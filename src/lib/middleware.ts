@@ -1,12 +1,12 @@
 // ============================================================================
-// Quantix Technology - API Middleware Helpers
+// Quantix Technology — API Middleware Helpers
+// MANAGED PLATFORM
 // ============================================================================
 
 import type { NextRequest } from 'next/server';
-import type { NextApiResponse } from 'next';
 import type { ZodSchema } from 'zod';
 import type { Role, Permission, BusinessContext } from './types';
-import { hasPermission, hasAnyPermission, getPermissionsForRole } from './permissions';
+import { hasPermission, hasAnyPermission, getPermissionsForRole, isPlatformRole } from './permissions';
 import { db } from './db';
 
 // ============================================================================
@@ -22,6 +22,7 @@ interface AuthenticatedRequest extends NextRequest {
     businessId?: string;
     storeId?: string;
     permissions: Permission[];
+    isPlatformAdmin: boolean;
   };
   businessContext?: BusinessContext;
 }
@@ -34,6 +35,7 @@ type HandlerFunction = (
 interface MiddlewareConfig {
   requireAuth?: boolean;
   requireBusinessContext?: boolean;
+  requirePlatformAdmin?: boolean;
   requiredPermission?: Permission;
   requiredPermissions?: Permission[];
   requiredRoles?: Role[];
@@ -42,8 +44,8 @@ interface MiddlewareConfig {
 }
 
 interface RateLimitConfig {
-  windowMs: number;  // Time window in milliseconds
-  maxRequests: number; // Max requests per window
+  windowMs: number;
+  maxRequests: number;
 }
 
 // ============================================================================
@@ -53,8 +55,7 @@ interface RateLimitConfig {
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
 /**
- * Rate limiting helper - uses in-memory store
- * Returns null if allowed, or an error message if rate limited
+ * Rate limiting helper — uses in-memory store
  */
 export function checkRateLimit(
   key: string,
@@ -96,23 +97,16 @@ function cleanupRateLimitStore(now: number) {
 // SESSION / AUTH EXTRACTION
 // ============================================================================
 
-/**
- * Extract user info from request headers (set by NextAuth)
- * This is a simplified version - in production, you'd verify the JWT token
- */
 async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRequest['user'] | null> {
   try {
-    // Get session token from cookies or authorization header
     const authHeader = req.headers.get('authorization');
     const businessIdHeader = req.headers.get('x-business-id');
 
     if (!authHeader) return null;
 
-    // Extract token from Bearer header
     const token = authHeader.replace('Bearer ', '');
     if (!token) return null;
 
-    // Look up the refresh token to find the user
     const refreshToken = await db.refreshToken.findUnique({
       where: { token },
       include: {
@@ -126,6 +120,7 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
                 },
               },
             },
+            salesProfile: true,
           },
         },
       },
@@ -135,31 +130,36 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
     if (!refreshToken.user.isActive) return null;
 
     const user = refreshToken.user;
-    const primaryBusinessUser = user.businessUsers[0];
-    const businessId = businessIdHeader || primaryBusinessUser?.business.id;
+    let role: Role = 'CUSTOMER';
+    let businessId: string | undefined;
+    let storeId: string | undefined;
 
-    // If a specific business context is requested, find the matching role
-    let role: Role = primaryBusinessUser?.role || 'CUSTOMER';
-    let storeId: string | undefined = primaryBusinessUser?.storeId || undefined;
-
-    if (businessId && businessId !== primaryBusinessUser?.business.id) {
-      const matchingBU = user.businessUsers.find(
-        (bu) => bu.business.id === businessId
-      );
-      if (matchingBU) {
-        role = matchingBU.role;
-        storeId = matchingBU.storeId || undefined;
+    if (user.salesProfile) {
+      role = 'QUANTIX_SALES_TEAM';
+    } else if (user.email.endsWith('@quantixtechnology.in') && user.businessUsers.length === 0) {
+      role = 'QUANTIX_SUPER_ADMIN';
+    } else if (user.businessUsers.length > 0) {
+      const targetBU = businessIdHeader
+        ? user.businessUsers.find(bu => bu.business.id === businessIdHeader)
+        : user.businessUsers[0];
+      if (targetBU) {
+        role = targetBU.role;
+        businessId = targetBU.business.id;
+        storeId = targetBU.storeId || undefined;
       }
     }
+
+    const platAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'QUANTIX_SALES_TEAM';
 
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       role,
-      businessId,
+      businessId: businessId || businessIdHeader || undefined,
       storeId,
       permissions: getPermissionsForRole(role),
+      isPlatformAdmin: platAdmin,
     };
   } catch {
     return null;
@@ -172,7 +172,6 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
 
 /**
  * Main API middleware wrapper
- * Combines auth, permissions, rate limiting, and validation
  */
 export function withMiddleware(config: MiddlewareConfig = {}) {
   return function (handler: HandlerFunction): HandlerFunction {
@@ -196,7 +195,6 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
             if (!validated.success) {
               return createValidationErrorResponse(validated.error);
             }
-            // Attach validated body to request for handler use
             (req as AuthenticatedRequest & { validatedBody: unknown }).validatedBody = validated.data;
           } catch {
             return createErrorResponse('Invalid JSON body', 400);
@@ -211,8 +209,13 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
           }
           (req as AuthenticatedRequest).user = user;
 
+          // Platform admin check
+          if (config.requirePlatformAdmin && !user.isPlatformAdmin) {
+            return createErrorResponse('Platform admin access required', 403);
+          }
+
           // Business context
-          if (config.requireBusinessContext && !user.businessId) {
+          if (config.requireBusinessContext && !user.businessId && !user.isPlatformAdmin) {
             return createErrorResponse('Business context required', 400);
           }
 
@@ -230,7 +233,7 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
             }
           }
 
-          // Multiple permissions check (any match)
+          // Multiple permissions check
           if (config.requiredPermissions && config.requiredPermissions.length > 0) {
             if (!hasAnyPermission(user.role, config.requiredPermissions)) {
               return createErrorResponse('Insufficient permissions', 403);
@@ -238,16 +241,17 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
           }
 
           // Set business context on request
-          if (user.businessId) {
+          if (user.businessId || user.isPlatformAdmin) {
             (req as AuthenticatedRequest).businessContext = {
-              businessId: user.businessId,
-              businessType: 'GROCERY', // Would be populated from DB
+              businessId: user.businessId || '',
+              businessType: 'GROCERY',
               businessSlug: '',
               businessName: '',
               role: user.role,
               userId: user.id,
               storeId: user.storeId,
               permissions: user.permissions,
+              isPlatformAdmin: user.isPlatformAdmin,
             };
           }
         }
@@ -277,6 +281,13 @@ export function withAuth(handler: HandlerFunction): HandlerFunction {
  */
 export function withBusinessContext(handler: HandlerFunction): HandlerFunction {
   return withMiddleware({ requireAuth: true, requireBusinessContext: true })(handler);
+}
+
+/**
+ * Require platform admin access (Super Admin or Sales Team)
+ */
+export function withPlatformAccess(handler: HandlerFunction): HandlerFunction {
+  return withMiddleware({ requireAuth: true, requirePlatformAdmin: true })(handler);
 }
 
 /**
@@ -376,7 +387,6 @@ export function createErrorResponse(message: string, status: number = 400): Resp
  * Create a validation error response from Zod error
  */
 export function createValidationErrorResponse(error: unknown): Response {
-  // Handle Zod v4 error format
   const errors = error && typeof error === 'object' && 'issues' in error
     ? (error as { issues: Array<{ path: (string | number)[]; message: string }> }).issues.map((issue) => ({
         field: issue.path.join('.'),

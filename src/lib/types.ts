@@ -1,24 +1,54 @@
 // ============================================================================
-// Quantix Technology - Complete TypeScript Types & Interfaces
+// Quantix Technology — Managed White-Label Multi-Tenant SaaS Platform
+// "Run Your Business Smarter"
+// www.quantixtechnology.in
+//
+// ARCHITECTURE PRINCIPLE:
+// This is a MANAGED platform. Customers CANNOT self-signup or create businesses.
+// ONLY Quantix Super Admin creates, configures, and deploys businesses.
+// Clients receive login access AFTER deployment.
 // ============================================================================
 
 // ============================================================================
-// ENUM TYPES (matching Prisma schema)
+// ENUM TYPES (matching Prisma schema exactly)
 // ============================================================================
 
-export type BusinessType = 'GROCERY' | 'FOOD_DELIVERY' | 'LAUNDRY' | 'CAR_WASH' | 'HOME_SERVICES';
-export type BusinessStatus = 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
+/** 11 supported business verticals */
+export type BusinessType =
+  | 'GROCERY'
+  | 'FOOD_DELIVERY'
+  | 'LAUNDRY'
+  | 'CAR_WASH'
+  | 'PHARMACY'
+  | 'HOME_SERVICES'
+  | 'ECOMMERCE'
+  | 'COSMETICS'
+  | 'MEAT_DELIVERY'
+  | 'FURNITURE'
+  | 'DIRECTORY';
+
+/** Business lifecycle status — managed by Quantix */
+export type BusinessStatus = 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
+
+/** Platform roles for the MANAGED model */
 export type Role =
-  | 'SUPER_ADMIN'
-  | 'BUSINESS_OWNER'
-  | 'BUSINESS_ADMIN'
+  | 'QUANTIX_SUPER_ADMIN'
+  | 'QUANTIX_SALES_TEAM'
+  | 'CLIENT_OWNER'
   | 'STORE_MANAGER'
-  | 'STORE_STAFF'
-  | 'CASHIER'
-  | 'DELIVERY_MANAGER'
-  | 'DELIVERY_PARTNER'
+  | 'DELIVERY_STAFF'
   | 'CUSTOMER';
-export type OrderType = 'DELIVERY' | 'PICKUP' | 'DINE_IN' | 'POS' | 'SUBSCRIPTION';
+
+/** Order types including pickup-and-delivery for laundry etc. */
+export type OrderType =
+  | 'DELIVERY'
+  | 'PICKUP'
+  | 'DINE_IN'
+  | 'POS'
+  | 'SUBSCRIPTION'
+  | 'PICKUP_AND_DELIVERY';
+
+/** Extended order statuses including pickup & delivery specific */
 export type OrderStatus =
   | 'PENDING'
   | 'CONFIRMED'
@@ -28,13 +58,30 @@ export type OrderStatus =
   | 'DELIVERED'
   | 'CANCELLED'
   | 'REFUNDED'
-  | 'SCHEDULED';
+  | 'SCHEDULED'
+  | 'PICKUP_ASSIGNED'
+  | 'PICKED_UP'
+  | 'PROCESSING'
+  | 'READY_FOR_DELIVERY';
+
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
+
 export type PaymentMethod = 'CASH' | 'CARD' | 'UPI' | 'NETBANKING' | 'WALLET' | 'COD' | 'CREDIT';
+
 export type DeliveryStatus = 'ASSIGNING' | 'ASSIGNED' | 'PICKED_UP' | 'ON_THE_WAY' | 'ARRIVED' | 'DELIVERED' | 'FAILED' | 'CANCELLED';
-export type SubscriptionType = 'CAR_WASH' | 'HOME_SERVICE' | 'LAUNDRY' | 'GROCERY' | 'CUSTOM';
-export type SubscriptionStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'TRIAL';
-export type BillingCycle = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
+
+/** Subscription service types for car wash, home services etc. */
+export type SubscriptionServiceType = 'CAR_WASH' | 'HOME_SERVICE' | 'LAUNDRY' | 'GROCERY' | 'CUSTOM';
+
+/** Subscription billing cycles for customer-facing plans */
+export type SubscriptionBillingCycle = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
+
+/** Customer subscription status */
+export type CustomerSubscriptionStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'TRIAL';
+
+/** Platform (business) subscription status — managed by Quantix */
+export type SubscriptionStatus = 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED' | 'EXPIRED' | 'PAUSED';
+
 export type ProductType = 'PHYSICAL' | 'DIGITAL' | 'SERVICE' | 'SUBSCRIPTION';
 export type ProductStatus = 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
 export type InventoryStatus = 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'DISCONTINUED';
@@ -45,7 +92,41 @@ export type NotificationType = 'ORDER_STATUS' | 'DELIVERY_UPDATE' | 'PROMOTION' 
 export type POSSessionStatus = 'OPEN' | 'CLOSED' | 'SUSPENDED';
 export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
 export type ZoneType = 'CIRCLE' | 'POLYGON' | 'PINCODE';
-export type AuthProvider = 'EMAIL' | 'GOOGLE' | 'PHONE' | 'OTP';
+export type AuthProvider = 'EMAIL_OTP' | 'WHATSAPP_OTP' | 'PUSH_NOTIFICATION' | 'GOOGLE' | 'PASSWORD';
+
+/** Platform plan tiers */
+export type PlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM';
+
+/** Domain mapping statuses — managed by Quantix */
+export type DomainStatus = 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR';
+
+/** Deployment statuses — managed by Quantix */
+export type DeploymentStatus = 'PENDING' | 'BUILDING' | 'DEPLOYING' | 'LIVE' | 'FAILED' | 'MAINTENANCE';
+
+/** Deployment types */
+export type DeploymentType = 'WEBSITE' | 'ADMIN_DASHBOARD' | 'CUSTOMER_APP' | 'DELIVERY_APP' | 'ADMIN_APP';
+
+/** Lead sources for the sales pipeline */
+export type LeadSource =
+  | 'META_ADS'
+  | 'GOOGLE_ADS'
+  | 'DIRECT_REFERRAL'
+  | 'WEBSITE_INQUIRY'
+  | 'COLD_OUTREACH'
+  | 'WHATSAPP_INQUIRY'
+  | 'PHONE_CALL'
+  | 'OTHER';
+
+/** Lead statuses for the sales pipeline */
+export type LeadStatus =
+  | 'NEW'
+  | 'CONTACTED'
+  | 'QUALIFIED'
+  | 'PROPOSAL_SENT'
+  | 'NEGOTIATION'
+  | 'WON'
+  | 'LOST'
+  | 'FOLLOW_UP';
 
 // ============================================================================
 // API RESPONSE TYPES
@@ -89,22 +170,33 @@ export interface CreateBusinessRequest {
   primaryColor?: string;
   secondaryColor?: string;
   logo?: string;
+  tagline?: string;
   address?: string;
   city?: string;
   state?: string;
   pincode?: string;
   gstNumber?: string;
   panNumber?: string;
+  cinNumber?: string;
+  fssaiLicense?: string;
   contactEmail?: string;
   contactPhone?: string;
   supportEmail?: string;
   supportPhone?: string;
+  salesRepId?: string;
+  planId?: string;
+  billingCycle?: 'monthly' | 'yearly';
+  customPrice?: number;
+  discountPercentage?: number;
+  manualPriceOverride?: boolean;
+  overrideReason?: string;
 }
 
 export interface UpdateBusinessRequest extends Partial<CreateBusinessRequest> {
   status?: BusinessStatus;
   settings?: Record<string, unknown>;
   features?: Record<string, boolean>;
+  notificationConfig?: Record<string, unknown>;
 }
 
 export interface CreateStoreRequest {
@@ -127,6 +219,8 @@ export interface CreateStoreRequest {
   preparationTime?: number;
   posEnabled?: boolean;
   gstNumber?: string;
+  paperSize?: string;
+  printerType?: string;
 }
 
 export interface CreateProductRequest {
@@ -178,8 +272,7 @@ export interface CreateOrderRequest {
   deliveryAddressId?: string;
   deliveryInstructions?: string;
   scheduledAt?: string;
-  pickupName?: string;
-  pickupPhone?: string;
+  pickupAddress?: string;
   items: Array<{
     productId: string;
     variantId?: string;
@@ -198,8 +291,8 @@ export interface CreateSubscriptionPlanRequest {
   name: string;
   slug: string;
   description?: string;
-  type: SubscriptionType;
-  billingCycle: BillingCycle;
+  serviceType: SubscriptionServiceType;
+  billingCycle: SubscriptionBillingCycle;
   price: number;
   originalPrice?: number;
   setupFee?: number;
@@ -221,6 +314,50 @@ export interface CreateSubscriptionPlanRequest {
     rollover?: boolean;
     rolloverMax?: number;
   }>;
+}
+
+export interface CreateLeadRequest {
+  businessName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  businessType: BusinessType;
+  source?: LeadSource;
+  notes?: string;
+  followUpDate?: string;
+  estimatedValue?: number;
+  salesRepId?: string;
+  tags?: string[];
+}
+
+export interface DomainMappingRequest {
+  domain: string;
+  subdomain?: string;
+  isPrimary?: boolean;
+  dnsProvider?: string;
+  dnsConfig?: Record<string, unknown>;
+  notes?: string;
+}
+
+export interface DeploymentRequest {
+  type: DeploymentType;
+  environment?: 'production' | 'staging';
+  hostingProvider?: string;
+  hostingConfig?: Record<string, unknown>;
+  version?: string;
+  notes?: string;
+}
+
+export interface BusinessSubscriptionRequest {
+  planId: string;
+  billingCycle?: 'monthly' | 'yearly';
+  customPrice?: number;
+  discountPercentage?: number;
+  manualPriceOverride?: boolean;
+  overrideReason?: string;
+  trialStart?: string;
+  trialEnd?: string;
+  notes?: string;
 }
 
 export interface LoginRequest {
@@ -277,6 +414,16 @@ export interface CustomerFilter {
   tags?: string[];
 }
 
+export interface LeadFilter {
+  status?: LeadStatus | LeadStatus[];
+  source?: LeadSource | LeadSource[];
+  businessType?: BusinessType | BusinessType[];
+  salesRepId?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
 // ============================================================================
 // PERMISSION TYPES
 // ============================================================================
@@ -305,6 +452,7 @@ export interface BusinessContext {
   userId: string;
   storeId?: string;
   permissions: Permission[];
+  isPlatformAdmin: boolean;
 }
 
 // ============================================================================
@@ -323,6 +471,8 @@ export interface BusinessListItem {
   state: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  subscriptionStatus?: SubscriptionStatus;
+  domain?: string | null;
 }
 
 export interface StoreListItem {
@@ -334,6 +484,7 @@ export interface StoreListItem {
   status: StoreStatus;
   isMainStore: boolean;
   phone: string | null;
+  posEnabled: boolean;
 }
 
 export interface ProductListItem {
@@ -381,6 +532,23 @@ export interface CustomerListItem {
   lastOrderAt: string | null;
 }
 
+export interface LeadListItem {
+  id: string;
+  businessName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  businessType: BusinessType;
+  source: LeadSource;
+  status: LeadStatus;
+  estimatedValue: number | null;
+  salesRepId: string | null;
+  salesRepName?: string | null;
+  convertedBusinessId: string | null;
+  followUpDate: string | null;
+  createdAt: string;
+}
+
 // ============================================================================
 // SESSION / AUTH TYPES
 // ============================================================================
@@ -397,6 +565,7 @@ export interface SessionUser {
   businessSlug?: string;
   storeId?: string;
   permissions: Permission[];
+  isPlatformAdmin: boolean;
 }
 
 // ============================================================================
@@ -424,7 +593,7 @@ export interface DeliveryZoneCircle {
 
 export interface DeliveryZonePolygon {
   zoneType: 'POLYGON';
-  polygon: GeoJSON.Polygon;
+  polygon: string; // GeoJSON string
 }
 
 export interface DeliveryZonePincode {
@@ -480,6 +649,18 @@ export interface DashboardStats {
   deliveryPartnersOnline: number;
 }
 
+export interface PlatformDashboardStats extends DashboardStats {
+  totalBusinesses: number;
+  activeBusinesses: number;
+  trialBusinesses: number;
+  onboardingBusinesses: number;
+  totalRevenue: number;
+  mrr: number; // Monthly recurring revenue
+  activeLeads: number;
+  leadsWonThisMonth: number;
+  churnedBusinesses: number;
+}
+
 export interface RevenueChart {
   date: string;
   revenue: number;
@@ -490,4 +671,30 @@ export interface OrderStatusBreakdown {
   status: OrderStatus;
   count: number;
   percentage: number;
+}
+
+// ============================================================================
+// DEPLOYMENT / DOMAIN TYPES
+// ============================================================================
+
+export interface DeploymentInfo {
+  id: string;
+  type: DeploymentType;
+  status: DeploymentStatus;
+  environment: string;
+  hostingProvider: string;
+  liveUrl: string | null;
+  version: string | null;
+  healthStatus: string;
+  deployedAt: string | null;
+}
+
+export interface DomainInfo {
+  id: string;
+  domain: string;
+  subdomain: string | null;
+  status: DomainStatus;
+  sslStatus: string;
+  isPrimary: boolean;
+  configuredAt: string | null;
 }

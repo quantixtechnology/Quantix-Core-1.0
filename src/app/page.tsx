@@ -4,30 +4,39 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar, type ViewType } from '@/components/dashboard/sidebar';
 import { Header } from '@/components/dashboard/header';
-import { Overview } from '@/components/dashboard/overview';
+import { PlatformOverview } from '@/components/dashboard/platform-overview';
 import { BusinessesView } from '@/components/dashboard/businesses-view';
+import { SalesView } from '@/components/dashboard/sales-view';
+import { SubscriptionsView } from '@/components/dashboard/subscriptions-view';
+import { DomainsView } from '@/components/dashboard/domains-view';
+import { PlansView } from '@/components/dashboard/plans-view';
+import { BusinessDashboard } from '@/components/dashboard/business-dashboard';
 import { StoresView } from '@/components/dashboard/stores-view';
 import { ProductsView } from '@/components/dashboard/products-view';
 import { OrdersView } from '@/components/dashboard/orders-view';
 import { CustomersView } from '@/components/dashboard/customers-view';
 import { DeliveriesView } from '@/components/dashboard/deliveries-view';
-import { SubscriptionsView } from '@/components/dashboard/subscriptions-view';
+import { SubscriptionPlansView } from '@/components/dashboard/subscription-plans-view';
 import { PosView } from '@/components/dashboard/pos-view';
 import { InvoicesView } from '@/components/dashboard/invoices-view';
-import { ArchitectureView } from '@/components/dashboard/architecture-view';
 import { SettingsView } from '@/components/dashboard/settings-view';
+import { ArchitectureView } from '@/components/dashboard/architecture-view';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
-import { cn } from '@/lib/utils';
 
-const viewComponents: Record<ViewType, React.ComponentType> = {
-  dashboard: Overview,
+const viewComponents: Record<ViewType, React.ComponentType<{ selectedBusiness?: string }>> = {
+  platform_dashboard: PlatformOverview,
   businesses: BusinessesView,
+  sales: SalesView,
+  subscriptions: SubscriptionsView,
+  domains: DomainsView,
+  plans: PlansView,
+  business_dashboard: BusinessDashboard,
   stores: StoresView,
   products: ProductsView,
   orders: OrdersView,
   customers: CustomersView,
   deliveries: DeliveriesView,
-  subscriptions: SubscriptionsView,
+  sub_plans: SubscriptionPlansView,
   pos: PosView,
   invoices: InvoicesView,
   settings: SettingsView,
@@ -35,24 +44,30 @@ const viewComponents: Record<ViewType, React.ComponentType> = {
 };
 
 const viewTitles: Record<ViewType, string> = {
-  dashboard: 'Dashboard',
+  platform_dashboard: 'Platform Dashboard',
   businesses: 'Businesses',
+  sales: 'Sales & Leads',
+  subscriptions: 'Client Subscriptions',
+  domains: 'Domains & Deployments',
+  plans: 'Platform Plans',
+  business_dashboard: 'Business Dashboard',
   stores: 'Stores',
   products: 'Products',
   orders: 'Orders',
   customers: 'Customers',
   deliveries: 'Deliveries',
-  subscriptions: 'Subscriptions',
+  sub_plans: 'Subscription Packages',
   pos: 'POS Terminal',
   invoices: 'Invoices',
   settings: 'Settings',
-  architecture: 'Architecture',
+  architecture: 'Architecture Documentation',
 };
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<ViewType>('dashboard');
+  const [activeView, setActiveView] = useState<ViewType>('platform_dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [selectedBusiness, setSelectedBusiness] = useState('biz_1');
 
   const handleViewChange = (view: ViewType) => {
     setActiveView(view);
@@ -91,6 +106,8 @@ export default function Home() {
           <Header
             onMobileMenuToggle={() => setMobileMenuOpen(true)}
             currentView={viewTitles[activeView]}
+            selectedBusiness={selectedBusiness}
+            onBusinessChange={setSelectedBusiness}
           />
 
           <main className="flex-1 overflow-y-auto">
@@ -103,7 +120,7 @@ export default function Home() {
                   exit={{ opacity: 0, x: -8 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <ViewComponent />
+                  <ViewComponent selectedBusiness={selectedBusiness} />
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -117,13 +134,15 @@ export default function Home() {
                   <span className="text-white font-bold text-[8px]">QX</span>
                 </div>
                 <span className="text-xs text-slate-500">
-                  © 2024 Quantix Technology. All rights reserved.
+                  © 2025 Quantix Technology · Run Your Business Smarter
                 </span>
               </div>
               <div className="flex items-center gap-4 text-[10px] text-slate-400">
-                <span>Version 1.0.0</span>
-                <span>•</span>
-                <span>Made with ❤️ in India</span>
+                <span>quantixtechnology.in</span>
+                <span>·</span>
+                <span>v2.0.0</span>
+                <span>·</span>
+                <span>Managed White-Label SaaS</span>
               </div>
             </div>
           </footer>

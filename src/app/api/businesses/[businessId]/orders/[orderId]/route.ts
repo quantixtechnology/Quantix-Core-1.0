@@ -1,95 +1,84 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { withBusinessAccess, validateBusinessExists } from '@/lib/api-utils';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ businessId: string; orderId: string }> }
 ) {
-  const { businessId, orderId } = await params;
-  if (!(await validateBusinessExists(businessId))) {
-    return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
-  }
-  return withBusinessAccess(request, businessId, async () => {
-    try {
-      const order = await db.order.findFirst({
-        where: { id: orderId, businessId },
-        include: {
-          customer: { select: { id: true, name: true, phone: true, email: true, avatar: true } },
-          store: { select: { id: true, name: true, address: true, phone: true } },
-          items: {
-            include: {
-              product: { select: { id: true, name: true, images: true } },
-              variant: { select: { id: true, name: true } },
-            },
-          },
-          delivery: {
-            include: {
-              deliveryPartner: { select: { id: true, name: true, phone: true, avatar: true } },
-            },
-          },
-          statusHistory: { orderBy: { createdAt: 'desc' } },
-          payments: true,
-          promoCode: { select: { id: true, code: true, promoType: true, value: true } },
-          invoice: true,
-        },
-      });
+  try {
+    const { businessId, orderId } = await params;
 
-      if (!order) {
-        return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
-      }
+    const order = await db.order.findFirst({
+      where: { id: orderId, businessId },
+      include: {
+        items: true,
+        customer: true,
+        store: { select: { id: true, name: true, address: true, phone: true } },
+        delivery: { include: { deliveryPartner: { select: { id: true, name: true, phone: true } } } },
+        statusHistory: { orderBy: { createdAt: 'desc' } },
+        payments: true,
+        invoice: true,
+      },
+    });
 
-      return NextResponse.json({ success: true, data: order });
-    } catch (error) {
-      console.error('Get order error:', error);
-      return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    if (!order) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
     }
-  });
+
+    return NextResponse.json({ success: true, data: order });
+  } catch (error) {
+    console.error('Get order error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch order' },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ businessId: string; orderId: string }> }
 ) {
-  const { businessId, orderId } = await params;
-  if (!(await validateBusinessExists(businessId))) {
-    return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
-  }
-  return withBusinessAccess(request, businessId, async (_req, user) => {
-    try {
-      const order = await db.order.findFirst({ where: { id: orderId, businessId } });
-      if (!order) {
-        return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
-      }
+  try {
+    const { businessId, orderId } = await params;
+    const body = await request.json();
 
-      const body = await request.json();
-      const allowedFields = [
-        'paymentStatus', 'paymentMethod', 'notes', 'cancelReason',
-        'deliveryInstructions', 'scheduledAt',
-      ];
-
-      const data: Record<string, unknown> = {};
-      for (const field of allowedFields) {
-        if (body[field] !== undefined) {
-          data[field] = body[field];
-        }
-      }
-
-      if (body.cancelReason) {
-        data.status = 'CANCELLED';
-        data.cancelledAt = new Date();
-      }
-
-      const updated = await db.order.update({
-        where: { id: orderId },
-        data,
-        include: { items: true },
-      });
-
-      return NextResponse.json({ success: true, data: updated, message: 'Order updated' });
-    } catch (error) {
-      console.error('Update order error:', error);
-      return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    const existing = await db.order.findFirst({ where: { id: orderId, businessId } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
     }
-  });
+
+    const updateData: Record<string, unknown> = {};
+    const allowedFields = [
+      'customerName', 'customerPhone', 'customerEmail',
+      'deliveryAddress', 'deliveryInstructions', 'notes',
+      'paymentMethod', 'paymentStatus', 'cancelReason',
+    ];
+    for (const field of allowedFields) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
+
+    if (body.scheduledAt) updateData.scheduledAt = new Date(body.scheduledAt);
+
+    if (body.paymentStatus === 'COMPLETED') updateData.paidAt = new Date();
+
+    const order = await db.order.update({
+      where: { id: orderId },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, data: order });
+  } catch (error) {
+    console.error('Update order error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update order' },
+      { status: 500 }
+    );
+  }
 }

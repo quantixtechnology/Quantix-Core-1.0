@@ -1,269 +1,137 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import {
-  ShoppingCart,
-  UtensilsCrossed,
-  WashingMachine,
-  Car,
-  Home,
-  Plus,
-  Search,
-  Filter,
-  Mail,
-  Phone,
-  MapPin,
-  Building2,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Plus, ShoppingCart, UtensilsCrossed, Shirt, Car, Pill, Home, Package, Sparkles, Beef, Sofa, BookOpen, Eye, Power } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { businesses, businessTypeLabels, businessTypeColors, type BusinessType, type Business } from './data';
-import { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { businesses, businessTypeConfig, statusColors } from './data';
+import type { BusinessType } from './data';
 
-const businessTypeIcons: Record<BusinessType, React.ElementType> = {
-  grocery: ShoppingCart,
-  food_delivery: UtensilsCrossed,
-  laundry: WashingMachine,
-  car_wash: Car,
-  home_services: Home,
-};
+const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.04 } } };
+const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.25 } } };
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
-};
+const iconMap: Record<string, React.ElementType> = { ShoppingCart, UtensilsCrossed, Shirt, Car, Pill, Home, Package, Sparkles, Beef, Sofa, BookOpen };
 
 export function BusinessesView() {
-  const [search, setSearch] = useState('');
-  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
-
-  const filtered = businesses.filter(
-    (b) =>
-      b.name.toLowerCase().includes(search.toLowerCase()) ||
-      b.owner.toLowerCase().includes(search.toLowerCase()) ||
-      b.city.toLowerCase().includes(search.toLowerCase())
-  );
+  const typeCounts = businesses.reduce((acc, b) => { acc[b.type] = (acc[b.type] || 0) + 1; return acc; }, {} as Record<string, number>);
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      {/* Header */}
-      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Businesses</h2>
-          <p className="text-sm text-slate-500">Manage all on-boarded businesses on the platform</p>
-        </div>
-        <Button className="bg-emerald-600 hover:bg-emerald-700 text-xs h-9">
-          <Plus className="h-3.5 w-3.5 mr-2" />
-          Add Business
-        </Button>
-      </motion.div>
-
-      {/* Filters */}
-      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Search businesses..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-9 text-sm"
-          />
-        </div>
-        <Button variant="outline" size="sm" className="h-9 text-xs">
-          <Filter className="h-3.5 w-3.5 mr-2" />
-          Filter
-        </Button>
-      </motion.div>
-
-      {/* Business Stats */}
-      <motion.div variants={itemVariants} className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {(Object.keys(businessTypeLabels) as BusinessType[]).map((type) => {
-          const Icon = businessTypeIcons[type];
-          const count = businesses.filter((b) => b.type === type).length;
+      {/* Type Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+        {Object.entries(businessTypeConfig).map(([type, config]) => {
+          const Icon = iconMap[config.icon] || ShoppingCart;
+          const count = typeCounts[type] || 0;
           return (
-            <Card key={type} className="hover:shadow-sm transition-shadow cursor-pointer">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${businessTypeColors[type]}`}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div>
+            <motion.div key={type} variants={itemVariants}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-3 text-center">
+                  <div className="w-8 h-8 rounded-lg mx-auto mb-1.5 flex items-center justify-center" style={{ backgroundColor: `${config.color}15`, color: config.color }}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <p className="text-[10px] text-slate-500 truncate">{config.label}</p>
                   <p className="text-lg font-bold text-slate-900">{count}</p>
-                  <p className="text-[10px] text-slate-500">{businessTypeLabels[type]}</p>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </motion.div>
           );
         })}
+      </div>
+
+      {/* Header */}
+      <motion.div variants={itemVariants} className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">All Businesses</h3>
+          <p className="text-xs text-slate-500">{businesses.length} total businesses on platform</p>
+        </div>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button size="sm" className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700">
+              <Plus className="h-3.5 w-3.5 mr-1.5" />Create Business
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-sm">Create New Business</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-xs text-slate-600">
+              <p>Only <strong>Quantix Super Admin</strong> can create businesses.</p>
+              <p>After creation, configure branding, assign a subscription plan, map domain, and deploy.</p>
+              <div className="p-3 bg-amber-50 rounded-lg text-amber-700 text-[10px]">
+                ⚠️ Customers CANNOT self-signup. This is a managed platform.
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </motion.div>
 
-      {/* Businesses Table */}
+      {/* Business Table */}
       <motion.div variants={itemVariants}>
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Business</TableHead>
-                  <TableHead className="text-xs">Type</TableHead>
-                  <TableHead className="text-xs hidden md:table-cell">Owner</TableHead>
-                  <TableHead className="text-xs hidden sm:table-cell">City</TableHead>
-                  <TableHead className="text-xs hidden lg:table-cell">Stores</TableHead>
-                  <TableHead className="text-xs hidden lg:table-cell">Revenue</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((business) => {
-                  const Icon = businessTypeIcons[business.type];
-                  return (
-                    <TableRow
-                      key={business.id}
-                      className="cursor-pointer hover:bg-slate-50"
-                      onClick={() => setSelectedBusiness(business)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className={`p-1.5 rounded-lg ${businessTypeColors[business.type]}`}>
-                            <Icon className="h-4 w-4" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-3 px-4 font-semibold text-slate-700">Business</th>
+                    <th className="text-left py-3 px-4 font-semibold text-slate-700">Type</th>
+                    <th className="text-left py-3 px-4 font-semibold text-slate-700">City</th>
+                    <th className="text-left py-3 px-4 font-semibold text-slate-700">Plan</th>
+                    <th className="text-left py-3 px-4 font-semibold text-slate-700">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-slate-700">Online</th>
+                    <th className="text-right py-3 px-4 font-semibold text-slate-700">Revenue</th>
+                    <th className="text-right py-3 px-4 font-semibold text-slate-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {businesses.map(biz => {
+                    const config = businessTypeConfig[biz.type];
+                    const Icon = iconMap[config?.icon || 'ShoppingCart'] || ShoppingCart;
+                    return (
+                      <tr key={biz.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${config?.color}15`, color: config?.color }}>
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-slate-900">{biz.name}</p>
+                              <p className="text-[10px] text-slate-400">{biz.contactPhone}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-xs font-semibold text-slate-900">{business.name}</p>
-                            <p className="text-[10px] text-slate-500">{business.email}</p>
+                        </td>
+                        <td className="py-3 px-4">
+                          <Badge variant="outline" className="text-[9px] h-5">{config?.label || biz.type}</Badge>
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">{biz.city}</td>
+                        <td className="py-3 px-4">
+                          <span className="font-medium">{biz.plan}</span>
+                          {biz.customPrice && <span className="text-[9px] text-amber-600 ml-1">custom</span>}
+                        </td>
+                        <td className="py-3 px-4">
+                          <Badge className={`text-[9px] h-5 ${statusColors[biz.status]}`} variant="secondary">{biz.status}</Badge>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className={`w-2 h-2 rounded-full ${biz.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                        </td>
+                        <td className="py-3 px-4 text-right font-medium">₹{biz.monthlyRevenue.toLocaleString()}</td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7"><Eye className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7"><Power className="h-3 w-3" /></Button>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`text-[10px] h-5 ${businessTypeColors[business.type]}`} variant="secondary">
-                          {businessTypeLabels[business.type]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs hidden md:table-cell">{business.owner}</TableCell>
-                      <TableCell className="text-xs hidden sm:table-cell">{business.city}</TableCell>
-                      <TableCell className="text-xs hidden lg:table-cell">{business.totalStores}</TableCell>
-                      <TableCell className="text-xs hidden lg:table-cell font-medium">
-                        ₹{(business.monthlyRevenue / 100000).toFixed(1)}L
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={`text-[10px] h-5 ${
-                            business.status === 'active'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                          variant="secondary"
-                        >
-                          {business.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       </motion.div>
-
-      {/* Business Detail Dialog */}
-      <Dialog open={!!selectedBusiness} onOpenChange={() => setSelectedBusiness(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-emerald-600" />
-              {selectedBusiness?.name}
-            </DialogTitle>
-            <DialogDescription>Business details and overview</DialogDescription>
-          </DialogHeader>
-          {selectedBusiness && (
-            <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-2">
-                  <Badge className={`text-[10px] h-5 ${businessTypeColors[selectedBusiness.type]}`} variant="secondary">
-                    {businessTypeLabels[selectedBusiness.type]}
-                  </Badge>
-                </div>
-                <Badge
-                  className={`text-[10px] h-5 justify-self-end ${
-                    selectedBusiness.status === 'active'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                  variant="secondary"
-                >
-                  {selectedBusiness.status}
-                </Badge>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-slate-600">{selectedBusiness.email}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-slate-600">{selectedBusiness.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-slate-600">{selectedBusiness.city}</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <Card className="bg-slate-50">
-                  <CardContent className="p-3 text-center">
-                    <p className="text-lg font-bold text-slate-900">{selectedBusiness.totalStores}</p>
-                    <p className="text-[10px] text-slate-500">Stores</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-slate-50">
-                  <CardContent className="p-3 text-center">
-                    <p className="text-lg font-bold text-slate-900">
-                      {(selectedBusiness.totalOrders / 1000).toFixed(1)}K
-                    </p>
-                    <p className="text-[10px] text-slate-500">Orders</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-slate-50">
-                  <CardContent className="p-3 text-center">
-                    <p className="text-lg font-bold text-emerald-700">
-                      ₹{(selectedBusiness.monthlyRevenue / 100000).toFixed(1)}L
-                    </p>
-                    <p className="text-[10px] text-slate-500">Monthly Rev.</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex items-center justify-between text-sm border-t pt-3">
-                <span className="text-slate-500">Plan: <span className="font-medium text-slate-700">{selectedBusiness.subscriptionPlan}</span></span>
-                <span className="text-slate-500">Since: <span className="font-medium text-slate-700">{selectedBusiness.createdAt}</span></span>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </motion.div>
   );
 }

@@ -1,115 +1,102 @@
-# Quantix Technology - Multi-Tenant SaaS Platform Worklog
+# Quantix Technology — Managed White-Label SaaS Platform Worklog
 
 ---
 Task ID: 1
 Agent: Main Orchestrator
-Task: Explore current project structure and dependencies
+Task: Redesign complete Prisma schema for managed SaaS model
 
 Work Log:
-- Explored project directory structure
-- Read package.json, prisma/schema.prisma, layout.tsx, globals.css
-- Confirmed Next.js 16, Tailwind CSS 4, shadcn/ui, Prisma, NextAuth.js v4
-- Verified all shadcn/ui components available
+- Completely redesigned Prisma schema for MANAGED white-label platform
+- Added Platform, SalesTeamMember, Lead, PlatformPlan models
+- Added BusinessSubscription with custom_price, discount_percentage, manual_price_override, trial_extension, subscription_pause
+- Added DomainMapping with DNS/SSL status tracking
+- Added Deployment with hosting provider and health status
+- Added OTP-based auth (Email OTP, WhatsApp OTP, Push Notification) - NO SMS
+- Updated Role enum: QUANTIX_SUPER_ADMIN, QUANTIX_SALES_TEAM, CLIENT_OWNER, STORE_MANAGER, DELIVERY_STAFF, CUSTOMER
+- Added 11 BusinessTypes: GROCERY, FOOD_DELIVERY, LAUNDRY, CAR_WASH, PHARMACY, HOME_SERVICES, ECOMMERCE, COSMETICS, MEAT_DELIVERY, FURNITURE, DIRECTORY
+- Added PICKUP_AND_DELIVERY order type with pickup/delivery workflow statuses
+- Pushed schema to SQLite database
 
 Stage Summary:
-- Project uses SQLite with Prisma ORM
-- All shadcn/ui components present in src/components/ui/
-- NextAuth.js v4 and Zustand available
+- 30+ Prisma models with business_id isolation
+- Key new models: SalesTeamMember, Lead, PlatformPlan, BusinessSubscription (with custom pricing), DomainMapping, Deployment, OTPCode
+- All enums updated for managed platform model
 
 ---
 Task ID: 2
-Agent: Main Orchestrator
-Task: Design and implement complete Prisma database schema (multi-tenant)
+Agent: full-stack-developer
+Task: Rebuild core lib files
 
 Work Log:
-- Designed comprehensive multi-tenant database schema
-- Created 30+ models covering all business domains
-- Implemented business_id based data isolation
-- Added GST compliance fields (CGST/SGST/IGST/Cess)
-- Pushed schema to SQLite database successfully
+- Rebuilt types.ts with 27 enum types, BusinessContext with isPlatformAdmin
+- Rebuilt permissions.ts with 14 permission modules, 6-role mapping
+- Rebuilt constants.ts with all 11 BUSINESS_TYPES, LEAD_SOURCES, PRICING_PLANS, PAPER_SIZES, HOSTING_PROVIDERS
+- Updated utils.ts with generateOTP (6-digit), calculateGST, calculateDistance (Haversine)
+- Rebuilt seed.ts for comprehensive demo data
+- Rebuilt auth.ts with QUANTIX_SUPER_ADMIN handling
+- Rebuilt api-client.ts with platformApi
+- Rebuilt validations.ts with leadSchema, domainMappingSchema, deploymentSchema
+- Rebuilt middleware.ts with withPlatformAccess, requirePlatformAdmin
 
 Stage Summary:
-- 30+ Prisma models: Platform, Business, User, BusinessUser, Store, StoreTiming, Category, Product, ProductVariant, Inventory, InventoryLog, Customer, Address, DeliveryZone, DeliveryPartner, Order, OrderItem, OrderStatusHistory, Delivery, SubscriptionPlan, SubscriptionPlanItem, CustomerSubscription, SubscriptionUsage, POSSession, Payment, PaymentGateway, TaxConfig, Invoice, PromoCode, Notification, ActivityLog, RefreshToken
-- Enums: BusinessType, BusinessStatus, Role, OrderType, OrderStatus, PaymentStatus, PaymentMethod, DeliveryStatus, SubscriptionType, SubscriptionStatus, BillingCycle, ProductType, ProductStatus, InventoryStatus, TaxType, PromoType, InvoiceType, NotificationType, POSSessionStatus, StoreStatus, ZoneType, AuthProvider
-- Multi-tenant isolation via businessId on all tenant-scoped models
-- GST-compliant invoicing with CGST/SGST/IGST breakdown
+- All 10 core library files rebuilt for managed platform model
+- Lint passed with zero errors
 
 ---
 Task ID: 3
 Agent: full-stack-developer
-Task: Create core lib files
+Task: Rebuild API routes
 
 Work Log:
-- Created src/lib/types.ts - 22 enum types, API response types, request types, filter types, BusinessContext
-- Created src/lib/permissions.ts - 10 permission modules with ~50 granular permissions, 9-role mapping
-- Created src/lib/constants.ts - BUSINESS_TYPES, ORDER_STATUSES, PAYMENT_METHODS, ROLES, TAX_RATES, etc.
-- Updated src/lib/utils.ts - formatCurrency, calculateDistance (Haversine), calculateGST, generateOTP, etc.
-- Created src/lib/auth.ts - NextAuth v4 config with CredentialsProvider, JWT strategy
-- Created src/lib/api-client.ts - Typed fetch wrapper with auto business-id header injection
-- Created src/lib/validations.ts - 20+ Zod v4 schemas with Indian-specific validations
-- Created src/lib/middleware.ts - withAuth, withBusinessContext, withPermission, withRole, withValidation, withRateLimit
-- Created src/lib/seed.ts - Comprehensive demo data seeding
-- Created src/hooks/use-business.ts - Zustand store with persist for business context
+- Deleted all 36 old API route files
+- Created 48 new API route files covering all domains
+- Platform routes: stats, plans
+- Sales routes: leads, team
+- Business routes: CRUD, stats, toggle-online
+- Subscription routes: with custom pricing override, pause, trial extension
+- Domain & Deployment routes: DNS mapping, deployment management
+- Auth routes: register (Super Admin only), login, OTP
+- All tenant-scoped routes filter by businessId
+- Simplified seed route that works without crashing
 
 Stage Summary:
-- All 10 core library files created
-- bcryptjs for password hashing
-- Zod v4 for validation schemas
-- NextAuth v4 with JWT + business context
-- Indian GST compliance throughout
+- 48 API route files created
+- Business creation restricted to QUANTIX_SUPER_ADMIN
+- Lint passed with zero errors
+- Seed verified working: 11 businesses, 3 plans, real data in database
 
 ---
-Task ID: 4
-Agent: full-stack-developer
-Task: Build API routes
+Task ID: 4+5+6
+Agent: Main Orchestrator
+Task: Build complete frontend (Super Admin + Client + Architecture)
 
 Work Log:
-- Created auth routes (register, login, me)
-- Created business routes (CRUD, stats)
-- Created store routes (CRUD)
-- Created product routes (CRUD, inventory)
-- Created order routes (CRUD, status updates)
-- Created customer routes (CRUD)
-- Created delivery routes (partners, zones, assignments)
-- Created subscription routes (plans, subscriptions, usage)
-- Created POS routes (sessions, billing)
-- Created invoice routes (list, generate, detail)
-- Created payment, tax-config, promo-code, notification, activity-log routes
-- Created seed route for demo data
+- Created data.ts with comprehensive mock data for all 11 business types
+- Created sidebar.tsx with Super Admin mode badge, grouped navigation
+- Created header.tsx with business selector, search, notifications
+- Created platform-overview.tsx with KPIs, revenue chart, lead pipeline
+- Created businesses-view.tsx with 11 business type icons, status badges
+- Created sales-view.tsx with lead pipeline, sales team performance
+- Created subscriptions-view.tsx with custom pricing override dialog
+- Created domains-view.tsx with DNS/SSL status, deployment cards, hosting strategy
+- Created plans-view.tsx with Starter ₹4,999, Professional ₹9,999, Enterprise ₹24,999
+- Created business-dashboard.tsx with business-specific KPIs, online/offline toggle
+- Created stores-view.tsx with delivery radius, Haversine explanation
+- Created products-view.tsx with GST rates, veg/non-veg indicators
+- Created orders-view.tsx with pickup & delivery workflow
+- Created customers-view.tsx with loyalty tiers
+- Created deliveries-view.tsx with OTP verification, live tracking
+- Created subscription-plans-view.tsx with Car Wash credit system
+- Created pos-view.tsx with cart, 58mm/80mm/A4 paper sizes, Bluetooth/USB printers
+- Created invoices-view.tsx with CGST/SGST/IGST breakdown
+- Created settings-view.tsx with business configuration
+- Created architecture-view.tsx with ALL 16 deliverables (database schema, multi-tenant arch, folder structure, API arch, auth flow, role permissions, POS arch, delivery arch, subscription engine, pickup & delivery engine, super admin arch, deployment arch, domain mapping arch, development roadmap, MVP scope, production architecture)
+- Updated page.tsx with sidebar, header, view switching, footer
 
 Stage Summary:
-- 35+ API route files created
-- All routes enforce multi-tenant data isolation via businessId
-- Consistent response format with success/error handling
-- Pagination support with page, limit, search params
-
----
-Task ID: 5
-Agent: full-stack-developer
-Task: Build Admin Dashboard frontend
-
-Work Log:
-- Created src/components/dashboard/data.ts - Comprehensive mock data
-- Created src/components/dashboard/sidebar.tsx - Collapsible sidebar with grouped navigation
-- Created src/components/dashboard/header.tsx - Search, business selector, notifications, avatar
-- Created src/components/dashboard/overview.tsx - KPI cards, revenue chart, order status pie, recent orders
-- Created src/components/dashboard/businesses-view.tsx - Business type stat cards, searchable table
-- Created src/components/dashboard/stores-view.tsx - Store cards with metrics
-- Created src/components/dashboard/products-view.tsx - Category/type filters, product cards with GST
-- Created src/components/dashboard/orders-view.tsx - Status filter tabs, detail dialog with timeline
-- Created src/components/dashboard/customers-view.tsx - Loyalty tiers, customer cards
-- Created src/components/dashboard/deliveries-view.tsx - Delivery stats, zone map
-- Created src/components/dashboard/subscriptions-view.tsx - Plan cards, credit usage bars
-- Created src/components/dashboard/pos-view.tsx - Product grid, cart, payment method selector
-- Created src/components/dashboard/invoices-view.tsx - GST breakdown, invoice detail
-- Created src/components/dashboard/architecture-view.tsx - 10 comprehensive architecture sections
-- Created src/components/dashboard/settings-view.tsx - Business config, tax, delivery, payment settings
-- Updated src/app/page.tsx - Single page app with sidebar navigation and view switching
-
-Stage Summary:
-- 15 component files + page.tsx
-- Emerald/green primary color (#10B981)
-- Responsive with mobile sidebar
-- Framer Motion animations
-- Recharts for data visualization
-- Comprehensive Architecture View with all 10 sections
+- 20 dashboard component files + page.tsx
+- Emerald green primary (#10B981)
+- Super Admin mode with platform control
+- Architecture view with all 16 sections
+- Lint passed, dev server verified
+- API returning real data from seeded database

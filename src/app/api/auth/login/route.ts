@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyPassword } from '@/lib/password-utils';
-import { createSession } from '@/lib/api-utils';
+import bcrypt from 'bcryptjs';
+import { sign } from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.NEXTAUTH_SECRET || 'quantix-secret-key-change-in-production';
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,29 +19,20 @@ export async function POST(request: NextRequest) {
 
     const user = await db.user.findUnique({
       where: { email },
-      include: {
-        businessUsers: {
-          where: { isActive: true },
-          include: {
-            business: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                businessType: true,
-                status: true,
-                primaryColor: true,
-                logo: true,
-              },
-            },
-          },
-        },
-      },
+      include: { businessUsers: { include: { business: true } } },
     });
 
     if (!user || !user.passwordHash) {
       return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
+        { success: false, error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+
+    const isValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isValid) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid credentials' },
         { status: 401 }
       );
     }
@@ -51,15 +44,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isValid = await verifyPassword(password, user.passwordHash);
-    if (!isValid) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
-        { status: 401 }
-      );
-    }
+    // Update last login
+    await db.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
 
-    const token = await createSession(user.id);
+    // Create refresh token
+    const refreshToken = sign({ userId: user.id, type: 'refresh' }, JWT_SECRET, { expiresIn: '30d' });
+    await db.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: refreshToken,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    // Create access token
+    const accessToken = sign(
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.businessUsers[0]?.role || 'CUSTOMER',
+        businessId: user.businessUsers[0]?.businessId,
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
     const { passwordHash: _, ...userWithoutPassword } = user;
 
@@ -67,14 +78,21 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         user: userWithoutPassword,
-        token,
+        accessToken,
+        refreshToken,
+        businesses: user.businessUsers.map((bu) => ({
+          businessId: bu.businessId,
+          businessName: bu.business.name,
+          businessType: bu.business.businessType,
+          role: bu.role,
+          slug: bu.business.slug,
+        })),
       },
-      message: 'Login successful',
     });
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(
-      { success: false, error: 'Internal server error' },
+      { success: false, error: 'Failed to login' },
       { status: 500 }
     );
   }

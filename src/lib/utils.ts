@@ -1,5 +1,6 @@
 // ============================================================================
-// Quantix Technology - Utility Functions
+// Quantix Technology — Utility Functions
+// MANAGED PLATFORM
 // ============================================================================
 
 import { clsx, type ClassValue } from "clsx"
@@ -19,7 +20,7 @@ export function cn(...inputs: ClassValue[]) {
 // ============================================================================
 
 /**
- * Format amount as INR currency
+ * Format amount as INR currency (or other)
  */
 export function formatCurrency(amount: number, currency: string = 'INR'): string {
   return new Intl.NumberFormat('en-IN', {
@@ -181,9 +182,9 @@ export function calculateGST(
 // ============================================================================
 
 /**
- * Generate a random 4-digit OTP
+ * Generate a random 6-digit OTP (as per schema requirement)
  */
-export function generateOTP(length: number = 4): string {
+export function generateOTP(length: number = 6): string {
   const min = Math.pow(10, length - 1);
   const max = Math.pow(10, length) - 1;
   return String(Math.floor(Math.random() * (max - min + 1)) + min);
@@ -198,20 +199,13 @@ export function generateOTP(length: number = 4): string {
  * Input: 9876543210 → Output: +91 98765 43210
  */
 export function formatPhoneNumber(phone: string): string {
-  // Remove all non-digit characters
   const digits = phone.replace(/\D/g, '');
-
-  // If starts with 91 and has 12 digits
   if (digits.length === 12 && digits.startsWith('91')) {
     return `+${digits.slice(0, 2)} ${digits.slice(2, 7)} ${digits.slice(7)}`;
   }
-
-  // If 10 digits (Indian mobile)
   if (digits.length === 10) {
     return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
   }
-
-  // Return as-is if not standard format
   return phone;
 }
 

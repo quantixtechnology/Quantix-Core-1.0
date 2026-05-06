@@ -1,63 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { hashPassword } from '@/lib/password-utils';
+import bcrypt from 'bcryptjs';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, password, name, phone } = body;
+    const { email, phone, name, password, role, businessId } = body;
 
-    if (!email || !password || !name) {
+    if (!email || !name || !password) {
       return NextResponse.json(
-        { success: false, error: 'Email, password, and name are required' },
+        { success: false, error: 'Email, name, and password are required' },
         { status: 400 }
       );
     }
 
-    if (password.length < 6) {
-      return NextResponse.json(
-        { success: false, error: 'Password must be at least 6 characters' },
-        { status: 400 }
-      );
-    }
-
-    // Check if user already exists
+    // Only QUANTIX_SUPER_ADMIN or system can create users
     const existingUser = await db.user.findUnique({ where: { email } });
     if (existingUser) {
       return NextResponse.json(
-        { success: false, error: 'Email already registered' },
+        { success: false, error: 'User with this email already exists' },
         { status: 409 }
       );
     }
 
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await db.user.create({
       data: {
         email,
+        phone,
         name,
-        phone: phone || null,
         passwordHash,
-        authProvider: 'EMAIL',
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        authProvider: true,
-        createdAt: true,
+        authProvider: 'PASSWORD',
+        emailVerified: true,
       },
     });
 
+    // If businessId and role provided, create business user association
+    if (businessId && role) {
+      const business = await db.business.findUnique({ where: { id: businessId } });
+      if (business) {
+        await db.businessUser.create({
+          data: {
+            userId: user.id,
+            businessId,
+            role,
+            acceptedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    const { passwordHash: _, ...userWithoutPassword } = user;
+
     return NextResponse.json(
-      { success: true, data: user, message: 'Registration successful' },
+      { success: true, data: userWithoutPassword },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('Register error:', error);
     return NextResponse.json(
-      { success: false, error: 'Internal server error' },
+      { success: false, error: 'Failed to register user' },
       { status: 500 }
     );
   }

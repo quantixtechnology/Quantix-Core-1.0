@@ -1,26 +1,33 @@
 // ============================================================================
-// Quantix Technology - Frontend API Client
+// Quantix Technology — Frontend API Client
+// MANAGED PLATFORM
 // ============================================================================
 
 import type {
   ApiResponse,
   PaginatedResponse,
-  PaginationMeta,
   CreateBusinessRequest,
   UpdateBusinessRequest,
   CreateStoreRequest,
   CreateProductRequest,
   CreateOrderRequest,
   CreateSubscriptionPlanRequest,
+  CreateLeadRequest,
+  DomainMappingRequest,
+  DeploymentRequest,
+  BusinessSubscriptionRequest,
   OrderFilter,
   ProductFilter,
   CustomerFilter,
+  LeadFilter,
   BusinessListItem,
   StoreListItem,
   ProductListItem,
   OrderListItem,
   CustomerListItem,
+  LeadListItem,
   DashboardStats,
+  PlatformDashboardStats,
 } from './types';
 
 // ============================================================================
@@ -174,6 +181,24 @@ async function remove<T>(resource: string, id: string): Promise<ApiResponse<T>> 
 }
 
 // ============================================================================
+// PLATFORM API (Super Admin only)
+// ============================================================================
+
+export const platformApi = {
+  getStats: () => apiFetch<PlatformDashboardStats>('/platform/stats'),
+  getBusinesses: (params?: Record<string, unknown>) =>
+    getList<BusinessListItem>('/businesses', params as Record<string, string | string[] | number | boolean | undefined>),
+  createBusiness: (data: CreateBusinessRequest) => create<BusinessListItem>('/businesses', data),
+  getLeads: (params?: LeadFilter & { page?: number; limit?: number }) =>
+    getList<LeadListItem>('/leads', params as Record<string, string | string[] | number | boolean | undefined>),
+  createLead: (data: CreateLeadRequest) => create<LeadListItem>('/leads', data),
+  getDeployments: (params?: Record<string, unknown>) =>
+    getList<unknown>('/deployments', params as Record<string, string | string[] | number | boolean | undefined>),
+  getDomains: (params?: Record<string, unknown>) =>
+    getList<unknown>('/domains', params as Record<string, string | string[] | number | boolean | undefined>),
+};
+
+// ============================================================================
 // BUSINESS API
 // ============================================================================
 
@@ -282,7 +307,7 @@ export const invoiceApi = {
     getList<unknown>('/invoices', params as Record<string, string | string[] | number | boolean | undefined>),
   get: (id: string) => getOne<unknown>('/invoices', id),
   generate: (orderId: string) =>
-    create<unknown>(`/invoices/generate`, { orderId }),
+    create<unknown>('/invoices/generate', { orderId }),
 };
 
 // ============================================================================

@@ -1,13 +1,14 @@
 // ============================================================================
-// Quantix Technology - Authentication Utilities (NextAuth v4)
+// Quantix Technology — Authentication (NextAuth v4)
+// MANAGED PLATFORM: Super Admin has no business context
 // ============================================================================
 
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { db } from './db';
-import { verifyPassword, hashPassword } from './password-utils';
+import { verifyPassword } from './password-utils';
 import type { Role, BusinessType, Permission } from './types';
-import { getPermissionsForRole } from './permissions';
+import { getPermissionsForRole, isPlatformRole } from './permissions';
 
 // ============================================================================
 // NEXTAUTH CONFIGURATION
@@ -30,6 +31,7 @@ export const authOptions: NextAuthOptions = {
           where: { email: credentials.email },
           include: {
             businessUsers: {
+              where: { isActive: true },
               include: {
                 business: {
                   select: {
@@ -41,6 +43,7 @@ export const authOptions: NextAuthOptions = {
                 },
               },
             },
+            salesProfile: true,
           },
         });
 
@@ -63,22 +66,45 @@ export const authOptions: NextAuthOptions = {
           data: { lastLoginAt: new Date() },
         });
 
-        // Get primary business context (first active business)
-        const primaryBusinessUser = user.businessUsers.find((bu) => bu.isActive);
-        const primaryBusiness = primaryBusinessUser?.business;
+        // Determine role based on user's memberships
+        let role: Role = 'CUSTOMER';
+        let businessId: string | undefined;
+        let businessName: string | undefined;
+        let businessType: BusinessType | undefined;
+        let businessSlug: string | undefined;
+        let storeId: string | undefined;
+
+        // Check if user is a Quantix Super Admin (has salesProfile or is in the platform admin list)
+        if (user.salesProfile) {
+          role = 'QUANTIX_SALES_TEAM';
+        } else if (user.email.endsWith('@quantixtechnology.in') && user.businessUsers.length === 0) {
+          role = 'QUANTIX_SUPER_ADMIN';
+        } else if (user.businessUsers.length > 0) {
+          // Use the first active business user record
+          const primaryBU = user.businessUsers[0];
+          role = primaryBU.role;
+          businessId = primaryBU.business.id;
+          businessName = primaryBU.business.name;
+          businessType = primaryBU.business.businessType as BusinessType;
+          businessSlug = primaryBU.business.slug;
+          storeId = primaryBU.storeId || undefined;
+        }
+
+        const isPlatformAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'QUANTIX_SALES_TEAM';
 
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           image: user.avatar,
-          role: primaryBusinessUser?.role || ('CUSTOMER' as Role),
-          businessId: primaryBusiness?.id,
-          businessName: primaryBusiness?.name,
-          businessType: primaryBusiness?.businessType,
-          businessSlug: primaryBusiness?.slug,
-          storeId: primaryBusinessUser?.storeId,
-          permissions: getPermissionsForRole(primaryBusinessUser?.role || ('CUSTOMER' as Role)),
+          role,
+          businessId,
+          businessName,
+          businessType,
+          businessSlug,
+          storeId,
+          permissions: getPermissionsForRole(role),
+          isPlatformAdmin,
         };
       },
     }),
@@ -95,6 +121,7 @@ export const authOptions: NextAuthOptions = {
         token.businessSlug = user.businessSlug;
         token.storeId = user.storeId;
         token.permissions = user.permissions;
+        token.isPlatformAdmin = user.isPlatformAdmin;
       }
 
       // Update session (e.g., when switching business context)
@@ -108,6 +135,7 @@ export const authOptions: NextAuthOptions = {
           token.permissions = getPermissionsForRole(session.role);
         }
         if (session.storeId) token.storeId = session.storeId;
+        if (session.isPlatformAdmin !== undefined) token.isPlatformAdmin = session.isPlatformAdmin;
       }
 
       return token;
@@ -122,6 +150,7 @@ export const authOptions: NextAuthOptions = {
         session.user.businessSlug = token.businessSlug as string | undefined;
         session.user.storeId = token.storeId as string | undefined;
         session.user.permissions = token.permissions as Permission[];
+        session.user.isPlatformAdmin = token.isPlatformAdmin as boolean;
       }
       return session;
     },
@@ -155,6 +184,7 @@ declare module 'next-auth' {
       businessSlug?: string;
       storeId?: string;
       permissions: Permission[];
+      isPlatformAdmin: boolean;
     };
   }
 
@@ -170,6 +200,7 @@ declare module 'next-auth' {
     businessSlug?: string;
     storeId?: string;
     permissions: Permission[];
+    isPlatformAdmin: boolean;
   }
 }
 
@@ -183,6 +214,7 @@ declare module 'next-auth/jwt' {
     businessSlug?: string;
     storeId?: string;
     permissions: Permission[];
+    isPlatformAdmin: boolean;
   }
 }
 
@@ -199,6 +231,21 @@ import type { Session } from 'next-auth';
 export function getBusinessContext(session: Session | null): BusinessContext | null {
   if (!session?.user) return null;
 
+  // Platform admins may not have a business context
+  if (session.user.isPlatformAdmin && !session.user.businessId) {
+    return {
+      businessId: '',
+      businessType: 'GROCERY', // default
+      businessSlug: '',
+      businessName: 'Quantix Technology',
+      role: session.user.role,
+      userId: session.user.id,
+      storeId: session.user.storeId,
+      permissions: session.user.permissions,
+      isPlatformAdmin: true,
+    };
+  }
+
   return {
     businessId: session.user.businessId || '',
     businessType: session.user.businessType || 'GROCERY',
@@ -208,6 +255,7 @@ export function getBusinessContext(session: Session | null): BusinessContext | n
     userId: session.user.id,
     storeId: session.user.storeId,
     permissions: session.user.permissions,
+    isPlatformAdmin: session.user.isPlatformAdmin,
   };
 }
 
@@ -215,7 +263,7 @@ export function getBusinessContext(session: Session | null): BusinessContext | n
  * Check if user is a platform admin
  */
 export function isPlatformAdmin(session: Session | null): boolean {
-  return session?.user?.role === 'SUPER_ADMIN';
+  return session?.user?.isPlatformAdmin === true;
 }
 
 /**
@@ -223,6 +271,6 @@ export function isPlatformAdmin(session: Session | null): boolean {
  */
 export function belongsToBusiness(session: Session | null, businessId: string): boolean {
   if (!session?.user) return false;
-  if (session.user.role === 'SUPER_ADMIN') return true;
+  if (session.user.isPlatformAdmin) return true;
   return session.user.businessId === businessId;
 }

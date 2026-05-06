@@ -1,181 +1,130 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Check, Star, Zap, Crown, CreditCard, TrendingUp } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Pause, Play, RefreshCw, Edit } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { subscriptions, subscriptionPlans, type SubscriptionStatus } from './data';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { clientSubscriptions, subStatusColors, businesses } from './data';
+import type { SubscriptionStatus } from './data';
 
-const statusColors: Record<SubscriptionStatus, string> = {
-  active: 'bg-emerald-100 text-emerald-700',
-  expired: 'bg-red-100 text-red-700',
-  cancelled: 'bg-slate-100 text-slate-600',
-  trial: 'bg-amber-100 text-amber-700',
-};
+const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
+const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.25 } } };
 
-const planIcons: Record<string, React.ElementType> = {
-  starter: Star,
-  growth: Zap,
-  enterprise: Crown,
-};
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
-};
+const statusCounts = clientSubscriptions.reduce((acc, s) => { acc[s.status] = (acc[s.status] || 0) + 1; return acc; }, {} as Record<string, number>);
 
 export function SubscriptionsView() {
-  const activeCount = subscriptions.filter((s) => s.status === 'active').length;
-  const totalMRR = subscriptions.filter((s) => s.status === 'active').reduce((a, s) => a + s.monthlyFee, 0);
-
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      {/* Header */}
-      <motion.div variants={itemVariants}>
-        <h2 className="text-xl font-bold text-slate-900">Subscriptions</h2>
-        <p className="text-sm text-slate-500">Manage plans, billing, and credit usage</p>
-      </motion.div>
+      {/* Status Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        {(['TRIAL', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELLED', 'EXPIRED', 'PAUSED'] as SubscriptionStatus[]).map(status => (
+          <motion.div key={status} variants={itemVariants}>
+            <Card>
+              <CardContent className="p-3 text-center">
+                <Badge className={`text-[9px] h-5 mb-1 ${subStatusColors[status]}`} variant="secondary">{status.replace(/_/g, ' ')}</Badge>
+                <p className="text-2xl font-bold text-slate-900">{statusCounts[status] || 0}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
 
-      {/* Stats */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600"><CreditCard className="h-5 w-5" /></div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{activeCount}</p>
-              <p className="text-xs text-slate-500">Active Subscriptions</p>
+      {/* MRR Summary */}
+      <motion.div variants={itemVariants}>
+        <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200">
+          <CardContent className="p-5">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold text-emerald-700">₹{(clientSubscriptions.filter(s => s.status === 'ACTIVE').reduce((sum, s) => sum + (s.customPrice || s.planPrice), 0) * 100).toLocaleString()}</p>
+                <p className="text-xs text-emerald-600">Monthly Recurring Revenue</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-emerald-700">{clientSubscriptions.filter(s => s.manualOverride).length}</p>
+                <p className="text-xs text-emerald-600">Custom Pricing</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-emerald-700">{clientSubscriptions.filter(s => s.status === 'TRIAL').length}</p>
+                <p className="text-xs text-emerald-600">In Trial</p>
+              </div>
             </div>
           </CardContent>
         </Card>
+      </motion.div>
+
+      {/* Subscriptions Table */}
+      <motion.div variants={itemVariants}>
         <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600"><TrendingUp className="h-5 w-5" /></div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">₹{(totalMRR / 1000).toFixed(0)}K</p>
-              <p className="text-xs text-slate-500">Monthly Recurring Revenue</p>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold">Client Subscriptions</CardTitle>
+            <CardDescription className="text-xs">Super Admin can override pricing per customer</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Business</th>
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Plan</th>
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Status</th>
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Plan Price</th>
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Custom Price</th>
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Discount</th>
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Cycle</th>
+                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Next Billing</th>
+                    <th className="text-right py-2.5 px-3 font-semibold text-slate-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {clientSubscriptions.map(sub => (
+                    <tr key={sub.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 font-medium text-slate-900">{sub.businessName}</td>
+                      <td className="py-2.5 px-3">{sub.plan}</td>
+                      <td className="py-2.5 px-3"><Badge className={`text-[9px] h-5 ${subStatusColors[sub.status]}`} variant="secondary">{sub.status.replace(/_/g, ' ')}</Badge></td>
+                      <td className="py-2.5 px-3 text-slate-600">₹{sub.planPrice.toLocaleString()}</td>
+                      <td className="py-2.5 px-3">
+                        {sub.customPrice ? (
+                          <span className="font-medium text-amber-600">₹{sub.customPrice.toLocaleString()} <Badge className="text-[8px] h-3.5 bg-amber-100 text-amber-700" variant="secondary">override</Badge></span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        {sub.discountPercentage ? <span className="text-emerald-600">{sub.discountPercentage}%</span> : <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 capitalize">{sub.billingCycle}</td>
+                      <td className="py-2.5 px-3 text-slate-500">{sub.nextBilling}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-3 w-3" /></Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-md">
+                            <DialogHeader><DialogTitle className="text-sm">Override Pricing — {sub.businessName}</DialogTitle></DialogHeader>
+                            <div className="space-y-3 text-xs">
+                              <div className="p-3 bg-amber-50 rounded-lg text-amber-700 text-[10px]">
+                                ⚠️ Only Super Admin can override pricing. This is a manual override.
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-slate-500 text-[10px]">Custom Price</label><div className="h-8 rounded border px-2 mt-1 flex items-center">₹{sub.customPrice || sub.planPrice}</div></div>
+                                <div><label className="text-slate-500 text-[10px]">Discount %</label><div className="h-8 rounded border px-2 mt-1 flex items-center">{sub.discountPercentage || 0}%</div></div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <Button size="sm" variant="outline" className="text-xs h-8"><Pause className="h-3 w-3 mr-1" />Pause</Button>
+                                <Button size="sm" variant="outline" className="text-xs h-8"><RefreshCw className="h-3 w-3 mr-1" />Extend Trial</Button>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-violet-50 text-violet-600"><Crown className="h-5 w-5" /></div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{subscriptions.filter((s) => s.status === 'trial').length}</p>
-              <p className="text-xs text-slate-500">Trial Accounts</p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Pricing Plans */}
-      <motion.div variants={itemVariants}>
-        <h3 className="text-sm font-semibold text-slate-900 mb-3">Subscription Plans</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {subscriptionPlans.map((plan) => {
-            const Icon = plan.name === 'Starter' ? Star : plan.name === 'Growth' ? Zap : Crown;
-            return (
-              <Card key={plan.name} className={`relative border-2 ${plan.color}`}>
-                {plan.badge && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-emerald-600 text-white text-[10px]">{plan.badge}</Badge>
-                  </div>
-                )}
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className={`p-2 rounded-lg ${
-                      plan.name === 'Starter' ? 'bg-slate-100 text-slate-600' :
-                      plan.name === 'Growth' ? 'bg-emerald-100 text-emerald-600' :
-                      'bg-amber-100 text-amber-600'
-                    }`}>
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <h4 className="font-bold text-slate-900">{plan.name}</h4>
-                  </div>
-                  <div className="mb-3">
-                    <span className="text-3xl font-bold text-slate-900">₹{plan.price.toLocaleString()}</span>
-                    <span className="text-xs text-slate-500">/{plan.period}</span>
-                  </div>
-                  <p className="text-xs text-slate-500 mb-4">{plan.description}</p>
-                  <div className="space-y-1.5">
-                    {plan.features.map((f) => (
-                      <div key={f} className="flex items-center gap-2 text-xs">
-                        <Check className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
-                        <span className="text-slate-700">{f}</span>
-                      </div>
-                    ))}
-                    {plan.limitations.map((l) => (
-                      <div key={l} className="flex items-center gap-2 text-xs">
-                        <span className="h-3.5 w-3.5 flex-shrink-0 text-slate-300">—</span>
-                        <span className="text-slate-400">{l}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </motion.div>
-
-      {/* Active Subscriptions with Credits */}
-      <motion.div variants={itemVariants}>
-        <h3 className="text-sm font-semibold text-slate-900 mb-3">Active Subscriptions</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {subscriptions.map((sub) => {
-            const usagePercent = (sub.creditsUsed / sub.creditsTotal) * 100;
-            return (
-              <Card key={sub.id} className="hover:shadow-sm transition-shadow">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold text-slate-900">{sub.businessName}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge className={`text-[9px] h-4 ${
-                          sub.plan === 'starter' ? 'bg-slate-100 text-slate-600' :
-                          sub.plan === 'growth' ? 'bg-emerald-100 text-emerald-700' :
-                          'bg-amber-100 text-amber-700'
-                        }`} variant="secondary">
-                          {sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1)}
-                        </Badge>
-                        <Badge className={`text-[9px] h-4 ${statusColors[sub.status]}`} variant="secondary">
-                          {sub.status}
-                        </Badge>
-                      </div>
-                    </div>
-                    <p className="text-sm font-bold text-slate-900">
-                      {sub.monthlyFee > 0 ? `₹${sub.monthlyFee.toLocaleString()}` : 'Free'}
-                      <span className="text-[10px] text-slate-400 font-normal">/mo</span>
-                    </p>
-                  </div>
-
-                  {/* Credit Usage */}
-                  <div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
-                      <span>API Credits Used</span>
-                      <span className="font-medium">{sub.creditsUsed} / {sub.creditsTotal}</span>
-                    </div>
-                    <Progress
-                      value={usagePercent}
-                      className="h-2"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t">
-                    <span>{sub.startDate} → {sub.endDate}</span>
-                    <span>{sub.features.length} features</span>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
       </motion.div>
     </motion.div>
   );

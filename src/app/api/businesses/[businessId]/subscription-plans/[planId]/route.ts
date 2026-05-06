@@ -1,87 +1,88 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { withBusinessAccess, validateBusinessExists } from '@/lib/api-utils';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ businessId: string; planId: string }> }
 ) {
-  const { businessId, planId } = await params;
-  if (!(await validateBusinessExists(businessId))) {
-    return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
-  }
-  return withBusinessAccess(request, businessId, async () => {
-    try {
-      const plan = await db.subscriptionPlan.findFirst({
-        where: { id: planId, businessId },
-        include: {
-          planItems: { include: { product: { select: { id: true, name: true } } } },
-          _count: { select: { subscriptions: true } },
-        },
-      });
+  try {
+    const { businessId, planId } = await params;
 
-      if (!plan) {
-        return NextResponse.json({ success: false, error: 'Plan not found' }, { status: 404 });
-      }
+    const plan = await db.subscriptionPlan.findFirst({
+      where: { id: planId, businessId },
+      include: { planItems: true, _count: { select: { subscriptions: true } } },
+    });
 
-      return NextResponse.json({ success: true, data: plan });
-    } catch (error) {
-      console.error('Get subscription plan error:', error);
-      return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    if (!plan) {
+      return NextResponse.json(
+        { success: false, error: 'Subscription plan not found' },
+        { status: 404 }
+      );
     }
-  });
+
+    return NextResponse.json({ success: true, data: plan });
+  } catch (error) {
+    console.error('Get subscription plan error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch subscription plan' },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ businessId: string; planId: string }> }
 ) {
-  const { businessId, planId } = await params;
-  if (!(await validateBusinessExists(businessId))) {
-    return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
-  }
-  return withBusinessAccess(request, businessId, async (_req, user) => {
-    try {
-      const bu = user.businessUsers.find(b => b.businessId === businessId);
-      if (!bu || (bu.role !== 'SUPER_ADMIN' && bu.role !== 'BUSINESS_OWNER' && bu.role !== 'BUSINESS_ADMIN')) {
-        return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-      }
+  try {
+    const { businessId, planId } = await params;
+    const body = await request.json();
 
-      const plan = await db.subscriptionPlan.findFirst({ where: { id: planId, businessId } });
-      if (!plan) {
-        return NextResponse.json({ success: false, error: 'Plan not found' }, { status: 404 });
-      }
-
-      const body = await request.json();
-      const allowedFields = [
-        'name', 'description', 'price', 'originalPrice', 'setupFee', 'trialDays',
-        'totalCredits', 'creditLabel', 'features', 'isFeatured', 'maxSubscribers',
-        'sortOrder', 'isActive', 'startsAt', 'endsAt',
-      ];
-
-      const data: Record<string, unknown> = {};
-      for (const field of allowedFields) {
-        if (body[field] !== undefined) {
-          if (field === 'features') {
-            data[field] = JSON.stringify(body[field]);
-          } else if (field === 'startsAt' || field === 'endsAt') {
-            data[field] = body[field] ? new Date(body[field] as string) : null;
-          } else {
-            data[field] = body[field];
-          }
-        }
-      }
-
-      const updated = await db.subscriptionPlan.update({
-        where: { id: planId },
-        data,
-        include: { planItems: true },
-      });
-
-      return NextResponse.json({ success: true, data: updated, message: 'Plan updated' });
-    } catch (error) {
-      console.error('Update subscription plan error:', error);
-      return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    const existing = await db.subscriptionPlan.findFirst({ where: { id: planId, businessId } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Subscription plan not found' },
+        { status: 404 }
+      );
     }
-  });
+
+    const updateData: Record<string, unknown> = {};
+    const stringFields = ['name', 'description', 'serviceType', 'billingCycle', 'creditLabel'];
+    for (const field of stringFields) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
+
+    const floatFields = ['price', 'originalPrice', 'setupFee'];
+    for (const field of floatFields) {
+      if (body[field] !== undefined) updateData[field] = parseFloat(String(body[field]));
+    }
+
+    const intFields = ['trialDays', 'totalCredits', 'maxSubscribers', 'sortOrder'];
+    for (const field of intFields) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
+
+    const booleanFields = ['isFeatured', 'isActive'];
+    for (const field of booleanFields) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
+
+    if (body.features) updateData.features = JSON.stringify(body.features);
+    if (body.startsAt) updateData.startsAt = new Date(body.startsAt);
+    if (body.endsAt) updateData.endsAt = new Date(body.endsAt);
+
+    const plan = await db.subscriptionPlan.update({
+      where: { id: planId },
+      data: updateData,
+      include: { planItems: true },
+    });
+
+    return NextResponse.json({ success: true, data: plan });
+  } catch (error) {
+    console.error('Update subscription plan error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update subscription plan' },
+      { status: 500 }
+    );
+  }
 }

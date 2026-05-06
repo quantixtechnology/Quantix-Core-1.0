@@ -1,157 +1,86 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Truck, MapPin, Phone, Clock, Navigation, Package } from 'lucide-react';
+import { Truck, MapPin, Navigation, Phone, CheckCircle2, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { deliveries, type DeliveryStatus } from './data';
 
-const statusColors: Record<DeliveryStatus, string> = {
-  assigned: 'bg-blue-100 text-blue-700',
-  picked_up: 'bg-amber-100 text-amber-700',
-  in_transit: 'bg-purple-100 text-purple-700',
-  delivered: 'bg-emerald-100 text-emerald-700',
-};
+const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
+const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.25 } } };
 
-const statusLabels: Record<DeliveryStatus, string> = {
-  assigned: 'Assigned',
-  picked_up: 'Picked Up',
-  in_transit: 'In Transit',
-  delivered: 'Delivered',
-};
+const demoDeliveries = [
+  { id: 'd1', orderId: 'ORD-001', customer: 'Rajesh Kumar', partner: 'Amit Singh', status: 'ON_THE_WAY', vehicle: 'Bike', distance: '3.2 km', eta: '15 min', otp: '4829' },
+  { id: 'd2', orderId: 'ORD-002', customer: 'Sneha Patil', partner: 'Ravi Kumar', status: 'PICKED_UP', vehicle: 'Bike', distance: '5.1 km', eta: '22 min', otp: '7163' },
+  { id: 'd3', orderId: 'ORD-003', customer: 'Anand Joshi', partner: 'Suresh Yadav', status: 'ASSIGNED', vehicle: 'Bicycle', distance: '2.8 km', eta: '-', otp: '9254' },
+];
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.25 } },
+const deliveryStatusColors: Record<string, string> = {
+  ASSIGNING: 'bg-slate-100 text-slate-700', ASSIGNED: 'bg-blue-100 text-blue-700', PICKED_UP: 'bg-cyan-100 text-cyan-700',
+  ON_THE_WAY: 'bg-purple-100 text-purple-700', ARRIVED: 'bg-amber-100 text-amber-700', DELIVERED: 'bg-emerald-100 text-emerald-700',
 };
 
 export function DeliveriesView() {
-  const activeCount = deliveries.filter((d) => d.status !== 'delivered').length;
-  const deliveredCount = deliveries.filter((d) => d.status === 'delivered').length;
-  const avgDistance = (deliveries.reduce((a, d) => a + d.distance, 0) / deliveries.length).toFixed(1);
-
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      {/* Header */}
-      <motion.div variants={itemVariants}>
-        <h2 className="text-xl font-bold text-slate-900">Deliveries</h2>
-        <p className="text-sm text-slate-500">Track active deliveries and delivery partners</p>
-      </motion.div>
-
-      {/* Stats */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600"><Truck className="h-5 w-5" /></div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{activeCount}</p>
-              <p className="text-xs text-slate-500">Active</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600"><Package className="h-5 w-5" /></div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{deliveredCount}</p>
-              <p className="text-xs text-slate-500">Delivered Today</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600"><Navigation className="h-5 w-5" /></div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{avgDistance}km</p>
-              <p className="text-xs text-slate-500">Avg Distance</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-violet-50 text-violet-600"><MapPin className="h-5 w-5" /></div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">5</p>
-              <p className="text-xs text-slate-500">Active Zones</p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Delivery Cards */}
-      <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {deliveries.map((delivery) => (
-          <Card key={delivery.id} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-emerald-700">{delivery.orderNumber}</span>
-                  <Badge className={`text-[9px] h-5 ${statusColors[delivery.status]}`} variant="secondary">
-                    {statusLabels[delivery.status]}
-                  </Badge>
-                </div>
-                <span className="text-[10px] text-slate-400">{delivery.zone}</span>
-              </div>
-
-              {/* Route visualization */}
-              <div className="flex items-start gap-3 bg-slate-50 rounded-lg p-3">
-                <div className="flex flex-col items-center gap-1 pt-0.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  <div className="w-0.5 h-8 bg-slate-300" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-                </div>
-                <div className="flex-1 space-y-3">
-                  <div>
-                    <p className="text-[10px] text-slate-500">Pickup</p>
-                    <p className="text-xs font-medium text-slate-700">{delivery.pickupAddress}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500">Drop-off</p>
-                    <p className="text-xs font-medium text-slate-700">{delivery.customerAddress}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-slate-700">{delivery.partnerName}</span>
-                  <span className="text-slate-400 flex items-center gap-1">
-                    <Phone className="h-3 w-3" />{delivery.partnerPhone}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 text-slate-500">
-                  <span className="flex items-center gap-1"><Navigation className="h-3 w-3" />{delivery.distance}km</span>
-                  <span className="flex items-center gap-1"><Clock className="h-3 w-3" />ETA {delivery.estimatedDelivery}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t text-xs">
-                <span className="text-slate-500">Customer: <span className="font-medium text-slate-700">{delivery.customerName}</span></span>
-                <span className="font-medium text-emerald-700">₹{delivery.fee}</span>
-              </div>
-            </CardContent>
-          </Card>
+      {/* Delivery Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Active Deliveries', value: 2, color: 'text-blue-600' },
+          { label: 'Completed Today', value: 24, color: 'text-emerald-600' },
+          { label: 'Online Partners', value: 5, color: 'text-purple-600' },
+        ].map(s => (
+          <motion.div key={s.label} variants={itemVariants}>
+            <Card><CardContent className="p-4 text-center"><p className={`text-2xl font-bold ${s.color}`}>{s.value}</p><p className="text-xs text-slate-500">{s.label}</p></CardContent></Card>
+          </motion.div>
         ))}
-      </motion.div>
+      </div>
 
-      {/* Delivery Zone Map Placeholder */}
+      {/* Active Deliveries */}
+      <div className="space-y-3">
+        {demoDeliveries.map(del => (
+          <motion.div key={del.id} variants={itemVariants}>
+            <Card className="hover:shadow-md transition-shadow">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-900 font-mono">{del.orderId}</span>
+                      <Badge className={`text-[9px] h-5 ${deliveryStatusColors[del.status]}`} variant="secondary">{del.status.replace(/_/g, ' ')}</Badge>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">Customer: {del.customer}</p>
+                    <p className="text-[10px] text-slate-500">Partner: {del.partner} · {del.vehicle}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-medium text-slate-900">{del.distance}</p>
+                    <p className="text-[10px] text-slate-500">ETA: {del.eta}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-3">
+                  <Badge variant="outline" className="text-[9px] h-5">OTP: {del.otp}</Badge>
+                  <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: del.status === 'ON_THE_WAY' ? '75%' : del.status === 'PICKED_UP' ? '50%' : '25%' }} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Haversine Explanation */}
       <motion.div variants={itemVariants}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Delivery Zones</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48 bg-slate-50 rounded-lg flex items-center justify-center">
-              <div className="text-center">
-                <MapPin className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Interactive map view</p>
-                <p className="text-xs text-slate-400">Delivery zones and partner locations</p>
-              </div>
+        <Card className="bg-slate-50 border-dashed">
+          <CardContent className="p-4">
+            <h4 className="text-xs font-semibold text-slate-700 mb-2">Delivery Radius Logic (Haversine Formula)</h4>
+            <div className="flex flex-wrap items-center gap-2 text-[10px]">
+              <span className="bg-white px-2 py-1 rounded border">Customer enters address</span><span className="text-emerald-500">→</span>
+              <span className="bg-white px-2 py-1 rounded border">Find nearest store</span><span className="text-emerald-500">→</span>
+              <span className="bg-white px-2 py-1 rounded border">Haversine distance check</span><span className="text-emerald-500">→</span>
+              <span className="bg-emerald-100 px-2 py-1 rounded border">Show products ✅</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] mt-2">
+              <span className="bg-white px-2 py-1 rounded border">If distance &gt; radius</span><span className="text-red-500">→</span>
+              <span className="bg-red-100 px-2 py-1 rounded border text-red-700">"Currently not available in your area" ❌</span>
             </div>
           </CardContent>
         </Card>

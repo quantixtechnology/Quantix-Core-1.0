@@ -1,112 +1,84 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { withBusinessAccess, validateBusinessExists } from '@/lib/api-utils';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ businessId: string; sessionId: string }> }
 ) {
-  const { businessId, sessionId } = await params;
-  if (!(await validateBusinessExists(businessId))) {
-    return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
-  }
-  return withBusinessAccess(request, businessId, async () => {
-    try {
-      const session = await db.pOSSession.findFirst({
-        where: { id: sessionId, businessId },
-        include: {
-          store: { select: { id: true, name: true, code: true } },
-          orders: {
-            take: 20,
-            orderBy: { createdAt: 'desc' },
-            select: {
-              id: true,
-              orderNumber: true,
-              totalAmount: true,
-              paymentMethod: true,
-              paymentStatus: true,
-              createdAt: true,
-              items: { take: 5, select: { productName: true, quantity: true, totalPrice: true } },
-            },
-          },
-          _count: { select: { orders: true } },
-        },
-      });
+  try {
+    const { businessId, sessionId } = await params;
 
-      if (!session) {
-        return NextResponse.json({ success: false, error: 'POS session not found' }, { status: 404 });
-      }
+    const session = await db.pOSSession.findFirst({
+      where: { id: sessionId, businessId },
+      include: {
+        store: { select: { id: true, name: true } },
+        orders: { take: 50, orderBy: { createdAt: 'desc' } },
+      },
+    });
 
-      return NextResponse.json({ success: true, data: session });
-    } catch (error) {
-      console.error('Get POS session error:', error);
-      return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: 'POS session not found' },
+        { status: 404 }
+      );
     }
-  });
+
+    return NextResponse.json({ success: true, data: session });
+  } catch (error) {
+    console.error('Get POS session error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch POS session' },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ businessId: string; sessionId: string }> }
 ) {
-  const { businessId, sessionId } = await params;
-  if (!(await validateBusinessExists(businessId))) {
-    return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
-  }
-  return withBusinessAccess(request, businessId, async () => {
-    try {
-      const session = await db.pOSSession.findFirst({ where: { id: sessionId, businessId } });
-      if (!session) {
-        return NextResponse.json({ success: false, error: 'POS session not found' }, { status: 404 });
-      }
+  try {
+    const { businessId, sessionId } = await params;
+    const body = await request.json();
 
-      const body = await request.json();
-      const { action } = body;
-
-      if (action === 'close') {
-        if (session.status !== 'OPEN') {
-          return NextResponse.json({ success: false, error: 'Session is not open' }, { status: 400 });
-        }
-
-        // Calculate totals from orders
-        const orders = await db.order.findMany({
-          where: { posSessionId: sessionId, paymentStatus: 'COMPLETED' },
-        });
-
-        const totalSales = orders.reduce((sum, o) => sum + o.totalAmount, 0);
-        const totalCash = orders.filter(o => o.paymentMethod === 'CASH' || o.paymentMethod === 'COD').reduce((sum, o) => sum + o.totalAmount, 0);
-        const totalCard = orders.filter(o => o.paymentMethod === 'CARD').reduce((sum, o) => sum + o.totalAmount, 0);
-        const totalUpi = orders.filter(o => o.paymentMethod === 'UPI').reduce((sum, o) => sum + o.totalAmount, 0);
-
-        const updated = await db.pOSSession.update({
-          where: { id: sessionId },
-          data: {
-            status: 'CLOSED',
-            closingBalance: body.closingBalance || totalCash + session.openingBalance,
-            totalSales,
-            totalCash,
-            totalCard,
-            totalUpi,
-            totalOrders: orders.length,
-            closedAt: new Date(),
-          },
-        });
-
-        return NextResponse.json({ success: true, data: updated, message: 'POS session closed' });
-      }
-
-      if (action === 'suspend') {
-        const updated = await db.pOSSession.update({
-          where: { id: sessionId },
-          data: { status: 'SUSPENDED' },
-        });
-        return NextResponse.json({ success: true, data: updated, message: 'POS session suspended' });
-      }
-
-      return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
-    } catch (error) {
-      console.error('Update POS session error:', error);
-      return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    const existing = await db.pOSSession.findFirst({ where: { id: sessionId, businessId } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'POS session not found' },
+        { status: 404 }
+      );
     }
-  });
+
+    const updateData: Record<string, unknown> = {};
+
+    if (body.action === 'close') {
+      updateData.status = 'CLOSED';
+      updateData.closedAt = new Date();
+      updateData.closingBalance = body.closingBalance ? parseFloat(String(body.closingBalance)) : existing.openingBalance + existing.totalSales;
+      updateData.totalCash = body.totalCash ? parseFloat(String(body.totalCash)) : existing.totalCash;
+      updateData.totalCard = body.totalCard ? parseFloat(String(body.totalCard)) : existing.totalCard;
+      updateData.totalUpi = body.totalUpi ? parseFloat(String(body.totalUpi)) : existing.totalUpi;
+      updateData.totalRefunds = body.totalRefunds ? parseFloat(String(body.totalRefunds)) : existing.totalRefunds;
+    }
+
+    if (body.action === 'suspend') {
+      updateData.status = 'SUSPENDED';
+    }
+
+    if (body.cashDrawer) updateData.cashDrawer = JSON.stringify(body.cashDrawer);
+    if (body.printerQueue) updateData.printerQueue = JSON.stringify(body.printerQueue);
+
+    const session = await db.pOSSession.update({
+      where: { id: sessionId },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, data: session });
+  } catch (error) {
+    console.error('Update POS session error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update POS session' },
+      { status: 500 }
+    );
+  }
 }

@@ -1,40 +1,27 @@
 'use client';
 
+import { useState } from 'react';
 import {
-  LayoutDashboard,
-  Building2,
-  Store,
-  Package,
-  ShoppingCart,
-  Users,
-  Truck,
-  CreditCard,
-  Monitor,
-  FileText,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  Layers,
+  LayoutDashboard, Building2, TrendingUp, CreditCard, Globe, Layers,
+  Store, Package, ClipboardList, Users, Truck, Repeat, Monitor, FileText, Settings,
+  Database, ChevronDown, ChevronRight, Zap, Shield
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 export type ViewType =
-  | 'dashboard'
+  | 'platform_dashboard'
   | 'businesses'
+  | 'sales'
+  | 'subscriptions'
+  | 'domains'
+  | 'plans'
+  | 'business_dashboard'
   | 'stores'
   | 'products'
   | 'orders'
   | 'customers'
   | 'deliveries'
-  | 'subscriptions'
+  | 'sub_plans'
   | 'pos'
   | 'invoices'
   | 'settings'
@@ -47,121 +34,184 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-const navItems: { id: ViewType; label: string; icon: React.ElementType; group: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Overview' },
-  { id: 'businesses', label: 'Businesses', icon: Building2, group: 'Management' },
-  { id: 'stores', label: 'Stores', icon: Store, group: 'Management' },
-  { id: 'products', label: 'Products', icon: Package, group: 'Management' },
-  { id: 'orders', label: 'Orders', icon: ShoppingCart, group: 'Operations' },
-  { id: 'customers', label: 'Customers', icon: Users, group: 'Operations' },
-  { id: 'deliveries', label: 'Deliveries', icon: Truck, group: 'Operations' },
-  { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard, group: 'Finance' },
-  { id: 'pos', label: 'POS', icon: Monitor, group: 'Finance' },
-  { id: 'invoices', label: 'Invoices', icon: FileText, group: 'Finance' },
-  { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
-  { id: 'architecture', label: 'Architecture', icon: Layers, group: 'System' },
+const platformNav = [
+  { id: 'platform_dashboard' as ViewType, label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'businesses' as ViewType, label: 'Businesses', icon: Building2 },
+  { id: 'sales' as ViewType, label: 'Sales & Leads', icon: TrendingUp },
+  { id: 'subscriptions' as ViewType, label: 'Subscriptions', icon: CreditCard },
+  { id: 'domains' as ViewType, label: 'Domains & Deploys', icon: Globe },
+  { id: 'plans' as ViewType, label: 'Platform Plans', icon: Layers },
 ];
 
-const groups = ['Overview', 'Management', 'Operations', 'Finance', 'System'];
+const businessNav = [
+  { id: 'business_dashboard' as ViewType, label: 'Business Hub', icon: Zap },
+  { id: 'stores' as ViewType, label: 'Stores', icon: Store },
+  { id: 'products' as ViewType, label: 'Products', icon: Package },
+  { id: 'orders' as ViewType, label: 'Orders', icon: ClipboardList },
+  { id: 'customers' as ViewType, label: 'Customers', icon: Users },
+  { id: 'deliveries' as ViewType, label: 'Deliveries', icon: Truck },
+  { id: 'sub_plans' as ViewType, label: 'Subscriptions', icon: Repeat },
+  { id: 'pos' as ViewType, label: 'POS Terminal', icon: Monitor },
+  { id: 'invoices' as ViewType, label: 'Invoices', icon: FileText },
+  { id: 'settings' as ViewType, label: 'Settings', icon: Settings },
+];
+
+const systemNav = [
+  { id: 'architecture' as ViewType, label: 'Architecture', icon: Database },
+];
 
 export function Sidebar({ activeView, onViewChange, collapsed, onToggle }: SidebarProps) {
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    platform: true,
+    business: false,
+    system: false,
+  });
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
   return (
-    <TooltipProvider delayDuration={0}>
-      <aside
-        className={cn(
-          'h-full bg-white border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out relative',
-          collapsed ? 'w-[68px]' : 'w-[260px]'
-        )}
-      >
-        {/* Logo */}
-        <div className="flex items-center h-16 px-4 border-b border-slate-200">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">QX</span>
+    <aside className={cn(
+      'h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300',
+      collapsed ? 'w-[68px]' : 'w-[250px]'
+    )}>
+      {/* Logo */}
+      <div className="h-14 flex items-center border-b border-slate-200 px-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-black text-xs">QX</span>
+          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-slate-900 truncate">Quantix</h1>
+              <p className="text-[9px] text-emerald-600 font-medium truncate">Run Your Business Smarter</p>
             </div>
-            {!collapsed && (
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold text-slate-900 truncate">Quantix</span>
-                <span className="text-[10px] text-slate-500 truncate">Technology Platform</span>
-              </div>
-            )}
+          )}
+        </div>
+        <button
+          onClick={onToggle}
+          className="ml-auto p-1 rounded hover:bg-slate-100 flex-shrink-0"
+        >
+          {collapsed ? <ChevronRight className="h-3.5 w-3.5 text-slate-400" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />}
+        </button>
+      </div>
+
+      {/* Mode Badge */}
+      {!collapsed && (
+        <div className="px-3 pt-3 pb-1">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-semibold">
+            <Shield className="h-3 w-3" />
+            SUPER ADMIN MODE
           </div>
         </div>
+      )}
 
-        {/* Nav Items */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-          {groups.map((group) => {
-            const groupItems = navItems.filter((item) => item.group === group);
-            return (
-              <div key={group}>
-                {!collapsed && (
-                  <div className="px-3 py-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      {group}
-                    </span>
-                  </div>
-                )}
-                {collapsed && <div className="my-1"><Separator className="mx-2 bg-slate-100" /></div>}
-                {groupItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeView === item.id;
-                  const button = (
-                    <button
-                      key={item.id}
-                      onClick={() => onViewChange(item.id)}
-                      className={cn(
-                        'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150',
-                        isActive
-                          ? 'bg-emerald-50 text-emerald-700 shadow-sm'
-                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                      )}
-                    >
-                      <Icon
-                        className={cn(
-                          'flex-shrink-0 h-[18px] w-[18px]',
-                          isActive ? 'text-emerald-600' : 'text-slate-400'
-                        )}
-                      />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                    </button>
-                  );
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-1">
+        {/* Platform Control */}
+        <SidebarSection
+          title="Platform Control"
+          collapsed={collapsed}
+          expanded={expandedSections.platform}
+          onToggle={() => toggleSection('platform')}
+          items={platformNav}
+          activeView={activeView}
+          onViewChange={onViewChange}
+        />
 
-                  if (collapsed) {
-                    return (
-                      <Tooltip key={item.id}>
-                        <TooltipTrigger asChild>{button}</TooltipTrigger>
-                        <TooltipContent side="right" className="font-medium">
-                          {item.label}
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  }
-                  return button;
-                })}
-              </div>
-            );
-          })}
-        </nav>
+        {/* Client Operations */}
+        <SidebarSection
+          title="Client Operations"
+          collapsed={collapsed}
+          expanded={expandedSections.business}
+          onToggle={() => toggleSection('business')}
+          items={businessNav}
+          activeView={activeView}
+          onViewChange={onViewChange}
+        />
 
-        {/* Collapse Toggle */}
-        <div className="border-t border-slate-200 p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-center"
-            onClick={onToggle}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <>
-                <ChevronLeft className="h-4 w-4 mr-2" />
-                <span className="text-xs">Collapse</span>
-              </>
-            )}
-          </Button>
+        {/* System */}
+        <SidebarSection
+          title="System"
+          collapsed={collapsed}
+          expanded={expandedSections.system}
+          onToggle={() => toggleSection('system')}
+          items={systemNav}
+          activeView={activeView}
+          onViewChange={onViewChange}
+        />
+      </nav>
+
+      {/* Footer */}
+      {!collapsed && (
+        <div className="p-3 border-t border-slate-200">
+          <div className="text-[10px] text-slate-400 text-center">
+            quantixtechnology.in
+          </div>
         </div>
-      </aside>
-    </TooltipProvider>
+      )}
+    </aside>
+  );
+}
+
+function SidebarSection({
+  title, collapsed, expanded, onToggle, items, activeView, onViewChange
+}: {
+  title: string; collapsed: boolean; expanded: boolean; onToggle: () => void;
+  items: { id: ViewType; label: string; icon: React.ElementType }[];
+  activeView: ViewType; onViewChange: (v: ViewType) => void;
+}) {
+  if (collapsed) {
+    return (
+      <div className="space-y-0.5">
+        {items.map(item => (
+          <button
+            key={item.id}
+            onClick={() => onViewChange(item.id)}
+            className={cn(
+              'w-full flex items-center justify-center p-2 rounded-md transition-colors',
+              activeView === item.id
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+            )}
+            title={item.label}
+          >
+            <item.icon className="h-4 w-4" />
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-600"
+      >
+        {title}
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      </button>
+      {expanded && (
+        <div className="space-y-0.5 mt-0.5">
+          {items.map(item => (
+            <button
+              key={item.id}
+              onClick={() => onViewChange(item.id)}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs transition-colors',
+                activeView === item.id
+                  ? 'bg-emerald-50 text-emerald-700 font-semibold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              )}
+            >
+              <item.icon className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

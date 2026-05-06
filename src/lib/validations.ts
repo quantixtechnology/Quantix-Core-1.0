@@ -1,5 +1,6 @@
 // ============================================================================
-// Quantix Technology - Zod Validation Schemas
+// Quantix Technology — Zod Validation Schemas
+// MANAGED PLATFORM
 // ============================================================================
 
 import { z } from 'zod';
@@ -43,43 +44,43 @@ export const changePasswordSchema = z.object({
   path: ['confirmPassword'],
 });
 
-export const forgotPasswordSchema = z.object({
-  email: z.string().email('Invalid email address'),
-});
-
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Token is required'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword'],
-});
-
 // ============================================================================
-// BUSINESS SCHEMAS
+// BUSINESS SCHEMA — Super Admin creates businesses
 // ============================================================================
 
 export const businessSchema = z.object({
   name: z.string().min(2, 'Business name must be at least 2 characters').max(200),
   slug: z.string().regex(slugRegex, 'Invalid slug format').min(2).max(100),
-  businessType: z.enum(['GROCERY', 'FOOD_DELIVERY', 'LAUNDRY', 'CAR_WASH', 'HOME_SERVICES']),
+  businessType: z.enum([
+    'GROCERY', 'FOOD_DELIVERY', 'LAUNDRY', 'CAR_WASH', 'PHARMACY',
+    'HOME_SERVICES', 'ECOMMERCE', 'COSMETICS', 'MEAT_DELIVERY', 'FURNITURE', 'DIRECTORY',
+  ]),
   description: z.string().max(1000).optional(),
   domain: z.string().optional(),
   subdomain: z.string().regex(slugRegex, 'Invalid subdomain format').optional(),
   primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid color format').default('#10B981'),
   secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid color format').optional(),
   logo: z.string().url('Invalid logo URL').optional(),
+  tagline: z.string().max(200).optional(),
   address: z.string().max(500).optional(),
   city: z.string().max(100).optional(),
   state: z.string().max(100).optional(),
   pincode: z.string().regex(pincodeRegex, 'Invalid pincode').optional(),
   gstNumber: z.string().regex(gstRegex, 'Invalid GST number').optional(),
   panNumber: z.string().regex(panRegex, 'Invalid PAN number').optional(),
+  cinNumber: z.string().max(21).optional(),
+  fssaiLicense: z.string().max(14).optional(),
   contactEmail: z.string().email('Invalid email').optional(),
   contactPhone: z.string().regex(indianPhoneRegex, 'Invalid phone number').optional(),
   supportEmail: z.string().email('Invalid email').optional(),
   supportPhone: z.string().regex(indianPhoneRegex, 'Invalid phone number').optional(),
+  salesRepId: z.string().optional(),
+  planId: z.string().optional(),
+  billingCycle: z.enum(['monthly', 'yearly']).default('monthly'),
+  customPrice: z.number().min(0).optional(),
+  discountPercentage: z.number().min(0).max(100).optional(),
+  manualPriceOverride: z.boolean().default(false),
+  overrideReason: z.string().max(500).optional(),
 });
 
 export const updateBusinessSchema = businessSchema.partial();
@@ -108,6 +109,8 @@ export const storeSchema = z.object({
   preparationTime: z.number().min(0).max(480).default(30),
   posEnabled: z.boolean().default(true),
   gstNumber: z.string().regex(gstRegex, 'Invalid GST number').optional(),
+  paperSize: z.enum(['58mm', '80mm', 'A4']).default('80mm'),
+  printerType: z.enum(['thermal_bluetooth', 'thermal_usb', 'laser']).optional(),
 });
 
 // ============================================================================
@@ -180,7 +183,7 @@ export const orderItemSchema = z.object({
 
 export const orderSchema = z.object({
   storeId: z.string().min(1, 'Store ID is required'),
-  orderType: z.enum(['DELIVERY', 'PICKUP', 'DINE_IN', 'POS', 'SUBSCRIPTION']),
+  orderType: z.enum(['DELIVERY', 'PICKUP', 'DINE_IN', 'POS', 'SUBSCRIPTION', 'PICKUP_AND_DELIVERY']),
   paymentMethod: z.enum(['CASH', 'CARD', 'UPI', 'NETBANKING', 'WALLET', 'COD', 'CREDIT']).optional(),
   customerId: z.string().optional(),
   customerName: z.string().max(200).optional(),
@@ -189,8 +192,7 @@ export const orderSchema = z.object({
   deliveryAddressId: z.string().optional(),
   deliveryInstructions: z.string().max(500).optional(),
   scheduledAt: z.string().datetime().optional(),
-  pickupName: z.string().max(200).optional(),
-  pickupPhone: z.string().regex(indianPhoneRegex, 'Invalid phone number').optional(),
+  pickupAddress: z.string().max(1000).optional(),
   items: z.array(orderItemSchema).min(1, 'At least one item is required'),
   promoCodeId: z.string().optional(),
   notes: z.string().max(500).optional(),
@@ -200,7 +202,7 @@ export const orderSchema = z.object({
 });
 
 // ============================================================================
-// SUBSCRIPTION SCHEMAS
+// SUBSCRIPTION PLAN SCHEMAS
 // ============================================================================
 
 export const subscriptionPlanItemSchema = z.object({
@@ -216,8 +218,8 @@ export const subscriptionPlanSchema = z.object({
   name: z.string().min(2, 'Plan name must be at least 2 characters').max(200),
   slug: z.string().regex(slugRegex, 'Invalid slug format').min(2).max(100),
   description: z.string().max(2000).optional(),
-  type: z.enum(['CAR_WASH', 'HOME_SERVICE', 'LAUNDRY', 'GROCERY', 'CUSTOM']),
-  billingCycle: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']),
+  serviceType: z.enum(['CAR_WASH', 'HOME_SERVICE', 'LAUNDRY', 'GROCERY', 'CUSTOM']),
+  billingCycle: z.enum(['WEEKLY', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']),
   price: z.number().min(0, 'Price must be non-negative'),
   originalPrice: z.number().min(0).optional(),
   setupFee: z.number().min(0).default(0),
@@ -264,20 +266,86 @@ export const customerSchema = z.object({
 });
 
 // ============================================================================
-// DELIVERY ZONE SCHEMAS
+// LEAD SCHEMA — Sales pipeline
+// ============================================================================
+
+export const leadSchema = z.object({
+  businessName: z.string().min(2, 'Business name is required').max(200),
+  contactName: z.string().min(2, 'Contact name is required').max(200),
+  contactEmail: z.string().email('Invalid email'),
+  contactPhone: z.string().regex(indianPhoneRegex, 'Invalid Indian phone number'),
+  businessType: z.enum([
+    'GROCERY', 'FOOD_DELIVERY', 'LAUNDRY', 'CAR_WASH', 'PHARMACY',
+    'HOME_SERVICES', 'ECOMMERCE', 'COSMETICS', 'MEAT_DELIVERY', 'FURNITURE', 'DIRECTORY',
+  ]),
+  source: z.enum(['META_ADS', 'GOOGLE_ADS', 'DIRECT_REFERRAL', 'WEBSITE_INQUIRY', 'COLD_OUTREACH', 'WHATSAPP_INQUIRY', 'PHONE_CALL', 'OTHER']).default('WEBSITE_INQUIRY'),
+  notes: z.string().max(2000).optional(),
+  followUpDate: z.string().datetime().optional(),
+  estimatedValue: z.number().min(0).optional(),
+  salesRepId: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+});
+
+// ============================================================================
+// DOMAIN MAPPING SCHEMA
+// ============================================================================
+
+export const domainMappingSchema = z.object({
+  domain: z.string().min(3, 'Domain is required').max(253),
+  subdomain: z.string().regex(slugRegex, 'Invalid subdomain format').optional(),
+  isPrimary: z.boolean().default(true),
+  dnsProvider: z.enum(['cloudflare', 'route53', 'godaddy', 'other']).optional(),
+  dnsConfig: z.record(z.string(), z.unknown()).default({}),
+  notes: z.string().max(1000).optional(),
+});
+
+// ============================================================================
+// DEPLOYMENT SCHEMA
+// ============================================================================
+
+export const deploymentSchema = z.object({
+  type: z.enum(['WEBSITE', 'ADMIN_DASHBOARD', 'CUSTOMER_APP', 'DELIVERY_APP', 'ADMIN_APP']),
+  environment: z.enum(['production', 'staging']).default('production'),
+  hostingProvider: z.enum(['replit', 'vercel', 'aws', 'digitalocean']).default('replit'),
+  hostingConfig: z.record(z.string(), z.unknown()).default({}),
+  version: z.string().max(20).optional(),
+  notes: z.string().max(1000).optional(),
+});
+
+// ============================================================================
+// BUSINESS SUBSCRIPTION SCHEMA (with custom pricing)
+// ============================================================================
+
+export const businessSubscriptionSchema = z.object({
+  planId: z.string().min(1, 'Plan is required'),
+  billingCycle: z.enum(['monthly', 'yearly']).default('monthly'),
+  customPrice: z.number().min(0).optional(),
+  discountPercentage: z.number().min(0).max(100).optional(),
+  manualPriceOverride: z.boolean().default(false),
+  overrideReason: z.string().max(500).optional(),
+  trialStart: z.string().datetime().optional(),
+  trialEnd: z.string().datetime().optional(),
+  notes: z.string().max(1000).optional(),
+}).refine(
+  (data) => {
+    if (data.manualPriceOverride && !data.customPrice) return false;
+    return true;
+  },
+  { message: 'Custom price is required when manual override is enabled', path: ['customPrice'] }
+);
+
+// ============================================================================
+// DELIVERY ZONE SCHEMA
 // ============================================================================
 
 export const deliveryZoneSchema = z.object({
   name: z.string().min(2, 'Zone name is required').max(200),
   storeId: z.string().optional(),
   zoneType: z.enum(['CIRCLE', 'POLYGON', 'PINCODE']),
-  // Circle zone
   centerLat: z.number().min(-90).max(90).optional(),
   centerLng: z.number().min(-180).max(180).optional(),
   radius: z.number().positive().optional(),
-  // Polygon zone (GeoJSON)
   polygon: z.string().optional(),
-  // Pincode zone
   pincodes: z.string().optional(),
   deliveryFee: z.number().min(0).default(0),
   minOrderAmount: z.number().min(0).default(0),
@@ -337,19 +405,15 @@ export const taxConfigSchema = z.object({
 }).refine(
   (data) => {
     const totalRate = data.cgstRate + data.sgstRate;
-    if (totalRate > 0 && Math.abs(totalRate - data.gstRate) > 0.01) {
-      return false;
-    }
-    if (data.igstRate > 0 && Math.abs(data.igstRate - data.gstRate) > 0.01) {
-      return false;
-    }
+    if (totalRate > 0 && Math.abs(totalRate - data.gstRate) > 0.01) return false;
+    if (data.igstRate > 0 && Math.abs(data.igstRate - data.gstRate) > 0.01) return false;
     return true;
   },
   { message: 'CGST + SGST or IGST must equal total GST rate', path: ['gstRate'] }
 );
 
 // ============================================================================
-// POS SESSION SCHEMA
+// POS SESSION SCHEMAS
 // ============================================================================
 
 export const posSessionSchema = z.object({
@@ -370,8 +434,6 @@ export const posSessionCloseSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
-export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type BusinessInput = z.infer<typeof businessSchema>;
 export type UpdateBusinessInput = z.infer<typeof updateBusinessSchema>;
 export type StoreInput = z.infer<typeof storeSchema>;
@@ -383,6 +445,10 @@ export type OrderItemInput = z.infer<typeof orderItemSchema>;
 export type SubscriptionPlanInput = z.infer<typeof subscriptionPlanSchema>;
 export type CustomerInput = z.infer<typeof customerSchema>;
 export type AddressInput = z.infer<typeof addressSchema>;
+export type LeadInput = z.infer<typeof leadSchema>;
+export type DomainMappingInput = z.infer<typeof domainMappingSchema>;
+export type DeploymentInput = z.infer<typeof deploymentSchema>;
+export type BusinessSubscriptionInput = z.infer<typeof businessSubscriptionSchema>;
 export type DeliveryZoneInput = z.infer<typeof deliveryZoneSchema>;
 export type PromoCodeInput = z.infer<typeof promoCodeSchema>;
 export type TaxConfigInput = z.infer<typeof taxConfigSchema>;

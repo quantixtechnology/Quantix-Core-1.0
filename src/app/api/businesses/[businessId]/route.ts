@@ -1,97 +1,134 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { withBusinessAccess } from '@/lib/api-utils';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ businessId: string }> }
 ) {
-  const { businessId } = await params;
-  return withBusinessAccess(request, businessId, async () => {
-    try {
-      const business = await db.business.findUnique({
-        where: { id: businessId },
-        include: {
-          _count: {
-            select: {
-              stores: true,
-              customers: true,
-              orders: true,
-              products: true,
-              deliveryPartners: true,
-              businessUsers: true,
-            },
-          },
-        },
-      });
+  try {
+    const { businessId } = await params;
+    const business = await db.business.findUnique({
+      where: { id: businessId },
+      include: {
+        businessSubscription: { include: { plan: true, billingHistory: { take: 10, orderBy: { createdAt: 'desc' } } } },
+        domain: true,
+        deployments: true,
+        salesRep: { select: { id: true, name: true, email: true } },
+        _count: { select: { stores: true, products: true, orders: true, customers: true, deliveryPartners: true, businessUsers: true } },
+      },
+    });
 
-      if (!business) {
-        return NextResponse.json(
-          { success: false, error: 'Business not found' },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({ success: true, data: business });
-    } catch (error) {
-      console.error('Get business error:', error);
+    if (!business) {
       return NextResponse.json(
-        { success: false, error: 'Internal server error' },
-        { status: 500 }
+        { success: false, error: 'Business not found' },
+        { status: 404 }
       );
     }
-  });
+
+    return NextResponse.json({ success: true, data: business });
+  } catch (error) {
+    console.error('Get business error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch business' },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ businessId: string }> }
 ) {
-  const { businessId } = await params;
-  return withBusinessAccess(request, businessId, async (_req, user) => {
-    try {
-      const bu = user.businessUsers.find(b => b.businessId === businessId);
-      if (!bu || (bu.role !== 'SUPER_ADMIN' && bu.role !== 'BUSINESS_OWNER' && bu.role !== 'BUSINESS_ADMIN')) {
-        return NextResponse.json(
-          { success: false, error: 'Insufficient permissions' },
-          { status: 403 }
-        );
-      }
+  try {
+    const { businessId } = await params;
+    const body = await request.json();
 
-      const body = await request.json();
-      const allowedFields = [
-        'name', 'description', 'domain', 'subdomain',
-        'primaryColor', 'secondaryColor', 'logo', 'favicon',
-        'address', 'city', 'state', 'pincode', 'country',
-        'contactEmail', 'contactPhone', 'supportEmail', 'supportPhone',
-        'gstNumber', 'panNumber', 'cinNumber',
-        'defaultCurrency', 'defaultLocale', 'timezone',
-        'status', 'settings', 'features',
-      ];
-
-      const data: Record<string, unknown> = {};
-      for (const field of allowedFields) {
-        if (body[field] !== undefined) {
-          data[field] = body[field];
-        }
-      }
-
-      const business = await db.business.update({
-        where: { id: businessId },
-        data,
-      });
-
-      return NextResponse.json({
-        success: true,
-        data: business,
-        message: 'Business updated successfully',
-      });
-    } catch (error) {
-      console.error('Update business error:', error);
+    const existing = await db.business.findUnique({ where: { id: businessId } });
+    if (!existing) {
       return NextResponse.json(
-        { success: false, error: 'Internal server error' },
-        { status: 500 }
+        { success: false, error: 'Business not found' },
+        { status: 404 }
       );
     }
-  });
+
+    const updateData: Record<string, unknown> = {};
+    const stringFields = [
+      'name', 'tagline', 'description', 'logo', 'favicon', 'primaryColor', 'secondaryColor',
+      'gstNumber', 'panNumber', 'cinNumber', 'fssaiLicense',
+      'address', 'city', 'state', 'pincode', 'country',
+      'contactEmail', 'contactPhone', 'supportEmail', 'supportPhone',
+      'defaultCurrency', 'defaultLocale', 'timezone',
+    ];
+
+    for (const field of stringFields) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
+
+    const booleanFields = ['darkMode', 'isOnline'];
+    for (const field of booleanFields) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
+
+    const floatFields = ['latitude', 'longitude'];
+    for (const field of floatFields) {
+      if (body[field] !== undefined) updateData[field] = parseFloat(String(body[field]));
+    }
+
+    const jsonFields = ['settings', 'features', 'notificationConfig'];
+    for (const field of jsonFields) {
+      if (body[field] !== undefined) updateData[field] = JSON.stringify(body[field]);
+    }
+
+    if (body.status !== undefined) {
+      updateData.status = body.status;
+      if (body.status === 'ACTIVE' && !existing.activatedAt) {
+        updateData.activatedAt = new Date();
+      }
+      if (body.status === 'SUSPENDED') {
+        updateData.suspendedAt = new Date();
+      }
+    }
+
+    if (body.salesRepId !== undefined) updateData.salesRepId = body.salesRepId;
+
+    const business = await db.business.update({
+      where: { id: businessId },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, data: business });
+  } catch (error) {
+    console.error('Update business error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update business' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ businessId: string }> }
+) {
+  try {
+    const { businessId } = await params;
+
+    const existing = await db.business.findUnique({ where: { id: businessId } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: 'Business not found' },
+        { status: 404 }
+      );
+    }
+
+    await db.business.delete({ where: { id: businessId } });
+
+    return NextResponse.json({ success: true, data: { deleted: true } });
+  } catch (error) {
+    console.error('Delete business error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to delete business' },
+      { status: 500 }
+    );
+  }
 }
