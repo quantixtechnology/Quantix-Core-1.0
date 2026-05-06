@@ -14,24 +14,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
+  title: "Quantix Technology - Managed White-Label SaaS Platform",
+  description: "Run Your Business Smarter. Managed white-label multi-tenant SaaS platform for Grocery, Food Delivery, Laundry, Car Wash, Pharmacy, Home Services and more.",
+  keywords: ["Quantix", "SaaS", "White-Label", "Multi-Tenant", "Business Platform", "India"],
+  authors: [{ name: "Quantix Technology" }],
   openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+    title: "Quantix Technology",
+    description: "Run Your Business Smarter - Managed White-Label SaaS Platform",
+    siteName: "Quantix Technology",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
+    title: "Quantix Technology",
+    description: "Run Your Business Smarter - Managed White-Label SaaS Platform",
   },
 };
 

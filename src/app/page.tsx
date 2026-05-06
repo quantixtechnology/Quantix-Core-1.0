@@ -1,29 +1,29 @@
 'use client';
 
-import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useState, lazy, Suspense } from 'react';
 import { Sidebar, type ViewType } from '@/components/dashboard/sidebar';
 import { Header } from '@/components/dashboard/header';
-import { PlatformOverview } from '@/components/dashboard/platform-overview';
-import { BusinessesView } from '@/components/dashboard/businesses-view';
-import { SalesView } from '@/components/dashboard/sales-view';
-import { SubscriptionsView } from '@/components/dashboard/subscriptions-view';
-import { DomainsView } from '@/components/dashboard/domains-view';
-import { PlansView } from '@/components/dashboard/plans-view';
-import { BusinessDashboard } from '@/components/dashboard/business-dashboard';
-import { StoresView } from '@/components/dashboard/stores-view';
-import { ProductsView } from '@/components/dashboard/products-view';
-import { OrdersView } from '@/components/dashboard/orders-view';
-import { CustomersView } from '@/components/dashboard/customers-view';
-import { DeliveriesView } from '@/components/dashboard/deliveries-view';
-import { SubscriptionPlansView } from '@/components/dashboard/subscription-plans-view';
-import { PosView } from '@/components/dashboard/pos-view';
-import { InvoicesView } from '@/components/dashboard/invoices-view';
-import { SettingsView } from '@/components/dashboard/settings-view';
-import { ArchitectureView } from '@/components/dashboard/architecture-view';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
-const viewComponents: Record<ViewType, React.ComponentType<{ selectedBusiness?: string }>> = {
+const PlatformOverview = lazy(() => import('@/components/dashboard/platform-overview').then(m => ({ default: m.PlatformOverview })));
+const BusinessesView = lazy(() => import('@/components/dashboard/businesses-view').then(m => ({ default: m.BusinessesView })));
+const SalesView = lazy(() => import('@/components/dashboard/sales-view').then(m => ({ default: m.SalesView })));
+const SubscriptionsView = lazy(() => import('@/components/dashboard/subscriptions-view').then(m => ({ default: m.SubscriptionsView })));
+const DomainsView = lazy(() => import('@/components/dashboard/domains-view').then(m => ({ default: m.DomainsView })));
+const PlansView = lazy(() => import('@/components/dashboard/plans-view').then(m => ({ default: m.PlansView })));
+const BusinessDashboard = lazy(() => import('@/components/dashboard/business-dashboard').then(m => ({ default: m.BusinessDashboard })));
+const StoresView = lazy(() => import('@/components/dashboard/stores-view').then(m => ({ default: m.StoresView })));
+const ProductsView = lazy(() => import('@/components/dashboard/products-view').then(m => ({ default: m.ProductsView })));
+const OrdersView = lazy(() => import('@/components/dashboard/orders-view').then(m => ({ default: m.OrdersView })));
+const CustomersView = lazy(() => import('@/components/dashboard/customers-view').then(m => ({ default: m.CustomersView })));
+const DeliveriesView = lazy(() => import('@/components/dashboard/deliveries-view').then(m => ({ default: m.DeliveriesView })));
+const SubscriptionPlansView = lazy(() => import('@/components/dashboard/subscription-plans-view').then(m => ({ default: m.SubscriptionPlansView })));
+const PosView = lazy(() => import('@/components/dashboard/pos-view').then(m => ({ default: m.PosView })));
+const InvoicesView = lazy(() => import('@/components/dashboard/invoices-view').then(m => ({ default: m.InvoicesView })));
+const SettingsView = lazy(() => import('@/components/dashboard/settings-view').then(m => ({ default: m.SettingsView })));
+const ArchitectureView = lazy(() => import('@/components/dashboard/architecture-view').then(m => ({ default: m.ArchitectureView })));
+
+const viewComponents: Record<ViewType, React.LazyExoticComponent<React.ComponentType<{ selectedBusiness?: string }>>> = {
   platform_dashboard: PlatformOverview,
   businesses: BusinessesView,
   sales: SalesView,
@@ -63,6 +63,17 @@ const viewTitles: Record<ViewType, string> = {
   architecture: 'Architecture Documentation',
 };
 
+function ViewLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm text-slate-500">Loading...</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [activeView, setActiveView] = useState<ViewType>('platform_dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -79,7 +90,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <div className="flex flex-1 min-h-0">
-        {/* Desktop Sidebar */}
         <div className="hidden lg:flex">
           <Sidebar
             activeView={activeView}
@@ -89,7 +99,6 @@ export default function Home() {
           />
         </div>
 
-        {/* Mobile Sidebar */}
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetContent side="left" className="p-0 w-[260px]">
             <Sidebar
@@ -101,7 +110,6 @@ export default function Home() {
           </SheetContent>
         </Sheet>
 
-        {/* Main Content Area */}
         <div className="flex-1 flex flex-col min-w-0">
           <Header
             onMobileMenuToggle={() => setMobileMenuOpen(true)}
@@ -112,21 +120,12 @@ export default function Home() {
 
           <main className="flex-1 overflow-y-auto">
             <div className="p-4 lg:p-6">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeView}
-                  initial={{ opacity: 0, x: 8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -8 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <ViewComponent selectedBusiness={selectedBusiness} />
-                </motion.div>
-              </AnimatePresence>
+              <Suspense fallback={<ViewLoader />}>
+                <ViewComponent selectedBusiness={selectedBusiness} />
+              </Suspense>
             </div>
           </main>
 
-          {/* Footer */}
           <footer className="bg-white border-t border-slate-200 px-4 lg:px-6 py-3 flex-shrink-0">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
               <div className="flex items-center gap-2">

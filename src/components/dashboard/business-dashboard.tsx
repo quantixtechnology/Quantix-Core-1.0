@@ -1,14 +1,10 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { DollarSign, ShoppingCart, Users, CreditCard, ArrowUpRight, Power, TrendingUp, TrendingDown } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { businesses, orders } from './data';
-
-const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.06 } } };
-const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.25 } } };
 
 interface Props { selectedBusiness: string }
 
@@ -19,9 +15,9 @@ export function BusinessDashboard({ selectedBusiness }: Props) {
   const bizOrders = orders.filter(o => o.businessId === selectedBusiness);
 
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-300">
       {/* Business Header */}
-      <motion.div variants={itemVariants} className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900">{biz.name}</h2>
           <p className="text-xs text-slate-500">{biz.city} · {biz.type.replace(/_/g, ' ')} · Plan: {biz.plan}</p>
@@ -33,7 +29,7 @@ export function BusinessDashboard({ selectedBusiness }: Props) {
           </Badge>
           <Button variant="outline" size="sm" className="text-xs h-8"><Power className="h-3.5 w-3.5 mr-1.5" />Toggle</Button>
         </div>
-      </motion.div>
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -43,50 +39,46 @@ export function BusinessDashboard({ selectedBusiness }: Props) {
           { title: 'Active Customers', value: biz.activeCustomers.toLocaleString(), change: '+12%', trend: 'up', icon: Users, color: 'bg-blue-50 text-blue-600' },
           { title: 'Avg Order Value', value: `₹${biz.totalOrders ? Math.round(biz.monthlyRevenue / biz.totalOrders) : 0}`, change: '-2%', trend: 'down', icon: CreditCard, color: 'bg-purple-50 text-purple-600' },
         ].map(kpi => (
-          <motion.div key={kpi.title} variants={itemVariants}>
-            <Card className="hover:shadow-md transition-shadow">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between">
-                  <div className={`p-2.5 rounded-xl ${kpi.color}`}><kpi.icon className="h-5 w-5" /></div>
-                  <div className="flex items-center gap-1">
-                    {kpi.trend === 'up' ? <TrendingUp className="h-3.5 w-3.5 text-emerald-500" /> : <TrendingDown className="h-3.5 w-3.5 text-red-500" />}
-                    <span className={`text-xs font-medium ${kpi.trend === 'up' ? 'text-emerald-600' : 'text-red-600'}`}>{kpi.change}</span>
-                  </div>
+          <Card key={kpi.title} className="hover:shadow-md transition-shadow duration-200">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div className={`p-2.5 rounded-xl ${kpi.color}`}><kpi.icon className="h-5 w-5" /></div>
+                <div className="flex items-center gap-1">
+                  {kpi.trend === 'up' ? <TrendingUp className="h-3.5 w-3.5 text-emerald-500" /> : <TrendingDown className="h-3.5 w-3.5 text-red-500" />}
+                  <span className={`text-xs font-medium ${kpi.trend === 'up' ? 'text-emerald-600' : 'text-red-600'}`}>{kpi.change}</span>
                 </div>
-                <p className="text-2xl font-bold text-slate-900 mt-3">{kpi.value}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{kpi.title}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
+              </div>
+              <p className="text-2xl font-bold text-slate-900 mt-3">{kpi.value}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{kpi.title}</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {/* Recent Orders */}
-      <motion.div variants={itemVariants}>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">Recent Orders</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {bizOrders.length > 0 ? (
-              <div className="space-y-2">
-                {bizOrders.slice(0, 5).map(order => (
-                  <div key={order.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-900">{order.orderNumber}</p>
-                      <p className="text-[10px] text-slate-500">{order.customerName} · {order.items} items</p>
-                    </div>
-                    <Badge variant="outline" className="text-[9px] h-5">{order.type.replace(/_/g, ' ')}</Badge>
-                    <span className="text-xs font-medium">₹{order.total.toLocaleString()}</span>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Recent Orders</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {bizOrders.length > 0 ? (
+            <div className="space-y-2">
+              {bizOrders.slice(0, 5).map(order => (
+                <div key={order.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors duration-150">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-900">{order.orderNumber}</p>
+                    <p className="text-[10px] text-slate-500">{order.customerName} · {order.items} items</p>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 text-center py-6">No orders yet</p>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-    </motion.div>
+                  <Badge variant="outline" className="text-[9px] h-5">{order.type.replace(/_/g, ' ')}</Badge>
+                  <span className="text-xs font-medium">₹{order.total.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 text-center py-6">No orders yet</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

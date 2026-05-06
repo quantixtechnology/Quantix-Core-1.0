@@ -1,13 +1,9 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { Search, Filter, Package, IndianRupee } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-
-const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.04 } } };
-const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.2 } } };
 
 const demoProducts = [
   { id: 'p1', name: 'Basmati Rice 5kg', category: 'Rice & Grains', price: 450, mrp: 520, gst: 5, stock: 150, status: 'ACTIVE', isVeg: true },
@@ -22,7 +18,7 @@ const demoProducts = [
 
 export function ProductsView() {
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-300">
       {/* Search & Filter */}
       <div className="flex items-center gap-2">
         <div className="flex-1 relative">
@@ -36,36 +32,34 @@ export function ProductsView() {
       {/* Products Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {demoProducts.map(product => (
-          <motion.div key={product.id} variants={itemVariants}>
-            <Card className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 truncate">{product.name}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{product.category}</p>
+          <Card key={product.id} className="hover:shadow-md transition-shadow duration-200">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-900 truncate">{product.name}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">{product.category}</p>
+                </div>
+                {product.isVeg !== null && (
+                  <div className={`w-4 h-4 border-2 rounded flex items-center justify-center ${product.isVeg ? 'border-emerald-500' : 'border-red-500'}`}>
+                    <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-emerald-500' : 'bg-red-500'}`} />
                   </div>
-                  {product.isVeg !== null && (
-                    <div className={`w-4 h-4 border-2 rounded flex items-center justify-center ${product.isVeg ? 'border-emerald-500' : 'border-red-500'}`}>
-                      <div className={`w-2 h-2 rounded-full ${product.isVeg ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-sm font-bold text-slate-900">₹{product.price}</span>
-                  <span className="text-[10px] text-slate-400 line-through">₹{product.mrp}</span>
-                  <Badge variant="outline" className="text-[8px] h-4 ml-auto">GST {product.gst}%</Badge>
-                </div>
-                <div className="flex items-center justify-between mt-3">
-                  <span className={`text-[10px] ${product.stock > 20 ? 'text-emerald-600' : product.stock > 0 ? 'text-amber-600' : 'text-red-600'}`}>
-                    {product.stock > 20 ? `${product.stock} in stock` : product.stock > 0 ? `Low: ${product.stock} left` : 'Out of stock'}
-                  </span>
-                  <Badge className={`text-[9px] h-5 ${product.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`} variant="secondary">{product.status}</Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-sm font-bold text-slate-900">₹{product.price}</span>
+                <span className="text-[10px] text-slate-400 line-through">₹{product.mrp}</span>
+                <Badge variant="outline" className="text-[8px] h-4 ml-auto">GST {product.gst}%</Badge>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <span className={`text-[10px] ${product.stock > 20 ? 'text-emerald-600' : product.stock > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                  {product.stock > 20 ? `${product.stock} in stock` : product.stock > 0 ? `Low: ${product.stock} left` : 'Out of stock'}
+                </span>
+                <Badge className={`text-[9px] h-5 ${product.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`} variant="secondary">{product.status}</Badge>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }

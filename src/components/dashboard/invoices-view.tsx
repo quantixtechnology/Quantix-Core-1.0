@@ -1,13 +1,9 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { FileText, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-
-const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
-const itemVariants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.25 } } };
 
 const demoInvoices = [
   { id: 'inv1', number: 'INV-2025-001', business: 'FreshMart', customer: 'Rajesh Kumar', amount: 1250, cgst: 56.25, sgst: 56.25, igst: 0, total: 1362.50, date: '2025-01-15', status: 'PAID' },
@@ -18,53 +14,49 @@ const demoInvoices = [
 
 export function InvoicesView() {
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      <motion.div variants={itemVariants}>
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Invoice</th>
-                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Business</th>
-                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Customer</th>
-                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">CGST</th>
-                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">SGST</th>
-                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">IGST</th>
-                    <th className="text-right py-2.5 px-3 font-semibold text-slate-700">Total</th>
-                    <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Status</th>
-                    <th className="text-right py-2.5 px-3"></th>
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Invoice</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Business</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Customer</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-slate-700">CGST</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-slate-700">SGST</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-slate-700">IGST</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-slate-700">Total</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-slate-700">Status</th>
+                  <th className="text-right py-2.5 px-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {demoInvoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-slate-50 transition-colors duration-150">
+                    <td className="py-2.5 px-3 font-mono font-medium text-slate-900">{inv.number}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{inv.business}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{inv.customer}</td>
+                    <td className="py-2.5 px-3 text-slate-600">₹{inv.cgst.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-slate-600">₹{inv.sgst.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{inv.igst ? `₹${inv.igst.toFixed(2)}` : '—'}</td>
+                    <td className="py-2.5 px-3 text-right font-medium">₹{inv.total.toFixed(2)}</td>
+                    <td className="py-2.5 px-3"><Badge className={`text-[9px] h-5 ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`} variant="secondary">{inv.status}</Badge></td>
+                    <td className="py-2.5 px-3 text-right"><Button variant="ghost" size="icon" className="h-6 w-6"><Download className="h-3 w-3" /></Button></td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {demoInvoices.map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-50">
-                      <td className="py-2.5 px-3 font-mono font-medium text-slate-900">{inv.number}</td>
-                      <td className="py-2.5 px-3 text-slate-600">{inv.business}</td>
-                      <td className="py-2.5 px-3 text-slate-600">{inv.customer}</td>
-                      <td className="py-2.5 px-3 text-slate-600">₹{inv.cgst.toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-slate-600">₹{inv.sgst.toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-slate-600">{inv.igst ? `₹${inv.igst.toFixed(2)}` : '—'}</td>
-                      <td className="py-2.5 px-3 text-right font-medium">₹{inv.total.toFixed(2)}</td>
-                      <td className="py-2.5 px-3"><Badge className={`text-[9px] h-5 ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`} variant="secondary">{inv.status}</Badge></td>
-                      <td className="py-2.5 px-3 text-right"><Button variant="ghost" size="icon" className="h-6 w-6"><Download className="h-3 w-3" /></Button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
-      <motion.div variants={itemVariants}>
-        <Card className="bg-slate-50 border-dashed">
-          <CardContent className="p-4 text-xs text-slate-600">
-            <strong>GST Invoice:</strong> All invoices include CGST/SGST for intra-state and IGST for inter-state transactions. HSN codes supported. Compliant with Indian GST regulations.
-          </CardContent>
-        </Card>
-      </motion.div>
-    </motion.div>
+      <Card className="bg-slate-50 border-dashed">
+        <CardContent className="p-4 text-xs text-slate-600">
+          <strong>GST Invoice:</strong> All invoices include CGST/SGST for intra-state and IGST for inter-state transactions. HSN codes supported. Compliant with Indian GST regulations.
+        </CardContent>
+      </Card>
+    </div>
   );
 }
