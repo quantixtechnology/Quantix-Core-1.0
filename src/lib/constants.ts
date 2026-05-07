@@ -15,8 +15,8 @@ import type {
   DeliveryStatus,
   TaxType,
   LeadSource,
-  LeadStatus,
-  PlanTier,
+  LeadStage,
+  PlanBillingCycle,
   DomainStatus,
   DeploymentStatus,
   DeploymentType,
@@ -100,8 +100,7 @@ export const BUSINESS_TYPES: Record<BusinessType, { label: string; icon: string;
 // ============================================================================
 
 export const BUSINESS_STATUSES: Record<BusinessStatus, { label: string; color: string; bgColor: string; description: string }> = {
-  ONBOARDING: { label: 'Onboarding', color: '#F59E0B', bgColor: '#FEF3C7', description: 'Being set up by Quantix' },
-  TRIAL: { label: 'Trial', color: '#3B82F6', bgColor: '#DBEAFE', description: 'Trial period active' },
+  ONBOARDING: { label: 'Onboarding', color: '#F59E0B', bgColor: '#FEF3C7', description: 'Being set up by Quantix after payment verified' },
   ACTIVE: { label: 'Active', color: '#10B981', bgColor: '#D1FAE5', description: 'Live and operational' },
   SUSPENDED: { label: 'Suspended', color: '#EF4444', bgColor: '#FEE2E2', description: 'Payment failure / policy violation' },
   CHURNED: { label: 'Churned', color: '#6B7280', bgColor: '#F3F4F6', description: 'Cancelled / left the platform' },
@@ -203,15 +202,17 @@ export const LEAD_SOURCES: Record<LeadSource, { label: string; icon: string; des
 // LEAD STATUSES
 // ============================================================================
 
-export const LEAD_STATUSES: Record<LeadStatus, { label: string; color: string; bgColor: string; description: string }> = {
-  NEW: { label: 'New', color: '#3B82F6', bgColor: '#DBEAFE', description: 'Fresh lead, not yet contacted' },
-  CONTACTED: { label: 'Contacted', color: '#8B5CF6', bgColor: '#EDE9FE', description: 'Initial contact made' },
-  QUALIFIED: { label: 'Qualified', color: '#F59E0B', bgColor: '#FEF3C7', description: 'Lead qualified as potential client' },
-  PROPOSAL_SENT: { label: 'Proposal Sent', color: '#06B6D4', bgColor: '#CFFAFE', description: 'Pricing proposal sent' },
+export const LEAD_STAGES: Record<LeadStage, { label: string; color: string; bgColor: string; description: string }> = {
+  LEAD: { label: 'Lead', color: '#3B82F6', bgColor: '#DBEAFE', description: 'New lead received' },
+  DEMO_SHARED: { label: 'Demo Shared', color: '#8B5CF6', bgColor: '#EDE9FE', description: 'Demo credentials shared with prospect' },
   NEGOTIATION: { label: 'Negotiation', color: '#F97316', bgColor: '#FFEDD5', description: 'Actively negotiating terms' },
-  WON: { label: 'Won', color: '#10B981', bgColor: '#D1FAE5', description: 'Deal closed — client onboarded' },
+  PAYMENT_PENDING: { label: 'Payment Pending', color: '#F59E0B', bgColor: '#FEF3C7', description: 'Awaiting payment from prospect' },
+  PAYMENT_RECEIVED: { label: 'Payment Received', color: '#06B6D4', bgColor: '#CFFAFE', description: 'Payment verified — ready to onboard' },
+  ONBOARDING: { label: 'Onboarding', color: '#6366F1', bgColor: '#E0E7FF', description: 'Business being set up by Quantix' },
+  DEPLOYMENT: { label: 'Deployment', color: '#3B82F6', bgColor: '#DBEAFE', description: 'App being deployed and configured' },
+  ACTIVE: { label: 'Active', color: '#10B981', bgColor: '#D1FAE5', description: 'Client live and operational' },
   LOST: { label: 'Lost', color: '#EF4444', bgColor: '#FEE2E2', description: 'Deal lost' },
-  FOLLOW_UP: { label: 'Follow Up', color: '#6366F1', bgColor: '#E0E7FF', description: 'Requires follow-up' },
+  CHURNED: { label: 'Churned', color: '#6B7280', bgColor: '#F3F4F6', description: 'Client left the platform' },
 };
 
 // ============================================================================
@@ -219,24 +220,20 @@ export const LEAD_STATUSES: Record<LeadStatus, { label: string; color: string; b
 // ============================================================================
 
 export const SUBSCRIPTION_STATUSES: Record<SubscriptionStatus, { label: string; color: string; bgColor: string }> = {
-  TRIAL: { label: 'Trial', color: '#3B82F6', bgColor: '#DBEAFE' },
   ACTIVE: { label: 'Active', color: '#10B981', bgColor: '#D1FAE5' },
   PAST_DUE: { label: 'Past Due', color: '#F59E0B', bgColor: '#FEF3C7' },
   SUSPENDED: { label: 'Suspended', color: '#EF4444', bgColor: '#FEE2E2' },
   CANCELLED: { label: 'Cancelled', color: '#6B7280', bgColor: '#F3F4F6' },
   EXPIRED: { label: 'Expired', color: '#9CA3AF', bgColor: '#F3F4F6' },
-  PAUSED: { label: 'Paused', color: '#8B5CF6', bgColor: '#EDE9FE' },
 };
 
 // ============================================================================
-// PLAN TIERS
+// PLAN BILLING CYCLES — Only 2 fixed plans
 // ============================================================================
 
-export const PLAN_TIERS: Record<PlanTier, { label: string; description: string; color: string }> = {
-  STARTER: { label: 'Starter', description: 'For small businesses getting started', color: '#10B981' },
-  PROFESSIONAL: { label: 'Professional', description: 'For growing businesses with advanced needs', color: '#3B82F6' },
-  ENTERPRISE: { label: 'Enterprise', description: 'For large businesses with custom requirements', color: '#8B5CF6' },
-  CUSTOM: { label: 'Custom', description: 'Custom pricing and features', color: '#F59E0B' },
+export const PLAN_BILLING_CYCLES: Record<PlanBillingCycle, { label: string; price: number; description: string; color: string }> = {
+  MONTHLY: { label: 'Monthly', price: 4999, description: '₹4,999/month', color: '#10B981' },
+  YEARLY: { label: 'Yearly', price: 49999, description: '₹49,999/year — Save ₹9,989!', color: '#8B5CF6' },
 };
 
 // ============================================================================
@@ -339,62 +336,40 @@ export const PAPER_SIZES = [
 ] as const;
 
 // ============================================================================
-// PRICING PLANS — Quantix Platform Pricing
+// PRICING PLANS — Quantix Platform Pricing (Only 2 fixed plans)
 // ============================================================================
 
 export const PRICING_PLANS = [
   {
-    tier: 'STARTER' as PlanTier,
-    name: 'Starter',
-    monthlyPrice: 4999,
-    yearlyPrice: 49999,
-    description: 'Perfect for small businesses getting started',
-    features: ['1 Store', '500 Products', '1000 Orders/month', '5 Delivery Partners', '10 Staff', 'Basic POS', 'Standard Delivery', 'Email Support'],
-    maxStores: 1,
-    maxProducts: 500,
-    maxOrders: 1000,
-    maxDeliveryPartners: 5,
-    maxStaff: 10,
-    hasPOS: true,
-    hasDelivery: true,
-    hasSubscription: false,
-    hasCustomDomain: false,
-    hasWhiteLabel: false,
-    hasAdvancedReports: false,
-    hasAPIAccess: false,
-  },
-  {
-    tier: 'PROFESSIONAL' as PlanTier,
-    name: 'Professional',
-    monthlyPrice: 9999,
-    yearlyPrice: 99999,
-    description: 'For growing businesses with advanced needs',
-    features: ['3 Stores', '2000 Products', '5000 Orders/month', '15 Delivery Partners', '25 Staff', 'Advanced POS', 'Subscription Plans', 'Custom Domain', 'Advanced Reports', 'Priority Support'],
-    maxStores: 3,
-    maxProducts: 2000,
-    maxOrders: 5000,
-    maxDeliveryPartners: 15,
-    maxStaff: 25,
+    billingCycle: 'MONTHLY' as PlanBillingCycle,
+    name: 'Quantix Monthly',
+    price: 4999,
+    description: 'Monthly subscription — ₹4,999/month',
+    features: ['Up to 5 Stores', '5,000 Products', '10,000 Orders/month', '50 Delivery Partners', '50 Staff', 'Full POS Suite', 'Delivery Management', 'Subscription Plans', 'Custom Domain', 'White Label Branding', 'Advanced Reports', 'API Access', 'Priority Support'],
+    maxStores: 5,
+    maxProducts: 5000,
+    maxOrders: 10000,
+    maxDeliveryPartners: 50,
+    maxStaff: 50,
     hasPOS: true,
     hasDelivery: true,
     hasSubscription: true,
     hasCustomDomain: true,
-    hasWhiteLabel: false,
+    hasWhiteLabel: true,
     hasAdvancedReports: true,
-    hasAPIAccess: false,
+    hasAPIAccess: true,
   },
   {
-    tier: 'ENTERPRISE' as PlanTier,
-    name: 'Enterprise',
-    monthlyPrice: 24999,
-    yearlyPrice: 249999,
-    description: 'For large businesses with custom requirements',
-    features: ['Unlimited Stores', 'Unlimited Products', 'Unlimited Orders', 'Unlimited Partners', 'Unlimited Staff', 'Full POS Suite', 'Subscriptions', 'Custom Domain', 'White Label', 'API Access', 'Dedicated Support'],
-    maxStores: 999,
-    maxProducts: 99999,
-    maxOrders: 99999,
-    maxDeliveryPartners: 999,
-    maxStaff: 999,
+    billingCycle: 'YEARLY' as PlanBillingCycle,
+    name: 'Quantix Yearly',
+    price: 49999,
+    description: 'Annual subscription — ₹49,999/year (Save ₹9,989!)',
+    features: ['Up to 5 Stores', '5,000 Products', '10,000 Orders/month', '50 Delivery Partners', '50 Staff', 'Full POS Suite', 'Delivery Management', 'Subscription Plans', 'Custom Domain', 'White Label Branding', 'Advanced Reports', 'API Access', 'Priority Support', '2 Months Free'],
+    maxStores: 5,
+    maxProducts: 5000,
+    maxOrders: 10000,
+    maxDeliveryPartners: 50,
+    maxStaff: 50,
     hasPOS: true,
     hasDelivery: true,
     hasSubscription: true,
@@ -502,7 +477,7 @@ export const PLATFORM = {
   LOGIN_LOCKOUT_MINUTES: 15,
   PAGE_SIZE: 20,
   MAX_PAGE_SIZE: 100,
-  TRIAL_DAYS: 14,
+  // NO TRIAL — business created ONLY after payment verified
 } as const;
 
 // ============================================================================

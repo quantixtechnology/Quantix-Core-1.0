@@ -3,16 +3,16 @@
 import { Phone, Mail, Calendar, User, Target, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { salesTeam, leads, leadStatusColors, businessTypeConfig } from './data';
-import type { LeadStatus } from './data';
+import { salesTeam, leads, leadStageColors, businessTypeConfig } from './data';
+import type { LeadStage } from './data';
 
-const pipelineColumns: { status: LeadStatus; label: string }[] = [
-  { status: 'NEW', label: 'New' },
-  { status: 'CONTACTED', label: 'Contacted' },
-  { status: 'QUALIFIED', label: 'Qualified' },
-  { status: 'PROPOSAL_SENT', label: 'Proposal' },
-  { status: 'NEGOTIATION', label: 'Negotiation' },
-  { status: 'WON', label: 'Won' },
+const pipelineColumns: { stage: LeadStage; label: string }[] = [
+  { stage: 'LEAD', label: 'Lead' },
+  { stage: 'DEMO_SHARED', label: 'Demo' },
+  { stage: 'NEGOTIATION', label: 'Negotiation' },
+  { stage: 'PAYMENT_PENDING', label: 'Payment' },
+  { stage: 'PAYMENT_RECEIVED', label: 'Paid' },
+  { stage: 'ONBOARDING', label: 'Onboarding' },
 ];
 
 export function SalesView() {
@@ -128,7 +128,7 @@ export function SalesView() {
                     <td className="py-2 px-3 text-slate-600">{lead.contactName}</td>
                     <td className="py-2 px-3"><Badge variant="outline" className="text-[8px] h-4">{businessTypeConfig[lead.type]?.label}</Badge></td>
                     <td className="py-2 px-3 text-slate-500">{lead.source.replace(/_/g, ' ')}</td>
-                    <td className="py-2 px-3"><Badge className={`text-[9px] h-5 ${leadStatusColors[lead.status]}`} variant="secondary">{lead.status.replace(/_/g, ' ')}</Badge></td>
+                    <td className="py-2 px-3"><Badge className={`text-[9px] h-5 ${leadStageColors[lead.stage as LeadStage]}`} variant="secondary">{lead.stage.replace(/_/g, ' ')}</Badge></td>
                     <td className="py-2 px-3 text-slate-500">{lead.salesRep?.split(' ')[0]}</td>
                     <td className="py-2 px-3 text-right font-medium">₹{(lead.estimatedValue / 12).toLocaleString()}/mo</td>
                   </tr>

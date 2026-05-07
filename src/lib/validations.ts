@@ -318,13 +318,11 @@ export const deploymentSchema = z.object({
 
 export const businessSubscriptionSchema = z.object({
   planId: z.string().min(1, 'Plan is required'),
-  billingCycle: z.enum(['monthly', 'yearly']).default('monthly'),
+  billingCycle: z.enum(['MONTHLY', 'YEARLY']).default('MONTHLY'),
   customPrice: z.number().min(0).optional(),
   discountPercentage: z.number().min(0).max(100).optional(),
   manualPriceOverride: z.boolean().default(false),
   overrideReason: z.string().max(500).optional(),
-  trialStart: z.string().datetime().optional(),
-  trialEnd: z.string().datetime().optional(),
   notes: z.string().max(1000).optional(),
 }).refine(
   (data) => {

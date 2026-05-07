@@ -34,7 +34,7 @@ export async function GET(
         },
         subscriptions: {
           take: 5,
-          where: { status: { in: ['ACTIVE', 'TRIAL'] } },
+          where: { status: { in: ['ACTIVE'] } },
           include: {
             plan: { select: { name: true, price: true } },
           },

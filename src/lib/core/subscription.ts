@@ -2,17 +2,24 @@
 // QUANTIX CORE — Dual Subscription Engine
 //
 // Part A: Platform Subscription (Quantix → Business)
-//   - Businesses subscribe to platform plans (Starter/Professional/Enterprise)
-//   - Supports trial periods, billing cycles, pricing overrides by Super Admin
+//   - Businesses subscribe to platform plans (MONTHLY ₹4,999 / YEARLY ₹49,999)
+//   - NO trial periods — business created ONLY after payment verified
+//   - Super Admin can override pricing per customer
 //   - Processes billing at the end of each cycle
 //
 // Part B: Customer Subscription (Business → Customer)
 //   - Credit-based packages for Car Wash, Home Services, Laundry etc.
 //   - Credit deduction, rollover on renewal, pause/resume, expiry tracking
 //   - Cron-friendly renewal checks
+//
+// BUSINESS MODEL:
+//   - NO free trial, NO self-signup
+//   - Demo credentials given first; tenant created ONLY after payment verified
+//   - Super Admin can override pricing per customer
 // ============================================================================
 
 import { db } from '@/lib/db';
+import type { PlanBillingCycle } from './types';
 
 // ============================================================================
 // TYPES
@@ -20,7 +27,7 @@ import { db } from '@/lib/db';
 
 export type SubscriptionBillingCycle = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
 
-export type PlatformBillingCycle = 'monthly' | 'yearly';
+export type PlatformBillingCycle = PlanBillingCycle; // 'MONTHLY' | 'YEARLY'
 
 export interface PlatformSubscriptionResult {
   success: boolean;
@@ -35,8 +42,6 @@ export interface PlatformSubscriptionResult {
     nextBillingDate: Date;
     planPrice: number;
     customPrice: number | null;
-    trialStart: Date | null;
-    trialEnd: Date | null;
   };
   error?: string;
 }
@@ -86,11 +91,13 @@ export interface RenewalCheckResult {
 
 // ============================================================================
 // PART A: PLATFORM SUBSCRIPTION (Quantix → Business)
+// NO TRIAL — Business subscription starts as ACTIVE after payment verified
 // ============================================================================
 
 /**
  * Create a platform subscription for a business.
- * Supports trial period, billing cycle selection, and custom pricing override.
+ * Called ONLY after payment has been verified.
+ * NO trial period — subscription starts as ACTIVE immediately.
  */
 export async function createPlatformSubscription(params: {
   businessId: string;
@@ -98,7 +105,6 @@ export async function createPlatformSubscription(params: {
   billingCycle: PlatformBillingCycle;
   customPrice?: number;
   overrideReason?: string;
-  trialDays?: number;
 }): Promise<PlatformSubscriptionResult> {
   // Check if business already has a subscription
   const existing = await db.businessSubscription.findUnique({
@@ -118,56 +124,40 @@ export async function createPlatformSubscription(params: {
     return { success: false, error: 'Platform plan not found' };
   }
 
-  if (!plan.isActive) {
-    return { success: false, error: 'This platform plan is no longer active' };
-  }
-
   const now = new Date();
 
-  // Determine plan price based on billing cycle
-  const planPrice = params.billingCycle === 'yearly' ? plan.yearlyPrice : plan.monthlyPrice;
+  // Get plan price from the plan record (price is per billing cycle now)
+  const planPrice = plan.price;
 
-  // Calculate period dates
-  const periodEnd = calculatePeriodEnd(now, params.billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY');
+  // Calculate period dates based on billing cycle
+  const periodEnd = calculatePeriodEnd(now, params.billingCycle);
 
-  // Trial period
-  const trialDays = params.trialDays || 14; // Default 14-day trial
-  const trialStart = now;
-  const trialEnd = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
-
-  // Determine effective price
+  // Determine effective price — custom price overrides plan price (Super Admin override)
   const effectivePrice = params.customPrice ?? planPrice;
   const hasOverride = params.customPrice !== undefined && params.customPrice !== planPrice;
+  const discountPercentage = hasOverride && planPrice > 0
+    ? Math.round(((planPrice - (params.customPrice || 0)) / planPrice) * 100 * 100) / 100
+    : null;
 
-  // Create subscription
+  // Create subscription — starts as ACTIVE, NO TRIAL
   const subscription = await db.businessSubscription.create({
     data: {
       businessId: params.businessId,
       planId: params.planId,
-      status: 'TRIAL',
+      status: 'ACTIVE',
       planPrice,
       customPrice: params.customPrice,
-      discountPercentage: hasOverride ? Math.round(((planPrice - (params.customPrice || 0)) / planPrice) * 100 * 100) / 100 : null,
+      discountPercentage,
       manualPriceOverride: hasOverride,
       overrideReason: params.overrideReason,
-      billingCycle: params.billingCycle,
+      billingCycle: params.billingCycle === 'MONTHLY' ? 'monthly' : 'yearly',
       currentPeriodStart: now,
       currentPeriodEnd: periodEnd,
-      nextBillingDate: trialEnd, // First billing after trial
-      trialStart,
-      trialEnd,
+      nextBillingDate: periodEnd,
       nextPaymentAmount: effectivePrice,
       autoRenew: true,
-    },
-  });
-
-  // Update business status to TRIAL
-  await db.business.update({
-    where: { id: params.businessId },
-    data: {
-      status: 'TRIAL',
-      trialStartsAt: trialStart,
-      trialEndsAt: trialEnd,
+      lastPaymentDate: now,
+      lastPaymentAmount: effectivePrice,
     },
   });
 
@@ -184,15 +174,13 @@ export async function createPlatformSubscription(params: {
       nextBillingDate: subscription.nextBillingDate,
       planPrice: subscription.planPrice,
       customPrice: subscription.customPrice,
-      trialStart: subscription.trialStart,
-      trialEnd: subscription.trialEnd,
     },
   };
 }
 
 /**
  * Process a billing cycle for a platform subscription.
- * Creates a billing record and transitions subscription status.
+ * Creates a billing record and updates subscription period.
  */
 export async function processBillingCycle(subscriptionId: string): Promise<BillingResult> {
   const subscription = await db.businessSubscription.findUnique({
@@ -221,47 +209,21 @@ export async function processBillingCycle(subscriptionId: string): Promise<Billi
     },
   });
 
-  // If trial is ending, transition to ACTIVE
-  if (subscription.status === 'TRIAL' && subscription.trialEnd && now >= subscription.trialEnd) {
-    const newPeriodEnd = calculatePeriodEnd(
-      subscription.currentPeriodStart,
-      subscription.billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY'
-    );
+  // Calculate new period
+  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
+  const newPeriodEnd = calculatePeriodEnd(now, billingCycle);
 
-    await db.businessSubscription.update({
-      where: { id: subscriptionId },
-      data: {
-        status: 'ACTIVE',
-        currentPeriodStart: now,
-        currentPeriodEnd: newPeriodEnd,
-        nextBillingDate: newPeriodEnd,
-        lastPaymentDate: now,
-        lastPaymentAmount: effectivePrice,
-      },
-    });
-
-    await db.business.update({
-      where: { id: subscription.businessId },
-      data: { status: 'ACTIVE', activatedAt: now },
-    });
-  } else {
-    // Normal billing cycle renewal
-    const newPeriodEnd = calculatePeriodEnd(
-      now,
-      subscription.billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY'
-    );
-
-    await db.businessSubscription.update({
-      where: { id: subscriptionId },
-      data: {
-        status: 'ACTIVE',
-        currentPeriodStart: now,
-        currentPeriodEnd: newPeriodEnd,
-        nextBillingDate: newPeriodEnd,
-        nextPaymentAmount: effectivePrice,
-      },
-    });
-  }
+  // Update subscription for next billing cycle
+  await db.businessSubscription.update({
+    where: { id: subscriptionId },
+    data: {
+      status: 'ACTIVE',
+      currentPeriodStart: now,
+      currentPeriodEnd: newPeriodEnd,
+      nextBillingDate: newPeriodEnd,
+      nextPaymentAmount: effectivePrice,
+    },
+  });
 
   return {
     success: true,
@@ -277,6 +239,7 @@ export async function processBillingCycle(subscriptionId: string): Promise<Billi
 /**
  * Override subscription pricing — Super Admin only.
  * Allows setting a custom price for a business (e.g., enterprise negotiation).
+ * Can be applied at any time during an active subscription.
  */
 export async function overrideSubscriptionPricing(params: {
   subscriptionId: string;
@@ -327,8 +290,231 @@ export async function overrideSubscriptionPricing(params: {
       nextBillingDate: updated.nextBillingDate,
       planPrice: updated.planPrice,
       customPrice: updated.customPrice,
-      trialStart: updated.trialStart,
-      trialEnd: updated.trialEnd,
+    } : undefined,
+  };
+}
+
+/**
+ * Remove pricing override — Super Admin only.
+ * Resets the subscription to the standard plan price.
+ */
+export async function removePricingOverride(subscriptionId: string): Promise<PlatformSubscriptionResult> {
+  const subscription = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  if (!subscription) {
+    return { success: false, error: 'Subscription not found' };
+  }
+
+  await db.businessSubscription.update({
+    where: { id: subscriptionId },
+    data: {
+      customPrice: null,
+      manualPriceOverride: false,
+      overrideReason: null,
+      discountPercentage: null,
+      nextPaymentAmount: subscription.planPrice,
+    },
+  });
+
+  const updated = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  return {
+    success: true,
+    subscription: updated ? {
+      id: updated.id,
+      businessId: updated.businessId,
+      planId: updated.planId,
+      status: updated.status,
+      billingCycle: updated.billingCycle,
+      currentPeriodStart: updated.currentPeriodStart,
+      currentPeriodEnd: updated.currentPeriodEnd,
+      nextBillingDate: updated.nextBillingDate,
+      planPrice: updated.planPrice,
+      customPrice: updated.customPrice,
+    } : undefined,
+  };
+}
+
+/**
+ * Suspend a platform subscription due to non-payment.
+ * Called when payment is overdue or policy violation.
+ */
+export async function suspendPlatformSubscription(
+  subscriptionId: string,
+  reason: string
+): Promise<PlatformSubscriptionResult> {
+  const subscription = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  if (!subscription) {
+    return { success: false, error: 'Subscription not found' };
+  }
+
+  if (subscription.status === 'SUSPENDED') {
+    return { success: false, error: 'Subscription is already suspended' };
+  }
+
+  await db.businessSubscription.update({
+    where: { id: subscriptionId },
+    data: {
+      status: 'SUSPENDED',
+      pauseReason: reason,
+    },
+  });
+
+  // Also suspend the business
+  await db.business.update({
+    where: { id: subscription.businessId },
+    data: {
+      status: 'SUSPENDED',
+      suspendedAt: new Date(),
+      isOnline: false,
+    },
+  });
+
+  const updated = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  return {
+    success: true,
+    subscription: updated ? {
+      id: updated.id,
+      businessId: updated.businessId,
+      planId: updated.planId,
+      status: updated.status,
+      billingCycle: updated.billingCycle,
+      currentPeriodStart: updated.currentPeriodStart,
+      currentPeriodEnd: updated.currentPeriodEnd,
+      nextBillingDate: updated.nextBillingDate,
+      planPrice: updated.planPrice,
+      customPrice: updated.customPrice,
+    } : undefined,
+  };
+}
+
+/**
+ * Reactivate a suspended platform subscription after payment received.
+ */
+export async function reactivatePlatformSubscription(
+  subscriptionId: string
+): Promise<PlatformSubscriptionResult> {
+  const subscription = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  if (!subscription) {
+    return { success: false, error: 'Subscription not found' };
+  }
+
+  if (subscription.status !== 'SUSPENDED') {
+    return { success: false, error: 'Only suspended subscriptions can be reactivated' };
+  }
+
+  const now = new Date();
+  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
+  const newPeriodEnd = calculatePeriodEnd(now, billingCycle);
+  const effectivePrice = subscription.customPrice ?? subscription.planPrice;
+
+  await db.businessSubscription.update({
+    where: { id: subscriptionId },
+    data: {
+      status: 'ACTIVE',
+      currentPeriodStart: now,
+      currentPeriodEnd: newPeriodEnd,
+      nextBillingDate: newPeriodEnd,
+      nextPaymentAmount: effectivePrice,
+      pauseReason: null,
+    },
+  });
+
+  // Also reactivate the business
+  await db.business.update({
+    where: { id: subscription.businessId },
+    data: {
+      status: 'ACTIVE',
+      activatedAt: now,
+    },
+  });
+
+  const updated = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  return {
+    success: true,
+    subscription: updated ? {
+      id: updated.id,
+      businessId: updated.businessId,
+      planId: updated.planId,
+      status: updated.status,
+      billingCycle: updated.billingCycle,
+      currentPeriodStart: updated.currentPeriodStart,
+      currentPeriodEnd: updated.currentPeriodEnd,
+      nextBillingDate: updated.nextBillingDate,
+      planPrice: updated.planPrice,
+      customPrice: updated.customPrice,
+    } : undefined,
+  };
+}
+
+/**
+ * Cancel a platform subscription permanently.
+ * Used when a business churns.
+ */
+export async function cancelPlatformSubscription(
+  subscriptionId: string,
+  reason: string
+): Promise<PlatformSubscriptionResult> {
+  const subscription = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  if (!subscription) {
+    return { success: false, error: 'Subscription not found' };
+  }
+
+  await db.businessSubscription.update({
+    where: { id: subscriptionId },
+    data: {
+      status: 'CANCELLED',
+      cancelledAt: new Date(),
+      cancelReason: reason,
+      autoRenew: false,
+    },
+  });
+
+  // Also churn the business
+  await db.business.update({
+    where: { id: subscription.businessId },
+    data: {
+      status: 'CHURNED',
+      isOnline: false,
+    },
+  });
+
+  const updated = await db.businessSubscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  return {
+    success: true,
+    subscription: updated ? {
+      id: updated.id,
+      businessId: updated.businessId,
+      planId: updated.planId,
+      status: updated.status,
+      billingCycle: updated.billingCycle,
+      currentPeriodStart: updated.currentPeriodStart,
+      currentPeriodEnd: updated.currentPeriodEnd,
+      nextBillingDate: updated.nextBillingDate,
+      planPrice: updated.planPrice,
+      customPrice: updated.customPrice,
     } : undefined,
   };
 }
@@ -341,6 +527,7 @@ export async function overrideSubscriptionPricing(params: {
 /**
  * Subscribe a customer to a plan with credits.
  * Creates the CustomerSubscription record with initial credits.
+ * NO TRIAL — customer subscriptions start as ACTIVE.
  */
 export async function subscribeCustomerToPlan(params: {
   businessId: string;
@@ -372,7 +559,7 @@ export async function subscribeCustomerToPlan(params: {
     where: {
       customerId: params.customerId,
       planId: params.planId,
-      status: { in: ['ACTIVE', 'TRIAL'] },
+      status: 'ACTIVE',
     },
   });
 
@@ -387,16 +574,13 @@ export async function subscribeCustomerToPlan(params: {
   // Calculate total credits from plan items
   const totalCredits = plan.totalCredits || plan.planItems.reduce((sum, item) => sum + item.creditsPerCycle, 0);
 
-  // Apply trial days if applicable
-  const trialEnd = plan.trialDays > 0 ? new Date(now.getTime() + plan.trialDays * 24 * 60 * 60 * 1000) : null;
-
-  // Create subscription
+  // Create subscription — starts as ACTIVE, NO TRIAL
   const subscription = await db.customerSubscription.create({
     data: {
       businessId: params.businessId,
       customerId: params.customerId,
       planId: params.planId,
-      status: trialEnd ? 'TRIAL' : 'ACTIVE',
+      status: 'ACTIVE',
       currentPeriodStart: now,
       currentPeriodEnd: periodEnd,
       nextBillingDate: periodEnd,
@@ -405,8 +589,8 @@ export async function subscribeCustomerToPlan(params: {
       remainingCredits: totalCredits,
       autoRenew: params.autoRenew !== false,
       paymentMethodId: params.paymentMethodId,
-      lastPaymentAt: trialEnd ? undefined : now,
-      lastPaymentAmount: trialEnd ? undefined : plan.price,
+      lastPaymentAt: now,
+      lastPaymentAmount: plan.price,
     },
   });
 
@@ -437,7 +621,7 @@ export async function deductCredits(params: {
     return { success: false, creditsUsed: 0, remainingCredits: 0, error: 'Subscription not found' };
   }
 
-  if (subscription.status !== 'ACTIVE' && subscription.status !== 'TRIAL') {
+  if (subscription.status !== 'ACTIVE') {
     return {
       success: false,
       creditsUsed: 0,
@@ -645,7 +829,7 @@ export async function checkRenewals(businessId: string): Promise<RenewalCheckRes
   const expiringSoon = await db.customerSubscription.findMany({
     where: {
       businessId,
-      status: { in: ['ACTIVE', 'TRIAL'] },
+      status: 'ACTIVE',
       currentPeriodEnd: { lte: sevenDaysFromNow },
     },
     include: { plan: true, customer: true },
@@ -681,7 +865,7 @@ export async function checkRenewals(businessId: string): Promise<RenewalCheckRes
 
 /**
  * Calculate the end date of a billing period.
- * Supports both platform (monthly/yearly) and customer (weekly–yearly) cycles.
+ * Supports both platform (MONTHLY/YEARLY) and customer (weekly–yearly) cycles.
  */
 export function calculatePeriodEnd(
   startDate: Date,

@@ -1,12 +1,13 @@
 // ============================================================================
 // Quantix Technology — Role-Based Permission System
 // MANAGED PLATFORM: Customers CANNOT self-signup. Only Quantix creates businesses.
+// NO free trial — business created ONLY after payment verified.
 // ============================================================================
 
 import type { Role, Permission } from './types';
 
 // ============================================================================
-// PERMISSION MODULES — 14 modules for the managed platform
+// PERMISSION MODULES — 17 modules for the managed platform
 // ============================================================================
 
 // Platform Module — Quantix internal only
@@ -17,9 +18,11 @@ export const PLATFORM_PERMISSIONS = {
   MANAGE_SALES: 'platform:manage_sales',
   VIEW_ANALYTICS: 'platform:view_analytics',
   MAINTENANCE: 'platform:maintenance',
+  PRICING_OVERRIDE: 'platform:pricing_override',
 } as const;
 
 // Business Module — Super Admin creates/manages, Client Owner manages their own
+// CLIENT_OWNER CANNOT create businesses
 export const BUSINESS_PERMISSIONS = {
   READ: 'business:read',
   WRITE: 'business:write',
@@ -27,9 +30,10 @@ export const BUSINESS_PERMISSIONS = {
   SETTINGS: 'business:settings',
   BILLING: 'business:billing',
   TEAM_MANAGE: 'business:team_manage',
-  CREATE: 'business:create',       // Super Admin only
+  CREATE: 'business:create',       // Super Admin only — NOT CLIENT_OWNER
   CONFIGURE: 'business:configure', // Super Admin: branding, features
   SUSPEND: 'business:suspend',     // Super Admin only
+  ACTIVATE: 'business:activate',   // Super Admin only
 } as const;
 
 // Sales Module — Quantix Sales Team
@@ -42,6 +46,36 @@ export const SALES_PERMISSIONS = {
   VIEW_REPORTS: 'sales:view_reports',
   CONVERT_LEAD: 'sales:convert_lead',
   RENEWAL_TRACKING: 'sales:renewal_tracking',
+  SHARE_DEMO: 'sales:share_demo',
+} as const;
+
+// Lead Module — Quantix team only
+export const LEAD_PERMISSIONS = {
+  READ: 'lead:read',
+  WRITE: 'lead:write',
+  DELETE: 'lead:delete',
+  UPDATE_STAGE: 'lead:update_stage',
+  ASSIGN: 'lead:assign',
+  CONVERT: 'lead:convert',
+  VIEW_PIPELINE: 'lead:view_pipeline',
+} as const;
+
+// Demo Tenant Module — Quantix team only
+export const DEMO_TENANT_PERMISSIONS = {
+  READ: 'demo_tenant:read',
+  WRITE: 'demo_tenant:write',
+  ASSIGN: 'demo_tenant:assign',
+  RESET: 'demo_tenant:reset',
+  MANAGE: 'demo_tenant:manage',
+} as const;
+
+// Onboarding Module — Quantix team + Client Owner (own business)
+export const ONBOARDING_PERMISSIONS = {
+  READ: 'onboarding:read',
+  WRITE: 'onboarding:write',
+  UPDATE_STEP: 'onboarding:update_step',
+  COMPLETE: 'onboarding:complete',
+  MANAGE_STEPS: 'onboarding:manage_steps',
 } as const;
 
 // Store Module
@@ -164,6 +198,12 @@ export const ALL_PERMISSIONS: Permission[] = [
   ...Object.values(BUSINESS_PERMISSIONS),
   // Sales
   ...Object.values(SALES_PERMISSIONS),
+  // Lead
+  ...Object.values(LEAD_PERMISSIONS),
+  // Demo Tenant
+  ...Object.values(DEMO_TENANT_PERMISSIONS),
+  // Onboarding
+  ...Object.values(ONBOARDING_PERMISSIONS),
   // Store
   ...Object.values(STORE_PERMISSIONS),
   // Product
@@ -196,22 +236,34 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   // ─────────────────────────────────────────────────────────────────
   // QUANTIX_SUPER_ADMIN — Full platform access
   // Creates businesses, deploys, domain mapping, pricing overrides
+  // Manages leads, demo tenants, onboarding, and all operations
   // ─────────────────────────────────────────────────────────────────
   QUANTIX_SUPER_ADMIN: [...ALL_PERMISSIONS],
 
   // ─────────────────────────────────────────────────────────────────
   // QUANTIX_SALES_TEAM — Lead management, onboarding, follow-ups
+  // Can create businesses from verified leads, share demos
   // ─────────────────────────────────────────────────────────────────
   QUANTIX_SALES_TEAM: [
     // Platform
     PLATFORM_PERMISSIONS.READ,
-    // Business (limited — can view & create leads, track onboarding)
+    PLATFORM_PERMISSIONS.MANAGE_SALES,
+    PLATFORM_PERMISSIONS.VIEW_ANALYTICS,
+    // Business (limited — can view, create from leads, track onboarding)
     BUSINESS_PERMISSIONS.READ,
     BUSINESS_PERMISSIONS.WRITE,
     BUSINESS_PERMISSIONS.CREATE,
     BUSINESS_PERMISSIONS.CONFIGURE,
     // Sales
     ...Object.values(SALES_PERMISSIONS),
+    // Lead
+    ...Object.values(LEAD_PERMISSIONS),
+    // Demo Tenant
+    ...Object.values(DEMO_TENANT_PERMISSIONS),
+    // Onboarding
+    ONBOARDING_PERMISSIONS.READ,
+    ONBOARDING_PERMISSIONS.WRITE,
+    ONBOARDING_PERMISSIONS.UPDATE_STEP,
     // Store (read during onboarding)
     STORE_PERMISSIONS.READ,
     // Deployment (read only)
@@ -223,7 +275,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   // ─────────────────────────────────────────────────────────────────
   // CLIENT_OWNER — Business owner (client)
   // Manages products, orders, delivery, POS, staff, reports
-  // CANNOT: create business, deploy, change infra, domain mapping
+  // CANNOT: create businesses, deploy, change infra, domain mapping,
+  //         override pricing, manage leads, manage demo tenants
   // ─────────────────────────────────────────────────────────────────
   CLIENT_OWNER: [
     // Business (own business only — enforced by middleware)
@@ -232,6 +285,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     BUSINESS_PERMISSIONS.SETTINGS,
     BUSINESS_PERMISSIONS.BILLING,
     BUSINESS_PERMISSIONS.TEAM_MANAGE,
+    // NO business:create — only Quantix creates businesses
+    // NO business:suspend, business:activate — only Quantix manages status
+    // Onboarding (own business)
+    ONBOARDING_PERMISSIONS.READ,
+    ONBOARDING_PERMISSIONS.WRITE,
+    ONBOARDING_PERMISSIONS.UPDATE_STEP,
     // Store
     ...Object.values(STORE_PERMISSIONS),
     // Product
@@ -302,6 +361,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 
   // ─────────────────────────────────────────────────────────────────
   // CUSTOMER — Place orders, subscriptions, tracking, payments
+  // Self-registration is only for CUSTOMER role
   // ─────────────────────────────────────────────────────────────────
   CUSTOMER: [
     BUSINESS_PERMISSIONS.READ,
@@ -363,6 +423,22 @@ export function isPlatformRole(role: Role): boolean {
 }
 
 /**
+ * Check if a role can create businesses
+ * ONLY Quantix roles can create businesses — CLIENT_OWNER cannot
+ */
+export function canCreateBusiness(role: Role): boolean {
+  return hasPermission(role, BUSINESS_PERMISSIONS.CREATE);
+}
+
+/**
+ * Check if a role can override pricing
+ * ONLY QUANTIX_SUPER_ADMIN can override pricing
+ */
+export function canOverridePricing(role: Role): boolean {
+  return hasPermission(role, PLATFORM_PERMISSIONS.PRICING_OVERRIDE);
+}
+
+/**
  * Get permissions grouped by module for a given role
  */
 export function getPermissionsByModule(role: Role): Record<string, Permission[]> {
@@ -373,6 +449,9 @@ export function getPermissionsByModule(role: Role): Record<string, Permission[]>
     platform: Object.values(PLATFORM_PERMISSIONS),
     business: Object.values(BUSINESS_PERMISSIONS),
     sales: Object.values(SALES_PERMISSIONS),
+    lead: Object.values(LEAD_PERMISSIONS),
+    demo_tenant: Object.values(DEMO_TENANT_PERMISSIONS),
+    onboarding: Object.values(ONBOARDING_PERMISSIONS),
     store: Object.values(STORE_PERMISSIONS),
     product: Object.values(PRODUCT_PERMISSIONS),
     order: Object.values(ORDER_PERMISSIONS),

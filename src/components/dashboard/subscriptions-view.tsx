@@ -14,8 +14,8 @@ export function SubscriptionsView() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Status Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        {(['TRIAL', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELLED', 'EXPIRED', 'PAUSED'] as SubscriptionStatus[]).map(status => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {(['ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELLED', 'EXPIRED'] as SubscriptionStatus[]).map(status => (
           <Card key={status} className="transition-shadow duration-200">
             <CardContent className="p-3 text-center">
               <Badge className={`text-[9px] h-5 mb-1 ${subStatusColors[status]}`} variant="secondary">{status.replace(/_/g, ' ')}</Badge>
@@ -38,8 +38,8 @@ export function SubscriptionsView() {
               <p className="text-xs text-emerald-600">Custom Pricing</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-emerald-700">{clientSubscriptions.filter(s => s.status === 'TRIAL').length}</p>
-              <p className="text-xs text-emerald-600">In Trial</p>
+              <p className="text-2xl font-bold text-emerald-700">{clientSubscriptions.filter(s => s.status === 'ACTIVE').length}</p>
+              <p className="text-xs text-emerald-600">Active Subscriptions</p>
             </div>
           </div>
         </CardContent>
@@ -103,7 +103,7 @@ export function SubscriptionsView() {
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <Button size="sm" variant="outline" className="text-xs h-8"><Pause className="h-3 w-3 mr-1" />Pause</Button>
-                              <Button size="sm" variant="outline" className="text-xs h-8"><RefreshCw className="h-3 w-3 mr-1" />Extend Trial</Button>
+                              <Button size="sm" variant="outline" className="text-xs h-8"><RefreshCw className="h-3 w-3 mr-1" />Renew</Button>
                             </div>
                           </div>
                         </DialogContent>

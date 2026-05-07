@@ -1,6 +1,6 @@
 // ============================================================================
 // QUANTIX CORE — Notification System
-// Multi-channel notifications: Push, Email, WhatsApp, In-App, SMS
+// Multi-channel notifications: Push, Email, WhatsApp, In-App (NO SMS)
 // Template engine with {{variable}} interpolation
 // Order/Delivery/Subscription-specific notification helpers
 // ============================================================================
@@ -23,8 +23,7 @@ export type NotificationChannel =
   | 'PUSH'
   | 'EMAIL'
   | 'WHATSAPP'
-  | 'IN_APP'
-  | 'SMS';
+  | 'IN_APP';
 
 export interface SendNotificationParams {
   businessId: string;
@@ -549,10 +548,6 @@ async function deliverNotification(
 
     case 'WHATSAPP':
       // In production: call WhatsApp Business API with params.userId's phone
-      return { success: true };
-
-    case 'SMS':
-      // In production: call Twilio/MSG91 with params.userId's phone
       return { success: true };
 
     case 'IN_APP':

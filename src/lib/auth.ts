@@ -1,6 +1,12 @@
 // ============================================================================
 // Quantix Technology — Authentication (NextAuth v4)
 // MANAGED PLATFORM: Super Admin has no business context
+//
+// BUSINESS MODEL:
+// - NO self-signup for business roles (CLIENT_OWNER, STORE_MANAGER, etc.)
+// - ONLY CUSTOMER role can self-register
+// - Business roles are assigned by Quantix team only
+// - CLIENT_OWNER login created only after payment verified and business deployed
 // ============================================================================
 
 import type { NextAuthOptions } from 'next-auth';
@@ -9,6 +15,19 @@ import { db } from './db';
 import { verifyPassword } from './password-utils';
 import type { Role, BusinessType, Permission } from './types';
 import { getPermissionsForRole, isPlatformRole } from './permissions';
+
+/** Roles that can self-register — ONLY CUSTOMER */
+const SELF_REGISTER_ROLES: Role[] = ['CUSTOMER'];
+
+/**
+ * Check if a role is allowed to self-register.
+ * Only CUSTOMER role can self-register.
+ * Business roles (CLIENT_OWNER, STORE_MANAGER, DELIVERY_STAFF) are
+ * created by the Quantix team only after payment verification.
+ */
+export function canSelfRegister(role: Role): boolean {
+  return SELF_REGISTER_ROLES.includes(role);
+}
 
 // ============================================================================
 // NEXTAUTH CONFIGURATION
@@ -39,6 +58,7 @@ export const authOptions: NextAuthOptions = {
                     name: true,
                     slug: true,
                     businessType: true,
+                    status: true,
                   },
                 },
               },
@@ -88,6 +108,14 @@ export const authOptions: NextAuthOptions = {
           businessType = primaryBU.business.businessType as BusinessType;
           businessSlug = primaryBU.business.slug;
           storeId = primaryBU.storeId || undefined;
+
+          // Business must be in a valid status for client access
+          const validBusinessStatuses = ['ONBOARDING', 'ACTIVE'];
+          if (!validBusinessStatuses.includes(primaryBU.business.status)) {
+            throw new Error(
+              'Your business account is not active. Please contact Quantix support.'
+            );
+          }
         }
 
         const isPlatformAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'QUANTIX_SALES_TEAM';

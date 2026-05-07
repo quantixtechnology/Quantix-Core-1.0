@@ -6,7 +6,8 @@
 // ARCHITECTURE PRINCIPLE:
 // This is a MANAGED platform. Customers CANNOT self-signup or create businesses.
 // ONLY Quantix Super Admin creates, configures, and deploys businesses.
-// Clients receive login access AFTER deployment.
+// Clients receive login access AFTER payment verification and deployment.
+// NO free trial, NO self-onboarding, NO public business creation.
 // ============================================================================
 
 // ============================================================================
@@ -27,8 +28,8 @@ export type BusinessType =
   | 'FURNITURE'
   | 'DIRECTORY';
 
-/** Business lifecycle status — managed by Quantix */
-export type BusinessStatus = 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
+/** Business lifecycle status — managed by Quantix, NO TRIAL */
+export type BusinessStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
 
 /** Platform roles for the MANAGED model */
 export type Role =
@@ -66,7 +67,7 @@ export type OrderStatus =
 
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
 
-export type PaymentMethod = 'CASH' | 'CARD' | 'UPI' | 'NETBANKING' | 'WALLET' | 'COD' | 'CREDIT';
+export type PaymentMethod = 'CASH' | 'CARD' | 'UPI' | 'NETBANKING' | 'WALLET' | 'COD' | 'CREDIT' | 'MIXED';
 
 export type DeliveryStatus = 'ASSIGNING' | 'ASSIGNED' | 'PICKED_UP' | 'ON_THE_WAY' | 'ARRIVED' | 'DELIVERED' | 'FAILED' | 'CANCELLED';
 
@@ -76,11 +77,14 @@ export type SubscriptionServiceType = 'CAR_WASH' | 'HOME_SERVICE' | 'LAUNDRY' | 
 /** Subscription billing cycles for customer-facing plans */
 export type SubscriptionBillingCycle = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
 
-/** Customer subscription status */
-export type CustomerSubscriptionStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'TRIAL';
+/** Customer subscription status — NO TRIAL */
+export type CustomerSubscriptionStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED';
 
-/** Platform (business) subscription status — managed by Quantix */
-export type SubscriptionStatus = 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED' | 'EXPIRED' | 'PAUSED';
+/** Platform (business) subscription status — NO TRIAL, managed by Quantix */
+export type SubscriptionStatus = 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED' | 'EXPIRED';
+
+/** Platform plan billing cycle — ONLY MONTHLY and YEARLY */
+export type PlanBillingCycle = 'MONTHLY' | 'YEARLY';
 
 export type ProductType = 'PHYSICAL' | 'DIGITAL' | 'SERVICE' | 'SUBSCRIPTION';
 export type ProductStatus = 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
@@ -89,13 +93,14 @@ export type TaxType = 'GST_0' | 'GST_5' | 'GST_12' | 'GST_18' | 'GST_28' | 'CUST
 export type PromoType = 'PERCENTAGE' | 'FLAT' | 'FREE_DELIVERY' | 'BOGO';
 export type InvoiceType = 'TAX_INVOICE' | 'CREDIT_NOTE' | 'DEBIT_NOTE' | 'PROFORMA' | 'RECEIPT';
 export type NotificationType = 'ORDER_STATUS' | 'DELIVERY_UPDATE' | 'PROMOTION' | 'SUBSCRIPTION' | 'PAYMENT' | 'SYSTEM';
+
+/** Notification channels — NO SMS, only Push, WhatsApp, Email, In-App */
+export type NotificationChannel = 'PUSH' | 'EMAIL' | 'WHATSAPP' | 'IN_APP';
+
 export type POSSessionStatus = 'OPEN' | 'CLOSED' | 'SUSPENDED';
 export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
 export type ZoneType = 'CIRCLE' | 'POLYGON' | 'PINCODE';
 export type AuthProvider = 'EMAIL_OTP' | 'WHATSAPP_OTP' | 'PUSH_NOTIFICATION' | 'GOOGLE' | 'PASSWORD';
-
-/** Platform plan tiers */
-export type PlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM';
 
 /** Domain mapping statuses — managed by Quantix */
 export type DomainStatus = 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR';
@@ -117,16 +122,27 @@ export type LeadSource =
   | 'PHONE_CALL'
   | 'OTHER';
 
-/** Lead statuses for the sales pipeline */
-export type LeadStatus =
-  | 'NEW'
-  | 'CONTACTED'
-  | 'QUALIFIED'
-  | 'PROPOSAL_SENT'
+/** Lead lifecycle stages — new managed sales pipeline */
+export type LeadStage =
+  | 'LEAD'
+  | 'DEMO_SHARED'
   | 'NEGOTIATION'
-  | 'WON'
+  | 'PAYMENT_PENDING'
+  | 'PAYMENT_RECEIVED'
+  | 'ONBOARDING'
+  | 'DEPLOYMENT'
+  | 'ACTIVE'
   | 'LOST'
-  | 'FOLLOW_UP';
+  | 'CHURNED';
+
+/** Demo tenant status for prospect demos */
+export type DemoTenantStatus = 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE' | 'DISABLED';
+
+/** Onboarding step status for business setup tracking */
+export type OnboardingStepStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
+
+/** Business module status — NO TRIAL */
+export type ModuleStatus = 'DISABLED' | 'ENABLED';
 
 // ============================================================================
 // API RESPONSE TYPES
@@ -185,11 +201,12 @@ export interface CreateBusinessRequest {
   supportPhone?: string;
   salesRepId?: string;
   planId?: string;
-  billingCycle?: 'monthly' | 'yearly';
+  billingCycle?: PlanBillingCycle;
   customPrice?: number;
   discountPercentage?: number;
   manualPriceOverride?: boolean;
   overrideReason?: string;
+  leadId?: string;
 }
 
 export interface UpdateBusinessRequest extends Partial<CreateBusinessRequest> {
@@ -296,7 +313,6 @@ export interface CreateSubscriptionPlanRequest {
   price: number;
   originalPrice?: number;
   setupFee?: number;
-  trialDays?: number;
   totalCredits?: number;
   creditLabel?: string;
   features?: string[];
@@ -350,13 +366,11 @@ export interface DeploymentRequest {
 
 export interface BusinessSubscriptionRequest {
   planId: string;
-  billingCycle?: 'monthly' | 'yearly';
+  billingCycle?: PlanBillingCycle;
   customPrice?: number;
   discountPercentage?: number;
   manualPriceOverride?: boolean;
   overrideReason?: string;
-  trialStart?: string;
-  trialEnd?: string;
   notes?: string;
 }
 
@@ -415,13 +429,23 @@ export interface CustomerFilter {
 }
 
 export interface LeadFilter {
-  status?: LeadStatus | LeadStatus[];
+  stage?: LeadStage | LeadStage[];
   source?: LeadSource | LeadSource[];
   businessType?: BusinessType | BusinessType[];
   salesRepId?: string;
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+}
+
+export interface BusinessListFilters {
+  businessType?: BusinessType | BusinessType[];
+  status?: BusinessStatus | BusinessStatus[];
+  salesRepId?: string;
+  isOnline?: boolean;
+  search?: string;
+  page?: number;
+  limit?: number;
 }
 
 // ============================================================================
@@ -540,7 +564,7 @@ export interface LeadListItem {
   contactPhone: string;
   businessType: BusinessType;
   source: LeadSource;
-  status: LeadStatus;
+  stage: LeadStage;
   estimatedValue: number | null;
   salesRepId: string | null;
   salesRepName?: string | null;
@@ -652,13 +676,26 @@ export interface DashboardStats {
 export interface PlatformDashboardStats extends DashboardStats {
   totalBusinesses: number;
   activeBusinesses: number;
-  trialBusinesses: number;
   onboardingBusinesses: number;
   totalRevenue: number;
   mrr: number; // Monthly recurring revenue
   activeLeads: number;
-  leadsWonThisMonth: number;
+  leadsConvertedThisMonth: number;
   churnedBusinesses: number;
+  demoTenantsInUse: number;
+}
+
+export interface BusinessStats {
+  totalOrders: number;
+  totalRevenue: number;
+  totalCustomers: number;
+  todayOrders: number;
+  todayRevenue: number;
+  pendingOrders: number;
+  activeStores: number;
+  totalProducts: number;
+  totalDeliveryPartners: number;
+  avgOrderValue: number;
 }
 
 export interface RevenueChart {
@@ -697,4 +734,42 @@ export interface DomainInfo {
   sslStatus: string;
   isPrimary: boolean;
   configuredAt: string | null;
+}
+
+// ============================================================================
+// ONBOARDING TYPES
+// ============================================================================
+
+export interface OnboardingStepInfo {
+  id: string;
+  stepKey: string;
+  stepName: string;
+  status: OnboardingStepStatus;
+  completedAt: Date | null;
+  notes: string | null;
+}
+
+export interface OnboardingProgress {
+  businessId: string;
+  totalSteps: number;
+  completedSteps: number;
+  currentStep: string | null;
+  progress: number; // 0-100 percentage
+  steps: OnboardingStepInfo[];
+}
+
+// ============================================================================
+// DEMO TENANT TYPES
+// ============================================================================
+
+export interface DemoTenantInfo {
+  id: string;
+  name: string;
+  slug: string;
+  businessType: BusinessType;
+  status: DemoTenantStatus;
+  leadId: string | null;
+  leadName: string | null;
+  accessUrl: string;
+  expiresAt: Date | null;
 }

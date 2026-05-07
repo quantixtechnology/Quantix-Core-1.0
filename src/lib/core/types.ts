@@ -5,6 +5,14 @@
 // ALL enum types match the Prisma schema at prisma/schema.prisma exactly.
 // This file is the SINGLE SOURCE OF TRUTH for all core platform types.
 // Server-side only — do NOT import React components from this file.
+//
+// BUSINESS MODEL:
+// - NO free trial, NO self-signup, NO self-onboarding
+// - ONLY 2 plans: ₹4,999/mo (MONTHLY) and ₹49,999/yr (YEARLY)
+// - Super Admin can override pricing per customer
+// - Demo credentials given first; tenant created ONLY after payment verified
+// - New Lead lifecycle: LEAD → DEMO_SHARED → NEGOTIATION → PAYMENT_PENDING
+//   → PAYMENT_RECEIVED → ONBOARDING → DEPLOYMENT → ACTIVE
 // ============================================================================
 
 // ============================================================================
@@ -25,8 +33,8 @@ export type BusinessType =
   | 'FURNITURE'
   | 'DIRECTORY';
 
-/** Business lifecycle status — managed by Quantix */
-export type BusinessStatus = 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
+/** Business lifecycle status — NO TRIAL, managed by Quantix */
+export type BusinessStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
 
 /** Platform roles for the MANAGED model */
 export type Role =
@@ -99,8 +107,8 @@ export type DeliveryStatus =
 /** Delivery zone geometry types */
 export type ZoneType = 'CIRCLE' | 'POLYGON' | 'PINCODE';
 
-/** Business module status */
-export type ModuleStatus = 'DISABLED' | 'ENABLED' | 'TRIAL';
+/** Business module status — NO TRIAL */
+export type ModuleStatus = 'DISABLED' | 'ENABLED';
 
 /** Store operational status */
 export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
@@ -108,18 +116,16 @@ export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
 /** POS session status */
 export type POSSessionStatus = 'OPEN' | 'CLOSED' | 'SUSPENDED';
 
-/** Platform plan tiers */
-export type PlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE' | 'CUSTOM';
+/** Platform plan billing cycle — ONLY MONTHLY and YEARLY */
+export type PlanBillingCycle = 'MONTHLY' | 'YEARLY';
 
-/** Business (platform) subscription status — managed by Quantix */
+/** Business (platform) subscription status — NO TRIAL, managed by Quantix */
 export type SubscriptionStatus =
-  | 'TRIAL'
   | 'ACTIVE'
   | 'PAST_DUE'
   | 'SUSPENDED'
   | 'CANCELLED'
-  | 'EXPIRED'
-  | 'PAUSED';
+  | 'EXPIRED';
 
 /** Customer subscription service types */
 export type SubscriptionServiceType =
@@ -137,13 +143,12 @@ export type SubscriptionBillingCycle =
   | 'HALF_YEARLY'
   | 'YEARLY';
 
-/** Customer subscription status */
+/** Customer subscription status — NO TRIAL */
 export type CustomerSubscriptionStatus =
   | 'ACTIVE'
   | 'PAUSED'
   | 'CANCELLED'
-  | 'EXPIRED'
-  | 'TRIAL';
+  | 'EXPIRED';
 
 /** Product types */
 export type ProductType = 'PHYSICAL' | 'DIGITAL' | 'SERVICE' | 'SUBSCRIPTION';
@@ -172,8 +177,8 @@ export type NotificationType =
   | 'PAYMENT'
   | 'SYSTEM';
 
-/** Notification channels */
-export type NotificationChannel = 'PUSH' | 'EMAIL' | 'WHATSAPP' | 'IN_APP' | 'SMS';
+/** Notification channels — NO SMS, only Push, WhatsApp, Email, In-App */
+export type NotificationChannel = 'PUSH' | 'EMAIL' | 'WHATSAPP' | 'IN_APP';
 
 /** Auth provider types */
 export type AuthProvider = 'EMAIL_OTP' | 'WHATSAPP_OTP' | 'PUSH_NOTIFICATION' | 'GOOGLE' | 'PASSWORD';
@@ -198,16 +203,24 @@ export type LeadSource =
   | 'PHONE_CALL'
   | 'OTHER';
 
-/** Lead statuses for the sales pipeline */
-export type LeadStatus =
-  | 'NEW'
-  | 'CONTACTED'
-  | 'QUALIFIED'
-  | 'PROPOSAL_SENT'
+/** Lead lifecycle stages — new managed sales pipeline */
+export type LeadStage =
+  | 'LEAD'
+  | 'DEMO_SHARED'
   | 'NEGOTIATION'
-  | 'WON'
+  | 'PAYMENT_PENDING'
+  | 'PAYMENT_RECEIVED'
+  | 'ONBOARDING'
+  | 'DEPLOYMENT'
+  | 'ACTIVE'
   | 'LOST'
-  | 'FOLLOW_UP';
+  | 'CHURNED';
+
+/** Demo tenant status for prospect demos */
+export type DemoTenantStatus = 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE' | 'DISABLED';
+
+/** Onboarding step status for business setup tracking */
+export type OnboardingStepStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED';
 
 // ============================================================================
 // SECTION 2: API RESPONSE TYPES
@@ -269,11 +282,12 @@ export interface CreateBusinessRequest {
   supportPhone?: string;
   salesRepId?: string;
   planId?: string;
-  billingCycle?: 'monthly' | 'yearly';
+  billingCycle?: PlanBillingCycle;
   customPrice?: number;
   discountPercentage?: number;
   manualPriceOverride?: boolean;
   overrideReason?: string;
+  leadId?: string;
 }
 
 export interface UpdateBusinessRequest extends Partial<CreateBusinessRequest> {
@@ -335,13 +349,11 @@ export interface CreateOrderRequest {
 
 export interface BusinessSubscriptionRequest {
   planId: string;
-  billingCycle?: 'monthly' | 'yearly';
+  billingCycle?: PlanBillingCycle;
   customPrice?: number;
   discountPercentage?: number;
   manualPriceOverride?: boolean;
   overrideReason?: string;
-  trialStart?: string;
-  trialEnd?: string;
   notes?: string;
 }
 
@@ -391,7 +403,7 @@ export interface CustomerFilter {
 }
 
 export interface LeadFilter {
-  status?: LeadStatus | LeadStatus[];
+  stage?: LeadStage | LeadStage[];
   source?: LeadSource | LeadSource[];
   businessType?: BusinessType | BusinessType[];
   salesRepId?: string;
@@ -411,6 +423,16 @@ export interface ProductFilter {
   minPrice?: number;
   maxPrice?: number;
   tags?: string[];
+}
+
+export interface BusinessListFilters {
+  businessType?: BusinessType | BusinessType[];
+  status?: BusinessStatus | BusinessStatus[];
+  salesRepId?: string;
+  isOnline?: boolean;
+  search?: string;
+  page?: number;
+  limit?: number;
 }
 
 // ============================================================================
@@ -556,13 +578,26 @@ export interface DashboardStats {
 export interface PlatformDashboardStats extends DashboardStats {
   totalBusinesses: number;
   activeBusinesses: number;
-  trialBusinesses: number;
   onboardingBusinesses: number;
   totalRevenue: number;
   mrr: number; // Monthly recurring revenue
   activeLeads: number;
-  leadsWonThisMonth: number;
+  leadsConvertedThisMonth: number;
   churnedBusinesses: number;
+  demoTenantsInUse: number;
+}
+
+export interface BusinessStats {
+  totalOrders: number;
+  totalRevenue: number;
+  totalCustomers: number;
+  todayOrders: number;
+  todayRevenue: number;
+  pendingOrders: number;
+  activeStores: number;
+  totalProducts: number;
+  totalDeliveryPartners: number;
+  avgOrderValue: number;
 }
 
 export interface RevenueChart {
@@ -717,7 +752,7 @@ export interface LeadListItem {
   contactPhone: string;
   businessType: BusinessType;
   source: LeadSource;
-  status: LeadStatus;
+  stage: LeadStage;
   estimatedValue: number | null;
   salesRepId: string | null;
   salesRepName?: string | null;
@@ -830,4 +865,52 @@ export interface CreateOrderParams {
   notes?: string;
   metadata?: string;
   items: OrderItemInput[];
+}
+
+// ============================================================================
+// SECTION 16: ONBOARDING TYPES
+// ============================================================================
+
+export interface OnboardingStepInfo {
+  id: string;
+  stepKey: string;
+  stepName: string;
+  status: OnboardingStepStatus;
+  completedAt: Date | null;
+  notes: string | null;
+}
+
+export interface OnboardingProgress {
+  businessId: string;
+  totalSteps: number;
+  completedSteps: number;
+  currentStep: string | null;
+  progress: number; // 0-100 percentage
+  steps: OnboardingStepInfo[];
+}
+
+// ============================================================================
+// SECTION 17: DEMO TENANT TYPES
+// ============================================================================
+
+export interface DemoTenantInfo {
+  id: string;
+  name: string;
+  slug: string;
+  businessType: BusinessType;
+  status: DemoTenantStatus;
+  leadId: string | null;
+  leadName: string | null;
+  accessUrl: string;
+  expiresAt: Date | null;
+}
+
+// ============================================================================
+// SECTION 18: BUSINESS TYPE MODULE DEFAULTS
+// ============================================================================
+
+export interface BusinessTypeModuleDefaults {
+  moduleKey: string;
+  moduleName: string;
+  status: ModuleStatus;
 }

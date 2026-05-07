@@ -23,7 +23,7 @@ export async function PUT(
     }
 
     // Validate status value
-    const validStatuses: BusinessStatus[] = ['ONBOARDING', 'TRIAL', 'ACTIVE', 'SUSPENDED', 'CHURNED'];
+    const validStatuses: BusinessStatus[] = ['ONBOARDING', 'ACTIVE', 'SUSPENDED', 'CHURNED'];
     if (!validStatuses.includes(body.status)) {
       return NextResponse.json(
         { success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },

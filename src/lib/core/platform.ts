@@ -3,10 +3,15 @@
 // "Run Your Business Smarter" — www.quantixtechnology.in
 //
 // Server-side only — do NOT import React components from this file.
+//
+// BUSINESS MODEL:
+// - ONLY 2 plans: ₹4,999/mo (MONTHLY) and ₹49,999/yr (YEARLY)
+// - Super Admin can override pricing per customer
+// - NO free trial, NO self-signup
 // ============================================================================
 
 import { db } from '@/lib/db';
-import type { BusinessType, ModuleKey, ModuleConfig, ModuleStatus } from './types';
+import type { BusinessType, ModuleKey, ModuleConfig, ModuleStatus, PlanBillingCycle } from './types';
 
 // ============================================================================
 // MODULE REGISTRY — All supported business modules
@@ -271,6 +276,102 @@ export const BUSINESS_TYPE_DEFAULT_MODULES: Record<BusinessType, ModuleKey[]> = 
 };
 
 // ============================================================================
+// PLATFORM PRICING — Only 2 fixed plans
+// ============================================================================
+
+/** Fixed platform plan definitions — only 2 billing cycles */
+export const PLATFORM_PLANS = {
+  MONTHLY: {
+    billingCycle: 'MONTHLY' as PlanBillingCycle,
+    price: 4999,
+    name: 'Quantix Monthly',
+    description: 'Monthly subscription — ₹4,999/month',
+    features: [
+      'Up to 5 Stores',
+      'Up to 5,000 Products',
+      'Up to 10,000 Orders/month',
+      'Up to 50 Delivery Partners',
+      'Up to 50 Staff',
+      'Full POS Suite',
+      'Delivery Management',
+      'Subscription Plans',
+      'Custom Domain',
+      'White Label Branding',
+      'Advanced Reports',
+      'API Access',
+      'Priority Support',
+    ],
+  },
+  YEARLY: {
+    billingCycle: 'YEARLY' as PlanBillingCycle,
+    price: 49999,
+    name: 'Quantix Yearly',
+    description: 'Annual subscription — ₹49,999/year (Save ₹9,989!)',
+    features: [
+      'Up to 5 Stores',
+      'Up to 5,000 Products',
+      'Up to 10,000 Orders/month',
+      'Up to 50 Delivery Partners',
+      'Up to 50 Staff',
+      'Full POS Suite',
+      'Delivery Management',
+      'Subscription Plans',
+      'Custom Domain',
+      'White Label Branding',
+      'Advanced Reports',
+      'API Access',
+      'Priority Support',
+      '2 Months Free',
+    ],
+  },
+} as const;
+
+// ============================================================================
+// SEED FUNCTION — Create the 2 fixed platform plans
+// ============================================================================
+
+/**
+ * Seed the 2 fixed platform plans into the database.
+ * Should be called during platform initialization.
+ * Safe to call multiple times — uses upsert.
+ */
+export async function seedPlatformPlans(platformId: string): Promise<void> {
+  for (const [key, plan] of Object.entries(PLATFORM_PLANS)) {
+    await db.platformPlan.upsert({
+      where: { billingCycle: plan.billingCycle },
+      update: {
+        price: plan.price,
+        name: plan.name,
+        description: plan.description,
+        features: JSON.stringify(plan.features),
+      },
+      create: {
+        platformId,
+        billingCycle: plan.billingCycle,
+        price: plan.price,
+        name: plan.name,
+        description: plan.description,
+        features: JSON.stringify(plan.features),
+        // Default limits — same for both plans
+        maxStores: 5,
+        maxProducts: 5000,
+        maxOrders: 10000,
+        maxDeliveryPartners: 50,
+        maxStaff: 50,
+        hasPOS: true,
+        hasDelivery: true,
+        hasSubscription: true,
+        hasCustomDomain: true,
+        hasWhiteLabel: true,
+        hasAdvancedReports: true,
+        hasAPIAccess: true,
+        isActive: true,
+      },
+    });
+  }
+}
+
+// ============================================================================
 // PLATFORM CONFIG — Read/Write platform-level key-value config
 // ============================================================================
 
@@ -341,7 +442,7 @@ export async function getBusinessModules(businessId: string): Promise<
 
 /**
  * Check if a specific module is enabled for a business.
- * A module is considered active if its status is ENABLED or TRIAL.
+ * A module is considered active only if its status is ENABLED (NO TRIAL).
  */
 export async function isModuleEnabled(businessId: string, moduleKey: ModuleKey): Promise<boolean> {
   const moduleRecord = await db.businessModule.findUnique({
@@ -352,7 +453,7 @@ export async function isModuleEnabled(businessId: string, moduleKey: ModuleKey):
   });
 
   if (!moduleRecord) return false;
-  return moduleRecord.status === 'ENABLED' || moduleRecord.status === 'TRIAL';
+  return moduleRecord.status === 'ENABLED';
 }
 
 /**
@@ -415,7 +516,7 @@ export async function disableModule(businessId: string, moduleKey: ModuleKey): P
 
 /**
  * Enable all default modules for a business based on its type.
- * Called during business onboarding.
+ * Called during business onboarding after payment verification.
  */
 export async function enableDefaultModules(businessId: string, businessType: BusinessType): Promise<void> {
   const defaultModules = BUSINESS_TYPE_DEFAULT_MODULES[businessType] || [];
@@ -423,4 +524,37 @@ export async function enableDefaultModules(businessId: string, businessType: Bus
   for (const moduleKey of defaultModules) {
     await enableModule(businessId, moduleKey);
   }
+}
+
+// ============================================================================
+// PLAN HELPERS
+// ============================================================================
+
+/**
+ * Get a platform plan by billing cycle.
+ * Returns the plan record from the database.
+ */
+export async function getPlatformPlan(billingCycle: PlanBillingCycle) {
+  return db.platformPlan.findUnique({
+    where: { billingCycle },
+  });
+}
+
+/**
+ * Get the effective price for a plan, considering custom overrides.
+ * If a customPrice is provided, it takes precedence.
+ */
+export function getEffectivePrice(planPrice: number, customPrice?: number | null): number {
+  if (customPrice !== null && customPrice !== undefined && customPrice > 0) {
+    return customPrice;
+  }
+  return planPrice;
+}
+
+/**
+ * Calculate discount percentage from original price and custom price.
+ */
+export function calculateDiscountPercentage(originalPrice: number, customPrice: number): number {
+  if (originalPrice <= 0) return 0;
+  return Math.round(((originalPrice - customPrice) / originalPrice) * 100 * 100) / 100;
 }

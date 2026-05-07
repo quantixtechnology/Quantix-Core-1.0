@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const plans = await db.platformPlan.findMany({
       where: { isActive: true },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { price: 'asc' },
     });
 
     // Parse JSON features field

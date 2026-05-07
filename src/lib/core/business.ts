@@ -1,6 +1,7 @@
 // ============================================================================
 // QUANTIX CORE PLATFORM — Business Management Library
 // Managed by Quantix Super Admin ONLY. Businesses cannot self-signup.
+// NO free trial — business created ONLY after payment verified.
 // ============================================================================
 
 import { db } from '@/lib/db';
@@ -8,12 +9,14 @@ import type {
   BusinessListFilters,
   BusinessStats,
   BusinessTypeModuleDefaults,
-} from '@/lib/core/types';
-import type {
   CreateBusinessRequest,
   UpdateBusinessRequest,
   BusinessType,
   BusinessStatus,
+  OnboardingStepStatus,
+  OnboardingStepInfo,
+  OnboardingProgress,
+  LeadStage,
 } from '@/lib/core/types';
 
 // ============================================================================
@@ -81,13 +84,31 @@ const BUSINESS_TYPE_MODULES: Record<string, BusinessTypeModuleDefaults[]> = {
 };
 
 // ============================================================================
-// CREATE BUSINESS
+// DEFAULT ONBOARDING STEPS
+// ============================================================================
+
+const DEFAULT_ONBOARDING_STEPS = [
+  { stepKey: 'business_setup', stepName: 'Business Setup', order: 1 },
+  { stepKey: 'branding', stepName: 'Branding & Theme', order: 2 },
+  { stepKey: 'store_config', stepName: 'Store Configuration', order: 3 },
+  { stepKey: 'product_catalog', stepName: 'Product Catalog Setup', order: 4 },
+  { stepKey: 'delivery_zones', stepName: 'Delivery Zones', order: 5 },
+  { stepKey: 'payment_setup', stepName: 'Payment Gateway Setup', order: 6 },
+  { stepKey: 'staff_onboarding', stepName: 'Staff Onboarding', order: 7 },
+  { stepKey: 'domain_mapping', stepName: 'Domain & SSL', order: 8 },
+  { stepKey: 'go_live', stepName: 'Go Live Review', order: 9 },
+] as const;
+
+// ============================================================================
+// CREATE BUSINESS — From verified lead only
 // ============================================================================
 
 /**
- * Create a new business (Quantix Super Admin only).
- * Auto-creates BusinessSubscription with trial, enables default modules
- * for business type, and creates a main store.
+ * Create a new business from a verified lead.
+ * Called ONLY by Quantix Super Admin after payment has been verified.
+ * The lead must be at stage PAYMENT_RECEIVED or later.
+ * Auto-creates BusinessSubscription as ACTIVE, enables default modules,
+ * creates onboarding steps, and creates a main store.
  */
 export async function createBusiness(data: CreateBusinessRequest) {
   // 1. Check slug uniqueness
@@ -96,16 +117,31 @@ export async function createBusiness(data: CreateBusinessRequest) {
     throw new Error(`Business with slug "${data.slug}" already exists`);
   }
 
-  // 2. Find or use provided plan
+  // 2. Validate lead if provided — lead must be at PAYMENT_RECEIVED or later
+  if (data.leadId) {
+    const lead = await db.lead.findUnique({ where: { id: data.leadId } });
+    if (!lead) {
+      throw new Error(`Lead "${data.leadId}" not found`);
+    }
+    const validStages: LeadStage[] = ['PAYMENT_RECEIVED', 'ONBOARDING', 'DEPLOYMENT'];
+    if (!validStages.includes(lead.stage as LeadStage)) {
+      throw new Error(
+        `Lead must be at PAYMENT_RECEIVED stage or later to create a business. Current stage: ${lead.stage}`
+      );
+    }
+  }
+
+  // 3. Find or use provided plan
   let planId = data.planId;
   if (!planId) {
-    const starterPlan = await db.platformPlan.findFirst({
-      where: { tier: 'STARTER', isActive: true },
+    // Default to MONTHLY plan
+    const monthlyPlan = await db.platformPlan.findUnique({
+      where: { billingCycle: 'MONTHLY' },
     });
-    if (!starterPlan) {
-      throw new Error('No STARTER plan found. Please create a platform plan first.');
+    if (!monthlyPlan) {
+      throw new Error('No MONTHLY plan found. Please seed platform plans first.');
     }
-    planId = starterPlan.id;
+    planId = monthlyPlan.id;
   }
 
   const plan = await db.platformPlan.findUnique({ where: { id: planId } });
@@ -113,25 +149,24 @@ export async function createBusiness(data: CreateBusinessRequest) {
     throw new Error(`Platform plan "${planId}" not found`);
   }
 
-  // 3. Determine pricing
-  const billingCycle = data.billingCycle || 'monthly';
-  const planPrice = billingCycle === 'yearly' ? plan.yearlyPrice : plan.monthlyPrice;
+  // 4. Determine pricing — plan price is the base, custom price overrides (Super Admin)
+  const billingCycle = data.billingCycle || 'MONTHLY';
+  const planPrice = plan.price;
+  const effectivePrice = data.customPrice ?? planPrice;
+  const hasOverride = data.customPrice !== undefined && data.customPrice !== planPrice;
   const now = new Date();
-  const trialDays = 14; // Default 14-day trial
-  const trialStart = now;
-  const trialEnd = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
   const periodStart = now;
-  const periodEnd = new Date(now.getTime() + (billingCycle === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000);
+  const periodEnd = new Date(now.getTime() + (billingCycle === 'YEARLY' ? 365 : 30) * 24 * 60 * 60 * 1000);
 
-  // 4. Create business + subscription + modules + main store in a transaction
+  // 5. Create business + subscription + modules + onboarding steps + main store in a transaction
   const result = await db.$transaction(async (tx) => {
-    // Create business
+    // Create business — status is ONBOARDING (will be set to ACTIVE after deployment)
     const business = await tx.business.create({
       data: {
         name: data.name,
         slug: data.slug,
         businessType: data.businessType as BusinessType,
-        status: 'TRIAL',
+        status: 'ONBOARDING',
         description: data.description,
         logo: data.logo,
         primaryColor: data.primaryColor || '#10B981',
@@ -150,32 +185,33 @@ export async function createBusiness(data: CreateBusinessRequest) {
         supportEmail: data.supportEmail,
         supportPhone: data.supportPhone,
         salesRepId: data.salesRepId,
-        trialStartsAt: trialStart,
-        trialEndsAt: trialEnd,
         settings: '{}',
         features: '{}',
         notificationConfig: '{}',
       },
     });
 
-    // Create business subscription with trial
+    // Create business subscription — starts as ACTIVE (NO TRIAL)
     await tx.businessSubscription.create({
       data: {
         businessId: business.id,
         planId: planId,
-        status: 'TRIAL',
+        status: 'ACTIVE',
         planPrice: planPrice,
         customPrice: data.customPrice,
-        discountPercentage: data.discountPercentage,
-        manualPriceOverride: data.manualPriceOverride || false,
+        discountPercentage: hasOverride && planPrice > 0
+          ? Math.round(((planPrice - (data.customPrice || 0)) / planPrice) * 100 * 100) / 100
+          : null,
+        manualPriceOverride: hasOverride,
         overrideReason: data.overrideReason,
-        billingCycle: billingCycle,
+        billingCycle: billingCycle === 'YEARLY' ? 'yearly' : 'monthly',
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
         nextBillingDate: periodEnd,
-        trialStart: trialStart,
-        trialEnd: trialEnd,
+        nextPaymentAmount: effectivePrice,
         autoRenew: true,
+        lastPaymentDate: now,
+        lastPaymentAmount: effectivePrice,
       },
     });
 
@@ -187,11 +223,22 @@ export async function createBusiness(data: CreateBusinessRequest) {
           businessId: business.id,
           moduleKey: m.moduleKey,
           moduleName: m.moduleName,
-          status: m.status === 'ENABLED' ? 'ENABLED' : 'TRIAL',
+          status: 'ENABLED',
           enabledAt: new Date(),
         })),
       });
     }
+
+    // Create onboarding steps
+    await tx.onboardingStep.createMany({
+      data: DEFAULT_ONBOARDING_STEPS.map((step) => ({
+        businessId: business.id,
+        stepKey: step.stepKey,
+        stepName: step.stepName,
+        status: 'PENDING',
+        order: step.order,
+      })),
+    });
 
     // Create main store
     const storeSlug = data.slug;
@@ -227,6 +274,35 @@ export async function createBusiness(data: CreateBusinessRequest) {
         },
       });
     }
+
+    // Update lead if provided
+    if (data.leadId) {
+      await tx.lead.update({
+        where: { id: data.leadId },
+        data: {
+          stage: 'ONBOARDING',
+          convertedBusinessId: business.id,
+        },
+      });
+    }
+
+    // Log activity
+    await tx.activityLog.create({
+      data: {
+        businessId: business.id,
+        action: 'business.created',
+        entity: 'Business',
+        entityId: business.id,
+        details: JSON.stringify({
+          name: data.name,
+          businessType: data.businessType,
+          billingCycle,
+          planPrice,
+          customPrice: data.customPrice,
+          leadId: data.leadId,
+        }),
+      },
+    });
 
     return business;
   });
@@ -310,7 +386,7 @@ export async function updateBusiness(
 // ============================================================================
 
 /**
- * Get business with subscription, modules, and store count.
+ * Get business with subscription, modules, onboarding steps, and store count.
  */
 export async function getBusiness(businessId: string) {
   const business = await db.business.findUnique({
@@ -321,6 +397,9 @@ export async function getBusiness(businessId: string) {
       },
       modules: true,
       domain: true,
+      onboardingSteps: {
+        orderBy: { order: 'asc' },
+      },
       _count: {
         select: {
           stores: true,
@@ -395,7 +474,7 @@ export async function listBusinesses(filters?: BusinessListFilters) {
       take: limit,
       include: {
         businessSubscription: {
-          select: { status: true, plan: { select: { name: true, tier: true } } },
+          select: { status: true, plan: { select: { name: true, billingCycle: true } } },
         },
         domain: { select: { domain: true, status: true } },
         salesRep: { select: { name: true } },
@@ -427,14 +506,14 @@ export async function listBusinesses(filters?: BusinessListFilters) {
 
 /**
  * Change business status with validation.
- * Enforces valid transitions:
- *   ONBOARDING → TRIAL → ACTIVE → SUSPENDED → ACTIVE | CHURNED
+ * Enforces valid transitions (NO TRIAL):
+ *   ONBOARDING → ACTIVE → SUSPENDED → ACTIVE | CHURNED
  *   ACTIVE → CHURNED
  *   SUSPENDED → CHURNED
+ *   ONBOARDING → SUSPENDED (if payment issue during onboarding)
  */
 const VALID_STATUS_TRANSITIONS: Record<string, BusinessStatus[]> = {
-  ONBOARDING: ['TRIAL', 'SUSPENDED'],
-  TRIAL: ['ACTIVE', 'SUSPENDED', 'CHURNED'],
+  ONBOARDING: ['ACTIVE', 'SUSPENDED', 'CHURNED'],
   ACTIVE: ['SUSPENDED', 'CHURNED'],
   SUSPENDED: ['ACTIVE', 'CHURNED'],
   CHURNED: [], // Terminal state
@@ -469,10 +548,7 @@ export async function updateBusinessStatus(
     status: newStatus,
   };
 
-  if (newStatus === 'TRIAL') {
-    updateData.trialStartsAt = new Date();
-    updateData.trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-  } else if (newStatus === 'ACTIVE') {
+  if (newStatus === 'ACTIVE') {
     updateData.activatedAt = new Date();
     updateData.onboardedAt = new Date();
   } else if (newStatus === 'SUSPENDED') {
@@ -482,7 +558,6 @@ export async function updateBusinessStatus(
 
   // Update subscription status in tandem
   const subscriptionStatusMap: Record<string, string> = {
-    TRIAL: 'TRIAL',
     ACTIVE: 'ACTIVE',
     SUSPENDED: 'SUSPENDED',
     CHURNED: 'CANCELLED',
@@ -545,6 +620,177 @@ export async function toggleOnline(businessId: string, isOnline: boolean) {
   return db.business.update({
     where: { id: businessId },
     data: { isOnline },
+  });
+}
+
+// ============================================================================
+// ONBOARDING STEP MANAGEMENT
+// ============================================================================
+
+/**
+ * Get onboarding progress for a business.
+ */
+export async function getOnboardingProgress(businessId: string): Promise<OnboardingProgress> {
+  const steps = await db.onboardingStep.findMany({
+    where: { businessId },
+    orderBy: { order: 'asc' },
+  });
+
+  const totalSteps = steps.length;
+  const completedSteps = steps.filter((s) => s.status === 'COMPLETED').length;
+  const currentStep = steps.find((s) => s.status === 'PENDING' || s.status === 'IN_PROGRESS')?.stepKey || null;
+  const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+  return {
+    businessId,
+    totalSteps,
+    completedSteps,
+    currentStep,
+    progress,
+    steps: steps.map((s) => ({
+      id: s.id,
+      stepKey: s.stepKey,
+      stepName: s.stepName,
+      status: s.status as OnboardingStepStatus,
+      completedAt: s.completedAt,
+      notes: s.notes,
+    })),
+  };
+}
+
+/**
+ * Update the status of an onboarding step.
+ */
+export async function updateOnboardingStep(
+  businessId: string,
+  stepKey: string,
+  status: OnboardingStepStatus,
+  notes?: string
+): Promise<OnboardingStepInfo> {
+  const step = await db.onboardingStep.findFirst({
+    where: { businessId, stepKey },
+  });
+
+  if (!step) {
+    throw new Error(`Onboarding step "${stepKey}" not found for business "${businessId}"`);
+  }
+
+  const updated = await db.onboardingStep.update({
+    where: { id: step.id },
+    data: {
+      status,
+      completedAt: status === 'COMPLETED' ? new Date() : null,
+      notes: notes || step.notes,
+    },
+  });
+
+  // Log activity
+  await db.activityLog.create({
+    data: {
+      businessId,
+      action: 'business.onboarding_step_updated',
+      entity: 'OnboardingStep',
+      entityId: updated.id,
+      details: JSON.stringify({ stepKey, status, notes }),
+    },
+  });
+
+  return {
+    id: updated.id,
+    stepKey: updated.stepKey,
+    stepName: updated.stepName,
+    status: updated.status as OnboardingStepStatus,
+    completedAt: updated.completedAt,
+    notes: updated.notes,
+  };
+}
+
+/**
+ * Complete all onboarding steps and activate the business.
+ * Called by Super Admin after go-live review.
+ */
+export async function completeOnboarding(businessId: string): Promise<void> {
+  // Mark all remaining pending steps as completed
+  await db.onboardingStep.updateMany({
+    where: {
+      businessId,
+      status: { in: ['PENDING', 'IN_PROGRESS'] },
+    },
+    data: {
+      status: 'COMPLETED',
+      completedAt: new Date(),
+    },
+  });
+
+  // Update business status to ACTIVE
+  await updateBusinessStatus(businessId, 'ACTIVE', 'Onboarding completed successfully');
+
+  // Update lead stage if linked
+  const lead = await db.lead.findFirst({
+    where: { convertedBusinessId: businessId },
+  });
+  if (lead) {
+    await db.lead.update({
+      where: { id: lead.id },
+      data: { stage: 'ACTIVE' },
+    });
+  }
+}
+
+// ============================================================================
+// LEAD-TO-BUSINESS CONVERSION
+// ============================================================================
+
+/**
+ * Convert a lead to a business.
+ * Only callable by Quantix Super Admin.
+ * The lead must be at PAYMENT_RECEIVED stage.
+ */
+export async function convertLeadToBusiness(params: {
+  leadId: string;
+  planId?: string;
+  billingCycle?: 'MONTHLY' | 'YEARLY';
+  customPrice?: number;
+  overrideReason?: string;
+  domain?: string;
+  subdomain?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+}): Promise<unknown> {
+  const lead = await db.lead.findUnique({ where: { id: params.leadId } });
+  if (!lead) {
+    throw new Error(`Lead "${params.leadId}" not found`);
+  }
+
+  const validStages: LeadStage[] = ['PAYMENT_RECEIVED', 'ONBOARDING'];
+  if (!validStages.includes(lead.stage as LeadStage)) {
+    throw new Error(
+      `Lead must be at PAYMENT_RECEIVED stage to convert. Current stage: ${lead.stage}`
+    );
+  }
+
+  // Generate slug from business name
+  const slug = lead.businessName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  return createBusiness({
+    name: lead.businessName,
+    slug,
+    businessType: lead.businessType as BusinessType,
+    contactEmail: lead.contactEmail,
+    contactPhone: lead.contactPhone,
+    planId: params.planId,
+    billingCycle: params.billingCycle || 'MONTHLY',
+    customPrice: params.customPrice,
+    overrideReason: params.overrideReason,
+    domain: params.domain,
+    subdomain: params.subdomain,
+    primaryColor: params.primaryColor,
+    secondaryColor: params.secondaryColor,
+    leadId: params.leadId,
+    salesRepId: lead.salesRepId ?? undefined,
   });
 }
 

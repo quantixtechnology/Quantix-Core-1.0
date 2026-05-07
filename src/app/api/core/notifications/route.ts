@@ -128,7 +128,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const validChannels = ['PUSH', 'EMAIL', 'WHATSAPP', 'IN_APP', 'SMS'];
+    const validChannels = ['PUSH', 'EMAIL', 'WHATSAPP', 'IN_APP'];
     if (!validChannels.includes(body.channel)) {
       return NextResponse.json(
         { success: false, error: `channel must be one of: ${validChannels.join(', ')}` },

@@ -4,14 +4,14 @@
 // ============================================================================
 
 export type BusinessType = 'GROCERY' | 'FOOD_DELIVERY' | 'LAUNDRY' | 'CAR_WASH' | 'PHARMACY' | 'HOME_SERVICES' | 'ECOMMERCE' | 'COSMETICS' | 'MEAT_DELIVERY' | 'FURNITURE' | 'DIRECTORY';
-export type BusinessStatus = 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
+export type BusinessStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
 export type Role = 'QUANTIX_SUPER_ADMIN' | 'QUANTIX_SALES_TEAM' | 'CLIENT_OWNER' | 'STORE_MANAGER' | 'DELIVERY_STAFF' | 'CUSTOMER';
 export type LeadSource = 'META_ADS' | 'GOOGLE_ADS' | 'DIRECT_REFERRAL' | 'WEBSITE_INQUIRY' | 'COLD_OUTREACH' | 'WHATSAPP_INQUIRY' | 'PHONE_CALL' | 'OTHER';
-export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL_SENT' | 'NEGOTIATION' | 'WON' | 'LOST' | 'FOLLOW_UP';
+export type LeadStage = 'LEAD' | 'DEMO_SHARED' | 'NEGOTIATION' | 'PAYMENT_PENDING' | 'PAYMENT_RECEIVED' | 'ONBOARDING' | 'DEPLOYMENT' | 'ACTIVE' | 'LOST' | 'CHURNED';
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY_FOR_PICKUP' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED' | 'PICKUP_ASSIGNED' | 'PICKED_UP' | 'PROCESSING' | 'READY_FOR_DELIVERY';
 export type OrderType = 'DELIVERY' | 'PICKUP' | 'DINE_IN' | 'POS' | 'SUBSCRIPTION' | 'PICKUP_AND_DELIVERY';
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
-export type SubscriptionStatus = 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED' | 'EXPIRED' | 'PAUSED';
+export type SubscriptionStatus = 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELLED' | 'EXPIRED';
 export type DomainStatus = 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR';
 export type DeploymentStatus = 'PENDING' | 'BUILDING' | 'DEPLOYING' | 'LIVE' | 'FAILED' | 'MAINTENANCE';
 export type DeploymentType = 'WEBSITE' | 'ADMIN_DASHBOARD' | 'CUSTOMER_APP' | 'DELIVERY_APP' | 'ADMIN_APP';
@@ -33,7 +33,6 @@ export const businessTypeConfig: Record<BusinessType, { label: string; icon: str
 
 export const statusColors: Record<BusinessStatus, string> = {
   ONBOARDING: 'bg-amber-100 text-amber-700',
-  TRIAL: 'bg-blue-100 text-blue-700',
   ACTIVE: 'bg-emerald-100 text-emerald-700',
   SUSPENDED: 'bg-red-100 text-red-700',
   CHURNED: 'bg-slate-100 text-slate-600',
@@ -54,13 +53,11 @@ export const orderStatusColors: Record<string, string> = {
 };
 
 export const subStatusColors: Record<SubscriptionStatus, string> = {
-  TRIAL: 'bg-blue-100 text-blue-700',
   ACTIVE: 'bg-emerald-100 text-emerald-700',
   PAST_DUE: 'bg-amber-100 text-amber-700',
   SUSPENDED: 'bg-red-100 text-red-700',
   CANCELLED: 'bg-slate-100 text-slate-600',
   EXPIRED: 'bg-slate-100 text-slate-500',
-  PAUSED: 'bg-yellow-100 text-yellow-700',
 };
 
 export const domainStatusColors: Record<DomainStatus, string> = {
@@ -71,22 +68,23 @@ export const domainStatusColors: Record<DomainStatus, string> = {
   ERROR: 'bg-red-100 text-red-700',
 };
 
-export const leadStatusColors: Record<LeadStatus, string> = {
-  NEW: 'bg-slate-100 text-slate-700',
-  CONTACTED: 'bg-blue-100 text-blue-700',
-  QUALIFIED: 'bg-cyan-100 text-cyan-700',
-  PROPOSAL_SENT: 'bg-yellow-100 text-yellow-700',
+export const leadStageColors: Record<LeadStage, string> = {
+  LEAD: 'bg-slate-100 text-slate-700',
+  DEMO_SHARED: 'bg-blue-100 text-blue-700',
   NEGOTIATION: 'bg-orange-100 text-orange-700',
-  WON: 'bg-emerald-100 text-emerald-700',
+  PAYMENT_PENDING: 'bg-yellow-100 text-yellow-700',
+  PAYMENT_RECEIVED: 'bg-cyan-100 text-cyan-700',
+  ONBOARDING: 'bg-purple-100 text-purple-700',
+  DEPLOYMENT: 'bg-indigo-100 text-indigo-700',
+  ACTIVE: 'bg-emerald-100 text-emerald-700',
   LOST: 'bg-red-100 text-red-700',
-  FOLLOW_UP: 'bg-purple-100 text-purple-700',
+  CHURNED: 'bg-slate-100 text-slate-600',
 };
 
-// Platform Plans
+// Platform Plans — Only 2 fixed plans
 export const platformPlans = [
-  { id: 'plan_1', name: 'Starter', tier: 'STARTER', monthlyPrice: 4999, yearlyPrice: 49999, maxStores: 1, maxProducts: 500, maxOrders: 1000, hasPOS: true, hasDelivery: true, hasSubscription: false, hasCustomDomain: false, hasWhiteLabel: false },
-  { id: 'plan_2', name: 'Professional', tier: 'PROFESSIONAL', monthlyPrice: 9999, yearlyPrice: 99999, maxStores: 3, maxProducts: 2000, maxOrders: 5000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: false },
-  { id: 'plan_3', name: 'Enterprise', tier: 'ENTERPRISE', monthlyPrice: 24999, yearlyPrice: 249999, maxStores: 10, maxProducts: 10000, maxOrders: 50000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true },
+  { id: 'plan_monthly', name: 'Quantix Monthly', billingCycle: 'MONTHLY', price: 4999, maxStores: 5, maxProducts: 5000, maxOrders: 10000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true },
+  { id: 'plan_yearly', name: 'Quantix Yearly', billingCycle: 'YEARLY', price: 49999, maxStores: 5, maxProducts: 5000, maxOrders: 10000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true },
 ];
 
 // Businesses
@@ -95,8 +93,8 @@ export const businesses = [
   { id: 'biz_2', name: 'SpiceRoute Kitchen', slug: 'spiceroute', type: 'FOOD_DELIVERY' as BusinessType, status: 'ACTIVE' as BusinessStatus, city: 'Delhi', plan: 'Professional', customPrice: null, monthlyRevenue: 420000, totalOrders: 2100, activeCustomers: 1450, isOnline: true, contactPhone: '+91 87654 32109' },
   { id: 'biz_3', name: 'QuickClean Laundry', slug: 'quickclean', type: 'LAUNDRY' as BusinessType, status: 'ACTIVE' as BusinessStatus, city: 'Bangalore', plan: 'Starter', customPrice: null, monthlyRevenue: 95000, totalOrders: 380, activeCustomers: 210, isOnline: true, contactPhone: '+91 76543 21098' },
   { id: 'biz_4', name: 'SparkleWash Auto', slug: 'sparklewash', type: 'CAR_WASH' as BusinessType, status: 'ACTIVE' as BusinessStatus, city: 'Hyderabad', plan: 'Professional', customPrice: 7999, monthlyRevenue: 185000, totalOrders: 620, activeCustomers: 340, isOnline: true, contactPhone: '+91 65432 10987' },
-  { id: 'biz_5', name: 'MedQuick Pharmacy', slug: 'medquick', type: 'PHARMACY' as BusinessType, status: 'TRIAL' as BusinessStatus, city: 'Chennai', plan: 'Starter', customPrice: null, monthlyRevenue: 45000, totalOrders: 180, activeCustomers: 120, isOnline: true, contactPhone: '+91 54321 09876' },
-  { id: 'biz_6', name: 'HomeFix Services', slug: 'homefix', type: 'HOME_SERVICES' as BusinessType, status: 'ACTIVE' as BusinessStatus, city: 'Pune', plan: 'Enterprise', customPrice: null, monthlyRevenue: 520000, totalOrders: 890, activeCustomers: 620, isOnline: true, contactPhone: '+91 43210 98765' },
+  { id: 'biz_5', name: 'MedQuick Pharmacy', slug: 'medquick', type: 'PHARMACY' as BusinessType, status: 'ONBOARDING' as BusinessStatus, city: 'Chennai', plan: 'Monthly', customPrice: null, monthlyRevenue: 45000, totalOrders: 180, activeCustomers: 120, isOnline: false, contactPhone: '+91 54321 09876' },
+  { id: 'biz_6', name: 'HomeFix Services', slug: 'homefix', type: 'HOME_SERVICES' as BusinessType, status: 'ACTIVE' as BusinessStatus, city: 'Pune', plan: 'Yearly', customPrice: null, monthlyRevenue: 520000, totalOrders: 890, activeCustomers: 620, isOnline: true, contactPhone: '+91 43210 98765' },
   { id: 'biz_7', name: 'ShopNow Express', slug: 'shopnow', type: 'ECOMMERCE' as BusinessType, status: 'ACTIVE' as BusinessStatus, city: 'Jaipur', plan: 'Professional', customPrice: null, monthlyRevenue: 340000, totalOrders: 1560, activeCustomers: 920, isOnline: true, contactPhone: '+91 32109 87654' },
   { id: 'biz_8', name: 'GlowUp Beauty', slug: 'glowup', type: 'COSMETICS' as BusinessType, status: 'ONBOARDING' as BusinessStatus, city: 'Kolkata', plan: 'Starter', customPrice: null, monthlyRevenue: 0, totalOrders: 0, activeCustomers: 0, isOnline: false, contactPhone: '+91 21098 76543' },
   { id: 'biz_9', name: 'FreshCuts Meat', slug: 'freshcuts', type: 'MEAT_DELIVERY' as BusinessType, status: 'ACTIVE' as BusinessStatus, city: 'Lucknow', plan: 'Professional', customPrice: 6499, monthlyRevenue: 165000, totalOrders: 720, activeCustomers: 480, isOnline: true, contactPhone: '+91 10987 65432' },
@@ -112,29 +110,29 @@ export const salesTeam = [
 
 // Leads
 export const leads = [
-  { id: 'lead_1', businessName: 'TasteBud Restaurant', contactName: 'Amit Patel', contactEmail: 'amit@tastebud.in', contactPhone: '+91 99887 76543', source: 'META_ADS' as LeadSource, status: 'NEW' as LeadStatus, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-20', type: 'FOOD_DELIVERY' as BusinessType },
-  { id: 'lead_2', businessName: 'WashMaster Pro', contactName: 'Suresh Kumar', contactEmail: 'suresh@washmaster.in', contactPhone: '+91 88776 65432', source: 'WHATSAPP_INQUIRY' as LeadSource, status: 'CONTACTED' as LeadStatus, estimatedValue: 119988, salesRep: 'Rahul Verma', followUpDate: '2025-01-18', type: 'CAR_WASH' as BusinessType },
-  { id: 'lead_3', businessName: 'GreenLeaf Organic', contactName: 'Meera Nair', contactEmail: 'meera@greenleaf.in', contactPhone: '+91 77665 54321', source: 'DIRECT_REFERRAL' as LeadSource, status: 'QUALIFIED' as LeadStatus, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-22', type: 'GROCERY' as BusinessType },
-  { id: 'lead_4', businessName: 'MedPlus Health', contactName: 'Dr. Rajesh', contactEmail: 'rajesh@medplus.in', contactPhone: '+91 66554 43210', source: 'GOOGLE_ADS' as LeadSource, status: 'PROPOSAL_SENT' as LeadStatus, estimatedValue: 119988, salesRep: 'Rahul Verma', followUpDate: '2025-01-19', type: 'PHARMACY' as BusinessType },
-  { id: 'lead_5', businessName: 'StyleHut Fashion', contactName: 'Neha Gupta', contactEmail: 'neha@stylehut.in', contactPhone: '+91 55443 32109', source: 'PHONE_CALL' as LeadSource, status: 'NEGOTIATION' as LeadStatus, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-21', type: 'ECOMMERCE' as BusinessType },
-  { id: 'lead_6', businessName: 'CleanPro Services', contactName: 'Vikram Singh', contactEmail: 'vikram@cleanpro.in', contactPhone: '+91 44332 21098', source: 'COLD_OUTREACH' as LeadSource, status: 'WON' as LeadStatus, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '', type: 'LAUNDRY' as BusinessType },
-  { id: 'lead_7', businessName: 'HomeCare Plus', contactName: 'Anita Desai', contactEmail: 'anita@homecare.in', contactPhone: '+91 33221 10987', source: 'WEBSITE_INQUIRY' as LeadSource, status: 'LOST' as LeadStatus, estimatedValue: 249988, salesRep: 'Priya Sharma', followUpDate: '', type: 'HOME_SERVICES' as BusinessType },
-  { id: 'lead_8', businessName: 'BeautyBox Store', contactName: 'Kavita Reddy', contactEmail: 'kavita@beautybox.in', contactPhone: '+91 22110 09876', source: 'META_ADS' as LeadSource, status: 'FOLLOW_UP' as LeadStatus, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '2025-01-25', type: 'COSMETICS' as BusinessType },
+  { id: 'lead_1', businessName: 'TasteBud Restaurant', contactName: 'Amit Patel', contactEmail: 'amit@tastebud.in', contactPhone: '+91 99887 76543', source: 'META_ADS' as LeadSource, stage: 'LEAD' as LeadStage, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-20', type: 'FOOD_DELIVERY' as BusinessType },
+  { id: 'lead_2', businessName: 'WashMaster Pro', contactName: 'Suresh Kumar', contactEmail: 'suresh@washmaster.in', contactPhone: '+91 88776 65432', source: 'WHATSAPP_INQUIRY' as LeadSource, stage: 'DEMO_SHARED' as LeadStage, estimatedValue: 119988, salesRep: 'Rahul Verma', followUpDate: '2025-01-18', type: 'CAR_WASH' as BusinessType },
+  { id: 'lead_3', businessName: 'GreenLeaf Organic', contactName: 'Meera Nair', contactEmail: 'meera@greenleaf.in', contactPhone: '+91 77665 54321', source: 'DIRECT_REFERRAL' as LeadSource, stage: 'NEGOTIATION' as LeadStage, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-22', type: 'GROCERY' as BusinessType },
+  { id: 'lead_4', businessName: 'MedPlus Health', contactName: 'Dr. Rajesh', contactEmail: 'rajesh@medplus.in', contactPhone: '+91 66554 43210', source: 'GOOGLE_ADS' as LeadSource, stage: 'PAYMENT_PENDING' as LeadStage, estimatedValue: 119988, salesRep: 'Rahul Verma', followUpDate: '2025-01-19', type: 'PHARMACY' as BusinessType },
+  { id: 'lead_5', businessName: 'StyleHut Fashion', contactName: 'Neha Gupta', contactEmail: 'neha@stylehut.in', contactPhone: '+91 55443 32109', source: 'PHONE_CALL' as LeadSource, stage: 'PAYMENT_RECEIVED' as LeadStage, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-21', type: 'ECOMMERCE' as BusinessType },
+  { id: 'lead_6', businessName: 'CleanPro Services', contactName: 'Vikram Singh', contactEmail: 'vikram@cleanpro.in', contactPhone: '+91 44332 21098', source: 'COLD_OUTREACH' as LeadSource, stage: 'ACTIVE' as LeadStage, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '', type: 'LAUNDRY' as BusinessType },
+  { id: 'lead_7', businessName: 'HomeCare Plus', contactName: 'Anita Desai', contactEmail: 'anita@homecare.in', contactPhone: '+91 33221 10987', source: 'WEBSITE_INQUIRY' as LeadSource, stage: 'LOST' as LeadStage, estimatedValue: 249988, salesRep: 'Priya Sharma', followUpDate: '', type: 'HOME_SERVICES' as BusinessType },
+  { id: 'lead_8', businessName: 'BeautyBox Store', contactName: 'Kavita Reddy', contactEmail: 'kavita@beautybox.in', contactPhone: '+91 22110 09876', source: 'META_ADS' as LeadSource, stage: 'DEMO_SHARED' as LeadStage, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '2025-01-25', type: 'COSMETICS' as BusinessType },
 ];
 
 // Client Subscriptions
 export const clientSubscriptions = [
-  { id: 'sub_1', businessId: 'biz_1', businessName: 'FreshMart Grocers', plan: 'Professional', status: 'ACTIVE' as SubscriptionStatus, planPrice: 9999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'monthly', nextBilling: '2025-02-01', trialEnd: null },
-  { id: 'sub_2', businessId: 'biz_2', businessName: 'SpiceRoute Kitchen', plan: 'Professional', status: 'ACTIVE' as SubscriptionStatus, planPrice: 9999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'monthly', nextBilling: '2025-02-01', trialEnd: null },
-  { id: 'sub_3', businessId: 'biz_3', businessName: 'QuickClean Laundry', plan: 'Starter', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'monthly', nextBilling: '2025-02-01', trialEnd: null },
-  { id: 'sub_4', businessId: 'biz_4', businessName: 'SparkleWash Auto', plan: 'Professional', status: 'ACTIVE' as SubscriptionStatus, planPrice: 9999, customPrice: 7999, discountPercentage: 20, manualOverride: true, billingCycle: 'monthly', nextBilling: '2025-02-01', trialEnd: null },
-  { id: 'sub_5', businessId: 'biz_5', businessName: 'MedQuick Pharmacy', plan: 'Starter', status: 'TRIAL' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'monthly', nextBilling: '2025-02-15', trialEnd: '2025-02-15' },
-  { id: 'sub_6', businessId: 'biz_6', businessName: 'HomeFix Services', plan: 'Enterprise', status: 'ACTIVE' as SubscriptionStatus, planPrice: 24999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'yearly', nextBilling: '2025-12-01', trialEnd: null },
-  { id: 'sub_7', businessId: 'biz_7', businessName: 'ShopNow Express', plan: 'Professional', status: 'PAST_DUE' as SubscriptionStatus, planPrice: 9999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'monthly', nextBilling: '2025-01-01', trialEnd: null },
-  { id: 'sub_8', businessId: 'biz_8', businessName: 'GlowUp Beauty', plan: 'Starter', status: 'TRIAL' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'monthly', nextBilling: '2025-02-20', trialEnd: '2025-02-20' },
-  { id: 'sub_9', businessId: 'biz_9', businessName: 'FreshCuts Meat', plan: 'Professional', status: 'ACTIVE' as SubscriptionStatus, planPrice: 9999, customPrice: 6499, discountPercentage: 35, manualOverride: true, billingCycle: 'monthly', nextBilling: '2025-02-01', trialEnd: null },
-  { id: 'sub_10', businessId: 'biz_10', businessName: 'WoodCraft Furniture', plan: 'Starter', status: 'SUSPENDED' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'monthly', nextBilling: '2024-12-01', trialEnd: null },
-  { id: 'sub_11', businessId: 'biz_11', businessName: 'CityGuide Directory', plan: 'Starter', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'yearly', nextBilling: '2025-11-01', trialEnd: null },
+  { id: 'sub_1', businessId: 'biz_1', businessName: 'FreshMart Grocers', plan: 'Monthly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'MONTHLY', nextBilling: '2025-02-01' },
+  { id: 'sub_2', businessId: 'biz_2', businessName: 'SpiceRoute Kitchen', plan: 'Monthly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'MONTHLY', nextBilling: '2025-02-01' },
+  { id: 'sub_3', businessId: 'biz_3', businessName: 'QuickClean Laundry', plan: 'Monthly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'MONTHLY', nextBilling: '2025-02-01' },
+  { id: 'sub_4', businessId: 'biz_4', businessName: 'SparkleWash Auto', plan: 'Monthly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: 3999, discountPercentage: 20, manualOverride: true, billingCycle: 'MONTHLY', nextBilling: '2025-02-01' },
+  { id: 'sub_5', businessId: 'biz_5', businessName: 'MedQuick Pharmacy', plan: 'Monthly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'MONTHLY', nextBilling: '2025-02-15' },
+  { id: 'sub_6', businessId: 'biz_6', businessName: 'HomeFix Services', plan: 'Yearly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 49999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'YEARLY', nextBilling: '2025-12-01' },
+  { id: 'sub_7', businessId: 'biz_7', businessName: 'ShopNow Express', plan: 'Monthly', status: 'PAST_DUE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'MONTHLY', nextBilling: '2025-01-01' },
+  { id: 'sub_8', businessId: 'biz_8', businessName: 'GlowUp Beauty', plan: 'Monthly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'MONTHLY', nextBilling: '2025-02-20' },
+  { id: 'sub_9', businessId: 'biz_9', businessName: 'FreshCuts Meat', plan: 'Monthly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 4999, customPrice: 3499, discountPercentage: 30, manualOverride: true, billingCycle: 'MONTHLY', nextBilling: '2025-02-01' },
+  { id: 'sub_10', businessId: 'biz_10', businessName: 'WoodCraft Furniture', plan: 'Monthly', status: 'SUSPENDED' as SubscriptionStatus, planPrice: 4999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'MONTHLY', nextBilling: '2024-12-01' },
+  { id: 'sub_11', businessId: 'biz_11', businessName: 'CityGuide Directory', plan: 'Yearly', status: 'ACTIVE' as SubscriptionStatus, planPrice: 49999, customPrice: null, discountPercentage: null, manualOverride: false, billingCycle: 'YEARLY', nextBilling: '2025-11-01' },
 ];
 
 // Domains
