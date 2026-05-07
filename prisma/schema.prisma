@@ -1,12 +1,20 @@
 // ============================================================================
-// Quantix Technology — Managed White-Label Multi-Tenant SaaS Platform
-// "Run Your Business Smarter"
-// www.quantixtechnology.in
+// QUANTIX CORE PLATFORM — Managed White-Label Multi-Tenant SaaS
+// "Run Your Business Smarter" — www.quantixtechnology.in
 //
-// ARCHITECTURE PRINCIPLE:
-// This is a MANAGED platform. Customers CANNOT self-signup or create businesses.
-// ONLY Quantix Super Admin creates, configures, and deploys businesses.
-// Clients receive login access AFTER deployment.
+// ARCHITECTURE:
+//   Core Platform = Auth + Tenant + Roles + Businesses + Stores + Orders
+//                    + POS + Delivery + Subscriptions + Payments + Notifications
+//   Business Modules = Grocery, Restaurant, Pharmacy, etc. EXTEND the core
+//                      by registering via BusinessModule and adding their own
+//                      product/service tables that plug into OrderItem (polymorphic)
+//
+// EXTENSIBILITY:
+//   - BusinessModule table tracks which modules a business has enabled
+//   - OrderItem uses itemType/itemId (polymorphic) so any module's products
+//     can be added to an order without core knowing about them
+//   - Module-specific tables live in this same schema but are clearly marked
+//     with "// MODULE: <name>" comments
 // ============================================================================
 
 generator client {
@@ -19,134 +27,20 @@ datasource db {
 }
 
 // ============================================================================
-// PLATFORM LEVEL — Quantix Internal
+// SECTION 1: PLATFORM CONFIG
 // ============================================================================
 
-model Platform {
-  id                String   @id @default(cuid())
-  companyName       String   @default("Quantix Technology")
-  tagline           String   @default("Run Your Business Smarter")
-  website           String   @default("www.quantixtechnology.in")
-  supportEmail      String?
-  supportPhone      String?
-  defaultCurrency   String   @default("INR")
-  defaultLocale     String   @default("en-IN")
-  defaultTimezone   String   @default("Asia/Kolkata")
-  maintenanceMode   Boolean  @default(false)
-  version           String   @default("2.0.0")
-  hostingProvider   String   @default("replit") // replit, vercel, aws, digitalocean
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  businesses        Business[]
-  salesTeam         SalesTeamMember[]
-  platformPlans     PlatformPlan[]
-  domains           DomainMapping[]
-  deployments       Deployment[]
-  leads             Lead[]
-}
-
-// ============================================================================
-// SALES TEAM — Quantix Internal Sales
-// ============================================================================
-
-model SalesTeamMember {
-  id          String   @id @default(cuid())
-  platformId  String   @default("platform_1")
-  userId      String   @unique
-  name        String
-  email       String
-  phone       String
-  avatar      String?
-  target      Float    @default(0)  // Monthly target in INR
-  achieved    Float    @default(0)
-  region      String?  // Assigned region/territory
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  platform    Platform @relation(fields: [platformId], references: [id])
-  user        User     @relation(fields: [userId], references: [id])
-  leads       Lead[]
-  clients     Business[]  @relation("SalesRepClients")
-}
-
-model Lead {
-  id              String        @id @default(cuid())
-  platformId      String        @default("platform_1")
-  salesRepId      String?
-  businessName    String
-  contactName     String
-  contactEmail    String
-  contactPhone    String
-  businessType    BusinessType
-  source          LeadSource    @default(META_ADS)
-  status          LeadStatus    @default(NEW)
-  notes           String?
-  followUpDate    DateTime?
-  estimatedValue  Float?
-  convertedBusinessId String?
-  tags            String        @default("[]")
-  lastContactedAt DateTime?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  platform        Platform      @relation(fields: [platformId], references: [id])
-  salesRep        SalesTeamMember? @relation(fields: [salesRepId], references: [id])
-
-  @@index([salesRepId])
-  @@index([status])
-  @@index([source])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// PLATFORM SUBSCRIPTION PLANS — Defined by Quantix Only
-// ============================================================================
-
-enum PlanTier {
-  STARTER
-  PROFESSIONAL
-  ENTERPRISE
-  CUSTOM
-}
-
-model PlatformPlan {
-  id              String    @id @default(cuid())
-  platformId      String    @default("platform_1")
-  name            String
-  tier            PlanTier
-  monthlyPrice    Float
-  yearlyPrice     Float
+model PlatformConfig {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String   // JSON string for complex configs
   description     String?
-  features        String    @default("[]")  // JSON: included features/modules
-  maxStores       Int       @default(1)
-  maxProducts     Int       @default(500)
-  maxOrders       Int       @default(1000)  // per month
-  maxDeliveryPartners Int   @default(5)
-  maxStaff        Int       @default(10)
-  hasPOS          Boolean   @default(true)
-  hasDelivery     Boolean   @default(true)
-  hasSubscription Boolean   @default(false)
-  hasCustomDomain Boolean   @default(false)
-  hasWhiteLabel   Boolean   @default(false)
-  hasAdvancedReports Boolean @default(false)
-  hasAPIAccess    Boolean   @default(false)
-  isActive        Boolean   @default(true)
-  isPublic        Boolean   @default(true)  // Visible on pricing page?
-  sortOrder       Int       @default(0)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  platform        Platform  @relation(fields: [platformId], references: [id])
-  subscriptions   BusinessSubscription[]
-
-  @@index([platformId])
-  @@index([isActive])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ============================================================================
-// BUSINESS (TENANT) — Created ONLY by Quantix Super Admin
+// SECTION 2: TENANT (BUSINESS) — Created ONLY by Quantix Super Admin
 // ============================================================================
 
 enum BusinessType {
@@ -164,17 +58,15 @@ enum BusinessType {
 }
 
 enum BusinessStatus {
-  ONBOARDING     // Being set up by Quantix
-  TRIAL          // Trial period
-  ACTIVE         // Live and operational
-  SUSPENDED      // Payment failure / policy violation
-  CHURNED        // Cancelled / left
+  ONBOARDING
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CHURNED
 }
 
 model Business {
   id                String         @id @default(cuid())
-  platformId        String         @default("platform_1")
-  salesRepId        String?        // Quantix sales rep who closed this client
   name              String
   slug              String         @unique
   businessType      BusinessType
@@ -191,8 +83,8 @@ model Business {
   gstNumber         String?
   panNumber         String?
   cinNumber         String?
-  fssaiLicense      String?        // For food businesses
-  // Address
+  fssaiLicense      String?
+  // Address (embedded — not a separate model for business/store)
   address           String?
   city              String?
   state             String?
@@ -209,13 +101,13 @@ model Business {
   defaultCurrency   String         @default("INR")
   defaultLocale     String         @default("en-IN")
   timezone          String         @default("Asia/Kolkata")
-  isOnline          Boolean        @default(true)  // Business online/offline toggle
+  isOnline          Boolean        @default(true)
   // JSON configuration blobs
   settings          String         @default("{}")
-  features          String         @default("{}")  // Feature flags: which modules enabled
+  features          String         @default("{}")  // Feature flags
   notificationConfig String        @default("{}")
   // Timestamps
-  onboardedAt       DateTime?      // When Quantix completed setup
+  onboardedAt       DateTime?
   trialStartsAt     DateTime?
   trialEndsAt       DateTime?
   activatedAt       DateTime?
@@ -224,20 +116,14 @@ model Business {
   updatedAt         DateTime       @updatedAt
 
   // Relations
-  platform          Platform       @relation(fields: [platformId], references: [id])
-  salesRep          SalesTeamMember? @relation("SalesRepClients", fields: [salesRepId], references: [id])
   businessUsers     BusinessUser[]
+  modules           BusinessModule[]
   stores            Store[]
-  categories        Category[]
-  products          Product[]
-  customers         Customer[]
   orders            Order[]
+  customers         Customer[]
   deliveryZones     DeliveryZone[]
   deliveryPartners  DeliveryPartner[]
-  subscriptionPlans SubscriptionPlan[]   // Business's own subscription packages (car wash plans etc.)
-  customerSubscriptions CustomerSubscription[]
   taxConfigs        TaxConfig[]
-  paymentGateways   PaymentGateway[]
   invoices          Invoice[]
   posSessions       POSSession[]
   promoCodes        PromoCode[]
@@ -246,185 +132,130 @@ model Business {
   businessSubscription BusinessSubscription?
   domain            DomainMapping?
   deployments       Deployment[]
+  salesRepId        String?
+  salesRep          SalesTeamMember? @relation("SalesRepClients", fields: [salesRepId], references: [id])
+  paymentGateways   PaymentGateway[]
+  payments          Payment[]
+  subscriptionPlans SubscriptionPlan[]
+  customerSubscriptions CustomerSubscription[]
+  categories        Category[]
+  products          Product[]
 
-  @@index([platformId])
   @@index([businessType])
   @@index([status])
   @@index([salesRepId])
 }
 
 // ============================================================================
-// BUSINESS SUBSCRIPTION — Quantix controls pricing
+// SECTION 3: BUSINESS MODULE REGISTRY — Extensibility System
 // ============================================================================
 
-enum SubscriptionStatus {
+enum ModuleStatus {
+  DISABLED
+  ENABLED
   TRIAL
+}
+
+model BusinessModule {
+  id            String       @id @default(cuid())
+  businessId    String
+  business      Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  moduleKey     String       // "grocery", "restaurant", "pharmacy", "car_wash", etc.
+  moduleName    String       // Display name
+  version       String       @default("1.0.0")
+  status        ModuleStatus @default(DISABLED)
+  config        String       @default("{}")  // Module-specific config (JSON)
+  enabledAt     DateTime?
+  disabledAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([businessId, moduleKey])
+  @@index([businessId])
+  @@index([moduleKey])
+  @@index([status])
+}
+
+// ============================================================================
+// SECTION 4: STORES (Multi-Store per Business)
+// ============================================================================
+
+enum StoreStatus {
   ACTIVE
-  PAST_DUE
-  SUSPENDED
-  CANCELLED
-  EXPIRED
-  PAUSED
-}
-
-model BusinessSubscription {
-  id                  String             @id @default(cuid())
-  businessId          String             @unique
-  planId              String
-  status              SubscriptionStatus @default(TRIAL)
-  // Pricing — supports manual override by Super Admin
-  planPrice           Float              // The standard plan price
-  customPrice         Float?             // Super Admin override
-  discountPercentage  Float?             // Discount applied
-  manualPriceOverride Boolean            @default(false)
-  overrideReason      String?
-  // Billing cycle
-  billingCycle        String             @default("monthly") // monthly, yearly
-  currentPeriodStart  DateTime
-  currentPeriodEnd    DateTime
-  nextBillingDate     DateTime
-  // Trial
-  trialStart          DateTime?
-  trialEnd            DateTime?
-  trialExtensionDays  Int                @default(0)
-  // Pause
-  pausedAt            DateTime?
-  pauseReason         String?
-  resumeAt            DateTime?
-  // Payment
-  lastPaymentDate     DateTime?
-  lastPaymentAmount   Float?
-  nextPaymentAmount   Float?
-  paymentMethod       String?            // razorpay, stripe, bank_transfer, cash
-  // Auto
-  autoRenew           Boolean            @default(true)
-  cancelledAt         DateTime?
-  cancelReason        String?
-  // Metadata
-  notes               String?            // Internal Quantix notes
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-
-  business            Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  plan                PlatformPlan       @relation(fields: [planId], references: [id])
-  billingHistory      BillingRecord[]
-
-  @@index([businessId])
-  @@index([status])
-  @@index([nextBillingDate])
-}
-
-model BillingRecord {
-  id                    String   @id @default(cuid())
-  businessSubscriptionId String
-  amount                Float
-  currency              String   @default("INR")
-  status                String   @default("pending") // pending, paid, failed, refunded
-  invoiceNumber         String?
-  paymentGateway        String?
-  gatewayTransactionId  String?
-  dueDate               DateTime
-  paidDate              DateTime?
-  description           String?
-  createdAt             DateTime @default(now())
-
-  subscription          BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
-
-  @@index([businessSubscriptionId])
-  @@index([status])
-  @@index([dueDate])
-}
-
-// ============================================================================
-// DOMAIN MAPPING — Quantix manages DNS/SSL
-// ============================================================================
-
-enum DomainStatus {
-  PENDING_DNS     // DNS not configured yet
-  DNS_PROPAGATING // DNS configured, waiting for propagation
-  SSL_PENDING     // DNS resolved, SSL being provisioned
-  ACTIVE          // Live with HTTPS
-  ERROR           // Configuration error
-}
-
-model DomainMapping {
-  id              String       @id @default(cuid())
-  platformId      String       @default("platform_1")
-  businessId      String       @unique
-  domain          String       // e.g., shop.example.com or www.clientbusiness.in
-  subdomain       String?      // e.g., "shop" if using quantix subdomain
-  isPrimary       Boolean      @default(true)
-  sslStatus       String       @default("pending") // pending, active, expired, error
-  sslExpiryDate   DateTime?
-  dnsProvider     String?      // cloudflare, route53, godaddy, etc.
-  dnsConfig       String       @default("{}") // JSON: DNS records configured
-  status          DomainStatus @default(PENDING_DNS)
-  configuredBy    String?      // Quantix admin who set it up
-  configuredAt    DateTime?
-  deployedAt      DateTime?
-  notes           String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  platform        Platform     @relation(fields: [platformId], references: [id])
-  business        Business     @relation(fields: [businessId], references: [id])
-
-  @@unique([domain])
-  @@index([businessId])
-  @@index([status])
-}
-
-// ============================================================================
-// DEPLOYMENT — Quantix manages deployments
-// ============================================================================
-
-enum DeploymentStatus {
-  PENDING
-  BUILDING
-  DEPLOYING
-  LIVE
-  FAILED
+  INACTIVE
   MAINTENANCE
 }
 
-enum DeploymentType {
-  WEBSITE
-  ADMIN_DASHBOARD
-  CUSTOMER_APP
-  DELIVERY_APP
-  ADMIN_APP
-}
-
-model Deployment {
-  id              String           @id @default(cuid())
-  platformId      String           @default("platform_1")
+model Store {
+  id              String       @id @default(cuid())
   businessId      String
-  type            DeploymentType
-  status          DeploymentStatus @default(PENDING)
-  environment     String           @default("production") // production, staging
-  hostingProvider String           @default("replit") // replit, vercel, aws, digitalocean
-  hostingConfig   String           @default("{}") // JSON: deployment-specific config
-  buildUrl        String?
-  liveUrl         String?
-  version         String?
-  deployedBy      String?          // Quantix admin
-  deployedAt      DateTime?
-  lastCheckedAt   DateTime?
-  healthStatus    String           @default("unknown") // healthy, degraded, down, unknown
-  notes           String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name            String
+  slug            String
+  code            String?      // Short code for POS
+  // Address (embedded)
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  country         String       @default("India")
+  latitude        Float?
+  longitude       Float?
+  phone           String?
+  email           String?
+  status          StoreStatus  @default(ACTIVE)
+  isMainStore     Boolean      @default(false)
+  // Delivery configuration
+  deliveryRadius  Float        @default(5.0)  // km — used with Haversine
+  minOrderAmount  Float        @default(0)
+  deliveryFee     Float        @default(0)
+  freeDeliveryAbove Float?
+  maxDeliveryDistance Float?    @default(10.0)
+  preparationTime Int          @default(30)   // minutes
+  // Operating hours
+  operatingHours  String       @default("{}") // JSON: {mon: {open: "09:00", close: "22:00"}}
+  // POS & Printer config
+  posEnabled      Boolean      @default(true)
+  printerConfig   String       @default("{}") // JSON: thermal printer settings
+  printerType     String?      // thermal_bluetooth, thermal_usb, laser
+  paperSize       String       @default("80mm") // 58mm, 80mm, A4
+  // GST
+  gstNumber       String?
+  // Settings
+  settings        String       @default("{}")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
-  platform        Platform         @relation(fields: [platformId], references: [id])
-  business        Business         @relation(fields: [businessId], references: [id])
+  // Relations
+  inventory       Inventory[]
+  orders          Order[]
+  posSessions     POSSession[]
+  staff           BusinessUser[]
+  storeTimings    StoreTiming[]
 
+  @@unique([businessId, slug])
   @@index([businessId])
-  @@index([type])
   @@index([status])
 }
 
+model StoreTiming {
+  id        String   @id @default(cuid())
+  storeId   String
+  day       Int      // 0=Sunday ... 6=Saturday
+  openTime  String
+  closeTime String
+  isClosed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, day])
+  @@index([storeId])
+}
+
 // ============================================================================
-// USER & AUTHENTICATION
+// SECTION 5: USERS & AUTHENTICATION
 // ============================================================================
 
 enum AuthProvider {
@@ -442,7 +273,7 @@ model User {
   name            String
   avatar          String?
   passwordHash    String?
-  authProvider    AuthProvider  @default(EMAIL_OTP)
+  authProvider    AuthProvider @default(EMAIL_OTP)
   emailVerified   Boolean      @default(false)
   phoneVerified   Boolean      @default(false)
   isActive        Boolean      @default(true)
@@ -495,16 +326,16 @@ model RefreshToken {
 }
 
 // ============================================================================
-// ROLES & PERMISSIONS
+// SECTION 6: ROLES & PERMISSIONS
 // ============================================================================
 
 enum Role {
-  QUANTIX_SUPER_ADMIN   // Full platform access
-  QUANTIX_SALES_TEAM    // Sales & lead management
-  CLIENT_OWNER          // Business owner (client)
-  STORE_MANAGER         // Store operations
-  DELIVERY_STAFF        // Delivery driver
-  CUSTOMER              // End customer
+  QUANTIX_SUPER_ADMIN
+  QUANTIX_SALES_TEAM
+  CLIENT_OWNER
+  STORE_MANAGER
+  DELIVERY_STAFF
+  CUSTOMER
 }
 
 model BusinessUser {
@@ -530,312 +361,250 @@ model BusinessUser {
 }
 
 // ============================================================================
-// STORE (Multi-Store Support)
+// SECTION 7: ORDERS (CORE — Polymorphic OrderItem)
+// Any business module's products/services can be added to an order.
+// OrderItem.itemType tells the system which module's table to look up.
+// OrderItem.itemId is the ID in that module's product/service table.
 // ============================================================================
 
-enum StoreStatus {
-  ACTIVE
-  INACTIVE
-  MAINTENANCE
-}
-
-model Store {
-  id              String       @id @default(cuid())
-  businessId      String
-  name            String
-  slug            String
-  code            String?
-  address         String?
-  city            String?
-  state           String?
-  pincode         String?
-  country         String       @default("India")
-  latitude        Float?
-  longitude       Float?
-  phone           String?
-  email           String?
-  status          StoreStatus  @default(ACTIVE)
-  isMainStore     Boolean      @default(false)
-  deliveryRadius  Float        @default(5.0)  // km — used with Haversine
-  minOrderAmount  Float        @default(0)
-  deliveryFee     Float        @default(0)
-  freeDeliveryAbove Float?
-  preparationTime Int          @default(30)   // minutes
-  operatingHours  String       @default("{}") // JSON: {mon: {open: "09:00", close: "22:00"}}
-  gstNumber       String?
-  // POS & Printer config
-  printerConfig   String       @default("{}") // JSON: thermal printer settings
-  printerType     String?      // thermal_bluetooth, thermal_usb, laser
-  paperSize       String       @default("80mm") // 58mm, 80mm, A4
-  posEnabled      Boolean      @default(true)
-  settings        String       @default("{}")
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  inventory       Inventory[]
-  orders          Order[]
-  posSessions     POSSession[]
-  staff           BusinessUser[]
-  storeTimings    StoreTiming[]
-
-  @@unique([businessId, slug])
-  @@index([businessId])
-  @@index([slug])
-  @@index([status])
-}
-
-model StoreTiming {
-  id        String   @id @default(cuid())
-  storeId   String
-  day       Int      // 0=Sunday ... 6=Saturday
-  openTime  String
-  closeTime String
-  isClosed  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@unique([storeId, day])
-  @@index([storeId])
-}
-
-// ============================================================================
-// CATALOG — Categories & Products
-// ============================================================================
-
-model Category {
-  id          String    @id @default(cuid())
-  businessId  String
-  name        String
-  slug        String
-  description String?
-  image       String?
-  icon        String?
-  parentId    String?
-  sortOrder   Int       @default(0)
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children    Category[] @relation("CategoryHierarchy")
-  products    Product[]
-
-  @@unique([businessId, slug])
-  @@index([businessId])
-  @@index([parentId])
-}
-
-enum ProductType {
-  PHYSICAL
-  DIGITAL
-  SERVICE
+enum OrderType {
+  DELIVERY
+  PICKUP
+  DINE_IN
+  POS
   SUBSCRIPTION
+  PICKUP_AND_DELIVERY
 }
 
-enum ProductStatus {
-  ACTIVE
-  INACTIVE
-  DRAFT
-  ARCHIVED
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+  SCHEDULED
+  // Pickup & Delivery specific
+  PICKUP_ASSIGNED
+  PICKED_UP
+  PROCESSING
+  READY_FOR_DELIVERY
 }
 
-model Product {
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethodType {
+  CASH
+  CARD
+  UPI
+  NETBANKING
+  WALLET
+  COD
+  CREDIT
+  MIXED
+}
+
+model Order {
   id              String        @id @default(cuid())
   businessId      String
-  storeId         String?
-  categoryId      String?
-  name            String
-  slug            String
-  description     String?
-  shortDesc       String?
-  type            ProductType   @default(PHYSICAL)
-  status          ProductStatus @default(ACTIVE)
-  sku             String?
-  barcode         String?
-  images          String        @default("[]")
-  unit            String?
-  unitQuantity    Float?
-  isVeg           Boolean?
-  isFeatured      Boolean       @default(false)
-  isPopular       Boolean       @default(false)
-  preparationTime Int?
-  minOrderQty     Float         @default(1)
-  maxOrderQty     Float         @default(100)
-  tags            String        @default("[]")
-  nutritionInfo   String?
-  allergenInfo    String?
-  sortOrder       Int           @default(0)
-  metadata        String        @default("{}")
+  storeId         String
+  orderNumber     String
+  orderType       OrderType
+  orderSource     String        @default("online") // online, pos, phone, whatsapp
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentMethod   PaymentMethodType?
+  // Customer info
+  customerId      String?
+  customerName    String?
+  customerPhone   String?
+  customerEmail   String?
+  // Delivery
+  deliveryAddressId String?
+  deliveryAddress  String?       // JSON snapshot of address
+  deliveryLat     Float?
+  deliveryLng     Float?
+  deliveryInstructions String?
+  scheduledAt     DateTime?
+  // Pickup (Laundry etc.)
+  pickupAddress   String?       // JSON snapshot
+  pickupScheduledAt DateTime?
+  pickupCompletedAt DateTime?
+  // Billing
+  subtotal        Float         @default(0)
+  totalDiscount   Float         @default(0)
+  totalTax        Float         @default(0)
+  deliveryFee     Float         @default(0)
+  packagingFee    Float         @default(0)
+  convenienceFee  Float         @default(0)
+  tip             Float         @default(0)
+  roundOff        Float         @default(0)
+  totalAmount     Float         @default(0)
+  // GST
+  cgstAmount      Float         @default(0)
+  sgstAmount      Float         @default(0)
+  igstAmount      Float         @default(0)
+  cessAmount      Float         @default(0)
+  // POS
+  posSessionId    String?
+  posOperatorId   String?
+  tableNumber     String?
+  // Subscription
+  subscriptionId  String?
+  // Promo
+  promoCodeId     String?
+  // Pickup & Delivery specific
+  pickupPartnerId String?
+  deliveryPartnerId String?
+  deliveryOtp     String?
+  pickupOtp       String?
+  // Metadata
+  notes           String?
+  cancelReason    String?
+  metadata        String        @default("{}")  // Extensible: module-specific data
+  confirmedAt     DateTime?
+  preparedAt      DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
+  // Relations
   business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  category        Category?     @relation(fields: [categoryId], references: [id])
-  variants        ProductVariant[]
-  inventory       Inventory[]
-  orderItems      OrderItem[]
-  subscriptionPlanItems SubscriptionPlanItem[]
+  store           Store         @relation(fields: [storeId], references: [id])
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  items           OrderItem[]
+  delivery        Delivery?
+  invoice         Invoice?
+  statusHistory   OrderStatusHistory[]
+  payments        Payment[]
+  posSession      POSSession?   @relation(fields: [posSessionId], references: [id])
+  customerSubscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id])
+  promoCode       PromoCode?    @relation(fields: [promoCodeId], references: [id])
 
-  @@unique([businessId, slug])
+  @@unique([businessId, orderNumber])
   @@index([businessId])
-  @@index([categoryId])
-  @@index([status])
   @@index([storeId])
-}
-
-model ProductVariant {
-  id              String   @id @default(cuid())
-  productId       String
-  name            String
-  sku             String?
-  barcode         String?
-  price           Float
-  mrp             Float
-  costPrice       Float?
-  discountPrice   Float?
-  discountPercent Float?
-  stock           Int      @default(0)
-  minStock        Int      @default(0)
-  isDefault       Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  attributes      String   @default("{}")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  inventory       Inventory[]
-  orderItems      OrderItem[]
-
-  @@index([productId])
-  @@index([isActive])
-}
-
-// ============================================================================
-// INVENTORY
-// ============================================================================
-
-enum InventoryStatus {
-  IN_STOCK
-  LOW_STOCK
-  OUT_OF_STOCK
-  DISCONTINUED
-}
-
-model Inventory {
-  id             String          @id @default(cuid())
-  businessId     String
-  storeId        String
-  productId      String
-  variantId      String?
-  quantity       Int             @default(0)
-  reservedQty    Int             @default(0)
-  minStock       Int             @default(5)
-  maxStock       Int             @default(1000)
-  status         InventoryStatus @default(IN_STOCK)
-  lastRestockedAt DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-
-  store          Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant        ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  logs           InventoryLog[]
-
-  @@unique([storeId, productId, variantId])
-  @@index([storeId])
-  @@index([productId])
+  @@index([customerId])
   @@index([status])
+  @@index([createdAt])
+  @@index([orderType])
 }
 
-model InventoryLog {
-  id          String   @id @default(cuid())
-  inventoryId String
-  action      String   // RESTOCK, ORDER_RESERVED, ORDER_FULFILLED, ADJUSTMENT, RETURN
-  quantity    Int
-  previousQty Int
-  newQty      Int
-  note        String?
-  performedBy String?
-  createdAt   DateTime @default(now())
+model OrderItem {
+  id                  String   @id @default(cuid())
+  orderId             String
+  // Polymorphic item reference — ANY module's product can be ordered
+  itemType            String   // "grocery_product", "menu_item", "pharmacy_product", "service", etc.
+  itemId              String   // ID in the module's product/service table
+  // Snapshot (denormalized at time of order — source of truth for billing)
+  itemName            String
+  variantName         String?
+  sku                 String?
+  barcode             String?
+  quantity            Float
+  unitPrice           Float
+  mrp                 Float?
+  discountPrice       Float?
+  discountPercent     Float?
+  totalPrice          Float
+  totalMrp            Float?
+  // GST
+  gstRate             Float    @default(0)
+  gstAmount           Float    @default(0)
+  cgstAmount          Float    @default(0)
+  sgstAmount          Float    @default(0)
+  igstAmount          Float    @default(0)
+  // Optional
+  specialInstructions String?
+  customizations      String?  // JSON: module-specific customizations
+  isVeg               Boolean?
+  unit                String?  // "kg", "piece", "pack", "litre"
+  metadata            String   @default("{}")  // Module-specific data
+  createdAt           DateTime @default(now())
 
-  inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryId])
+  @@index([orderId])
+  @@index([itemType])
+  @@index([itemId])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  note      String?
+  changedBy String?
+  createdAt DateTime    @default(now())
+
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
   @@index([createdAt])
 }
 
 // ============================================================================
-// CUSTOMER
+// SECTION 8: DELIVERY CORE
 // ============================================================================
 
-model Customer {
-  id            String   @id @default(cuid())
-  businessId    String
-  userId        String?
-  name          String
-  email         String?
-  phone         String?
-  avatar        String?
-  gstNumber     String?
-  loyaltyPoints Int      @default(0)
-  totalOrders   Int      @default(0)
-  totalSpent    Float    @default(0)
-  avgOrderValue Float    @default(0)
-  lastOrderAt   DateTime?
-  tags          String   @default("[]")
-  metadata      String   @default("{}")
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user          User?    @relation(fields: [userId], references: [id])
-  addresses     Address[]
-  orders        Order[]
-  subscriptions CustomerSubscription[]
-  invoices      Invoice[]
-
-  @@unique([businessId, phone])
-  @@index([businessId])
-  @@index([userId])
-  @@index([phone])
+enum DeliveryStatus {
+  ASSIGNING
+  ASSIGNED
+  PICKED_UP
+  ON_THE_WAY
+  ARRIVED
+  DELIVERED
+  FAILED
+  CANCELLED
 }
-
-model Address {
-  id           String   @id @default(cuid())
-  customerId   String
-  label        String?
-  addressLine1 String
-  addressLine2 String?
-  city         String
-  state        String
-  pincode      String
-  country      String   @default("India")
-  latitude     Float?
-  longitude    Float?
-  isDefault    Boolean  @default(false)
-  landmark     String?
-  instructions String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([customerId])
-}
-
-// ============================================================================
-// DELIVERY ZONES & PARTNERS
-// ============================================================================
 
 enum ZoneType {
   CIRCLE
   POLYGON
   PINCODE
+}
+
+model Delivery {
+  id                  String         @id @default(cuid())
+  orderId             String         @unique
+  deliveryPartnerId   String?
+  pickupPartnerId     String?
+  status              DeliveryStatus @default(ASSIGNING)
+  pickupLat           Float?
+  pickupLng           Float?
+  pickupAddress       String?
+  dropLat             Float?
+  dropLng             Float?
+  dropAddress         String?
+  estimatedPickupTime DateTime?
+  estimatedDeliveryTime DateTime?
+  actualPickupTime    DateTime?
+  actualDeliveryTime  DateTime?
+  distance            Float?
+  deliveryOtp         String?
+  pickupOtp           String?
+  rating              Int?
+  feedback            String?
+  cancelReason        String?
+  liveTracking        String         @default("[]")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  order               Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  deliveryPartner     DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
+
+  @@index([deliveryPartnerId])
+  @@index([status])
 }
 
 model DeliveryZone {
@@ -896,236 +665,214 @@ model DeliveryPartner {
 }
 
 // ============================================================================
-// ORDER MANAGEMENT
+// SECTION 9: POS CORE
 // ============================================================================
 
-enum OrderType {
-  DELIVERY
-  PICKUP
-  DINE_IN
-  POS
-  SUBSCRIPTION
-  PICKUP_AND_DELIVERY  // For Laundry etc.
+enum POSSessionStatus {
+  OPEN
+  CLOSED
+  SUSPENDED
 }
 
-enum OrderStatus {
-  PENDING
-  CONFIRMED
-  PREPARING
-  READY_FOR_PICKUP
-  OUT_FOR_DELIVERY
-  DELIVERED
-  CANCELLED
-  REFUNDED
-  SCHEDULED
-  // Pickup & Delivery specific
-  PICKUP_ASSIGNED
-  PICKED_UP
-  PROCESSING
-  READY_FOR_DELIVERY
-}
-
-enum PaymentStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-  REFUNDED
-  PARTIALLY_REFUNDED
-}
-
-enum PaymentMethod {
-  CASH
-  CARD
-  UPI
-  NETBANKING
-  WALLET
-  COD
-  CREDIT
-}
-
-model Order {
-  id              String        @id @default(cuid())
+model POSSession {
+  id              String          @id @default(cuid())
   businessId      String
   storeId         String
-  orderNumber     String
-  orderType       OrderType
-  status          OrderStatus   @default(PENDING)
-  paymentStatus   PaymentStatus @default(PENDING)
-  paymentMethod   PaymentMethod?
-  // Customer info
-  customerId      String?
-  customerName    String?
-  customerPhone   String?
-  customerEmail   String?
-  // Delivery
-  deliveryAddressId String?
-  deliveryAddress  String?
-  deliveryLat     Float?
-  deliveryLng     Float?
-  deliveryInstructions String?
-  scheduledAt     DateTime?
-  // Pickup (Laundry etc.)
-  pickupAddress   String?       // JSON snapshot
-  pickupScheduledAt DateTime?
-  pickupCompletedAt DateTime?
-  // Billing
-  subtotal        Float         @default(0)
-  totalDiscount   Float         @default(0)
-  totalTax        Float         @default(0)
-  deliveryFee     Float         @default(0)
-  packagingFee    Float         @default(0)
-  convenienceFee  Float         @default(0)
-  tip             Float         @default(0)
-  roundOff        Float         @default(0)
-  totalAmount     Float         @default(0)
-  // GST
-  cgstAmount      Float         @default(0)
-  sgstAmount      Float         @default(0)
-  igstAmount      Float         @default(0)
-  cessAmount      Float         @default(0)
-  // POS
-  posSessionId    String?
-  posOperatorId   String?
-  tableNumber     String?
-  // Subscription
-  subscriptionId  String?
-  // Promo
-  promoCodeId     String?
-  // Pickup & Delivery specific
-  pickupPartnerId String?
-  deliveryPartnerId String?
-  deliveryOtp     String?
-  pickupOtp       String?
-  // Metadata
-  notes           String?
-  cancelReason    String?
-  metadata        String        @default("{}")
-  confirmedAt     DateTime?
-  preparedAt      DateTime?
-  deliveredAt     DateTime?
-  cancelledAt     DateTime?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  sessionNumber   String
+  operatorId      String
+  status          POSSessionStatus @default(OPEN)
+  openingBalance  Float           @default(0)
+  closingBalance  Float?
+  totalSales      Float           @default(0)
+  totalCash       Float           @default(0)
+  totalCard       Float           @default(0)
+  totalUpi        Float           @default(0)
+  totalOther      Float           @default(0)
+  totalRefunds    Float           @default(0)
+  totalOrders     Int             @default(0)
+  openedAt        DateTime        @default(now())
+  closedAt        DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store           Store         @relation(fields: [storeId], references: [id])
-  customer        Customer?     @relation(fields: [customerId], references: [id])
-  items           OrderItem[]
-  delivery        Delivery?
-  invoice         Invoice?
-  statusHistory   OrderStatusHistory[]
-  payments        Payment[]
-  posSession      POSSession?   @relation(fields: [posSessionId], references: [id])
-  customerSubscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id])
-  promoCode       PromoCode?    @relation(fields: [promoCodeId], references: [id])
+  business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store           Store           @relation(fields: [storeId], references: [id])
+  orders          Order[]
 
-  @@unique([businessId, orderNumber])
   @@index([businessId])
   @@index([storeId])
-  @@index([customerId])
   @@index([status])
-  @@index([createdAt])
-  @@index([orderType])
 }
 
-model OrderItem {
-  id                  String   @id @default(cuid())
+// ============================================================================
+// SECTION 10: PAYMENTS
+// ============================================================================
+
+model Payment {
+  id                  String          @id @default(cuid())
   orderId             String
-  productId           String
-  variantId           String?
-  productName         String
-  variantName         String?
-  sku                 String?
-  quantity            Float
-  unitPrice           Float
-  mrp                 Float?
-  discountPrice       Float?
-  discountPercent     Float?
-  totalPrice          Float
-  totalMrp            Float?
-  gstRate             Float    @default(0)
-  gstAmount           Float    @default(0)
-  cgstAmount          Float    @default(0)
-  sgstAmount          Float    @default(0)
-  igstAmount          Float    @default(0)
-  specialInstructions String?
-  customizations      String?
-  isVeg               Boolean?
-  createdAt           DateTime @default(now())
+  businessId          String
+  amount              Float
+  currency            String          @default("INR")
+  method              PaymentMethodType
+  status              PaymentStatus   @default(PENDING)
+  gatewayTransactionId String?
+  gatewayName         String?         // "razorpay", "stripe", "cash", "upi"
+  gatewayResponse     String?         // JSON: full gateway response
+  refundAmount        Float?
+  refundStatus        String?         // pending, processing, completed, failed
+  refundedAt          DateTime?
+  paidAt              DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
-  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product             Product  @relation(fields: [productId], references: [id])
-  variant             ProductVariant? @relation(fields: [variantId], references: [id])
+  order               Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  business            Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
-  @@index([productId])
-}
-
-model OrderStatusHistory {
-  id        String      @id @default(cuid())
-  orderId   String
-  status    OrderStatus
-  note      String?
-  changedBy String?
-  createdAt DateTime    @default(now())
-
-  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// DELIVERY TRACKING
-// ============================================================================
-
-enum DeliveryStatus {
-  ASSIGNING
-  ASSIGNED
-  PICKED_UP
-  ON_THE_WAY
-  ARRIVED
-  DELIVERED
-  FAILED
-  CANCELLED
-}
-
-model Delivery {
-  id                  String         @id @default(cuid())
-  orderId             String         @unique
-  deliveryPartnerId   String?
-  pickupPartnerId     String?        // Separate pickup partner (Laundry)
-  status              DeliveryStatus @default(ASSIGNING)
-  pickupLat           Float?
-  pickupLng           Float?
-  pickupAddress       String?
-  dropLat             Float?
-  dropLng             Float?
-  dropAddress         String?
-  estimatedPickupTime DateTime?
-  estimatedDeliveryTime DateTime?
-  actualPickupTime    DateTime?
-  actualDeliveryTime  DateTime?
-  distance            Float?
-  deliveryOtp         String?
-  pickupOtp           String?
-  rating              Int?
-  feedback            String?
-  cancelReason        String?
-  liveTracking        String         @default("[]")
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-
-  order               Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  deliveryPartner     DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
-
-  @@index([deliveryPartnerId])
+  @@index([businessId])
   @@index([status])
 }
 
+model PaymentGateway {
+  id              String   @id @default(cuid())
+  businessId      String
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name            String   // "razorpay", "stripe", "paytm"
+  gateway         String
+  isActive        Boolean  @default(true)
+  isTestMode      Boolean  @default(true)
+  config          String   @default("{}") // JSON: api_key, secret, etc. (encrypted in production)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
 // ============================================================================
-// SUBSCRIPTION SERVICE ENGINE — Car Wash, Home Services etc.
+// SECTION 11: SUBSCRIPTION ENGINE (Platform → Business)
+// Quantix controls pricing. Business subscription to use the platform.
+// ============================================================================
+
+enum PlanTier {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+  PAUSED
+}
+
+model PlatformPlan {
+  id              String    @id @default(cuid())
+  name            String
+  tier            PlanTier
+  monthlyPrice    Float
+  yearlyPrice     Float
+  description     String?
+  features        String    @default("[]")  // JSON: included features/modules
+  maxStores       Int       @default(1)
+  maxProducts     Int       @default(500)
+  maxOrders       Int       @default(1000)
+  maxDeliveryPartners Int   @default(5)
+  maxStaff        Int       @default(10)
+  hasPOS          Boolean   @default(true)
+  hasDelivery     Boolean   @default(true)
+  hasSubscription Boolean   @default(false)
+  hasCustomDomain Boolean   @default(false)
+  hasWhiteLabel   Boolean   @default(false)
+  hasAdvancedReports Boolean @default(false)
+  hasAPIAccess    Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  isPublic        Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  subscriptions   BusinessSubscription[]
+
+  @@index([isActive])
+}
+
+model BusinessSubscription {
+  id                  String             @id @default(cuid())
+  businessId          String             @unique
+  planId              String
+  status              SubscriptionStatus @default(TRIAL)
+  // Pricing — supports manual override by Super Admin
+  planPrice           Float
+  customPrice         Float?
+  discountPercentage  Float?
+  manualPriceOverride Boolean            @default(false)
+  overrideReason      String?
+  // Billing cycle
+  billingCycle        String             @default("monthly")
+  currentPeriodStart  DateTime
+  currentPeriodEnd    DateTime
+  nextBillingDate     DateTime
+  // Trial
+  trialStart          DateTime?
+  trialEnd            DateTime?
+  trialExtensionDays  Int                @default(0)
+  // Pause
+  pausedAt            DateTime?
+  pauseReason         String?
+  resumeAt            DateTime?
+  // Payment
+  lastPaymentDate     DateTime?
+  lastPaymentAmount   Float?
+  nextPaymentAmount   Float?
+  paymentMethod       String?
+  // Auto
+  autoRenew           Boolean            @default(true)
+  cancelledAt         DateTime?
+  cancelReason        String?
+  // Metadata
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  business            Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan                PlatformPlan       @relation(fields: [planId], references: [id])
+  billingHistory      BillingRecord[]
+
+  @@index([status])
+  @@index([nextBillingDate])
+}
+
+model BillingRecord {
+  id                    String   @id @default(cuid())
+  businessSubscriptionId String
+  amount                Float
+  currency              String   @default("INR")
+  status                String   @default("pending")
+  invoiceNumber         String?
+  paymentGateway        String?
+  gatewayTransactionId  String?
+  dueDate               DateTime
+  paidDate              DateTime?
+  description           String?
+  createdAt             DateTime @default(now())
+
+  subscription          BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([businessSubscriptionId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// ============================================================================
+// SECTION 12: CUSTOMER-SUBSCRIPTION ENGINE (Business → Customer)
+// Credit-based packages for Car Wash, Home Services, Laundry etc.
 // ============================================================================
 
 enum SubscriptionServiceType {
@@ -1165,7 +912,7 @@ model SubscriptionPlan {
   setupFee          Float                  @default(0)
   trialDays         Int                    @default(0)
   totalCredits      Int                    @default(0)
-  creditLabel       String?                // "washes", "pickups", "sessions"
+  creditLabel       String?
   features          String                 @default("[]")
   isFeatured        Boolean                @default(false)
   maxSubscribers    Int?
@@ -1189,7 +936,7 @@ model SubscriptionPlan {
 model SubscriptionPlanItem {
   id              String            @id @default(cuid())
   planId          String
-  productId       String?
+  productId       String?           // Optional link to catalog product
   serviceName     String?
   creditsPerCycle Int               @default(1)
   maxPerUse       Int               @default(1)
@@ -1198,7 +945,6 @@ model SubscriptionPlanItem {
   createdAt       DateTime          @default(now())
 
   plan            SubscriptionPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
-  product         Product?          @relation(fields: [productId], references: [id])
 
   @@index([planId])
 }
@@ -1228,157 +974,152 @@ model CustomerSubscription {
   updatedAt         DateTime                 @updatedAt
 
   business          Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer          Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  plan              SubscriptionPlan         @relation(fields: [planId], references: [id])
+  customer          Customer                 @relation(fields: [customerId], references: [id])
+  plan              SubscriptionPlan          @relation(fields: [planId], references: [id])
   usages            SubscriptionUsage[]
   orders            Order[]
-  invoices          Invoice[]
 
   @@index([businessId])
   @@index([customerId])
   @@index([status])
-  @@index([nextBillingDate])
 }
 
 model SubscriptionUsage {
-  id               String              @id @default(cuid())
-  subscriptionId   String
-  orderId          String?
-  creditsUsed      Int                 @default(1)
-  description      String?
-  usedAt           DateTime            @default(now())
+  id              String   @id @default(cuid())
+  subscriptionId  String
+  orderId         String?
+  creditsUsed     Int      @default(1)
+  description     String?
+  createdAt       DateTime @default(now())
 
-  subscription     CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription    CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([subscriptionId])
-  @@index([usedAt])
+  @@index([createdAt])
 }
 
 // ============================================================================
-// POS SYSTEM
+// SECTION 13: CUSTOMER
 // ============================================================================
 
-enum POSSessionStatus {
-  OPEN
-  CLOSED
-  SUSPENDED
-}
-
-model POSSession {
-  id              String           @id @default(cuid())
-  businessId      String
-  storeId         String
-  operatorId      String
-  sessionNumber   String
-  status          POSSessionStatus @default(OPEN)
-  openingBalance  Float            @default(0)
-  closingBalance  Float?
-  totalSales      Float            @default(0)
-  totalCash       Float            @default(0)
-  totalCard       Float            @default(0)
-  totalUpi        Float            @default(0)
-  totalRefunds    Float            @default(0)
-  totalOrders     Int              @default(0)
-  cashDrawer      String           @default("{}")
-  printerQueue    String           @default("[]")
-  openedAt        DateTime         @default(now())
-  closedAt        DateTime?
-
-  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store           Store            @relation(fields: [storeId], references: [id])
-  orders          Order[]
-
-  @@unique([businessId, sessionNumber])
-  @@index([businessId])
-  @@index([storeId])
-  @@index([status])
-}
-
-// ============================================================================
-// PAYMENTS
-// ============================================================================
-
-model Payment {
-  id               String        @id @default(cuid())
-  orderId          String
-  businessId       String
-  amount           Float
-  currency         String        @default("INR")
-  method           PaymentMethod
-  status           PaymentStatus @default(PENDING)
-  gateway          String?
-  gatewayPaymentId String?
-  gatewayOrderId   String?
-  gatewaySignature String?
-  refundId         String?
-  refundAmount     Float?
-  refundedAt       DateTime?
-  transactionId    String?
-  receiptNumber    String?
-  metadata         String        @default("{}")
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-
-  order            Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([businessId])
-  @@index([gatewayPaymentId])
-  @@index([status])
-}
-
-model PaymentGateway {
+model Customer {
   id            String   @id @default(cuid())
   businessId    String
+  userId        String?
   name          String
-  type          String
+  email         String?
+  phone         String?
+  avatar        String?
+  gstNumber     String?
+  loyaltyPoints Int      @default(0)
+  totalOrders   Int      @default(0)
+  totalSpent    Float    @default(0)
+  avgOrderValue Float    @default(0)
+  lastOrderAt   DateTime?
+  tags          String   @default("[]")
+  metadata      String   @default("{}")
   isActive      Boolean  @default(true)
-  config        String   @default("{}")
-  isDefault     Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user          User?    @relation(fields: [userId], references: [id])
+  addresses     Address[]
+  orders        Order[]
+  subscriptions CustomerSubscription[]
+  invoices      Invoice[]
+
+  @@unique([businessId, phone])
+  @@index([businessId])
+  @@index([userId])
+  @@index([phone])
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  customerId   String
+  label        String?
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  pincode      String
+  country      String   @default("India")
+  latitude     Float?
+  longitude    Float?
+  isDefault    Boolean  @default(false)
+  landmark     String?
+  instructions String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+// ============================================================================
+// SECTION 14: NOTIFICATIONS
+// ============================================================================
+
+enum NotificationType {
+  ORDER_STATUS
+  DELIVERY_UPDATE
+  PROMOTION
+  SUBSCRIPTION
+  PAYMENT
+  SYSTEM
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  WHATSAPP
+  IN_APP
+  SMS
+}
+
+model NotificationTemplate {
+  id          String              @id @default(cuid())
+  key         String              // "order.confirmed", "delivery.assigned", etc.
+  name        String
+  channel     NotificationChannel
+  subject     String?             // For email
+  body        String              // Template with {{variables}}
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([key, channel])
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  businessId  String
+  userId      String?
+  type        NotificationType
+  channel     NotificationChannel
+  title       String
+  message     String
+  data        String             @default("{}") // JSON: additional data
+  isRead      Boolean            @default(false)
+  readAt      DateTime?
+  sentAt      DateTime?
+  failedAt    DateTime?
+  error       String?
+  createdAt   DateTime           @default(now())
+
+  business    Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
 }
 
 // ============================================================================
-// TAX (GST)
-// ============================================================================
-
-enum TaxType {
-  GST_0
-  GST_5
-  GST_12
-  GST_18
-  GST_28
-  CUSTOM
-}
-
-model TaxConfig {
-  id         String   @id @default(cuid())
-  businessId String
-  name       String
-  taxType    TaxType
-  gstRate    Float
-  cgstRate   Float    @default(0)
-  sgstRate   Float    @default(0)
-  igstRate   Float    @default(0)
-  cessRate   Float    @default(0)
-  hsnCode    String?
-  isActive   Boolean  @default(true)
-  isDefault  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@index([businessId])
-}
-
-// ============================================================================
-// INVOICES (GST Compliant)
+// SECTION 15: INVOICE & TAX
 // ============================================================================
 
 enum InvoiceType {
@@ -1394,54 +1135,60 @@ model Invoice {
   businessId      String
   orderId         String?     @unique
   customerId      String?
-  subscriptionId  String?
   invoiceNumber   String
   invoiceType     InvoiceType @default(TAX_INVOICE)
-  businessName    String
-  businessAddress String?
-  businessGst     String?
-  businessPan     String?
-  customerName    String
-  customerAddress String?
-  customerGst     String?
-  customerPan     String?
-  customerState   String?
+  // Billing snapshot
   subtotal        Float       @default(0)
-  totalDiscount   Float       @default(0)
   totalTax        Float       @default(0)
-  cgstTotal       Float       @default(0)
-  sgstTotal       Float       @default(0)
-  igstTotal       Float       @default(0)
-  cessTotal       Float       @default(0)
-  deliveryFee     Float       @default(0)
-  packagingFee    Float       @default(0)
-  roundOff        Float       @default(0)
+  totalDiscount   Float       @default(0)
   totalAmount     Float       @default(0)
-  amountInWords   String?
-  reverseCharge   Boolean     @default(false)
-  placeOfSupply   String?
-  terms           String?
-  notes           String?
+  cgstAmount      Float       @default(0)
+  sgstAmount      Float       @default(0)
+  igstAmount      Float       @default(0)
+  // Due & paid
   dueDate         DateTime?
   paidAt          DateTime?
-  isGstCompliant  Boolean     @default(true)
+  status          String      @default("pending") // pending, paid, overdue, cancelled
+  // PDF
   pdfUrl          String?
+  metadata        String      @default("{}")
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
   business        Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   order           Order?      @relation(fields: [orderId], references: [id])
-  subscription    CustomerSubscription? @relation(fields: [subscriptionId], references: [id])
   customer        Customer?   @relation(fields: [customerId], references: [id])
 
   @@unique([businessId, invoiceNumber])
   @@index([businessId])
+  @@index([orderId])
   @@index([customerId])
-  @@index([createdAt])
+  @@index([status])
+}
+
+model TaxConfig {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String   // "GST 5%", "GST 12%", etc.
+  taxType     String   // "gst_0", "gst_5", "gst_12", "gst_18", "gst_28", "custom"
+  rate        Float    // Percentage
+  cgstRate    Float?
+  sgstRate    Float?
+  igstRate    Float?
+  cessRate    Float?
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([taxType])
 }
 
 // ============================================================================
-// PROMO CODES
+// SECTION 16: PROMO CODES
 // ============================================================================
 
 enum PromoType {
@@ -1452,96 +1199,55 @@ enum PromoType {
 }
 
 model PromoCode {
-  id                 String    @id @default(cuid())
-  businessId         String
-  code               String
-  description        String?
-  promoType          PromoType
-  value              Float
-  minOrderAmount     Float     @default(0)
-  maxDiscount        Float?
-  usageLimit         Int?
-  usageCount         Int       @default(0)
-  perCustomerLimit   Int?
-  applicableCategories String  @default("[]")
-  applicableProducts String   @default("[]")
-  isFirstOrderOnly   Boolean   @default(false)
-  isActive           Boolean   @default(true)
-  startsAt           DateTime
-  endsAt             DateTime
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  businessId      String
+  code            String
+  description     String?
+  type            PromoType
+  value           Float
+  minOrderAmount  Float     @default(0)
+  maxDiscount     Float?
+  usageLimit      Int?
+  usedCount       Int       @default(0)
+  perUserLimit    Int       @default(1)
+  validFrom       DateTime
+  validUntil      DateTime
+  isActive        Boolean   @default(true)
+  applicableModules String  @default("[]") // Which modules this applies to
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  business           Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  orders             Order[]
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders          Order[]
 
   @@unique([businessId, code])
   @@index([businessId])
   @@index([code])
+  @@index([isActive])
 }
 
 // ============================================================================
-// NOTIFICATIONS
+// SECTION 17: SALES TEAM (Quantix Internal)
 // ============================================================================
 
-enum NotificationType {
-  ORDER_STATUS
-  DELIVERY_UPDATE
-  PROMOTION
-  SUBSCRIPTION
-  PAYMENT
-  SYSTEM
-}
-
-model Notification {
-  id          String           @id @default(cuid())
-  businessId  String
-  userId      String?
-  type        NotificationType
-  title       String
-  message     String
-  data        String           @default("{}")
-  isRead      Boolean          @default(false)
-  readAt      DateTime?
-  channel     String           @default("in_app")
-  sentAt      DateTime?
-  createdAt   DateTime         @default(now())
-
-  business    Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@index([businessId])
-  @@index([userId])
-  @@index([isRead])
-}
-
-// ============================================================================
-// ACTIVITY LOG
-// ============================================================================
-
-model ActivityLog {
+model SalesTeamMember {
   id          String   @id @default(cuid())
-  businessId  String
-  userId      String?
-  action      String
-  entity      String?
-  entityId    String?
-  details     String   @default("{}")
-  ipAddress   String?
-  userAgent   String?
+  userId      String   @unique
+  name        String
+  email       String
+  phone       String
+  avatar      String?
+  target      Float    @default(0)
+  achieved    Float    @default(0)
+  region      String?
+  isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user        User?    @relation(fields: [userId], references: [id])
-
-  @@index([businessId])
-  @@index([userId])
-  @@index([action])
-  @@index([createdAt])
+  user        User     @relation(fields: [userId], references: [id])
+  leads       Lead[]
+  clients     Business[]  @relation("SalesRepClients")
 }
-
-// ============================================================================
-// LEAD SOURCES (Enum)
-// ============================================================================
 
 enum LeadSource {
   META_ADS
@@ -1563,4 +1269,297 @@ enum LeadStatus {
   WON
   LOST
   FOLLOW_UP
+}
+
+model Lead {
+  id              String        @id @default(cuid())
+  salesRepId      String?
+  businessName    String
+  contactName     String
+  contactEmail    String
+  contactPhone    String
+  businessType    BusinessType
+  source          LeadSource    @default(META_ADS)
+  status          LeadStatus    @default(NEW)
+  notes           String?
+  followUpDate    DateTime?
+  estimatedValue  Float?
+  convertedBusinessId String?
+  tags            String        @default("[]")
+  lastContactedAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  salesRep        SalesTeamMember? @relation(fields: [salesRepId], references: [id])
+
+  @@index([salesRepId])
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// SECTION 18: DOMAIN & DEPLOYMENT (Quantix Managed)
+// ============================================================================
+
+enum DomainStatus {
+  PENDING_DNS
+  DNS_PROPAGATING
+  SSL_PENDING
+  ACTIVE
+  ERROR
+}
+
+model DomainMapping {
+  id              String       @id @default(cuid())
+  businessId      String       @unique
+  domain          String
+  subdomain       String?
+  isPrimary       Boolean      @default(true)
+  sslStatus       String       @default("pending")
+  sslExpiryDate   DateTime?
+  dnsProvider     String?
+  dnsConfig       String       @default("{}")
+  status          DomainStatus @default(PENDING_DNS)
+  configuredBy    String?
+  configuredAt    DateTime?
+  deployedAt      DateTime?
+  notes           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  business        Business     @relation(fields: [businessId], references: [id])
+
+  @@unique([domain])
+  @@index([status])
+}
+
+enum DeploymentStatus {
+  PENDING
+  BUILDING
+  DEPLOYING
+  LIVE
+  FAILED
+  MAINTENANCE
+}
+
+enum DeploymentType {
+  WEBSITE
+  ADMIN_DASHBOARD
+  CUSTOMER_APP
+  DELIVERY_APP
+  ADMIN_APP
+}
+
+model Deployment {
+  id              String           @id @default(cuid())
+  businessId      String
+  type            DeploymentType
+  status          DeploymentStatus @default(PENDING)
+  environment     String           @default("production")
+  hostingProvider String           @default("replit")
+  hostingConfig   String           @default("{}")
+  buildUrl        String?
+  liveUrl         String?
+  version         String?
+  deployedBy      String?
+  deployedAt      DateTime?
+  lastCheckedAt   DateTime?
+  healthStatus    String           @default("unknown")
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  business        Business         @relation(fields: [businessId], references: [id])
+
+  @@index([businessId])
+  @@index([type])
+  @@index([status])
+}
+
+// ============================================================================
+// SECTION 19: AUDIT LOG
+// ============================================================================
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  businessId  String?
+  userId      String?
+  action      String   // "business.created", "order.cancelled", etc.
+  entity      String   // "Business", "Order", "User", etc.
+  entityId    String?
+  details     String?  // JSON: { before: {}, after: {} }
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  business    Business? @relation(fields: [businessId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
+
+  @@index([businessId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// SECTION 20: CATALOG MODULE (Shared product/category/inventory)
+// Enabled via BusinessModule with moduleKey = "catalog"
+// Used by: GROCERY, PHARMACY, ECOMMERCE, COSMETICS, MEAT_DELIVERY, FURNITURE
+// ============================================================================
+
+enum ProductType {
+  PHYSICAL
+  DIGITAL
+  SERVICE
+  SUBSCRIPTION
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
+  ARCHIVED
+}
+
+enum InventoryStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+  DISCONTINUED
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  businessId  String
+  name        String
+  slug        String
+  description String?
+  image       String?
+  icon        String?
+  parentId    String?
+  sortOrder   Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  products    Product[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([parentId])
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  businessId      String
+  storeId         String?
+  categoryId      String?
+  name            String
+  slug            String
+  description     String?
+  shortDesc       String?
+  type            ProductType   @default(PHYSICAL)
+  status          ProductStatus @default(ACTIVE)
+  sku             String?
+  barcode         String?
+  images          String        @default("[]")
+  unit            String?
+  unitQuantity    Float?
+  isVeg           Boolean?
+  isFeatured      Boolean       @default(false)
+  isPopular       Boolean       @default(false)
+  preparationTime Int?
+  minOrderQty     Float         @default(1)
+  maxOrderQty     Float         @default(100)
+  tags            String        @default("[]")
+  nutritionInfo   String?
+  allergenInfo    String?
+  sortOrder       Int           @default(0)
+  metadata        String        @default("{}") // Module-specific product data
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category        Category?     @relation(fields: [categoryId], references: [id])
+  variants        ProductVariant[]
+  inventory       Inventory[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([storeId])
+}
+
+model ProductVariant {
+  id              String   @id @default(cuid())
+  productId       String
+  name            String
+  sku             String?
+  barcode         String?
+  price           Float
+  mrp             Float
+  costPrice       Float?
+  discountPrice   Float?
+  discountPercent Float?
+  stock           Int      @default(0)
+  minStock        Int      @default(0)
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  attributes      String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventory       Inventory[]
+
+  @@index([productId])
+  @@index([isActive])
+}
+
+model Inventory {
+  id             String          @id @default(cuid())
+  businessId     String
+  storeId        String
+  productId      String
+  variantId      String?
+  quantity       Int             @default(0)
+  reservedQty    Int             @default(0)
+  minStock       Int             @default(5)
+  maxStock       Int             @default(1000)
+  status         InventoryStatus @default(IN_STOCK)
+  lastRestockedAt DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  store          Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant        ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  logs           InventoryLog[]
+
+  @@unique([storeId, productId, variantId])
+  @@index([storeId])
+  @@index([productId])
+  @@index([status])
+}
+
+model InventoryLog {
+  id          String   @id @default(cuid())
+  inventoryId String
+  action      String   // RESTOCK, ORDER_RESERVED, ORDER_FULFILLED, ADJUSTMENT, RETURN
+  quantity    Int
+  previousQty Int
+  newQty      Int
+  note        String?
+  performedBy String?
+  createdAt   DateTime @default(now())
+
+  inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId])
+  @@index([createdAt])
 }
