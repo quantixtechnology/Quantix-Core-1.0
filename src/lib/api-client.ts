@@ -1,6 +1,7 @@
 // ============================================================================
 // Quantix Technology — Frontend API Client
 // MANAGED PLATFORM
+// Supports auto-injection of Bearer token and automatic token refresh on 401
 // ============================================================================
 
 import type {
@@ -66,11 +67,76 @@ export function getBusinessContextId(): string | null {
 }
 
 // ============================================================================
+// AUTH TOKEN HELPERS
+// ============================================================================
+
+const AUTH_TOKEN_KEY = 'quantix_auth_token';
+const REFRESH_TOKEN_KEY = 'quantix_auth_refresh_token';
+
+/**
+ * Get the current auth token from localStorage
+ * Does NOT import from auth-store to avoid circular dependencies
+ */
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+/**
+ * Get the current refresh token from localStorage
+ */
+function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+/**
+ * Update stored tokens after refresh
+ */
+function updateStoredTokens(accessToken: string, refreshToken: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+
+/**
+ * Attempt to refresh the access token using the refresh token
+ * Returns the new access token, or null if refresh failed
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  try {
+    const response = await fetch(`${API_BASE}/core/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data.success || !data.data) return null;
+
+    const { accessToken, refreshToken: newRefreshToken } = data.data;
+    updateStoredTokens(accessToken, newRefreshToken);
+    return accessToken;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // CORE FETCH WRAPPER
 // ============================================================================
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string | string[] | number | boolean | undefined>;
+  /** Skip auto-injection of auth token */
+  skipAuth?: boolean;
+  /** Skip automatic token refresh on 401 */
+  skipRefresh?: boolean;
 }
 
 class ApiError extends Error {
@@ -89,7 +155,7 @@ async function apiFetch<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<ApiResponse<T>> {
-  const { params, headers: customHeaders, ...restOptions } = options;
+  const { params, headers: customHeaders, skipAuth, skipRefresh, ...restOptions } = options;
 
   // Build URL with query params
   let url = `${API_BASE}${endpoint}`;
@@ -122,11 +188,52 @@ async function apiFetch<T>(
     headers['x-business-id'] = businessId;
   }
 
+  // Auto-inject Bearer token (unless skipAuth is set)
+  if (!skipAuth) {
+    const token = getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
   try {
     const response = await fetch(url, {
       ...restOptions,
       headers,
     });
+
+    // ─── Handle 401 with token refresh ──────────────────────────────
+    if (response.status === 401 && !skipRefresh && !skipAuth) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        // Retry the request with the new token
+        headers['Authorization'] = `Bearer ${newToken}`;
+        const retryResponse = await fetch(url, {
+          ...restOptions,
+          headers,
+        });
+
+        const retryData = await retryResponse.json();
+
+        if (!retryResponse.ok) {
+          throw new ApiError(
+            retryData.error || retryData.message || 'An error occurred',
+            retryResponse.status,
+            retryData
+          );
+        }
+
+        return retryData as ApiResponse<T>;
+      } else {
+        // Refresh failed — clear auth state and reject
+        // The auth-provider will detect the storage change and log out
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+        }
+        throw new ApiError('Session expired. Please login again.', 401);
+      }
+    }
 
     const data = await response.json();
 
@@ -316,19 +423,46 @@ export const invoiceApi = {
 
 export const authApi = {
   login: (email: string, password: string) =>
-    apiFetch<unknown>('/auth/login', {
+    apiFetch<unknown>('/core/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+      skipAuth: true,
+    }),
+  loginWithOtp: (phone: string, otp: string, channel: 'EMAIL_OTP' | 'WHATSAPP_OTP' = 'WHATSAPP_OTP') =>
+    apiFetch<unknown>('/core/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code: otp, channel }),
+      skipAuth: true,
+    }),
+  sendOtp: (phone: string, channel: 'EMAIL_OTP' | 'WHATSAPP_OTP' = 'WHATSAPP_OTP') =>
+    apiFetch<unknown>('/core/auth/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, channel }),
+      skipAuth: true,
+    }),
+  refreshToken: (refreshToken: string) =>
+    apiFetch<unknown>('/core/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+      skipAuth: true,
+    }),
+  logout: (refreshToken: string) =>
+    apiFetch<unknown>('/core/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+      skipRefresh: true,
     }),
   register: (data: { name: string; email: string; password: string; phone?: string }) =>
     apiFetch<unknown>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
+      skipAuth: true,
     }),
   forgotPassword: (email: string) =>
     apiFetch<unknown>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
+      skipAuth: true,
     }),
 };
 

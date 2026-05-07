@@ -12,6 +12,7 @@ import {
   Bell,
   Settings,
   Zap,
+  ChevronDown,
 } from "lucide-react"
 import {
   Sidebar,
@@ -26,8 +27,18 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { useAdminStore, type AdminPage } from "@/stores/admin-store"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { useAdminStore, type AdminPage } from "@/stores/admin-store"
+import { useResponsive } from "@/hooks/use-responsive"
+import { useState } from "react"
 
 const mainNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -45,9 +56,128 @@ const systemNavItems: { key: AdminPage; label: string; icon: React.ComponentType
   { key: "settings", label: "Settings", icon: Settings },
 ]
 
-export function AppSidebar() {
-  const { activePage, setActivePage } = useAdminStore()
+/** Collapsible section for mobile sidebar */
+function CollapsibleSection({
+  title,
+  items,
+  activePage,
+  onNavigate,
+  defaultOpen = true,
+}: {
+  title: string
+  items: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[]
+  activePage: AdminPage
+  onNavigate: (page: AdminPage) => void
+  defaultOpen?: boolean
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
 
+  return (
+    <div className="mb-1">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+        aria-expanded={isOpen}
+      >
+        {title}
+        <ChevronDown
+          className={`size-3.5 transition-transform duration-200 ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      {isOpen && (
+        <div className="flex flex-col gap-0.5 px-2">
+          {items.map((item) => {
+            const isActive = activePage === item.key
+            return (
+              <button
+                key={item.key}
+                onClick={() => onNavigate(item.key)}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors min-h-[44px] ${
+                  isActive
+                    ? "bg-primary/10 text-primary dark:bg-primary/20"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                }`}
+              >
+                <item.icon className="shrink-0 size-5" />
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface AppSidebarProps {
+  mobileOpen?: boolean
+  onMobileOpenChange?: (open: boolean) => void
+}
+
+export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSidebarProps) {
+  const { activePage, setActivePage } = useAdminStore()
+  const { isMobile } = useResponsive()
+
+  const handleNavigate = (page: AdminPage) => {
+    setActivePage(page)
+    if (isMobile && onMobileOpenChange) {
+      onMobileOpenChange(false)
+    }
+  }
+
+  // Mobile: Sheet-based sidebar with collapsible sections and touch-friendly targets
+  if (isMobile) {
+    return (
+      <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
+        <SheetContent side="left" className="w-[280px] p-0">
+          <SheetHeader className="border-b p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Zap className="size-5" />
+              </div>
+              <div>
+                <SheetTitle className="text-left text-base font-bold">Quantix Core</SheetTitle>
+                <SheetDescription className="text-left text-xs">Super Admin</SheetDescription>
+              </div>
+            </div>
+          </SheetHeader>
+
+          <ScrollArea className="flex-1 px-1 py-3">
+            <CollapsibleSection
+              title="Platform"
+              items={mainNavItems}
+              activePage={activePage}
+              onNavigate={handleNavigate}
+              defaultOpen={true}
+            />
+            <CollapsibleSection
+              title="System"
+              items={systemNavItems}
+              activePage={activePage}
+              onNavigate={handleNavigate}
+              defaultOpen={true}
+            />
+          </ScrollArea>
+
+          <div className="border-t p-4">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10">
+                <AvatarFallback className="bg-primary text-primary-foreground text-sm">QT</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="truncate text-sm font-semibold">Quantix Admin</p>
+                <p className="truncate text-xs text-muted-foreground">admin@quantix.in</p>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+    )
+  }
+
+  // Desktop: Persistent sidebar
   return (
     <Sidebar collapsible="icon" className="border-r">
       <SidebarHeader className="p-4">

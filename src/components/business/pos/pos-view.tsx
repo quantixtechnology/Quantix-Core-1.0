@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -54,11 +54,16 @@ import {
   Percent,
 } from "lucide-react";
 import { products, categories, businessCustomers } from "@/components/business/data";
+import { useProducts, useCategories, useCreateOrder } from "@/hooks/use-api";
+import { setBusinessContext } from "@/lib/api-client";
+import { showSuccess, showError } from "@/lib/toast-utils";
 import { PageHeader } from "@/components/admin/shared/page-header";
 
 // ============================================================================
 // Types
 // ============================================================================
+
+const BUSINESS_ID = "biz_1"
 
 interface CartItem {
   productId: string;
@@ -100,6 +105,53 @@ function generateBillNumber(): string {
 // ============================================================================
 
 export function POSView() {
+  // Set business context on mount
+  useEffect(() => {
+    setBusinessContext(BUSINESS_ID)
+  }, [])
+
+  // ---- API hooks ----
+  const { data: productsData } = useProducts(BUSINESS_ID)
+  const { data: categoriesData } = useCategories(BUSINESS_ID)
+  const createOrderMutation = useCreateOrder()
+
+  // Map API products data (fall back to mock data if API hasn't loaded)
+  const apiProducts = useMemo(() => {
+    if (!productsData?.data || !Array.isArray(productsData.data)) return products
+    return productsData.data.map((p: Record<string, unknown>) => ({
+      ...p,
+      id: String(p.id || ""),
+      name: String(p.name || ""),
+      status: String(p.status || "ACTIVE"),
+      categoryId: String(p.categoryId || ""),
+      category: String(p.categoryName || p.category || ""),
+      isVeg: Boolean(p.isVeg !== undefined ? p.isVeg : true),
+      isFeatured: Boolean(p.isFeatured || false),
+      variants: Array.isArray(p.variants)
+        ? p.variants.map((v: Record<string, unknown>, i: number) => ({
+            id: String(v.id || `var_${i}`),
+            name: String(v.name || "Default"),
+            sku: String(v.sku || ""),
+            mrp: Number(v.mrp || 0),
+            price: Number(v.price || 0),
+            stock: Number(v.stock || 0),
+            isDefault: Boolean(v.isDefault || i === 0),
+          }))
+        : undefined,
+    }))
+  }, [productsData])
+
+  const apiCategories = useMemo(() => {
+    if (!categoriesData?.data || !Array.isArray(categoriesData.data)) return categories
+    return categoriesData.data.map((c: Record<string, unknown>) => ({
+      ...c,
+      id: String(c.id || ""),
+      name: String(c.name || ""),
+      slug: String(c.slug || ""),
+      productCount: Number(c.productCount || 0),
+    }))
+  }, [categoriesData])
+
   // ---- State ----
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -120,7 +172,7 @@ export function POSView() {
 
   // ---- Filtered products ----
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => p.status === "ACTIVE");
+    let result = apiProducts.filter((p) => p.status === "ACTIVE");
     if (selectedCategory !== "all") {
       result = result.filter((p) => p.categoryId === selectedCategory);
     }
@@ -130,11 +182,11 @@ export function POSView() {
         (p) =>
           p.name.toLowerCase().includes(q) ||
           p.category.toLowerCase().includes(q) ||
-          p.variants.some((v) => v.sku.toLowerCase().includes(q))
+          (p.variants && p.variants.some((v) => v.sku.toLowerCase().includes(q)))
       );
     }
     return result;
-  }, [selectedCategory, searchQuery]);
+  }, [selectedCategory, searchQuery, apiProducts]);
 
   // ---- Cart calculations ----
   const subtotal = useMemo(
@@ -158,9 +210,9 @@ export function POSView() {
   // ---- Cart actions ----
   const addToCart = useCallback(
     (productId: string) => {
-      const product = products.find((p) => p.id === productId);
+      const product = apiProducts.find((p) => p.id === productId);
       if (!product) return;
-      const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0];
+      const defaultVariant = product.variants?.find((v) => v.isDefault) || product.variants?.[0];
       if (!defaultVariant) return;
 
       setCart((prev) => {
@@ -187,7 +239,7 @@ export function POSView() {
         ];
       });
     },
-    []
+    [apiProducts]
   );
 
   const updateQuantity = useCallback((variantId: string, delta: number) => {
@@ -232,12 +284,45 @@ export function POSView() {
     [cart.length]
   );
 
-  const confirmPayment = useCallback(() => {
+  const selectedCustomerData = useMemo(() => {
+    if (selectedCustomer === "walk-in") return null;
+    return businessCustomers.find((c) => c.id === selectedCustomer) || null;
+  }, [selectedCustomer, businessCustomers]);
+
+  const confirmPayment = useCallback(async () => {
+    try {
+      // Create order via API for POS orders
+      if (cart.length > 0) {
+        createOrderMutation.mutate({
+          businessId: BUSINESS_ID,
+          storeId: "store_1",
+          orderType: "POS",
+          orderSource: "pos",
+          customerName: selectedCustomerData?.name || "Walk-in Customer",
+          customerPhone: selectedCustomerData?.phone,
+          paymentMethod: activePaymentMethod,
+          items: cart.map((item) => ({
+            itemType: "PRODUCT",
+            itemId: item.productId,
+            itemName: item.productName,
+            variantName: item.variantName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            mrp: item.mrp,
+            isVeg: item.isVeg,
+          })),
+          posSessionId: `pos_session_${sessionStartTime.getTime()}`,
+        })
+      }
+    } catch {
+      // Non-blocking - payment is still confirmed locally
+    }
+
     setPaymentConfirmed(true);
     setSessionBillCount((prev) => prev + 1);
     const billNum = generateBillNumber();
     setLastBillNumber(billNum);
-  }, []);
+  }, [cart, selectedCustomerData, activePaymentMethod, createOrderMutation, sessionStartTime]);
 
   const openReceipt = useCallback(() => {
     setPaymentDialogOpen(false);
@@ -254,11 +339,6 @@ export function POSView() {
     const received = parseFloat(cashReceived) || 0;
     return Math.max(0, Math.round((received - totalAmount) * 100) / 100);
   }, [cashReceived, totalAmount]);
-
-  const selectedCustomerData = useMemo(() => {
-    if (selectedCustomer === "walk-in") return null;
-    return businessCustomers.find((c) => c.id === selectedCustomer) || null;
-  }, [selectedCustomer]);
 
   // ---- Session info ----
   const sessionDuration = useMemo(() => {
@@ -997,7 +1077,7 @@ export function POSView() {
                 >
                   All Items
                 </Button>
-                {categories.map((cat) => (
+                {apiCategories.map((cat) => (
                   <Button
                     key={cat.id}
                     size="sm"

@@ -1,11 +1,25 @@
 // ============================================================================
 // Route: POST /api/core/auth/verify-otp
-// Verify OTP and return user session data
+// Verify OTP and return user session data with proper access + refresh tokens
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { getPermissionsForRole } from '@/lib/core';
+import { createAccessToken } from '@/lib/password-utils';
 import { NextResponse } from 'next/server';
+import type { Role, BusinessType, Permission } from '@/lib/types';
+
+// Refresh token expiry: 7 days
+const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+
+function generateRefreshToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 64; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
 
 export async function POST(request: Request) {
   try {
@@ -77,8 +91,6 @@ export async function POST(request: Request) {
 
     if (!user) {
       // Auto-create user if they don't exist (for OTP-based signup flow)
-      // The user will need to complete registration via /api/core/auth/register
-      // For now, create a basic user record
       const userEmail = email || `${phone}@otp.placeholder`;
       user = await db.user.create({
         data: {
@@ -128,42 +140,86 @@ export async function POST(request: Request) {
       where: { userId: user.id },
     });
 
-    // Build permissions per business
+    // Determine role and business context
+    let role: Role = 'CUSTOMER';
+    let businessId: string | undefined;
+    let businessName: string | undefined;
+    let businessType: BusinessType | undefined;
+    let businessSlug: string | undefined;
+    let storeId: string | undefined;
+    let isPlatformAdmin = false;
+
+    if (salesProfile) {
+      role = 'QUANTIX_SALES_TEAM';
+      isPlatformAdmin = true;
+    } else if (user.email.endsWith('@quantixtechnology.in') && businessUsers.length === 0) {
+      role = 'QUANTIX_SUPER_ADMIN';
+      isPlatformAdmin = true;
+    } else if (businessUsers.length > 0) {
+      const primaryBU = businessUsers[0];
+      role = primaryBU.role as Role;
+      businessId = primaryBU.business.id;
+      businessName = primaryBU.business.name;
+      businessType = primaryBU.business.businessType as BusinessType;
+      businessSlug = primaryBU.business.slug;
+      storeId = primaryBU.storeId || undefined;
+    }
+
+    const permissions: Permission[] = getPermissionsForRole(role);
+
+    // Build user session object
+    const sessionUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar,
+      role,
+      businessId,
+      businessName,
+      businessType,
+      businessSlug,
+      storeId,
+      permissions,
+      isPlatformAdmin,
+    };
+
+    // Build businesses array
     const userWithRoles = businessUsers.map((bu) => ({
       businessId: bu.businessId,
-      role: bu.role,
-      permissions: getPermissionsForRole(bu.role),
+      businessName: bu.business.name,
+      businessType: bu.business.businessType as BusinessType,
+      businessSlug: bu.business.slug,
+      role: bu.role as Role,
+      storeId: bu.storeId || null,
+      storeName: bu.store?.name || null,
+      permissions: getPermissionsForRole(bu.role as Role),
       business: bu.business,
-      storeId: bu.storeId,
-      store: bu.store,
     }));
 
-    // Create a simple token (JWT-like, just user data for now)
-    const token = Buffer.from(
-      JSON.stringify({
+    // ─── Create proper access token ──────────────────────────────────
+    const accessToken = createAccessToken();
+
+    // ─── Create refresh token in database ─────────────────────────────
+    const refreshTokenValue = generateRefreshToken();
+    const refreshExpiresAt = new Date();
+    refreshExpiresAt.setDate(refreshExpiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
+
+    await db.refreshToken.create({
+      data: {
         userId: user.id,
-        email: user.email,
-        phone: user.phone,
-        exp: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-      })
-    ).toString('base64');
+        token: refreshTokenValue,
+        expiresAt: refreshExpiresAt,
+      },
+    });
 
     return NextResponse.json({
       success: true,
       data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          phone: user.phone,
-          name: user.name,
-          avatar: user.avatar,
-          authProvider: user.authProvider,
-          emailVerified: user.emailVerified,
-          phoneVerified: user.phoneVerified,
-          isActive: user.isActive,
-          createdAt: user.createdAt,
-        },
+        user: sessionUser,
+        accessToken,
+        refreshToken: refreshTokenValue,
         businesses: userWithRoles,
+        permissions,
         salesProfile: salesProfile
           ? {
               id: salesProfile.id,
@@ -172,7 +228,6 @@ export async function POST(request: Request) {
               isActive: salesProfile.isActive,
             }
           : null,
-        token,
       },
     });
   } catch (error) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   ShoppingBag,
   Search,
@@ -29,10 +30,22 @@ import {
   Eye,
   RefreshCw,
 } from "lucide-react"
-import { businessOrders, deliveryPartners } from "@/components/business/data"
+import {
+  useOrders,
+  useUpdateOrderStatus,
+} from "@/hooks/use-api"
+import { useOrderUpdates } from "@/hooks/use-realtime"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showError, showOrderUpdate } from "@/lib/toast-utils"
+import { SkeletonTable, ErrorState } from "@/components/ui/loading-states"
 import { StatusBadge } from "@/components/admin/shared/status-badge"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+const BUSINESS_ID = "biz_1"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -135,12 +148,76 @@ function getTimelineSteps(status: OrderStatus): { step: OrderStatus; completed: 
 }
 
 // ---------------------------------------------------------------------------
+// Map API order data to local Order interface
+// ---------------------------------------------------------------------------
+function mapApiOrder(apiOrder: Record<string, unknown>): Order {
+  return {
+    id: String(apiOrder.id || ""),
+    orderNumber: String(apiOrder.orderNumber || apiOrder.id || ""),
+    type: (String(apiOrder.orderType || "DELIVERY").toUpperCase() === "POS" ? "POS" : "DELIVERY") as OrderType,
+    status: String(apiOrder.status || "PENDING") as OrderStatus,
+    customerName: String(apiOrder.customerName || "Unknown"),
+    customerPhone: String(apiOrder.customerPhone || ""),
+    items: Array.isArray(apiOrder.items)
+      ? apiOrder.items.map((item: Record<string, unknown>) => ({
+          name: String(item.itemName || item.name || "Item"),
+          qty: Number(item.quantity || 1),
+          price: Number(item.unitPrice || item.price || 0),
+        }))
+      : [],
+    subtotal: Number(apiOrder.subtotal || 0),
+    deliveryFee: Number(apiOrder.deliveryFee || 0),
+    tax: Number(apiOrder.tax || apiOrder.gstAmount || 0),
+    total: Number(apiOrder.totalAmount || apiOrder.total || 0),
+    paymentMethod: String(apiOrder.paymentMethod || "UPI"),
+    paymentStatus: String(apiOrder.paymentStatus || "PENDING"),
+    createdAt: apiOrder.createdAt ? String(apiOrder.createdAt) : new Date().toISOString(),
+    deliveryAddress: apiOrder.deliveryAddress ? String(apiOrder.deliveryAddress) : null,
+    assignedTo: apiOrder.assignedTo ? String(apiOrder.assignedTo) : null,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
 export function OrdersView() {
+  // Set business context on mount
+  useEffect(() => {
+    setBusinessContext(BUSINESS_ID)
+  }, [])
+
+  // ---- API hooks ----
+  const { data: ordersData, isLoading: ordersLoading, error: ordersError, refetch: refetchOrders } = useOrders(
+    { businessId: BUSINESS_ID, limit: 100 } as Record<string, unknown>,
+    {
+      refetchInterval: 30000,
+    }
+  )
+
+  const updateStatusMutation = useUpdateOrderStatus()
+
+  // Real-time order updates
+  const { latestOrder, orderCount } = useOrderUpdates(BUSINESS_ID)
+
+  // Show toast on real-time order updates
+  useEffect(() => {
+    if (latestOrder && latestOrder.orderNumber) {
+      showOrderUpdate(latestOrder.status || "placed", latestOrder.orderNumber)
+      // Refetch orders to get latest data
+      refetchOrders()
+    }
+  }, [orderCount, latestOrder, refetchOrders])
+
+  // Map API data to local Order type
+  const apiOrders: Order[] = useMemo(() => {
+    if (!ordersData?.data) return []
+    const rawData = ordersData.data
+    if (!Array.isArray(rawData)) return []
+    return rawData.map((o: Record<string, unknown>) => mapApiOrder(o))
+  }, [ordersData])
+
   // ---- State ----
-  const [orders, setOrders] = useState<Order[]>(businessOrders as Order[])
   const [activeTab, setActiveTab] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState("ALL")
@@ -157,25 +234,20 @@ export function OrdersView() {
   } | null>(null)
   const [statusNotes, setStatusNotes] = useState("")
 
-  // Assign delivery partner dialog
-  const [assignDialogOpen, setAssignDialogOpen] = useState(false)
-  const [assignOrder, setAssignOrder] = useState<Order | null>(null)
-  const [selectedPartner, setSelectedPartner] = useState("")
-
   // ---- Computed ----
-  const pendingCount = orders.filter((o) => o.status === "PENDING").length
-  const preparingCount = orders.filter(
+  const pendingCount = apiOrders.filter((o) => o.status === "PENDING").length
+  const preparingCount = apiOrders.filter(
     (o) => o.status === "CONFIRMED" || o.status === "PREPARING"
   ).length
-  const outForDeliveryCount = orders.filter(
+  const outForDeliveryCount = apiOrders.filter(
     (o) => o.status === "OUT_FOR_DELIVERY"
   ).length
-  const deliveredTodayCount = orders.filter(
+  const deliveredTodayCount = apiOrders.filter(
     (o) => o.status === "DELIVERED"
   ).length
 
   const filteredOrders = useMemo(() => {
-    let result = [...orders]
+    let result = [...apiOrders]
 
     // Tab filter
     if (activeTab !== "all") {
@@ -216,7 +288,7 @@ export function OrdersView() {
     if (dateFilter !== "ALL") {
       const now = new Date()
       result = result.filter((o) => {
-        const orderDate = new Date(o.createdAt.replace(" ", "T"))
+        const orderDate = new Date(o.createdAt)
         if (dateFilter === "TODAY") {
           return orderDate.toDateString() === now.toDateString()
         }
@@ -230,7 +302,7 @@ export function OrdersView() {
     }
 
     return result
-  }, [orders, activeTab, searchQuery, typeFilter, paymentFilter, dateFilter])
+  }, [apiOrders, activeTab, searchQuery, typeFilter, paymentFilter, dateFilter])
 
   // ---- Handlers ----
   function openDetail(order: Order) {
@@ -244,63 +316,28 @@ export function OrdersView() {
     setStatusDialogOpen(true)
   }
 
-  function confirmStatusUpdate() {
+  const confirmStatusUpdate = useCallback(async () => {
     if (!pendingStatusUpdate) return
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === pendingStatusUpdate.order.id
-          ? { ...o, status: pendingStatusUpdate.newStatus }
-          : o
-      )
-    )
-    // Also update selected order if it's open
-    if (selectedOrder?.id === pendingStatusUpdate.order.id) {
-      setSelectedOrder((prev) =>
-        prev ? { ...prev, status: pendingStatusUpdate.newStatus } : prev
-      )
-    }
-    setStatusDialogOpen(false)
-    setPendingStatusUpdate(null)
-    setStatusNotes("")
-  }
 
-  function openAssignDialog(order: Order) {
-    setAssignOrder(order)
-    setSelectedPartner("")
-    setAssignDialogOpen(true)
-  }
-
-  function confirmAssignPartner() {
-    if (!assignOrder || !selectedPartner) return
-    const partner = deliveryPartners.find((p) => p.id === selectedPartner)
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === assignOrder.id
-          ? {
-              ...o,
-              status: "OUT_FOR_DELIVERY" as OrderStatus,
-              assignedTo: partner?.name || null,
-            }
-          : o
+    try {
+      await updateStatusMutation.mutateAsync({
+        orderId: pendingStatusUpdate.order.id,
+        status: pendingStatusUpdate.newStatus,
+        note: statusNotes || undefined,
+      })
+      showSuccess(
+        `Order ${pendingStatusUpdate.order.orderNumber} updated to ${pendingStatusUpdate.newStatus.replace(/_/g, " ")}`
       )
-    )
-    if (selectedOrder?.id === assignOrder.id) {
-      setSelectedOrder((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: "OUT_FOR_DELIVERY" as OrderStatus,
-              assignedTo: partner?.name || null,
-            }
-          : prev
-      )
+      setStatusDialogOpen(false)
+      setPendingStatusUpdate(null)
+      setStatusNotes("")
+    } catch (error) {
+      showError("Failed to update order status")
     }
-    setAssignDialogOpen(false)
-    setAssignOrder(null)
-    setSelectedPartner("")
-  }
+  }, [pendingStatusUpdate, statusNotes, updateStatusMutation])
 
   function getActionButtons(order: Order) {
+    const isLoading = updateStatusMutation.isPending
     switch (order.status) {
       case "PENDING":
         return (
@@ -308,6 +345,7 @@ export function OrdersView() {
             <Button
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={isLoading}
               onClick={() => requestStatusUpdate(order, "CONFIRMED")}
             >
               Accept
@@ -315,6 +353,7 @@ export function OrdersView() {
             <Button
               size="sm"
               variant="destructive"
+              disabled={isLoading}
               onClick={() => requestStatusUpdate(order, "CANCELLED")}
             >
               Reject
@@ -326,6 +365,7 @@ export function OrdersView() {
           <Button
             size="sm"
             className="bg-blue-600 hover:bg-blue-700 text-white"
+            disabled={isLoading}
             onClick={() => requestStatusUpdate(order, "PREPARING")}
           >
             Start Preparing
@@ -336,6 +376,7 @@ export function OrdersView() {
           <Button
             size="sm"
             className="bg-yellow-600 hover:bg-yellow-700 text-white"
+            disabled={isLoading}
             onClick={() => requestStatusUpdate(order, "READY_FOR_PICKUP")}
           >
             Ready for Pickup
@@ -346,16 +387,21 @@ export function OrdersView() {
           <Button
             size="sm"
             className="bg-orange-600 hover:bg-orange-700 text-white"
-            onClick={() => openAssignDialog(order)}
+            disabled={isLoading}
+            onClick={() => requestStatusUpdate(order, "OUT_FOR_DELIVERY")}
           >
-            Assign Delivery Partner
+            Send for Delivery
           </Button>
         )
       case "OUT_FOR_DELIVERY":
         return (
-          <Button size="sm" variant="outline" className="gap-1.5">
-            <MapPin className="h-3.5 w-3.5" />
-            View on Map
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            disabled={isLoading}
+            onClick={() => requestStatusUpdate(order, "DELIVERED")}
+          >
+            Mark Delivered
           </Button>
         )
       default:
@@ -370,6 +416,24 @@ export function OrdersView() {
     setDateFilter("ALL")
   }
 
+  // ---- Error state ----
+  if (ordersError && !ordersData) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Orders"
+          description="Manage and track all customer orders"
+          icon={ShoppingBag}
+        />
+        <ErrorState
+          title="Failed to load orders"
+          description="Could not fetch orders. Please try again."
+          onRetry={() => refetchOrders()}
+        />
+      </div>
+    )
+  }
+
   // ---- Render ----
   return (
     <div className="space-y-6">
@@ -380,7 +444,7 @@ export function OrdersView() {
         icon={ShoppingBag}
         action={
           <Badge variant="secondary" className="text-sm px-3 py-1 bg-primary/10 text-primary hover:bg-primary/10">
-            {orders.length} orders
+            {apiOrders.length} orders
           </Badge>
         }
       />
@@ -389,28 +453,28 @@ export function OrdersView() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           title="Pending Orders"
-          value={pendingCount}
+          value={ordersLoading ? "..." : pendingCount}
           icon={Clock}
           iconColor="text-amber-600"
           iconBg="bg-amber-50"
         />
         <StatCard
           title="Preparing"
-          value={preparingCount}
+          value={ordersLoading ? "..." : preparingCount}
           icon={RefreshCw}
           iconColor="text-yellow-600"
           iconBg="bg-yellow-50"
         />
         <StatCard
           title="Out for Delivery"
-          value={outForDeliveryCount}
+          value={ordersLoading ? "..." : outForDeliveryCount}
           icon={Truck}
           iconColor="text-purple-600"
           iconBg="bg-purple-50"
         />
         <StatCard
           title="Delivered Today"
-          value={deliveredTodayCount}
+          value={ordersLoading ? "..." : deliveredTodayCount}
           icon={CheckCircle2}
           iconColor="text-emerald-600"
           iconBg="bg-emerald-50"
@@ -484,7 +548,11 @@ export function OrdersView() {
           <TabsContent key={tab} value={tab} className="mt-4">
             <Card>
               <CardContent className="p-0">
-                {filteredOrders.length === 0 ? (
+                {ordersLoading ? (
+                  <div className="p-6">
+                    <SkeletonTable rows={5} columns={7} showSearch={false} showPagination={false} />
+                  </div>
+                ) : filteredOrders.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16">
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
                       <ShoppingBag className="h-7 w-7 text-muted-foreground" />
@@ -556,7 +624,7 @@ export function OrdersView() {
                             </TableCell>
                             <TableCell>
                               <span className="text-xs text-muted-foreground">
-                                {order.createdAt.split(" ")[1]}
+                                {order.createdAt ? new Date(order.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : ""}
                               </span>
                             </TableCell>
                             <TableCell className="text-right">
@@ -597,7 +665,7 @@ export function OrdersView() {
                   <OrderStatusBadge status={selectedOrder.status} />
                 </div>
                 <SheetDescription>
-                  Order placed on {selectedOrder.createdAt}
+                  Order placed on {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString("en-IN") : "N/A"}
                 </SheetDescription>
               </SheetHeader>
 
@@ -833,11 +901,13 @@ export function OrdersView() {
             <Button
               variant="outline"
               onClick={() => setStatusDialogOpen(false)}
+              disabled={updateStatusMutation.isPending}
             >
               Cancel
             </Button>
             <Button
               onClick={confirmStatusUpdate}
+              disabled={updateStatusMutation.isPending}
               variant={
                 pendingStatusUpdate?.newStatus === "CANCELLED"
                   ? "destructive"
@@ -849,111 +919,11 @@ export function OrdersView() {
                   : ""
               }
             >
-              {pendingStatusUpdate?.newStatus === "CANCELLED"
+              {updateStatusMutation.isPending
+                ? "Updating..."
+                : pendingStatusUpdate?.newStatus === "CANCELLED"
                 ? "Reject Order"
                 : "Confirm"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ===== Assign Delivery Partner Dialog ===== */}
-      <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Assign Delivery Partner</DialogTitle>
-            <DialogDescription>
-              Select a delivery partner for order {assignOrder?.orderNumber}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Select Partner</Label>
-              <Select value={selectedPartner} onValueChange={setSelectedPartner}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a delivery partner" />
-                </SelectTrigger>
-                <SelectContent>
-                  {deliveryPartners.map((partner) => (
-                    <SelectItem
-                      key={partner.id}
-                      value={partner.id}
-                      disabled={partner.status === "OFFLINE"}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>{partner.name}</span>
-                        <Badge
-                          variant="secondary"
-                          className={`text-[10px] ${
-                            partner.status === "ONLINE"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          {partner.status}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {partner.activeOrders} active
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedPartner && (
-              <Card className="bg-muted/50">
-                <CardContent className="p-3">
-                  {(() => {
-                    const partner = deliveryPartners.find(
-                      (p) => p.id === selectedPartner
-                    )
-                    if (!partner) return null
-                    return (
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`h-2 w-2 rounded-full ${
-                              partner.status === "ONLINE"
-                                ? "bg-emerald-500"
-                                : "bg-slate-400"
-                            }`}
-                          />
-                          <span className="font-medium">{partner.name}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          ⭐ {partner.rating} · {partner.totalDeliveries} deliveries
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </CardContent>
-              </Card>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="assign-notes">Notes (optional)</Label>
-              <Textarea
-                id="assign-notes"
-                placeholder="Any instructions for the delivery partner..."
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setAssignDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={confirmAssignPartner}
-              disabled={!selectedPartner}
-              className="bg-orange-600 hover:bg-orange-700 text-white"
-            >
-              Assign & Send
             </Button>
           </DialogFooter>
         </DialogContent>

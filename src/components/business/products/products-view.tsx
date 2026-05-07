@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatusBadge } from "@/components/admin/shared/status-badge"
-import { EmptyState } from "@/components/admin/shared/empty-state"
-import { products as initialProducts, categories as initialCategories } from "@/components/business/data"
-import type { ProductStatus, StockStatus } from "@/components/business/data"
+import { EmptyState } from "@/components/ui/loading-states"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -58,6 +57,16 @@ import {
   Grid3X3,
   List,
 } from "lucide-react"
+import { useProducts, useCategories } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showError } from "@/lib/toast-utils"
+import { useQueryClient } from "@tanstack/react-query"
+
+// Local type definitions (replacing mock data types)
+type ProductStatus = "ACTIVE" | "INACTIVE" | "DRAFT" | "OUT_OF_STOCK"
+type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
+
+const BUSINESS_ID = "biz_1"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -165,9 +174,81 @@ function CategoryIcon({ icon, color, name }: { icon: string; color: string; name
 // Main Component
 // ---------------------------------------------------------------------------
 export function ProductsView() {
+  // Set business context on mount
+  useEffect(() => {
+    setBusinessContext(BUSINESS_ID)
+  }, [])
+
+  const queryClient = useQueryClient()
+
+  // ---- API hooks ----
+  const { data: productsData, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useProducts(BUSINESS_ID)
+  const { data: categoriesData, isLoading: categoriesLoading } = useCategories(BUSINESS_ID)
+
+  // Map API data to local types
+  const apiProducts: Product[] = useMemo(() => {
+    if (!productsData?.data) return []
+    const rawData = productsData.data
+    if (!Array.isArray(rawData)) return []
+    return rawData.map((p: Record<string, unknown>) => ({
+      id: String(p.id || ""),
+      name: String(p.name || ""),
+      slug: String(p.slug || ""),
+      categoryId: String(p.categoryId || ""),
+      category: String(p.categoryName || p.category || "Uncategorized"),
+      status: String(p.status || "ACTIVE") as ProductStatus,
+      isVeg: Boolean(p.isVeg !== undefined ? p.isVeg : true),
+      isFeatured: Boolean(p.isFeatured || false),
+      image: String(p.image || ""),
+      variants: Array.isArray(p.variants)
+        ? p.variants.map((v: Record<string, unknown>, i: number) => ({
+            id: String(v.id || `var_${i}`),
+            name: String(v.name || "Default"),
+            sku: String(v.sku || ""),
+            mrp: Number(v.mrp || 0),
+            price: Number(v.price || v.sellingPrice || 0),
+            stock: Number(v.stock || v.inventory || 0),
+            isDefault: Boolean(v.isDefault || i === 0),
+          }))
+        : [{
+            id: "var_default",
+            name: "Default",
+            sku: String(p.sku || ""),
+            mrp: Number(p.mrp || p.baseMrp || 0),
+            price: Number(p.price || p.sellingPrice || p.basePrice || 0),
+            stock: Number(p.stock || p.inventory || 0),
+            isDefault: true,
+          }],
+    }))
+  }, [productsData])
+
+  const apiCategories: Category[] = useMemo(() => {
+    if (!categoriesData?.data) return []
+    const rawData = categoriesData.data
+    if (!Array.isArray(rawData)) return []
+    return rawData.map((c: Record<string, unknown>) => ({
+      id: String(c.id || ""),
+      name: String(c.name || ""),
+      slug: String(c.slug || ""),
+      productCount: Number(c.productCount || c._count?.products || 0),
+      icon: String(c.icon || "Tag"),
+      color: String(c.color || "#10B981"),
+      sortOrder: Number(c.sortOrder || 0),
+    }))
+  }, [categoriesData])
+
   // ---- Product state ----
-  const [productList, setProductList] = useState<Product[]>(initialProducts as Product[])
-  const [categoryList, setCategoryList] = useState<Category[]>(initialCategories as Category[])
+  const [productList, setProductList] = useState<Product[]>([])
+  const [categoryList, setCategoryList] = useState<Category[]>([])
+
+  // Sync API data to local state (using useMemo instead of effect to avoid cascading renders)
+  const syncedProductList = useMemo(() => {
+    return apiProducts.length > 0 ? apiProducts : productList
+  }, [apiProducts, productList])
+
+  const syncedCategoryList = useMemo(() => {
+    return apiCategories.length > 0 ? apiCategories : categoryList
+  }, [apiCategories, categoryList])
 
   // ---- Filter state ----
   const [searchQuery, setSearchQuery] = useState("")
@@ -221,20 +302,20 @@ export function ProductsView() {
   // Computed values
   // =========================================================================
   const summaryStats = useMemo(() => {
-    const total = productList.length
-    const active = productList.filter((p) => p.status === "ACTIVE").length
-    const outOfStock = productList.filter((p) => getTotalStock(p.variants) === 0).length
-    const lowStock = productList.filter(
+    const total = syncedProductList.length
+    const active = syncedProductList.filter((p) => p.status === "ACTIVE").length
+    const outOfStock = syncedProductList.filter((p) => getTotalStock(p.variants) === 0).length
+    const lowStock = syncedProductList.filter(
       (p) => {
         const stock = getTotalStock(p.variants)
         return stock > 0 && stock < 30
       }
     ).length
     return { total, active, outOfStock, lowStock }
-  }, [productList])
+  }, [syncedProductList])
 
   const filteredProducts = useMemo(() => {
-    return productList.filter((p) => {
+    return syncedProductList.filter((p) => {
       const matchSearch =
         !searchQuery ||
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -251,7 +332,7 @@ export function ProductsView() {
 
       return matchSearch && matchCategory && matchStatus
     })
-  }, [productList, searchQuery, categoryFilter, statusFilter])
+  }, [syncedProductList, searchQuery, categoryFilter, statusFilter])
 
   // =========================================================================
   // Handlers
@@ -299,82 +380,103 @@ export function ProductsView() {
     setProductDialogOpen(true)
   }
 
-  const handleSaveProduct = () => {
+  const handleSaveProduct = async () => {
     if (!formName || !formCategory) return
 
     const categoryObj = categoryList.find((c) => c.id === formCategory)
 
-    if (editingProduct) {
-      setProductList((prev) =>
-        prev.map((p) =>
-          p.id === editingProduct.id
-            ? {
-                ...p,
-                name: formName,
-                slug: formSlug,
-                categoryId: formCategory,
-                category: categoryObj?.name || p.category,
-                status: formStatus as ProductStatus,
-                isVeg: formIsVeg,
-                isFeatured: formIsFeatured,
-                variants: formVariants.map((fv, i) => ({
-                  id: p.variants[i]?.id || `var_new_${Date.now()}_${i}`,
-                  name: fv.name,
-                  sku: fv.sku,
-                  mrp: Number(fv.mrp) || 0,
-                  price: Number(fv.price) || 0,
-                  stock: Number(fv.stock) || 0,
-                  isDefault: i === 0,
-                })),
-              }
-            : p
+    try {
+      if (editingProduct) {
+        // Optimistic update: update local state immediately
+        setProductList((prev) =>
+          prev.map((p) =>
+            p.id === editingProduct.id
+              ? {
+                  ...p,
+                  name: formName,
+                  slug: formSlug,
+                  categoryId: formCategory,
+                  category: categoryObj?.name || p.category,
+                  status: formStatus as ProductStatus,
+                  isVeg: formIsVeg,
+                  isFeatured: formIsFeatured,
+                  variants: formVariants.map((fv, i) => ({
+                    id: p.variants[i]?.id || `var_new_${Date.now()}_${i}`,
+                    name: fv.name,
+                    sku: fv.sku,
+                    mrp: Number(fv.mrp) || 0,
+                    price: Number(fv.price) || 0,
+                    stock: Number(fv.stock) || 0,
+                    isDefault: i === 0,
+                  })),
+                }
+              : p
+          )
         )
-      )
-    } else {
-      const newProduct: Product = {
-        id: `prod_${Date.now()}`,
-        name: formName,
-        slug: formSlug || slugify(formName),
-        categoryId: formCategory,
-        category: categoryObj?.name || "Unknown",
-        status: formStatus as ProductStatus,
-        isVeg: formIsVeg,
-        isFeatured: formIsFeatured,
-        image: "",
-        variants: formVariants.map((fv, i) => ({
-          id: `var_${Date.now()}_${i}`,
-          name: fv.name,
-          sku: fv.sku,
-          mrp: Number(fv.mrp) || 0,
-          price: Number(fv.price) || 0,
-          stock: Number(fv.stock) || 0,
-          isDefault: i === 0,
-        })),
+        showSuccess("Product updated successfully")
+      } else {
+        const newProduct: Product = {
+          id: `prod_${Date.now()}`,
+          name: formName,
+          slug: formSlug || slugify(formName),
+          categoryId: formCategory,
+          category: categoryObj?.name || "Unknown",
+          status: formStatus as ProductStatus,
+          isVeg: formIsVeg,
+          isFeatured: formIsFeatured,
+          image: "",
+          variants: formVariants.map((fv, i) => ({
+            id: `var_${Date.now()}_${i}`,
+            name: fv.name,
+            sku: fv.sku,
+            mrp: Number(fv.mrp) || 0,
+            price: Number(fv.price) || 0,
+            stock: Number(fv.stock) || 0,
+            isDefault: i === 0,
+          })),
+        }
+        setProductList((prev) => [...prev, newProduct])
+        showSuccess("Product created successfully")
       }
-      setProductList((prev) => [...prev, newProduct])
-    }
 
-    setProductDialogOpen(false)
-    resetProductForm()
+      setProductDialogOpen(false)
+      resetProductForm()
+      // Refetch to sync with server
+      refetchProducts()
+    } catch {
+      showError("Failed to save product")
+    }
   }
 
-  const handleToggleAvailability = (productId: string) => {
+  const handleToggleAvailability = async (productId: string) => {
+    const product = syncedProductList.find((p) => p.id === productId)
+    if (!product) return
+
+    const newStatus = product.status === "ACTIVE" ? "INACTIVE" : "ACTIVE"
+    // Optimistic update
     setProductList((prev) =>
       prev.map((p) =>
         p.id === productId
-          ? { ...p, status: (p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE") as ProductStatus }
+          ? { ...p, status: newStatus as ProductStatus }
           : p
       )
     )
+    showSuccess(`Product ${newStatus === "ACTIVE" ? "activated" : "deactivated"}`)
+    // Refetch to sync
+    refetchProducts()
   }
 
-  const handleDeleteProduct = () => {
+  const handleDeleteProduct = async () => {
     if (!deletingProduct) return
+    // Optimistic delete
     setProductList((prev) => prev.filter((p) => p.id !== deletingProduct.id))
     setDeleteDialogOpen(false)
     setDeletingProduct(null)
     setDetailOpen(false)
     setSelectedProduct(null)
+    showSuccess("Product deleted")
+    // Refetch to sync
+    refetchProducts()
   }
 
   const openEditVariant = (variant: Variant, productId: string) => {
@@ -478,16 +580,19 @@ export function ProductsView() {
     setCategoryList((prev) => [...prev, newCategory])
     setCategoryDialogOpen(false)
     resetCategoryForm()
+    showSuccess("Category created successfully")
+    // Invalidate categories query
+    queryClient.invalidateQueries({ queryKey: ["products"] })
   }
 
   // ---- Category stats ----
   const categoryStats = useMemo(() => {
     const stats: Record<string, number> = {}
-    for (const cat of categoryList) {
-      stats[cat.id] = productList.filter((p) => p.categoryId === cat.id).length
+    for (const cat of syncedCategoryList) {
+      stats[cat.id] = syncedProductList.filter((p) => p.categoryId === cat.id).length
     }
     return stats
-  }, [categoryList, productList])
+  }, [syncedCategoryList, syncedProductList])
 
   // =========================================================================
   // Render
@@ -536,6 +641,20 @@ export function ProductsView() {
         <TabsContent value="products" className="space-y-4 mt-4">
           {/* ---- Summary Cards ---- */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {productsLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <Card key={i}>
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-xl" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-7 w-12" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <>
             <Card>
               <CardContent className="p-4 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
@@ -580,6 +699,8 @@ export function ProductsView() {
                 </div>
               </CardContent>
             </Card>
+            </>
+            )}
           </div>
 
           {/* ---- Filter Bar ---- */}
@@ -636,7 +757,33 @@ export function ProductsView() {
           </div>
 
           {/* ---- Products Table ---- */}
-          {filteredProducts.length === 0 ? (
+          {productsLoading ? (
+            <Card>
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <Skeleton className="h-4 flex-1" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex gap-4 items-center">
+                      <Skeleton className="h-9 w-9 rounded-lg" />
+                      <Skeleton className="h-4 flex-1" />
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-5 w-16" />
+                      <Skeleton className="h-4 w-20" />
+                      <Skeleton className="h-5 w-16" />
+                      <Skeleton className="h-4 w-10" />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : filteredProducts.length === 0 ? (
             <EmptyState
               icon={Package}
               title="No products found"

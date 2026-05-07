@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { findNearestDeliveryPartner } from '@/lib/core/delivery';
+import { emitDeliveryEvent, emitOrderEvent } from '@/lib/realtime-emitter';
 
 export async function POST(request: Request) {
   try {
@@ -138,6 +139,43 @@ export async function POST(request: Request) {
         }),
       },
     });
+
+    // Emit real-time events after successful assignment
+    try {
+      await emitDeliveryEvent(order.businessId, order.id, {
+        event: 'delivery:assigned',
+        deliveryId: delivery.id,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        partnerId: deliveryPartnerId,
+        partnerName: partnerInfo?.name,
+        partnerPhone: partnerInfo?.phone,
+        autoAssigned: !body.deliveryPartnerId,
+      });
+
+      // Also notify the customer if customerId exists
+      if (order.customerId) {
+        await emitDeliveryEvent(order.businessId, order.id, {
+          event: 'delivery:assigned',
+          deliveryId: delivery.id,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          partnerId: deliveryPartnerId,
+          partnerName: partnerInfo?.name,
+          userId: order.customerId,
+        });
+      }
+
+      // Emit order status changed (since order now has delivery assigned)
+      await emitOrderEvent(order.businessId, 'order:updated', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        deliveryPartnerId,
+        status: 'CONFIRMED',
+      });
+    } catch (emitErr) {
+      console.error('[Delivery Assign API] Failed to emit delivery events:', emitErr);
+    }
 
     return NextResponse.json({
       success: true,

@@ -44,6 +44,15 @@ export const changePasswordSchema = z.object({
   path: ['confirmPassword'],
 });
 
+export const otpSendSchema = z.object({
+  phone: z.string().regex(indianPhoneRegex, 'Invalid Indian phone number (must start with 6-9 and be 10 digits)'),
+});
+
+export const otpVerifySchema = z.object({
+  phone: z.string().regex(indianPhoneRegex, 'Invalid Indian phone number'),
+  otp: z.string().length(6, 'OTP must be exactly 6 digits').regex(/^\d{6}$/, 'OTP must contain only digits'),
+});
+
 // ============================================================================
 // BUSINESS SCHEMA — Super Admin creates businesses
 // ============================================================================
@@ -426,12 +435,36 @@ export const posSessionCloseSchema = z.object({
 });
 
 // ============================================================================
+// CART ITEM SCHEMA — Product + Variant + Quantity
+// ============================================================================
+
+export const cartItemSchema = z.object({
+  productId: z.string().min(1, 'Product ID is required'),
+  variantId: z.string().min(1, 'Variant ID is required'),
+  quantity: z.number().min(0.1, 'Quantity must be at least 0.1').max(999, 'Maximum 999 items'),
+  specialInstructions: z.string().max(500, 'Instructions too long').optional(),
+  customizations: z.record(z.string(), z.string()).optional(),
+});
+
+// ============================================================================
+// DELIVERY ASSIGNMENT SCHEMA — Order + Partner
+// ============================================================================
+
+export const deliveryAssignmentSchema = z.object({
+  orderId: z.string().min(1, 'Order ID is required'),
+  partnerId: z.string().min(1, 'Delivery partner ID is required'),
+  notes: z.string().max(500).optional(),
+});
+
+// ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type OTPSendInput = z.infer<typeof otpSendSchema>;
+export type OTPVerifyInput = z.infer<typeof otpVerifySchema>;
 export type BusinessInput = z.infer<typeof businessSchema>;
 export type UpdateBusinessInput = z.infer<typeof updateBusinessSchema>;
 export type StoreInput = z.infer<typeof storeSchema>;
@@ -452,3 +485,5 @@ export type PromoCodeInput = z.infer<typeof promoCodeSchema>;
 export type TaxConfigInput = z.infer<typeof taxConfigSchema>;
 export type POSSessionInput = z.infer<typeof posSessionSchema>;
 export type POSSessionCloseInput = z.infer<typeof posSessionCloseSchema>;
+export type CartItemInput = z.infer<typeof cartItemSchema>;
+export type DeliveryAssignmentInput = z.infer<typeof deliveryAssignmentSchema>;

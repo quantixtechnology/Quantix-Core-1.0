@@ -4,8 +4,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Bell, Search, ShoppingBag, ArrowLeftRight } from "lucide-react"
+import { Search, ShoppingBag, ArrowLeftRight, Menu } from "lucide-react"
 import { useAdminStore, type ViewMode } from "@/stores/admin-store"
 import {
   DropdownMenu,
@@ -13,6 +12,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { NotificationBell } from "@/components/shared/notification-bell"
+import { useResponsive } from "@/hooks/use-responsive"
 
 const pageTitles: Record<string, string> = {
   dashboard: "Dashboard",
@@ -24,16 +25,46 @@ const pageTitles: Record<string, string> = {
   settings: "Store Settings",
 }
 
-export function BusinessHeader() {
-  const { businessPage, searchQuery, setSearchQuery, viewMode, setViewMode } = useAdminStore()
+interface BusinessHeaderProps {
+  onMobileMenuClick?: () => void
+}
+
+export function BusinessHeader({ onMobileMenuClick }: BusinessHeaderProps) {
+  const { businessPage, searchQuery, setSearchQuery, viewMode, setViewMode, setActivePage } = useAdminStore()
+  const { isMobile } = useResponsive()
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 !h-5" />
-      <h2 className="text-sm font-semibold hidden sm:block">{pageTitles[businessPage] || "Dashboard"}</h2>
+      {isMobile ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="-ml-2 size-10"
+          onClick={onMobileMenuClick}
+          aria-label="Open navigation menu"
+        >
+          <Menu className="size-5" />
+        </Button>
+      ) : (
+        <>
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 !h-5" />
+        </>
+      )}
+      <h2 className="text-sm font-semibold truncate">{pageTitles[businessPage] || "Dashboard"}</h2>
 
       <div className="ml-auto flex items-center gap-2">
+        {isMobile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            onClick={() => setSearchQuery("")}
+            aria-label="Search"
+          >
+            <Search className="size-4" />
+          </Button>
+        )}
         <div className="relative hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -44,12 +75,10 @@ export function BusinessHeader() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-4 w-4" />
-          <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px] bg-red-500 text-white border-0">
-            5
-          </Badge>
-        </Button>
+        <NotificationBell
+          businessId="biz_1"
+          onViewAll={() => setActivePage("notifications")}
+        />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

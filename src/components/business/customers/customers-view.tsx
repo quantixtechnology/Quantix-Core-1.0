@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +33,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Users,
   Plus,
@@ -45,10 +46,15 @@ import {
   Eye,
   X,
 } from "lucide-react"
-import { businessCustomers, businessOrders } from "@/components/business/data"
+import { useCustomers, useOrders } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showError } from "@/lib/toast-utils"
+import { SkeletonTable, ErrorState } from "@/components/ui/loading-states"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
-import { EmptyState } from "@/components/admin/shared/empty-state"
+import { EmptyState } from "@/components/ui/loading-states"
+
+const BUSINESS_ID = "biz_1"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -183,6 +189,52 @@ function getOrderStatusColor(status: string) {
 // Main Component
 // ---------------------------------------------------------------------------
 export function CustomersView() {
+  // Set business context on mount
+  useEffect(() => {
+    setBusinessContext(BUSINESS_ID)
+  }, [])
+
+  // ---- API hooks ----
+  const { data: customersData, isLoading: customersLoading, error: customersError, refetch: refetchCustomers } = useCustomers(BUSINESS_ID)
+  const { data: ordersData } = useOrders({ businessId: BUSINESS_ID, limit: 100 } as Record<string, unknown>)
+
+  // Map API customer data
+  const businessCustomers: Customer[] = useMemo(() => {
+    if (!customersData?.data) return []
+    const rawData = customersData.data
+    if (!Array.isArray(rawData)) return []
+    return rawData.map((c: Record<string, unknown>) => ({
+      id: String(c.id || ""),
+      name: String(c.name || ""),
+      phone: String(c.phone || ""),
+      email: String(c.email || ""),
+      totalOrders: Number(c.totalOrders || c._count?.orders || 0),
+      totalSpent: Number(c.totalSpent || 0),
+      loyaltyPoints: Number(c.loyaltyPoints || 0),
+      tier: (String(c.tags || "BRONZE").replace(/[\[\]"]/g, "") || "BRONZE") as Tier,
+      lastOrder: c.lastOrder ? String(c.lastOrder) : c.updatedAt ? String(c.updatedAt) : new Date().toISOString(),
+      addresses: Array.isArray(c.addresses)
+        ? c.addresses.map((a: Record<string, unknown>) => ({
+            id: String(a.id || ""),
+            label: String(a.label || "Home"),
+            line1: String(a.line1 || a.address || ""),
+            line2: String(a.line2 || ""),
+            city: String(a.city || ""),
+            pincode: String(a.pincode || a.zipCode || ""),
+            isDefault: Boolean(a.isDefault || false),
+          }))
+        : [],
+    }))
+  }, [customersData])
+
+  // Map API orders for customer history
+  const businessOrders = useMemo(() => {
+    if (!ordersData?.data) return []
+    const rawData = ordersData.data
+    if (!Array.isArray(rawData)) return []
+    return rawData
+  }, [ordersData])
+
   // Local state
   const [searchQuery, setSearchQuery] = useState("")
   const [tierFilter, setTierFilter] = useState<string>("all")
@@ -227,7 +279,7 @@ export function CustomersView() {
     })
 
     return result
-  }, [searchQuery, tierFilter, sortBy])
+  }, [businessCustomers, searchQuery, tierFilter, sortBy])
 
   // ---------------------------------------------------------------------------
   // Summary stats
@@ -247,7 +299,7 @@ export function CustomersView() {
   // Orders for a customer
   // ---------------------------------------------------------------------------
   const getOrdersForCustomer = (customerName: string) =>
-    businessOrders.filter((o) => o.customerName === customerName && o.customerName !== "Walk-in Customer")
+    businessOrders.filter((o: Record<string, unknown>) => (o.customerName === customerName && o.customerName !== "Walk-in Customer"))
 
   // ---------------------------------------------------------------------------
   // Reset add form
@@ -453,7 +505,19 @@ export function CustomersView() {
       {/* ================================================================== */}
       {/* Customer Table or Empty State                                      */}
       {/* ================================================================== */}
-      {filteredCustomers.length === 0 ? (
+      {customersLoading ? (
+        <Card>
+          <CardContent className="p-6">
+            <SkeletonTable rows={6} columns={7} showSearch={false} showPagination={false} />
+          </CardContent>
+        </Card>
+      ) : customersError && !customersData ? (
+        <ErrorState
+          title="Failed to load customers"
+          description="Could not fetch customer data. Please try again."
+          onRetry={() => refetchCustomers()}
+        />
+      ) : filteredCustomers.length === 0 ? (
         <EmptyState
           icon={Users}
           title="No customers found"

@@ -6,6 +6,7 @@
 
 import { NextResponse } from 'next/server';
 import { createOrder, listOrders } from '@/lib/core/order';
+import { emitOrderEvent } from '@/lib/realtime-emitter';
 
 export async function GET(request: Request) {
   try {
@@ -147,6 +148,22 @@ export async function POST(request: Request) {
         metadata: item.metadata as string | undefined,
       })),
     });
+
+    // Emit real-time event after successful order creation
+    try {
+      await emitOrderEvent(body.businessId, 'order:created', {
+        orderId: order.id,
+        orderNumber: (order as Record<string, unknown>).orderNumber,
+        orderType: body.orderType,
+        orderSource: body.orderSource || 'online',
+        customerId: body.customerId,
+        customerName: body.customerName,
+        totalAmount: (order as Record<string, unknown>).totalAmount,
+        status: (order as Record<string, unknown>).status,
+      });
+    } catch (emitErr) {
+      console.error('[Orders API] Failed to emit order:created event:', emitErr);
+    }
 
     return NextResponse.json({
       success: true,

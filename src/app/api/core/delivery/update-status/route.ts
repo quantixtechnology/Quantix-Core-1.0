@@ -6,6 +6,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyOtp } from '@/lib/core/delivery';
+import { sendDeliveryNotification } from '@/lib/core/notification';
+import { emitDeliveryEvent, emitOrderEvent } from '@/lib/realtime-emitter';
 
 export async function PUT(request: Request) {
   try {
@@ -143,6 +145,61 @@ export async function PUT(request: Request) {
         }),
       },
     });
+
+    // Emit real-time events after successful status update
+    try {
+      await emitDeliveryEvent(delivery.order.businessId, delivery.orderId, {
+        event: 'delivery:updated',
+        deliveryId: delivery.id,
+        orderId: delivery.orderId,
+        orderNumber: delivery.order.orderNumber,
+        oldStatus: delivery.status,
+        newStatus: body.status,
+        otpVerified: body.status === 'DELIVERED' && !!delivery.deliveryOtp,
+      });
+
+      // If customer exists, notify them too
+      if (delivery.order.customerId) {
+        await emitDeliveryEvent(delivery.order.businessId, delivery.orderId, {
+          event: 'delivery:updated',
+          deliveryId: delivery.id,
+          orderId: delivery.orderId,
+          orderNumber: delivery.order.orderNumber,
+          newStatus: body.status,
+          userId: delivery.order.customerId,
+        });
+      }
+
+      // If the order status was also synced, emit order:status_changed
+      if (mappedOrderStatus) {
+        await emitOrderEvent(delivery.order.businessId, 'order:status_changed', {
+          orderId: delivery.orderId,
+          orderNumber: delivery.order.orderNumber,
+          newStatus: mappedOrderStatus,
+          changedBy: 'delivery_system',
+        });
+      }
+    } catch (emitErr) {
+      console.error('[Delivery Update Status API] Failed to emit delivery events:', emitErr);
+    }
+
+    // Send delivery notification for status change
+    try {
+      const statusToNotificationType: Record<string, 'assigned' | 'picked_up' | 'on_the_way' | 'arrived' | 'delivered' | 'failed'> = {
+        ASSIGNED: 'assigned',
+        PICKED_UP: 'picked_up',
+        ON_THE_WAY: 'on_the_way',
+        ARRIVED: 'arrived',
+        DELIVERED: 'delivered',
+        FAILED: 'failed',
+      };
+      const notificationType = statusToNotificationType[body.status];
+      if (notificationType) {
+        await sendDeliveryNotification(delivery.id, notificationType);
+      }
+    } catch (notifErr) {
+      console.error('[Delivery Update Status API] Failed to send delivery notification:', notifErr);
+    }
 
     return NextResponse.json({
       success: true,

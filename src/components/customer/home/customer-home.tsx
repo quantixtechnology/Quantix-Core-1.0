@@ -3,7 +3,10 @@
 import React, { useState, useEffect, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { banners, offers, categories, products, recentlyOrdered } from "@/components/customer/data"
+import { useProducts, useCategories } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ErrorState } from "@/components/ui/loading-states"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -28,6 +31,22 @@ import {
   Leaf,
 } from "lucide-react"
 
+const BIZ_ID = "biz_1"
+
+const banners = [
+  { id: "ban_1", title: "Fresh Vegetables", subtitle: "Farm to door in 2 hours", color: "#10B981", link: "cat_1" },
+  { id: "ban_2", title: "Dairy Essentials", subtitle: "Up to 15% off on fresh dairy", color: "#3B82F6", link: "cat_2" },
+  { id: "ban_3", title: "Weekend Specials", subtitle: "Flat ₹100 off on orders above ₹500", color: "#F59E0B", link: "" },
+  { id: "ban_4", title: "Snack Attack", subtitle: "Buy 2 Get 1 Free on all snacks", color: "#EF4444", link: "cat_4" },
+]
+
+const offers = [
+  { id: "off_1", title: "₹100 OFF", description: "On orders above ₹500", code: "FRESH100" },
+  { id: "off_2", title: "FREE DELIVERY", description: "On all orders today", code: "FREEDEL" },
+  { id: "off_3", title: "20% OFF", description: "On fruits & vegetables", code: "VEG20" },
+  { id: "off_4", title: "₹50 OFF", description: "First order special", code: "WELCOME50" },
+]
+
 const categoryIcons: Record<string, React.ReactNode> = {
   Apple: <Apple className="w-6 h-6" />,
   Milk: <Milk className="w-6 h-6" />,
@@ -41,11 +60,48 @@ const categoryIcons: Record<string, React.ReactNode> = {
   Snowflake: <Snowflake className="w-6 h-6" />,
 }
 
+// Fallback categories for when API categories are loading or unavailable
+const fallbackCategories = [
+  { id: "cat_1", name: "Fruits & Vegetables", icon: "Apple", color: "#10B981" },
+  { id: "cat_2", name: "Dairy & Eggs", icon: "Milk", color: "#3B82F6" },
+  { id: "cat_3", name: "Bakery", icon: "Croissant", color: "#F59E0B" },
+  { id: "cat_4", name: "Snacks & Chips", icon: "Cookie", color: "#EF4444" },
+  { id: "cat_5", name: "Beverages", icon: "Coffee", color: "#8B5CF6" },
+  { id: "cat_6", name: "Rice & Grains", icon: "Wheat", color: "#D97706" },
+  { id: "cat_7", name: "Spices & Masala", icon: "Flame", color: "#DC2626" },
+  { id: "cat_8", name: "Personal Care", icon: "Sparkles", color: "#EC4899" },
+  { id: "cat_9", name: "Cleaning", icon: "SprayCan", color: "#0891B2" },
+  { id: "cat_10", name: "Frozen Foods", icon: "Snowflake", color: "#6366F1" },
+]
+
+interface CategoryItem {
+  id: string
+  name: string
+  icon?: string
+  color?: string
+  slug?: string
+  productCount?: number
+}
+
 export function CustomerHome() {
   const { setCustomerPage, setSelectedProductId, customerLoggedIn } = useAdminStore()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [currentBanner, setCurrentBanner] = useState(0)
+
+  // Set business context before API calls
+  useEffect(() => {
+    setBusinessContext(BIZ_ID)
+  }, [])
+
+  // Fetch products
+  const { data: productsData, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useProducts(BIZ_ID, {
+    status: "ACTIVE",
+    limit: 20,
+  })
+
+  // Fetch categories
+  const { data: categoriesData } = useCategories(BIZ_ID)
 
   // Auto-scroll banner
   useEffect(() => {
@@ -55,8 +111,49 @@ export function CustomerHome() {
     return () => clearInterval(interval)
   }, [])
 
-  const featuredProducts = products.filter((p) => p.isFeatured && p.status === "ACTIVE")
-  const recentProducts = products.filter((p) => recentlyOrdered.includes(p.id) && p.status === "ACTIVE")
+  // Parse API products into a usable format
+  const apiProducts = React.useMemo(() => {
+    if (!productsData?.data) return []
+    const prods = Array.isArray(productsData.data) ? productsData.data : []
+    return prods.map((p: Record<string, unknown>) => ({
+      id: p.id as string,
+      name: p.name as string,
+      categoryId: (p.category as Record<string, string>)?.id || "",
+      category: (p.category as Record<string, string>)?.name || "",
+      status: p.status as string,
+      isVeg: p.isVeg as boolean | null,
+      isFeatured: p.isFeatured as boolean,
+      image: Array.isArray(p.images) && p.images.length > 0 ? (p.images[0] as string) : "",
+      variants: Array.isArray(p.variants)
+        ? (p.variants as Array<Record<string, unknown>>).map((v) => ({
+            id: v.id as string,
+            name: v.name as string,
+            price: v.price as number,
+            mrp: v.mrp as number,
+            stock: (v as Record<string, unknown>).stock as number | undefined,
+            isDefault: (v as Record<string, unknown>).isDefault as boolean | undefined,
+          }))
+        : [],
+    }))
+  }, [productsData])
+
+  // Parse categories from API or use fallback
+  const categories: CategoryItem[] = React.useMemo(() => {
+    if (categoriesData?.data && Array.isArray(categoriesData.data) && categoriesData.data.length > 0) {
+      return (categoriesData.data as Array<Record<string, unknown>>).map((c) => ({
+        id: c.id as string,
+        name: c.name as string,
+        icon: (c as Record<string, unknown>).icon as string | undefined,
+        color: (c as Record<string, unknown>).color as string | undefined,
+        slug: (c as Record<string, unknown>).slug as string | undefined,
+        productCount: (c as Record<string, unknown>).productCount as number | undefined,
+      }))
+    }
+    return fallbackCategories
+  }, [categoriesData])
+
+  const featuredProducts = apiProducts.filter((p) => p.isFeatured && p.status === "ACTIVE")
+  const recentProducts = apiProducts.filter((p) => p.status === "ACTIVE").slice(0, 4)
 
   const getCartQty = useCallback(
     (productId: string, variantId: string) => {
@@ -66,8 +163,9 @@ export function CustomerHome() {
     [items]
   )
 
-  const handleAddToCart = (product: typeof products[0]) => {
+  const handleAddToCart = (product: typeof apiProducts[0]) => {
     const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
+    if (!defaultVariant) return
     addItem({
       productId: product.id,
       variantId: defaultVariant.id,
@@ -76,7 +174,7 @@ export function CustomerHome() {
       price: defaultVariant.price,
       mrp: defaultVariant.mrp,
       image: product.image,
-      isVeg: product.isVeg,
+      isVeg: product.isVeg ?? true,
     })
   }
 
@@ -86,6 +184,10 @@ export function CustomerHome() {
   }
 
   const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
+
+  const getCatColor = (categoryId: string) => {
+    return categories.find((c) => c.id === categoryId)?.color || "#10B981"
+  }
 
   return (
     <div className="pb-4">
@@ -204,10 +306,10 @@ export function CustomerHome() {
             >
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${cat.color}15` }}
+                style={{ backgroundColor: `${cat.color || "#10B981"}15` }}
               >
-                <span style={{ color: cat.color }}>
-                  {categoryIcons[cat.icon] || <Sparkles className="w-6 h-6" />}
+                <span style={{ color: cat.color || "#10B981" }}>
+                  {categoryIcons[cat.icon || ""] || <Sparkles className="w-6 h-6" />}
                 </span>
               </div>
               <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2">
@@ -232,84 +334,114 @@ export function CustomerHome() {
             View All
           </button>
         </div>
-        <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
-          {featuredProducts.map((product) => {
-            const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
-            const cartQty = getCartQty(product.id, defaultVariant.id)
-            const savings = defaultVariant.mrp - defaultVariant.price
 
-            return (
-              <div
-                key={product.id}
-                className="flex-shrink-0 w-36 bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm"
-              >
-                <button
-                  onClick={() => handleProductClick(product.id)}
-                  className="w-full"
-                >
-                  <div
-                    className="h-28 flex items-center justify-center relative"
-                    style={{ backgroundColor: `${categories.find((c) => c.id === product.categoryId)?.color || "#10B981"}10` }}
-                  >
-                    <Leaf className="w-10 h-10 text-gray-300" />
-                    {product.isVeg && (
-                      <div className="absolute top-1.5 left-1.5 w-3.5 h-3.5 border border-green-600 flex items-center justify-center rounded-sm">
-                        <div className="w-2 h-2 bg-green-600 rounded-full" />
-                      </div>
-                    )}
-                    {savings > 0 && (
-                      <Badge className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[9px] px-1 py-0 h-4">
-                        {Math.round((savings / defaultVariant.mrp) * 100)}% OFF
-                      </Badge>
-                    )}
-                  </div>
-                </button>
-                <div className="p-2">
-                  <p className="text-xs font-medium text-gray-800 line-clamp-1">{product.name}</p>
-                  <p className="text-[10px] text-gray-400">{defaultVariant.name}</p>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-sm font-bold text-gray-900">{formatPrice(defaultVariant.price)}</span>
-                    {savings > 0 && (
-                      <span className="text-[10px] text-gray-400 line-through">{formatPrice(defaultVariant.mrp)}</span>
-                    )}
-                  </div>
-                  <div className="mt-1.5">
-                    {cartQty === 0 ? (
-                      <Button
-                        onClick={() => handleAddToCart(product)}
-                        className="w-full h-7 text-xs font-semibold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 rounded-lg"
-                        variant="ghost"
-                        size="sm"
-                      >
-                        ADD
-                      </Button>
-                    ) : (
-                      <div className="flex items-center justify-between bg-emerald-500 rounded-lg h-7 px-1">
-                        <button
-                          onClick={() =>
-                            cartQty === 1
-                              ? removeItem(product.id, defaultVariant.id)
-                              : updateQuantity(product.id, defaultVariant.id, cartQty - 1)
-                          }
-                          className="w-6 h-6 flex items-center justify-center text-white"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="text-xs font-bold text-white">{cartQty}</span>
-                        <button
-                          onClick={() => updateQuantity(product.id, defaultVariant.id, cartQty + 1)}
-                          className="w-6 h-6 flex items-center justify-center text-white"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
+        {productsLoading ? (
+          <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex-shrink-0 w-36 bg-white border border-gray-100 rounded-xl overflow-hidden">
+                <Skeleton className="h-28 w-full" />
+                <div className="p-2 space-y-2">
+                  <Skeleton className="h-3 w-3/4" />
+                  <Skeleton className="h-2 w-1/2" />
+                  <Skeleton className="h-6 w-full rounded-lg" />
                 </div>
               </div>
-            )
-          })}
-        </div>
+            ))}
+          </div>
+        ) : productsError ? (
+          <div className="px-4">
+            <ErrorState
+              title="Could not load products"
+              description="Something went wrong while fetching products."
+              onRetry={() => refetchProducts()}
+              className="py-8"
+            />
+          </div>
+        ) : featuredProducts.length === 0 ? (
+          <div className="px-4 text-center py-8 text-xs text-gray-400">
+            No featured products available right now.
+          </div>
+        ) : (
+          <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
+            {featuredProducts.map((product) => {
+              const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
+              if (!defaultVariant) return null
+              const cartQty = getCartQty(product.id, defaultVariant.id)
+              const savings = defaultVariant.mrp - defaultVariant.price
+
+              return (
+                <div
+                  key={product.id}
+                  className="flex-shrink-0 w-36 bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm"
+                >
+                  <button
+                    onClick={() => handleProductClick(product.id)}
+                    className="w-full"
+                  >
+                    <div
+                      className="h-28 flex items-center justify-center relative"
+                      style={{ backgroundColor: `${getCatColor(product.categoryId)}10` }}
+                    >
+                      <Leaf className="w-10 h-10 text-gray-300" />
+                      {product.isVeg && (
+                        <div className="absolute top-1.5 left-1.5 w-3.5 h-3.5 border border-green-600 flex items-center justify-center rounded-sm">
+                          <div className="w-2 h-2 bg-green-600 rounded-full" />
+                        </div>
+                      )}
+                      {savings > 0 && (
+                        <Badge className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[9px] px-1 py-0 h-4">
+                          {Math.round((savings / defaultVariant.mrp) * 100)}% OFF
+                        </Badge>
+                      )}
+                    </div>
+                  </button>
+                  <div className="p-2">
+                    <p className="text-xs font-medium text-gray-800 line-clamp-1">{product.name}</p>
+                    <p className="text-[10px] text-gray-400">{defaultVariant.name}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-sm font-bold text-gray-900">{formatPrice(defaultVariant.price)}</span>
+                      {savings > 0 && (
+                        <span className="text-[10px] text-gray-400 line-through">{formatPrice(defaultVariant.mrp)}</span>
+                      )}
+                    </div>
+                    <div className="mt-1.5">
+                      {cartQty === 0 ? (
+                        <Button
+                          onClick={() => handleAddToCart(product)}
+                          className="w-full h-7 text-xs font-semibold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 rounded-lg"
+                          variant="ghost"
+                          size="sm"
+                        >
+                          ADD
+                        </Button>
+                      ) : (
+                        <div className="flex items-center justify-between bg-emerald-500 rounded-lg h-7 px-1">
+                          <button
+                            onClick={() =>
+                              cartQty === 1
+                                ? removeItem(product.id, defaultVariant.id)
+                                : updateQuantity(product.id, defaultVariant.id, cartQty - 1)
+                            }
+                            className="w-6 h-6 flex items-center justify-center text-white"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="text-xs font-bold text-white">{cartQty}</span>
+                          <button
+                            onClick={() => updateQuantity(product.id, defaultVariant.id, cartQty + 1)}
+                            className="w-6 h-6 flex items-center justify-center text-white"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Recently Ordered */}
@@ -324,6 +456,7 @@ export function CustomerHome() {
           <div className="space-y-2 px-4">
             {recentProducts.slice(0, 4).map((product) => {
               const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
+              if (!defaultVariant) return null
               const cartQty = getCartQty(product.id, defaultVariant.id)
 
               return (
@@ -337,7 +470,7 @@ export function CustomerHome() {
                   >
                     <div
                       className="w-14 h-14 rounded-lg flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${categories.find((c) => c.id === product.categoryId)?.color || "#10B981"}10` }}
+                      style={{ backgroundColor: `${getCatColor(product.categoryId)}10` }}
                     >
                       <Leaf className="w-6 h-6 text-gray-300" />
                     </div>

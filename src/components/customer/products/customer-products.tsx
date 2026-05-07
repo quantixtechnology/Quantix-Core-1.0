@@ -1,13 +1,51 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { categories, products } from "@/components/customer/data"
+import { useProducts, useCategories } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ErrorState } from "@/components/ui/loading-states"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Search, Plus, Minus, Leaf, X, SlidersHorizontal } from "lucide-react"
+
+const BIZ_ID = "biz_1"
+
+// Fallback categories
+const fallbackCategories = [
+  { id: "cat_1", name: "Fruits & Vegetables", color: "#10B981" },
+  { id: "cat_2", name: "Dairy & Eggs", color: "#3B82F6" },
+  { id: "cat_3", name: "Bakery", color: "#F59E0B" },
+  { id: "cat_4", name: "Snacks & Chips", color: "#EF4444" },
+  { id: "cat_5", name: "Beverages", color: "#8B5CF6" },
+  { id: "cat_6", name: "Rice & Grains", color: "#D97706" },
+  { id: "cat_7", name: "Spices & Masala", color: "#DC2626" },
+  { id: "cat_8", name: "Personal Care", color: "#EC4899" },
+  { id: "cat_9", name: "Cleaning", color: "#0891B2" },
+  { id: "cat_10", name: "Frozen Foods", color: "#6366F1" },
+]
+
+interface ProductItem {
+  id: string
+  name: string
+  categoryId: string
+  category: string
+  status: string
+  isVeg: boolean | null
+  isFeatured: boolean
+  image: string
+  variants: Array<{
+    id: string
+    name: string
+    price: number
+    mrp: number
+    stock?: number
+    isDefault?: boolean
+  }>
+}
 
 export function CustomerProducts() {
   const { setCustomerPage, setSelectedProductId } = useAdminStore()
@@ -16,12 +54,62 @@ export function CustomerProducts() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<"default" | "price-low" | "price-high" | "discount">("default")
 
-  const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => p.status === "ACTIVE")
+  useEffect(() => {
+    setBusinessContext(BIZ_ID)
+  }, [])
 
-    if (selectedCategory) {
-      result = result.filter((p) => p.categoryId === selectedCategory)
+  // Fetch products with filters
+  const { data: productsData, isLoading: productsLoading, error: productsError, refetch } = useProducts(BIZ_ID, {
+    status: "ACTIVE",
+    ...(selectedCategory ? { categoryId: selectedCategory } : {}),
+    ...(searchQuery ? { search: searchQuery } : {}),
+    limit: 50,
+  })
+
+  // Fetch categories
+  const { data: categoriesData } = useCategories(BIZ_ID)
+
+  // Parse categories from API or fallback
+  const categories = useMemo(() => {
+    if (categoriesData?.data && Array.isArray(categoriesData.data) && categoriesData.data.length > 0) {
+      return (categoriesData.data as Array<Record<string, unknown>>).map((c) => ({
+        id: c.id as string,
+        name: c.name as string,
+        color: (c as Record<string, unknown>).color as string | undefined || "#10B981",
+      }))
     }
+    return fallbackCategories
+  }, [categoriesData])
+
+  // Parse products from API
+  const apiProducts: ProductItem[] = useMemo(() => {
+    if (!productsData?.data) return []
+    const prods = Array.isArray(productsData.data) ? productsData.data : []
+    return prods.map((p: Record<string, unknown>) => ({
+      id: p.id as string,
+      name: p.name as string,
+      categoryId: (p.category as Record<string, string>)?.id || "",
+      category: (p.category as Record<string, string>)?.name || "",
+      status: p.status as string,
+      isVeg: p.isVeg as boolean | null,
+      isFeatured: p.isFeatured as boolean,
+      image: Array.isArray(p.images) && p.images.length > 0 ? (p.images[0] as string) : "",
+      variants: Array.isArray(p.variants)
+        ? (p.variants as Array<Record<string, unknown>>).map((v) => ({
+            id: v.id as string,
+            name: v.name as string,
+            price: v.price as number,
+            mrp: v.mrp as number,
+            stock: v.stock as number | undefined,
+            isDefault: v.isDefault as boolean | undefined,
+          }))
+        : [],
+    }))
+  }, [productsData])
+
+  // Client-side sort
+  const filteredProducts = useMemo(() => {
+    let result = apiProducts
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
@@ -59,15 +147,16 @@ export function CustomerProducts() {
     }
 
     return result
-  }, [selectedCategory, searchQuery, sortBy])
+  }, [apiProducts, searchQuery, sortBy])
 
   const getCartQty = (productId: string, variantId: string) => {
     const item = items.find((i) => i.productId === productId && i.variantId === variantId)
     return item?.quantity || 0
   }
 
-  const handleAddToCart = (product: typeof products[0]) => {
+  const handleAddToCart = (product: ProductItem) => {
     const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
+    if (!defaultVariant) return
     addItem({
       productId: product.id,
       variantId: defaultVariant.id,
@@ -76,7 +165,7 @@ export function CustomerProducts() {
       price: defaultVariant.price,
       mrp: defaultVariant.mrp,
       image: product.image,
-      isVeg: product.isVeg,
+      isVeg: product.isVeg ?? true,
     })
   }
 
@@ -86,6 +175,10 @@ export function CustomerProducts() {
   }
 
   const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
+
+  const getCatColor = (categoryId: string) => {
+    return categories.find((c) => c.id === categoryId)?.color || "#10B981"
+  }
 
   return (
     <div className="pb-4">
@@ -133,7 +226,7 @@ export function CustomerProducts() {
             }`}
             style={
               cat.id === selectedCategory
-                ? { backgroundColor: cat.color }
+                ? { backgroundColor: cat.color || "#10B981" }
                 : {}
             }
           >
@@ -145,7 +238,7 @@ export function CustomerProducts() {
       {/* Sort & Results */}
       <div className="flex items-center justify-between px-4 py-2">
         <span className="text-xs text-gray-500">
-          {filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}
+          {productsLoading ? "Loading..." : `${filteredProducts.length} product${filteredProducts.length !== 1 ? "s" : ""}`}
         </span>
         <div className="flex items-center gap-1">
           <SlidersHorizontal className="w-3 h-3 text-gray-400" />
@@ -163,7 +256,27 @@ export function CustomerProducts() {
       </div>
 
       {/* Product Grid */}
-      {filteredProducts.length === 0 ? (
+      {productsLoading ? (
+        <div className="grid grid-cols-2 gap-2.5 px-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+              <Skeleton className="h-32 w-full" />
+              <div className="p-2.5 space-y-2">
+                <Skeleton className="h-3 w-3/4" />
+                <Skeleton className="h-2 w-1/2" />
+                <Skeleton className="h-6 w-full rounded-lg" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : productsError ? (
+        <ErrorState
+          title="Could not load products"
+          description="Something went wrong while fetching products."
+          onRetry={() => refetch()}
+          className="py-16"
+        />
+      ) : filteredProducts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
             <Search className="w-7 h-7 text-gray-300" />
@@ -175,9 +288,10 @@ export function CustomerProducts() {
         <div className="grid grid-cols-2 gap-2.5 px-4">
           {filteredProducts.map((product) => {
             const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
+            if (!defaultVariant) return null
             const cartQty = getCartQty(product.id, defaultVariant.id)
             const savings = defaultVariant.mrp - defaultVariant.price
-            const catColor = categories.find((c) => c.id === product.categoryId)?.color || "#10B981"
+            const catColor = getCatColor(product.categoryId)
             const isOutOfStock = product.status === "OUT_OF_STOCK" || defaultVariant.stock === 0
 
             return (

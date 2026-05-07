@@ -1,15 +1,21 @@
 "use client"
 
+import { useState } from "react"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { BusinessSidebar } from "./business-sidebar"
 import { BusinessHeader } from "./business-header"
 
 export function BusinessLayout({ children }: { children: React.ReactNode }) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+
   return (
     <SidebarProvider>
-      <BusinessSidebar />
+      <BusinessSidebar
+        mobileOpen={mobileSidebarOpen}
+        onMobileOpenChange={setMobileSidebarOpen}
+      />
       <SidebarInset>
-        <BusinessHeader />
+        <BusinessHeader onMobileMenuClick={() => setMobileSidebarOpen(true)} />
         <main className="flex-1 overflow-auto">
           <div className="p-4 md:p-6">
             {children}

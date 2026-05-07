@@ -1,7 +1,10 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
+import { useOrders } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -18,6 +21,8 @@ import {
   Settings,
 } from "lucide-react"
 
+const BIZ_ID = "biz_1"
+
 export function CustomerProfile() {
   const {
     customerName,
@@ -26,8 +31,25 @@ export function CustomerProfile() {
     setCustomerPage,
     setViewMode,
   } = useAdminStore()
+  const { user, logout } = useAuthStore()
+
+  // Fetch order count for stats
+  const { data: ordersData } = useOrders({
+    ...(user?.id ? { customerId: user.id } : {}),
+    limit: 1,
+  })
+
+  useEffect(() => {
+    setBusinessContext(BIZ_ID)
+  }, [])
+
+  const orderCount = ordersData?.pagination?.total || 0
+  const displayName = user?.name || customerName || "Guest User"
+  const displayPhone = user?.email ? `+91 ${user.email}` : "+91 98765 11111"
+  const displayEmail = user?.email || ""
 
   const handleLogout = () => {
+    logout()
     setCustomerLoggedIn(false)
     setCustomerName("")
     setCustomerPage("auth")
@@ -104,23 +126,23 @@ export function CustomerProfile() {
             <User className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-bold">{customerName || "Guest User"}</h2>
-            <p className="text-sm text-emerald-100">+91 98765 11111</p>
-            <p className="text-xs text-emerald-200">rajesh@email.com</p>
+            <h2 className="text-lg font-bold">{displayName}</h2>
+            {displayPhone && <p className="text-sm text-emerald-100">{displayPhone}</p>}
+            {displayEmail && <p className="text-xs text-emerald-200">{displayEmail}</p>}
           </div>
         </div>
         <div className="mt-4 flex items-center gap-4">
           <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5 flex-1 text-center">
-            <p className="text-lg font-bold">24</p>
+            <p className="text-lg font-bold">{orderCount}</p>
             <p className="text-[10px] text-emerald-100">Orders</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5 flex-1 text-center">
-            <p className="text-lg font-bold">1,420</p>
-            <p className="text-[10px] text-emerald-100">Points</p>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5 flex-1 text-center">
             <p className="text-lg font-bold">GOLD</p>
             <p className="text-[10px] text-emerald-100">Tier</p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5 flex-1 text-center">
+            <p className="text-lg font-bold">1,420</p>
+            <p className="text-[10px] text-emerald-100">Points</p>
           </div>
         </div>
       </div>

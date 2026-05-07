@@ -1,8 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { assignedOrders } from "@/components/delivery/data"
+import { useDeliveryOrders, useUpdateDeliveryStatus, useVerifyDeliveryOtp } from "@/hooks/use-api"
+import { useDeliveryUpdates } from "@/hooks/use-realtime"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showError, showApiError, showInfo } from "@/lib/toast-utils"
+import { SectionLoader, ErrorState } from "@/components/ui/loading-states"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -15,7 +19,6 @@ import {
   Package,
   Truck,
   CheckCircle2,
-  ChevronRight,
   IndianRupee,
   Clock,
   Store,
@@ -26,14 +29,25 @@ import {
   AlertTriangle,
   Copy,
   Check,
+  Loader2,
 } from "lucide-react"
 
 const statusSteps = [
+  { key: "ASSIGNED", label: "Pickup", icon: Package },
   { key: "PICKUP", label: "Pickup", icon: Package },
   { key: "PICKED_UP", label: "Picked Up", icon: Truck },
   { key: "ON_THE_WAY", label: "On the Way", icon: Navigation },
   { key: "DELIVERED", label: "Delivered", icon: CheckCircle2 },
 ]
+
+const paymentIcons: Record<string, React.ElementType> = {
+  UPI: Smartphone,
+  CARD: CreditCard,
+  CASH: Banknote,
+  COD: Banknote,
+  CASH_ON_DELIVERY: Banknote,
+  RAZORPAY: CreditCard,
+}
 
 export function DeliveryOrderDetail() {
   const { selectedOrderId, setDeliveryPage } = useAdminStore()
@@ -43,33 +57,122 @@ export function DeliveryOrderDetail() {
   const [copied, setCopied] = useState(false)
   const [showReportDialog, setShowReportDialog] = useState(false)
 
-  const order = assignedOrders.find((o) => o.id === selectedOrderId)
+  // Set business context
+  useEffect(() => {
+    setBusinessContext("biz_1")
+  }, [])
+
+  // Fetch active and completed orders to find the selected one
+  const { data: activeData, isLoading: isLoadingActive } = useDeliveryOrders("active")
+  const { data: completedData, isLoading: isLoadingCompleted } = useDeliveryOrders("completed")
+
+  // Real-time delivery updates for this order
+  const { latestUpdate } = useDeliveryUpdates(selectedOrderId || undefined)
+
+  // Update status mutation
+  const updateStatusMutation = useUpdateDeliveryStatus({
+    onSuccess: (data) => {
+      const responseData = data.data as Record<string, unknown> | undefined
+      const newStatus = responseData?.status || ""
+      showSuccess("Status Updated", `Delivery status updated to ${newStatus}`)
+    },
+    onError: (err) => {
+      showApiError(err)
+    },
+  })
+
+  // Verify OTP mutation
+  const verifyOtpMutation = useVerifyDeliveryOtp({
+    onSuccess: (data) => {
+      const responseData = data.data as Record<string, unknown> | undefined
+      setOtpVerified(true)
+      setOtpError("")
+      const deliveryStatus = responseData?.deliveryStatus as string || ""
+      showSuccess("OTP Verified", `Delivery status updated to ${deliveryStatus}`)
+    },
+    onError: (err) => {
+      setOtpError(err.message || "Invalid OTP. Please try again.")
+      showError("OTP Verification Failed", err.message || "Invalid OTP")
+    },
+  })
+
+  // Find the order from API data
+  const order = useMemo(() => {
+    const allRaw = [
+      ...(Array.isArray(activeData?.data) ? activeData.data as Array<Record<string, unknown>> : []),
+      ...(Array.isArray(completedData?.data) ? completedData.data as Array<Record<string, unknown>> : []),
+    ]
+
+    const raw = allRaw.find((o) => {
+      const orderData = (o.order || {}) as Record<string, unknown>
+      return orderData.id === selectedOrderId || o.deliveryId === selectedOrderId
+    })
+
+    if (!raw) return null
+
+    const orderData = (raw.order || {}) as Record<string, unknown>
+    const storeData = (orderData.store || {}) as Record<string, unknown>
+
+    return {
+      id: (orderData.id || "") as string,
+      deliveryId: (raw.deliveryId || "") as string,
+      orderNumber: (orderData.orderNumber || "") as string,
+      status: (raw.deliveryStatus || orderData.status || "") as string,
+      customerName: (orderData.customerName || "Customer") as string,
+      customerPhone: (orderData.customerPhone || "") as string,
+      deliveryAddress: (raw.dropAddress || orderData.deliveryAddress || "") as string,
+      deliveryInstructions: (orderData.deliveryInstructions || "") as string,
+      pickupAddress: (raw.pickupAddress || storeData.address || "") as string,
+      storeName: (storeData.name || "Store") as string,
+      storeAddress: (storeData.address || raw.pickupAddress || "") as string,
+      storePhone: (storeData.phone || "") as string,
+      totalAmount: Number(orderData.totalAmount || 0),
+      paymentMethod: (orderData.paymentMethod || "COD") as string,
+      paymentStatus: (orderData.paymentStatus || "") as string,
+      deliveryOtp: (orderData.deliveryOtp || "") as string,
+      pickupOtp: (orderData.pickupOtp || "") as string,
+      estimatedDeliveryTime: raw.estimatedDeliveryTime
+        ? new Date(raw.estimatedDeliveryTime as string).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : "30 min",
+      distance: (raw.distance || "") as string,
+      items: [] as Array<{ name: string; qty: number }>,
+    }
+  }, [activeData, completedData, selectedOrderId])
+
+  // Apply real-time status updates
+  const currentStatus = useMemo(() => {
+    if (latestUpdate?.newStatus) {
+      return latestUpdate.newStatus as string
+    }
+    return order?.status || ""
+  }, [order, latestUpdate])
+
+  const isLoading = isLoadingActive || isLoadingCompleted
+
+  if (isLoading) {
+    return <SectionLoader message="Loading order details..." />
+  }
 
   if (!order) {
     return (
-      <div className="px-4 py-12 text-center">
-        <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-        <p className="text-sm text-gray-500">Order not found</p>
-        <Button
-          variant="outline"
-          className="mt-4"
-          onClick={() => setDeliveryPage("dashboard")}
-        >
-          Back to Dashboard
-        </Button>
-      </div>
+      <ErrorState
+        title="Order not found"
+        description="The selected order could not be found. It may have been removed or unassigned."
+        onRetry={() => setDeliveryPage("dashboard")}
+      />
     )
   }
 
-  const currentStepIndex = statusSteps.findIndex((s) => s.key === order.status)
+  const normalizedStatus = currentStatus === "PICKUP" ? "ASSIGNED" : currentStatus
+  const currentStepIndex = statusSteps.findIndex((s) => s.key === normalizedStatus)
+  const effectiveStepIndex = currentStepIndex === -1 ? 0 : currentStepIndex
 
   const handleVerifyOtp = () => {
-    if (otpInput === order.deliveryOtp) {
-      setOtpVerified(true)
-      setOtpError("")
-    } else {
-      setOtpError("Invalid OTP. Please try again.")
+    if (otpInput.length < 4) {
+      setOtpError("Please enter the 4-digit OTP")
+      return
     }
+    verifyOtpMutation.mutate({ orderId: order.id, otp: otpInput })
   }
 
   const handleCopyOtp = () => {
@@ -78,11 +181,17 @@ export function DeliveryOrderDetail() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const paymentIcons: Record<string, React.ElementType> = {
-    UPI: Smartphone,
-    CARD: CreditCard,
-    CASH: Banknote,
-    COD: Banknote,
+  const handleStatusUpdate = (newStatus: string) => {
+    updateStatusMutation.mutate({ deliveryId: order.deliveryId, status: newStatus })
+  }
+
+  const handleReportIssue = (issue: string) => {
+    setShowReportDialog(false)
+    updateStatusMutation.mutate({
+      deliveryId: order.deliveryId,
+      status: "CANCELLED",
+      note: `Issue reported: ${issue}`,
+    })
   }
 
   const PaymentIcon = paymentIcons[order.paymentMethod] || Banknote
@@ -97,25 +206,26 @@ export function DeliveryOrderDetail() {
             <Badge
               variant="outline"
               className={`text-xs px-2 py-0.5 ${
-                order.status === "DELIVERED"
+                normalizedStatus === "DELIVERED"
                   ? "text-green-700 bg-green-50 border-green-200"
-                  : order.status === "ON_THE_WAY"
+                  : normalizedStatus === "ON_THE_WAY"
                   ? "text-teal-700 bg-teal-50 border-teal-200"
-                  : order.status === "PICKED_UP"
+                  : normalizedStatus === "PICKED_UP"
                   ? "text-blue-700 bg-blue-50 border-blue-200"
                   : "text-amber-700 bg-amber-50 border-amber-200"
               } border-0 font-semibold`}
             >
-              {statusSteps[currentStepIndex]?.label || order.status}
+              {statusSteps[effectiveStepIndex]?.label || normalizedStatus}
             </Badge>
           </div>
 
           {/* Progress Steps */}
           <div className="relative">
             <div className="flex items-center justify-between relative z-10">
-              {statusSteps.map((step, index) => {
-                const isCompleted = index <= currentStepIndex
-                const isCurrent = index === currentStepIndex
+              {statusSteps.filter((s, i) => i === 0 || s.key !== "ASSIGNED").map((step, index) => {
+                const filteredSteps = statusSteps.filter((s, i) => i === 0 || s.key !== "ASSIGNED")
+                const isCompleted = index <= effectiveStepIndex || (index === 0 && effectiveStepIndex >= 0)
+                const isCurrent = step.key === normalizedStatus || (step.key === "ASSIGNED" && normalizedStatus === "ASSIGNED")
 
                 return (
                   <div key={step.key} className="flex flex-col items-center relative z-10">
@@ -147,7 +257,7 @@ export function DeliveryOrderDetail() {
               <div
                 className="h-full bg-teal-500 transition-all duration-500"
                 style={{
-                  width: `${Math.min((currentStepIndex / (statusSteps.length - 1)) * 100, 100)}%`,
+                  width: `${Math.min((effectiveStepIndex / (statusSteps.length - 1)) * 100, 100)}%`,
                 }}
               />
             </div>
@@ -171,7 +281,11 @@ export function DeliveryOrderDetail() {
               variant="outline"
               size="icon"
               className="h-9 w-9 rounded-full border-teal-200 text-teal-600 hover:bg-teal-50 shrink-0"
-              onClick={() => {}}
+              onClick={() => {
+                if (order.storePhone) {
+                  showInfo("Calling Store", `Dialing ${order.storePhone}...`)
+                }
+              }}
             >
               <Phone className="h-4 w-4" />
             </Button>
@@ -181,7 +295,9 @@ export function DeliveryOrderDetail() {
               variant="outline"
               size="sm"
               className="h-8 text-xs border-teal-200 text-teal-600 hover:bg-teal-50"
-              onClick={() => {}}
+              onClick={() => {
+                showInfo("Navigation", "Opening navigation to store...")
+              }}
             >
               <Navigation className="h-3 w-3 mr-1" />
               Navigate to Store
@@ -201,12 +317,19 @@ export function DeliveryOrderDetail() {
             <div>
               <p className="text-sm font-semibold text-gray-900">{order.customerName}</p>
               <p className="text-xs text-gray-500 mt-0.5">{order.deliveryAddress}</p>
+              {order.deliveryInstructions && (
+                <p className="text-xs text-amber-600 mt-1 italic">📝 {order.deliveryInstructions}</p>
+              )}
             </div>
             <Button
               variant="outline"
               size="icon"
               className="h-9 w-9 rounded-full border-teal-200 text-teal-600 hover:bg-teal-50 shrink-0"
-              onClick={() => {}}
+              onClick={() => {
+                if (order.customerPhone) {
+                  showInfo("Calling Customer", `Dialing ${order.customerPhone}...`)
+                }
+              }}
             >
               <Phone className="h-4 w-4" />
             </Button>
@@ -216,46 +339,47 @@ export function DeliveryOrderDetail() {
               variant="outline"
               size="sm"
               className="h-8 text-xs border-teal-200 text-teal-600 hover:bg-teal-50"
-              onClick={() => {}}
+              onClick={() => {
+                showInfo("Navigation", "Opening directions to delivery address...")
+              }}
             >
               <Navigation className="h-3 w-3 mr-1" />
               Get Directions
             </Button>
             <span className="text-xs text-gray-400 flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {order.estimatedDelivery}
+              {order.estimatedDeliveryTime}
             </span>
           </div>
         </CardContent>
       </Card>
 
-      {/* Order Items */}
+      {/* Order Items / Payment */}
       <Card className="border-0 shadow-sm">
         <CardContent className="p-4">
           <div className="flex items-center gap-2 mb-3">
             <Package className="h-4 w-4 text-teal-600" />
-            <h3 className="text-sm font-bold text-gray-900">Order Items</h3>
-            <Badge variant="secondary" className="text-[10px] h-5 ml-auto">
-              {order.items.length} items
-            </Badge>
-          </div>
-          <div className="space-y-2">
-            {order.items.map((item, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="h-6 w-6 rounded-md bg-teal-50 flex items-center justify-center text-[10px] font-bold text-teal-600">
-                    {item.qty}×
-                  </span>
-                  <span className="text-sm text-gray-700">{item.name}</span>
-                </div>
-              </div>
-            ))}
+            <h3 className="text-sm font-bold text-gray-900">Order Summary</h3>
+            {order.distance && (
+              <Badge variant="secondary" className="text-[10px] h-5 ml-auto">
+                {order.distance}
+              </Badge>
+            )}
           </div>
           <Separator className="my-3" />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <PaymentIcon className="h-4 w-4 text-gray-500" />
               <span className="text-sm text-gray-600">{order.paymentMethod}</span>
+              {order.paymentStatus && (
+                <Badge variant="outline" className={`text-[10px] h-5 px-1 border-0 ${
+                  order.paymentStatus === "COMPLETED" || order.paymentStatus === "PAID"
+                    ? "bg-green-50 text-green-600"
+                    : "bg-amber-50 text-amber-600"
+                }`}>
+                  {order.paymentStatus}
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <IndianRupee className="h-4 w-4 text-gray-600" />
@@ -266,7 +390,7 @@ export function DeliveryOrderDetail() {
       </Card>
 
       {/* Delivery OTP Section */}
-      {order.status !== "DELIVERED" && (
+      {normalizedStatus !== "DELIVERED" && normalizedStatus !== "CANCELLED" && (
         <Card className="border-0 shadow-sm border-2 border-teal-100">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -275,29 +399,31 @@ export function DeliveryOrderDetail() {
             </div>
 
             {/* OTP Display for partner */}
-            <div className="bg-teal-50 rounded-xl p-3 mb-3">
-              <p className="text-xs text-teal-600 mb-1 font-medium">Share this OTP with the customer</p>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-3xl font-bold tracking-[8px] text-teal-700">
-                    {order.deliveryOtp}
-                  </span>
+            {order.deliveryOtp && (
+              <div className="bg-teal-50 rounded-xl p-3 mb-3">
+                <p className="text-xs text-teal-600 mb-1 font-medium">Share this OTP with the customer</p>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-3xl font-bold tracking-[8px] text-teal-700">
+                      {order.deliveryOtp}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-teal-600 h-8"
+                    onClick={handleCopyOtp}
+                  >
+                    {copied ? (
+                      <Check className="h-4 w-4 mr-1" />
+                    ) : (
+                      <Copy className="h-4 w-4 mr-1" />
+                    )}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-teal-600 h-8"
-                  onClick={handleCopyOtp}
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 mr-1" />
-                  ) : (
-                    <Copy className="h-4 w-4 mr-1" />
-                  )}
-                  {copied ? "Copied" : "Copy"}
-                </Button>
               </div>
-            </div>
+            )}
 
             {/* OTP Verification Input */}
             {!otpVerified ? (
@@ -325,9 +451,9 @@ export function DeliveryOrderDetail() {
                     size="sm"
                     className="h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg"
                     onClick={handleVerifyOtp}
-                    disabled={otpInput.length < 4}
+                    disabled={otpInput.length < 4 || verifyOtpMutation.isPending}
                   >
-                    Verify
+                    {verifyOtpMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
                   </Button>
                 </div>
                 {otpError && (
@@ -345,7 +471,7 @@ export function DeliveryOrderDetail() {
       )}
 
       {/* Delivered confirmation */}
-      {order.status === "DELIVERED" && (
+      {normalizedStatus === "DELIVERED" && (
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4 text-center">
             <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-2" />
@@ -357,19 +483,27 @@ export function DeliveryOrderDetail() {
 
       {/* Action Buttons */}
       <div className="space-y-2">
-        {order.status === "PICKUP" && (
-          <Button className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-base shadow-lg shadow-amber-500/20">
-            <Package className="h-5 w-5 mr-2" />
+        {(normalizedStatus === "ASSIGNED" || normalizedStatus === "PICKUP") && (
+          <Button
+            className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-base shadow-lg shadow-amber-500/20"
+            disabled={updateStatusMutation.isPending}
+            onClick={() => handleStatusUpdate("PICKED_UP")}
+          >
+            {updateStatusMutation.isPending ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Package className="h-5 w-5 mr-2" />}
             Mark as Picked Up
           </Button>
         )}
-        {order.status === "PICKED_UP" && (
-          <Button className="w-full h-12 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold text-base shadow-lg shadow-blue-500/20">
-            <Navigation className="h-5 w-5 mr-2" />
+        {normalizedStatus === "PICKED_UP" && (
+          <Button
+            className="w-full h-12 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold text-base shadow-lg shadow-blue-500/20"
+            disabled={updateStatusMutation.isPending}
+            onClick={() => handleStatusUpdate("ON_THE_WAY")}
+          >
+            {updateStatusMutation.isPending ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Navigation className="h-5 w-5 mr-2" />}
             Start Navigation
           </Button>
         )}
-        {order.status === "ON_THE_WAY" && !otpVerified && (
+        {(normalizedStatus === "ON_THE_WAY" || normalizedStatus === "ARRIVED") && !otpVerified && (
           <Button
             className="w-full h-12 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-base shadow-lg shadow-teal-600/20"
             disabled
@@ -378,15 +512,19 @@ export function DeliveryOrderDetail() {
             Verify OTP to Complete
           </Button>
         )}
-        {order.status === "ON_THE_WAY" && otpVerified && (
-          <Button className="w-full h-12 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-base shadow-lg shadow-green-600/20">
-            <CheckCircle2 className="h-5 w-5 mr-2" />
+        {(normalizedStatus === "ON_THE_WAY" || normalizedStatus === "ARRIVED") && otpVerified && (
+          <Button
+            className="w-full h-12 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-base shadow-lg shadow-green-600/20"
+            disabled={updateStatusMutation.isPending}
+            onClick={() => handleStatusUpdate("DELIVERED")}
+          >
+            {updateStatusMutation.isPending ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <CheckCircle2 className="h-5 w-5 mr-2" />}
             Mark as Delivered
           </Button>
         )}
 
         {/* Report Issue */}
-        {order.status !== "DELIVERED" && (
+        {normalizedStatus !== "DELIVERED" && normalizedStatus !== "CANCELLED" && (
           <Button
             variant="outline"
             className="w-full h-10 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-medium text-sm"
@@ -411,7 +549,7 @@ export function DeliveryOrderDetail() {
                 <button
                   key={issue}
                   className="w-full text-left text-xs text-red-600 hover:bg-red-100 rounded-lg px-3 py-2 transition-colors"
-                  onClick={() => setShowReportDialog(false)}
+                  onClick={() => handleReportIssue(issue)}
                 >
                   {issue}
                 </button>

@@ -1,12 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { assignedOrders, earningsData, partnerProfile } from "@/components/delivery/data"
+import { useDeliveryOrders, useUpdateDeliveryStatus, queryKeys } from "@/hooks/use-api"
+import { useDeliveryUpdates } from "@/hooks/use-realtime"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showError, showApiError } from "@/lib/toast-utils"
+import { SkeletonList, EmptyState, ErrorState } from "@/components/ui/loading-states"
+import { ConnectionStatusBadge } from "@/components/ui/connection-status"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import {
   Package,
   MapPin,
@@ -23,12 +27,15 @@ import {
   Banknote,
   Smartphone,
   Bike,
+  Loader2,
 } from "lucide-react"
 
 const statusConfig: Record<string, { label: string; color: string; bgColor: string; icon: React.ElementType }> = {
+  ASSIGNED: { label: "Ready for Pickup", color: "text-amber-700", bgColor: "bg-amber-50 border-amber-200", icon: Clock },
   PICKUP: { label: "Ready for Pickup", color: "text-amber-700", bgColor: "bg-amber-50 border-amber-200", icon: Clock },
   PICKED_UP: { label: "Picked Up", color: "text-blue-700", bgColor: "bg-blue-50 border-blue-200", icon: Package },
   ON_THE_WAY: { label: "On the Way", color: "text-teal-700", bgColor: "bg-teal-50 border-teal-200", icon: Truck },
+  ARRIVED: { label: "Arrived", color: "text-cyan-700", bgColor: "bg-cyan-50 border-cyan-200", icon: MapPin },
   DELIVERED: { label: "Delivered", color: "text-green-700", bgColor: "bg-green-50 border-green-200", icon: CheckCircle2 },
   CANCELLED: { label: "Cancelled", color: "text-red-700", bgColor: "bg-red-50 border-red-200", icon: AlertCircle },
 }
@@ -38,32 +45,125 @@ const paymentIcons: Record<string, React.ElementType> = {
   CARD: CreditCard,
   CASH: Banknote,
   COD: Banknote,
+  CASH_ON_DELIVERY: Banknote,
+  RAZORPAY: CreditCard,
+}
+
+// Normalize delivery order from API to a consistent shape for the UI
+interface NormalizedDeliveryOrder {
+  id: string
+  deliveryId: string
+  orderNumber: string
+  status: string
+  customerName: string
+  customerPhone: string
+  deliveryAddress: string
+  totalAmount: number
+  paymentMethod: string
+  storeName: string
+  storeAddress: string
+  deliveryOtp: string
+  estimatedDelivery: string
+  distance: string
+  itemsCount: number
+}
+
+function normalizeOrder(raw: Record<string, unknown>): NormalizedDeliveryOrder {
+  const order = (raw.order || {}) as Record<string, unknown>
+  const store = (order.store || {}) as Record<string, unknown>
+
+  return {
+    id: (order.id || raw.deliveryId || "") as string,
+    deliveryId: (raw.deliveryId || "") as string,
+    orderNumber: (order.orderNumber || "") as string,
+    status: (raw.deliveryStatus || order.status || "") as string,
+    customerName: (order.customerName || "Customer") as string,
+    customerPhone: (order.customerPhone || "") as string,
+    deliveryAddress: (raw.dropAddress || order.deliveryAddress || "") as string,
+    totalAmount: Number(order.totalAmount || 0),
+    paymentMethod: (order.paymentMethod || "COD") as string,
+    storeName: (store.name || "Store") as string,
+    storeAddress: (store.address || raw.pickupAddress || "") as string,
+    deliveryOtp: (order.deliveryOtp || "") as string,
+    estimatedDelivery: raw.estimatedDeliveryTime
+      ? new Date(raw.estimatedDeliveryTime as string).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : (order.estimatedDelivery || "30 min") as string,
+    distance: (raw.distance || "") as string,
+    itemsCount: Number(order.itemsCount || 0),
+  }
 }
 
 export function DeliveryDashboard() {
   const { setDeliveryPage, setSelectedOrderId } = useAdminStore()
   const [activeTab, setActiveTab] = useState<"active" | "completed">("active")
 
-  const activeOrders = assignedOrders.filter(
-    (o) => o.status === "PICKUP" || o.status === "PICKED_UP" || o.status === "ON_THE_WAY"
-  )
-  const completedOrders = assignedOrders.filter((o) => o.status === "DELIVERED")
+  // Set business context
+  useEffect(() => {
+    setBusinessContext("biz_1")
+  }, [])
+
+  // Fetch orders using React Query
+  const { data: activeData, isLoading: isLoadingActive, error: activeError, refetch: refetchActive } = useDeliveryOrders("active")
+  const { data: completedData, isLoading: isLoadingCompleted, error: completedError, refetch: refetchCompleted } = useDeliveryOrders("completed")
+
+  // Real-time delivery updates
+  const { latestUpdate } = useDeliveryUpdates()
+
+  // Status update mutation
+  const updateStatusMutation = useUpdateDeliveryStatus({
+    onSuccess: () => {
+      showSuccess("Status Updated", "Delivery status has been updated")
+    },
+    onError: (err) => {
+      showApiError(err)
+    },
+  })
+
+  // Normalize API data
+  const activeOrders = useMemo(() => {
+    if (!activeData?.data) return []
+    const rawOrders = Array.isArray(activeData.data) ? activeData.data : []
+    return rawOrders.map((o: unknown) => normalizeOrder(o as Record<string, unknown>))
+  }, [activeData])
+
+  const completedOrders = useMemo(() => {
+    if (!completedData?.data) return []
+    const rawOrders = Array.isArray(completedData.data) ? completedData.data : []
+    return rawOrders.map((o: unknown) => normalizeOrder(o as Record<string, unknown>))
+  }, [completedData])
 
   const displayOrders = activeTab === "active" ? activeOrders : completedOrders
+  const isLoading = activeTab === "active" ? isLoadingActive : isLoadingCompleted
+  const error = activeTab === "active" ? activeError : completedError
+
+  // Compute summary stats from active orders data
+  const todayEarnings = useMemo(() => {
+    return activeOrders.reduce((sum, o) => sum + o.totalAmount, 0)
+  }, [activeOrders])
 
   const handleOrderClick = (orderId: string) => {
     setSelectedOrderId(orderId)
     setDeliveryPage("order-detail")
   }
 
+  const handleStatusUpdate = (deliveryId: string, newStatus: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    updateStatusMutation.mutate({ deliveryId, status: newStatus })
+  }
+
   return (
     <div className="px-4 py-4 space-y-4">
+      {/* Connection Status */}
+      <div className="flex items-center justify-between">
+        <ConnectionStatusBadge size="sm" />
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="bg-gradient-to-br from-teal-500 to-teal-600 border-0 text-white shadow-md">
           <CardContent className="p-3 text-center">
             <IndianRupee className="h-5 w-5 mx-auto mb-1 text-teal-100" />
-            <p className="text-lg font-bold">₹{earningsData.todayEarnings}</p>
+            <p className="text-lg font-bold">₹{todayEarnings.toFixed(0)}</p>
             <p className="text-[10px] text-teal-100 font-medium">Today&apos;s Earnings</p>
           </CardContent>
         </Card>
@@ -71,16 +171,16 @@ export function DeliveryDashboard() {
         <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 border-0 text-white shadow-md">
           <CardContent className="p-3 text-center">
             <Package className="h-5 w-5 mx-auto mb-1 text-emerald-100" />
-            <p className="text-lg font-bold">{earningsData.todayDeliveries}</p>
-            <p className="text-[10px] text-emerald-100 font-medium">Deliveries</p>
+            <p className="text-lg font-bold">{activeOrders.length}</p>
+            <p className="text-[10px] text-emerald-100 font-medium">Active</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-amber-500 to-amber-600 border-0 text-white shadow-md">
           <CardContent className="p-3 text-center">
-            <Star className="h-5 w-5 mx-auto mb-1 text-amber-100" />
-            <p className="text-lg font-bold">{partnerProfile.rating}</p>
-            <p className="text-[10px] text-amber-100 font-medium">Rating</p>
+            <CheckCircle2 className="h-5 w-5 mx-auto mb-1 text-amber-100" />
+            <p className="text-lg font-bold">{completedOrders.length}</p>
+            <p className="text-[10px] text-amber-100 font-medium">Completed</p>
           </CardContent>
         </Card>
       </div>
@@ -154,26 +254,36 @@ export function DeliveryDashboard() {
         </button>
       </div>
 
+      {/* Loading State */}
+      {isLoading && <SkeletonList count={3} showAvatar showAction />}
+
+      {/* Error State */}
+      {error && !isLoading && (
+        <ErrorState
+          title="Failed to load orders"
+          description="Could not fetch your delivery orders. Please try again."
+          onRetry={() => activeTab === "active" ? refetchActive() : refetchCompleted()}
+        />
+      )}
+
       {/* Orders List */}
-      <div className="space-y-3">
-        {displayOrders.length === 0 ? (
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-8 text-center">
-              <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm font-medium text-gray-500">No {activeTab} orders</p>
-              <p className="text-xs text-gray-400 mt-1">
-                {activeTab === "active" ? "New orders will appear here" : "Completed deliveries will show here"}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          displayOrders.map((order) => {
-            const config = statusConfig[order.status]
+      {!isLoading && !error && displayOrders.length === 0 && (
+        <EmptyState
+          icon={Package}
+          title={`No ${activeTab} orders`}
+          description={activeTab === "active" ? "New orders will appear here" : "Completed deliveries will show here"}
+        />
+      )}
+
+      {!isLoading && !error && displayOrders.length > 0 && (
+        <div className="space-y-3">
+          {displayOrders.map((order) => {
+            const config = statusConfig[order.status] || statusConfig.ASSIGNED
             const PaymentIcon = paymentIcons[order.paymentMethod] || Banknote
 
             return (
               <Card
-                key={order.id}
+                key={order.deliveryId || order.id}
                 className="border-0 shadow-sm overflow-hidden cursor-pointer active:scale-[0.98] transition-transform"
                 onClick={() => handleOrderClick(order.id)}
               >
@@ -218,15 +328,16 @@ export function DeliveryDashboard() {
                     {/* Order details row */}
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-50">
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1">
-                          <Navigation className="h-3.5 w-3.5 text-teal-500" />
-                          <span className="text-xs font-medium text-teal-600">{order.distance}</span>
-                        </div>
+                        {order.distance && (
+                          <div className="flex items-center gap-1">
+                            <Navigation className="h-3.5 w-3.5 text-teal-500" />
+                            <span className="text-xs font-medium text-teal-600">{order.distance}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-1">
                           <PaymentIcon className="h-3.5 w-3.5 text-gray-400" />
                           <span className="text-xs text-gray-500">{order.paymentMethod}</span>
                         </div>
-                        <span className="text-xs text-gray-400">{order.items.length} items</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <IndianRupee className="h-3.5 w-3.5 text-gray-600" />
@@ -236,25 +347,34 @@ export function DeliveryDashboard() {
                   </div>
 
                   {/* Action button */}
-                  {order.status !== "DELIVERED" && (
+                  {order.status !== "DELIVERED" && order.status !== "CANCELLED" && (
                     <div className="px-4 pb-3">
                       <Button
                         className={`w-full h-10 rounded-xl font-semibold text-sm ${
-                          order.status === "PICKUP"
+                          order.status === "ASSIGNED" || order.status === "PICKUP"
                             ? "bg-amber-500 hover:bg-amber-600 text-white"
                             : order.status === "PICKED_UP"
                             ? "bg-blue-500 hover:bg-blue-600 text-white"
                             : "bg-teal-600 hover:bg-teal-700 text-white"
                         }`}
+                        disabled={updateStatusMutation.isPending}
                         onClick={(e) => {
-                          e.stopPropagation()
-                          handleOrderClick(order.id)
+                          if (order.status === "ASSIGNED" || order.status === "PICKUP") {
+                            handleStatusUpdate(order.deliveryId, "PICKED_UP", e)
+                          } else if (order.status === "PICKED_UP") {
+                            handleStatusUpdate(order.deliveryId, "ON_THE_WAY", e)
+                          } else {
+                            handleOrderClick(order.id)
+                          }
                         }}
                       >
-                        {order.status === "PICKUP" && (
+                        {updateStatusMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : null}
+                        {(order.status === "ASSIGNED" || order.status === "PICKUP") && (
                           <>
                             <Package className="h-4 w-4 mr-2" />
-                            Go to Pickup
+                            Mark as Picked Up
                           </>
                         )}
                         {order.status === "PICKED_UP" && (
@@ -263,7 +383,7 @@ export function DeliveryDashboard() {
                             Start Delivery
                           </>
                         )}
-                        {order.status === "ON_THE_WAY" && (
+                        {(order.status === "ON_THE_WAY" || order.status === "ARRIVED") && (
                           <>
                             <Phone className="h-4 w-4 mr-2" />
                             Call Customer
@@ -275,9 +395,9 @@ export function DeliveryDashboard() {
                 </CardContent>
               </Card>
             )
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
       {/* Bottom spacing */}
       <div className="h-4" />

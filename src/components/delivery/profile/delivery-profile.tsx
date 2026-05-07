@@ -1,8 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { partnerProfile } from "@/components/delivery/data"
+import { useAuthStore } from "@/stores/auth-store"
+import { useDeliveryEarnings } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showInfo } from "@/lib/toast-utils"
+import { SkeletonCard } from "@/components/ui/loading-states"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -25,26 +29,73 @@ import {
   IndianRupee,
   Package,
   Award,
-  Settings,
   Eye,
   EyeOff,
   HelpCircle,
   Info,
   ArrowLeftRight,
+  Loader2,
 } from "lucide-react"
 
 export function DeliveryProfile() {
   const { setDeliveryLoggedIn, setDeliveryPage, setDeliveryPartnerName, setViewMode } = useAdminStore()
+  const { user, logout: authLogout } = useAuthStore()
   const [notifOrders, setNotifOrders] = useState(true)
   const [notifPayments, setNotifPayments] = useState(true)
   const [notifPromos, setNotifPromos] = useState(false)
   const [showBankDetails, setShowBankDetails] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
+  // Set business context
+  useEffect(() => {
+    setBusinessContext("biz_1")
+  }, [])
+
+  // Fetch earnings to get partner data
+  const { data: earningsData, isLoading: isLoadingEarnings } = useDeliveryEarnings()
+
+  // Parse partner data from earnings API
+  const partner = useMemo(() => {
+    if (!earningsData?.data) return null
+    const data = earningsData.data as Record<string, unknown>
+    return data.partner as Record<string, unknown> | null
+  }, [earningsData])
+
+  // Build profile data from auth store and partner API data
+  const profile = useMemo(() => {
+    return {
+      name: user?.name || (partner?.name as string) || "Delivery Partner",
+      phone: user?.phone || "",
+      email: user?.email || "",
+      rating: partner?.rating ? Number(partner.rating) : 4.7,
+      totalDeliveries: partner?.totalDeliveries ? Number(partner.totalDeliveries) : 0,
+      totalEarnings: partner?.totalEarnings ? Number(partner.totalEarnings) : 0,
+      isOnline: partner?.isOnline as boolean || false,
+      vehicleType: "Motorcycle",
+      vehicleNumber: "MH-02-AB-1234",
+      bankAccount: "XXXX XXXX XXXX 4523",
+      bankName: "HDFC Bank",
+      upiId: "delivery@upi",
+    }
+  }, [user, partner])
+
   const handleLogout = () => {
+    // Use auth store logout (clears tokens, calls server logout)
+    authLogout()
+    // Also update admin store
     setDeliveryLoggedIn(false)
     setDeliveryPartnerName("")
     setDeliveryPage("login")
+    showSuccess("Logged Out", "You have been logged out successfully")
+  }
+
+  if (isLoadingEarnings) {
+    return (
+      <div className="px-4 py-4 space-y-4">
+        <SkeletonCard count={1} />
+        <SkeletonCard count={2} />
+      </div>
+    )
   }
 
   return (
@@ -55,16 +106,16 @@ export function DeliveryProfile() {
           <div className="absolute top-0 right-0 h-24 w-24 rounded-full bg-white/5 -mr-8 -mt-8" />
           <div className="flex items-center gap-4">
             <div className="h-16 w-16 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold text-white border-3 border-white/30 shadow-lg">
-              {partnerProfile.name.charAt(0)}
+              {profile.name.charAt(0)}
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">{partnerProfile.name}</h2>
+              <h2 className="text-xl font-bold text-white">{profile.name}</h2>
               <div className="flex items-center gap-2 mt-1">
                 <Badge className="bg-white/20 text-white border-0 text-xs px-2 h-5">
                   <Star className="h-3 w-3 mr-0.5 text-yellow-300" />
-                  {partnerProfile.rating}
+                  {profile.rating}
                 </Badge>
-                <span className="text-xs text-teal-100">{partnerProfile.totalDeliveries} deliveries</span>
+                <span className="text-xs text-teal-100">{profile.totalDeliveries} deliveries</span>
               </div>
             </div>
           </div>
@@ -74,7 +125,7 @@ export function DeliveryProfile() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Phone className="h-4 w-4 text-gray-400" />
-                <span className="text-sm text-gray-600">{partnerProfile.phone}</span>
+                <span className="text-sm text-gray-600">{profile.phone || "Not provided"}</span>
               </div>
               <Badge variant="secondary" className="text-[10px] h-5 bg-green-50 text-green-600 border-0">
                 Verified
@@ -82,7 +133,7 @@ export function DeliveryProfile() {
             </div>
             <div className="flex items-center gap-2 mt-2">
               <Mail className="h-4 w-4 text-gray-400" />
-              <span className="text-sm text-gray-600">{partnerProfile.email}</span>
+              <span className="text-sm text-gray-600">{profile.email || "Not provided"}</span>
             </div>
           </div>
         </CardContent>
@@ -93,21 +144,23 @@ export function DeliveryProfile() {
         <Card className="border-0 shadow-sm">
           <CardContent className="p-3 text-center">
             <Package className="h-5 w-5 text-teal-500 mx-auto mb-1" />
-            <p className="text-lg font-bold text-gray-900">{partnerProfile.totalDeliveries}</p>
+            <p className="text-lg font-bold text-gray-900">{profile.totalDeliveries}</p>
             <p className="text-[10px] text-gray-500 font-medium">Total Deliveries</p>
           </CardContent>
         </Card>
         <Card className="border-0 shadow-sm">
           <CardContent className="p-3 text-center">
             <IndianRupee className="h-5 w-5 text-emerald-500 mx-auto mb-1" />
-            <p className="text-lg font-bold text-gray-900">₹{(partnerProfile.earnings / 1000).toFixed(1)}k</p>
+            <p className="text-lg font-bold text-gray-900">
+              ₹{profile.totalEarnings > 0 ? (profile.totalEarnings / 1000).toFixed(1) : "0"}k
+            </p>
             <p className="text-[10px] text-gray-500 font-medium">Total Earnings</p>
           </CardContent>
         </Card>
         <Card className="border-0 shadow-sm">
           <CardContent className="p-3 text-center">
             <Award className="h-5 w-5 text-amber-500 mx-auto mb-1" />
-            <p className="text-lg font-bold text-gray-900">{partnerProfile.rating}</p>
+            <p className="text-lg font-bold text-gray-900">{profile.rating}</p>
             <p className="text-[10px] text-gray-500 font-medium">Rating</p>
           </CardContent>
         </Card>
@@ -123,11 +176,11 @@ export function DeliveryProfile() {
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-500">Vehicle Type</span>
-              <span className="text-sm font-medium text-gray-900">{partnerProfile.vehicleType}</span>
+              <span className="text-sm font-medium text-gray-900">{profile.vehicleType}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-500">Vehicle Number</span>
-              <span className="text-sm font-medium text-gray-900 font-mono">{partnerProfile.vehicleNumber}</span>
+              <span className="text-sm font-medium text-gray-900 font-mono">{profile.vehicleNumber}</span>
             </div>
           </div>
         </CardContent>
@@ -159,16 +212,16 @@ export function DeliveryProfile() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-500">Bank Account</span>
               <span className="text-sm font-medium text-gray-900 font-mono">
-                {showBankDetails ? "1234 5678 9012 4523" : partnerProfile.bankAccount}
+                {showBankDetails ? "1234 5678 9012 4523" : profile.bankAccount}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-500">Bank</span>
-              <span className="text-sm font-medium text-gray-900">{partnerProfile.bankName}</span>
+              <span className="text-sm font-medium text-gray-900">{profile.bankName}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-500">UPI ID</span>
-              <span className="text-sm font-medium text-gray-900">{partnerProfile.upiId}</span>
+              <span className="text-sm font-medium text-gray-900">{profile.upiId}</span>
             </div>
           </div>
         </CardContent>
@@ -189,7 +242,10 @@ export function DeliveryProfile() {
               </div>
               <Switch
                 checked={notifOrders}
-                onCheckedChange={setNotifOrders}
+                onCheckedChange={(checked) => {
+                  setNotifOrders(checked)
+                  showInfo("Notification Preference", `New orders notifications ${checked ? "enabled" : "disabled"}`)
+                }}
                 className="data-[state=checked]:bg-teal-600"
               />
             </div>
@@ -201,7 +257,10 @@ export function DeliveryProfile() {
               </div>
               <Switch
                 checked={notifPayments}
-                onCheckedChange={setNotifPayments}
+                onCheckedChange={(checked) => {
+                  setNotifPayments(checked)
+                  showInfo("Notification Preference", `Payment notifications ${checked ? "enabled" : "disabled"}`)
+                }}
                 className="data-[state=checked]:bg-teal-600"
               />
             </div>
@@ -213,7 +272,10 @@ export function DeliveryProfile() {
               </div>
               <Switch
                 checked={notifPromos}
-                onCheckedChange={setNotifPromos}
+                onCheckedChange={(checked) => {
+                  setNotifPromos(checked)
+                  showInfo("Notification Preference", `Promo notifications ${checked ? "enabled" : "disabled"}`)
+                }}
                 className="data-[state=checked]:bg-teal-600"
               />
             </div>

@@ -2,7 +2,10 @@
 
 import { useState, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { partnerProfile } from "@/components/delivery/data"
+import { useAuthStore } from "@/stores/auth-store"
+import { useSendOtp } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showError, showInfo } from "@/lib/toast-utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
@@ -10,24 +13,31 @@ import { Bike, Phone, Shield, ArrowRight, Loader2 } from "lucide-react"
 
 export function DeliveryLogin() {
   const { setDeliveryLoggedIn, setDeliveryPartnerName, setDeliveryPage } = useAdminStore()
+  const { loginWithOtp, isLoading: isAuthLoading } = useAuthStore()
   const [phone, setPhone] = useState("")
   const [otp, setOtp] = useState("")
   const [step, setStep] = useState<"phone" | "otp">("phone")
-  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const sendOtpMutation = useSendOtp({
+    onSuccess: () => {
+      setStep("otp")
+      showInfo("OTP Sent", `Verification code sent to +91 ${phone}`)
+    },
+    onError: (err) => {
+      setError(err.message || "Failed to send OTP. Please try again.")
+      showError("OTP Failed", err.message || "Could not send OTP")
+    },
+  })
 
   const handleSendOtp = () => {
     if (phone.length < 10) {
       setError("Please enter a valid 10-digit phone number")
       return
     }
-    setIsLoading(true)
     setError("")
-    setTimeout(() => {
-      setIsLoading(false)
-      setStep("otp")
-    }, 1500)
+    sendOtpMutation.mutate({ phone })
   }
 
   const handleVerifyOtp = () => {
@@ -35,18 +45,25 @@ export function DeliveryLogin() {
       setError("Please enter the 4-digit OTP")
       return
     }
-    setIsLoading(true)
     setError("")
-    setTimeout(() => {
-      setIsLoading(false)
-      if (otp === "1234" || otp.length === 4) {
-        setDeliveryLoggedIn(true)
-        setDeliveryPartnerName(partnerProfile.name)
-        setDeliveryPage("dashboard")
-      } else {
-        setError("Invalid OTP. Try again.")
-      }
-    }, 1500)
+    // Use the auth store's loginWithOtp which handles the full flow
+    loginWithOtp(phone, otp).then(() => {
+      // Set business context
+      setBusinessContext("biz_1")
+
+      const authState = useAuthStore.getState()
+      const partnerName = authState.user?.name || authState.user?.phone || "Delivery Partner"
+
+      setDeliveryLoggedIn(true)
+      setDeliveryPartnerName(partnerName)
+      setDeliveryPage("dashboard")
+
+      showSuccess("Login Successful", `Welcome back, ${partnerName}!`)
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : "Invalid OTP. Please try again."
+      setError(message)
+      showError("Verification Failed", message)
+    })
   }
 
   const handlePhoneChange = (value: string) => {
@@ -54,6 +71,12 @@ export function DeliveryLogin() {
     setPhone(digits)
     if (error) setError("")
   }
+
+  const handleResendOtp = () => {
+    sendOtpMutation.mutate({ phone })
+  }
+
+  const isLoading = sendOtpMutation.isPending || isAuthLoading
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-600 via-teal-500 to-teal-700 flex flex-col relative overflow-hidden">
@@ -127,10 +150,10 @@ export function DeliveryLogin() {
 
               <Button
                 onClick={handleSendOtp}
-                disabled={isLoading || phone.length < 10}
+                disabled={sendOtpMutation.isPending || phone.length < 10}
                 className="w-full h-12 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-base shadow-lg shadow-teal-600/30 disabled:opacity-50"
               >
-                {isLoading ? (
+                {sendOtpMutation.isPending ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   <>
@@ -166,7 +189,7 @@ export function DeliveryLogin() {
                   </InputOTPGroup>
                 </InputOTP>
                 <p className="text-xs text-gray-400 mt-3">
-                  Demo: Enter any 4 digits to login
+                  Enter the OTP sent to your phone
                 </p>
               </div>
 
@@ -204,11 +227,10 @@ export function DeliveryLogin() {
                 </button>
                 <button
                   className="text-sm text-teal-600 hover:text-teal-700 font-medium"
-                  onClick={() => {
-                    setOtp("1234")
-                  }}
+                  onClick={handleResendOtp}
+                  disabled={sendOtpMutation.isPending}
                 >
-                  Resend OTP
+                  {sendOtpMutation.isPending ? "Sending..." : "Resend OTP"}
                 </button>
               </div>
             </div>

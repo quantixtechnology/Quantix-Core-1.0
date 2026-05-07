@@ -34,6 +34,32 @@ export interface LogActivityParams {
   userAgent?: string | null;
 }
 
+/** Activity log record returned from domain-specific loggers */
+interface ActivityLogRecord {
+  id: string;
+  businessId: string | null;
+  userId: string | null;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  details: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+}
+
+/** Helper to extract IP and user-agent from a Request-like object */
+function extractRequestMeta(request?: { headers?: { get(name: string): string | null } }): {
+  ip: string | null;
+  userAgent: string | null;
+} {
+  if (!request?.headers) return { ip: null, userAgent: null };
+  return {
+    ip: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || null,
+    userAgent: request.headers.get('user-agent') || null,
+  };
+}
+
 /** Filters for querying activity logs */
 export interface ActivityLogFilters {
   /** Filter by action type (e.g., "order.created") */
@@ -103,8 +129,8 @@ export interface DateRange {
  * });
  * ```
  */
-export async function logActivity(params: LogActivityParams): Promise<void> {
-  await db.activityLog.create({
+export async function logActivity(params: LogActivityParams): Promise<ActivityLogRecord> {
+  const record = await db.activityLog.create({
     data: {
       businessId: params.businessId || null,
       userId: params.userId || null,
@@ -116,6 +142,7 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
       userAgent: params.userAgent || null,
     },
   });
+  return record;
 }
 
 // ============================================================================
@@ -268,4 +295,181 @@ export async function exportAuditLog(
     userAgent: log.userAgent,
     createdAt: log.createdAt.toISOString(),
   }));
+}
+
+// ============================================================================
+// DOMAIN-SPECIFIC AUDIT LOGGERS
+// Convenience wrappers that auto-set entity, action prefix, and request meta
+// ============================================================================
+
+/**
+ * Log an order-related activity.
+ * Actions: order.created, order.status_changed, order.cancelled, order.refunded, etc.
+ */
+export async function logOrderActivity(
+  businessId: string | null,
+  userId: string | null,
+  action: string,
+  orderId: string,
+  details?: Record<string, unknown> | null,
+  request?: { headers?: { get(name: string): string | null } }
+): Promise<ActivityLogRecord> {
+  const meta = extractRequestMeta(request);
+  return logActivity({
+    businessId,
+    userId,
+    action: action.startsWith('order.') ? action : `order.${action}`,
+    entity: 'Order',
+    entityId: orderId,
+    details,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+/**
+ * Log a payment-related activity.
+ * Actions: payment.created, payment.completed, payment.failed, payment.refunded, payment.verified, etc.
+ */
+export async function logPaymentActivity(
+  businessId: string | null,
+  userId: string | null,
+  action: string,
+  paymentId: string,
+  details?: Record<string, unknown> | null,
+  request?: { headers?: { get(name: string): string | null } }
+): Promise<ActivityLogRecord> {
+  const meta = extractRequestMeta(request);
+  return logActivity({
+    businessId,
+    userId,
+    action: action.startsWith('payment.') ? action : `payment.${action}`,
+    entity: 'Payment',
+    entityId: paymentId,
+    details,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+/**
+ * Log a POS-related activity.
+ * Actions: pos.session_opened, pos.session_closed, pos.order_created, etc.
+ */
+export async function logPOSActivity(
+  businessId: string | null,
+  userId: string | null,
+  action: string,
+  sessionId: string,
+  details?: Record<string, unknown> | null,
+  request?: { headers?: { get(name: string): string | null } }
+): Promise<ActivityLogRecord> {
+  const meta = extractRequestMeta(request);
+  return logActivity({
+    businessId,
+    userId,
+    action: action.startsWith('pos.') ? action : `pos.${action}`,
+    entity: 'POSSession',
+    entityId: sessionId,
+    details,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+/**
+ * Log a lead/sales-related activity.
+ * Actions: lead.created, lead.stage_changed, lead.converted, lead.demo_shared, etc.
+ */
+export async function logLeadActivity(
+  userId: string | null,
+  action: string,
+  leadId: string,
+  details?: Record<string, unknown> | null,
+  request?: { headers?: { get(name: string): string | null } }
+): Promise<ActivityLogRecord> {
+  const meta = extractRequestMeta(request);
+  return logActivity({
+    businessId: null, // Leads are platform-level
+    userId,
+    action: action.startsWith('lead.') ? action : `lead.${action}`,
+    entity: 'Lead',
+    entityId: leadId,
+    details,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+/**
+ * Log a delivery-related activity.
+ * Actions: delivery.assigned, delivery.picked_up, delivery.on_the_way, delivery.delivered, etc.
+ */
+export async function logDeliveryActivity(
+  businessId: string | null,
+  userId: string | null,
+  action: string,
+  deliveryId: string,
+  details?: Record<string, unknown> | null,
+  request?: { headers?: { get(name: string): string | null } }
+): Promise<ActivityLogRecord> {
+  const meta = extractRequestMeta(request);
+  return logActivity({
+    businessId,
+    userId,
+    action: action.startsWith('delivery.') ? action : `delivery.${action}`,
+    entity: 'Delivery',
+    entityId: deliveryId,
+    details,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+/**
+ * Log an auth-related activity.
+ * Actions: auth.login, auth.logout, auth.login_failed, auth.token_refreshed, auth.otp_sent, etc.
+ */
+export async function logAuthActivity(
+  userId: string | null,
+  action: string,
+  details?: Record<string, unknown> | null,
+  request?: { headers?: { get(name: string): string | null } }
+): Promise<ActivityLogRecord> {
+  const meta = extractRequestMeta(request);
+  return logActivity({
+    businessId: null, // Auth is platform-level
+    userId,
+    action: action.startsWith('auth.') ? action : `auth.${action}`,
+    entity: 'User',
+    entityId: userId,
+    details,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+/**
+ * Log a subscription-related activity.
+ * Actions: subscription.created, subscription.cancelled, subscription.renewed, subscription.plan_changed, etc.
+ */
+export async function logSubscriptionActivity(
+  businessId: string | null,
+  userId: string | null,
+  action: string,
+  subscriptionId: string,
+  details?: Record<string, unknown> | null,
+  request?: { headers?: { get(name: string): string | null } }
+): Promise<ActivityLogRecord> {
+  const meta = extractRequestMeta(request);
+  return logActivity({
+    businessId,
+    userId,
+    action: action.startsWith('subscription.') ? action : `subscription.${action}`,
+    entity: 'BusinessSubscription',
+    entityId: subscriptionId,
+    details,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
 }

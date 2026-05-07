@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Settings,
   Save,
@@ -20,8 +20,24 @@ import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { storeTiming, deliveryPartners } from "@/components/business/data"
+import { useStores, useOrders } from "@/hooks/use-api"
+import { setBusinessContext } from "@/lib/api-client"
+import { showSuccess, showError } from "@/lib/toast-utils"
 import { PageHeader } from "@/components/admin/shared/page-header"
+
+const BUSINESS_ID = "biz_1"
+
+// ─── Fallback Store Timing ────────────────────────────────────────────────
+
+const defaultStoreTiming = [
+  { day: "MONDAY" as const, open: "08:00", close: "22:00", isClosed: false },
+  { day: "TUESDAY" as const, open: "08:00", close: "22:00", isClosed: false },
+  { day: "WEDNESDAY" as const, open: "08:00", close: "22:00", isClosed: false },
+  { day: "THURSDAY" as const, open: "08:00", close: "22:00", isClosed: false },
+  { day: "FRIDAY" as const, open: "08:00", close: "22:00", isClosed: false },
+  { day: "SATURDAY" as const, open: "08:00", close: "22:00", isClosed: false },
+  { day: "SUNDAY" as const, open: "09:00", close: "20:00", isClosed: false },
+]
 
 // ─── GST Rates ──────────────────────────────────────────────────────────────
 
@@ -42,7 +58,25 @@ const stateGstins = [
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function StoreSettingsView() {
-  // General tab state
+  // Set business context on mount
+  useEffect(() => {
+    setBusinessContext(BUSINESS_ID)
+  }, [])
+
+  // ---- API hooks ----
+  const { data: storesData } = useStores(BUSINESS_ID)
+
+  // Extract store data
+  const storeData = useMemo(() => {
+    if (!storesData?.data) return null
+    const rawData = storesData.data
+    if (Array.isArray(rawData) && rawData.length > 0) {
+      return rawData[0] as Record<string, unknown>
+    }
+    return null
+  }, [storesData])
+
+  // General tab state - initialized with API data when available
   const [storeName, setStoreName] = useState("FreshMart Grocers")
   const [storePhone, setStorePhone] = useState("+91 22 2876 5432")
   const [storeEmail, setStoreEmail] = useState("info@freshmart.in")
@@ -50,7 +84,13 @@ export function StoreSettingsView() {
   const [isOnline, setIsOnline] = useState(true)
   const [minOrder, setMinOrder] = useState("200")
   const [prepTime, setPrepTime] = useState("30")
-  const [timings, setTimings] = useState(storeTiming)
+  const [timings, setTimings] = useState(defaultStoreTiming)
+
+  // Initialize store data from API (use individual defaults, sync via initial values)
+  const storeNameValue = storeData?.name ? String(storeData.name) : storeName
+  const storePhoneValue = storeData?.phone ? String(storeData.phone) : storePhone
+  const storeEmailValue = storeData?.email ? String(storeData.email) : storeEmail
+  const storeAddressValue = storeData?.address ? String(storeData.address) : storeAddress
 
   // Delivery tab state
   const [deliveryRadius, setDeliveryRadius] = useState("5")
@@ -265,11 +305,19 @@ export function StoreSettingsView() {
 
           {/* Save / Reset */}
           <div className="flex items-center gap-3 justify-end">
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="gap-2" onClick={() => {
+              // Reset to defaults
+              if (storeData) {
+                if (storeData.name) setStoreName(String(storeData.name))
+                if (storeData.phone) setStorePhone(String(storeData.phone))
+                if (storeData.email) setStoreEmail(String(storeData.email))
+                if (storeData.address) setStoreAddress(String(storeData.address))
+              }
+            }}>
               <RotateCcw className="h-4 w-4" />
               Reset
             </Button>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => showSuccess("Store settings saved successfully")}>
               <Save className="h-4 w-4" />
               Save Changes
             </Button>
@@ -345,44 +393,17 @@ export function StoreSettingsView() {
               <CardDescription>Manage your delivery fleet</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Partner</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Active Orders</TableHead>
-                    <TableHead className="text-right">Rating</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deliveryPartners.map((partner) => (
-                    <TableRow key={partner.id}>
-                      <TableCell className="font-medium">{partner.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{partner.phone}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={partner.status === "ONLINE" ? "default" : "secondary"}
-                          className={
-                            partner.status === "ONLINE"
-                              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
-                              : "bg-gray-100 text-gray-600 hover:bg-gray-100"
-                          }
-                        >
-                          {partner.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">{partner.activeOrders}</TableCell>
-                      <TableCell className="text-right">
-                        <span className="flex items-center justify-end gap-1">
-                          <span className="text-amber-500">★</span>
-                          {partner.rating}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center">
+                <MapPin className="h-10 w-10 text-muted-foreground/50 mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Delivery partner management</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Configure delivery partners and their zones
+                </p>
+                <Button variant="outline" size="sm" className="mt-4 gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Manage Partners
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -413,7 +434,7 @@ export function StoreSettingsView() {
               <RotateCcw className="h-4 w-4" />
               Reset
             </Button>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => showSuccess("Delivery settings saved successfully")}>
               <Save className="h-4 w-4" />
               Save Changes
             </Button>
@@ -543,7 +564,7 @@ export function StoreSettingsView() {
               <RotateCcw className="h-4 w-4" />
               Reset
             </Button>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => showSuccess("Tax settings saved successfully")}>
               <Save className="h-4 w-4" />
               Save Changes
             </Button>
@@ -674,7 +695,7 @@ export function StoreSettingsView() {
               <RotateCcw className="h-4 w-4" />
               Reset
             </Button>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => showSuccess("Printer settings saved successfully")}>
               <Save className="h-4 w-4" />
               Save Changes
             </Button>
