@@ -1,152 +1,71 @@
 'use client';
 
-import { useState, lazy, Suspense } from 'react';
-import { Sidebar, type ViewType } from '@/components/dashboard/sidebar';
-import { Header } from '@/components/dashboard/header';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
-
-const PlatformOverview = lazy(() => import('@/components/dashboard/platform-overview').then(m => ({ default: m.PlatformOverview })));
-const BusinessesView = lazy(() => import('@/components/dashboard/businesses-view').then(m => ({ default: m.BusinessesView })));
-const SalesView = lazy(() => import('@/components/dashboard/sales-view').then(m => ({ default: m.SalesView })));
-const SubscriptionsView = lazy(() => import('@/components/dashboard/subscriptions-view').then(m => ({ default: m.SubscriptionsView })));
-const DomainsView = lazy(() => import('@/components/dashboard/domains-view').then(m => ({ default: m.DomainsView })));
-const PlansView = lazy(() => import('@/components/dashboard/plans-view').then(m => ({ default: m.PlansView })));
-const BusinessDashboard = lazy(() => import('@/components/dashboard/business-dashboard').then(m => ({ default: m.BusinessDashboard })));
-const StoresView = lazy(() => import('@/components/dashboard/stores-view').then(m => ({ default: m.StoresView })));
-const ProductsView = lazy(() => import('@/components/dashboard/products-view').then(m => ({ default: m.ProductsView })));
-const OrdersView = lazy(() => import('@/components/dashboard/orders-view').then(m => ({ default: m.OrdersView })));
-const CustomersView = lazy(() => import('@/components/dashboard/customers-view').then(m => ({ default: m.CustomersView })));
-const DeliveriesView = lazy(() => import('@/components/dashboard/deliveries-view').then(m => ({ default: m.DeliveriesView })));
-const SubscriptionPlansView = lazy(() => import('@/components/dashboard/subscription-plans-view').then(m => ({ default: m.SubscriptionPlansView })));
-const PosView = lazy(() => import('@/components/dashboard/pos-view').then(m => ({ default: m.PosView })));
-const InvoicesView = lazy(() => import('@/components/dashboard/invoices-view').then(m => ({ default: m.InvoicesView })));
-const SettingsView = lazy(() => import('@/components/dashboard/settings-view').then(m => ({ default: m.SettingsView })));
-const ArchitectureView = lazy(() => import('@/components/dashboard/architecture-view').then(m => ({ default: m.ArchitectureView })));
-
-const viewComponents: Record<ViewType, React.LazyExoticComponent<React.ComponentType<{ selectedBusiness?: string }>>> = {
-  platform_dashboard: PlatformOverview,
-  businesses: BusinessesView,
-  sales: SalesView,
-  subscriptions: SubscriptionsView,
-  domains: DomainsView,
-  plans: PlansView,
-  business_dashboard: BusinessDashboard,
-  stores: StoresView,
-  products: ProductsView,
-  orders: OrdersView,
-  customers: CustomersView,
-  deliveries: DeliveriesView,
-  sub_plans: SubscriptionPlansView,
-  pos: PosView,
-  invoices: InvoicesView,
-  settings: SettingsView,
-  architecture: ArchitectureView,
-};
-
-const viewTitles: Record<ViewType, string> = {
-  platform_dashboard: 'Platform Dashboard',
-  businesses: 'Businesses',
-  sales: 'Sales & Leads',
-  subscriptions: 'Client Subscriptions',
-  domains: 'Domains & Deployments',
-  plans: 'Platform Plans',
-  business_dashboard: 'Business Dashboard',
-  stores: 'Stores',
-  products: 'Products',
-  orders: 'Orders',
-  customers: 'Customers',
-  deliveries: 'Deliveries',
-  sub_plans: 'Subscription Packages',
-  pos: 'POS Terminal',
-  invoices: 'Invoices',
-  settings: 'Settings',
-  architecture: 'Architecture Documentation',
-};
-
-function ViewLoader() {
-  return (
-    <div className="flex items-center justify-center h-64">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-        <span className="text-sm text-slate-500">Loading...</span>
-      </div>
-    </div>
-  );
-}
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GroceryStore } from '@/components/grocery/grocery-store';
+import { PosTerminal } from '@/components/grocery/pos-terminal';
+import { AdminDashboard } from '@/components/grocery/admin-dashboard';
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<ViewType>('platform_dashboard');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [selectedBusiness, setSelectedBusiness] = useState('biz_1');
-
-  const handleViewChange = (view: ViewType) => {
-    setActiveView(view);
-    setMobileMenuOpen(false);
-  };
-
-  const ViewComponent = viewComponents[activeView];
-
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <div className="flex flex-1 min-h-0">
-        <div className="hidden lg:flex">
-          <Sidebar
-            activeView={activeView}
-            onViewChange={handleViewChange}
-            collapsed={sidebarCollapsed}
-            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          />
+    <div className="min-h-screen flex flex-col bg-slate-50">
+      {/* Main Tabs */}
+      <Tabs defaultValue="grocery" className="flex flex-col flex-1">
+        <div className="bg-white border-b shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <TabsList className="w-full sm:w-auto h-12 bg-transparent p-0 gap-0">
+              <TabsTrigger
+                value="grocery"
+                className="flex-1 sm:flex-none px-4 sm:px-6 h-12 rounded-none border-b-2 border-transparent data-[state=active]:border-emerald-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none text-sm font-medium data-[state=active]:text-emerald-700"
+              >
+                🏪 Grocery Store
+              </TabsTrigger>
+              <TabsTrigger
+                value="pos"
+                className="flex-1 sm:flex-none px-4 sm:px-6 h-12 rounded-none border-b-2 border-transparent data-[state=active]:border-emerald-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none text-sm font-medium data-[state=active]:text-emerald-700"
+              >
+                💳 POS Terminal
+              </TabsTrigger>
+              <TabsTrigger
+                value="admin"
+                className="flex-1 sm:flex-none px-4 sm:px-6 h-12 rounded-none border-b-2 border-transparent data-[state=active]:border-emerald-600 data-[state=active]:bg-transparent data-[state=active]:shadow-none text-sm font-medium data-[state=active]:text-emerald-700"
+              >
+                📊 Admin
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
 
-        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-          <SheetContent side="left" className="p-0 w-[260px]">
-            <Sidebar
-              activeView={activeView}
-              onViewChange={handleViewChange}
-              collapsed={false}
-              onToggle={() => setMobileMenuOpen(false)}
-            />
-          </SheetContent>
-        </Sheet>
+        <TabsContent value="grocery" className="flex-1 m-0 overflow-hidden">
+          <GroceryStore />
+        </TabsContent>
+        <TabsContent value="pos" className="flex-1 m-0 overflow-hidden">
+          <PosTerminal />
+        </TabsContent>
+        <TabsContent value="admin" className="flex-1 m-0 overflow-auto">
+          <AdminDashboard />
+        </TabsContent>
+      </Tabs>
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <Header
-            onMobileMenuToggle={() => setMobileMenuOpen(true)}
-            currentView={viewTitles[activeView]}
-            selectedBusiness={selectedBusiness}
-            onBusinessChange={setSelectedBusiness}
-          />
-
-          <main className="flex-1 overflow-y-auto">
-            <div className="p-4 lg:p-6">
-              <Suspense fallback={<ViewLoader />}>
-                <ViewComponent selectedBusiness={selectedBusiness} />
-              </Suspense>
+      {/* Sticky Footer */}
+      <footer className="bg-white border-t border-slate-200 px-4 sm:px-6 py-3 flex-shrink-0 mt-auto">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded bg-emerald-600 flex items-center justify-center">
+              <span className="text-white font-bold text-[8px]">FM</span>
             </div>
-          </main>
-
-          <footer className="bg-white border-t border-slate-200 px-4 lg:px-6 py-3 flex-shrink-0">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded bg-emerald-600 flex items-center justify-center">
-                  <span className="text-white font-bold text-[8px]">QX</span>
-                </div>
-                <span className="text-xs text-slate-500">
-                  © 2025 Quantix Technology · Run Your Business Smarter
-                </span>
-              </div>
-              <div className="flex items-center gap-4 text-[10px] text-slate-400">
-                <span>quantixtechnology.in</span>
-                <span>·</span>
-                <span>v2.0.0</span>
-                <span>·</span>
-                <span>Managed White-Label SaaS</span>
-              </div>
-            </div>
-          </footer>
+            <span className="text-xs text-slate-500">
+              © 2025 FreshMart Grocery · Fresh to Your Doorstep
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-[10px] text-slate-400">
+            <span>freshmart.in</span>
+            <span>·</span>
+            <span>Mumbai, Maharashtra</span>
+            <span>·</span>
+            <span>GSTIN: 27AABCF1234A1Z5</span>
+          </div>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }
