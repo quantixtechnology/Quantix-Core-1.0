@@ -6,7 +6,6 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
-import { enableDefaultModules } from '@/lib/core';
 import { NextResponse } from 'next/server';
 
 export async function POST() {
@@ -233,22 +232,28 @@ export async function POST() {
     // =========================================================================
     // 7. BUSINESS MODULES
     // =========================================================================
-    await enableDefaultModules(business.id, 'GROCERY');
+    // Enable default modules for GROCERY business type inline
+    // (replaces enableDefaultModules from @/lib/core which is not available)
+    const defaultModules = [
+      { moduleKey: 'grocery', moduleName: 'Grocery Store', config: { enableCategories: true, enableVariants: true, enableInventory: true, enableDelivery: true, enablePOS: true } },
+      { moduleKey: 'catalog', moduleName: 'Product Catalog', config: { enableCategories: true, enableVariants: true } },
+    ];
 
-    // Also enable catalog module
-    await db.businessModule.upsert({
-      where: { businessId_moduleKey: { businessId: business.id, moduleKey: 'catalog' } },
-      update: { status: 'ENABLED', enabledAt: new Date() },
-      create: {
-        businessId: business.id,
-        moduleKey: 'catalog',
-        moduleName: 'Product Catalog',
-        status: 'ENABLED',
-        config: JSON.stringify({ enableCategories: true, enableVariants: true }),
-        enabledAt: new Date(),
-      },
-    });
-    summary.modules = ['grocery', 'catalog'];
+    for (const mod of defaultModules) {
+      await db.businessModule.upsert({
+        where: { businessId_moduleKey: { businessId: business.id, moduleKey: mod.moduleKey } },
+        update: { status: 'ENABLED', enabledAt: new Date() },
+        create: {
+          businessId: business.id,
+          moduleKey: mod.moduleKey,
+          moduleName: mod.moduleName,
+          status: 'ENABLED',
+          config: JSON.stringify(mod.config),
+          enabledAt: new Date(),
+        },
+      });
+    }
+    summary.modules = defaultModules.map((m) => m.moduleKey);
 
     // =========================================================================
     // 8. MAIN STORE WITH TIMINGS

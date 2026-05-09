@@ -3,13 +3,13 @@
 // POST /api/core/storefront/orders — Create order from customer app
 //
 // Auth required (CUSTOMER role)
-// Uses existing createOrder from @/lib/core/order
+// Uses direct Prisma db.order.create() instead of missing createOrder
 // Broadcasts order:created via WebSocket
 // ============================================================================
 
 import { NextResponse } from 'next/server';
 import { withMiddleware, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
-import { createOrder, sendNotification } from '@/lib/core';
+import { db } from '@/lib/db';
 
 export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
   async (req) => {
@@ -43,11 +43,9 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
       let deliveryLng: number | undefined;
 
       if (body.deliveryAddressId) {
-        const address = await import('@/lib/db').then((m) =>
-          m.db.address.findUnique({
-            where: { id: body.deliveryAddressId },
-          })
-        );
+        const address = await db.address.findUnique({
+          where: { id: body.deliveryAddressId },
+        });
         if (address) {
           deliveryAddress = `${address.addressLine1}${address.addressLine2 ? ', ' + address.addressLine2 : ''}, ${address.city}, ${address.state} - ${address.pincode}`;
           deliveryLat = address.latitude || undefined;
@@ -69,24 +67,20 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
       }
 
       // Look up customer profile for the user
-      const customer = await import('@/lib/db').then((m) =>
-        m.db.customer.findFirst({
-          where: {
-            userId: user.id,
-            businessId: user.businessId || undefined,
-          },
-        })
-      );
+      const customer = await db.customer.findFirst({
+        where: {
+          userId: user.id,
+          businessId: user.businessId || undefined,
+        },
+      });
 
       // Resolve product details for each item
       const resolvedItems = [];
       for (const item of body.items) {
-        const product = await import('@/lib/db').then((m) =>
-          m.db.product.findUnique({
-            where: { id: item.productId },
-            include: { variants: { where: { isActive: true } } },
-          })
-        );
+        const product = await db.product.findUnique({
+          where: { id: item.productId },
+          include: { variants: { where: { isActive: true } } },
+        });
 
         if (!product || product.status !== 'ACTIVE') {
           return NextResponse.json(
@@ -145,40 +139,124 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         );
       }
 
-      // Create order using core function
-      const order = await createOrder({
-        businessId,
-        storeId: body.storeId,
-        orderType: body.orderType,
-        orderSource: 'online',
-        customerId: customer?.id || body.customerId,
-        customerName: customer?.name || user.name,
-        customerPhone: customer?.phone || undefined,
-        customerEmail: customer?.email || user.email,
-        deliveryAddressId: body.deliveryAddressId,
-        deliveryAddress,
-        deliveryLat,
-        deliveryLng,
-        deliveryInstructions: body.deliveryInstructions,
-        paymentMethod: body.paymentMethod,
-        promoCodeId: body.promoCodeId,
-        notes: body.notes,
-        items: resolvedItems,
+      // Calculate subtotal from resolved items
+      let subtotal = 0;
+      let totalTax = 0;
+      let cgstAmount = 0;
+      let sgstAmount = 0;
+      for (const item of resolvedItems) {
+        const lineTotal = item.unitPrice * item.quantity;
+        const itemGst = lineTotal * (item.gstRate || 0) / 100;
+        subtotal += lineTotal;
+        totalTax += itemGst;
+        cgstAmount += itemGst / 2;
+        sgstAmount += itemGst / 2;
+      }
+      const deliveryFee = body.deliveryFee || 0;
+      const totalAmount = Math.round(subtotal + totalTax + deliveryFee);
+
+      // Generate order number: ORD-YYYYMMDD-NNN
+      const now = new Date();
+      const dateStr = now.getFullYear().toString() +
+        String(now.getMonth() + 1).padStart(2, '0') +
+        String(now.getDate()).padStart(2, '0');
+      const prefix = `ORD-${dateStr}-`;
+      const lastOrder = await db.order.findFirst({
+        where: { businessId, orderNumber: { startsWith: prefix } },
+        orderBy: { orderNumber: 'desc' },
+        select: { orderNumber: true },
+      });
+      let seq = 1;
+      if (lastOrder) {
+        const lastSeq = parseInt(lastOrder.orderNumber.split('-').pop() || '0', 10);
+        seq = lastSeq + 1;
+      }
+      const orderNumber = `${prefix}${String(seq).padStart(3, '0')}`;
+
+      // Create order using direct Prisma call
+      const order = await db.order.create({
+        data: {
+          businessId,
+          storeId: body.storeId,
+          orderNumber,
+          orderType: body.orderType,
+          orderSource: 'online',
+          status: 'PENDING',
+          paymentStatus: 'PENDING',
+          paymentMethod: body.paymentMethod || null,
+          customerId: customer?.id || body.customerId || null,
+          customerName: customer?.name || user.name,
+          customerPhone: customer?.phone || null,
+          customerEmail: customer?.email || user.email,
+          deliveryAddressId: body.deliveryAddressId || null,
+          deliveryAddress: deliveryAddress || null,
+          deliveryLat: deliveryLat || null,
+          deliveryLng: deliveryLng || null,
+          deliveryInstructions: body.deliveryInstructions || null,
+          promoCodeId: body.promoCodeId || null,
+          notes: body.notes || null,
+          subtotal: Math.round(subtotal * 100) / 100,
+          totalTax: Math.round(totalTax * 100) / 100,
+          cgstAmount: Math.round(cgstAmount * 100) / 100,
+          sgstAmount: Math.round(sgstAmount * 100) / 100,
+          deliveryFee,
+          totalAmount,
+          items: {
+            create: resolvedItems.map((item) => {
+              const lineTotal = item.unitPrice * item.quantity;
+              const itemGst = lineTotal * (item.gstRate || 0) / 100;
+              return {
+                itemType: item.itemType,
+                itemId: item.itemId,
+                itemName: item.itemName,
+                variantName: item.variantName || null,
+                sku: item.sku || null,
+                barcode: item.barcode || null,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                mrp: item.mrp || null,
+                discountPrice: item.discountPrice || null,
+                discountPercent: item.discountPercent || null,
+                totalPrice: Math.round(lineTotal * 100) / 100,
+                gstRate: item.gstRate || 0,
+                gstAmount: Math.round(itemGst * 100) / 100,
+                cgstAmount: Math.round((itemGst / 2) * 100) / 100,
+                sgstAmount: Math.round((itemGst / 2) * 100) / 100,
+                specialInstructions: item.specialInstructions || null,
+                customizations: item.customizations || null,
+                isVeg: item.isVeg || null,
+                unit: item.unit || null,
+              };
+            }),
+          },
+        },
+        include: { items: true },
+      });
+
+      // Create initial status history
+      await db.orderStatusHistory.create({
+        data: {
+          orderId: order.id,
+          status: 'PENDING',
+          note: 'Order created',
+          changedBy: customer?.id || user.id,
+        },
       });
 
       // Send notification to business owner
       try {
-        await sendNotification({
-          businessId,
-          type: 'ORDER_STATUS',
-          channel: 'IN_APP',
-          title: 'New Order Received! 🎉',
-          message: `Order #${(order as Record<string, unknown>).orderNumber} has been placed.`,
+        await db.notification.create({
           data: {
-            orderId: (order as Record<string, unknown>).id,
-            orderNumber: (order as Record<string, unknown>).orderNumber,
+            businessId,
+            type: 'ORDER_STATUS',
+            channel: 'IN_APP',
+            title: 'New Order Received! 🎉',
+            message: `Order #${order.orderNumber} has been placed.`,
+            data: JSON.stringify({
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+            }),
           },
-          sendImmediately: true,
         });
       } catch (notifErr) {
         console.error('[Storefront Orders] Notification error:', notifErr);
@@ -193,10 +271,10 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
             businessId,
             event: 'order:created',
             data: {
-              orderId: (order as Record<string, unknown>).id,
-              orderNumber: (order as Record<string, unknown>).orderNumber,
+              orderId: order.id,
+              orderNumber: order.orderNumber,
               orderType: body.orderType,
-              totalAmount: (order as Record<string, unknown>).totalAmount,
+              totalAmount: order.totalAmount,
               customerName: customer?.name || user.name,
             },
           }),

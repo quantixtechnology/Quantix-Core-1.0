@@ -26,6 +26,24 @@ const pageTitles: Record<string, string> = {
   sales: "Sales Team",
   notifications: "Notifications",
   settings: "Settings",
+  // Phase 6
+  "mobile-apps": "Mobile Apps",
+  "ops-dashboard": "Operations Dashboard",
+  "deployment-pipeline": "Deployment Pipeline",
+  "build-automation": "Build Automation",
+  "release-management": "Release Management",
+  "play-store": "Play Store Management",
+  "mobile-versions": "Mobile Version Control",
+  "client-assets": "Client Assets",
+  "tenant-provisioning": "Tenant Provisioning",
+  "product-import": "Product Import",
+  "onboarding-checklist": "Onboarding Checklist",
+  "platform-analytics": "Analytics & Reports",
+  revenue: "Revenue & Payouts",
+  support: "Support & Tickets",
+  "backup-monitoring": "Backup & Monitoring",
+  "security-access": "Security & Access",
+  "audit-logs": "Audit Logs",
 }
 
 interface AdminHeaderProps {

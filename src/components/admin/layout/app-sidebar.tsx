@@ -1,38 +1,21 @@
 "use client"
 
 import {
-  LayoutDashboard,
-  Users,
-  Building2,
-  CreditCard,
-  ClipboardList,
-  Globe,
-  Monitor,
-  UserCheck,
-  Bell,
-  Settings,
-  Zap,
-  ChevronDown,
+  LayoutDashboard, Users, Building2, CreditCard, ClipboardList, Globe,
+  Monitor, UserCheck, Bell, Settings, Zap, ChevronDown,
+  Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
+  Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
+  BarChart3, Wallet, HeadphonesIcon, Package, Warehouse, Tag,
+  Megaphone, Star, UserCog, MapPin, Receipt, Heart, Eye,
+  Truck
 } from "lucide-react"
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarRail,
+  Sidebar, SidebarContent, SidebarFooter,
+  SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
+  SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail,
 } from "@/components/ui/sidebar"
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -40,29 +23,51 @@ import { useAdminStore, type AdminPage } from "@/stores/admin-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useState } from "react"
 
-const mainNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const platformNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "leads", label: "Leads", icon: Users },
   { key: "businesses", label: "Businesses", icon: Building2 },
+  { key: "leads", label: "Sales & Leads", icon: UserCheck },
   { key: "subscriptions", label: "Subscriptions", icon: CreditCard },
-  { key: "onboarding", label: "Onboarding", icon: ClipboardList },
-  { key: "domains", label: "Domains & Deploy", icon: Globe },
-  { key: "demo-tenants", label: "Demo Tenants", icon: Monitor },
-  { key: "sales", label: "Sales Team", icon: UserCheck },
+  { key: "domains", label: "Domains & Deploys", icon: Globe },
+  { key: "sales", label: "Sales Team", icon: Users },
+]
+
+const mobileNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone },
+]
+
+const deployNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "ops-dashboard", label: "Operations Dashboard", icon: Activity },
+  { key: "deployment-pipeline", label: "Deployment Pipeline", icon: Rocket },
+  { key: "build-automation", label: "Build Automation", icon: Hammer },
+  { key: "release-management", label: "Release Management", icon: GitBranch },
+  { key: "play-store", label: "Play Store", icon: PlayCircle },
+  { key: "mobile-versions", label: "Version Control", icon: Smartphone },
+]
+
+const clientNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "client-assets", label: "Client Assets", icon: Image },
+  { key: "tenant-provisioning", label: "Tenant Provisioning", icon: Workflow },
+  { key: "product-import", label: "Product Import", icon: Upload },
+  { key: "onboarding-checklist", label: "Onboarding Checklist", icon: FileCheck },
+]
+
+const opsNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "platform-analytics", label: "Analytics & Reports", icon: BarChart3 },
+  { key: "revenue", label: "Revenue & Payouts", icon: Wallet },
+  { key: "support", label: "Support & Tickets", icon: HeadphonesIcon },
+  { key: "notifications", label: "Notifications", icon: Bell },
 ]
 
 const systemNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "notifications", label: "Notifications", icon: Bell },
+  { key: "backup-monitoring", label: "Backup & Monitoring", icon: Server },
+  { key: "security-access", label: "Security & Access", icon: Lock },
+  { key: "audit-logs", label: "Audit Logs", icon: ScrollText },
   { key: "settings", label: "Settings", icon: Settings },
 ]
 
-/** Collapsible section for mobile sidebar */
 function CollapsibleSection({
-  title,
-  items,
-  activePage,
-  onNavigate,
-  defaultOpen = true,
+  title, items, activePage, onNavigate, defaultOpen = false,
 }: {
   title: string
   items: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[]
@@ -80,11 +85,7 @@ function CollapsibleSection({
         aria-expanded={isOpen}
       >
         {title}
-        <ChevronDown
-          className={`size-3.5 transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        />
+        <ChevronDown className={`size-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
       </button>
       {isOpen && (
         <div className="flex flex-col gap-0.5 px-2">
@@ -94,14 +95,12 @@ function CollapsibleSection({
               <button
                 key={item.key}
                 onClick={() => onNavigate(item.key)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors min-h-[44px] ${
-                  isActive
-                    ? "bg-primary/10 text-primary dark:bg-primary/20"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-[36px] ${
+                  isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 }`}
               >
-                <item.icon className="shrink-0 size-5" />
-                <span>{item.label}</span>
+                <item.icon className="shrink-0 size-4" />
+                <span className="text-xs">{item.label}</span>
               </button>
             )
           })}
@@ -122,12 +121,18 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
 
   const handleNavigate = (page: AdminPage) => {
     setActivePage(page)
-    if (isMobile && onMobileOpenChange) {
-      onMobileOpenChange(false)
-    }
+    if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }
 
-  // Mobile: Sheet-based sidebar with collapsible sections and touch-friendly targets
+  const sections = [
+    { title: "Platform Control", items: platformNavItems, open: true },
+    { title: "Mobile & Apps", items: mobileNavItems, open: true },
+    { title: "Deployment & Operations", items: deployNavItems, open: false },
+    { title: "Client Operations", items: clientNavItems, open: false },
+    { title: "Platform Operations", items: opsNavItems, open: false },
+    { title: "System", items: systemNavItems, open: false },
+  ]
+
   if (isMobile) {
     return (
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
@@ -139,28 +144,15 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
               </div>
               <div>
                 <SheetTitle className="text-left text-base font-bold">Quantix Core</SheetTitle>
-                <SheetDescription className="text-left text-xs">Super Admin</SheetDescription>
+                <SheetDescription className="text-left text-xs">Platform Admin</SheetDescription>
               </div>
             </div>
           </SheetHeader>
-
           <ScrollArea className="flex-1 px-1 py-3">
-            <CollapsibleSection
-              title="Platform"
-              items={mainNavItems}
-              activePage={activePage}
-              onNavigate={handleNavigate}
-              defaultOpen={true}
-            />
-            <CollapsibleSection
-              title="System"
-              items={systemNavItems}
-              activePage={activePage}
-              onNavigate={handleNavigate}
-              defaultOpen={true}
-            />
+            {sections.map((s) => (
+              <CollapsibleSection key={s.title} title={s.title} items={s.items} activePage={activePage} onNavigate={handleNavigate} defaultOpen={s.open} />
+            ))}
           </ScrollArea>
-
           <div className="border-t p-4">
             <div className="flex items-center gap-3">
               <Avatar className="h-10 w-10">
@@ -177,7 +169,6 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
     )
   }
 
-  // Desktop: Persistent sidebar
   return (
     <Sidebar collapsible="icon" className="border-r">
       <SidebarHeader className="p-4">
@@ -189,7 +180,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-bold">Quantix Core</span>
-                <span className="truncate text-xs text-muted-foreground">Super Admin</span>
+                <span className="truncate text-xs text-muted-foreground">Platform Admin</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -197,45 +188,27 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Platform</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {mainNavItems.map((item) => (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    isActive={activePage === item.key}
-                    onClick={() => setActivePage(item.key)}
-                    tooltip={item.label}
-                  >
-                    <item.icon className="size-4" />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>System</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {systemNavItems.map((item) => (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    isActive={activePage === item.key}
-                    onClick={() => setActivePage(item.key)}
-                    tooltip={item.label}
-                  >
-                    <item.icon className="size-4" />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {sections.map((s) => (
+          <SidebarGroup key={s.title}>
+            <SidebarGroupLabel>{s.title}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {s.items.map((item) => (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton
+                      isActive={activePage === item.key}
+                      onClick={() => setActivePage(item.key)}
+                      tooltip={item.label}
+                    >
+                      <item.icon className="size-4" />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter className="p-4">

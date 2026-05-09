@@ -1,14 +1,9 @@
 "use client"
 
 import {
-  LayoutDashboard,
-  ShoppingBag,
-  Package,
-  Monitor,
-  Users,
-  BarChart3,
-  Settings,
-  ShoppingCart,
+  LayoutDashboard, ShoppingBag, Package, Monitor, Users, BarChart3,
+  Settings, ShoppingCart, Warehouse, Megaphone, Tag, Star, UserCog,
+  Receipt, Heart, MapPin, Upload, Eye,
 } from "lucide-react"
 import {
   Sidebar,
@@ -35,47 +30,77 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAdminStore, type BusinessPage } from "@/stores/admin-store"
 import { useResponsive } from "@/hooks/use-responsive"
 
-const navItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const opsNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "orders", label: "Orders", icon: ShoppingBag },
   { key: "products", label: "Products", icon: Package },
-  { key: "pos", label: "POS Billing", icon: Monitor },
+  { key: "inventory", label: "Inventory", icon: Warehouse },
   { key: "customers", label: "Customers", icon: Users },
-  { key: "reports", label: "Reports", icon: BarChart3 },
-  { key: "settings", label: "Store Settings", icon: Settings },
+  { key: "product-import", label: "Product Import", icon: Upload },
 ]
 
-/** Shared navigation items renderer for both mobile and desktop */
-function NavItems({
+const commerceNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "pos", label: "POS Billing", icon: Monitor },
+  { key: "marketing", label: "Marketing", icon: Megaphone },
+  { key: "offers", label: "Offers & Coupons", icon: Tag },
+  { key: "reviews", label: "Reviews", icon: Star },
+]
+
+const mgmtNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "staff", label: "Staff & Roles", icon: UserCog },
+  { key: "tax", label: "Tax & GST", icon: Receipt },
+  { key: "loyalty", label: "Loyalty Program", icon: Heart },
+  { key: "delivery-zones", label: "Delivery Zones", icon: MapPin },
+  { key: "reports", label: "Reports", icon: BarChart3 },
+  { key: "settings", label: "Settings", icon: Settings },
+]
+
+const storefrontNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "storefront", label: "Storefront Preview", icon: Eye },
+]
+
+/** Shared navigation items renderer */
+function NavSection({
+  title,
+  items,
   activePage,
   onNavigate,
   compact = false,
 }: {
+  title?: string
+  items: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[]
   activePage: BusinessPage
   onNavigate: (page: BusinessPage) => void
   compact?: boolean
 }) {
   return (
-    <div className="flex flex-col gap-1 px-2">
-      {navItems.map((item) => {
-        const isActive = activePage === item.key
-        return (
-          <button
-            key={item.key}
-            onClick={() => onNavigate(item.key)}
-            className={`flex items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${
-              compact ? "py-2.5" : "py-2"
-            } ${
-              isActive
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            }`}
-          >
-            <item.icon className={`shrink-0 ${compact ? "size-5" : "size-4"}`} />
-            <span>{item.label}</span>
-          </button>
-        )
-      })}
+    <div className="mb-1">
+      {title && (
+        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {title}
+        </div>
+      )}
+      <div className="flex flex-col gap-0.5 px-2">
+        {items.map((item) => {
+          const isActive = activePage === item.key
+          return (
+            <button
+              key={item.key}
+              onClick={() => onNavigate(item.key)}
+              className={`flex items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${
+                compact ? "py-2" : "py-1.5"
+              } ${
+                isActive
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              <item.icon className={`shrink-0 ${compact ? "size-4" : "size-3.5"}`} />
+              <span className="text-xs">{item.label}</span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -114,14 +139,10 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
           </SheetHeader>
 
           <ScrollArea className="flex-1 px-1 py-3">
-            <div className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Management
-            </div>
-            <NavItems
-              activePage={businessPage}
-              onNavigate={handleNavigate}
-              compact
-            />
+            <NavSection title="Operations" items={opsNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
+            <NavSection title="Commerce" items={commerceNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
+            <NavSection title="Management" items={mgmtNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
+            <NavSection title="Store" items={storefrontNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
           </ScrollArea>
 
           <div className="border-t p-4">
@@ -161,16 +182,57 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
 
       <SidebarContent>
         <SidebarGroup>
+          <SidebarGroupLabel>Operations</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {opsNavItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
+                    <item.icon className="size-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Commerce</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {commerceNavItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
+                    <item.icon className="size-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
           <SidebarGroupLabel>Management</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
+              {mgmtNavItems.map((item) => (
                 <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    isActive={businessPage === item.key}
-                    onClick={() => setBusinessPage(item.key)}
-                    tooltip={item.label}
-                  >
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
+                    <item.icon className="size-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Store</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {storefrontNavItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
                     <item.icon className="size-4" />
                     <span>{item.label}</span>
                   </SidebarMenuButton>
