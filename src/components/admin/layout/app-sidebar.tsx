@@ -24,10 +24,12 @@ import { useResponsive } from "@/hooks/use-responsive"
 import { useState } from "react"
 
 const platformNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "workflow-engine", label: "Workflow Engine", icon: Workflow },
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "businesses", label: "Businesses", icon: Building2 },
   { key: "leads", label: "Sales & Leads", icon: UserCheck },
   { key: "subscriptions", label: "Subscriptions", icon: CreditCard },
+  { key: "plan-management", label: "Plan Management", icon: Receipt },
   { key: "domains", label: "Domains & Deploys", icon: Globe },
   { key: "sales", label: "Sales Team", icon: Users },
 ]

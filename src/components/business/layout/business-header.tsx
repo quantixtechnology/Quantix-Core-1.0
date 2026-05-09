@@ -4,7 +4,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, ShoppingBag, ArrowLeftRight, Menu } from "lucide-react"
+import { Search, ShoppingBag, Menu } from "lucide-react"
 import { useAdminStore, type ViewMode } from "@/stores/admin-store"
 import {
   DropdownMenu,
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { NotificationBell } from "@/components/shared/notification-bell"
 import { useResponsive } from "@/hooks/use-responsive"
+import { DemoSwitcher } from "@/components/workflow/demo-switcher"
 
 const pageTitles: Record<string, string> = {
   dashboard: "Dashboard",
@@ -23,6 +24,8 @@ const pageTitles: Record<string, string> = {
   customers: "Customers",
   reports: "Reports",
   settings: "Store Settings",
+  "workflow-config": "Workflow Configuration",
+  workflows: "Workflows",
 }
 
 interface BusinessHeaderProps {
@@ -79,25 +82,7 @@ export function BusinessHeader({ onMobileMenuClick }: BusinessHeaderProps) {
           businessId="biz_1"
           onViewAll={() => setActivePage("notifications")}
         />
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2 h-8">
-              <ArrowLeftRight className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline text-xs">Switch View</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setViewMode("super_admin")} className="gap-2">
-              <ShoppingBag className="h-4 w-4" />
-              Super Admin
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setViewMode("business_owner")} className="gap-2">
-              <ShoppingBag className="h-4 w-4" />
-              Business Owner
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <DemoSwitcher />
       </div>
     </header>
   )

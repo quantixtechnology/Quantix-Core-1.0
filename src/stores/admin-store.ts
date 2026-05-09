@@ -35,6 +35,9 @@ export type AdminPage =
   | "revenue"
   | "support"
   | "mobile-apps"
+  // Workflow Engine
+  | "workflow-engine"
+  | "plan-management"
 
 export type BusinessPage =
   | "dashboard"
@@ -54,6 +57,9 @@ export type BusinessPage =
   | "product-import"
   | "delivery-zones"
   | "storefront"
+  // Workflow Engine — Business Owner
+  | "workflow-config"
+  | "workflows"
 
 export type CustomerPage =
   | "auth"
@@ -77,6 +83,257 @@ export type DeliveryPage =
   | "earnings"
   | "profile"
 
+// ============================================================================
+// WORKFLOW TYPES
+// ============================================================================
+
+export type WorkflowType = 
+  | "ECOMMERCE"
+  | "PICKUP_DELIVERY"
+  | "APPOINTMENT"
+  | "SUBSCRIPTION"
+  | "POST_SERVICE_BILLING"
+
+export type PlanTier = "STANDARD" | "PRO"
+
+export interface DemoBusiness {
+  id: string
+  name: string
+  businessType: string
+  planTier: PlanTier
+  icon: string
+  color: string
+  description: string
+  activeWorkflows: WorkflowType[]
+  categories: { name: string; workflow: WorkflowType }[]
+}
+
+// ============================================================================
+// DEMO BUSINESS PRESETS
+// ============================================================================
+
+export const DEMO_BUSINESSES: DemoBusiness[] = [
+  {
+    id: "super_admin",
+    name: "Super Admin",
+    businessType: "PLATFORM",
+    planTier: "PRO",
+    icon: "Zap",
+    color: "bg-primary text-primary-foreground",
+    description: "Full platform control",
+    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
+    categories: [],
+  },
+  {
+    id: "standard_grocery",
+    name: "FreshMart Grocers",
+    businessType: "GROCERY",
+    planTier: "STANDARD",
+    icon: "ShoppingCart",
+    color: "bg-emerald-600 text-white",
+    description: "Standard Grocery — Ecommerce & Delivery",
+    activeWorkflows: ["ECOMMERCE"],
+    categories: [
+      { name: "Fruits & Vegetables", workflow: "ECOMMERCE" },
+      { name: "Dairy & Bakery", workflow: "ECOMMERCE" },
+      { name: "Snacks & Beverages", workflow: "ECOMMERCE" },
+      { name: "Household Items", workflow: "ECOMMERCE" },
+    ],
+  },
+  {
+    id: "standard_laundry",
+    name: "QuickWash Laundry",
+    businessType: "LAUNDRY",
+    planTier: "STANDARD",
+    icon: "Droplets",
+    color: "bg-sky-600 text-white",
+    description: "Standard Laundry — Ecommerce Only",
+    activeWorkflows: ["ECOMMERCE"],
+    categories: [
+      { name: "Wash & Fold", workflow: "ECOMMERCE" },
+      { name: "Dry Cleaning", workflow: "ECOMMERCE" },
+      { name: "Ironing", workflow: "ECOMMERCE" },
+    ],
+  },
+  {
+    id: "pro_laundry",
+    name: "ProWash Premium",
+    businessType: "LAUNDRY",
+    planTier: "PRO",
+    icon: "Droplets",
+    color: "bg-sky-700 text-white",
+    description: "Pro Laundry — Multiple Workflows",
+    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
+    categories: [
+      { name: "Standard Wash", workflow: "ECOMMERCE" },
+      { name: "Weight Wash", workflow: "POST_SERVICE_BILLING" },
+      { name: "Subscription Wash", workflow: "SUBSCRIPTION" },
+      { name: "Pickup & Delivery", workflow: "PICKUP_DELIVERY" },
+    ],
+  },
+  {
+    id: "pro_carwash",
+    name: "SparkleCar Wash",
+    businessType: "CAR_WASH",
+    planTier: "PRO",
+    icon: "Car",
+    color: "bg-amber-600 text-white",
+    description: "Pro Car Wash — All Workflows",
+    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
+    categories: [
+      { name: "Subscription Wash", workflow: "SUBSCRIPTION" },
+      { name: "Pickup Wash", workflow: "PICKUP_DELIVERY" },
+      { name: "Accessories", workflow: "ECOMMERCE" },
+      { name: "Appointment Wash", workflow: "APPOINTMENT" },
+      { name: "Detailing Service", workflow: "POST_SERVICE_BILLING" },
+    ],
+  },
+]
+
+// ============================================================================
+// WORKFLOW CONFIG
+// ============================================================================
+
+export interface WorkflowConfig {
+  type: WorkflowType
+  label: string
+  description: string
+  icon: string
+  color: string
+  bgColor: string
+  features: string[]
+  standardAllowed: boolean
+  proAllowed: boolean
+}
+
+export const WORKFLOW_CONFIGS: WorkflowConfig[] = [
+  {
+    type: "ECOMMERCE",
+    label: "Ecommerce Workflow",
+    description: "Traditional online shopping flow",
+    icon: "ShoppingCart",
+    color: "text-emerald-600",
+    bgColor: "bg-emerald-50 border-emerald-200",
+    features: ["Cart", "Checkout", "Payment", "Delivery"],
+    standardAllowed: true,
+    proAllowed: true,
+  },
+  {
+    type: "PICKUP_DELIVERY",
+    label: "Pickup & Delivery Workflow",
+    description: "Pickup → Process → Return delivery",
+    icon: "Truck",
+    color: "text-sky-600",
+    bgColor: "bg-sky-50 border-sky-200",
+    features: ["Pickup Scheduling", "Delivery Scheduling", "Pickup Assignment", "Return Delivery"],
+    standardAllowed: false,
+    proAllowed: true,
+  },
+  {
+    type: "APPOINTMENT",
+    label: "Appointment Workflow",
+    description: "Book time slots with technicians",
+    icon: "Calendar",
+    color: "text-violet-600",
+    bgColor: "bg-violet-50 border-violet-200",
+    features: ["Date/Time Booking", "Technician Assignment", "Slot Management"],
+    standardAllowed: false,
+    proAllowed: true,
+  },
+  {
+    type: "SUBSCRIPTION",
+    label: "Subscription Workflow",
+    description: "Credit-based recurring packages",
+    icon: "CreditCard",
+    color: "text-amber-600",
+    bgColor: "bg-amber-50 border-amber-200",
+    features: ["Package Purchase", "Credit Tracking", "Usage Deduction", "Renewal Reminders"],
+    standardAllowed: false,
+    proAllowed: true,
+  },
+  {
+    type: "POST_SERVICE_BILLING",
+    label: "Post-Service Billing Workflow",
+    description: "Bill after inspection/service completion",
+    icon: "Receipt",
+    color: "text-rose-600",
+    bgColor: "bg-rose-50 border-rose-200",
+    features: ["Estimated Pricing", "Final Billing After Inspection", "Customer Approval", "Delayed Payment"],
+    standardAllowed: false,
+    proAllowed: true,
+  },
+]
+
+// ============================================================================
+// PLAN CONFIG
+// ============================================================================
+
+export interface PlanConfig {
+  tier: PlanTier
+  name: string
+  monthlyPrice: number
+  yearlyPrice: number
+  implementationCharge: number
+  description: string
+  features: string[]
+  allowedWorkflows: WorkflowType[]
+  limits: { stores: number; products: number; orders: number; partners: number; staff: number }
+  popular?: boolean
+}
+
+export const PLAN_CONFIGS: PlanConfig[] = [
+  {
+    tier: "STANDARD",
+    name: "Standard",
+    monthlyPrice: 2999,
+    yearlyPrice: 30000,
+    implementationCharge: 1999,
+    description: "Essential tools for single-workflow businesses",
+    features: [
+      "Ecommerce workflow",
+      "Standard POS",
+      "Delivery workflow",
+      "Basic inventory management",
+      "Customer management",
+      "Order management",
+      "Single store support",
+      "Basic reports",
+      "WhatsApp notifications",
+    ],
+    allowedWorkflows: ["ECOMMERCE"],
+    limits: { stores: 1, products: 2000, orders: 5000, partners: 10, staff: 10 },
+  },
+  {
+    tier: "PRO",
+    name: "Pro",
+    monthlyPrice: 4999,
+    yearlyPrice: 49999,
+    implementationCharge: 1999,
+    description: "Full workflow engine for multi-service businesses",
+    features: [
+      "Multiple workflows",
+      "Subscription engine",
+      "Pickup & delivery workflow",
+      "Appointment workflow",
+      "Post-service billing",
+      "Advanced workflow engine",
+      "Advanced POS",
+      "Multi-store support",
+      "Advanced reports & analytics",
+      "Priority support",
+      "Custom domain",
+      "White-label branding",
+    ],
+    allowedWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
+    limits: { stores: 5, products: 10000, orders: 25000, partners: 50, staff: 50 },
+    popular: true,
+  },
+]
+
+// ============================================================================
+// STORE
+// ============================================================================
+
 interface AdminState {
   // View mode
   viewMode: ViewMode
@@ -96,6 +353,9 @@ interface AdminState {
   // Current business context (for business owner view)
   currentBusinessId: string
   setCurrentBusinessId: (id: string) => void
+  // Demo Business Context
+  demoBusinessId: string
+  setDemoBusinessId: (id: string) => void
   // Selected items
   selectedProductId: string | null
   setSelectedProductId: (id: string | null) => void
@@ -132,7 +392,7 @@ interface AdminState {
 export const useAdminStore = create<AdminState>((set) => ({
   viewMode: "super_admin",
   setViewMode: (mode) => set({ viewMode: mode, searchQuery: "", isCreateDialogOpen: false, isDetailSheetOpen: false }),
-  activePage: "dashboard",
+  activePage: "workflow-engine",
   setActivePage: (page) => set({ activePage: page, searchQuery: "", selectedLeadId: null, selectedBusinessId: null, selectedSubscriptionId: null, isCreateDialogOpen: false, isDetailSheetOpen: false }),
   businessPage: "dashboard",
   setBusinessPage: (page) => set({ businessPage: page, searchQuery: "", isCreateDialogOpen: false, isDetailSheetOpen: false }),
@@ -142,6 +402,9 @@ export const useAdminStore = create<AdminState>((set) => ({
   setDeliveryPage: (page) => set({ deliveryPage: page }),
   currentBusinessId: "biz_1",
   setCurrentBusinessId: (id) => set({ currentBusinessId: id }),
+  // Demo Business Context
+  demoBusinessId: "super_admin",
+  setDemoBusinessId: (id) => set({ demoBusinessId: id }),
   selectedProductId: null,
   setSelectedProductId: (id) => set({ selectedProductId: id }),
   selectedOrderId: null,

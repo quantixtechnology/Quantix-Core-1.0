@@ -4,23 +4,38 @@
 //
 // BUSINESS MODEL (FINAL):
 //   - NO free trial, NO self-signup, NO self-onboarding, NO public creation
-//   - ONLY 2 plans: ₹4,999/mo and ₹49,999/yr
+//   - 2 plans: STANDARD (₹2,999/mo, ₹30,000/yr) and PRO (₹4,999/mo, ₹49,999/yr)
+//   - ₹1,999 implementation charge for both plans
 //   - Super Admin can override pricing per customer
 //   - Lead → Demo → Negotiation → Payment → Onboarding → Deployment → Active
 //   - Demo credentials given first; tenant created ONLY after payment verified
 //   - Business owners CANNOT create businesses — only Quantix team does
 //   - Quantix controls: deployment, domains, branding, onboarding, app activation
 //
-// ARCHITECTURE:
-//   Core Platform = Auth + Tenant + Roles + Businesses + Stores + Orders
-//                    + POS + Delivery + Subscriptions + Payments + Notifications
-//   Business Modules = Grocery, Restaurant, Pharmacy, etc. EXTEND the core
-//                      by registering via BusinessModule and adding their own
-//                      product/service tables that plug into OrderItem (polymorphic)
+// ARCHITECTURE — PRODUCT/SERVICE WORKFLOW ENGINE:
+//   The platform does NOT design around business types.
+//   Instead, each CATEGORY/PRODUCT/SERVICE gets assigned a WORKFLOW TYPE.
+//   Within the SAME business, different products can use different workflows.
+//
+//   Example: Car Wash Business:
+//     - Subscription Wash → Subscription Workflow
+//     - Pickup Wash → Pickup Workflow
+//     - Accessories → Ecommerce Workflow
+//     - Appointment Wash → Appointment Workflow
+//
+//   5 Supported Workflow Types:
+//     1. ECOMMERCE — cart → checkout → payment → delivery
+//     2. PICKUP_DELIVERY — pickup scheduling → delivery scheduling → assignment → return
+//     3. APPOINTMENT — date/time booking → technician assignment → slot management
+//     4. SUBSCRIPTION — package purchase → credit tracking → usage deduction → renewal
+//     5. POST_SERVICE_BILLING — estimated pricing → inspection → final billing → approval → delayed payment
+//
+//   ALL workflows reuse: same backend, auth, inventory, notifications, POS, delivery, deployment
 //
 // EXTENSIBILITY:
 //   - BusinessModule table tracks which modules a business has enabled
-//   - OrderItem uses itemType/itemId (polymorphic) so any module's products
+//   - Category/Product.workflowType determines the workflow for each item
+//   - OrderItem uses itemType/itemId (polymorphic) so any workflow's items
 //     can be added to an order without core knowing about them
 // ============================================================================
 
@@ -183,6 +198,18 @@ enum BusinessType {
   MEAT_DELIVERY
   FURNITURE
   DIRECTORY
+}
+
+// ============================================================================
+// WORKFLOW TYPE — Assigned per Category/Product/Service, NOT per business
+// ============================================================================
+
+enum WorkflowType {
+  ECOMMERCE              // cart → checkout → payment → delivery
+  PICKUP_DELIVERY        // pickup scheduling → delivery scheduling → assignment → return delivery
+  APPOINTMENT            // date/time booking → technician assignment → slot management
+  SUBSCRIPTION           // package purchase → credit tracking → usage deduction → renewal reminders
+  POST_SERVICE_BILLING   // estimated pricing → inspection/weight → final billing → customer approval → delayed payment
 }
 
 enum BusinessStatus {
@@ -911,9 +938,14 @@ model PaymentGateway {
 // NO trial. Business is created ONLY after payment is verified.
 // ============================================================================
 
+enum PlanTier {
+  STANDARD    // ₹2,999/mo, ₹30,000/yr — Ecommerce workflow, Standard POS, Delivery
+  PRO         // ₹4,999/mo, ₹49,999/yr — Multiple workflows, Subscription, Pickup, Appointment, Post-Service
+}
+
 enum PlanBillingCycle {
-  MONTHLY     // ₹4,999/month
-  YEARLY      // ₹49,999/year
+  MONTHLY
+  YEARLY
 }
 
 enum SubscriptionStatus {
@@ -926,9 +958,11 @@ enum SubscriptionStatus {
 
 model PlatformPlan {
   id              String           @id @default(cuid())
-  billingCycle    PlanBillingCycle @unique // Only 2 records: MONTHLY and YEARLY
-  price           Float            // 4999 for monthly, 49999 for yearly
-  name            String           // "Quantix Monthly", "Quantix Yearly"
+  tier            PlanTier         @default(STANDARD)
+  billingCycle    PlanBillingCycle
+  price           Float            // 2999/4999 monthly, 30000/49999 yearly
+  implementationCharge Float       @default(1999) // ₹1,999 one-time
+  name            String           // "Quantix Standard Monthly", "Quantix Pro Yearly", etc.
   description     String?
   features        String           @default("[]")
   // Limits
@@ -938,20 +972,29 @@ model PlatformPlan {
   maxDeliveryPartners Int          @default(50)
   maxStaff        Int              @default(50)
   // Feature flags
-  hasPOS          Boolean          @default(true)
-  hasDelivery     Boolean          @default(true)
-  hasSubscription Boolean          @default(true)
-  hasCustomDomain Boolean          @default(true)
-  hasWhiteLabel   Boolean          @default(true)
-  hasAdvancedReports Boolean       @default(true)
-  hasAPIAccess    Boolean          @default(true)
+  hasPOS                  Boolean  @default(true)
+  hasDelivery             Boolean  @default(true)
+  hasSubscription         Boolean  @default(true)
+  hasCustomDomain         Boolean  @default(true)
+  hasWhiteLabel           Boolean  @default(true)
+  hasAdvancedReports      Boolean  @default(true)
+  hasAPIAccess            Boolean  @default(true)
+  // Workflow access (STANDARD gets Ecommerce only; PRO gets all)
+  hasEcommerceWorkflow    Boolean  @default(true)
+  hasPickupWorkflow       Boolean  @default(false)
+  hasAppointmentWorkflow  Boolean  @default(false)
+  hasSubscriptionWorkflow Boolean  @default(false)
+  hasPostServiceWorkflow  Boolean  @default(false)
+  hasAdvancedWorkflowEngine Boolean @default(false)
   isActive        Boolean          @default(true)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
   subscriptions   BusinessSubscription[]
 
+  @@unique([tier, billingCycle])
   @@index([isActive])
+  @@index([tier])
 }
 
 model BusinessSubscription {
@@ -1528,27 +1571,30 @@ enum InventoryStatus {
 }
 
 model Category {
-  id          String    @id @default(cuid())
-  businessId  String
-  name        String
-  slug        String
-  description String?
-  image       String?
-  icon        String?
-  parentId    String?
-  sortOrder   Int       @default(0)
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            String      @id @default(cuid())
+  businessId    String
+  name          String
+  slug          String
+  description   String?
+  image         String?
+  icon          String?
+  parentId      String?
+  // WORKFLOW ASSIGNMENT — determines how products in this category are processed
+  workflowType  WorkflowType @default(ECOMMERCE)
+  sortOrder     Int         @default(0)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children    Category[] @relation("CategoryHierarchy")
-  products    Product[]
+  business      Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  parent        Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children      Category[]  @relation("CategoryHierarchy")
+  products      Product[]
 
   @@unique([businessId, slug])
   @@index([businessId])
   @@index([parentId])
+  @@index([workflowType])
 }
 
 model Product {
@@ -1576,6 +1622,8 @@ model Product {
   tags            String        @default("[]")
   nutritionInfo   String?
   allergenInfo    String?
+  // WORKFLOW ASSIGNMENT — overrides category workflow if set, inherits from category if null
+  workflowType    WorkflowType? 
   sortOrder       Int           @default(0)
   metadata        String        @default("{}")
   createdAt       DateTime      @default(now())
@@ -1591,6 +1639,7 @@ model Product {
   @@index([categoryId])
   @@index([status])
   @@index([storeId])
+  @@index([workflowType])
 }
 
 model ProductVariant {

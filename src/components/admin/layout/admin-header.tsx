@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { NotificationBell } from "@/components/shared/notification-bell"
 import { useResponsive } from "@/hooks/use-responsive"
+import { DemoSwitcher } from "@/components/workflow/demo-switcher"
 
 const pageTitles: Record<string, string> = {
   dashboard: "Dashboard",
@@ -26,6 +27,9 @@ const pageTitles: Record<string, string> = {
   sales: "Sales Team",
   notifications: "Notifications",
   settings: "Settings",
+  // Workflow Engine
+  "workflow-engine": "Workflow Engine",
+  "plan-management": "Plan Management",
   // Phase 6
   "mobile-apps": "Mobile Apps",
   "ops-dashboard": "Operations Dashboard",
@@ -99,24 +103,7 @@ export function AdminHeader({ onMobileMenuClick }: AdminHeaderProps) {
           businessId="biz_1"
           onViewAll={() => setActivePage("notifications")}
         />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2 h-8">
-              <ArrowLeftRight className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline text-xs">Switch View</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem className="gap-2 font-medium">
-              <ShoppingBag className="h-4 w-4" />
-              Super Admin (Current)
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setViewMode("business_owner")} className="gap-2">
-              <ShoppingBag className="h-4 w-4" />
-              Business Owner
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <DemoSwitcher />
       </div>
     </header>
   )

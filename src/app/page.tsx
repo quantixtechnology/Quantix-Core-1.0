@@ -73,12 +73,19 @@ import { DeliveryDashboard } from "@/components/delivery/dashboard/delivery-dash
 import { DeliveryOrderDetail } from "@/components/delivery/orders/delivery-order-detail"
 import { DeliveryEarnings } from "@/components/delivery/earnings/delivery-earnings"
 import { DeliveryProfile } from "@/components/delivery/profile/delivery-profile"
+// Workflow Engine
+import { WorkflowEngineView } from "@/components/workflow/workflow-engine-view"
+import { WorkflowConfigView } from "@/components/workflow/workflow-config-view"
+import { PlanComparison } from "@/components/workflow/plan-comparison"
 
 export default function Home() {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage } = useAdminStore()
 
   const renderSuperAdminPage = () => {
     switch (activePage) {
+      // Workflow Engine
+      case "workflow-engine": return <WorkflowEngineView />
+      case "plan-management": return <PlanComparison />
       // Core
       case "dashboard": return <DashboardView />
       case "leads": return <LeadsView />
@@ -112,7 +119,7 @@ export default function Home() {
       case "backup-monitoring": return <BackupMonitoringView />
       case "security-access": return <SecurityAccessView />
       case "audit-logs": return <AuditLogsView />
-      default: return <DashboardView />
+      default: return <WorkflowEngineView />
     }
   }
 
@@ -135,6 +142,9 @@ export default function Home() {
       case "product-import": return <ProductImportView />
       case "delivery-zones": return <DeliveryZonesView />
       case "storefront": return <StorefrontShell />
+      // Workflow Engine
+      case "workflow-config": return <WorkflowConfigView />
+      case "workflows": return <WorkflowEngineView />
       default: return <BusinessDashboard />
     }
   }
