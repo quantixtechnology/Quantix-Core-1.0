@@ -292,17 +292,17 @@ async function remove<T>(resource: string, id: string): Promise<ApiResponse<T>> 
 // ============================================================================
 
 export const platformApi = {
-  getStats: () => apiFetch<PlatformDashboardStats>('/platform/stats'),
+  getStats: () => apiFetch<PlatformDashboardStats>('/core/platform/stats'),
   getBusinesses: (params?: Record<string, unknown>) =>
-    getList<BusinessListItem>('/businesses', params as Record<string, string | string[] | number | boolean | undefined>),
-  createBusiness: (data: CreateBusinessRequest) => create<BusinessListItem>('/businesses', data),
+    getList<BusinessListItem>('/core/businesses', params as Record<string, string | string[] | number | boolean | undefined>),
+  createBusiness: (data: CreateBusinessRequest) => create<BusinessListItem>('/core/businesses', data),
   getLeads: (params?: LeadFilter & { page?: number; limit?: number }) =>
-    getList<LeadListItem>('/leads', params as Record<string, string | string[] | number | boolean | undefined>),
-  createLead: (data: CreateLeadRequest) => create<LeadListItem>('/leads', data),
+    getList<LeadListItem>('/core/leads', params as Record<string, string | string[] | number | boolean | undefined>),
+  createLead: (data: CreateLeadRequest) => create<LeadListItem>('/core/leads', data),
   getDeployments: (params?: Record<string, unknown>) =>
-    getList<unknown>('/deployments', params as Record<string, string | string[] | number | boolean | undefined>),
+    getList<unknown>('/core/deployments', params as Record<string, string | string[] | number | boolean | undefined>),
   getDomains: (params?: Record<string, unknown>) =>
-    getList<unknown>('/domains', params as Record<string, string | string[] | number | boolean | undefined>),
+    getList<unknown>('/core/domains', params as Record<string, string | string[] | number | boolean | undefined>),
 };
 
 // ============================================================================
@@ -311,13 +311,13 @@ export const platformApi = {
 
 export const businessApi = {
   list: (params?: Record<string, unknown>) =>
-    getList<BusinessListItem>('/businesses', params as Record<string, string | string[] | number | boolean | undefined>),
-  get: (id: string) => getOne<BusinessListItem>('/businesses', id),
-  create: (data: CreateBusinessRequest) => create<BusinessListItem>('/businesses', data),
-  update: (id: string, data: UpdateBusinessRequest) => update<BusinessListItem>('/businesses', id, data),
-  delete: (id: string) => remove<BusinessListItem>('/businesses', id),
+    getList<BusinessListItem>('/core/businesses', params as Record<string, string | string[] | number | boolean | undefined>),
+  get: (id: string) => getOne<BusinessListItem>('/core/businesses', id),
+  create: (data: CreateBusinessRequest) => create<BusinessListItem>('/core/businesses', data),
+  update: (id: string, data: UpdateBusinessRequest) => update<BusinessListItem>('/core/businesses', id, data),
+  delete: (id: string) => remove<BusinessListItem>('/core/businesses', id),
   getDashboard: (businessId: string) =>
-    apiFetch<DashboardStats>(`/businesses/${businessId}/dashboard`),
+    apiFetch<DashboardStats>(`/core/businesses/${businessId}/dashboard`),
 };
 
 // ============================================================================
@@ -326,11 +326,11 @@ export const businessApi = {
 
 export const storeApi = {
   list: (params?: Record<string, unknown>) =>
-    getList<StoreListItem>('/stores', params as Record<string, string | string[] | number | boolean | undefined>),
-  get: (id: string) => getOne<StoreListItem>('/stores', id),
-  create: (data: CreateStoreRequest) => create<StoreListItem>('/stores', data),
-  update: (id: string, data: Partial<CreateStoreRequest>) => update<StoreListItem>('/stores', id, data),
-  delete: (id: string) => remove<StoreListItem>('/stores', id),
+    getList<StoreListItem>('/core/stores', params as Record<string, string | string[] | number | boolean | undefined>),
+  get: (id: string) => getOne<StoreListItem>('/core/stores', id),
+  create: (data: CreateStoreRequest) => create<StoreListItem>('/core/stores', data),
+  update: (id: string, data: Partial<CreateStoreRequest>) => update<StoreListItem>('/core/stores', id, data),
+  delete: (id: string) => remove<StoreListItem>('/core/stores', id),
 };
 
 // ============================================================================
@@ -339,13 +339,13 @@ export const storeApi = {
 
 export const productApi = {
   list: (params?: ProductFilter & { page?: number; limit?: number }) =>
-    getList<ProductListItem>('/products', params as Record<string, string | string[] | number | boolean | undefined>),
-  get: (id: string) => getOne<ProductListItem>('/products', id),
-  create: (data: CreateProductRequest) => create<ProductListItem>('/products', data),
-  update: (id: string, data: Partial<CreateProductRequest>) => update<ProductListItem>('/products', id, data),
-  delete: (id: string) => remove<ProductListItem>('/products', id),
+    getList<ProductListItem>('/core/storefront/products', params as Record<string, string | string[] | number | boolean | undefined>),
+  get: (id: string) => getOne<ProductListItem>('/core/storefront/products', id),
+  create: (data: CreateProductRequest) => create<ProductListItem>('/core/storefront/products', data),
+  update: (id: string, data: Partial<CreateProductRequest>) => update<ProductListItem>('/core/storefront/products', id, data),
+  delete: (id: string) => remove<ProductListItem>('/core/storefront/products', id),
   getByCategory: (categoryId: string) =>
-    getList<ProductListItem>('/products', { categoryId } as Record<string, string | string[] | number | boolean | undefined>),
+    getList<ProductListItem>('/core/storefront/products', { categoryId } as Record<string, string | string[] | number | boolean | undefined>),
 };
 
 // ============================================================================
@@ -354,13 +354,13 @@ export const productApi = {
 
 export const orderApi = {
   list: (params?: OrderFilter & { page?: number; limit?: number }) =>
-    getList<OrderListItem>('/orders', params as Record<string, string | string[] | number | boolean | undefined>),
-  get: (id: string) => getOne<OrderListItem>('/orders', id),
-  create: (data: CreateOrderRequest) => create<OrderListItem>('/orders', data),
+    getList<OrderListItem>('/core/orders', params as Record<string, string | string[] | number | boolean | undefined>),
+  get: (id: string) => getOne<OrderListItem>('/core/orders', id),
+  create: (data: CreateOrderRequest) => create<OrderListItem>('/core/orders', data),
   updateStatus: (id: string, status: string, note?: string) =>
-    update<OrderListItem>(`/orders/${id}/status`, '', { status, note }),
+    update<OrderListItem>(`/core/orders/${id}/status`, '', { status, note }),
   cancel: (id: string, reason: string) =>
-    update<OrderListItem>(`/orders/${id}/cancel`, '', { reason }),
+    update<OrderListItem>(`/core/orders/${id}/cancel`, '', { reason }),
 };
 
 // ============================================================================
@@ -368,14 +368,27 @@ export const orderApi = {
 // ============================================================================
 
 export const customerApi = {
-  list: (params?: CustomerFilter & { page?: number; limit?: number }) =>
-    getList<CustomerListItem>('/customers', params as Record<string, string | string[] | number | boolean | undefined>),
-  get: (id: string) => getOne<CustomerListItem>('/customers', id),
-  create: (data: { name: string; email?: string; phone?: string }) =>
-    create<CustomerListItem>('/customers', data),
-  update: (id: string, data: Partial<CustomerListItem>) =>
-    update<CustomerListItem>('/customers', id, data),
-  delete: (id: string) => remove<CustomerListItem>('/customers', id),
+  list: (params?: CustomerFilter & { page?: number; limit?: number }) => {
+    const businessId = getBusinessContextId();
+    if (!businessId) throw new Error('Business context not set. Call setBusinessContext() first.');
+    return getList<CustomerListItem>(`/core/businesses/${businessId}/customers`, params as Record<string, string | string[] | number | boolean | undefined>);
+  },
+  get: (id: string) => {
+    const businessId = getBusinessContextId();
+    return getOne<CustomerListItem>(`/core/businesses/${businessId}/customers`, id);
+  },
+  create: (data: { name: string; email?: string; phone?: string }) => {
+    const businessId = getBusinessContextId();
+    return create<CustomerListItem>(`/core/businesses/${businessId}/customers`, data);
+  },
+  update: (id: string, data: Partial<CustomerListItem>) => {
+    const businessId = getBusinessContextId();
+    return update<CustomerListItem>(`/core/businesses/${businessId}/customers`, id, data);
+  },
+  delete: (id: string) => {
+    const businessId = getBusinessContextId();
+    return remove<CustomerListItem>(`/core/businesses/${businessId}/customers`, id);
+  },
 };
 
 // ============================================================================
@@ -384,12 +397,12 @@ export const customerApi = {
 
 export const subscriptionApi = {
   listPlans: (params?: Record<string, unknown>) =>
-    getList<unknown>('/subscriptions/plans', params as Record<string, string | string[] | number | boolean | undefined>),
-  getPlan: (id: string) => getOne<unknown>('/subscriptions/plans', id),
+    getList<unknown>('/core/subscriptions/plans', params as Record<string, string | string[] | number | boolean | undefined>),
+  getPlan: (id: string) => getOne<unknown>('/core/subscriptions/plans', id),
   createPlan: (data: CreateSubscriptionPlanRequest) =>
-    create<unknown>('/subscriptions/plans', data),
+    create<unknown>('/core/subscriptions/plans', data),
   listSubscriptions: (params?: Record<string, unknown>) =>
-    getList<unknown>('/subscriptions', params as Record<string, string | string[] | number | boolean | undefined>),
+    getList<unknown>('/core/subscriptions', params as Record<string, string | string[] | number | boolean | undefined>),
 };
 
 // ============================================================================
@@ -398,11 +411,11 @@ export const subscriptionApi = {
 
 export const deliveryApi = {
   listPartners: (params?: Record<string, unknown>) =>
-    getList<unknown>('/delivery/partners', params as Record<string, string | string[] | number | boolean | undefined>),
+    getList<unknown>('/core/delivery/partners', params as Record<string, string | string[] | number | boolean | undefined>),
   listZones: (params?: Record<string, unknown>) =>
-    getList<unknown>('/delivery/zones', params as Record<string, string | string[] | number | boolean | undefined>),
+    getList<unknown>('/core/delivery/zones', params as Record<string, string | string[] | number | boolean | undefined>),
   trackOrder: (orderId: string) =>
-    apiFetch<unknown>(`/delivery/track/${orderId}`),
+    apiFetch<unknown>(`/core/delivery/track/${orderId}`),
 };
 
 // ============================================================================
@@ -411,10 +424,10 @@ export const deliveryApi = {
 
 export const invoiceApi = {
   list: (params?: Record<string, unknown>) =>
-    getList<unknown>('/invoices', params as Record<string, string | string[] | number | boolean | undefined>),
-  get: (id: string) => getOne<unknown>('/invoices', id),
+    getList<unknown>('/core/invoices', params as Record<string, string | string[] | number | boolean | undefined>),
+  get: (id: string) => getOne<unknown>('/core/invoices', id),
   generate: (orderId: string) =>
-    create<unknown>('/invoices/generate', { orderId }),
+    create<unknown>('/core/invoices/generate', { orderId }),
 };
 
 // ============================================================================
@@ -453,13 +466,13 @@ export const authApi = {
       skipRefresh: true,
     }),
   register: (data: { name: string; email: string; password: string; phone?: string }) =>
-    apiFetch<unknown>('/auth/register', {
+    apiFetch<unknown>('/core/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
       skipAuth: true,
     }),
   forgotPassword: (email: string) =>
-    apiFetch<unknown>('/auth/forgot-password', {
+    apiFetch<unknown>('/core/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
       skipAuth: true,

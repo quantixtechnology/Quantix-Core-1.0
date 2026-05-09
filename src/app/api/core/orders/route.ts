@@ -20,10 +20,15 @@ export async function GET(request: Request) {
       );
     }
 
+    // Parse comma-separated status values into array
+    const statusParam = searchParams.get('status');
+    const orderTypeParam = searchParams.get('orderType');
+    const paymentStatusParam = searchParams.get('paymentStatus');
+
     const result = await listOrders(businessId, {
-      status: searchParams.get('status') || undefined,
-      orderType: searchParams.get('orderType') || undefined,
-      paymentStatus: searchParams.get('paymentStatus') || undefined,
+      status: statusParam ? statusParam.split(',') : undefined,
+      orderType: orderTypeParam ? orderTypeParam.split(',') : undefined,
+      paymentStatus: paymentStatusParam ? paymentStatusParam.split(',') : undefined,
       storeId: searchParams.get('storeId') || undefined,
       customerId: searchParams.get('customerId') || undefined,
       dateFrom: searchParams.get('dateFrom') || undefined,

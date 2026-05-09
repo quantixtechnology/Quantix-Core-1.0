@@ -328,7 +328,7 @@ export function useCategories(
     queryKey: queryKeys.products.categories(businessId),
     queryFn: async () => {
       setBusinessContext(businessId);
-      const response = await fetch("/api/core/products?fields=category", {
+      const response = await fetch("/api/core/storefront/products?fields=category", {
         headers: { "Content-Type": "application/json" },
       });
       const data = await response.json();

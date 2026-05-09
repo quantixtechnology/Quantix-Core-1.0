@@ -42,63 +42,21 @@ export async function POST() {
     summary.platformConfigs = createdConfigs.length;
 
     // =========================================================================
-    // 2. PLATFORM PLANS
+    // 2. PLATFORM PLANS (Only 2: MONTHLY and YEARLY per schema)
     // =========================================================================
     const plans = [
       {
-        name: 'Starter',
-        tier: 'STARTER' as const,
-        monthlyPrice: 4999,
-        yearlyPrice: 49990,
-        description: 'Perfect for small businesses getting started',
-        features: JSON.stringify(['1 Store', '500 Products', '1000 Orders/mo', '5 Staff', 'Basic POS', 'Delivery Management']),
-        maxStores: 1,
-        maxProducts: 500,
-        maxOrders: 1000,
-        maxDeliveryPartners: 3,
-        maxStaff: 5,
-        hasPOS: true,
-        hasDelivery: true,
-        hasSubscription: false,
-        hasCustomDomain: false,
-        hasWhiteLabel: false,
-        hasAdvancedReports: false,
-        hasAPIAccess: false,
-        sortOrder: 1,
-      },
-      {
-        name: 'Professional',
-        tier: 'PROFESSIONAL' as const,
-        monthlyPrice: 14999,
-        yearlyPrice: 149990,
-        description: 'For growing businesses that need more power',
-        features: JSON.stringify(['3 Stores', '5000 Products', '5000 Orders/mo', '20 Staff', 'Full POS', 'Delivery', 'Subscriptions', 'Custom Domain', 'Advanced Reports']),
-        maxStores: 3,
+        id: 'plan_monthly',
+        billingCycle: 'MONTHLY' as const,
+        price: 4999,
+        name: 'Quantix Monthly',
+        description: 'Monthly plan — ₹4,999/month',
+        features: JSON.stringify(['5 Stores', '5000 Products', '10000 Orders/mo', '50 Staff', 'Full POS', 'Delivery Management', 'Subscriptions', 'Custom Domain', 'White Label', 'Advanced Reports', 'API Access']),
+        maxStores: 5,
         maxProducts: 5000,
-        maxOrders: 5000,
-        maxDeliveryPartners: 10,
-        maxStaff: 20,
-        hasPOS: true,
-        hasDelivery: true,
-        hasSubscription: true,
-        hasCustomDomain: true,
-        hasWhiteLabel: false,
-        hasAdvancedReports: true,
-        hasAPIAccess: false,
-        sortOrder: 2,
-      },
-      {
-        name: 'Enterprise',
-        tier: 'ENTERPRISE' as const,
-        monthlyPrice: 49999,
-        yearlyPrice: 499990,
-        description: 'For large businesses with unlimited needs',
-        features: JSON.stringify(['Unlimited Stores', 'Unlimited Products', 'Unlimited Orders', 'Unlimited Staff', 'Full POS', 'Delivery', 'Subscriptions', 'Custom Domain', 'White Label', 'Advanced Reports', 'API Access']),
-        maxStores: 100,
-        maxProducts: 100000,
-        maxOrders: 100000,
-        maxDeliveryPartners: 100,
-        maxStaff: 100,
+        maxOrders: 10000,
+        maxDeliveryPartners: 50,
+        maxStaff: 50,
         hasPOS: true,
         hasDelivery: true,
         hasSubscription: true,
@@ -106,21 +64,62 @@ export async function POST() {
         hasWhiteLabel: true,
         hasAdvancedReports: true,
         hasAPIAccess: true,
-        sortOrder: 3,
+        isActive: true,
+      },
+      {
+        id: 'plan_yearly',
+        billingCycle: 'YEARLY' as const,
+        price: 49999,
+        name: 'Quantix Yearly',
+        description: 'Yearly plan — ₹49,999/year (save ₹9,989)',
+        features: JSON.stringify(['5 Stores', '5000 Products', '10000 Orders/mo', '50 Staff', 'Full POS', 'Delivery Management', 'Subscriptions', 'Custom Domain', 'White Label', 'Advanced Reports', 'API Access']),
+        maxStores: 5,
+        maxProducts: 5000,
+        maxOrders: 10000,
+        maxDeliveryPartners: 50,
+        maxStaff: 50,
+        hasPOS: true,
+        hasDelivery: true,
+        hasSubscription: true,
+        hasCustomDomain: true,
+        hasWhiteLabel: true,
+        hasAdvancedReports: true,
+        hasAPIAccess: true,
+        isActive: true,
       },
     ];
 
     const createdPlans = [];
     for (const plan of plans) {
-      const planId = plan.tier === 'STARTER' ? 'plan_starter' : plan.tier === 'PROFESSIONAL' ? 'plan_professional' : 'plan_enterprise';
       const result = await db.platformPlan.upsert({
-        where: { id: planId },
-        update: plan,
-        create: { id: planId, ...plan },
+        where: { billingCycle: plan.billingCycle },
+        update: {
+          price: plan.price,
+          name: plan.name,
+          description: plan.description,
+          features: plan.features,
+          maxStores: plan.maxStores,
+          maxProducts: plan.maxProducts,
+          maxOrders: plan.maxOrders,
+          maxDeliveryPartners: plan.maxDeliveryPartners,
+          maxStaff: plan.maxStaff,
+          hasPOS: plan.hasPOS,
+          hasDelivery: plan.hasDelivery,
+          hasSubscription: plan.hasSubscription,
+          hasCustomDomain: plan.hasCustomDomain,
+          hasWhiteLabel: plan.hasWhiteLabel,
+          hasAdvancedReports: plan.hasAdvancedReports,
+          hasAPIAccess: plan.hasAPIAccess,
+          isActive: plan.isActive,
+        },
+        create: plan,
       });
       createdPlans.push(result);
     }
     summary.platformPlans = createdPlans.length;
+
+    // Get the monthly plan ID for the subscription
+    const monthlyPlan = createdPlans.find(p => p.billingCycle === 'MONTHLY');
 
     // =========================================================================
     // 3. SUPER ADMIN USER
@@ -174,16 +173,17 @@ export async function POST() {
     summary.salesTeamMember = { id: salesMember.id, name: salesMember.name };
 
     // =========================================================================
-    // 5. SAMPLE GROCERY BUSINESS — FreshMart
+    // 5. SAMPLE GROCERY BUSINESS — FreshMart (ID: biz_1)
     // =========================================================================
     const business = await db.business.upsert({
-      where: { slug: 'freshmart-grocery' },
+      where: { id: 'biz_1' },
       update: {},
       create: {
+        id: 'biz_1',
         name: 'FreshMart Grocery',
         slug: 'freshmart-grocery',
         businessType: 'GROCERY',
-        status: 'TRIAL',
+        status: 'ACTIVE',
         tagline: 'Fresh from Farm to Your Door',
         description: 'Premium grocery store with fresh fruits, vegetables, dairy, and daily essentials delivered to your doorstep.',
         gstNumber: '27AABCF1234A1Z5',
@@ -202,29 +202,31 @@ export async function POST() {
         primaryColor: '#10B981',
         isOnline: true,
         salesRepId: salesMember.id,
-        trialStartsAt: new Date(),
-        trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        activatedAt: new Date(),
+        onboardedAt: new Date(),
       },
     });
     summary.business = { id: business.id, name: business.name };
 
     // =========================================================================
-    // 6. BUSINESS SUBSCRIPTION (Trial)
+    // 6. BUSINESS SUBSCRIPTION (Active — no trial per schema)
     // =========================================================================
     const subscription = await db.businessSubscription.upsert({
       where: { businessId: business.id },
       update: {},
       create: {
         businessId: business.id,
-        planId: 'plan_professional',
-        status: 'TRIAL',
-        planPrice: 14999,
-        billingCycle: 'monthly',
+        planId: monthlyPlan!.id,
+        status: 'ACTIVE',
+        planPrice: 4999,
+        billingCycle: 'MONTHLY',
         currentPeriodStart: new Date(),
         currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        nextBillingDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-        trialStart: new Date(),
-        trialEnd: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        paymentVerified: true,
+        paymentVerifiedAt: new Date(),
+        paymentVerifiedBy: superAdmin.id,
+        autoRenew: true,
       },
     });
     summary.subscription = { id: subscription.id, status: subscription.status };
@@ -232,8 +234,6 @@ export async function POST() {
     // =========================================================================
     // 7. BUSINESS MODULES
     // =========================================================================
-    // Enable default modules for GROCERY business type inline
-    // (replaces enableDefaultModules from @/lib/core which is not available)
     const defaultModules = [
       { moduleKey: 'grocery', moduleName: 'Grocery Store', config: { enableCategories: true, enableVariants: true, enableInventory: true, enableDelivery: true, enablePOS: true } },
       { moduleKey: 'catalog', moduleName: 'Product Catalog', config: { enableCategories: true, enableVariants: true } },
@@ -445,8 +445,6 @@ export async function POST() {
     // =========================================================================
     // 13. CATEGORIES (12 Grocery Categories)
     // =========================================================================
-    // Category schema: id, businessId, name, slug, description, image, icon,
-    //                  parentId, sortOrder, isActive, createdAt, updatedAt
     const categoriesData = [
       { name: 'Fruits & Vegetables', slug: 'fruits-vegetables', description: 'Fresh fruits and organic vegetables', icon: '🥬', sortOrder: 1 },
       { name: 'Dairy & Breakfast', slug: 'dairy-breakfast', description: 'Milk, curd, paneer, bread and breakfast items', icon: '🥛', sortOrder: 2 },
@@ -485,16 +483,6 @@ export async function POST() {
     // =========================================================================
     // 14. PRODUCTS WITH VARIANTS AND INVENTORY (30 Products)
     // =========================================================================
-    // Product schema: id, businessId, storeId?, categoryId?, name, slug,
-    //   description?, shortDesc?, type (ProductType), status (ProductStatus),
-    //   sku?, barcode?, images, unit?, unitQuantity?, isVeg?, isFeatured,
-    //   isPopular, preparationTime?, minOrderQty, maxOrderQty, tags,
-    //   nutritionInfo?, allergenInfo?, sortOrder, metadata
-    // ProductVariant: id, productId, name, sku?, barcode?, price, mrp,
-    //   costPrice?, discountPrice?, discountPercent?, stock, minStock,
-    //   isDefault, isActive, attributes
-    // Inventory: id, businessId, storeId, productId, variantId?, quantity,
-    //   reservedQty, minStock, maxStock, status, lastRestockedAt
     const productsData = [
       // Fruits & Vegetables
       { name: 'Organic Bananas', slug: 'organic-bananas', catSlug: 'fruits-vegetables', mrp: 49, price: 45, gstRate: 0, unit: 'dozen', isVeg: true },

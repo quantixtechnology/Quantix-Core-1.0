@@ -286,7 +286,11 @@ export function CustomersView() {
   // ---------------------------------------------------------------------------
   const totalCustomers = businessCustomers.length
   const activeThisMonth = businessCustomers.filter(
-    (c) => new Date(c.lastOrder).getMonth() === 0 && new Date(c.lastOrder).getFullYear() === 2025
+    (c) => {
+      const d = new Date(c.lastOrder)
+      const now = new Date()
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+    }
   ).length
   const totalSpentAll = businessCustomers.reduce((s, c) => s + c.totalSpent, 0)
   const totalOrdersAll = businessCustomers.reduce((s, c) => s + c.totalOrders, 0)
@@ -401,9 +405,20 @@ export function CustomersView() {
       />
 
       {/* ================================================================== */}
-      {/* Summary Cards                                                      */}
+      {/* Error State (before filters)                                         */}
       {/* ================================================================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {customersError && !customersData ? (
+        <ErrorState
+          title="Failed to load customers"
+          description="Could not fetch customer data. Please try again."
+          onRetry={() => refetchCustomers()}
+        />
+      ) : (
+        <>
+          {/* ================================================================== */}
+          {/* Summary Cards                                                      */}
+          {/* ================================================================== */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Customers"
           value={totalCustomers}
@@ -416,7 +431,7 @@ export function CustomersView() {
         <StatCard
           title="Active This Month"
           value={activeThisMonth}
-          change={`${((activeThisMonth / totalCustomers) * 100).toFixed(0)}% of total`}
+          change={`${totalCustomers > 0 ? ((activeThisMonth / totalCustomers) * 100).toFixed(0) : 0}% of total`}
           changeType="positive"
           icon={ShoppingBag}
           iconColor="text-emerald-600"
@@ -440,183 +455,179 @@ export function CustomersView() {
           iconColor="text-purple-600"
           iconBg="bg-purple-50"
         />
-      </div>
+          </div>
 
-      {/* ================================================================== */}
-      {/* Filter Bar                                                         */}
-      {/* ================================================================== */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, phone or email..."
-            className="pl-8 h-9"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button
-              className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
-              onClick={() => setSearchQuery("")}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {["all", "PLATINUM", "GOLD", "SILVER", "BRONZE"].map((tier) => (
-            <Button
-              key={tier}
-              variant={tierFilter === tier ? "default" : "outline"}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setTierFilter(tier)}
-            >
-              {tier === "all" ? "All" : tier.charAt(0) + tier.slice(1).toLowerCase()}
-            </Button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">Sort:</span>
-          <select
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-          >
-            <option value="newest">Newest</option>
-            <option value="most_orders">Most Orders</option>
-            <option value="highest_spend">Highest Spend</option>
-          </select>
-        </div>
-        {(tierFilter !== "all" || searchQuery) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setTierFilter("all")
-              setSearchQuery("")
-            }}
-          >
-            <X className="h-3 w-3 mr-1" /> Clear
-          </Button>
-        )}
-      </div>
-
-      {/* ================================================================== */}
-      {/* Customer Table or Empty State                                      */}
-      {/* ================================================================== */}
-      {customersLoading ? (
-        <Card>
-          <CardContent className="p-6">
-            <SkeletonTable rows={6} columns={7} showSearch={false} showPagination={false} />
-          </CardContent>
-        </Card>
-      ) : customersError && !customersData ? (
-        <ErrorState
-          title="Failed to load customers"
-          description="Could not fetch customer data. Please try again."
-          onRetry={() => refetchCustomers()}
-        />
-      ) : filteredCustomers.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No customers found"
-          description="No customers match your current filters. Try adjusting your search or tier filter."
-          action={{
-            label: "Clear Filters",
-            onClick: () => {
-              setSearchQuery("")
-              setTierFilter("all")
-            },
-          }}
-        />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[250px]">Customer</TableHead>
-                    <TableHead className="hidden md:table-cell">Phone</TableHead>
-                    <TableHead className="hidden lg:table-cell">Email</TableHead>
-                    <TableHead className="text-right">Orders</TableHead>
-                    <TableHead className="text-right">Total Spent</TableHead>
-                    <TableHead className="text-center">Tier</TableHead>
-                    <TableHead className="hidden sm:table-cell">Last Order</TableHead>
-                    <TableHead className="text-center">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredCustomers.map((customer) => {
-                    const tierColors = getTierColors(customer.tier)
-                    return (
-                      <TableRow
-                        key={customer.id}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => openDetail(customer as Customer)}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-9 w-9 shrink-0">
-                              <AvatarFallback
-                                className={`text-xs font-semibold ${tierColors.avatar}`}
-                              >
-                                {getInitials(customer.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{customer.name}</p>
-                              <p className="text-[11px] text-muted-foreground md:hidden">
-                                {customer.phone}
-                              </p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                          {customer.phone}
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                          {customer.email}
-                        </TableCell>
-                        <TableCell className="text-right text-sm font-medium">
-                          {customer.totalOrders}
-                        </TableCell>
-                        <TableCell className="text-right text-sm font-medium">
-                          {formatCurrency(customer.totalSpent)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge
-                            className={`text-[10px] font-semibold ${tierColors.badge}`}
-                            variant="secondary"
-                          >
-                            {customer.tier}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                          {formatDate(customer.lastOrder)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openDetail(customer as Customer)
-                            }}
-                          >
-                            <Eye className="h-4 w-4 text-muted-foreground" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+          {/* ================================================================== */}
+          {/* Filter Bar                                                         */}
+          {/* ================================================================== */}
+          <div className="flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, phone or email..."
+                className="pl-8 h-9"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSearchQuery("")}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-1.5">
+              {["all", "PLATINUM", "GOLD", "SILVER", "BRONZE"].map((tier) => (
+                <Button
+                  key={tier}
+                  variant={tierFilter === tier ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setTierFilter(tier)}
+                >
+                  {tier === "all" ? "All" : tier.charAt(0) + tier.slice(1).toLowerCase()}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Sort:</span>
+              <select
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+              >
+                <option value="newest">Newest</option>
+                <option value="most_orders">Most Orders</option>
+                <option value="highest_spend">Highest Spend</option>
+              </select>
+            </div>
+            {(tierFilter !== "all" || searchQuery) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setTierFilter("all")
+                  setSearchQuery("")
+                }}
+              >
+                <X className="h-3 w-3 mr-1" /> Clear
+              </Button>
+            )}
+          </div>
+
+          {/* ================================================================== */}
+          {/* Customer Table or Empty State                                      */}
+          {/* ================================================================== */}
+          {customersLoading ? (
+            <Card>
+              <CardContent className="p-6">
+                <SkeletonTable rows={6} columns={7} showSearch={false} showPagination={false} />
+              </CardContent>
+            </Card>
+          ) : filteredCustomers.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No customers found"
+              description="No customers match your current filters. Try adjusting your search or tier filter."
+              action={{
+                label: "Clear Filters",
+                onClick: () => {
+                  setSearchQuery("")
+                  setTierFilter("all")
+                },
+              }}
+            />
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[250px]">Customer</TableHead>
+                        <TableHead className="hidden md:table-cell">Phone</TableHead>
+                        <TableHead className="hidden lg:table-cell">Email</TableHead>
+                        <TableHead className="text-right">Orders</TableHead>
+                        <TableHead className="text-right">Total Spent</TableHead>
+                        <TableHead className="text-center">Tier</TableHead>
+                        <TableHead className="hidden sm:table-cell">Last Order</TableHead>
+                        <TableHead className="text-center">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredCustomers.map((customer) => {
+                        const tierColors = getTierColors(customer.tier)
+                        return (
+                          <TableRow
+                            key={customer.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => openDetail(customer as Customer)}
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-9 w-9 shrink-0">
+                                  <AvatarFallback
+                                    className={`text-xs font-semibold ${tierColors.avatar}`}
+                                  >
+                                    {getInitials(customer.name)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium truncate">{customer.name}</p>
+                                  <p className="text-[11px] text-muted-foreground md:hidden">
+                                    {customer.phone}
+                                  </p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                              {customer.phone}
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                              {customer.email}
+                            </TableCell>
+                            <TableCell className="text-right text-sm font-medium">
+                              {customer.totalOrders}
+                            </TableCell>
+                            <TableCell className="text-right text-sm font-medium">
+                              {formatCurrency(customer.totalSpent)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge
+                                className={`text-[10px] font-semibold ${tierColors.badge}`}
+                                variant="secondary"
+                              >
+                                {customer.tier}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                              {formatDate(customer.lastOrder)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openDetail(customer as Customer)
+                                }}
+                              >
+                                <Eye className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       {/* ================================================================== */}
