@@ -29,7 +29,7 @@ interface AuthenticatedRequest extends NextRequest {
 
 type HandlerFunction = (
   req: AuthenticatedRequest,
-  context?: { params?: Record<string, string | string[]> }
+  context?: { params?: Promise<Record<string, string | string[]>> }
 ) => Promise<Response>;
 
 interface MiddlewareConfig {
