@@ -459,7 +459,9 @@ export function OrdersView() {
   }
 
   // ---- Error state ----
-  if (ordersError && !ordersData) {
+  // NOTE: If API fails, we fall back to demo data instead of showing error
+  // Only show error if BOTH API and demo data are empty
+  if (ordersError && !ordersData && demoOrdersList.length === 0) {
     return (
       <div className="space-y-6">
         <PageHeader

@@ -53,7 +53,8 @@ import {
 } from "@/components/ui/table";
 import { ThermalPrintDialog } from "./thermal-print-dialog";
 import { PrintStyles } from "./print-styles";
-import { products, categories, businessCustomers, businessOrders } from "@/components/business/data";
+import { getDemoProducts, getDemoCategories, getDemoCustomers, getDemoBusinessOrders } from "@/lib/demo-data";
+import { useAdminStore } from "@/stores/admin-store";
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { formatCurrency, formatIndianDateTime } from "@/lib/utils";
 import { calculatePOSCart, numberToWords } from "@/lib/core/pos";
@@ -105,6 +106,28 @@ function generateBillNumber(): string {
 // ============================================================================
 
 export function POSProduction() {
+  // Get demo business context
+  const { demoBusinessId } = useAdminStore()
+
+  // Demo data — context-aware
+  const products = useMemo(() => getDemoProducts(demoBusinessId).map((p) => ({
+    id: p.id, name: p.name, slug: p.slug, categoryId: p.categoryId, category: p.category,
+    status: p.status, isVeg: p.isVeg, isFeatured: p.isFeatured, image: p.image,
+    variants: p.variants.map((v) => ({ id: v.id, name: v.name, sku: v.sku, mrp: v.mrp, price: v.price, stock: v.stock, isDefault: v.isDefault })),
+  })), [demoBusinessId])
+
+  const categories = useMemo(() => {
+    const cats = getDemoCategories(demoBusinessId)
+    const prods = getDemoProducts(demoBusinessId)
+    return cats.map((c) => ({ id: c.id, name: c.name, slug: c.slug, productCount: prods.filter((p) => p.categoryId === c.id).length, icon: c.icon, color: c.color, sortOrder: c.sortOrder }))
+  }, [demoBusinessId])
+
+  const businessCustomers = useMemo(() => getDemoCustomers(demoBusinessId).map((c) => ({
+    id: c.id, name: c.name, phone: c.phone, email: c.email, totalOrders: c.totalOrders, totalSpent: c.totalSpent, loyaltyPoints: c.loyaltyPoints, tier: c.tier, lastOrder: c.lastOrder,
+  })), [demoBusinessId])
+
+  const businessOrders = useMemo(() => getDemoBusinessOrders(demoBusinessId), [demoBusinessId])
+
   // ---- Core State ----
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");

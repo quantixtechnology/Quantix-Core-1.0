@@ -1,9 +1,17 @@
 "use client"
 
-import { categories, products } from "@/components/business/data"
+import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
 
-// Re-export from business data
-export { categories, products }
+// Re-export context-aware demo data (grocery by default for customer app)
+export const categories = getDemoCategories("standard_grocery").map((c) => ({
+  id: c.id, name: c.name, slug: c.slug, productCount: 0, icon: c.icon, color: c.color, sortOrder: c.sortOrder,
+}))
+
+export const products = getDemoProducts("standard_grocery").map((p) => ({
+  id: p.id, name: p.name, slug: p.slug, categoryId: p.categoryId, category: p.category,
+  status: p.status, isVeg: p.isVeg, isFeatured: p.isFeatured, image: p.image,
+  variants: p.variants.map((v) => ({ id: v.id, name: v.name, sku: v.sku, mrp: v.mrp, price: v.price, stock: v.stock, isDefault: v.isDefault })),
+}))
 
 // Banner data for home carousel
 export const banners = [

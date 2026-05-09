@@ -1170,6 +1170,142 @@ const carwashOrders: DemoBusinessOrder[] = [
 ]
 
 // ============================================================================
+// CATEGORY REVENUE DATA — Per Business Type
+// ============================================================================
+const groceryCategoryRevenueData = [
+  { category: "Fruits & Vegetables", revenue: 42500, percentage: "22%" },
+  { category: "Dairy & Bakery", revenue: 31200, percentage: "16%" },
+  { category: "Snacks & Beverages", revenue: 28700, percentage: "15%" },
+  { category: "Rice & Grains", revenue: 24100, percentage: "13%" },
+  { category: "Spices & Masala", revenue: 16500, percentage: "9%" },
+  { category: "Personal Care", revenue: 14200, percentage: "7%" },
+  { category: "Household Items", revenue: 15800, percentage: "8%" },
+  { category: "Frozen Foods", revenue: 9800, percentage: "5%" },
+  { category: "Others", revenue: 5200, percentage: "5%" },
+]
+
+const laundryCategoryRevenueData = [
+  { category: "Wash & Fold", revenue: 18500, percentage: "42%" },
+  { category: "Dry Cleaning", revenue: 15200, percentage: "35%" },
+  { category: "Ironing", revenue: 10300, percentage: "23%" },
+]
+
+const proLaundryCategoryRevenueData = [
+  { category: "Standard Wash", revenue: 14200, percentage: "22%" },
+  { category: "Weight Wash", revenue: 18500, percentage: "29%" },
+  { category: "Subscription Wash", revenue: 16800, percentage: "26%" },
+  { category: "Pickup & Delivery", revenue: 8900, percentage: "14%" },
+  { category: "Ironing", revenue: 5600, percentage: "9%" },
+]
+
+const carwashCategoryRevenueData = [
+  { category: "Subscription Wash", revenue: 38500, percentage: "32%" },
+  { category: "Pickup Wash", revenue: 22200, percentage: "18%" },
+  { category: "Accessories", revenue: 8400, percentage: "7%" },
+  { category: "Appointment Wash", revenue: 18900, percentage: "16%" },
+  { category: "Detailing Service", revenue: 32800, percentage: "27%" },
+]
+
+// ============================================================================
+// PAYMENT SUMMARY — Per Business Type
+// ============================================================================
+const groceryPaymentSummary = [
+  { method: "UPI", count: 156, amount: 89400, percentage: 52 },
+  { method: "Cash", count: 68, amount: 38200, percentage: 23 },
+  { method: "Card", count: 48, amount: 27300, percentage: 16 },
+  { method: "COD", count: 21, amount: 7500, percentage: 9 },
+]
+
+const laundryPaymentSummary = [
+  { method: "UPI", count: 82, amount: 32800, percentage: 55 },
+  { method: "Cash", count: 35, amount: 12600, percentage: 21 },
+  { method: "Card", count: 22, amount: 9900, percentage: 17 },
+  { method: "Wallet", count: 10, amount: 4200, percentage: 7 },
+]
+
+const proLaundryPaymentSummary = [
+  { method: "UPI", count: 128, amount: 62400, percentage: 48 },
+  { method: "Card", count: 65, amount: 35800, percentage: 28 },
+  { method: "Cash", count: 42, amount: 18900, percentage: 15 },
+  { method: "Wallet", count: 18, amount: 8100, percentage: 9 },
+]
+
+const carwashPaymentSummary = [
+  { method: "UPI", count: 145, amount: 72500, percentage: 45 },
+  { method: "Card", count: 78, amount: 45600, percentage: 28 },
+  { method: "Cash", count: 52, amount: 28400, percentage: 18 },
+  { method: "Wallet", count: 15, amount: 12000, percentage: 9 },
+]
+
+// ============================================================================
+// ORDER TYPE DATA — Per Business Type
+// ============================================================================
+const groceryOrderTypeData = [
+  { name: "Delivery", value: 198, color: "#10B981" },
+  { name: "POS", value: 87, color: "#3B82F6" },
+  { name: "Takeaway", value: 34, color: "#F59E0B" },
+]
+
+const laundryOrderTypeData = [
+  { name: "Pickup", value: 145, color: "#10B981" },
+  { name: "Delivery", value: 82, color: "#3B82F6" },
+  { name: "Walk-in", value: 28, color: "#F59E0B" },
+]
+
+const proLaundryOrderTypeData = [
+  { name: "Pickup", value: 120, color: "#10B981" },
+  { name: "Delivery", value: 95, color: "#3B82F6" },
+  { name: "Subscription", value: 62, color: "#8B5CF6" },
+  { name: "Walk-in", value: 18, color: "#F59E0B" },
+]
+
+const carwashOrderTypeData = [
+  { name: "Subscription", value: 85, color: "#8B5CF6" },
+  { name: "Pickup", value: 68, color: "#10B981" },
+  { name: "Appointment", value: 52, color: "#F59E0B" },
+  { name: "Walk-in", value: 34, color: "#3B82F6" },
+  { name: "POS", value: 22, color: "#EC4899" },
+]
+
+// ============================================================================
+// ORDER STATUS DATA — Per Business Type
+// ============================================================================
+const groceryOrderStatusData = [
+  { status: "Pending", count: 12, percentage: "4.0%" },
+  { status: "Confirmed", count: 18, percentage: "6.0%" },
+  { status: "Processing", count: 24, percentage: "8.0%" },
+  { status: "Out for Delivery", count: 15, percentage: "5.0%" },
+  { status: "Delivered", count: 210, percentage: "70.0%" },
+  { status: "Cancelled", count: 21, percentage: "7.0%" },
+]
+
+const laundryOrderStatusData = [
+  { status: "Pending Pickup", count: 8, percentage: "5.3%" },
+  { status: "In Progress", count: 22, percentage: "14.7%" },
+  { status: "Ready for Delivery", count: 15, percentage: "10.0%" },
+  { status: "Delivered", count: 95, percentage: "63.3%" },
+  { status: "Cancelled", count: 10, percentage: "6.7%" },
+]
+
+const proLaundryOrderStatusData = [
+  { status: "Pending Pickup", count: 14, percentage: "4.7%" },
+  { status: "In Progress", count: 35, percentage: "11.7%" },
+  { status: "Ready for Delivery", count: 22, percentage: "7.3%" },
+  { status: "Active Subscription", count: 42, percentage: "14.0%" },
+  { status: "Delivered/Completed", count: 172, percentage: "57.3%" },
+  { status: "Cancelled", count: 15, percentage: "5.0%" },
+]
+
+const carwashOrderStatusData = [
+  { status: "Pending", count: 10, percentage: "4.0%" },
+  { status: "Scheduled", count: 28, percentage: "11.2%" },
+  { status: "In Progress", count: 18, percentage: "7.2%" },
+  { status: "Active Subscription", count: 45, percentage: "18.0%" },
+  { status: "Completed", count: 138, percentage: "55.2%" },
+  { status: "Cancelled", count: 11, percentage: "4.4%" },
+]
+
+// ============================================================================
 // DATA ACCESS FUNCTIONS
 // ============================================================================
 
@@ -1319,5 +1455,65 @@ export function getDemoBusinessOrders(demoBusinessId: string): DemoBusinessOrder
       return carwashOrders
     default:
       return groceryOrders
+  }
+}
+
+export function getDemoCategoryRevenueData(demoBusinessId: string): { category: string; revenue: number; percentage: string }[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryCategoryRevenueData
+    case "standard_laundry":
+      return laundryCategoryRevenueData
+    case "pro_laundry":
+      return proLaundryCategoryRevenueData
+    case "pro_carwash":
+      return carwashCategoryRevenueData
+    default:
+      return groceryCategoryRevenueData
+  }
+}
+
+export function getDemoPaymentSummary(demoBusinessId: string): { method: string; count: number; amount: number; percentage: number }[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryPaymentSummary
+    case "standard_laundry":
+      return laundryPaymentSummary
+    case "pro_laundry":
+      return proLaundryPaymentSummary
+    case "pro_carwash":
+      return carwashPaymentSummary
+    default:
+      return groceryPaymentSummary
+  }
+}
+
+export function getDemoOrderTypeData(demoBusinessId: string): { name: string; value: number; color: string }[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryOrderTypeData
+    case "standard_laundry":
+      return laundryOrderTypeData
+    case "pro_laundry":
+      return proLaundryOrderTypeData
+    case "pro_carwash":
+      return carwashOrderTypeData
+    default:
+      return groceryOrderTypeData
+  }
+}
+
+export function getDemoOrderStatusData(demoBusinessId: string): { status: string; count: number; percentage: string }[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryOrderStatusData
+    case "standard_laundry":
+      return laundryOrderStatusData
+    case "pro_laundry":
+      return proLaundryOrderStatusData
+    case "pro_carwash":
+      return carwashOrderStatusData
+    default:
+      return groceryOrderStatusData
   }
 }

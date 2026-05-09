@@ -28,8 +28,20 @@ import { setBusinessContext } from "@/lib/api-client"
 import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
+import { useAdminStore } from "@/stores/admin-store"
+import {
+  getDemoDailySales,
+  getDemoHourlySales,
+  getDemoTopProducts,
+  getDemoCategoryRevenueData,
+  getDemoPaymentSummary,
+  getDemoOrderTypeData,
+  getDemoOrderStatusData,
+} from "@/lib/demo-data"
 
 const BUSINESS_ID = "biz_1"
+
+const PAYMENT_COLORS = ["#10B981", "#F59E0B", "#6366F1", "#EF4444", "#8B5CF6"]
 
 // ─── Chart Configs ──────────────────────────────────────────────────────────
 
@@ -43,54 +55,28 @@ const hourlyChartConfig: ChartConfig = {
   orders: { label: "Orders", color: "#F59E0B" },
 }
 
-const orderTypeChartConfig: ChartConfig = {
-  Delivery: { label: "Delivery", color: "#10B981" },
-  POS: { label: "POS", color: "#3B82F6" },
-  "Takeaway": { label: "Takeaway", color: "#F59E0B" },
+// Chart configs are built dynamically based on business context
+function buildOrderTypeChartConfig(orderTypes: { name: string; color: string }[]): ChartConfig {
+  const config: ChartConfig = {}
+  for (const ot of orderTypes) {
+    config[ot.name] = { label: ot.name, color: ot.color }
+  }
+  return config
 }
 
-const paymentChartConfig: ChartConfig = {
-  UPI: { label: "UPI", color: "#10B981" },
-  Cash: { label: "Cash", color: "#F59E0B" },
-  Card: { label: "Card", color: "#6366F1" },
-  COD: { label: "COD", color: "#EF4444" },
+function buildPaymentChartConfig(payments: { method: string }[]): ChartConfig {
+  const config: ChartConfig = {}
+  payments.forEach((p, i) => {
+    config[p.method] = { label: p.method, color: PAYMENT_COLORS[i % PAYMENT_COLORS.length] }
+  })
+  return config
 }
-
-const PAYMENT_COLORS = ["#10B981", "#F59E0B", "#6366F1", "#EF4444"]
-const ORDER_TYPE_COLORS = ["#10B981", "#3B82F6", "#F59E0B"]
-
-// ─── Static Data (not dependent on API) ─────────────────────────────────────
-
-const orderTypeData = [
-  { name: "Delivery", value: 198, color: "#10B981" },
-  { name: "POS", value: 87, color: "#3B82F6" },
-  { name: "Takeaway", value: 34, color: "#F59E0B" },
-]
-
-const orderStatusData = [
-  { status: "Pending", count: 12, percentage: "4.0%" },
-  { status: "Confirmed", count: 18, percentage: "6.0%" },
-  { status: "Preparing", count: 24, percentage: "8.0%" },
-  { status: "Out for Delivery", count: 15, percentage: "5.0%" },
-  { status: "Delivered", count: 210, percentage: "70.0%" },
-  { status: "Cancelled", count: 21, percentage: "7.0%" },
-]
-
-const categoryRevenueData = [
-  { category: "Fruits & Vegetables", revenue: 42500, percentage: "22%" },
-  { category: "Dairy & Eggs", revenue: 31200, percentage: "16%" },
-  { category: "Snacks & Chips", revenue: 28700, percentage: "15%" },
-  { category: "Rice & Grains", revenue: 24100, percentage: "13%" },
-  { category: "Beverages", revenue: 19800, percentage: "10%" },
-  { category: "Spices & Masala", revenue: 16500, percentage: "9%" },
-  { category: "Cleaning", revenue: 14200, percentage: "7%" },
-  { category: "Others", revenue: 15100, percentage: "8%" },
-]
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function ReportsView() {
   const [dateRange, setDateRange] = useState("7d")
+  const { demoBusinessId } = useAdminStore()
 
   // Set business context on mount
   useEffect(() => {
@@ -106,60 +92,31 @@ export function ReportsView() {
   // Extract stats
   const stats = statsData?.data
 
-  // Derive report data from API orders
-  const dailySalesData = useMemo(() => {
-    // Fallback data when no API data available
-    return [
-      { date: "Mon", revenue: 14200, orders: 32 },
-      { date: "Tue", revenue: 18500, orders: 42 },
-      { date: "Wed", revenue: 15800, orders: 38 },
-      { date: "Thu", revenue: 21300, orders: 48 },
-      { date: "Fri", revenue: 19800, orders: 45 },
-      { date: "Sat", revenue: 24500, orders: 55 },
-      { date: "Sun", revenue: 22300, orders: 50 },
-    ]
-  }, [])
+  // ---- Context-aware demo data ----
+  const dailySalesData = useMemo(() => getDemoDailySales(demoBusinessId), [demoBusinessId])
 
-  const hourlySalesData = useMemo(() => {
-    return [
-      { hour: "8AM", revenue: 1200 },
-      { hour: "9AM", revenue: 2800 },
-      { hour: "10AM", revenue: 3500 },
-      { hour: "11AM", revenue: 4200 },
-      { hour: "12PM", revenue: 5100 },
-      { hour: "1PM", revenue: 4800 },
-      { hour: "2PM", revenue: 3200 },
-      { hour: "3PM", revenue: 2800 },
-      { hour: "4PM", revenue: 2400 },
-      { hour: "5PM", revenue: 3100 },
-      { hour: "6PM", revenue: 4500 },
-      { hour: "7PM", revenue: 5200 },
-      { hour: "8PM", revenue: 3800 },
-      { hour: "9PM", revenue: 2100 },
-    ]
-  }, [])
+  const hourlySalesData = useMemo(() => getDemoHourlySales(demoBusinessId), [demoBusinessId])
 
-  const topProducts = useMemo(() => {
-    return [
-      { name: "Organic Milk 1L", sold: 156, revenue: 18720 },
-      { name: "Fresh Bread", sold: 142, revenue: 8520 },
-      { name: "Bananas (1 dozen)", sold: 128, revenue: 5120 },
-      { name: "Eggs (12 pack)", sold: 118, revenue: 7080 },
-      { name: "Rice Basmati 5kg", sold: 95, revenue: 14250 },
-      { name: "Onions 1kg", sold: 88, revenue: 2640 },
-      { name: "Tomatoes 1kg", sold: 82, revenue: 2050 },
-      { name: "Cooking Oil 1L", sold: 76, revenue: 9120 },
-    ]
-  }, [])
+  const topProducts = useMemo(() => getDemoTopProducts(demoBusinessId), [demoBusinessId])
 
-  const paymentSummary = useMemo(() => {
-    return [
-      { method: "UPI", count: 156, amount: 89400, percentage: 52 },
-      { method: "Cash", count: 68, amount: 38200, percentage: 23 },
-      { method: "Card", count: 48, amount: 27300, percentage: 16 },
-      { method: "COD", count: 21, amount: 7500, percentage: 9 },
-    ]
-  }, [])
+  const paymentSummary = useMemo(() => getDemoPaymentSummary(demoBusinessId), [demoBusinessId])
+
+  const orderTypeData = useMemo(() => getDemoOrderTypeData(demoBusinessId), [demoBusinessId])
+
+  const orderStatusData = useMemo(() => getDemoOrderStatusData(demoBusinessId), [demoBusinessId])
+
+  const categoryRevenueData = useMemo(() => getDemoCategoryRevenueData(demoBusinessId), [demoBusinessId])
+
+  // Dynamic chart configs based on business data
+  const orderTypeChartConfig = useMemo(
+    () => buildOrderTypeChartConfig(orderTypeData),
+    [orderTypeData]
+  )
+
+  const paymentChartConfig = useMemo(
+    () => buildPaymentChartConfig(paymentSummary),
+    [paymentSummary]
+  )
 
   // Keep derived data calculations
   const totalWeekRevenue = dailySalesData.reduce((s, d) => s + d.revenue, 0)
@@ -411,11 +368,13 @@ export function ReportsView() {
                           <div className="flex items-center gap-2">
                             <Badge
                               variant={
-                                row.status === "Delivered"
+                                row.status === "Delivered" || row.status === "Delivered/Completed" || row.status === "Completed"
                                   ? "default"
                                   : row.status === "Cancelled"
                                     ? "destructive"
-                                    : "secondary"
+                                    : row.status === "Out for Delivery" || row.status === "Ready for Delivery"
+                                      ? "outline"
+                                      : "secondary"
                               }
                               className="text-xs"
                             >
@@ -603,64 +562,40 @@ export function ReportsView() {
             </Card>
           </div>
 
-          {/* UPI vs Cash vs Card Comparison */}
+          {/* Top Payment Methods Comparison */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">UPI vs Cash vs Card Comparison</CardTitle>
-              <CardDescription>Side-by-side comparison of major payment methods</CardDescription>
+              <CardTitle className="text-base">Top Payment Methods Comparison</CardTitle>
+              <CardDescription>Side-by-side comparison of payment methods</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 sm:grid-cols-3">
-                {/* UPI */}
-                <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-emerald-500" />
-                    <span className="font-semibold text-emerald-700">UPI</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className="text-2xl font-bold text-emerald-900">₹89,400</p>
-                    <p className="text-sm text-emerald-600">156 transactions</p>
-                    <p className="text-sm text-emerald-600">Avg ₹573 / transaction</p>
-                  </div>
-                  <div className="h-2 rounded-full bg-emerald-200 overflow-hidden">
-                    <div className="h-full rounded-full bg-emerald-500" style={{ width: "52%" }} />
-                  </div>
-                  <p className="text-xs text-emerald-600 font-medium">52% of total payments</p>
-                </div>
-
-                {/* Cash */}
-                <div className="rounded-xl border-2 border-amber-200 bg-amber-50/50 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-amber-500" />
-                    <span className="font-semibold text-amber-700">Cash</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className="text-2xl font-bold text-amber-900">₹38,200</p>
-                    <p className="text-sm text-amber-600">68 transactions</p>
-                    <p className="text-sm text-amber-600">Avg ₹562 / transaction</p>
-                  </div>
-                  <div className="h-2 rounded-full bg-amber-200 overflow-hidden">
-                    <div className="h-full rounded-full bg-amber-500" style={{ width: "23%" }} />
-                  </div>
-                  <p className="text-xs text-amber-600 font-medium">23% of total payments</p>
-                </div>
-
-                {/* Card */}
-                <div className="rounded-xl border-2 border-violet-200 bg-violet-50/50 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-violet-500" />
-                    <span className="font-semibold text-violet-700">Card</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className="text-2xl font-bold text-violet-900">₹27,300</p>
-                    <p className="text-sm text-violet-600">48 transactions</p>
-                    <p className="text-sm text-violet-600">Avg ₹569 / transaction</p>
-                  </div>
-                  <div className="h-2 rounded-full bg-violet-200 overflow-hidden">
-                    <div className="h-full rounded-full bg-violet-500" style={{ width: "16%" }} />
-                  </div>
-                  <p className="text-xs text-violet-600 font-medium">16% of total payments</p>
-                </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {paymentSummary.slice(0, 3).map((item, index) => {
+                  const colorClasses = [
+                    { border: "border-emerald-200", bg: "bg-emerald-50/50", dot: "bg-emerald-500", title: "text-emerald-700", amount: "text-emerald-900", sub: "text-emerald-600", barBg: "bg-emerald-200", barFill: "bg-emerald-500", label: "text-emerald-600" },
+                    { border: "border-amber-200", bg: "bg-amber-50/50", dot: "bg-amber-500", title: "text-amber-700", amount: "text-amber-900", sub: "text-amber-600", barBg: "bg-amber-200", barFill: "bg-amber-500", label: "text-amber-600" },
+                    { border: "border-violet-200", bg: "bg-violet-50/50", dot: "bg-violet-500", title: "text-violet-700", amount: "text-violet-900", sub: "text-violet-600", barBg: "bg-violet-200", barFill: "bg-violet-500", label: "text-violet-600" },
+                  ]
+                  const c = colorClasses[index] || colorClasses[0]
+                  const avgPerTxn = item.count > 0 ? Math.round(item.amount / item.count) : 0
+                  return (
+                    <div key={item.method} className={`rounded-xl border-2 ${c.border} ${c.bg} p-4 space-y-3`}>
+                      <div className="flex items-center gap-2">
+                        <div className={`h-3 w-3 rounded-full ${c.dot}`} />
+                        <span className={`font-semibold ${c.title}`}>{item.method}</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className={`text-2xl font-bold ${c.amount}`}>₹{item.amount.toLocaleString()}</p>
+                        <p className={`text-sm ${c.sub}`}>{item.count} transactions</p>
+                        <p className={`text-sm ${c.sub}`}>Avg ₹{avgPerTxn.toLocaleString()} / transaction</p>
+                      </div>
+                      <div className={`h-2 rounded-full ${c.barBg} overflow-hidden`}>
+                        <div className={`h-full rounded-full ${c.barFill}`} style={{ width: `${item.percentage}%` }} />
+                      </div>
+                      <p className={`text-xs ${c.label} font-medium`}>{item.percentage}% of total payments</p>
+                    </div>
+                  )
+                })}
               </div>
             </CardContent>
           </Card>

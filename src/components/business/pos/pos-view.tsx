@@ -53,11 +53,12 @@ import {
   Tag,
   Percent,
 } from "lucide-react";
-import { products, categories, businessCustomers } from "@/components/business/data";
 import { useProducts, useCategories, useCreateOrder } from "@/hooks/use-api";
 import { setBusinessContext } from "@/lib/api-client";
 import { showSuccess, showError } from "@/lib/toast-utils";
 import { PageHeader } from "@/components/admin/shared/page-header";
+import { useAdminStore } from "@/stores/admin-store";
+import { getDemoProducts, getDemoCategories, getDemoCustomers } from "@/lib/demo-data";
 
 // ============================================================================
 // Types
@@ -105,6 +106,61 @@ function generateBillNumber(): string {
 // ============================================================================
 
 export function POSView() {
+  // Get demo business context
+  const { demoBusinessId } = useAdminStore()
+
+  // Demo data — context-aware fallbacks
+  const demoProductsFallback = useMemo(() => {
+    return getDemoProducts(demoBusinessId).map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      categoryId: p.categoryId,
+      category: p.category,
+      status: p.status,
+      isVeg: p.isVeg,
+      isFeatured: p.isFeatured,
+      image: p.image,
+      variants: p.variants.map((v) => ({
+        id: v.id,
+        name: v.name,
+        sku: v.sku,
+        mrp: v.mrp,
+        price: v.price,
+        stock: v.stock,
+        isDefault: v.isDefault,
+      })),
+    }))
+  }, [demoBusinessId])
+
+  const demoCategoriesFallback = useMemo(() => {
+    const cats = getDemoCategories(demoBusinessId)
+    const prods = getDemoProducts(demoBusinessId)
+    return cats.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      productCount: prods.filter((p) => p.categoryId === c.id).length,
+      icon: c.icon,
+      color: c.color,
+      sortOrder: c.sortOrder,
+    }))
+  }, [demoBusinessId])
+
+  const businessCustomers = useMemo(() => {
+    return getDemoCustomers(demoBusinessId).map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      email: c.email,
+      totalOrders: c.totalOrders,
+      totalSpent: c.totalSpent,
+      loyaltyPoints: c.loyaltyPoints,
+      tier: c.tier,
+      lastOrder: c.lastOrder,
+    }))
+  }, [demoBusinessId])
+
   // Set business context on mount
   useEffect(() => {
     setBusinessContext(BUSINESS_ID)
@@ -115,9 +171,9 @@ export function POSView() {
   const { data: categoriesData } = useCategories(BUSINESS_ID)
   const createOrderMutation = useCreateOrder()
 
-  // Map API products data (fall back to mock data if API hasn't loaded)
+  // Map API products data (fall back to demo data if API hasn't loaded)
   const apiProducts = useMemo(() => {
-    if (!productsData?.data || !Array.isArray(productsData.data)) return products
+    if (!productsData?.data || !Array.isArray(productsData.data)) return demoProductsFallback
     return productsData.data.map((p: Record<string, unknown>) => ({
       ...p,
       id: String(p.id || ""),
@@ -139,10 +195,10 @@ export function POSView() {
           }))
         : undefined,
     }))
-  }, [productsData])
+  }, [productsData, demoProductsFallback])
 
   const apiCategories = useMemo(() => {
-    if (!categoriesData?.data || !Array.isArray(categoriesData.data)) return categories
+    if (!categoriesData?.data || !Array.isArray(categoriesData.data)) return demoCategoriesFallback
     return categoriesData.data.map((c: Record<string, unknown>) => ({
       ...c,
       id: String(c.id || ""),
@@ -150,7 +206,7 @@ export function POSView() {
       slug: String(c.slug || ""),
       productCount: Number(c.productCount || 0),
     }))
-  }, [categoriesData])
+  }, [categoriesData, demoCategoriesFallback])
 
   // ---- State ----
   const [searchQuery, setSearchQuery] = useState("");
