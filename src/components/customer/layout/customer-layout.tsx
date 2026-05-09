@@ -3,10 +3,13 @@
 import React from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import { getDemoBusinessName } from "@/lib/demo-data"
 import { Home, Grid3X3, ShoppingCart, ClipboardList, User, Search, Bell } from "lucide-react"
 
 export function CustomerLayout({ children }: { children: React.ReactNode }) {
-  const { customerPage, setCustomerPage, customerLoggedIn, setCustomerPage: navigate } = useAdminStore()
+  const { customerPage, setCustomerPage, customerLoggedIn, setCustomerPage: navigate, demoBusinessId } = useAdminStore()
+  const businessName = getDemoBusinessName(demoBusinessId)
+  const businessInitials = businessName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const totalItems = useCartStore((s) => s.totalItems())
 
   const handleTabPress = (page: "home" | "products" | "cart" | "orders" | "profile") => {
@@ -46,11 +49,11 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
           <header className="sticky top-0 z-50 bg-emerald-500 text-white px-4 py-3 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-                <span className="text-emerald-600 font-bold text-sm">FM</span>
+                <span className="text-emerald-600 font-bold text-sm">{businessInitials}</span>
               </div>
               <div>
-                <h1 className="text-sm font-bold leading-tight">FreshMart</h1>
-                <p className="text-[10px] text-emerald-100 leading-tight">Grocers</p>
+                <h1 className="text-sm font-bold leading-tight">{businessName.split(' ')[0]}</h1>
+                <p className="text-[10px] text-emerald-100 leading-tight">{businessName.split(' ').slice(1).join(' ') || 'Store'}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">

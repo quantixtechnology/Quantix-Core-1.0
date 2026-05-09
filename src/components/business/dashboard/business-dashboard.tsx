@@ -29,7 +29,8 @@ import {
   queryKeys,
 } from "@/hooks/use-api"
 import { useOrderUpdates } from "@/hooks/use-realtime"
-import { setBusinessContext } from "@/lib/api-client"
+import { useAdminStore } from "@/stores/admin-store"
+import { getDemoBusinessName } from "@/lib/demo-data"
 import { showSuccess, showError, showOrderUpdate } from "@/lib/toast-utils"
 import { ConnectionStatusBadge } from "@/components/ui/connection-status"
 import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
@@ -110,13 +111,10 @@ const fallbackRecentActivity = [
 ]
 
 export function BusinessDashboard() {
+  const { demoBusinessId } = useAdminStore()
+  const businessName = getDemoBusinessName(demoBusinessId)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const queryClient = useQueryClient()
-
-  // Set business context on mount
-  useEffect(() => {
-    setBusinessContext(BUSINESS_ID)
-  }, [])
 
   // Fetch business stats with auto-refresh every 30 seconds
   const { data: statsData, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useBusinessStats(BUSINESS_ID, {
@@ -175,7 +173,7 @@ export function BusinessDashboard() {
       <div className="space-y-6">
         <PageHeader
           title="Dashboard"
-          description="FreshMart Grocers"
+          description={businessName}
           icon={LayoutDashboard}
           action={
             <ConnectionStatusBadge size="sm" />
@@ -195,7 +193,7 @@ export function BusinessDashboard() {
       {/* Page Header */}
       <PageHeader
         title="Dashboard"
-        description="FreshMart Grocers"
+        description={businessName}
         icon={LayoutDashboard}
         action={
           <div className="flex items-center gap-3">

@@ -1,12 +1,9 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { useProducts, useCategories } from "@/hooks/use-api"
-import { setBusinessContext } from "@/lib/api-client"
-import { Skeleton } from "@/components/ui/skeleton"
-import { ErrorState } from "@/components/ui/loading-states"
+import { getDemoCategories, getDemoProducts, getDemoBusinessName } from "@/lib/demo-data"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -84,24 +81,44 @@ interface CategoryItem {
 }
 
 export function CustomerHome() {
-  const { setCustomerPage, setSelectedProductId, customerLoggedIn } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, customerLoggedIn, demoBusinessId } = useAdminStore()
+  const businessName = getDemoBusinessName(demoBusinessId)
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [currentBanner, setCurrentBanner] = useState(0)
 
-  // Set business context before API calls
-  useEffect(() => {
-    setBusinessContext(BIZ_ID)
-  }, [])
+  // ---- Demo data ----
+  const demoCategories: CategoryItem[] = useMemo(() => {
+    return getDemoCategories(demoBusinessId).map((c) => ({
+      id: c.id,
+      name: c.name,
+      icon: c.icon,
+      color: c.color,
+      slug: c.slug,
+      productCount: 0,
+    }))
+  }, [demoBusinessId])
 
-  // Fetch products
-  const { data: productsData, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useProducts(BIZ_ID, {
-    status: "ACTIVE",
-    limit: 20,
-  })
-
-  // Fetch categories
-  const { data: categoriesData } = useCategories(BIZ_ID)
+  const demoProducts = useMemo(() => {
+    return getDemoProducts(demoBusinessId).filter((p) => p.status === "ACTIVE").map((p) => ({
+      id: p.id,
+      name: p.name,
+      categoryId: p.categoryId,
+      category: p.category,
+      status: p.status,
+      isVeg: p.isVeg,
+      isFeatured: p.isFeatured,
+      image: p.image,
+      variants: p.variants.map((v) => ({
+        id: v.id,
+        name: v.name,
+        price: v.price,
+        mrp: v.mrp,
+        stock: v.stock,
+        isDefault: v.isDefault,
+      })),
+    }))
+  }, [demoBusinessId])
 
   // Auto-scroll banner
   useEffect(() => {
@@ -111,49 +128,9 @@ export function CustomerHome() {
     return () => clearInterval(interval)
   }, [])
 
-  // Parse API products into a usable format
-  const apiProducts = React.useMemo(() => {
-    if (!productsData?.data) return []
-    const prods = Array.isArray(productsData.data) ? productsData.data : []
-    return prods.map((p: Record<string, unknown>) => ({
-      id: p.id as string,
-      name: p.name as string,
-      categoryId: (p.category as Record<string, string>)?.id || "",
-      category: (p.category as Record<string, string>)?.name || "",
-      status: p.status as string,
-      isVeg: p.isVeg as boolean | null,
-      isFeatured: p.isFeatured as boolean,
-      image: Array.isArray(p.images) && p.images.length > 0 ? (p.images[0] as string) : "",
-      variants: Array.isArray(p.variants)
-        ? (p.variants as Array<Record<string, unknown>>).map((v) => ({
-            id: v.id as string,
-            name: v.name as string,
-            price: v.price as number,
-            mrp: v.mrp as number,
-            stock: (v as Record<string, unknown>).stock as number | undefined,
-            isDefault: (v as Record<string, unknown>).isDefault as boolean | undefined,
-          }))
-        : [],
-    }))
-  }, [productsData])
-
-  // Parse categories from API or use fallback
-  const categories: CategoryItem[] = React.useMemo(() => {
-    if (categoriesData?.data && Array.isArray(categoriesData.data) && categoriesData.data.length > 0) {
-      return (categoriesData.data as Array<Record<string, unknown>>).map((c) => ({
-        id: c.id as string,
-        name: c.name as string,
-        icon: (c as Record<string, unknown>).icon as string | undefined,
-        color: (c as Record<string, unknown>).color as string | undefined,
-        slug: (c as Record<string, unknown>).slug as string | undefined,
-        productCount: (c as Record<string, unknown>).productCount as number | undefined,
-      }))
-    }
-    return fallbackCategories
-  }, [categoriesData])
-
-  const featuredProducts = apiProducts.filter((p) => p.isFeatured && p.status === "ACTIVE")
-  const recentProducts = apiProducts.filter((p) => p.status === "ACTIVE").slice(0, 4)
+  const categories = demoCategories
+  const featuredProducts = demoProducts.filter((p) => p.isFeatured)
+  const recentProducts = demoProducts.slice(0, 4)
 
   const getCartQty = useCallback(
     (productId: string, variantId: string) => {
@@ -196,7 +173,7 @@ export function CustomerHome() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
-            placeholder="Search for groceries..."
+            placeholder={`Search for ${businessName.toLowerCase()}...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setCustomerPage("products")}
@@ -335,29 +312,7 @@ export function CustomerHome() {
           </button>
         </div>
 
-        {productsLoading ? (
-          <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-36 bg-white border border-gray-100 rounded-xl overflow-hidden">
-                <Skeleton className="h-28 w-full" />
-                <div className="p-2 space-y-2">
-                  <Skeleton className="h-3 w-3/4" />
-                  <Skeleton className="h-2 w-1/2" />
-                  <Skeleton className="h-6 w-full rounded-lg" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : productsError ? (
-          <div className="px-4">
-            <ErrorState
-              title="Could not load products"
-              description="Something went wrong while fetching products."
-              onRetry={() => refetchProducts()}
-              className="py-8"
-            />
-          </div>
-        ) : featuredProducts.length === 0 ? (
+        {featuredProducts.length === 0 ? (
           <div className="px-4 text-center py-8 text-xs text-gray-400">
             No featured products available right now.
           </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatusBadge } from "@/components/admin/shared/status-badge"
 import { EmptyState } from "@/components/ui/loading-states"
@@ -52,15 +52,14 @@ import {
   Tag,
   Barcode,
   DollarSign,
-  ToggleLeft,
   ToggleRight,
   Grid3X3,
   List,
+  Workflow,
 } from "lucide-react"
-import { useProducts, useCategories } from "@/hooks/use-api"
-import { setBusinessContext } from "@/lib/api-client"
+import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS } from "@/stores/admin-store"
+import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
 import { showSuccess, showError } from "@/lib/toast-utils"
-import { useQueryClient } from "@tanstack/react-query"
 
 // Local type definitions (replacing mock data types)
 type ProductStatus = "ACTIVE" | "INACTIVE" | "DRAFT" | "OUT_OF_STOCK"
@@ -102,6 +101,7 @@ interface Category {
   icon: string
   color: string
   sortOrder: number
+  workflow?: WorkflowType
 }
 
 // ---------------------------------------------------------------------------
@@ -179,94 +179,72 @@ function CategoryIcon({ icon, color, name }: { icon: string; color: string; name
 // Main Component
 // ---------------------------------------------------------------------------
 export function ProductsView() {
-  // Set business context on mount
-  useEffect(() => {
-    setBusinessContext(BUSINESS_ID)
-  }, [])
+  // Get demo business context
+  const { demoBusinessId } = useAdminStore()
 
-  const queryClient = useQueryClient()
-
-  // ---- API hooks ----
-  const { data: productsData, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useProducts(BUSINESS_ID)
-  const { data: categoriesData, isLoading: categoriesLoading } = useCategories(BUSINESS_ID)
-
-  // Map API data to local types
-  const apiProducts: Product[] = useMemo(() => {
-    if (!productsData?.data) return []
-    const rawData = productsData.data
-    if (!Array.isArray(rawData)) return []
-    return rawData.map((p: Record<string, unknown>) => {
-      // Handle category: API returns nested object { id, name, slug } or string
-      const catObj = p.category as Record<string, unknown> | undefined
-      const categoryId = String(p.categoryId || catObj?.id || "")
-      const categoryName = catObj && typeof catObj === "object"
-        ? String(catObj.name || "Uncategorized")
-        : String(p.categoryName || p.category || "Uncategorized")
-      return {
-        id: String(p.id || ""),
-        name: String(p.name || ""),
-        slug: String(p.slug || ""),
-        categoryId,
-        category: categoryName,
-        status: String(p.status || "ACTIVE") as ProductStatus,
-        isVeg: Boolean(p.isVeg !== undefined ? p.isVeg : true),
-        isFeatured: Boolean(p.isFeatured || false),
-        image: String(p.image || ""),
-      variants: Array.isArray(p.variants)
-        ? p.variants.map((v: Record<string, unknown>, i: number) => ({
-            id: String(v.id || `var_${i}`),
-            name: String(v.name || "Default"),
-            sku: String(v.sku || ""),
-            mrp: Number(v.mrp || 0),
-            price: Number(v.price || v.sellingPrice || 0),
-            stock: Number(v.stock || v.inventory || 0),
-            isDefault: Boolean(v.isDefault || i === 0),
-          }))
-        : [{
-            id: "var_default",
-            name: "Default",
-            sku: String(p.sku || ""),
-            mrp: Number(p.mrp || p.baseMrp || 0),
-            price: Number(p.price || p.sellingPrice || p.basePrice || 0),
-            stock: Number(p.stock || p.inventory || 0),
-            isDefault: true,
-          }],
-      }
-    })
-  }, [productsData])
-
-  const apiCategories: Category[] = useMemo(() => {
-    if (!categoriesData?.data) return []
-    const rawData = categoriesData.data
-    if (!Array.isArray(rawData)) return []
-    return rawData.map((c: Record<string, unknown>) => ({
-      id: String(c.id || ""),
-      name: String(c.name || ""),
-      slug: String(c.slug || ""),
-      productCount: Number(c.productCount || c._count?.products || 0),
-      icon: String(c.icon || "Tag"),
-      color: String(c.color || "#10B981"),
-      sortOrder: Number(c.sortOrder || 0),
+  // ---- Demo data based on business context ----
+  const demoProductList: Product[] = useMemo(() => {
+    return getDemoProducts(demoBusinessId).map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      categoryId: p.categoryId,
+      category: p.category,
+      status: p.status as ProductStatus,
+      isVeg: p.isVeg,
+      isFeatured: p.isFeatured,
+      image: p.image,
+      variants: p.variants.map((v) => ({
+        id: v.id,
+        name: v.name,
+        sku: v.sku,
+        mrp: v.mrp,
+        price: v.price,
+        stock: v.stock,
+        isDefault: v.isDefault,
+      })),
     }))
-  }, [categoriesData])
+  }, [demoBusinessId])
+
+  const demoCategoryList: Category[] = useMemo(() => {
+    const cats = getDemoCategories(demoBusinessId)
+    const prods = getDemoProducts(demoBusinessId)
+    return cats.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      productCount: prods.filter((p) => p.categoryId === c.id).length,
+      icon: c.icon,
+      color: c.color,
+      sortOrder: c.sortOrder,
+      workflow: c.workflow,
+    }))
+  }, [demoBusinessId])
 
   // ---- Product state ----
   const [productList, setProductList] = useState<Product[]>([])
   const [categoryList, setCategoryList] = useState<Category[]>([])
 
-  // Sync API data to local state (using useMemo instead of effect to avoid cascading renders)
+  // Sync: use local additions first, then fill from demo data
   const syncedProductList = useMemo(() => {
-    return apiProducts.length > 0 ? apiProducts : productList
-  }, [apiProducts, productList])
+    const localOnly = productList.filter(
+      (lp) => !demoProductList.some((dp) => dp.id === lp.id)
+    )
+    return [...demoProductList, ...localOnly]
+  }, [demoProductList, productList])
 
   const syncedCategoryList = useMemo(() => {
-    return apiCategories.length > 0 ? apiCategories : categoryList
-  }, [apiCategories, categoryList])
+    const localOnly = categoryList.filter(
+      (lc) => !demoCategoryList.some((dc) => dc.id === lc.id)
+    )
+    return [...demoCategoryList, ...localOnly]
+  }, [demoCategoryList, categoryList])
 
   // ---- Filter state ----
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL")
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  const [workflowFilter, setWorkflowFilter] = useState<string>("ALL")
 
   // ---- Tab state ----
   const [activeTab, setActiveTab] = useState("products")
@@ -327,6 +305,20 @@ export function ProductsView() {
     return { total, active, outOfStock, lowStock }
   }, [syncedProductList])
 
+  // Available workflows from current categories
+  const availableWorkflows = useMemo(() => {
+    const wfSet = new Set<string>()
+    for (const cat of syncedCategoryList) {
+      if (cat.workflow) wfSet.add(cat.workflow)
+    }
+    return Array.from(wfSet)
+  }, [syncedCategoryList])
+
+  // Workflow lookup for product (from its category)
+  const getWorkflowForProduct = useCallback((categoryId: string): WorkflowType | undefined => {
+    return syncedCategoryList.find((c) => c.id === categoryId)?.workflow
+  }, [syncedCategoryList])
+
   const filteredProducts = useMemo(() => {
     return syncedProductList.filter((p) => {
       const matchSearch =
@@ -343,9 +335,12 @@ export function ProductsView() {
       else if (statusFilter === "INACTIVE") matchStatus = p.status === "INACTIVE"
       else if (statusFilter === "OUT_OF_STOCK") matchStatus = totalStock === 0 || p.status === "OUT_OF_STOCK"
 
-      return matchSearch && matchCategory && matchStatus
+      const pWorkflow = getWorkflowForProduct(p.categoryId)
+      const matchWorkflow = workflowFilter === "ALL" || pWorkflow === workflowFilter
+
+      return matchSearch && matchCategory && matchStatus && matchWorkflow
     })
-  }, [syncedProductList, searchQuery, categoryFilter, statusFilter])
+  }, [syncedProductList, searchQuery, categoryFilter, statusFilter, workflowFilter, getWorkflowForProduct])
 
   // =========================================================================
   // Handlers
@@ -454,8 +449,6 @@ export function ProductsView() {
 
       setProductDialogOpen(false)
       resetProductForm()
-      // Refetch to sync with server
-      refetchProducts()
     } catch {
       showError("Failed to save product")
     }
@@ -475,8 +468,6 @@ export function ProductsView() {
       )
     )
     showSuccess(`Product ${newStatus === "ACTIVE" ? "activated" : "deactivated"}`)
-    // Refetch to sync
-    refetchProducts()
   }
 
   const handleDeleteProduct = async () => {
@@ -488,8 +479,6 @@ export function ProductsView() {
     setDetailOpen(false)
     setSelectedProduct(null)
     showSuccess("Product deleted")
-    // Refetch to sync
-    refetchProducts()
   }
 
   const openEditVariant = (variant: Variant, productId: string) => {
@@ -594,8 +583,7 @@ export function ProductsView() {
     setCategoryDialogOpen(false)
     resetCategoryForm()
     showSuccess("Category created successfully")
-    // Invalidate categories query
-    queryClient.invalidateQueries({ queryKey: ["products"] })
+
   }
 
   // ---- Category stats ----
@@ -654,20 +642,7 @@ export function ProductsView() {
         <TabsContent value="products" className="space-y-4 mt-4">
           {/* ---- Summary Cards ---- */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {productsLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <Card key={i}>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <Skeleton className="h-10 w-10 rounded-xl" />
-                    <div className="space-y-2">
-                      <Skeleton className="h-7 w-12" />
-                      <Skeleton className="h-3 w-20" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <>
+            <>
             <Card>
               <CardContent className="p-4 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
@@ -713,7 +688,6 @@ export function ProductsView() {
               </CardContent>
             </Card>
             </>
-            )}
           </div>
 
           {/* ---- Filter Bar ---- */}
@@ -734,13 +708,29 @@ export function ProductsView() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All Categories</SelectItem>
-                {categoryList.map((cat) => (
+                {syncedCategoryList.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
                     {cat.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
+            {availableWorkflows.length > 1 && (
+              <Select value={workflowFilter} onValueChange={setWorkflowFilter}>
+                <SelectTrigger className="w-[170px] h-9">
+                  <SelectValue placeholder="All Workflows" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Workflows</SelectItem>
+                  {availableWorkflows.map((wf) => (
+                    <SelectItem key={wf} value={wf}>
+                      {wf.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[160px] h-9">
@@ -754,7 +744,7 @@ export function ProductsView() {
               </SelectContent>
             </Select>
 
-            {(categoryFilter !== "ALL" || statusFilter !== "ALL" || searchQuery) && (
+            {(categoryFilter !== "ALL" || statusFilter !== "ALL" || workflowFilter !== "ALL" || searchQuery) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -762,6 +752,7 @@ export function ProductsView() {
                   setSearchQuery("")
                   setCategoryFilter("ALL")
                   setStatusFilter("ALL")
+                  setWorkflowFilter("ALL")
                 }}
               >
                 <X className="h-3 w-3 mr-1" /> Clear
@@ -770,33 +761,7 @@ export function ProductsView() {
           </div>
 
           {/* ---- Products Table ---- */}
-          {productsLoading ? (
-            <Card>
-              <CardContent className="p-6">
-                <div className="space-y-4">
-                  <div className="flex gap-4">
-                    <Skeleton className="h-4 flex-1" />
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex gap-4 items-center">
-                      <Skeleton className="h-9 w-9 rounded-lg" />
-                      <Skeleton className="h-4 flex-1" />
-                      <Skeleton className="h-4 w-24" />
-                      <Skeleton className="h-5 w-16" />
-                      <Skeleton className="h-4 w-20" />
-                      <Skeleton className="h-5 w-16" />
-                      <Skeleton className="h-4 w-10" />
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : filteredProducts.length === 0 ? (
+          {filteredProducts.length === 0 ? (
             <EmptyState
               icon={Package}
               title="No products found"
@@ -815,6 +780,7 @@ export function ProductsView() {
                       <TableRow>
                         <TableHead className="min-w-[200px]">Product Name</TableHead>
                         <TableHead>Category</TableHead>
+                        <TableHead>Workflow</TableHead>
                         <TableHead>Variants</TableHead>
                         <TableHead>Price Range</TableHead>
                         <TableHead>Stock Status</TableHead>
@@ -862,6 +828,21 @@ export function ProductsView() {
                             {/* Category */}
                             <TableCell>
                               <span className="text-sm">{product.category}</span>
+                            </TableCell>
+
+                            {/* Workflow */}
+                            <TableCell>
+                              {(() => {
+                                const wf = getWorkflowForProduct(product.categoryId)
+                                if (!wf) return <span className="text-xs text-muted-foreground">—</span>
+                                const wfConfig = WORKFLOW_CONFIGS.find(w => w.type === wf)
+                                return (
+                                  <Badge variant="outline" className={`text-[10px] gap-1 ${wfConfig?.color || ""}`}>
+                                    <Workflow className="h-3 w-3" />
+                                    {wf.replace(/_/g, " ")}
+                                  </Badge>
+                                )
+                              })()}
                             </TableCell>
 
                             {/* Variants */}
@@ -945,7 +926,7 @@ export function ProductsView() {
         {/* ============================================================== */}
         <TabsContent value="categories" className="space-y-4 mt-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {categoryList.map((cat) => {
+            {syncedCategoryList.map((cat) => {
               const count = categoryStats[cat.id] || 0
               return (
                 <Card
@@ -972,6 +953,15 @@ export function ProductsView() {
                           <Badge variant="secondary" className="text-[10px]">
                             {count} {count === 1 ? "product" : "products"}
                           </Badge>
+                          {cat.workflow && (() => {
+                            const wfConfig = WORKFLOW_CONFIGS.find(w => w.type === cat.workflow)
+                            return (
+                              <Badge variant="outline" className={`text-[10px] gap-1 ${wfConfig?.color || ""}`}>
+                                <Workflow className="h-2.5 w-2.5" />
+                                {cat.workflow.replace(/_/g, " ")}
+                              </Badge>
+                            )
+                          })()}
                         </div>
                       </div>
                     </div>
