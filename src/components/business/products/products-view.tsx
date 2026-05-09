@@ -158,14 +158,19 @@ function slugify(text: string): string {
     .slice(0, 40)
 }
 
-// Category icon mapping (just use colored circles with initials)
+// Category icon mapping (supports emoji icons from API or fallback to initials)
 function CategoryIcon({ icon, color, name }: { icon: string; color: string; name: string }) {
+  const isEmoji = icon && /\p{Emoji}/u.test(icon) && icon.length <= 4
   return (
     <div
       className="flex h-10 w-10 items-center justify-center rounded-xl"
       style={{ backgroundColor: `${color}18`, color }}
     >
-      <span className="text-sm font-bold">{name.slice(0, 2).toUpperCase()}</span>
+      {isEmoji ? (
+        <span className="text-lg">{icon}</span>
+      ) : (
+        <span className="text-sm font-bold">{name.slice(0, 2).toUpperCase()}</span>
+      )}
     </div>
   )
 }
@@ -190,16 +195,23 @@ export function ProductsView() {
     if (!productsData?.data) return []
     const rawData = productsData.data
     if (!Array.isArray(rawData)) return []
-    return rawData.map((p: Record<string, unknown>) => ({
-      id: String(p.id || ""),
-      name: String(p.name || ""),
-      slug: String(p.slug || ""),
-      categoryId: String(p.categoryId || ""),
-      category: String(p.categoryName || p.category || "Uncategorized"),
-      status: String(p.status || "ACTIVE") as ProductStatus,
-      isVeg: Boolean(p.isVeg !== undefined ? p.isVeg : true),
-      isFeatured: Boolean(p.isFeatured || false),
-      image: String(p.image || ""),
+    return rawData.map((p: Record<string, unknown>) => {
+      // Handle category: API returns nested object { id, name, slug } or string
+      const catObj = p.category as Record<string, unknown> | undefined
+      const categoryId = String(p.categoryId || catObj?.id || "")
+      const categoryName = catObj && typeof catObj === "object"
+        ? String(catObj.name || "Uncategorized")
+        : String(p.categoryName || p.category || "Uncategorized")
+      return {
+        id: String(p.id || ""),
+        name: String(p.name || ""),
+        slug: String(p.slug || ""),
+        categoryId,
+        category: categoryName,
+        status: String(p.status || "ACTIVE") as ProductStatus,
+        isVeg: Boolean(p.isVeg !== undefined ? p.isVeg : true),
+        isFeatured: Boolean(p.isFeatured || false),
+        image: String(p.image || ""),
       variants: Array.isArray(p.variants)
         ? p.variants.map((v: Record<string, unknown>, i: number) => ({
             id: String(v.id || `var_${i}`),
@@ -219,7 +231,8 @@ export function ProductsView() {
             stock: Number(p.stock || p.inventory || 0),
             isDefault: true,
           }],
-    }))
+      }
+    })
   }, [productsData])
 
   const apiCategories: Category[] = useMemo(() => {

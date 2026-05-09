@@ -328,8 +328,8 @@ export function useCategories(
     queryKey: queryKeys.products.categories(businessId),
     queryFn: async () => {
       setBusinessContext(businessId);
-      const response = await fetch("/api/core/storefront/products?fields=category", {
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch(`/api/core/storefront/categories?businessId=${encodeURIComponent(businessId)}`, {
+        headers: { "Content-Type": "application/json", "x-business-id": businessId },
       });
       const data = await response.json();
       if (!response.ok) throw AppError.fromApiError(data);

@@ -338,8 +338,10 @@ export const storeApi = {
 // ============================================================================
 
 export const productApi = {
-  list: (params?: ProductFilter & { page?: number; limit?: number }) =>
-    getList<ProductListItem>('/core/storefront/products', params as Record<string, string | string[] | number | boolean | undefined>),
+  list: (params?: ProductFilter & { page?: number; limit?: number }) => {
+    const businessId = getBusinessContextId();
+    return getList<ProductListItem>('/core/storefront/products', { businessId, ...params } as Record<string, string | string[] | number | boolean | undefined>);
+  },
   get: (id: string) => getOne<ProductListItem>('/core/storefront/products', id),
   create: (data: CreateProductRequest) => create<ProductListItem>('/core/storefront/products', data),
   update: (id: string, data: Partial<CreateProductRequest>) => update<ProductListItem>('/core/storefront/products', id, data),

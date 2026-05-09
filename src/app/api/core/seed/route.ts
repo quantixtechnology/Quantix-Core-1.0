@@ -42,37 +42,73 @@ export async function POST() {
     summary.platformConfigs = createdConfigs.length;
 
     // =========================================================================
-    // 2. PLATFORM PLANS (Only 2: MONTHLY and YEARLY per schema)
+    // 2. PLATFORM PLANS (Standard + Pro, each with Monthly & Yearly)
     // =========================================================================
     const plans = [
       {
-        id: 'plan_monthly',
+        id: 'plan_standard_monthly',
+        tier: 'STANDARD' as const,
         billingCycle: 'MONTHLY' as const,
-        price: 4999,
-        name: 'Quantix Monthly',
-        description: 'Monthly plan — ₹4,999/month',
-        features: JSON.stringify(['5 Stores', '5000 Products', '10000 Orders/mo', '50 Staff', 'Full POS', 'Delivery Management', 'Subscriptions', 'Custom Domain', 'White Label', 'Advanced Reports', 'API Access']),
-        maxStores: 5,
-        maxProducts: 5000,
-        maxOrders: 10000,
-        maxDeliveryPartners: 50,
-        maxStaff: 50,
+        price: 2999,
+        name: 'Quantix Standard Monthly',
+        description: 'Standard plan — ₹2,999/month',
+        features: JSON.stringify(['2 Stores', '2000 Products', '5000 Orders/mo', '10 Staff', 'Ecommerce Workflow', 'Standard POS', 'Delivery Management']),
+        maxStores: 2,
+        maxProducts: 2000,
+        maxOrders: 5000,
+        maxDeliveryPartners: 10,
+        maxStaff: 10,
         hasPOS: true,
         hasDelivery: true,
-        hasSubscription: true,
-        hasCustomDomain: true,
-        hasWhiteLabel: true,
-        hasAdvancedReports: true,
-        hasAPIAccess: true,
+        hasSubscription: false,
+        hasCustomDomain: false,
+        hasWhiteLabel: false,
+        hasAdvancedReports: false,
+        hasAPIAccess: false,
+        hasEcommerceWorkflow: true,
+        hasPickupWorkflow: false,
+        hasAppointmentWorkflow: false,
+        hasSubscriptionWorkflow: false,
+        hasPostServiceWorkflow: false,
+        hasAdvancedWorkflowEngine: false,
         isActive: true,
       },
       {
-        id: 'plan_yearly',
+        id: 'plan_standard_yearly',
+        tier: 'STANDARD' as const,
         billingCycle: 'YEARLY' as const,
-        price: 49999,
-        name: 'Quantix Yearly',
-        description: 'Yearly plan — ₹49,999/year (save ₹9,989)',
-        features: JSON.stringify(['5 Stores', '5000 Products', '10000 Orders/mo', '50 Staff', 'Full POS', 'Delivery Management', 'Subscriptions', 'Custom Domain', 'White Label', 'Advanced Reports', 'API Access']),
+        price: 30000,
+        name: 'Quantix Standard Yearly',
+        description: 'Standard plan — ₹30,000/year (save ₹5,988)',
+        features: JSON.stringify(['2 Stores', '2000 Products', '5000 Orders/mo', '10 Staff', 'Ecommerce Workflow', 'Standard POS', 'Delivery Management']),
+        maxStores: 2,
+        maxProducts: 2000,
+        maxOrders: 5000,
+        maxDeliveryPartners: 10,
+        maxStaff: 10,
+        hasPOS: true,
+        hasDelivery: true,
+        hasSubscription: false,
+        hasCustomDomain: false,
+        hasWhiteLabel: false,
+        hasAdvancedReports: false,
+        hasAPIAccess: false,
+        hasEcommerceWorkflow: true,
+        hasPickupWorkflow: false,
+        hasAppointmentWorkflow: false,
+        hasSubscriptionWorkflow: false,
+        hasPostServiceWorkflow: false,
+        hasAdvancedWorkflowEngine: false,
+        isActive: true,
+      },
+      {
+        id: 'plan_pro_monthly',
+        tier: 'PRO' as const,
+        billingCycle: 'MONTHLY' as const,
+        price: 4999,
+        name: 'Quantix Pro Monthly',
+        description: 'Pro plan — ₹4,999/month',
+        features: JSON.stringify(['5 Stores', '5000 Products', '10000 Orders/mo', '50 Staff', 'All Workflows', 'Advanced POS', 'Delivery Management', 'Subscriptions', 'Pickup & Delivery', 'Appointments', 'Post-Service Billing', 'Custom Domain', 'White Label', 'Advanced Reports', 'API Access']),
         maxStores: 5,
         maxProducts: 5000,
         maxOrders: 10000,
@@ -85,6 +121,40 @@ export async function POST() {
         hasWhiteLabel: true,
         hasAdvancedReports: true,
         hasAPIAccess: true,
+        hasEcommerceWorkflow: true,
+        hasPickupWorkflow: true,
+        hasAppointmentWorkflow: true,
+        hasSubscriptionWorkflow: true,
+        hasPostServiceWorkflow: true,
+        hasAdvancedWorkflowEngine: true,
+        isActive: true,
+      },
+      {
+        id: 'plan_pro_yearly',
+        tier: 'PRO' as const,
+        billingCycle: 'YEARLY' as const,
+        price: 49999,
+        name: 'Quantix Pro Yearly',
+        description: 'Pro plan — ₹49,999/year (save ₹9,989)',
+        features: JSON.stringify(['5 Stores', '5000 Products', '10000 Orders/mo', '50 Staff', 'All Workflows', 'Advanced POS', 'Delivery Management', 'Subscriptions', 'Pickup & Delivery', 'Appointments', 'Post-Service Billing', 'Custom Domain', 'White Label', 'Advanced Reports', 'API Access']),
+        maxStores: 5,
+        maxProducts: 5000,
+        maxOrders: 10000,
+        maxDeliveryPartners: 50,
+        maxStaff: 50,
+        hasPOS: true,
+        hasDelivery: true,
+        hasSubscription: true,
+        hasCustomDomain: true,
+        hasWhiteLabel: true,
+        hasAdvancedReports: true,
+        hasAPIAccess: true,
+        hasEcommerceWorkflow: true,
+        hasPickupWorkflow: true,
+        hasAppointmentWorkflow: true,
+        hasSubscriptionWorkflow: true,
+        hasPostServiceWorkflow: true,
+        hasAdvancedWorkflowEngine: true,
         isActive: true,
       },
     ];
@@ -92,7 +162,7 @@ export async function POST() {
     const createdPlans = [];
     for (const plan of plans) {
       const result = await db.platformPlan.upsert({
-        where: { billingCycle: plan.billingCycle },
+        where: { tier_billingCycle: { tier: plan.tier, billingCycle: plan.billingCycle } },
         update: {
           price: plan.price,
           name: plan.name,
@@ -110,6 +180,12 @@ export async function POST() {
           hasWhiteLabel: plan.hasWhiteLabel,
           hasAdvancedReports: plan.hasAdvancedReports,
           hasAPIAccess: plan.hasAPIAccess,
+          hasEcommerceWorkflow: plan.hasEcommerceWorkflow,
+          hasPickupWorkflow: plan.hasPickupWorkflow,
+          hasAppointmentWorkflow: plan.hasAppointmentWorkflow,
+          hasSubscriptionWorkflow: plan.hasSubscriptionWorkflow,
+          hasPostServiceWorkflow: plan.hasPostServiceWorkflow,
+          hasAdvancedWorkflowEngine: plan.hasAdvancedWorkflowEngine,
           isActive: plan.isActive,
         },
         create: plan,
@@ -118,8 +194,8 @@ export async function POST() {
     }
     summary.platformPlans = createdPlans.length;
 
-    // Get the monthly plan ID for the subscription
-    const monthlyPlan = createdPlans.find(p => p.billingCycle === 'MONTHLY');
+    // Get the pro monthly plan ID for the subscription
+    const proPlan = createdPlans.find(p => p.tier === 'PRO' && p.billingCycle === 'MONTHLY');
 
     // =========================================================================
     // 3. SUPER ADMIN USER
@@ -216,7 +292,7 @@ export async function POST() {
       update: {},
       create: {
         businessId: business.id,
-        planId: monthlyPlan!.id,
+        planId: proPlan!.id,
         status: 'ACTIVE',
         planPrice: 4999,
         billingCycle: 'MONTHLY',
@@ -388,11 +464,14 @@ export async function POST() {
     // 12. CUSTOMERS WITH ADDRESSES
     // =========================================================================
     const customersData = [
-      { name: 'Amit Patel', email: 'amit@gmail.com', phone: '+919876543301' },
-      { name: 'Sneha Kulkarni', email: 'sneha@gmail.com', phone: '+919876543302' },
-      { name: 'Rajesh Iyer', email: 'rajesh@gmail.com', phone: '+919876543303' },
-      { name: 'Pooja Deshmukh', email: 'pooja@gmail.com', phone: '+919876543304' },
-      { name: 'Vikram Singh', email: 'vikram@gmail.com', phone: '+919876543305' },
+      { name: 'Meera Joshi', email: 'meera.joshi@gmail.com', phone: '+919876543301' },
+      { name: 'Suresh Kadam', email: 'suresh.kadam@gmail.com', phone: '+919876543302' },
+      { name: 'Anita Rane', email: 'anita.rane@gmail.com', phone: '+919876543303' },
+      { name: 'Deepak Patil', email: 'deepak.patil@gmail.com', phone: '+919876543304' },
+      { name: 'Kavita Shah', email: 'kavita.shah@gmail.com', phone: '+919876543305' },
+      { name: 'Ravi Thakur', email: 'ravi.thakur@gmail.com', phone: '+919876543306' },
+      { name: 'Priti Nair', email: 'priti.nair@gmail.com', phone: '+919876543307' },
+      { name: 'Sandeep Menon', email: 'sandeep.menon@gmail.com', phone: '+919876543308' },
     ];
 
     const createdCustomers = [];
@@ -402,6 +481,9 @@ export async function POST() {
       { label: 'Home', addressLine1: '12, Shivaji Nagar', addressLine2: 'Goregaon West', city: 'Mumbai', state: 'Maharashtra', pincode: '400062', landmark: 'Near Aarey Colony' },
       { label: 'Home', addressLine1: 'A-301, Imperial Towers', addressLine2: 'Malad West', city: 'Mumbai', state: 'Maharashtra', pincode: '400064', landmark: 'Next to Inorbit Mall' },
       { label: 'Home', addressLine1: '45, Versova Beach Road', addressLine2: 'Versova, Andheri West', city: 'Mumbai', state: 'Maharashtra', pincode: '400061', landmark: 'Near Cafe Coffee Day' },
+      { label: 'Office', addressLine1: '302, Lotus Business Park', addressLine2: 'Link Road, Malad West', city: 'Mumbai', state: 'Maharashtra', pincode: '400064', landmark: 'Behind Mind Space' },
+      { label: 'Home', addressLine1: 'B-14, Yashwant Nagar', addressLine2: 'Kandivali West', city: 'Mumbai', state: 'Maharashtra', pincode: '400067', landmark: 'Near Thakur College' },
+      { label: 'Home', addressLine1: '501, Eknath Bhavan', addressLine2: 'D.N. Nagar, Andheri West', city: 'Mumbai', state: 'Maharashtra', pincode: '400053', landmark: 'Near Azad Nagar Metro' },
     ];
 
     for (let i = 0; i < customersData.length; i++) {

@@ -12,7 +12,7 @@ import { db } from '@/lib/db';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('businessId');
+    const businessId = searchParams.get('businessId') || request.headers.get('x-business-id');
 
     if (!businessId) {
       return NextResponse.json(
