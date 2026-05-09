@@ -140,7 +140,7 @@ export function CustomerHome() {
     [items]
   )
 
-  const handleAddToCart = (product: typeof apiProducts[0]) => {
+  const handleAddToCart = (product: typeof demoProducts[0]) => {
     const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
     if (!defaultVariant) return
     addItem({

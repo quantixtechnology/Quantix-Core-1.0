@@ -56,6 +56,11 @@ import {
   Grid3X3,
   List,
   Workflow,
+  ShoppingCart,
+  Truck,
+  Calendar,
+  CreditCard,
+  Receipt,
 } from "lucide-react"
 import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS } from "@/stores/admin-store"
 import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
@@ -66,6 +71,15 @@ type ProductStatus = "ACTIVE" | "INACTIVE" | "DRAFT" | "OUT_OF_STOCK"
 type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
 
 const BUSINESS_ID = "biz_1"
+
+// Workflow icon mapping for category dialog
+const workflowIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  ShoppingCart,
+  Truck,
+  Calendar,
+  CreditCard,
+  Receipt,
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -278,6 +292,11 @@ export function ProductsView() {
   const [catFormSlug, setCatFormSlug] = useState("")
   const [catFormColor, setCatFormColor] = useState("#10B981")
   const [catFormSortOrder, setCatFormSortOrder] = useState("")
+  const [catFormWorkflow, setCatFormWorkflow] = useState<WorkflowType>("ECOMMERCE")
+  const [catFormIcon, setCatFormIcon] = useState("📦")
+
+  // ---- Category emoji options ----
+  const categoryEmojis = ["🥬", "🥛", "🍪", "🌾", "🌶️", "✨", "🧹", "❄️", "👕", "🧥", "♨️", "🚚", "🔄", "⚖️", "🚗", "📅", "🧴", "📦", "🛒", "🎨", "💊", "🍕", "🎂", "🧁", "☕", "🍖", "🥩", "🐟", "📱", "💡"]
 
   // ---- Edit variant dialog ----
   const [editVariantDialogOpen, setEditVariantDialogOpen] = useState(false)
@@ -391,7 +410,7 @@ export function ProductsView() {
   const handleSaveProduct = async () => {
     if (!formName || !formCategory) return
 
-    const categoryObj = categoryList.find((c) => c.id === formCategory)
+    const categoryObj = syncedCategoryList.find((c) => c.id === formCategory)
 
     try {
       if (editingProduct) {
@@ -561,6 +580,8 @@ export function ProductsView() {
     setCatFormSlug("")
     setCatFormColor("#10B981")
     setCatFormSortOrder("")
+    setCatFormWorkflow("ECOMMERCE")
+    setCatFormIcon("📦")
   }
 
   const handleCatNameChange = (value: string) => {
@@ -575,15 +596,15 @@ export function ProductsView() {
       name: catFormName,
       slug: catFormSlug || slugify(catFormName),
       productCount: 0,
-      icon: "Tag",
+      icon: catFormIcon,
       color: catFormColor,
       sortOrder: Number(catFormSortOrder) || categoryList.length + 1,
+      workflow: catFormWorkflow,
     }
     setCategoryList((prev) => [...prev, newCategory])
     setCategoryDialogOpen(false)
     resetCategoryForm()
     showSuccess("Category created successfully")
-
   }
 
   // ---- Category stats ----
@@ -999,7 +1020,7 @@ export function ProductsView() {
         <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
           {selectedProduct && (() => {
             const product = selectedProduct
-            const categoryObj = categoryList.find((c) => c.id === product.categoryId)
+            const categoryObj = syncedCategoryList.find((c) => c.id === product.categoryId)
             return (
               <>
                 <SheetHeader className="px-6 pt-6 pb-4 border-b">
@@ -1230,9 +1251,16 @@ export function ProductsView() {
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categoryList.map((cat) => (
+                    {syncedCategoryList.map((cat) => (
                       <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
+                        <div className="flex items-center gap-2">
+                          <span>{cat.name}</span>
+                          {cat.workflow && (
+                            <Badge variant="outline" className="text-[9px] ml-1">
+                              {cat.workflow.replace(/_/g, " ")}
+                            </Badge>
+                          )}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1505,11 +1533,11 @@ export function ProductsView() {
           if (!open) resetCategoryForm()
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Category</DialogTitle>
             <DialogDescription>
-              Create a new product category for your catalog
+              Create a new product category and assign a workflow type
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -1529,6 +1557,51 @@ export function ProductsView() {
                   value={catFormSlug}
                   onChange={(e) => setCatFormSlug(e.target.value)}
                 />
+              </div>
+            </div>
+
+            {/* Workflow Type */}
+            <div className="space-y-2">
+              <Label>Workflow Type</Label>
+              <Select value={catFormWorkflow} onValueChange={(v) => setCatFormWorkflow(v as WorkflowType)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select workflow" />
+                </SelectTrigger>
+                <SelectContent>
+                  {WORKFLOW_CONFIGS.map((wf) => {
+                    const Icon = workflowIconMap[wf.icon] || ShoppingCart
+                    return (
+                      <SelectItem key={wf.type} value={wf.type}>
+                        <div className="flex items-center gap-2">
+                          <Icon className={`h-4 w-4 ${wf.color}`} />
+                          <span>{wf.label}</span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Determines how orders for products in this category are processed
+              </p>
+            </div>
+
+            {/* Icon Picker */}
+            <div className="space-y-2">
+              <Label>Icon</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {categoryEmojis.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    className={`h-8 w-8 rounded-lg border-2 flex items-center justify-center text-sm transition-all ${
+                      catFormIcon === emoji ? "border-primary scale-110 bg-primary/10" : "border-transparent hover:border-muted-foreground/30"
+                    }`}
+                    onClick={() => setCatFormIcon(emoji)}
+                  >
+                    {emoji}
+                  </button>
+                ))}
               </div>
             </div>
 

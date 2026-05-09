@@ -55,6 +55,7 @@ export interface DemoCustomer {
   loyaltyPoints: number
   tier: "PLATINUM" | "GOLD" | "SILVER" | "BRONZE"
   lastOrder: string
+  tags: string[]
   addresses: {
     id: string
     label: string
@@ -215,6 +216,7 @@ const groceryCustomers: DemoCustomer[] = [
   {
     id: "gcust_1", name: "Rajesh Kumar", phone: "+91 98765 43210", email: "rajesh.kumar@email.com",
     totalOrders: 24, totalSpent: 18540, loyaltyPoints: 3200, tier: "PLATINUM", lastOrder: "2026-05-08T14:30:00",
+    tags: ["Weekly Shopper", "Bulk Buyer", "Vegetables"],
     addresses: [
       { id: "ga_1", label: "Home", line1: "42, MG Road, Koramangala", line2: "Near Jyoti Nivas College", city: "Bengaluru", pincode: "560034", isDefault: true },
       { id: "ga_2", label: "Office", line1: "101, Brigade Metropolis", line2: "Garvebhavipalya", city: "Bengaluru", pincode: "560068", isDefault: false },
@@ -223,6 +225,7 @@ const groceryCustomers: DemoCustomer[] = [
   {
     id: "gcust_2", name: "Sneha Patil", phone: "+91 87654 32109", email: "sneha.patil@email.com",
     totalOrders: 18, totalSpent: 12300, loyaltyPoints: 2100, tier: "GOLD", lastOrder: "2026-05-07T10:15:00",
+    tags: ["Organic Preference", "Dairy Regular", "Home Delivery"],
     addresses: [
       { id: "ga_3", label: "Home", line1: "15, HSR Layout, Sector 2", line2: "", city: "Bengaluru", pincode: "560102", isDefault: true },
     ],
@@ -230,6 +233,7 @@ const groceryCustomers: DemoCustomer[] = [
   {
     id: "gcust_3", name: "Anand Joshi", phone: "+91 76543 21098", email: "anand.joshi@email.com",
     totalOrders: 12, totalSpent: 8900, loyaltyPoints: 1450, tier: "SILVER", lastOrder: "2026-05-06T16:45:00",
+    tags: ["Snack Buyer", "Monthly Restock"],
     addresses: [
       { id: "ga_4", label: "Home", line1: "78, Indiranagar, 100ft Road", line2: "Above Nilgiris", city: "Bengaluru", pincode: "560038", isDefault: true },
     ],
@@ -237,6 +241,7 @@ const groceryCustomers: DemoCustomer[] = [
   {
     id: "gcust_4", name: "Deepa Nair", phone: "+91 65432 10987", email: "deepa.nair@email.com",
     totalOrders: 8, totalSpent: 5600, loyaltyPoints: 800, tier: "SILVER", lastOrder: "2026-05-04T09:00:00",
+    tags: ["Bakery Items", "Breakfast Essentials"],
     addresses: [
       { id: "ga_5", label: "Home", line1: "23, Whitefield Main Road", line2: "Near ITPL", city: "Bengaluru", pincode: "560066", isDefault: true },
     ],
@@ -244,6 +249,7 @@ const groceryCustomers: DemoCustomer[] = [
   {
     id: "gcust_5", name: "Mohan Sharma", phone: "+91 54321 09876", email: "mohan.sharma@email.com",
     totalOrders: 5, totalSpent: 3200, loyaltyPoints: 450, tier: "BRONZE", lastOrder: "2026-05-01T11:30:00",
+    tags: ["New Customer", "Rice & Grains"],
     addresses: [
       { id: "ga_6", label: "Home", line1: "56, JP Nagar, Phase 3", line2: "", city: "Bengaluru", pincode: "560078", isDefault: true },
     ],
@@ -251,6 +257,7 @@ const groceryCustomers: DemoCustomer[] = [
   {
     id: "gcust_6", name: "Kavita Reddy", phone: "+91 43210 98765", email: "kavita.reddy@email.com",
     totalOrders: 15, totalSpent: 11200, loyaltyPoints: 1900, tier: "GOLD", lastOrder: "2026-05-08T18:20:00",
+    tags: ["Family Pack Buyer", "Spices & Masala", "Weekend Shopper"],
     addresses: [
       { id: "ga_7", label: "Home", line1: "90, Electronic City, Phase 1", line2: "Near Infosys Gate 4", city: "Bengaluru", pincode: "560100", isDefault: true },
     ],
@@ -384,6 +391,7 @@ const laundryCustomers: DemoCustomer[] = [
   {
     id: "lcust_1", name: "Priya Sharma", phone: "+91 99887 76655", email: "priya.sharma@email.com",
     totalOrders: 32, totalSpent: 24800, loyaltyPoints: 4500, tier: "PLATINUM", lastOrder: "2026-05-08T16:30:00",
+    tags: ["Weekly Pickup", "Dry Clean Regular", "Saree Specialist"],
     addresses: [
       { id: "la_1", label: "Home", line1: "12, AECS Layout, Kundalahalli", line2: "Near Brookefield", city: "Bengaluru", pincode: "560037", isDefault: true },
     ],
@@ -391,6 +399,7 @@ const laundryCustomers: DemoCustomer[] = [
   {
     id: "lcust_2", name: "Vikram Patel", phone: "+91 88776 65544", email: "vikram.patel@email.com",
     totalOrders: 22, totalSpent: 16500, loyaltyPoints: 2800, tier: "GOLD", lastOrder: "2026-05-07T09:15:00",
+    tags: ["Office Wear", "Shirt & Trouser Wash", "Bi-weekly"],
     addresses: [
       { id: "la_2", label: "Home", line1: "45, Marathahalli Bridge", line2: "Opp. Innovative Multiplex", city: "Bengaluru", pincode: "560037", isDefault: true },
     ],
@@ -398,6 +407,7 @@ const laundryCustomers: DemoCustomer[] = [
   {
     id: "lcust_3", name: "Meera Iyer", phone: "+91 77665 54433", email: "meera.iyer@email.com",
     totalOrders: 15, totalSpent: 9200, loyaltyPoints: 1600, tier: "SILVER", lastOrder: "2026-05-06T14:00:00",
+    tags: ["Ironing Only", "Saree Ironing"],
     addresses: [
       { id: "la_3", label: "Home", line1: "78, Bellandur, Outer Ring Road", line2: "Near Intel Office", city: "Bengaluru", pincode: "560103", isDefault: true },
     ],
@@ -405,6 +415,7 @@ const laundryCustomers: DemoCustomer[] = [
   {
     id: "lcust_4", name: "Arjun Reddy", phone: "+91 66554 43322", email: "arjun.reddy@email.com",
     totalOrders: 28, totalSpent: 21400, loyaltyPoints: 3800, tier: "PLATINUM", lastOrder: "2026-05-08T11:45:00",
+    tags: ["Subscription Member", "Suit Dry Clean", "Bedsheet Wash"],
     addresses: [
       { id: "la_4", label: "Home", line1: "23, HSR Layout, Sector 7", line2: "", city: "Bengaluru", pincode: "560102", isDefault: true },
       { id: "la_5", label: "Office", line1: "56, EcoSpace, Outer Ring Road", line2: "Bellandur", city: "Bengaluru", pincode: "560103", isDefault: false },
@@ -413,6 +424,7 @@ const laundryCustomers: DemoCustomer[] = [
   {
     id: "lcust_5", name: "Sunita Deshmukh", phone: "+91 55443 32211", email: "sunita.d@email.com",
     totalOrders: 9, totalSpent: 5400, loyaltyPoints: 750, tier: "SILVER", lastOrder: "2026-05-03T10:30:00",
+    tags: ["Curtain Wash", "Bedsheet Regular"],
     addresses: [
       { id: "la_6", label: "Home", line1: "90, BTM Layout, 2nd Stage", line2: "", city: "Bengaluru", pincode: "560076", isDefault: true },
     ],
@@ -420,6 +432,7 @@ const laundryCustomers: DemoCustomer[] = [
   {
     id: "lcust_6", name: "Rahul Verma", phone: "+91 44332 21100", email: "rahul.verma@email.com",
     totalOrders: 4, totalSpent: 2800, loyaltyPoints: 350, tier: "BRONZE", lastOrder: "2026-04-28T17:00:00",
+    tags: ["New Customer", "Express Wash"],
     addresses: [
       { id: "la_7", label: "Home", line1: "67, JP Nagar, Phase 6", line2: "Near Puttenahalli Lake", city: "Bengaluru", pincode: "560078", isDefault: true },
     ],
@@ -528,6 +541,7 @@ const carwashCustomers: DemoCustomer[] = [
   {
     id: "ccust_1", name: "Rohit Kapoor", phone: "+91 98123 45670", email: "rohit.kapoor@email.com",
     totalOrders: 36, totalSpent: 45600, loyaltyPoints: 6200, tier: "PLATINUM", lastOrder: "2026-05-08T10:00:00",
+    tags: ["SUV Owner", "Subscription Member", "Monthly Unlimited"],
     addresses: [
       { id: "ca_1", label: "Home", line1: "15, Palm Meadows, Whitefield", line2: "", city: "Bengaluru", pincode: "560066", isDefault: true },
     ],
@@ -535,6 +549,7 @@ const carwashCustomers: DemoCustomer[] = [
   {
     id: "ccust_2", name: "Neha Gupta", phone: "+91 87012 34567", email: "neha.gupta@email.com",
     totalOrders: 24, totalSpent: 28900, loyaltyPoints: 4100, tier: "PLATINUM", lastOrder: "2026-05-07T15:30:00",
+    tags: ["Sedan Owner", "Detailing Service", "Pickup Wash"],
     addresses: [
       { id: "ca_2", label: "Home", line1: "42, Prestige Shantiniketan", line2: "ITPL Road, Whitefield", city: "Bengaluru", pincode: "560048", isDefault: true },
     ],
@@ -542,6 +557,7 @@ const carwashCustomers: DemoCustomer[] = [
   {
     id: "ccust_3", name: "Amit Singhania", phone: "+91 76098 76543", email: "amit.s@email.com",
     totalOrders: 18, totalSpent: 18200, loyaltyPoints: 2800, tier: "GOLD", lastOrder: "2026-05-06T11:00:00",
+    tags: ["Hatchback Owner", "Appointment Wash", "Interior Clean"],
     addresses: [
       { id: "ca_3", label: "Home", line1: "88, Sobha Lakeview, HSR Layout", line2: "", city: "Bengaluru", pincode: "560102", isDefault: true },
       { id: "ca_4", label: "Office", line1: "101, Embassy Tech Village", line2: "Outer Ring Road, Marathahalli", city: "Bengaluru", pincode: "560103", isDefault: false },
@@ -550,6 +566,7 @@ const carwashCustomers: DemoCustomer[] = [
   {
     id: "ccust_4", name: "Sunita Rao", phone: "+91 65087 65432", email: "sunita.rao@email.com",
     totalOrders: 14, totalSpent: 12800, loyaltyPoints: 1900, tier: "GOLD", lastOrder: "2026-05-05T09:45:00",
+    tags: ["SUV Owner", "Paint Protection", "Accessories Buyer"],
     addresses: [
       { id: "ca_5", label: "Home", line1: "33, Brigade Cosmos, Malleshwaram", line2: "", city: "Bengaluru", pincode: "560055", isDefault: true },
     ],
@@ -557,6 +574,7 @@ const carwashCustomers: DemoCustomer[] = [
   {
     id: "ccust_5", name: "Karthik Menon", phone: "+91 54076 54321", email: "karthik.m@email.com",
     totalOrders: 7, totalSpent: 6500, loyaltyPoints: 950, tier: "SILVER", lastOrder: "2026-05-02T14:15:00",
+    tags: ["Sedan Owner", "Exterior Wash", "Occasional"],
     addresses: [
       { id: "ca_6", label: "Home", line1: "77, RMZ Ecoworld, Bellandur", line2: "", city: "Bengaluru", pincode: "560103", isDefault: true },
     ],
@@ -564,6 +582,7 @@ const carwashCustomers: DemoCustomer[] = [
   {
     id: "ccust_6", name: "Divya Nambiar", phone: "+91 43065 43210", email: "divya.n@email.com",
     totalOrders: 3, totalSpent: 2400, loyaltyPoints: 300, tier: "BRONZE", lastOrder: "2026-04-29T16:00:00",
+    tags: ["Hatchback Owner", "First-time Customer"],
     addresses: [
       { id: "ca_7", label: "Home", line1: "22, Jayanagar, 4th Block", line2: "Near Lalbagh", city: "Bengaluru", pincode: "560041", isDefault: true },
     ],

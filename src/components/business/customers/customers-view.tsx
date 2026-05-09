@@ -81,6 +81,7 @@ interface Customer {
   loyaltyPoints: number
   tier: Tier
   lastOrder: string
+  tags: string[]
   addresses: CustomerAddress[]
 }
 
@@ -220,6 +221,7 @@ export function CustomersView() {
       loyaltyPoints: c.loyaltyPoints,
       tier: c.tier,
       lastOrder: c.lastOrder,
+      tags: c.tags || [],
       addresses: c.addresses.map((a) => ({
         id: a.id,
         label: a.label,
@@ -571,6 +573,16 @@ export function CustomersView() {
                                 </Avatar>
                                 <div className="min-w-0">
                                   <p className="text-sm font-medium truncate">{customer.name}</p>
+                                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                    {customer.tags.slice(0, 2).map((tag) => (
+                                      <Badge key={tag} variant="outline" className="text-[9px] px-1 py-0 h-4 border-muted-foreground/30 text-muted-foreground">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {customer.tags.length > 2 && (
+                                      <span className="text-[9px] text-muted-foreground">+{customer.tags.length - 2}</span>
+                                    )}
+                                  </div>
                                   <p className="text-[11px] text-muted-foreground md:hidden">
                                     {customer.phone}
                                   </p>
@@ -683,6 +695,17 @@ export function CustomersView() {
 
                 <ScrollArea className="h-[calc(100vh-160px)]">
                   <div className="space-y-6 p-6">
+                    {/* Customer Tags */}
+                    {customer.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {customer.tags.map((tag) => (
+                          <Badge key={tag} variant="outline" className="text-[10px] px-2 py-0.5">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Stats Cards */}
                     <div className="grid grid-cols-2 gap-3">
                       <Card className="shadow-none">
