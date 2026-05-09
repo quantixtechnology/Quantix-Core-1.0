@@ -102,3 +102,28 @@ Stage Summary:
 - **Fixed**: POS terminal now uses business-specific products
 - **Fixed**: Reports view (by subagent) now uses context-aware data for all business types
 - All 5 business demo views now show correct, business-specific data
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Fix "no preview" issue and Sparkle Wash showing grocery data
+
+Work Log:
+- Discovered dev server was down (port 3000 not listening), causing "no preview"
+- Restarted dev server using detached Node.js spawn
+- Fixed business sidebar icon: was always showing ShoppingCart for all business types, now shows Car icon for car wash, Droplets for laundry, etc.
+- Added businessIconMap to business-sidebar.tsx with Zap, ShoppingCart, Droplets, Car, Truck, Calendar, CreditCard, Receipt icons
+- Updated customer/data.ts with context-aware banners and offers for all business types (grocery, laundry, pro laundry, car wash)
+- Added getBanners() and getOffers() functions to customer/data.ts
+- Updated customer-home.tsx to use dynamic banners and offers based on demoBusinessId
+- Updated storefront-shell.tsx to show business name and plan tier in header
+- All lint checks pass with 0 errors
+- Dev server running and responding with HTTP 200
+
+Stage Summary:
+- **Fixed**: Dev server was not running — restarted it
+- **Fixed**: Business sidebar now shows correct icon per business type (Car for Sparkle Wash, Droplets for laundry)
+- **Fixed**: Customer storefront now shows business-specific banners (car wash banners for car wash, etc.)
+- **Fixed**: Customer storefront offers are now business-specific
+- **Fixed**: Storefront preview shows business name and plan tier
+- All business owner views (dashboard, products, customers, orders) were already using context-aware demo data correctly

@@ -1,6 +1,7 @@
 'use client';
 
-import { useAdminStore } from '@/stores/admin-store';
+import { useAdminStore, DEMO_BUSINESSES } from '@/stores/admin-store';
+import { getDemoBusinessName } from '@/lib/demo-data';
 import { CustomerLayout } from '@/components/customer/layout/customer-layout';
 import { CustomerHome } from '@/components/customer/home/customer-home';
 import { CustomerProducts } from '@/components/customer/products/customer-products';
@@ -61,6 +62,10 @@ function CustomerApp() {
 }
 
 export function StorefrontShell() {
+  const { demoBusinessId } = useAdminStore()
+  const businessName = getDemoBusinessName(demoBusinessId)
+  const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[1]
+
   return (
     <div className="animate-in fade-in duration-300">
       {/* Omni-Channel Architecture Badge */}
@@ -70,9 +75,9 @@ export function StorefrontShell() {
           <span className="text-[10px] font-semibold text-emerald-700">LIVE STOREFRONT</span>
         </div>
         <span className="text-[10px] text-slate-400">·</span>
-        <span className="text-[10px] text-slate-400">Connected to centralized backend</span>
+        <span className="text-[10px] text-slate-400 font-medium">{businessName}</span>
         <span className="text-[10px] text-slate-400">·</span>
-        <span className="text-[10px] text-slate-400">Same APIs as Mobile App & POS</span>
+        <span className="text-[10px] text-slate-400">{demoBusiness.planTier === "PRO" ? "⭐ Pro" : "Standard"} Plan</span>
       </div>
 
       {/* Storefront Container */}

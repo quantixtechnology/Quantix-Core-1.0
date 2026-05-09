@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingBag, Package, Monitor, Users, BarChart3,
   Settings, ShoppingCart, Warehouse, Megaphone, Tag, Star, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
-  Workflow,
+  Workflow, Zap, Droplets, Car,
 } from "lucide-react"
 import {
   Sidebar,
@@ -168,6 +168,12 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
   // Business display info based on demo
   const businessInitials = demoBusiness.name.split(" ").map(w => w[0]).join("").slice(0, 2)
 
+  // Map business type to correct icon
+  const businessIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    Zap, ShoppingCart, Droplets, Car, Truck, Calendar, CreditCard, Receipt,
+  }
+  const BusinessIcon = businessIconMap[demoBusiness.icon] || ShoppingCart
+
   // Mobile: Sheet-based sidebar
   if (isMobile) {
     return (
@@ -176,7 +182,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
           <SheetHeader className="border-b p-4">
             <div className="flex items-center gap-3">
               <div className={`flex size-10 items-center justify-center rounded-lg ${demoBusiness.color}`}>
-                <ShoppingCart className="size-5" />
+                <BusinessIcon className="size-5" />
               </div>
               <div>
                 <SheetTitle className="text-left text-base font-bold">{demoBusiness.name}</SheetTitle>
@@ -221,7 +227,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" className="hover:bg-sidebar-accent">
               <div className={`flex aspect-square size-8 items-center justify-center rounded-lg ${demoBusiness.color}`}>
-                <ShoppingCart className="size-4" />
+                <BusinessIcon className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-bold">{demoBusiness.name}</span>

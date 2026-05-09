@@ -30,19 +30,7 @@ import {
 
 const BIZ_ID = "biz_1"
 
-const banners = [
-  { id: "ban_1", title: "Fresh Vegetables", subtitle: "Farm to door in 2 hours", color: "#10B981", link: "cat_1" },
-  { id: "ban_2", title: "Dairy Essentials", subtitle: "Up to 15% off on fresh dairy", color: "#3B82F6", link: "cat_2" },
-  { id: "ban_3", title: "Weekend Specials", subtitle: "Flat ₹100 off on orders above ₹500", color: "#F59E0B", link: "" },
-  { id: "ban_4", title: "Snack Attack", subtitle: "Buy 2 Get 1 Free on all snacks", color: "#EF4444", link: "cat_4" },
-]
-
-const offers = [
-  { id: "off_1", title: "₹100 OFF", description: "On orders above ₹500", code: "FRESH100" },
-  { id: "off_2", title: "FREE DELIVERY", description: "On all orders today", code: "FREEDEL" },
-  { id: "off_3", title: "20% OFF", description: "On fruits & vegetables", code: "VEG20" },
-  { id: "off_4", title: "₹50 OFF", description: "First order special", code: "WELCOME50" },
-]
+import { getBanners, getOffers } from "@/components/customer/data"
 
 const categoryIcons: Record<string, React.ReactNode> = {
   Apple: <Apple className="w-6 h-6" />,
@@ -120,13 +108,17 @@ export function CustomerHome() {
     }))
   }, [demoBusinessId])
 
+  // Context-aware banners and offers
+  const banners = useMemo(() => getBanners(demoBusinessId), [demoBusinessId])
+  const offers = useMemo(() => getOffers(demoBusinessId), [demoBusinessId])
+
   // Auto-scroll banner
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBanner((prev) => (prev + 1) % banners.length)
     }, 3500)
     return () => clearInterval(interval)
-  }, [])
+  }, [banners.length])
 
   const categories = demoCategories
   const featuredProducts = demoProducts.filter((p) => p.isFeatured)

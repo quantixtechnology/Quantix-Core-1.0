@@ -1,89 +1,102 @@
 "use client"
 
 import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
+import type { WorkflowType } from "@/stores/admin-store"
 
-// Re-export context-aware demo data (grocery by default for customer app)
+// Context-aware banner data per business type
+const groceryBanners = [
+  { id: "ban_1", title: "Fresh Vegetables", subtitle: "Farm to door in 2 hours", color: "#10B981", link: "gcat_1" },
+  { id: "ban_2", title: "Dairy Essentials", subtitle: "Up to 15% off on fresh dairy", color: "#3B82F6", link: "gcat_2" },
+  { id: "ban_3", title: "Weekend Specials", subtitle: "Flat ₹100 off on orders above ₹500", color: "#F59E0B", link: "" },
+  { id: "ban_4", title: "Snack Attack", subtitle: "Buy 2 Get 1 Free on all snacks", color: "#EF4444", link: "gcat_3" },
+]
+
+const laundryBanners = [
+  { id: "ban_1", title: "Wash & Fold", subtitle: "Fresh clothes from ₹15/piece", color: "#10B981", link: "lcat_1" },
+  { id: "ban_2", title: "Dry Cleaning", subtitle: "Premium care for your garments", color: "#8B5CF6", link: "lcat_2" },
+  { id: "ban_3", title: "Express Service", subtitle: "Same day delivery available", color: "#3B82F6", link: "" },
+]
+
+const proLaundryBanners = [
+  { id: "ban_1", title: "Subscription Wash", subtitle: "Monthly packages from ₹899", color: "#8B5CF6", link: "plcat_3" },
+  { id: "ban_2", title: "Pickup & Delivery", subtitle: "We come to your doorstep", color: "#3B82F6", link: "plcat_4" },
+  { id: "ban_3", title: "Weight Wash", subtitle: "Pay only for what you use", color: "#EF4444", link: "plcat_2" },
+  { id: "ban_4", title: "Free Pickup", subtitle: "On orders above ₹300", color: "#10B981", link: "" },
+]
+
+const carwashBanners = [
+  { id: "ban_1", title: "Monthly Unlimited", subtitle: "Wash your car as many times as you want", color: "#8B5CF6", link: "ccat_1" },
+  { id: "ban_2", title: "Pickup Wash", subtitle: "We pick up, wash & return your car", color: "#3B82F6", link: "ccat_2" },
+  { id: "ban_3", title: "Book an Appointment", subtitle: "Choose your preferred time slot", color: "#F59E0B", link: "ccat_4" },
+  { id: "ban_4", title: "Detailing Service", subtitle: "Full interior & exterior detailing", color: "#EF4444", link: "ccat_5" },
+]
+
+// Context-aware offers per business type
+const groceryOffers = [
+  { id: "off_1", title: "₹100 OFF", description: "On orders above ₹500", code: "FRESH100" },
+  { id: "off_2", title: "FREE DELIVERY", description: "On all orders today", code: "FREEDEL" },
+  { id: "off_3", title: "20% OFF", description: "On fruits & vegetables", code: "VEG20" },
+  { id: "off_4", title: "₹50 OFF", description: "First order special", code: "WELCOME50" },
+]
+
+const laundryOffers = [
+  { id: "off_1", title: "₹75 OFF", description: "On orders above ₹300", code: "CLEAN75" },
+  { id: "off_2", title: "FREE PICKUP", description: "On all orders today", code: "FREEPICK" },
+  { id: "off_3", title: "15% OFF", description: "On dry cleaning", code: "DRY15" },
+  { id: "off_4", title: "₹50 OFF", description: "First order special", code: "WASH50" },
+]
+
+const carwashOffers = [
+  { id: "off_1", title: "₹200 OFF", description: "On first subscription", code: "SPARKLE200" },
+  { id: "off_2", title: "FREE DETAILING", description: "With unlimited plan", code: "DETAILFREE" },
+  { id: "off_3", title: "10% OFF", description: "On appointment wash", code: "BOOK10" },
+  { id: "off_4", title: "₹100 OFF", description: "First pickup wash", code: "PICKUP100" },
+]
+
+// Helper to get context-aware banners
+export function getBanners(demoBusinessId: string) {
+  switch (demoBusinessId) {
+    case "standard_laundry":
+      return laundryBanners
+    case "pro_laundry":
+      return proLaundryBanners
+    case "pro_carwash":
+      return carwashBanners
+    case "standard_grocery":
+    default:
+      return groceryBanners
+  }
+}
+
+// Helper to get context-aware offers
+export function getOffers(demoBusinessId: string) {
+  switch (demoBusinessId) {
+    case "standard_laundry":
+    case "pro_laundry":
+      return laundryOffers
+    case "pro_carwash":
+      return carwashOffers
+    case "standard_grocery":
+    default:
+      return groceryOffers
+  }
+}
+
+// Context-aware categories (default to grocery for backward compat)
 export const categories = getDemoCategories("standard_grocery").map((c) => ({
   id: c.id, name: c.name, slug: c.slug, productCount: 0, icon: c.icon, color: c.color, sortOrder: c.sortOrder,
 }))
 
+// Context-aware products (default to grocery for backward compat)
 export const products = getDemoProducts("standard_grocery").map((p) => ({
   id: p.id, name: p.name, slug: p.slug, categoryId: p.categoryId, category: p.category,
   status: p.status, isVeg: p.isVeg, isFeatured: p.isFeatured, image: p.image,
   variants: p.variants.map((v) => ({ id: v.id, name: v.name, sku: v.sku, mrp: v.mrp, price: v.price, stock: v.stock, isDefault: v.isDefault })),
 }))
 
-// Banner data for home carousel
-export const banners = [
-  {
-    id: "ban_1",
-    title: "Fresh Vegetables",
-    subtitle: "Farm to door in 2 hours",
-    image: "",
-    color: "#10B981",
-    link: "cat_1",
-  },
-  {
-    id: "ban_2",
-    title: "Dairy Essentials",
-    subtitle: "Up to 15% off on fresh dairy",
-    image: "",
-    color: "#3B82F6",
-    link: "cat_2",
-  },
-  {
-    id: "ban_3",
-    title: "Weekend Specials",
-    subtitle: "Flat ₹100 off on orders above ₹500",
-    image: "",
-    color: "#F59E0B",
-    link: "",
-  },
-  {
-    id: "ban_4",
-    title: "Snack Attack",
-    subtitle: "Buy 2 Get 1 Free on all snacks",
-    image: "",
-    color: "#EF4444",
-    link: "cat_4",
-  },
-]
-
-// Offer/promo data
-export const offers = [
-  {
-    id: "off_1",
-    title: "₹100 OFF",
-    description: "On orders above ₹500",
-    code: "FRESH100",
-    discount: 100,
-    validTill: "2025-02-28",
-  },
-  {
-    id: "off_2",
-    title: "FREE DELIVERY",
-    description: "On all orders today",
-    code: "FREEDEL",
-    discount: 30,
-    validTill: "2025-01-31",
-  },
-  {
-    id: "off_3",
-    title: "20% OFF",
-    description: "On fruits & vegetables",
-    code: "VEG20",
-    discount: 0,
-    validTill: "2025-02-15",
-  },
-  {
-    id: "off_4",
-    title: "₹50 OFF",
-    description: "First order special",
-    code: "WELCOME50",
-    discount: 50,
-    validTill: "2025-03-31",
-  },
-]
+// Default banners and offers (grocery) for backward compatibility
+export const banners = groceryBanners
+export const offers = groceryOffers
 
 // Customer addresses
 export const customerAddresses = [
@@ -101,7 +114,7 @@ export const customerAddresses = [
   {
     id: "addr_2",
     label: "Office",
-    line1: "512,商业Tower, BKC",
+    line1: "512, Business Tower, BKC",
     line2: "13th Floor",
     city: "Mumbai",
     pincode: "400051",
