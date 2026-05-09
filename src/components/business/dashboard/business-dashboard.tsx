@@ -357,13 +357,16 @@ export function BusinessDashboard() {
         </Card>
       </div>
 
-      {/* Product Catalog Overview */}
-      <Card>
+      {/* Product Catalog Overview — Prominent */}
+      <Card className="border-primary/20">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-base">Product Catalog</CardTitle>
-              <CardDescription>{demoCategories.length} categories · {demoProducts.length} products</CardDescription>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Package className="h-4 w-4 text-primary" />
+                Product Catalog
+              </CardTitle>
+              <CardDescription className="mt-1">{demoCategories.length} categories · {demoProducts.length} products · {demoProducts.filter(p => p.status === "ACTIVE").length} active</CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => setBusinessPage("products")}>
               View All
@@ -392,6 +395,57 @@ export function BusinessDashboard() {
                   <Badge variant="outline" className="text-[9px]">
                     {cat.workflow.replace(/_/g, " ")}
                   </Badge>
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Recently Added Products */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-medium">Recently Added Products</CardTitle>
+              <CardDescription className="text-xs">Latest products in your catalog</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => setBusinessPage("products")}>
+              See All Products
+              <ArrowUpRight className="h-3 w-3" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="space-y-2">
+            {demoProducts.slice(-5).reverse().map((product) => {
+              const defaultVariant = product.variants.find(v => v.isDefault) || product.variants[0]
+              const catInfo = demoCategories.find(c => c.id === product.categoryId)
+              const isEmoji = catInfo?.icon && /\p{Emoji}/u.test(catInfo.icon) && catInfo.icon.length <= 4
+              return (
+                <div key={product.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setBusinessPage("products")}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: catInfo ? `${catInfo.color}18` : "#f3f4f6", color: catInfo?.color || "#6b7280" }}>
+                      {isEmoji ? <span className="text-sm">{catInfo?.icon}</span> : <Package className="h-4 w-4" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{product.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{product.category} · {defaultVariant?.name}</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 flex items-center gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">₹{defaultVariant?.price.toLocaleString("en-IN")}</p>
+                      {product.status === "ACTIVE" ? (
+                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[9px] px-1.5 py-0">Active</Badge>
+                      ) : product.status === "OUT_OF_STOCK" ? (
+                        <Badge className="bg-red-50 text-red-700 border-red-200 text-[9px] px-1.5 py-0">Out of Stock</Badge>
+                      ) : (
+                        <Badge className="bg-slate-50 text-slate-700 border-slate-200 text-[9px] px-1.5 py-0">{product.status}</Badge>
+                      )}
+                    </div>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
                 </div>
               )
             })}

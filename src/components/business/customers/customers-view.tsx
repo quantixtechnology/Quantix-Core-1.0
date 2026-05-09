@@ -193,6 +193,21 @@ export function CustomersView() {
   const { demoBusinessId } = useAdminStore()
   const businessName = getDemoBusinessName(demoBusinessId)
 
+  // Business-specific form placeholders
+  const customerPlaceholders = useMemo(() => {
+    switch (demoBusinessId) {
+      case "standard_grocery":
+        return { name: "e.g. Rajesh Kumar", address: "e.g. 42, MG Road, Bengaluru" }
+      case "standard_laundry":
+      case "pro_laundry":
+        return { name: "e.g. Regular Customer", address: "e.g. Flat No, Society Name, Bengaluru" }
+      case "pro_carwash":
+        return { name: "e.g. Car Owner Name", address: "e.g. Villa/Apt, Layout, Bengaluru" }
+      default:
+        return { name: "e.g. Priya Sharma", address: "Street, Area, City, Pincode" }
+    }
+  }, [demoBusinessId])
+
   // ---- Demo customer data based on business context ----
   const demoCustomerList: Customer[] = useMemo(() => {
     return getDemoCustomers(demoBusinessId).map((c) => ({
@@ -342,7 +357,7 @@ export function CustomersView() {
                 <div className="space-y-2">
                   <Label>Full Name</Label>
                   <Input
-                    placeholder="e.g. Priya Sharma"
+                    placeholder={customerPlaceholders.name}
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                   />
@@ -369,7 +384,7 @@ export function CustomersView() {
                 <div className="space-y-2">
                   <Label>Address</Label>
                   <Input
-                    placeholder="Street, Area, City, Pincode"
+                    placeholder={customerPlaceholders.address}
                     value={formAddress}
                     onChange={(e) => setFormAddress(e.target.value)}
                   />
@@ -385,6 +400,21 @@ export function CustomersView() {
           </Dialog>
         }
       />
+
+      {/* Business Context Banner */}
+      {demoBusinessId !== "super_admin" && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">{businessName}</span>
+              <Badge variant="outline" className="text-[10px]">
+                {demoBusinessId.includes("grocery") ? "Grocery" : demoBusinessId.includes("laundry") ? "Laundry" : demoBusinessId.includes("carwash") ? "Car Wash" : "Business"} Customers
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ================================================================== */}
       {/* Summary Cards                                                      */}

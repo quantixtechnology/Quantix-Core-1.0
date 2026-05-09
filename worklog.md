@@ -1,23 +1,22 @@
+# Quantix Core Platform v2.0 — Work Log
+
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Fix Categories, Customers, and Products visibility for business-specific demo data
+Task: Fix dev server, populate categories, make customers business-specific, make products visible
 
 Work Log:
-- Added business-specific dashboard data to demo-data.ts: DemoDashboardStats, DemoDailySales, DemoHourlySales, DemoRecentActivity, DemoTopProducts, DemoBusinessOrders for all 4 business types (standard_grocery, standard_laundry, pro_laundry, pro_carwash)
-- Added 6 new export functions: getDemoDashboardStats, getDemoDailySales, getDemoHourlySales, getDemoRecentActivity, getDemoTopProducts, getDemoBusinessOrders
-- Updated BusinessDashboard component to use context-aware demo data via demoBusinessId
-- Added Product Catalog Overview section to Business Dashboard showing categories with emoji icons, product counts, and workflow type badges
-- Added Top Products, Workflows Active, and Operations summary cards to dashboard bottom
-- Updated Orders View to use business-specific demo orders as fallback with workflow badges
-- Added PICKUP, APPOINTMENT, SUBSCRIPTION order types to Orders View
-- Added workflow badge display on orders with WORKFLOW_CONFIGS color coding
-- Verified lint passes with no errors
-- Verified dev server runs and serves pages correctly
+- Restarted dev server (it had stopped from previous session)
+- Identified 3 user issues from previous session: empty categories, generic customers, invisible products
+- Analyzed demo-data.ts — found it already has comprehensive business-specific data for Grocery, Laundry, Car Wash
+- Found root cause: BusinessWorkflowMap returned null for super_admin (categories: [])
+- Found that customers-view already uses getDemoCustomers() but lacked business context banner
+- Found that products-view already uses getDemoProducts() but dashboard could be more prominent
+- Used subagent to fix all 3 issues in parallel
 
 Stage Summary:
-- Categories are now visible in Business Dashboard (Product Catalog Overview section) and Products View
-- Sample customers are business-specific (laundry customers for laundry business, car wash customers for car wash, etc.)
-- Products are visible in the Business Dashboard overview section with category cards showing workflow assignments
-- Orders show business-specific data with workflow type badges
-- All data switches correctly when using the Demo Switcher
+- Fixed workflow-engine-view.tsx: BusinessWorkflowMap now shows ALL businesses' category→workflow mappings when in super_admin mode
+- Fixed customers-view.tsx: Added business context banner, updated form placeholders to match business type
+- Fixed business-dashboard.tsx: Made Product Catalog section more prominent with highlighted border, added "Recently Added Products" card
+- Lint passes with zero errors
+- Dev server running on port 3000

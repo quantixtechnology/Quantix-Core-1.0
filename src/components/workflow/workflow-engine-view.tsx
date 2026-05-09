@@ -14,6 +14,7 @@ import {
   Sparkles, Layers, Workflow,
 } from "lucide-react"
 import { useAdminStore, WORKFLOW_CONFIGS, DEMO_BUSINESSES, PLAN_CONFIGS, type WorkflowType, type DemoBusiness } from "@/stores/admin-store"
+import { getDemoCategories, getDemoProducts, getDemoBusinessName } from "@/lib/demo-data"
 import { DemoSwitcher } from "@/components/workflow/demo-switcher"
 import { PlanComparison } from "@/components/workflow/plan-comparison"
 
@@ -120,7 +121,77 @@ function WorkflowCard({ type, demoBusiness }: { type: WorkflowType; demoBusiness
 }
 
 function BusinessWorkflowMap({ demoBusiness }: { demoBusiness: DemoBusiness }) {
-  if (demoBusiness.id === "super_admin" || demoBusiness.categories.length === 0) return null
+  // Super Admin: show ALL businesses' category → workflow mappings
+  if (demoBusiness.id === "super_admin") {
+    const businessIds = ["standard_grocery", "standard_laundry", "pro_laundry", "pro_carwash"] as const
+    const businessMetadata: Record<string, { name: string; badgeClass: string; plan: string }> = {
+      standard_grocery: { name: "FreshMart Grocers", badgeClass: "bg-emerald-100 text-emerald-700 border-emerald-200", plan: "Standard" },
+      standard_laundry: { name: "QuickWash Laundry", badgeClass: "bg-sky-100 text-sky-700 border-sky-200", plan: "Standard" },
+      pro_laundry: { name: "ProWash Premium", badgeClass: "bg-sky-100 text-sky-700 border-sky-200", plan: "Pro" },
+      pro_carwash: { name: "SparkleCar Wash", badgeClass: "bg-amber-100 text-amber-700 border-amber-200", plan: "Pro" },
+    }
+
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Layers className="h-4 w-4" />
+            Category → Workflow Assignment Map — All Businesses
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Super admin view: see how every business maps categories to workflows
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {businessIds.map((bizId) => {
+            const categories = getDemoCategories(bizId)
+            const products = getDemoProducts(bizId)
+            const meta = businessMetadata[bizId]
+            return (
+              <div key={bizId} className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Badge className={meta.badgeClass}>{meta.name}</Badge>
+                  <Badge variant="outline" className="text-[10px]">{meta.plan} Plan</Badge>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {categories.length} categories · {products.length} products
+                  </span>
+                </div>
+                <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {categories.map((cat) => {
+                    const config = WORKFLOW_CONFIGS.find((w) => w.type === cat.workflow)
+                    const Icon = workflowIconMap[config?.icon || "ShoppingCart"] || ShoppingCart
+                    const catProducts = products.filter((p) => p.categoryId === cat.id)
+                    const isEmoji = cat.icon && /\p{Emoji}/u.test(cat.icon) && cat.icon.length <= 4
+                    return (
+                      <div key={cat.id} className="flex items-center gap-2 rounded-md border px-2.5 py-2">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${cat.color}18`, color: cat.color }}>
+                          {isEmoji ? <span className="text-sm">{cat.icon}</span> : <Package className="h-4 w-4" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium truncate">{cat.name}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <Icon className={`h-3 w-3 shrink-0 ${config?.color || "text-muted-foreground"}`} />
+                            <span className="text-[10px] text-muted-foreground truncate">{config?.label || cat.workflow.replace(/_/g, " ")}</span>
+                            <span className="text-[9px] text-muted-foreground">· {catProducts.length}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Specific business: show that business's category → workflow mapping using actual demo data
+  const categories = getDemoCategories(demoBusiness.id)
+  const products = getDemoProducts(demoBusiness.id)
+
+  if (categories.length === 0) return null
 
   return (
     <Card>
@@ -135,12 +206,22 @@ function BusinessWorkflowMap({ demoBusiness }: { demoBusiness: DemoBusiness }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
-          {demoBusiness.categories.map((cat) => {
+          {categories.map((cat) => {
             const config = WORKFLOW_CONFIGS.find((w) => w.type === cat.workflow)
             const Icon = workflowIconMap[config?.icon || "ShoppingCart"] || ShoppingCart
+            const catProducts = products.filter((p) => p.categoryId === cat.id)
+            const isEmoji = cat.icon && /\p{Emoji}/u.test(cat.icon) && cat.icon.length <= 4
             return (
-              <div key={cat.name} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                <span className="text-sm font-medium">{cat.name}</span>
+              <div key={cat.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: `${cat.color}18`, color: cat.color }}>
+                    {isEmoji ? <span className="text-sm">{cat.icon}</span> : <Package className="h-4 w-4" />}
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium">{cat.name}</span>
+                    <p className="text-[10px] text-muted-foreground">{catProducts.length} products · {cat.description}</p>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
                   <Icon className={`h-3.5 w-3.5 ${config?.color || "text-muted-foreground"}`} />
                   <Badge variant="outline" className="text-[10px]">
