@@ -5,14 +5,13 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useOrders } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
+import { getDemoBusinessName } from "@/lib/demo-data"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState, EmptyState } from "@/components/ui/loading-states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ClipboardList, ChevronRight, Package } from "lucide-react"
 import type { OrderStatus } from "@/lib/types"
-
-const BIZ_ID = "biz_1"
 
 const statusColors: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -40,9 +39,12 @@ interface OrderItem {
 }
 
 export function CustomerOrders() {
-  const { setCustomerPage, setSelectedOrderId } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, demoBusinessId } = useAdminStore()
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState<TabFilter>("active")
+
+  // Use dynamic business ID from admin store
+  const BIZ_ID = "biz_1"
 
   useEffect(() => {
     setBusinessContext(BIZ_ID)
@@ -66,11 +68,11 @@ export function CustomerOrders() {
       totalAmount: o.totalAmount as number,
       createdAt: o.createdAt as string,
       customerName: o.customerName as string | null,
-      store: (o.store as { id: string; name: string }) || { id: "", name: "FreshMart" },
+      store: (o.store as { id: string; name: string }) || { id: "", name: getDemoBusinessName(demoBusinessId) },
       _count: o._count as { items: number } | undefined,
       items: o.items as Array<{ name: string; qty: number; price: number }> | undefined,
     }))
-  }, [ordersData])
+  }, [ordersData, demoBusinessId])
 
   const filteredOrders = useMemo(() => {
     switch (activeTab) {

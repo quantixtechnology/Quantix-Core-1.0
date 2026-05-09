@@ -58,7 +58,7 @@ import { setBusinessContext } from "@/lib/api-client";
 import { showSuccess, showError } from "@/lib/toast-utils";
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { useAdminStore } from "@/stores/admin-store";
-import { getDemoProducts, getDemoCategories, getDemoCustomers } from "@/lib/demo-data";
+import { getDemoProducts, getDemoCategories, getDemoCustomers, getDemoOrderPrefix, getDemoStoreInfo } from "@/lib/demo-data";
 
 // ============================================================================
 // Types
@@ -94,11 +94,11 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-function generateBillNumber(): string {
+function generateBillNumber(prefix: string): string {
   const now = new Date();
   const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
   const rand = String(Math.floor(Math.random() * 9999) + 1).padStart(4, "0");
-  return `FM-${datePart}-${rand}`;
+  return `${prefix}${datePart}-${rand}`;
 }
 
 // ============================================================================
@@ -376,9 +376,9 @@ export function POSView() {
 
     setPaymentConfirmed(true);
     setSessionBillCount((prev) => prev + 1);
-    const billNum = generateBillNumber();
+    const billNum = generateBillNumber(getDemoOrderPrefix(demoBusinessId));
     setLastBillNumber(billNum);
-  }, [cart, selectedCustomerData, activePaymentMethod, createOrderMutation, sessionStartTime]);
+  }, [cart, selectedCustomerData, activePaymentMethod, createOrderMutation, sessionStartTime, demoBusinessId]);
 
   const openReceipt = useCallback(() => {
     setPaymentDialogOpen(false);
@@ -669,7 +669,7 @@ export function POSView() {
             disabled={cart.length === 0}
             onClick={() => {
               if (cart.length > 0) {
-                const billNum = lastBillNumber || generateBillNumber();
+                const billNum = lastBillNumber || generateBillNumber(getDemoOrderPrefix(demoBusinessId));
                 setLastBillNumber(billNum);
                 setReceiptDialogOpen(true);
               }
@@ -918,7 +918,7 @@ export function POSView() {
                   <div className="border-b border-dashed border-muted-foreground/30 pb-2 space-y-0.5">
                     <div className="flex justify-between">
                       <span>Bill No:</span>
-                      <span className="font-bold">{lastBillNumber || generateBillNumber()}</span>
+                      <span className="font-bold">{lastBillNumber || generateBillNumber(getDemoOrderPrefix(demoBusinessId))}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>Date:</span>
@@ -1025,7 +1025,7 @@ export function POSView() {
                   {/* Footer */}
                   <div className="text-center border-t border-dashed border-muted-foreground/30 pt-2 space-y-1">
                     <p className="font-bold text-[10px]">
-                      Thank you for shopping at FreshMart!
+                      Thank you for visiting {getDemoStoreInfo(demoBusinessId).name}!
                     </p>
                     <p className="text-[9px] text-muted-foreground">
                       Visit again · Fresh quality, best prices

@@ -33,7 +33,6 @@ import {
   Loader2,
 } from "lucide-react"
 
-const BIZ_ID = "biz_1"
 const STORE_ID = "store_1"
 
 // Local address data (can be replaced with API later)
@@ -41,25 +40,25 @@ const defaultAddresses = [
   {
     id: "addr_1",
     label: "Home",
-    line1: "402, Lotus Apartments, Andheri West",
-    line2: "Near Metro Station",
-    city: "Mumbai",
-    pincode: "400053",
+    line1: "402, Prestige Shantiniketan, Whitefield",
+    line2: "Near ITPL Road",
+    city: "Bengaluru",
+    pincode: "560048",
     isDefault: true,
   },
   {
     id: "addr_2",
     label: "Office",
-    line1: "512, Commercial Tower, BKC",
-    line2: "13th Floor",
-    city: "Mumbai",
-    pincode: "400051",
+    line1: "512, Embassy Tech Village, Outer Ring Road",
+    line2: "Tower B, 13th Floor",
+    city: "Bengaluru",
+    pincode: "560103",
     isDefault: false,
   },
 ]
 
 export function CustomerCheckout() {
-  const { setCustomerPage, setSelectedOrderId } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, demoBusinessId } = useAdminStore()
   const {
     items,
     subtotal: getSubtotal,
@@ -88,7 +87,7 @@ export function CustomerCheckout() {
   const { checkout: razorpayCheckout, isProcessing: razorpayProcessing } = useRazorpayCheckout()
 
   useEffect(() => {
-    setBusinessContext(BIZ_ID)
+    setBusinessContext(demoBusinessId)
   }, [])
 
   const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`

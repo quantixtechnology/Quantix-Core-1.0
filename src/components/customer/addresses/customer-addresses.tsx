@@ -20,7 +20,10 @@ import {
 } from "@/components/ui/dialog"
 import { Plus, MapPin, Home, Building2, Star, Edit, Trash2, ChevronRight, Loader2 } from "lucide-react"
 
-const BIZ_ID = "biz_1"
+const BENGALURU_DEFAULT_ADDRESSES = [
+  { id: "addr_1", label: "Home", line1: "402, Prestige Shantiniketan, Whitefield", line2: "Near ITPL Road", city: "Bengaluru", pincode: "560048", isDefault: true },
+  { id: "addr_2", label: "Office", line1: "512, Embassy Tech Village, Outer Ring Road", line2: "Tower B, 13th Floor", city: "Bengaluru", pincode: "560103", isDefault: false },
+]
 
 interface Address {
   id: string
@@ -34,6 +37,7 @@ interface Address {
 
 export function CustomerAddresses() {
   const { user } = useAuthStore()
+  const { demoBusinessId } = useAdminStore()
   const [addresses, setAddresses] = useState<Address[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -43,22 +47,19 @@ export function CustomerAddresses() {
     label: "Home",
     line1: "",
     line2: "",
-    city: "Mumbai",
+    city: "Bengaluru",
     pincode: "",
   })
 
   useEffect(() => {
-    setBusinessContext(BIZ_ID)
-  }, [])
+    setBusinessContext(demoBusinessId)
+  }, [demoBusinessId])
 
   // Fetch customer addresses
   const fetchAddresses = useCallback(async () => {
     if (!user?.id) {
       // Use default addresses if no user
-      setAddresses([
-        { id: "addr_1", label: "Home", line1: "402, Lotus Apartments, Andheri West", line2: "Near Metro Station", city: "Mumbai", pincode: "400053", isDefault: true },
-        { id: "addr_2", label: "Office", line1: "512, Commercial Tower, BKC", line2: "13th Floor", city: "Mumbai", pincode: "400051", isDefault: false },
-      ])
+      setAddresses(BENGALURU_DEFAULT_ADDRESSES)
       setLoading(false)
       return
     }
@@ -81,17 +82,11 @@ export function CustomerAddresses() {
         })))
       } else {
         // Fallback addresses
-        setAddresses([
-          { id: "addr_1", label: "Home", line1: "402, Lotus Apartments, Andheri West", line2: "Near Metro Station", city: "Mumbai", pincode: "400053", isDefault: true },
-          { id: "addr_2", label: "Office", line1: "512, Commercial Tower, BKC", line2: "13th Floor", city: "Mumbai", pincode: "400051", isDefault: false },
-        ])
+        setAddresses(BENGALURU_DEFAULT_ADDRESSES)
       }
     } catch {
       // On error, use fallback
-      setAddresses([
-        { id: "addr_1", label: "Home", line1: "402, Lotus Apartments, Andheri West", line2: "Near Metro Station", city: "Mumbai", pincode: "400053", isDefault: true },
-        { id: "addr_2", label: "Office", line1: "512, Commercial Tower, BKC", line2: "13th Floor", city: "Mumbai", pincode: "400051", isDefault: false },
-      ])
+      setAddresses(BENGALURU_DEFAULT_ADDRESSES)
       setError("Could not load addresses from server. Showing saved addresses.")
     } finally {
       setLoading(false)
@@ -143,7 +138,7 @@ export function CustomerAddresses() {
       }
       setAddresses((prev) => [...prev, newAddr])
       setShowAddDialog(false)
-      setNewAddress({ label: "Home", line1: "", line2: "", city: "Mumbai", pincode: "" })
+      setNewAddress({ label: "Home", line1: "", line2: "", city: "Bengaluru", pincode: "" })
       showSuccess("Address added!", "Your new address has been saved.")
     } catch (err) {
       // Optimistic update even on API failure
@@ -158,7 +153,7 @@ export function CustomerAddresses() {
       }
       setAddresses((prev) => [...prev, newAddr])
       setShowAddDialog(false)
-      setNewAddress({ label: "Home", line1: "", line2: "", city: "Mumbai", pincode: "" })
+      setNewAddress({ label: "Home", line1: "", line2: "", city: "Bengaluru", pincode: "" })
       showApiError(err)
     } finally {
       setSaving(false)

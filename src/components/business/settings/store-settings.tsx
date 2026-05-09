@@ -24,6 +24,8 @@ import { useStores, useOrders } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { PageHeader } from "@/components/admin/shared/page-header"
+import { useAdminStore } from "@/stores/admin-store"
+import { getDemoBusinessName, getDemoStoreInfo } from "@/lib/demo-data"
 
 const BUSINESS_ID = "biz_1"
 
@@ -77,10 +79,11 @@ export function StoreSettingsView() {
   }, [storesData])
 
   // General tab state - initialized with API data when available
-  const [storeName, setStoreName] = useState("FreshMart Grocers")
-  const [storePhone, setStorePhone] = useState("+91 22 2876 5432")
-  const [storeEmail, setStoreEmail] = useState("info@freshmart.in")
-  const [storeAddress, setStoreAddress] = useState("Shop 12, Hill Road, Bandra West, Mumbai 400050")
+  const { demoBusinessId } = useAdminStore()
+  const [storeName, setStoreName] = useState(getDemoBusinessName(demoBusinessId))
+  const [storePhone, setStorePhone] = useState(getDemoStoreInfo(demoBusinessId).phone)
+  const [storeEmail, setStoreEmail] = useState(getDemoStoreInfo(demoBusinessId).email)
+  const [storeAddress, setStoreAddress] = useState(getDemoStoreInfo(demoBusinessId).name + "\n" + getDemoStoreInfo(demoBusinessId).address)
   const [isOnline, setIsOnline] = useState(true)
   const [minOrder, setMinOrder] = useState("200")
   const [prepTime, setPrepTime] = useState("30")
@@ -111,7 +114,7 @@ export function StoreSettingsView() {
   const [autoPrint, setAutoPrint] = useState(true)
   const [printOnPayment, setPrintOnPayment] = useState(true)
   const [includeQr, setIncludeQr] = useState(true)
-  const [receiptHeader, setReceiptHeader] = useState("FreshMart Grocers\nHill Road, Bandra West, Mumbai")
+  const [receiptHeader, setReceiptHeader] = useState(getDemoStoreInfo(demoBusinessId).name + "\n" + getDemoStoreInfo(demoBusinessId).address)
   const [receiptFooter, setReceiptFooter] = useState("Thank you for shopping with us!\nVisit again soon.")
   const [numCopies, setNumCopies] = useState("2")
 

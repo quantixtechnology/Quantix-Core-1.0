@@ -1,8 +1,9 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import { getDemoCoupons } from "@/lib/demo-data"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -20,16 +21,11 @@ import {
   X,
 } from "lucide-react"
 
-// Coupon validation data (kept locally as this is a client-side validation)
-const validCoupons: Record<string, { discount: number; minOrder: number }> = {
-  FRESH100: { discount: 100, minOrder: 500 },
-  FREEDEL: { discount: 30, minOrder: 0 },
-  WELCOME50: { discount: 50, minOrder: 200 },
-  VEG20: { discount: 0, minOrder: 0 },
-}
-
 export function CustomerCart() {
-  const { setCustomerPage } = useAdminStore()
+  const { setCustomerPage, demoBusinessId } = useAdminStore()
+
+  // Dynamic coupons from business context
+  const validCoupons = useMemo(() => getDemoCoupons(demoBusinessId), [demoBusinessId])
   const {
     items,
     updateQuantity,

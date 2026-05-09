@@ -53,7 +53,7 @@ import {
 } from "@/components/ui/table";
 import { ThermalPrintDialog } from "./thermal-print-dialog";
 import { PrintStyles } from "./print-styles";
-import { getDemoProducts, getDemoCategories, getDemoCustomers, getDemoBusinessOrders } from "@/lib/demo-data";
+import { getDemoProducts, getDemoCategories, getDemoCustomers, getDemoBusinessOrders, getDemoOrderPrefix, getDemoStoreInfo } from "@/lib/demo-data";
 import { useAdminStore } from "@/stores/admin-store";
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { formatCurrency, formatIndianDateTime } from "@/lib/utils";
@@ -94,11 +94,11 @@ interface HeldOrder {
 // Helpers
 // ============================================================================
 
-function generateBillNumber(): string {
+function generateBillNumber(prefix: string): string {
   const now = new Date();
   const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
   const rand = String(Math.floor(Math.random() * 9999) + 1).padStart(4, "0");
-  return `FM-${datePart}-${rand}`;
+  return `${prefix}${datePart}-${rand}`;
 }
 
 // ============================================================================
@@ -360,7 +360,7 @@ export function POSProduction() {
   const confirmPayment = useCallback(() => {
     setPaymentConfirmed(true);
     setSessionBillCount((prev) => prev + 1);
-    const billNum = generateBillNumber();
+    const billNum = generateBillNumber(getDemoOrderPrefix(demoBusinessId));
     setLastBillNumber(billNum);
 
     // Track session totals
@@ -1062,7 +1062,7 @@ export function POSProduction() {
 
   // ---- Thermal receipt data for print dialog ----
   const receiptOrderData = useMemo(() => ({
-    orderNumber: lastBillNumber || generateBillNumber(),
+    orderNumber: lastBillNumber || generateBillNumber(getDemoOrderPrefix(demoBusinessId)),
     date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
     time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }),
     cashier: "Counter 1",
@@ -1089,16 +1089,18 @@ export function POSProduction() {
     customerPhone: selectedCustomerData?.phone,
   }), [cart, cartSummary, discountAmount, totalAmount, activePaymentMethod, selectedCustomerData, lastBillNumber]);
 
+  const storeInfo = useMemo(() => getDemoStoreInfo(demoBusinessId), [demoBusinessId]);
+
   const receiptBusinessData = useMemo(() => ({
-    name: "FreshMart Grocers",
-    address: "42 Linking Road, Bandra West, Mumbai - 400050",
+    name: storeInfo.name,
+    address: storeInfo.address,
     gstNumber: "27AABCF1234A1Z5",
-    phone: "+91 22 2640 0000",
-    email: "support@freshmart.in",
+    phone: storeInfo.phone,
+    email: storeInfo.email,
     fssaiLicense: "12345678901234",
-    supportPhone: "+91 22 2640 0001",
+    supportPhone: storeInfo.phone,
     tagline: "Fresh quality, best prices",
-  }), []);
+  }), [storeInfo]);
 
   // ============================================================================
   // Main Render
@@ -1350,7 +1352,7 @@ export function POSProduction() {
         onOpenChange={setPrintDialogOpen}
         order={receiptOrderData}
         business={receiptBusinessData}
-        store={{ name: "FreshMart - Bandra West", code: "FM-BW01", phone: "+91 22 2640 0000", address: "42 Linking Road, Bandra West, Mumbai 400050" }}
+        store={{ name: storeInfo.name, code: storeInfo.code, phone: storeInfo.phone, address: storeInfo.address }}
         defaultPaperSize={paperSize}
         onPrintComplete={() => {
           setPrintDialogOpen(false);

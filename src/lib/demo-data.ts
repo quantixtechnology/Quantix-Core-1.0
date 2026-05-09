@@ -1368,6 +1368,36 @@ export function getDemoBusinessName(demoBusinessId: string): string {
   }
 }
 
+export function getDemoOrderPrefix(demoBusinessId: string): string {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return "FM-"
+    case "standard_laundry":
+      return "QW-"
+    case "pro_laundry":
+      return "PW-"
+    case "pro_carwash":
+      return "SC-"
+    default:
+      return "QX-"
+  }
+}
+
+export function getDemoStoreInfo(demoBusinessId: string): { name: string; email: string; address: string; phone: string; code: string } {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return { name: "FreshMart Grocers", email: "info@freshmart.in", address: "Hill Road, Bandra West, Bengaluru", phone: "+91 80 2642 1234", code: "FM-BW01" }
+    case "standard_laundry":
+      return { name: "QuickWash Laundry", email: "care@quickwash.in", address: "AECS Layout, Kundalahalli, Bengaluru", phone: "+91 80 4123 5678", code: "QW-KD01" }
+    case "pro_laundry":
+      return { name: "ProWash Premium", email: "hello@prowash.in", address: "HSR Layout, Sector 2, Bengaluru", phone: "+91 80 4987 6543", code: "PW-HS01" }
+    case "pro_carwash":
+      return { name: "SparkleCar Wash", email: "support@sparklecar.in", address: "Whitefield Main Road, Bengaluru", phone: "+91 80 4321 8765", code: "SC-WF01" }
+    default:
+      return { name: "Quantix Store", email: "info@quantix.in", address: "Bengaluru, Karnataka", phone: "+91 80 0000 0000", code: "QX-01" }
+  }
+}
+
 export function getDemoDashboardStats(demoBusinessId: string): DemoDashboardStats {
   switch (demoBusinessId) {
     case "standard_grocery":
@@ -1515,5 +1545,62 @@ export function getDemoOrderStatusData(demoBusinessId: string): { status: string
       return carwashOrderStatusData
     default:
       return groceryOrderStatusData
+  }
+}
+
+export function getDemoBusinessTagline(demoBusinessId: string): string {
+  switch (demoBusinessId) {
+    case "standard_grocery": return "Fresh groceries delivered to your doorstep"
+    case "standard_laundry": return "Expert care for your garments"
+    case "pro_laundry": return "Premium laundry at your service"
+    case "pro_carwash": return "Your car deserves the best"
+    default: return "Quality service, every time"
+  }
+}
+
+export function getDemoBusinessInitials(demoBusinessId: string): string {
+  switch (demoBusinessId) {
+    case "standard_grocery": return "FM"
+    case "standard_laundry": return "QW"
+    case "pro_laundry": return "PW"
+    case "pro_carwash": return "SC"
+    default: return "QX"
+  }
+}
+
+export function getDemoCoupons(demoBusinessId: string): Record<string, { discount: number; minOrder: number; description: string }> {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return {
+        FRESH100: { discount: 100, minOrder: 500, description: "₹100 off on groceries" },
+        FREEDEL: { discount: 30, minOrder: 0, description: "Free delivery" },
+        WELCOME50: { discount: 50, minOrder: 200, description: "Welcome discount" },
+        VEG20: { discount: 0, minOrder: 0, description: "Free delivery on vegetables" },
+      }
+    case "standard_laundry":
+      return {
+        WASH50: { discount: 50, minOrder: 300, description: "₹50 off on laundry" },
+        FIRSTPICK: { discount: 30, minOrder: 0, description: "Free pickup" },
+        NEW25: { discount: 25, minOrder: 150, description: "New customer discount" },
+        IRON10: { discount: 0, minOrder: 0, description: "Free ironing on first order" },
+      }
+    case "pro_laundry":
+      return {
+        PRO100: { discount: 100, minOrder: 800, description: "₹100 off premium service" },
+        SUBFREE: { discount: 0, minOrder: 0, description: "Free subscription setup" },
+        EXPRESS49: { discount: 49, minOrder: 200, description: "Express pickup discount" },
+        BULK50: { discount: 50, minOrder: 500, description: "Bulk order savings" },
+      }
+    case "pro_carwash":
+      return {
+        SPARKLE150: { discount: 150, minOrder: 600, description: "₹150 off detailing" },
+        FIRSTWASH: { discount: 0, minOrder: 0, description: "Free exterior wash on first visit" },
+        CARCARE99: { discount: 99, minOrder: 400, description: "Car care combo discount" },
+        DETAIL200: { discount: 200, minOrder: 1500, description: "Detailing service savings" },
+      }
+    default:
+      return {
+        WELCOME50: { discount: 50, minOrder: 200, description: "Welcome discount" },
+      }
   }
 }

@@ -5,6 +5,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useOrders } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
+import { getDemoBusinessName } from "@/lib/demo-data"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -26,6 +27,7 @@ const BIZ_ID = "biz_1"
 export function CustomerProfile() {
   const {
     customerName,
+    demoBusinessId,
     setCustomerLoggedIn,
     setCustomerName,
     setCustomerPage,
@@ -86,7 +88,7 @@ export function CustomerProfile() {
     },
     {
       id: "about",
-      label: "About FreshMart",
+      label: `About ${getDemoBusinessName(demoBusinessId)}`,
       desc: "App version 2.1.0",
       icon: Info,
       action: () => {},
@@ -219,7 +221,7 @@ export function CustomerProfile() {
 
       {/* App Info */}
       <div className="text-center mt-6 pb-2">
-        <p className="text-[10px] text-gray-300">FreshMart Grocers v2.1.0</p>
+        <p className="text-[10px] text-gray-300">{getDemoBusinessName(demoBusinessId)} v2.1.0</p>
         <p className="text-[10px] text-gray-300">Powered by Quantix Core</p>
       </div>
     </div>

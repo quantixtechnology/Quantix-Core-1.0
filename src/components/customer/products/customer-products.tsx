@@ -5,28 +5,13 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useProducts, useCategories } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
+import { getDemoCategories } from "@/lib/demo-data"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState } from "@/components/ui/loading-states"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Search, Plus, Minus, Leaf, X, SlidersHorizontal } from "lucide-react"
-
-const BIZ_ID = "biz_1"
-
-// Fallback categories
-const fallbackCategories = [
-  { id: "cat_1", name: "Fruits & Vegetables", color: "#10B981" },
-  { id: "cat_2", name: "Dairy & Eggs", color: "#3B82F6" },
-  { id: "cat_3", name: "Bakery", color: "#F59E0B" },
-  { id: "cat_4", name: "Snacks & Chips", color: "#EF4444" },
-  { id: "cat_5", name: "Beverages", color: "#8B5CF6" },
-  { id: "cat_6", name: "Rice & Grains", color: "#D97706" },
-  { id: "cat_7", name: "Spices & Masala", color: "#DC2626" },
-  { id: "cat_8", name: "Personal Care", color: "#EC4899" },
-  { id: "cat_9", name: "Cleaning", color: "#0891B2" },
-  { id: "cat_10", name: "Frozen Foods", color: "#6366F1" },
-]
 
 interface ProductItem {
   id: string
@@ -48,11 +33,24 @@ interface ProductItem {
 }
 
 export function CustomerProducts() {
-  const { setCustomerPage, setSelectedProductId } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, demoBusinessId } = useAdminStore()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<"default" | "price-low" | "price-high" | "discount">("default")
+
+  // Use dynamic business ID from admin store
+  const BIZ_ID = "biz_1"
+
+  // Dynamic fallback categories from business context
+  const fallbackCategories = useMemo(() =>
+    getDemoCategories(demoBusinessId).map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color,
+    })),
+    [demoBusinessId]
+  )
 
   useEffect(() => {
     setBusinessContext(BIZ_ID)

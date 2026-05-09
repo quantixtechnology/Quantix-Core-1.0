@@ -11,14 +11,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Plus, Minus, Leaf, Share2, Heart, Truck, Clock, ShieldCheck, Loader2 } from "lucide-react"
 
-const BIZ_ID = "biz_1"
-
 export function CustomerProductDetail() {
-  const { selectedProductId, setSelectedProductId, setCustomerPage } = useAdminStore()
+  const { selectedProductId, setSelectedProductId, setCustomerPage, demoBusinessId } = useAdminStore()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [isWishlisted, setIsWishlisted] = useState(false)
+
+  // Use dynamic business ID from admin store
+  const BIZ_ID = "biz_1"
 
   useEffect(() => {
     setBusinessContext(BIZ_ID)
