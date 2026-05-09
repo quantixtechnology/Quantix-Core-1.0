@@ -2,7 +2,7 @@
 
 // ============================================================================
 // Quantix Platform — Business-Context-Aware Demo Data
-// Provides categories, products, and customers matching each demo business type
+// Provides categories, products, customers, and dashboard data matching each demo business type
 // ============================================================================
 
 import type { WorkflowType } from "@/stores/admin-store"
@@ -64,6 +64,52 @@ export interface DemoCustomer {
     pincode: string
     isDefault: boolean
   }[]
+}
+
+export interface DemoDashboardStats {
+  todayRevenue: number
+  todayOrders: number
+  pendingOrders: number
+  totalCustomers: number
+  avgOrderValue: number
+  totalProducts: number
+  lowStockProducts: number
+  activeStores: number
+  totalDeliveryPartners: number
+  deliveryPartnersOnline: number
+}
+
+export interface DemoRecentActivityItem {
+  id: string
+  type: "order" | "payment" | "stock" | "delivery" | "customer" | "pickup" | "service" | "subscription" | "appointment" | "billing"
+  message: string
+  time: string
+}
+
+export interface DemoBusinessOrderItem {
+  name: string
+  variant: string
+  quantity: number
+  price: number
+}
+
+export interface DemoBusinessOrder {
+  id: string
+  orderNumber: string
+  type: "DELIVERY" | "PICKUP" | "APPOINTMENT" | "SUBSCRIPTION" | "POS"
+  status: "PENDING" | "CONFIRMED" | "PROCESSING" | "PACKED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELLED" | "SCHEDULED" | "ACTIVE" | "COMPLETED"
+  customerName: string
+  items: DemoBusinessOrderItem[]
+  subtotal: number
+  deliveryFee: number
+  tax: number
+  total: number
+  paymentMethod: "UPI" | "CARD" | "CASH" | "NETBANKING" | "WALLET"
+  paymentStatus: "PAID" | "PENDING" | "FAILED" | "REFUNDED"
+  createdAt: string
+  deliveryAddress: string
+  assignedTo: string
+  workflow: WorkflowType
 }
 
 // ============================================================================
@@ -525,6 +571,586 @@ const carwashCustomers: DemoCustomer[] = [
 ]
 
 // ============================================================================
+// DASHBOARD STATS — Per Business Type
+// ============================================================================
+const groceryDashboardStats: DemoDashboardStats = {
+  todayRevenue: 28500,
+  todayOrders: 42,
+  pendingOrders: 5,
+  totalCustomers: 6,
+  avgOrderValue: 678,
+  totalProducts: 16,
+  lowStockProducts: 2,
+  activeStores: 1,
+  totalDeliveryPartners: 3,
+  deliveryPartnersOnline: 2,
+}
+
+const laundryDashboardStats: DemoDashboardStats = {
+  todayRevenue: 12400,
+  todayOrders: 28,
+  pendingOrders: 3,
+  totalCustomers: 6,
+  avgOrderValue: 443,
+  totalProducts: 10,
+  lowStockProducts: 0,
+  activeStores: 1,
+  totalDeliveryPartners: 2,
+  deliveryPartnersOnline: 1,
+}
+
+const proLaundryDashboardStats: DemoDashboardStats = {
+  todayRevenue: 24800,
+  todayOrders: 52,
+  pendingOrders: 4,
+  totalCustomers: 6,
+  avgOrderValue: 477,
+  totalProducts: 13,
+  lowStockProducts: 0,
+  activeStores: 2,
+  totalDeliveryPartners: 4,
+  deliveryPartnersOnline: 3,
+}
+
+const carwashDashboardStats: DemoDashboardStats = {
+  todayRevenue: 35200,
+  todayOrders: 38,
+  pendingOrders: 6,
+  totalCustomers: 6,
+  avgOrderValue: 926,
+  totalProducts: 13,
+  lowStockProducts: 2,
+  activeStores: 1,
+  totalDeliveryPartners: 3,
+  deliveryPartnersOnline: 2,
+}
+
+// ============================================================================
+// DAILY SALES — 7 Days Per Business Type
+// ============================================================================
+const groceryDailySales = [
+  { date: "Mon", revenue: 18500, orders: 28 },
+  { date: "Tue", revenue: 19800, orders: 31 },
+  { date: "Wed", revenue: 21200, orders: 34 },
+  { date: "Thu", revenue: 22800, orders: 37 },
+  { date: "Fri", revenue: 24500, orders: 40 },
+  { date: "Sat", revenue: 25600, orders: 42 },
+  { date: "Sun", revenue: 26800, orders: 45 },
+]
+
+const laundryDailySales = [
+  { date: "Mon", revenue: 8200, orders: 18 },
+  { date: "Tue", revenue: 8900, orders: 20 },
+  { date: "Wed", revenue: 9500, orders: 22 },
+  { date: "Thu", revenue: 10200, orders: 24 },
+  { date: "Fri", revenue: 11800, orders: 27 },
+  { date: "Sat", revenue: 13100, orders: 30 },
+  { date: "Sun", revenue: 14500, orders: 33 },
+]
+
+const proLaundryDailySales = [
+  { date: "Mon", revenue: 16000, orders: 32 },
+  { date: "Tue", revenue: 18200, orders: 37 },
+  { date: "Wed", revenue: 20500, orders: 42 },
+  { date: "Thu", revenue: 22800, orders: 47 },
+  { date: "Fri", revenue: 24200, orders: 50 },
+  { date: "Sat", revenue: 26100, orders: 54 },
+  { date: "Sun", revenue: 28000, orders: 58 },
+]
+
+const carwashDailySales = [
+  { date: "Mon", revenue: 22000, orders: 22 },
+  { date: "Tue", revenue: 25000, orders: 25 },
+  { date: "Wed", revenue: 28500, orders: 29 },
+  { date: "Thu", revenue: 31200, orders: 32 },
+  { date: "Fri", revenue: 34800, orders: 36 },
+  { date: "Sat", revenue: 38500, orders: 40 },
+  { date: "Sun", revenue: 42000, orders: 44 },
+]
+
+// ============================================================================
+// HOURLY SALES — Per Business Type
+// ============================================================================
+const groceryHourlySales = [
+  { hour: "6AM", revenue: 800 },
+  { hour: "7AM", revenue: 1200 },
+  { hour: "8AM", revenue: 2100 },
+  { hour: "9AM", revenue: 2800 },
+  { hour: "10AM", revenue: 3200 },
+  { hour: "11AM", revenue: 3500 },
+  { hour: "12PM", revenue: 3100 },
+  { hour: "1PM", revenue: 2900 },
+  { hour: "2PM", revenue: 2500 },
+  { hour: "3PM", revenue: 2200 },
+  { hour: "4PM", revenue: 2600 },
+  { hour: "5PM", revenue: 3200 },
+  { hour: "6PM", revenue: 4100 },
+  { hour: "7PM", revenue: 5800 },
+  { hour: "8PM", revenue: 5500 },
+  { hour: "9PM", revenue: 3800 },
+  { hour: "10PM", revenue: 2100 },
+  { hour: "11PM", revenue: 800 },
+]
+
+const laundryHourlySales = [
+  { hour: "6AM", revenue: 200 },
+  { hour: "7AM", revenue: 400 },
+  { hour: "8AM", revenue: 800 },
+  { hour: "9AM", revenue: 1500 },
+  { hour: "10AM", revenue: 2800 },
+  { hour: "11AM", revenue: 3200 },
+  { hour: "12PM", revenue: 2600 },
+  { hour: "1PM", revenue: 1800 },
+  { hour: "2PM", revenue: 1200 },
+  { hour: "3PM", revenue: 900 },
+  { hour: "4PM", revenue: 800 },
+  { hour: "5PM", revenue: 1100 },
+  { hour: "6PM", revenue: 1400 },
+  { hour: "7PM", revenue: 1600 },
+  { hour: "8PM", revenue: 1200 },
+  { hour: "9PM", revenue: 700 },
+  { hour: "10PM", revenue: 400 },
+  { hour: "11PM", revenue: 200 },
+]
+
+const proLaundryHourlySales = [
+  { hour: "6AM", revenue: 300 },
+  { hour: "7AM", revenue: 500 },
+  { hour: "8AM", revenue: 1000 },
+  { hour: "9AM", revenue: 2200 },
+  { hour: "10AM", revenue: 3800 },
+  { hour: "11AM", revenue: 4200 },
+  { hour: "12PM", revenue: 2800 },
+  { hour: "1PM", revenue: 2000 },
+  { hour: "2PM", revenue: 1500 },
+  { hour: "3PM", revenue: 1200 },
+  { hour: "4PM", revenue: 1400 },
+  { hour: "5PM", revenue: 2000 },
+  { hour: "6PM", revenue: 3500 },
+  { hour: "7PM", revenue: 4800 },
+  { hour: "8PM", revenue: 4200 },
+  { hour: "9PM", revenue: 2500 },
+  { hour: "10PM", revenue: 1200 },
+  { hour: "11PM", revenue: 400 },
+]
+
+const carwashHourlySales = [
+  { hour: "6AM", revenue: 500 },
+  { hour: "7AM", revenue: 1500 },
+  { hour: "8AM", revenue: 3800 },
+  { hour: "9AM", revenue: 4500 },
+  { hour: "10AM", revenue: 3200 },
+  { hour: "11AM", revenue: 2400 },
+  { hour: "12PM", revenue: 1800 },
+  { hour: "1PM", revenue: 1500 },
+  { hour: "2PM", revenue: 1200 },
+  { hour: "3PM", revenue: 1400 },
+  { hour: "4PM", revenue: 2000 },
+  { hour: "5PM", revenue: 4200 },
+  { hour: "6PM", revenue: 5500 },
+  { hour: "7PM", revenue: 4800 },
+  { hour: "8PM", revenue: 2800 },
+  { hour: "9PM", revenue: 1500 },
+  { hour: "10PM", revenue: 800 },
+  { hour: "11PM", revenue: 300 },
+]
+
+// ============================================================================
+// RECENT ACTIVITY — Per Business Type
+// ============================================================================
+const groceryRecentActivity: DemoRecentActivityItem[] = [
+  { id: "gra_1", type: "order", message: "New order from Rajesh Kumar", time: "2 min ago" },
+  { id: "gra_2", type: "payment", message: "UPI payment ₹485 received", time: "5 min ago" },
+  { id: "gra_3", type: "stock", message: "Fresh Tomatoes back in stock", time: "12 min ago" },
+  { id: "gra_4", type: "delivery", message: "Order #FM-2847 delivered successfully", time: "18 min ago" },
+  { id: "gra_5", type: "customer", message: "New customer Kavita Reddy registered", time: "25 min ago" },
+]
+
+const laundryRecentActivity: DemoRecentActivityItem[] = [
+  { id: "lra_1", type: "pickup", message: "Pickup scheduled for Priya Sharma", time: "3 min ago" },
+  { id: "lra_2", type: "service", message: "Saree dry clean completed", time: "8 min ago" },
+  { id: "lra_3", type: "payment", message: "Payment ₹680 received from Vikram Patel", time: "15 min ago" },
+  { id: "lra_4", type: "delivery", message: "3 shirts ready for delivery — Meera Iyer", time: "22 min ago" },
+  { id: "lra_5", type: "order", message: "New order from Arjun Reddy", time: "30 min ago" },
+]
+
+const proLaundryRecentActivity: DemoRecentActivityItem[] = [
+  { id: "plra_1", type: "subscription", message: "Subscription renewed — Monthly Pro 50 credits", time: "2 min ago" },
+  { id: "plra_2", type: "billing", message: "Weight wash 5.2kg billed ₹228", time: "6 min ago" },
+  { id: "plra_3", type: "pickup", message: "Express pickup assigned to Ramesh", time: "11 min ago" },
+  { id: "plra_4", type: "delivery", message: "Order #PW-1203 out for delivery", time: "19 min ago" },
+  { id: "plra_5", type: "subscription", message: "New subscription — Monthly Basic 20 credits", time: "28 min ago" },
+]
+
+const carwashRecentActivity: DemoRecentActivityItem[] = [
+  { id: "cra_1", type: "subscription", message: "Monthly subscription renewed — Rohit Kapoor", time: "4 min ago" },
+  { id: "cra_2", type: "service", message: "Detailing service completed for SUV", time: "9 min ago" },
+  { id: "cra_3", type: "appointment", message: "Appointment booked — 10:00 AM slot", time: "14 min ago" },
+  { id: "cra_4", type: "pickup", message: "Pickup wash assigned — Neha Gupta's Sedan", time: "20 min ago" },
+  { id: "cra_5", type: "billing", message: "Interior deep cleaning estimate ₹2,200", time: "32 min ago" },
+]
+
+// ============================================================================
+// TOP PRODUCTS — Per Business Type
+// ============================================================================
+const groceryTopProducts = [
+  { name: "Amul Toned Milk", sold: 85, revenue: 2295 },
+  { name: "Maggi Noodles", sold: 72, revenue: 3744 },
+  { name: "Fresh Tomatoes", sold: 68, revenue: 2380 },
+  { name: "Parle-G Biscuit", sold: 55, revenue: 550 },
+  { name: "India Gate Basmati Rice", sold: 18, revenue: 4140 },
+]
+
+const laundryTopProducts = [
+  { name: "Shirt Wash & Fold", sold: 120, revenue: 2400 },
+  { name: "Saree Dry Clean", sold: 45, revenue: 8100 },
+  { name: "Trouser/Pant Wash", sold: 85, revenue: 2125 },
+  { name: "Shirt Ironing", sold: 150, revenue: 1800 },
+  { name: "Suit Dry Clean", sold: 22, revenue: 6578 },
+]
+
+const proLaundryTopProducts = [
+  { name: "Clothes by Weight", sold: 62, revenue: 13640 },
+  { name: "Monthly Pro — 50 Credits", sold: 18, revenue: 35982 },
+  { name: "Shirt Wash & Fold", sold: 95, revenue: 1900 },
+  { name: "Express Pickup (Same Day)", sold: 48, revenue: 3792 },
+  { name: "Monthly Basic — 20 Credits", sold: 25, revenue: 22475 },
+]
+
+const carwashTopProducts = [
+  { name: "Basic Monthly — 4 Washes", sold: 32, revenue: 28768 },
+  { name: "Interior Deep Cleaning", sold: 15, revenue: 18000 },
+  { name: "Pro Monthly — 8 Washes", sold: 22, revenue: 35178 },
+  { name: "Exterior Pickup Wash", sold: 28, revenue: 9772 },
+  { name: "Car Perfume Freshener", sold: 42, revenue: 7518 },
+]
+
+// ============================================================================
+// BUSINESS ORDERS — Per Business Type
+// ============================================================================
+const groceryOrders: DemoBusinessOrder[] = [
+  {
+    id: "gord_1", orderNumber: "FM-2851", type: "DELIVERY", status: "CONFIRMED",
+    customerName: "Rajesh Kumar",
+    items: [
+      { name: "Amul Toned Milk", variant: "1L", quantity: 2, price: 52 },
+      { name: "Maggi Noodles", variant: "2-Min Masala (280g)", quantity: 1, price: 52 },
+      { name: "Fresh Tomatoes", variant: "1 kg", quantity: 2, price: 35 },
+    ],
+    subtotal: 226, deliveryFee: 30, tax: 18, total: 274,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T19:30:00",
+    deliveryAddress: "42, MG Road, Koramangala, Bengaluru",
+    assignedTo: "Ravi", workflow: "ECOMMERCE",
+  },
+  {
+    id: "gord_2", orderNumber: "FM-2850", type: "DELIVERY", status: "PROCESSING",
+    customerName: "Sneha Patil",
+    items: [
+      { name: "India Gate Basmati Rice", variant: "5kg", quantity: 1, price: 1020 },
+      { name: "MDH Garam Masala", variant: "100g", quantity: 1, price: 78 },
+    ],
+    subtotal: 1098, deliveryFee: 30, tax: 85, total: 1213,
+    paymentMethod: "CARD", paymentStatus: "PAID",
+    createdAt: "2026-05-08T18:45:00",
+    deliveryAddress: "15, HSR Layout, Sector 2, Bengaluru",
+    assignedTo: "Amit", workflow: "ECOMMERCE",
+  },
+  {
+    id: "gord_3", orderNumber: "FM-2849", type: "DELIVERY", status: "PACKED",
+    customerName: "Anand Joshi",
+    items: [
+      { name: "Amul Butter", variant: "500g", quantity: 1, price: 260 },
+      { name: "Britannia Bread", variant: "400g", quantity: 2, price: 42 },
+      { name: "Frozen Peas", variant: "500g", quantity: 1, price: 89 },
+    ],
+    subtotal: 433, deliveryFee: 30, tax: 32, total: 495,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T17:20:00",
+    deliveryAddress: "78, Indiranagar, 100ft Road, Bengaluru",
+    assignedTo: "Ravi", workflow: "ECOMMERCE",
+  },
+  {
+    id: "gord_4", orderNumber: "FM-2848", type: "DELIVERY", status: "OUT_FOR_DELIVERY",
+    customerName: "Deepa Nair",
+    items: [
+      { name: "Surf Excel Matic", variant: "2kg", quantity: 1, price: 285 },
+      { name: "Dove Shampoo", variant: "180ml", quantity: 1, price: 175 },
+    ],
+    subtotal: 460, deliveryFee: 30, tax: 37, total: 527,
+    paymentMethod: "CASH", paymentStatus: "PENDING",
+    createdAt: "2026-05-08T16:00:00",
+    deliveryAddress: "23, Whitefield Main Road, Bengaluru",
+    assignedTo: "Suresh", workflow: "ECOMMERCE",
+  },
+  {
+    id: "gord_5", orderNumber: "FM-2847", type: "DELIVERY", status: "DELIVERED",
+    customerName: "Kavita Reddy",
+    items: [
+      { name: "Lays Classic Chips", variant: "130g", quantity: 3, price: 38 },
+      { name: "Coca Cola", variant: "750ml", quantity: 2, price: 38 },
+      { name: "Parle-G Biscuit", variant: "800g Family Pack", quantity: 1, price: 65 },
+    ],
+    subtotal: 291, deliveryFee: 30, tax: 22, total: 343,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T14:30:00",
+    deliveryAddress: "90, Electronic City, Phase 1, Bengaluru",
+    assignedTo: "Amit", workflow: "ECOMMERCE",
+  },
+  {
+    id: "gord_6", orderNumber: "FM-2846", type: "POS", status: "COMPLETED",
+    customerName: "Mohan Sharma",
+    items: [
+      { name: "Onion", variant: "1 kg", quantity: 2, price: 30 },
+      { name: "Green Capsicum", variant: "500g", quantity: 1, price: 48 },
+      { name: "Fresh Tomatoes", variant: "1 kg", quantity: 1, price: 35 },
+    ],
+    subtotal: 143, deliveryFee: 0, tax: 10, total: 153,
+    paymentMethod: "CASH", paymentStatus: "PAID",
+    createdAt: "2026-05-08T11:30:00",
+    deliveryAddress: "In-store",
+    assignedTo: "-", workflow: "ECOMMERCE",
+  },
+]
+
+const laundryOrders: DemoBusinessOrder[] = [
+  {
+    id: "lord_1", orderNumber: "QW-1842", type: "PICKUP", status: "CONFIRMED",
+    customerName: "Priya Sharma",
+    items: [
+      { name: "Saree Dry Clean", variant: "Regular Saree", quantity: 2, price: 180 },
+      { name: "Blouse Dry Clean", variant: "Per piece", quantity: 3, price: 65 },
+    ],
+    subtotal: 555, deliveryFee: 0, tax: 28, total: 583,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T16:30:00",
+    deliveryAddress: "12, AECS Layout, Kundalahalli, Bengaluru",
+    assignedTo: "Ramesh", workflow: "PICKUP_DELIVERY",
+  },
+  {
+    id: "lord_2", orderNumber: "QW-1841", type: "DELIVERY", status: "PROCESSING",
+    customerName: "Vikram Patel",
+    items: [
+      { name: "Shirt Wash & Fold", variant: "Per piece", quantity: 8, price: 20 },
+      { name: "Trouser/Pant Wash", variant: "Per piece", quantity: 4, price: 25 },
+    ],
+    subtotal: 260, deliveryFee: 0, tax: 13, total: 273,
+    paymentMethod: "CARD", paymentStatus: "PAID",
+    createdAt: "2026-05-08T09:15:00",
+    deliveryAddress: "45, Marathahalli Bridge, Bengaluru",
+    assignedTo: "Suresh", workflow: "ECOMMERCE",
+  },
+  {
+    id: "lord_3", orderNumber: "QW-1840", type: "PICKUP", status: "SCHEDULED",
+    customerName: "Meera Iyer",
+    items: [
+      { name: "Suit Dry Clean", variant: "2-piece", quantity: 1, price: 299 },
+      { name: "Shirt Ironing", variant: "Per piece", quantity: 6, price: 12 },
+    ],
+    subtotal: 371, deliveryFee: 0, tax: 19, total: 390,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T14:00:00",
+    deliveryAddress: "78, Bellandur, Outer Ring Road, Bengaluru",
+    assignedTo: "-", workflow: "PICKUP_DELIVERY",
+  },
+  {
+    id: "lord_4", orderNumber: "QW-1839", type: "DELIVERY", status: "OUT_FOR_DELIVERY",
+    customerName: "Arjun Reddy",
+    items: [
+      { name: "T-Shirt Wash & Fold", variant: "Per piece", quantity: 12, price: 15 },
+      { name: "Bedsheet Wash", variant: "Double", quantity: 2, price: 100 },
+    ],
+    subtotal: 380, deliveryFee: 0, tax: 19, total: 399,
+    paymentMethod: "CARD", paymentStatus: "PAID",
+    createdAt: "2026-05-08T11:45:00",
+    deliveryAddress: "23, HSR Layout, Sector 7, Bengaluru",
+    assignedTo: "Ramesh", workflow: "ECOMMERCE",
+  },
+  {
+    id: "lord_5", orderNumber: "QW-1838", type: "PICKUP", status: "COMPLETED",
+    customerName: "Sunita Deshmukh",
+    items: [
+      { name: "Saree Ironing", variant: "Per piece", quantity: 4, price: 35 },
+      { name: "Saree Dry Clean", variant: "Silk/Special Saree", quantity: 1, price: 320 },
+    ],
+    subtotal: 460, deliveryFee: 0, tax: 23, total: 483,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-07T10:30:00",
+    deliveryAddress: "90, BTM Layout, 2nd Stage, Bengaluru",
+    assignedTo: "Suresh", workflow: "PICKUP_DELIVERY",
+  },
+  {
+    id: "lord_6", orderNumber: "QW-1837", type: "DELIVERY", status: "DELIVERED",
+    customerName: "Rahul Verma",
+    items: [
+      { name: "Shirt Wash & Fold", variant: "Per piece", quantity: 5, price: 20 },
+      { name: "Trouser Ironing", variant: "Per piece", quantity: 3, price: 15 },
+    ],
+    subtotal: 145, deliveryFee: 0, tax: 7, total: 152,
+    paymentMethod: "CASH", paymentStatus: "PAID",
+    createdAt: "2026-05-06T17:00:00",
+    deliveryAddress: "67, JP Nagar, Phase 6, Bengaluru",
+    assignedTo: "-", workflow: "ECOMMERCE",
+  },
+]
+
+const proLaundryOrders: DemoBusinessOrder[] = [
+  {
+    id: "plord_1", orderNumber: "PW-1208", type: "PICKUP", status: "CONFIRMED",
+    customerName: "Priya Sharma",
+    items: [
+      { name: "Clothes by Weight", variant: "Up to 5 kg", quantity: 1, price: 220 },
+      { name: "Express Pickup (Same Day)", variant: "Per pickup", quantity: 1, price: 79 },
+    ],
+    subtotal: 299, deliveryFee: 0, tax: 15, total: 314,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T16:30:00",
+    deliveryAddress: "12, AECS Layout, Kundalahalli, Bengaluru",
+    assignedTo: "Ramesh", workflow: "PICKUP_DELIVERY",
+  },
+  {
+    id: "plord_2", orderNumber: "PW-1207", type: "SUBSCRIPTION", status: "ACTIVE",
+    customerName: "Vikram Patel",
+    items: [
+      { name: "Monthly Pro — 50 Credits", variant: "Monthly", quantity: 1, price: 1999 },
+    ],
+    subtotal: 1999, deliveryFee: 0, tax: 0, total: 1999,
+    paymentMethod: "CARD", paymentStatus: "PAID",
+    createdAt: "2026-05-08T09:15:00",
+    deliveryAddress: "45, Marathahalli Bridge, Bengaluru",
+    assignedTo: "-", workflow: "SUBSCRIPTION",
+  },
+  {
+    id: "plord_3", orderNumber: "PW-1206", type: "PICKUP", status: "PROCESSING",
+    customerName: "Meera Iyer",
+    items: [
+      { name: "Blanket by Weight", variant: "Single (₹80/kg est.)", quantity: 2, price: 200 },
+      { name: "Scheduled Pickup (Next Day)", variant: "Per pickup", quantity: 1, price: 39 },
+    ],
+    subtotal: 439, deliveryFee: 0, tax: 22, total: 461,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T14:00:00",
+    deliveryAddress: "78, Bellandur, Outer Ring Road, Bengaluru",
+    assignedTo: "Suresh", workflow: "PICKUP_DELIVERY",
+  },
+  {
+    id: "plord_4", orderNumber: "PW-1205", type: "DELIVERY", status: "OUT_FOR_DELIVERY",
+    customerName: "Arjun Reddy",
+    items: [
+      { name: "Shirt Wash & Fold", variant: "Per piece", quantity: 10, price: 20 },
+      { name: "Shirt Ironing", variant: "Per piece", quantity: 10, price: 12 },
+    ],
+    subtotal: 320, deliveryFee: 0, tax: 16, total: 336,
+    paymentMethod: "CARD", paymentStatus: "PAID",
+    createdAt: "2026-05-08T11:45:00",
+    deliveryAddress: "23, HSR Layout, Sector 7, Bengaluru",
+    assignedTo: "Ramesh", workflow: "ECOMMERCE",
+  },
+  {
+    id: "plord_5", orderNumber: "PW-1204", type: "SUBSCRIPTION", status: "ACTIVE",
+    customerName: "Sunita Deshmukh",
+    items: [
+      { name: "Monthly Basic — 20 Credits", variant: "Monthly", quantity: 1, price: 899 },
+    ],
+    subtotal: 899, deliveryFee: 0, tax: 0, total: 899,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-06T10:30:00",
+    deliveryAddress: "90, BTM Layout, 2nd Stage, Bengaluru",
+    assignedTo: "-", workflow: "SUBSCRIPTION",
+  },
+  {
+    id: "plord_6", orderNumber: "PW-1203", type: "DELIVERY", status: "DELIVERED",
+    customerName: "Rahul Verma",
+    items: [
+      { name: "Clothes by Weight", variant: "Up to 3 kg", quantity: 1, price: 130 },
+      { name: "Saree Ironing", variant: "Per piece", quantity: 2, price: 35 },
+    ],
+    subtotal: 200, deliveryFee: 0, tax: 10, total: 210,
+    paymentMethod: "CASH", paymentStatus: "PAID",
+    createdAt: "2026-05-05T17:00:00",
+    deliveryAddress: "67, JP Nagar, Phase 6, Bengaluru",
+    assignedTo: "-", workflow: "ECOMMERCE",
+  },
+]
+
+const carwashOrders: DemoBusinessOrder[] = [
+  {
+    id: "cord_1", orderNumber: "SC-0942", type: "SUBSCRIPTION", status: "ACTIVE",
+    customerName: "Rohit Kapoor",
+    items: [
+      { name: "Unlimited Monthly", variant: "Hatchback/Sedan", quantity: 1, price: 2699 },
+    ],
+    subtotal: 2699, deliveryFee: 0, tax: 0, total: 2699,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T10:00:00",
+    deliveryAddress: "15, Palm Meadows, Whitefield, Bengaluru",
+    assignedTo: "-", workflow: "SUBSCRIPTION",
+  },
+  {
+    id: "cord_2", orderNumber: "SC-0941", type: "APPOINTMENT", status: "CONFIRMED",
+    customerName: "Neha Gupta",
+    items: [
+      { name: "In-Bay Full Detail Wash", variant: "Hatchback/Sedan — 90 min slot", quantity: 1, price: 699 },
+    ],
+    subtotal: 699, deliveryFee: 0, tax: 35, total: 734,
+    paymentMethod: "CARD", paymentStatus: "PAID",
+    createdAt: "2026-05-08T15:30:00",
+    deliveryAddress: "42, Prestige Shantiniketan, Whitefield, Bengaluru",
+    assignedTo: "-", workflow: "APPOINTMENT",
+  },
+  {
+    id: "cord_3", orderNumber: "SC-0940", type: "PICKUP", status: "OUT_FOR_DELIVERY",
+    customerName: "Amit Singhania",
+    items: [
+      { name: "Interior + Exterior Pickup Wash", variant: "SUV", quantity: 1, price: 999 },
+    ],
+    subtotal: 999, deliveryFee: 0, tax: 50, total: 1049,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-08T11:00:00",
+    deliveryAddress: "88, Sobha Lakeview, HSR Layout, Bengaluru",
+    assignedTo: "Karthik", workflow: "PICKUP_DELIVERY",
+  },
+  {
+    id: "cord_4", orderNumber: "SC-0939", type: "SUBSCRIPTION", status: "ACTIVE",
+    customerName: "Sunita Rao",
+    items: [
+      { name: "Pro Monthly — 8 Washes", variant: "Hatchback/Sedan", quantity: 1, price: 1599 },
+    ],
+    subtotal: 1599, deliveryFee: 0, tax: 0, total: 1599,
+    paymentMethod: "CARD", paymentStatus: "PAID",
+    createdAt: "2026-05-07T09:45:00",
+    deliveryAddress: "33, Brigade Cosmos, Malleshwaram, Bengaluru",
+    assignedTo: "-", workflow: "SUBSCRIPTION",
+  },
+  {
+    id: "cord_5", orderNumber: "SC-0938", type: "APPOINTMENT", status: "COMPLETED",
+    customerName: "Karthik Menon",
+    items: [
+      { name: "In-Bay Exterior Wash", variant: "SUV/MUV — 45 min slot", quantity: 1, price: 399 },
+      { name: "Engine Bay Cleaning", variant: "All cars (est. ₹800)", quantity: 1, price: 650 },
+    ],
+    subtotal: 1049, deliveryFee: 0, tax: 52, total: 1101,
+    paymentMethod: "UPI", paymentStatus: "PAID",
+    createdAt: "2026-05-06T14:15:00",
+    deliveryAddress: "77, RMZ Ecoworld, Bellandur, Bengaluru",
+    assignedTo: "-", workflow: "APPOINTMENT",
+  },
+  {
+    id: "cord_6", orderNumber: "SC-0937", type: "PICKUP", status: "DELIVERED",
+    customerName: "Divya Nambiar",
+    items: [
+      { name: "Exterior Pickup Wash", variant: "Hatchback", quantity: 1, price: 349 },
+      { name: "Car Perfume Freshener", variant: "50ml", quantity: 1, price: 179 },
+    ],
+    subtotal: 528, deliveryFee: 0, tax: 26, total: 554,
+    paymentMethod: "CASH", paymentStatus: "PAID",
+    createdAt: "2026-04-29T16:00:00",
+    deliveryAddress: "22, Jayanagar, 4th Block, Bengaluru",
+    assignedTo: "Suresh", workflow: "PICKUP_DELIVERY",
+  },
+]
+
+// ============================================================================
 // DATA ACCESS FUNCTIONS
 // ============================================================================
 
@@ -584,5 +1210,95 @@ export function getDemoBusinessName(demoBusinessId: string): string {
       return "SparkleCar Wash"
     default:
       return "Quantix Platform"
+  }
+}
+
+export function getDemoDashboardStats(demoBusinessId: string): DemoDashboardStats {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryDashboardStats
+    case "standard_laundry":
+      return laundryDashboardStats
+    case "pro_laundry":
+      return proLaundryDashboardStats
+    case "pro_carwash":
+      return carwashDashboardStats
+    default:
+      return groceryDashboardStats
+  }
+}
+
+export function getDemoDailySales(demoBusinessId: string): { date: string; revenue: number; orders: number }[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryDailySales
+    case "standard_laundry":
+      return laundryDailySales
+    case "pro_laundry":
+      return proLaundryDailySales
+    case "pro_carwash":
+      return carwashDailySales
+    default:
+      return groceryDailySales
+  }
+}
+
+export function getDemoHourlySales(demoBusinessId: string): { hour: string; revenue: number }[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryHourlySales
+    case "standard_laundry":
+      return laundryHourlySales
+    case "pro_laundry":
+      return proLaundryHourlySales
+    case "pro_carwash":
+      return carwashHourlySales
+    default:
+      return groceryHourlySales
+  }
+}
+
+export function getDemoRecentActivity(demoBusinessId: string): DemoRecentActivityItem[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryRecentActivity
+    case "standard_laundry":
+      return laundryRecentActivity
+    case "pro_laundry":
+      return proLaundryRecentActivity
+    case "pro_carwash":
+      return carwashRecentActivity
+    default:
+      return groceryRecentActivity
+  }
+}
+
+export function getDemoTopProducts(demoBusinessId: string): { name: string; sold: number; revenue: number }[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryTopProducts
+    case "standard_laundry":
+      return laundryTopProducts
+    case "pro_laundry":
+      return proLaundryTopProducts
+    case "pro_carwash":
+      return carwashTopProducts
+    default:
+      return groceryTopProducts
+  }
+}
+
+export function getDemoBusinessOrders(demoBusinessId: string): DemoBusinessOrder[] {
+  switch (demoBusinessId) {
+    case "standard_grocery":
+      return groceryOrders
+    case "standard_laundry":
+      return laundryOrders
+    case "pro_laundry":
+      return proLaundryOrders
+    case "pro_carwash":
+      return carwashOrders
+    default:
+      return groceryOrders
   }
 }

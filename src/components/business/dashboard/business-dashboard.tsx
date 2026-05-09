@@ -15,13 +15,15 @@ import {
   ShoppingBag,
   Users,
   TrendingUp,
-  TrendingDown,
   Clock,
   Package,
   CreditCard,
   ArrowUpRight,
   RefreshCw,
   Bell,
+  Truck,
+  Receipt,
+  Calendar,
 } from "lucide-react"
 import {
   useBusinessStats,
@@ -29,8 +31,19 @@ import {
   queryKeys,
 } from "@/hooks/use-api"
 import { useOrderUpdates } from "@/hooks/use-realtime"
-import { useAdminStore } from "@/stores/admin-store"
-import { getDemoBusinessName } from "@/lib/demo-data"
+import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
+import {
+  getDemoBusinessName,
+  getDemoDashboardStats,
+  getDemoDailySales,
+  getDemoHourlySales,
+  getDemoRecentActivity,
+  getDemoTopProducts,
+  getDemoCategories,
+  getDemoProducts,
+  getDemoCustomers,
+  getDemoBusinessOrders,
+} from "@/lib/demo-data"
 import { showSuccess, showError, showOrderUpdate } from "@/lib/toast-utils"
 import { ConnectionStatusBadge } from "@/components/ui/connection-status"
 import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
@@ -57,64 +70,62 @@ const hourlySalesConfig: ChartConfig = {
   },
 }
 
-// Activity icon map
+// Activity icon map — maps lowercase activity types from demo data
 const activityIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  ORDER: ShoppingBag,
-  DELIVERY: Package,
-  PAYMENT: CreditCard,
-  STOCK: Package,
-  POS: CreditCard,
+  order: ShoppingBag,
+  payment: CreditCard,
+  delivery: Package,
+  stock: Package,
+  pickup: Truck,
+  service: Clock,
+  subscription: CreditCard,
+  appointment: Calendar,
+  billing: Receipt,
+  customer: Users,
 }
 
 const activityColorMap: Record<string, string> = {
-  ORDER: "bg-emerald-100 text-emerald-600",
-  DELIVERY: "bg-sky-100 text-sky-600",
-  PAYMENT: "bg-amber-100 text-amber-600",
-  STOCK: "bg-red-100 text-red-600",
-  POS: "bg-violet-100 text-violet-600",
+  order: "bg-emerald-100 text-emerald-600",
+  payment: "bg-amber-100 text-amber-600",
+  delivery: "bg-sky-100 text-sky-600",
+  stock: "bg-red-100 text-red-600",
+  pickup: "bg-sky-100 text-sky-600",
+  service: "bg-violet-100 text-violet-600",
+  subscription: "bg-amber-100 text-amber-600",
+  appointment: "bg-violet-100 text-violet-600",
+  billing: "bg-rose-100 text-rose-600",
+  customer: "bg-emerald-100 text-emerald-600",
 }
 
-// Fallback chart data (used when API doesn't return chart data)
-const fallbackDailySales = [
-  { date: "Mon", revenue: 14200, orders: 32 },
-  { date: "Tue", revenue: 18500, orders: 42 },
-  { date: "Wed", revenue: 15800, orders: 38 },
-  { date: "Thu", revenue: 21300, orders: 48 },
-  { date: "Fri", revenue: 19800, orders: 45 },
-  { date: "Sat", revenue: 24500, orders: 55 },
-  { date: "Sun", revenue: 22300, orders: 50 },
-]
+// Workflow badge color helper
+function getWorkflowBadgeClasses(workflow: string) {
+  const config = WORKFLOW_CONFIGS.find(c => c.type === workflow)
+  if (config) return config.bgColor
+  return "bg-slate-50 border-slate-200"
+}
 
-const fallbackHourlySales = [
-  { hour: "8AM", revenue: 1200 },
-  { hour: "9AM", revenue: 2800 },
-  { hour: "10AM", revenue: 3500 },
-  { hour: "11AM", revenue: 4200 },
-  { hour: "12PM", revenue: 5100 },
-  { hour: "1PM", revenue: 4800 },
-  { hour: "2PM", revenue: 3200 },
-  { hour: "3PM", revenue: 2800 },
-  { hour: "4PM", revenue: 2400 },
-  { hour: "5PM", revenue: 3100 },
-  { hour: "6PM", revenue: 4500 },
-  { hour: "7PM", revenue: 5200 },
-  { hour: "8PM", revenue: 3800 },
-  { hour: "9PM", revenue: 2100 },
-]
-
-const fallbackRecentActivity = [
-  { id: "1", type: "ORDER", message: "New order #ORD-1028 placed by Priya Sharma", time: "2 min ago" },
-  { id: "2", type: "PAYMENT", message: "Payment of ₹1,240 received via UPI", time: "5 min ago" },
-  { id: "3", type: "DELIVERY", message: "Order #ORD-1025 out for delivery via Rajesh K.", time: "12 min ago" },
-  { id: "4", type: "POS", message: "POS bill FM-20260507-1234 settled — ₹890", time: "18 min ago" },
-  { id: "5", type: "STOCK", message: "Low stock alert: Organic Milk (2 variants)", time: "25 min ago" },
-]
+function getWorkflowBadgeText(workflow: string) {
+  const config = WORKFLOW_CONFIGS.find(c => c.type === workflow)
+  if (config) return config.color
+  return "text-slate-600"
+}
 
 export function BusinessDashboard() {
-  const { demoBusinessId } = useAdminStore()
+  const { demoBusinessId, setBusinessPage } = useAdminStore()
   const businessName = getDemoBusinessName(demoBusinessId)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const queryClient = useQueryClient()
+
+  // Demo data — context-aware
+  const demoStats = getDemoDashboardStats(demoBusinessId)
+  const demoDailySales = getDemoDailySales(demoBusinessId)
+  const demoHourlySales = getDemoHourlySales(demoBusinessId)
+  const demoActivity = getDemoRecentActivity(demoBusinessId)
+  const demoTopProducts = getDemoTopProducts(demoBusinessId)
+  const demoCategories = getDemoCategories(demoBusinessId)
+  const demoProducts = getDemoProducts(demoBusinessId)
+  const demoCustomers = getDemoCustomers(demoBusinessId)
+  const demoOrders = getDemoBusinessOrders(demoBusinessId)
 
   // Fetch business stats with auto-refresh every 30 seconds
   const { data: statsData, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useBusinessStats(BUSINESS_ID, {
@@ -139,20 +150,20 @@ export function BusinessDashboard() {
     }
   }, [orderCount, latestOrder])
 
-  // Extract stats from API response
+  // Extract stats from API response — fall back to demo data
   const stats = statsData?.data
 
-  // Extract orders from API response
-  const liveOrders = (() => {
-    if (ordersData?.data && Array.isArray(ordersData.data)) {
-      return ordersData.data.filter(
-        (order: Record<string, unknown>) =>
-          (order as Record<string, unknown>).status === "PENDING" ||
-          (order as Record<string, unknown>).status === "CONFIRMED"
-      )
-    }
-    return []
-  })()
+  // Merge API data with demo data (prefer API when available)
+  const todayRevenue = stats?.todayRevenue || demoStats.todayRevenue
+  const todayOrders = stats?.todayOrders || demoStats.todayOrders
+  const pendingOrders = stats?.pendingOrders || demoStats.pendingOrders
+  const totalCustomers = stats?.totalCustomers || demoStats.totalCustomers
+  const avgOrderValue = stats?.avgOrderValue || demoStats.avgOrderValue
+  const totalProducts = stats?.totalProducts || demoStats.totalProducts
+  const lowStockProducts = stats?.lowStockProducts || demoStats.lowStockProducts
+  const activeStores = stats?.activeStores || demoStats.activeStores
+  const totalDeliveryPartners = stats?.totalDeliveryPartners || demoStats.totalDeliveryPartners
+  const deliveryPartnersOnline = stats?.deliveryPartnersOnline || demoStats.deliveryPartnersOnline
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -213,48 +224,44 @@ export function BusinessDashboard() {
       />
 
       {/* Stat Cards Row */}
-      {statsLoading ? (
-        <SkeletonCard count={4} />
-      ) : (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            title="Today's Revenue"
-            value={stats?.todayRevenue ? `₹${stats.todayRevenue.toLocaleString("en-IN")}` : "₹0"}
-            change={stats?.todayOrders ? `${stats.todayOrders} orders today` : "No orders yet"}
-            changeType="neutral"
-            icon={IndianRupee}
-            iconColor="text-emerald-600"
-            iconBg="bg-emerald-50"
-          />
-          <StatCard
-            title="Today's Orders"
-            value={String(stats?.todayOrders || 0)}
-            change={stats?.pendingOrders ? `${stats.pendingOrders} pending` : "No pending orders"}
-            changeType="neutral"
-            icon={ShoppingBag}
-            iconColor="text-emerald-600"
-            iconBg="bg-emerald-50"
-          />
-          <StatCard
-            title="Active Customers"
-            value={stats?.totalCustomers ? String(stats.totalCustomers) : "0"}
-            change="Total registered"
-            changeType="neutral"
-            icon={Users}
-            iconColor="text-emerald-600"
-            iconBg="bg-emerald-50"
-          />
-          <StatCard
-            title="Avg Order Value"
-            value={stats?.avgOrderValue ? `₹${stats.avgOrderValue.toLocaleString("en-IN")}` : "₹0"}
-            change="Per order average"
-            changeType="neutral"
-            icon={IndianRupee}
-            iconColor="text-emerald-600"
-            iconBg="bg-emerald-50"
-          />
-        </div>
-      )}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Today's Revenue"
+          value={`₹${todayRevenue.toLocaleString("en-IN")}`}
+          change={`${todayOrders} orders today`}
+          changeType="neutral"
+          icon={IndianRupee}
+          iconColor="text-emerald-600"
+          iconBg="bg-emerald-50"
+        />
+        <StatCard
+          title="Today's Orders"
+          value={String(todayOrders)}
+          change={pendingOrders ? `${pendingOrders} pending` : "No pending orders"}
+          changeType="neutral"
+          icon={ShoppingBag}
+          iconColor="text-emerald-600"
+          iconBg="bg-emerald-50"
+        />
+        <StatCard
+          title="Active Customers"
+          value={String(totalCustomers)}
+          change="Total registered"
+          changeType="neutral"
+          icon={Users}
+          iconColor="text-emerald-600"
+          iconBg="bg-emerald-50"
+        />
+        <StatCard
+          title="Avg Order Value"
+          value={`₹${avgOrderValue.toLocaleString("en-IN")}`}
+          change="Per order average"
+          changeType="neutral"
+          icon={IndianRupee}
+          iconColor="text-emerald-600"
+          iconBg="bg-emerald-50"
+        />
+      </div>
 
       {/* Charts Section */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
@@ -266,7 +273,7 @@ export function BusinessDashboard() {
           </CardHeader>
           <CardContent>
             <ChartContainer config={dailySalesConfig} className="h-[280px] w-full">
-              <BarChart data={fallbackDailySales} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+              <BarChart data={demoDailySales} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -308,7 +315,7 @@ export function BusinessDashboard() {
           </CardHeader>
           <CardContent>
             <ChartContainer config={hourlySalesConfig} className="h-[280px] w-full">
-              <AreaChart data={fallbackHourlySales} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+              <AreaChart data={demoHourlySales} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                 <defs>
                   <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
@@ -350,6 +357,48 @@ export function BusinessDashboard() {
         </Card>
       </div>
 
+      {/* Product Catalog Overview */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Product Catalog</CardTitle>
+              <CardDescription>{demoCategories.length} categories · {demoProducts.length} products</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setBusinessPage("products")}>
+              View All
+              <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {demoCategories.map((cat) => {
+              const catProducts = demoProducts.filter(p => p.categoryId === cat.id)
+              const isEmoji = cat.icon && /\p{Emoji}/u.test(cat.icon) && cat.icon.length <= 4
+              return (
+                <div
+                  key={cat.id}
+                  className="flex flex-col items-center gap-2 rounded-lg border p-3 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => setBusinessPage("products")}
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${cat.color}18`, color: cat.color }}>
+                    {isEmoji ? <span className="text-lg">{cat.icon}</span> : <Package className="h-5 w-5" />}
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs font-medium truncate max-w-[100px]">{cat.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{catProducts.length} products</p>
+                  </div>
+                  <Badge variant="outline" className="text-[9px]">
+                    {cat.workflow.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Live Orders + Recent Activity */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-5">
         {/* Live Orders Section */}
@@ -358,94 +407,81 @@ export function BusinessDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base">Live Orders</CardTitle>
-                <CardDescription>Pending & confirmed orders requiring attention</CardDescription>
+                <CardDescription>Active orders across all workflows</CardDescription>
               </div>
               <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-200 bg-emerald-50">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                {liveOrders.length + (orderCount > 0 ? 1 : 0)} Active
+                {demoOrders.length} Active
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="p-0 px-6 pb-6">
-            {ordersLoading ? (
+            <ScrollArea className="max-h-96">
               <div className="space-y-3 pr-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="rounded-xl border p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-5 w-16" />
+                {demoOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="flex flex-col gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/30"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm">{order.orderNumber}</span>
+                          <StatusBadge status={order.status} />
+                          <Badge variant="outline" className={`text-[9px] ${getWorkflowBadgeClasses(order.workflow)} ${getWorkflowBadgeText(order.workflow)}`}>
+                            {order.workflow.replace(/_/g, " ")}
+                          </Badge>
+                          {order.type && (
+                            <Badge variant="outline" className="text-[10px] border-violet-200 text-violet-600 bg-violet-50">
+                              {order.type}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">{order.customerName}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-semibold text-sm">₹{order.total.toLocaleString("en-IN")}</p>
+                        <p className="text-xs text-muted-foreground">{order.items.length} items</p>
+                      </div>
                     </div>
-                    <Skeleton className="h-3 w-48" />
-                    <Skeleton className="h-3 w-24" />
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        {order.createdAt ? new Date(order.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Just now"}
+                        <span className="text-muted-foreground/50">·</span>
+                        <span>{order.paymentMethod}</span>
+                      </div>
+                      {order.status === "PENDING" && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                      {order.status === "CONFIRMED" && (
+                        <div className="flex items-center gap-1 text-xs text-sky-600">
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                          {order.assignedTo ? `Assigned: ${order.assignedTo}` : "Assigning..."}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-            ) : liveOrders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <ShoppingBag className="h-10 w-10 mb-3 opacity-30" />
-                <p className="text-sm font-medium">No active orders</p>
-                <p className="text-xs mt-1">New orders will appear here in real-time</p>
-              </div>
-            ) : (
-              <ScrollArea className="max-h-96">
-                <div className="space-y-3 pr-4">
-                  {liveOrders.map((order: Record<string, unknown>) => (
-                    <div
-                      key={String(order.id)}
-                      className="flex flex-col gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/30"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-sm">{String(order.orderNumber || order.id)}</span>
-                            <StatusBadge status={String(order.status || "PENDING")} />
-                            {order.orderType === "POS" && (
-                              <Badge variant="outline" className="text-[10px] border-violet-200 text-violet-600 bg-violet-50">
-                                POS
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">{String(order.customerName || "Unknown")}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="font-semibold text-sm">₹{Number(order.totalAmount || 0).toLocaleString("en-IN")}</p>
-                          <p className="text-xs text-muted-foreground">{String(order.itemCount || 0)} items</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Clock className="h-3.5 w-3.5" />
-                          {order.createdAt ? new Date(String(order.createdAt)).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Just now"}
-                        </div>
-                        {order.status === "PENDING" && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
-                            >
-                              Accept
-                            </button>
-                            <button
-                              className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        )}
-                        {order.status === "CONFIRMED" && (
-                          <div className="flex items-center gap-1 text-xs text-sky-600">
-                            <ArrowUpRight className="h-3.5 w-3.5" />
-                            {order.assignedTo ? `Assigned: ${String(order.assignedTo)}` : "Assigning..."}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            )}
+            </ScrollArea>
             <Separator className="my-4" />
             <div className="flex justify-center">
-              <button className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors">
+              <button
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors"
+                onClick={() => setBusinessPage("orders")}
+              >
                 View All Orders
                 <ArrowUpRight className="h-4 w-4" />
               </button>
@@ -467,14 +503,14 @@ export function BusinessDashboard() {
           <CardContent className="p-0 px-6 pb-6">
             <ScrollArea className="max-h-96">
               <div className="space-y-1 pr-4">
-                {fallbackRecentActivity.map((activity, index) => {
+                {demoActivity.map((activity, index) => {
                   const ActivityIcon = activityIconMap[activity.type] || Package
                   const colorClass = activityColorMap[activity.type] || "bg-slate-100 text-slate-600"
 
                   return (
                     <div key={activity.id} className="relative flex gap-3 pb-4">
                       {/* Timeline line */}
-                      {index < fallbackRecentActivity.length - 1 && (
+                      {index < demoActivity.length - 1 && (
                         <div className="absolute left-[15px] top-9 h-full w-px bg-border" />
                       )}
                       {/* Icon */}
@@ -495,64 +531,117 @@ export function BusinessDashboard() {
         </Card>
       </div>
 
-      {/* Quick Stats Footer Row */}
+      {/* Bottom Summary: Top Products + Category/Workflow + Partners */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-        {/* Top Product */}
+        {/* Top Products */}
         <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50">
-                <TrendingUp className="h-6 w-6 text-emerald-600" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-muted-foreground">Total Products</p>
-                <p className="text-base font-bold">
-                  {statsLoading ? "..." : String(stats?.totalProducts || 0)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {stats?.lowStockProducts ? `${stats.lowStockProducts} low stock` : "Catalog items"}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Delivery Partners */}
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-50">
-                <Package className="h-6 w-6 text-sky-600" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-muted-foreground">Delivery Partners</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-bold">
-                    {statsLoading ? "..." : String(stats?.totalDeliveryPartners || 0)}
-                  </span>
-                  <span className="text-sm text-muted-foreground">total</span>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Top Products</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2.5">
+              {demoTopProducts.slice(0, 5).map((product, index) => (
+                <div key={index} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-[10px] font-semibold text-emerald-600">
+                      {index + 1}
+                    </span>
+                    <span className="text-sm truncate">{product.name}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-medium">₹{product.revenue.toLocaleString("en-IN")}</p>
+                    <p className="text-[10px] text-muted-foreground">{product.sold} sold</p>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {stats?.deliveryPartnersOnline ? `${stats.deliveryPartnersOnline} online now` : "Fleet management"}
-                </p>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Category & Workflow Summary */}
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Workflows Active</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2.5">
+              {(() => {
+                const workflowCounts = demoCategories.reduce((acc, cat) => {
+                  acc[cat.workflow] = (acc[cat.workflow] || 0) + 1
+                  return acc
+                }, {} as Record<string, number>)
+                return Object.entries(workflowCounts).map(([workflow, count]) => (
+                  <div key={workflow} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={`text-[10px] ${getWorkflowBadgeClasses(workflow)} ${getWorkflowBadgeText(workflow)}`}>
+                        {workflow.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium">{count}</span>
+                      <span className="text-[10px] text-muted-foreground">categories</span>
+                    </div>
+                  </div>
+                ))
+              })()}
+              <Separator className="my-1" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Total Products</span>
+                <span className="text-sm font-medium">{demoProducts.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Low Stock</span>
+                <span className="text-sm font-medium">{lowStockProducts}</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* POS Session */}
+        {/* Active Subscribers / Delivery Partners */}
         <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50">
-                <CreditCard className="h-6 w-6 text-violet-600" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Operations</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
+                    <Package className="h-3.5 w-3.5 text-emerald-600" />
+                  </div>
+                  <span className="text-sm">Total Products</span>
+                </div>
+                <span className="text-sm font-semibold">{totalProducts}</span>
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-muted-foreground">Active Stores</p>
-                <p className="text-base font-bold">
-                  {statsLoading ? "..." : String(stats?.activeStores || 0)}
-                </p>
-                <p className="text-xs text-muted-foreground">Store locations</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-50">
+                    <Truck className="h-3.5 w-3.5 text-sky-600" />
+                  </div>
+                  <span className="text-sm">Delivery Partners</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-semibold">{totalDeliveryPartners}</span>
+                  <span className="text-[10px] text-muted-foreground ml-1">({deliveryPartnersOnline} online)</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50">
+                    <CreditCard className="h-3.5 w-3.5 text-violet-600" />
+                  </div>
+                  <span className="text-sm">Active Stores</span>
+                </div>
+                <span className="text-sm font-semibold">{activeStores}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50">
+                    <Users className="h-3.5 w-3.5 text-amber-600" />
+                  </div>
+                  <span className="text-sm">Customers</span>
+                </div>
+                <span className="text-sm font-semibold">{demoCustomers.length}</span>
               </div>
             </div>
           </CardContent>

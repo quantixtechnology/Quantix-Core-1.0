@@ -29,6 +29,7 @@ import {
   ArrowRight,
   Eye,
   RefreshCw,
+  Workflow,
 } from "lucide-react"
 import {
   useOrders,
@@ -41,6 +42,8 @@ import { SkeletonTable, ErrorState } from "@/components/ui/loading-states"
 import { StatusBadge } from "@/components/admin/shared/status-badge"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
+import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
+import { getDemoBusinessOrders } from "@/lib/demo-data"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -60,19 +63,20 @@ type OrderStatus =
   | "DELIVERED"
   | "CANCELLED"
 
-type OrderType = "DELIVERY" | "POS"
+type OrderType = "DELIVERY" | "POS" | "PICKUP" | "APPOINTMENT" | "SUBSCRIPTION"
 
 interface OrderItem {
   name: string
   qty: number
   price: number
+  variant?: string
 }
 
 interface Order {
   id: string
   orderNumber: string
   type: OrderType
-  status: OrderStatus
+  status: OrderStatus | "PROCESSING" | "PACKED" | "SCHEDULED" | "ACTIVE" | "COMPLETED"
   customerName: string
   customerPhone: string
   items: OrderItem[]
@@ -85,6 +89,7 @@ interface Order {
   createdAt: string
   deliveryAddress: string | null
   assignedTo: string | null
+  workflow?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +188,37 @@ function mapApiOrder(apiOrder: Record<string, unknown>): Order {
 
 export function OrdersView() {
   // Set business context on mount
+  const { demoBusinessId } = useAdminStore()
+  const demoOrdersRaw = getDemoBusinessOrders(demoBusinessId)
+
+  // Map demo orders to local Order type
+  const demoOrdersList: Order[] = useMemo(() => {
+    return demoOrdersRaw.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      type: o.type as OrderType,
+      status: o.status as Order["status"],
+      customerName: o.customerName,
+      customerPhone: "",
+      items: o.items.map((item) => ({
+        name: item.name,
+        qty: item.quantity,
+        price: item.price,
+        variant: item.variant,
+      })),
+      subtotal: o.subtotal,
+      deliveryFee: o.deliveryFee,
+      tax: o.tax,
+      total: o.total,
+      paymentMethod: o.paymentMethod,
+      paymentStatus: o.paymentStatus,
+      createdAt: o.createdAt,
+      deliveryAddress: o.deliveryAddress || null,
+      assignedTo: o.assignedTo || null,
+      workflow: o.workflow,
+    }))
+  }, [demoBusinessId])
+
   useEffect(() => {
     setBusinessContext(BUSINESS_ID)
   }, [])
@@ -217,6 +253,12 @@ export function OrdersView() {
     return rawData.map((o: Record<string, unknown>) => mapApiOrder(o))
   }, [ordersData])
 
+  // Merge: prefer API data, fall back to demo orders
+  const allOrders: Order[] = useMemo(() => {
+    if (apiOrders.length > 0) return apiOrders
+    return demoOrdersList
+  }, [apiOrders, demoOrdersList])
+
   // ---- State ----
   const [activeTab, setActiveTab] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
@@ -235,19 +277,19 @@ export function OrdersView() {
   const [statusNotes, setStatusNotes] = useState("")
 
   // ---- Computed ----
-  const pendingCount = apiOrders.filter((o) => o.status === "PENDING").length
-  const preparingCount = apiOrders.filter(
-    (o) => o.status === "CONFIRMED" || o.status === "PREPARING"
+  const pendingCount = allOrders.filter((o) => o.status === "PENDING").length
+  const preparingCount = allOrders.filter(
+    (o) => o.status === "CONFIRMED" || o.status === "PREPARING" || o.status === "PROCESSING"
   ).length
-  const outForDeliveryCount = apiOrders.filter(
+  const outForDeliveryCount = allOrders.filter(
     (o) => o.status === "OUT_FOR_DELIVERY"
   ).length
-  const deliveredTodayCount = apiOrders.filter(
-    (o) => o.status === "DELIVERED"
+  const deliveredTodayCount = allOrders.filter(
+    (o) => o.status === "DELIVERED" || o.status === "COMPLETED"
   ).length
 
   const filteredOrders = useMemo(() => {
-    let result = [...apiOrders]
+    let result = [...allOrders]
 
     // Tab filter
     if (activeTab !== "all") {
@@ -302,7 +344,7 @@ export function OrdersView() {
     }
 
     return result
-  }, [apiOrders, activeTab, searchQuery, typeFilter, paymentFilter, dateFilter])
+  }, [allOrders, activeTab, searchQuery, typeFilter, paymentFilter, dateFilter])
 
   // ---- Handlers ----
   function openDetail(order: Order) {
@@ -444,7 +486,7 @@ export function OrdersView() {
         icon={ShoppingBag}
         action={
           <Badge variant="secondary" className="text-sm px-3 py-1 bg-primary/10 text-primary hover:bg-primary/10">
-            {apiOrders.length} orders
+            {allOrders.length} orders
           </Badge>
         }
       />
@@ -597,16 +639,34 @@ export function OrdersView() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] ${
-                                  order.type === "DELIVERY"
-                                    ? "border-purple-200 text-purple-700 bg-purple-50"
-                                    : "border-teal-200 text-teal-700 bg-teal-50"
-                                }`}
-                              >
-                                {order.type}
-                              </Badge>
+                              <div className="flex flex-col gap-1">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] w-fit ${
+                                    order.type === "DELIVERY"
+                                      ? "border-purple-200 text-purple-700 bg-purple-50"
+                                      : order.type === "POS"
+                                      ? "border-teal-200 text-teal-700 bg-teal-50"
+                                      : order.type === "PICKUP"
+                                      ? "border-sky-200 text-sky-700 bg-sky-50"
+                                      : order.type === "APPOINTMENT"
+                                      ? "border-violet-200 text-violet-700 bg-violet-50"
+                                      : order.type === "SUBSCRIPTION"
+                                      ? "border-amber-200 text-amber-700 bg-amber-50"
+                                      : "border-slate-200 text-slate-700 bg-slate-50"
+                                  }`}
+                                >
+                                  {order.type}
+                                </Badge>
+                                {order.workflow && (
+                                  <Badge variant="outline" className={`text-[9px] w-fit ${(() => {
+                                    const cfg = WORKFLOW_CONFIGS.find(c => c.type === order.workflow)
+                                    return cfg ? `${cfg.bgColor} ${cfg.color}` : ""
+                                  })()}`}>
+                                    {order.workflow.replace(/_/g, " ")}
+                                  </Badge>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell>
                               <span className="text-xs text-muted-foreground">
