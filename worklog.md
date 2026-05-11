@@ -310,3 +310,23 @@ Stage Summary:
 - **Additional fix**: Updated HandlerFunction type in middleware.ts to use Promise<Record> for Next.js 16 compatibility
 - Build now completes successfully with exit code 0
 - Dev server is running and returning 200
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix QuickWash Laundry showing grocery items (fruits & vegetables) in Orders
+
+Work Log:
+- Analyzed screenshot using VLM: confirmed QuickWash Laundry shows grocery items (Green Apples, Amul Ghee, Surf Excel Matic) instead of laundry services
+- Found root cause in orders-view.tsx line 258: merge logic preferred API data over demo data (`if (apiOrders.length > 0) return apiOrders`)
+- API returns grocery orders from database (biz_1 seeded with grocery data), ignoring business-context-aware demo data
+- Fixed orders-view.tsx: changed merge logic to prefer demo orders (business-type-aware) over API data
+- Also fixed customer-products.tsx: added getDemoProducts import and created demoProductsList with same prefer-demo merge logic
+- Also fixed customer-product-detail.tsx: added demo product lookup that falls back to API only when demo product not found
+- Also fixed related products in product detail to use demo data first
+
+Stage Summary:
+- Fixed 3 files with the same root pattern: API data was preferred over business-context-aware demo data
+- All views now correctly show laundry/carwash data when those business types are selected
+- Customer home was already using only demo data (no fix needed)
+- Business dashboard, reports, products, POS were already using only demo data (no fix needed)

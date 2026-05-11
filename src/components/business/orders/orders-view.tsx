@@ -253,11 +253,13 @@ export function OrdersView() {
     return rawData.map((o: Record<string, unknown>) => mapApiOrder(o))
   }, [ordersData])
 
-  // Merge: prefer API data, fall back to demo orders
+  // Merge: prefer demo orders when demo context is active (business-type-aware),
+  // fall back to API data only when no demo context
   const allOrders: Order[] = useMemo(() => {
+    if (demoOrdersList.length > 0) return demoOrdersList
     if (apiOrders.length > 0) return apiOrders
-    return demoOrdersList
-  }, [apiOrders, demoOrdersList])
+    return []
+  }, [demoOrdersList, apiOrders])
 
   // ---- State ----
   const [activeTab, setActiveTab] = useState("all")

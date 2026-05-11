@@ -5,7 +5,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useProducts, useCategories } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
-import { getDemoCategories } from "@/lib/demo-data"
+import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState } from "@/components/ui/loading-states"
 import { Input } from "@/components/ui/input"
@@ -79,6 +79,30 @@ export function CustomerProducts() {
     return fallbackCategories
   }, [categoriesData])
 
+  // Demo products from business context (business-type-aware)
+  const demoProductsList: ProductItem[] = useMemo(() => {
+    return getDemoProducts(demoBusinessId)
+      .filter((p) => p.status === "ACTIVE")
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        categoryId: p.categoryId,
+        category: p.category,
+        status: p.status,
+        isVeg: p.isVeg,
+        isFeatured: p.isFeatured,
+        image: p.image,
+        variants: p.variants.map((v) => ({
+          id: v.id,
+          name: v.name,
+          price: v.price,
+          mrp: v.mrp,
+          stock: v.stock,
+          isDefault: v.isDefault,
+        })),
+      }))
+  }, [demoBusinessId])
+
   // Parse products from API
   const apiProducts: ProductItem[] = useMemo(() => {
     if (!productsData?.data) return []
@@ -105,9 +129,17 @@ export function CustomerProducts() {
     }))
   }, [productsData])
 
+  // Merge: prefer demo products when demo context is active (business-type-aware),
+  // fall back to API data only when no demo context
+  const allProducts: ProductItem[] = useMemo(() => {
+    if (demoProductsList.length > 0) return demoProductsList
+    if (apiProducts.length > 0) return apiProducts
+    return []
+  }, [demoProductsList, apiProducts])
+
   // Client-side sort
   const filteredProducts = useMemo(() => {
-    let result = apiProducts
+    let result = allProducts
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
@@ -145,7 +177,7 @@ export function CustomerProducts() {
     }
 
     return result
-  }, [apiProducts, searchQuery, sortBy])
+  }, [allProducts, searchQuery, sortBy])
 
   const getCartQty = (productId: string, variantId: string) => {
     const item = items.find((i) => i.productId === productId && i.variantId === variantId)

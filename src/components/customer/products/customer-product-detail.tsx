@@ -5,6 +5,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useProduct, useProducts } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
+import { getDemoProducts, getDemoCategories } from "@/lib/demo-data"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState } from "@/components/ui/loading-states"
 import { Badge } from "@/components/ui/badge"
@@ -31,8 +32,34 @@ export function CustomerProductDetail() {
   // Fetch related products (same business, for similar products)
   const { data: relatedData } = useProducts(BIZ_ID, { limit: 20 })
 
+  // Demo product from business context (business-type-aware)
+  const demoProduct = useMemo(() => {
+    const allDemoProducts = getDemoProducts(demoBusinessId)
+    const found = allDemoProducts.find((p) => p.id === selectedProductId)
+    if (!found) return null
+    return {
+      id: found.id,
+      name: found.name,
+      categoryId: found.categoryId,
+      category: found.category,
+      status: found.status,
+      isVeg: found.isVeg,
+      isFeatured: found.isFeatured,
+      image: found.image,
+      shortDesc: null as string | null,
+      variants: found.variants.map((v) => ({
+        id: v.id,
+        name: v.name,
+        price: v.price,
+        mrp: v.mrp,
+        stock: v.stock as number | undefined,
+        isDefault: v.isDefault as boolean | undefined,
+      })),
+    }
+  }, [demoBusinessId, selectedProductId])
+
   // Parse product from API
-  const product = useMemo(() => {
+  const apiProduct = useMemo(() => {
     if (!productData?.data) return null
     const p = productData.data as Record<string, unknown>
     return {
@@ -57,6 +84,9 @@ export function CustomerProductDetail() {
         : [],
     }
   }, [productData])
+
+  // Merge: prefer demo product, fall back to API
+  const product = demoProduct || apiProduct
 
   const activeVariant = useMemo(() => {
     if (!product) return null
@@ -92,9 +122,28 @@ export function CustomerProductDetail() {
     : null
   const cartQty = cartItem?.quantity || 0
 
-  // Related products
+  // Related products — prefer demo data, fall back to API
   const relatedProducts = useMemo(() => {
-    if (!product || !relatedData?.data) return []
+    if (!product) return []
+    // Try demo products first
+    const demoRelated = getDemoProducts(demoBusinessId)
+      .filter((p) => p.categoryId === product.categoryId && p.id !== product.id && p.status === "ACTIVE")
+      .slice(0, 4)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        variants: p.variants.map((v) => ({
+          id: v.id,
+          name: v.name,
+          price: v.price,
+          mrp: v.mrp,
+          isDefault: v.isDefault as boolean | undefined,
+        })),
+      }))
+    if (demoRelated.length > 0) return demoRelated
+    // Fall back to API data
+    if (!relatedData?.data) return []
     const prods = Array.isArray(relatedData.data) ? relatedData.data : []
     return prods
       .filter((p: Record<string, unknown>) => {
@@ -116,7 +165,7 @@ export function CustomerProductDetail() {
             }))
           : [],
       }))
-  }, [product, relatedData])
+  }, [product, relatedData, demoBusinessId])
 
   const handleAddToCart = () => {
     if (!product || !activeVariant) return
