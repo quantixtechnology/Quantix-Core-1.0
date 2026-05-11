@@ -1,11 +1,14 @@
 // ============================================================================
-// Route: GET/POST /api/admin/sales-team
-// GET  — Returns active sales team members
-// POST — Creates a new sales team member (User + SalesTeamMember)
+// Route: GET/POST/PATCH/DELETE /api/admin/sales-team
+// GET    — Returns active sales team members
+// POST   — Creates a new sales team member (User + SalesTeamMember)
+// PATCH  — Update sales team member (pass ?id=memberId in query)
+// DELETE — Soft delete (deactivate) sales team member (pass ?id=memberId in query)
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
+import { withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET() {
@@ -105,4 +108,118 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// ============================================================================
+// PATCH /api/admin/sales-team?id=memberId — Update sales team member
+// ============================================================================
+
+export async function PATCH(request: NextRequest) {
+  return withPlatformAccess(async (req) => {
+    try {
+      const { searchParams } = new URL(req.url);
+      const memberId = searchParams.get('id');
+
+      if (!memberId) {
+        return createErrorResponse('Missing ?id= query parameter', 400);
+      }
+
+      const body = await req.json();
+
+      const existing = await db.salesTeamMember.findUnique({
+        where: { id: memberId },
+      });
+
+      if (!existing) {
+        return createErrorResponse('Sales team member not found', 404);
+      }
+
+      if (body.email && body.email !== existing.email) {
+        const duplicate = await db.salesTeamMember.findFirst({
+          where: { email: body.email, id: { not: memberId } },
+        });
+        if (duplicate) {
+          return createErrorResponse('Email already in use', 409);
+        }
+      }
+
+      const result = await db.$transaction(async (tx) => {
+        const updated = await tx.salesTeamMember.update({
+          where: { id: memberId },
+          data: {
+            ...(body.name && { name: body.name }),
+            ...(body.email && { email: body.email }),
+            ...(body.phone && { phone: body.phone }),
+            ...(body.region && { region: body.region }),
+            ...(body.target !== undefined && { target: Number(body.target) }),
+            ...(body.achieved !== undefined && { achieved: Number(body.achieved) }),
+            ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
+          },
+        });
+
+        if (existing.userId) {
+          await tx.user.update({
+            where: { id: existing.userId },
+            data: {
+              ...(body.name && { name: body.name }),
+              ...(body.email && { email: body.email }),
+              ...(body.phone && { phone: body.phone }),
+              ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
+            },
+          });
+        }
+
+        return updated;
+      });
+
+      return createSuccessResponse(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update sales team member';
+      return createErrorResponse(message, 500);
+    }
+  })(request);
+}
+
+// ============================================================================
+// DELETE /api/admin/sales-team?id=memberId — Soft delete (deactivate)
+// ============================================================================
+
+export async function DELETE(request: NextRequest) {
+  return withPlatformAccess(async (req) => {
+    try {
+      const { searchParams } = new URL(req.url);
+      const memberId = searchParams.get('id');
+
+      if (!memberId) {
+        return createErrorResponse('Missing ?id= query parameter', 400);
+      }
+
+      const existing = await db.salesTeamMember.findUnique({
+        where: { id: memberId },
+      });
+
+      if (!existing) {
+        return createErrorResponse('Sales team member not found', 404);
+      }
+
+      await db.$transaction(async (tx) => {
+        await tx.salesTeamMember.update({
+          where: { id: memberId },
+          data: { isActive: false },
+        });
+
+        if (existing.userId) {
+          await tx.user.update({
+            where: { id: existing.userId },
+            data: { isActive: false },
+          });
+        }
+      });
+
+      return createSuccessResponse({ message: 'Sales team member deactivated' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete sales team member';
+      return createErrorResponse(message, 500);
+    }
+  })(request);
 }

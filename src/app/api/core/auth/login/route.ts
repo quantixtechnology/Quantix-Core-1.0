@@ -12,8 +12,8 @@ import { logAuthActivity } from '@/lib/core/audit';
 import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
 
-// Rate limit: 5 attempts per 15 minutes per email
-const RATE_LIMIT_CONFIG = { windowMs: 15 * 60 * 1000, maxRequests: 5 };
+// Rate limit: 20 attempts per 15 minutes per email
+const RATE_LIMIT_CONFIG = { windowMs: 15 * 60 * 1000, maxRequests: 20 };
 
 // Refresh token expiry: 7 days
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;

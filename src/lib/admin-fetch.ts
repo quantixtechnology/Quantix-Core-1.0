@@ -5,9 +5,20 @@
 // ============================================================================
 
 const AUTH_TOKEN_KEY = 'quantix_auth_token';
+const BUSINESS_ID_KEY = 'quantix_business_id';
 
 /**
- * Get the Authorization headers with Bearer token for admin API calls
+ * Get the current business ID from localStorage
+ * Reads from quantix_business_id (set by api-client's setBusinessContext)
+ * Falls back to quantix_auth_business_id (set by auth-store on login)
+ */
+function getBusinessId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(BUSINESS_ID_KEY) || localStorage.getItem('quantix_auth_business_id') || null;
+}
+
+/**
+ * Get the Authorization headers with Bearer token and business context for admin API calls
  */
 export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
@@ -17,6 +28,10 @@ export function getAuthHeaders(): Record<string, string> {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+    const businessId = getBusinessId();
+    if (businessId) {
+      headers['x-business-id'] = businessId;
     }
   }
   return headers;

@@ -6,7 +6,7 @@
 // Color-coded action types, expandable detail rows, real-time polling
 // ============================================================================
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -42,7 +43,6 @@ import {
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { StatCard } from "@/components/admin/shared/stat-card";
 import {
-  auditLogs,
   actionTypes,
   entityTypes,
   type AuditLogEntry,
@@ -72,6 +72,8 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { formatIndianDateTime, getRelativeTime } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/admin-fetch";
+import { useAuthStore } from "@/stores/auth-store";
 
 // ============================================================================
 // Types
@@ -79,6 +81,49 @@ import { formatIndianDateTime, getRelativeTime } from "@/lib/utils";
 
 type SortField = "createdAt" | "userName" | "action" | "entityType";
 type SortOrder = "asc" | "desc";
+
+// API audit log shape
+interface ApiAuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  action: string;
+  entity: string;
+  entityId: string;
+  details: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+function mapApiAuditLog(api: ApiAuditLog): AuditLogEntry {
+  // Parse details if it's a JSON string
+  let parsedDetails = api.details || "";
+  let parsedMetadata: Record<string, unknown> = {};
+  try {
+    if (api.details && api.details.startsWith("{")) {
+      const parsed = JSON.parse(api.details);
+      parsedDetails = parsed.details || parsed.content || api.details;
+      parsedMetadata = parsed;
+    }
+  } catch {
+    // Keep original details string
+  }
+
+  return {
+    id: api.id,
+    userId: api.userId,
+    userName: api.userName,
+    action: api.action,
+    entityType: api.entity,
+    entityId: api.entityId,
+    details: typeof parsedDetails === "string" ? parsedDetails : JSON.stringify(parsedDetails),
+    ipAddress: api.ipAddress || "-",
+    metadata: parsedMetadata,
+    createdAt: api.createdAt,
+  };
+}
 
 // ============================================================================
 // Action icon mapping
@@ -103,6 +148,9 @@ const actionIconMap: Record<string, typeof Activity> = {
 
 export function AuditLogViewer() {
   // ---- State ----
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [entityFilter, setEntityFilter] = useState<string>("all");
@@ -116,13 +164,48 @@ export function AuditLogViewer() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const pageSize = 10;
+  const { currentBusinessId } = useAuthStore();
+
+  // ---- Fetch audit logs from API ----
+  const fetchAuditLogs = useCallback(async () => {
+    const businessId = currentBusinessId || (typeof window !== 'undefined' ? localStorage.getItem('quantix_business_id') : null);
+    if (!businessId) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const res = await fetch(`/api/core/audit?businessId=${businessId}&limit=50`, {
+        headers: getAuthHeaders(),
+      });
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const mapped = (json.data as ApiAuditLog[]).map(mapApiAuditLog);
+        setAuditLogs(mapped);
+      } else {
+        setAuditLogs([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch audit logs:", err);
+      setFetchError("Failed to load audit logs");
+      setAuditLogs([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentBusinessId]);
+
+  useEffect(() => {
+    fetchAuditLogs();
+  }, [fetchAuditLogs]);
 
   // ---- Unique users ----
   const uniqueUsers = useMemo(() => {
     const users = new Map<string, string>();
     auditLogs.forEach((log) => users.set(log.userId, log.userName));
     return Array.from(users.entries()).map(([id, name]) => ({ id, name }));
-  }, []);
+  }, [auditLogs]);
 
   // ---- Stats ----
   const stats = useMemo(() => {
@@ -132,7 +215,7 @@ export function AuditLogViewer() {
     const del = auditLogs.filter((l) => l.action === "DELETE").length;
     const login = auditLogs.filter((l) => l.action === "LOGIN").length;
     return { total, create, update, delete: del, login };
-  }, []);
+  }, [auditLogs]);
 
   // ---- Filtered & sorted logs ----
   const filteredLogs = useMemo(() => {
@@ -197,7 +280,7 @@ export function AuditLogViewer() {
     });
 
     return result;
-  }, [searchQuery, actionFilter, entityFilter, userFilter, dateFrom, dateTo, sortField, sortOrder]);
+  }, [auditLogs, searchQuery, actionFilter, entityFilter, userFilter, dateFrom, dateTo, sortField, sortOrder]);
 
   // ---- Paginated logs ----
   const paginatedLogs = useMemo(() => {
@@ -252,11 +335,13 @@ export function AuditLogViewer() {
     URL.revokeObjectURL(url);
   }, [filteredLogs]);
 
-  // ---- Refresh (simulated) ----
+  // ---- Refresh ----
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 1500);
-  }, []);
+    fetchAuditLogs().finally(() => {
+      setTimeout(() => setIsRefreshing(false), 500);
+    });
+  }, [fetchAuditLogs]);
 
   // ---- Clear filters ----
   const clearFilters = useCallback(() => {
@@ -274,6 +359,59 @@ export function AuditLogViewer() {
   // ============================================================================
   // Render
   // ============================================================================
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Audit Log"
+          description="Track all platform activities — security, compliance, debugging"
+          icon={Shield}
+        />
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-4 w-20 mb-2" />
+                <Skeleton className="h-8 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Error state
+  if (fetchError) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Audit Log"
+          description="Track all platform activities — security, compliance, debugging"
+          icon={Shield}
+        />
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+            <AlertCircle className="h-6 w-6 text-red-500" />
+          </div>
+          <h3 className="mt-3 text-sm font-medium">{fetchError}</h3>
+          <Button variant="outline" size="sm" className="mt-2" onClick={handleRefresh}>
+            <RefreshCw className="w-3 h-3 mr-1" /> Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader

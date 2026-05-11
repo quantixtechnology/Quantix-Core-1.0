@@ -1,17 +1,9 @@
 #!/bin/bash
-# Keep-alive wrapper that restarts the dev server if it dies
 cd /home/z/my-project
-
 while true; do
-  echo "[$(date)] Starting dev server..." >> dev.log
-  npx next dev -p 3000 >> dev.log 2>&1 &
-  SERVER_PID=$!
-  
-  # Wait and check if process stays alive
-  while kill -0 $SERVER_PID 2>/dev/null; do
-    sleep 5
-  done
-  
-  echo "[$(date)] Dev server died, restarting in 3s..." >> dev.log
+  echo "[$(date)] Starting Next.js dev server..." >> /home/z/my-project/dev.log
+  NODE_OPTIONS="--max-old-space-size=4096" npx next dev -p 3000 >> /home/z/my-project/dev.log 2>&1
+  EXIT_CODE=$?
+  echo "[$(date)] Server exited with code $EXIT_CODE, restarting in 3s..." >> /home/z/my-project/dev.log
   sleep 3
 done

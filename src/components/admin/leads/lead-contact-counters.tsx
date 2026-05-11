@@ -1,6 +1,8 @@
 "use client"
 
+import { useState, useEffect, useCallback } from "react"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Phone,
   CalendarCheck,
@@ -9,10 +11,60 @@ import {
   Clock,
   Hash,
 } from "lucide-react"
-import { leadContactStats } from "./crm-data"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+
+interface ContactStats {
+  totalAttempts: number
+  totalFollowUps: number
+  totalCalls: number
+  totalWhatsApp: number
+  totalDemosShared: number
+  daysSinceLastContact: number
+}
+
+// API activity shape
+interface ApiActivity {
+  id: string
+  action: string
+  details: {
+    type?: string
+  } | null
+  createdAt: string
+}
+
+function computeStats(activities: ApiActivity[], lastContactedAt: string | null): ContactStats {
+  let totalCalls = 0
+  let totalWhatsApp = 0
+  let totalDemosShared = 0
+  let totalFollowUps = 0
+
+  for (const activity of activities) {
+    const type = activity.details?.type || activity.action.replace("lead.", "")
+    const upper = type.toUpperCase()
+    if (upper === "CALL") totalCalls++
+    else if (upper === "WHATSAPP") totalWhatsApp++
+    else if (upper === "DEMO_SHARED") totalDemosShared++
+    else if (upper === "FOLLOW_UP") totalFollowUps++
+  }
+
+  const totalAttempts = activities.length
+  const daysSinceLastContact = lastContactedAt
+    ? Math.floor((Date.now() - new Date(lastContactedAt).getTime()) / (1000 * 60 * 60 * 24))
+    : 999
+
+  return {
+    totalAttempts,
+    totalFollowUps,
+    totalCalls,
+    totalWhatsApp,
+    totalDemosShared,
+    daysSinceLastContact,
+  }
+}
 
 interface LeadContactCountersProps {
   leadId: string
+  lastContactedAt?: string | null
 }
 
 function getDaysColor(days: number): string {
@@ -27,8 +79,69 @@ function getDaysLabel(days: number): string {
   return `${days} days ago`
 }
 
-export function LeadContactCounters({ leadId }: LeadContactCountersProps) {
-  const stats = leadContactStats[leadId]
+export function LeadContactCounters({ leadId, lastContactedAt }: LeadContactCountersProps) {
+  const [stats, setStats] = useState<ContactStats | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const fetchStats = useCallback(async () => {
+    if (!leadId) return
+    setIsLoading(true)
+    try {
+      const res = await fetch(`/api/core/leads/${leadId}/activities`, {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success && json.data?.activities) {
+        const computed = computeStats(json.data.activities as ApiActivity[], lastContactedAt || null)
+        setStats(computed)
+      } else {
+        // No activities — compute from lastContactedAt only
+        if (lastContactedAt) {
+          setStats({
+            totalAttempts: 0,
+            totalFollowUps: 0,
+            totalCalls: 0,
+            totalWhatsApp: 0,
+            totalDemosShared: 0,
+            daysSinceLastContact: Math.floor((Date.now() - new Date(lastContactedAt).getTime()) / (1000 * 60 * 60 * 24)),
+          })
+        } else {
+          setStats(null)
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch lead contact stats:", err)
+      // Fallback: compute from lastContactedAt only
+      if (lastContactedAt) {
+        setStats({
+          totalAttempts: 0,
+          totalFollowUps: 0,
+          totalCalls: 0,
+          totalWhatsApp: 0,
+          totalDemosShared: 0,
+          daysSinceLastContact: Math.floor((Date.now() - new Date(lastContactedAt).getTime()) / (1000 * 60 * 60 * 24)),
+        })
+      } else {
+        setStats(null)
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }, [leadId, lastContactedAt])
+
+  useEffect(() => {
+    fetchStats()
+  }, [fetchStats])
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Skeleton key={i} className="h-6 w-20 rounded-md" />
+        ))}
+      </div>
+    )
+  }
 
   if (!stats) {
     return (

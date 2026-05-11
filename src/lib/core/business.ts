@@ -473,13 +473,8 @@ export async function listBusinesses(filters?: BusinessListFilters) {
       skip,
       take: limit,
       include: {
-        businessSubscription: {
-          select: { status: true, plan: { select: { name: true, billingCycle: true } } },
-        },
-        domain: { select: { domain: true, status: true } },
-        salesRep: { select: { name: true } },
         _count: {
-          select: { stores: true, orders: true, customers: true },
+          select: { stores: true },
         },
       },
       orderBy: { createdAt: 'desc' },

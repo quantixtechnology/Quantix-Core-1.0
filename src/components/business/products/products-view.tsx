@@ -235,15 +235,15 @@ export function ProductsView() {
         body: JSON.stringify(data),
       })
       const resp = await response.json()
-      if (!resp.success) throw new Error(resp.error || 'Failed to update product')
+      if (!resp.success) throw new Error(resp.error || resp.message || 'Failed to update product')
       return resp
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products", businessId] })
       showSuccess("Product updated successfully")
     },
-    onError: () => {
-      showError("Failed to update product")
+    onError: (error) => {
+      showError(error instanceof Error ? error.message : "Failed to update product")
     },
   })
 
@@ -255,15 +255,15 @@ export function ProductsView() {
         headers: getAuthHeaders(),
       })
       const data = await response.json()
-      if (!data.success) throw new Error(data.error || 'Failed to delete product')
+      if (!data.success) throw new Error(data.error || data.message || 'Failed to delete product')
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products", businessId] })
       showSuccess("Product deleted successfully")
     },
-    onError: () => {
-      showError("Failed to delete product")
+    onError: (error) => {
+      showError(error instanceof Error ? error.message : "Failed to delete product")
     },
   })
 
@@ -276,15 +276,15 @@ export function ProductsView() {
         body: JSON.stringify({ ...productData, businessId }),
       })
       const data = await response.json()
-      if (!data.success) throw new Error(data.error || 'Failed to create product')
+      if (!data.success) throw new Error(data.error || data.message || 'Failed to create product')
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products", businessId] })
       showSuccess("Product created successfully")
     },
-    onError: () => {
-      showError("Failed to create product")
+    onError: (error) => {
+      showError(error instanceof Error ? error.message : "Failed to create product")
     },
   })
 
@@ -297,15 +297,15 @@ export function ProductsView() {
         body: JSON.stringify({ ...categoryData, businessId }),
       })
       const data = await response.json()
-      if (!data.success) throw new Error(data.error || 'Failed to create category')
+      if (!data.success) throw new Error(data.error || data.message || 'Failed to create category')
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["categories", businessId] })
       showSuccess("Category created successfully")
     },
-    onError: () => {
-      showError("Failed to create category")
+    onError: (error) => {
+      showError(error instanceof Error ? error.message : "Failed to create category")
     },
   })
 
@@ -511,7 +511,14 @@ export function ProductsView() {
   }
 
   const handleSaveProduct = async () => {
-    if (!formName || !formCategory) return
+    if (!formName || !formCategory) {
+      showError("Please fill in the product name and category")
+      return
+    }
+    if (!businessId) {
+      showError("No business context. Please select a business first.")
+      return
+    }
 
     const categoryObj = syncedCategoryList.find((c) => c.id === formCategory)
 

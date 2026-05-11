@@ -127,7 +127,7 @@ export async function PUT(
                 discountPercent: v.discountPercent ? Number(v.discountPercent) : null,
                 stock: Number(v.stock) || 0,
                 isDefault: i === 0,
-                isActive: true,
+                isActive: v.isActive !== undefined ? Boolean(v.isActive) : true,
                 attributes: JSON.stringify(v.attributes || {}),
               })),
             },
@@ -137,6 +137,35 @@ export async function PUT(
             variants: true,
           },
         });
+
+        // Update or create inventory records for each new variant
+        if (existing.storeId) {
+          for (const variant of product.variants) {
+            await tx.inventory.upsert({
+              where: {
+                storeId_productId_variantId: {
+                  storeId: existing.storeId,
+                  productId: existing.id,
+                  variantId: variant.id,
+                },
+              },
+              update: {
+                quantity: variant.stock || 0,
+                status: (variant.stock || 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+              },
+              create: {
+                businessId: existing.businessId,
+                storeId: existing.storeId,
+                productId: existing.id,
+                variantId: variant.id,
+                quantity: variant.stock || 0,
+                minStock: 10,
+                maxStock: 1000,
+                status: (variant.stock || 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+              },
+            });
+          }
+        }
 
         return product;
       });

@@ -118,12 +118,16 @@ export function BusinessesView() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/admin/businesses?limit=100")
+      const res = await fetch("/api/admin/businesses?limit=100", {
+        headers: getAuthHeaders(),
+      })
       if (!res.ok) throw new Error("Failed to fetch businesses")
       const json = await res.json()
       if (json.success) setBusinesses(json.data)
+      else throw new Error(json.error || "Failed to load businesses")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load businesses")
+      toast.error(err instanceof Error ? err.message : "Failed to load businesses")
     } finally {
       setLoading(false)
     }
@@ -131,7 +135,9 @@ export function BusinessesView() {
 
   const fetchPlans = useCallback(async () => {
     try {
-      const res = await fetch("/api/core/platform/plans")
+      const res = await fetch("/api/core/platform/plans", {
+        headers: getAuthHeaders(),
+      })
       if (!res.ok) return
       const json = await res.json()
       if (json.success) setPlans(json.data)
@@ -213,10 +219,11 @@ export function BusinessesView() {
         resetForm()
         fetchBusinesses()
       } else {
-        toast.error(json.error || "Failed to create business")
+        const errMsg = json.error || json.message || "Failed to create business"
+        toast.error(errMsg)
       }
-    } catch {
-      toast.error("Failed to create business")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create business")
     } finally {
       setCreating(false)
     }
@@ -232,6 +239,9 @@ export function BusinessesView() {
       if (res.ok) {
         toast.success(`${biz.name} is now ${!biz.isOnline ? "online" : "offline"}`)
         fetchBusinesses()
+      } else {
+        const json = await res.json()
+        toast.error(json.error || "Failed to toggle online status")
       }
     } catch {
       toast.error("Failed to toggle online status")

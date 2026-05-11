@@ -256,39 +256,37 @@ export async function POST() {
     // =========================================================================
     // 5. SAMPLE GROCERY BUSINESS — FreshMart
     // =========================================================================
-    let business = await db.business.findUnique({ where: { slug: 'freshmart-grocery' } });
-    const existingData = business ? await db.category.count({ where: { businessId: business.id } }) : 0;
-
-    if (!business) {
-      business = await db.business.create({
-        data: {
-          name: 'FreshMart Grocery',
-          slug: 'freshmart-grocery',
-          businessType: 'GROCERY',
-          status: 'ACTIVE',
-          tagline: 'Fresh from Farm to Your Door',
-          description: 'Premium grocery store with fresh fruits, vegetables, dairy, and daily essentials delivered to your doorstep.',
-          gstNumber: '27AABCF1234A1Z5',
-          fssaiLicense: '12345678901234',
-          address: '42, MG Road, Andheri West',
-          city: 'Mumbai',
-          state: 'Maharashtra',
-          pincode: '400053',
-          country: 'India',
-          latitude: 19.1197,
-          longitude: 72.8464,
-          contactEmail: 'hello@freshmart.in',
-          contactPhone: '+919876543220',
-          supportEmail: 'support@freshmart.in',
-          supportPhone: '+919876543221',
-          primaryColor: '#10B981',
-          isOnline: true,
-          salesRepId: salesMember.id,
-          activatedAt: new Date(),
-          onboardedAt: new Date(),
-        },
-      });
-    }
+    const business = await db.business.upsert({
+      where: { slug: 'freshmart-grocery' },
+      update: { status: 'ACTIVE', isOnline: true, activatedAt: new Date(), onboardedAt: new Date() },
+      create: {
+        name: 'FreshMart Grocery',
+        slug: 'freshmart-grocery',
+        businessType: 'GROCERY',
+        status: 'ACTIVE',
+        tagline: 'Fresh from Farm to Your Door',
+        description: 'Premium grocery store with fresh fruits, vegetables, dairy, and daily essentials delivered to your doorstep.',
+        gstNumber: '27AABCF1234A1Z5',
+        fssaiLicense: '12345678901234',
+        address: '42, MG Road, Andheri West',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pincode: '400053',
+        country: 'India',
+        latitude: 19.1197,
+        longitude: 72.8464,
+        contactEmail: 'hello@freshmart.in',
+        contactPhone: '+919876543220',
+        supportEmail: 'support@freshmart.in',
+        supportPhone: '+919876543221',
+        primaryColor: '#10B981',
+        isOnline: true,
+        salesRepId: salesMember.id,
+        activatedAt: new Date(),
+        onboardedAt: new Date(),
+      },
+    });
+    const existingData = await db.category.count({ where: { businessId: business.id } });
     summary.business = { id: business.id, name: business.name };
 
     // =========================================================================

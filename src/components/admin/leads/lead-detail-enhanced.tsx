@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -7,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Phone,
   Mail,
@@ -27,7 +29,8 @@ import {
 import { useAdminStore } from "@/stores/admin-store"
 import { businessTypeConfig, leadStageColors } from "@/components/dashboard/data"
 import type { BusinessType, LeadStage } from "@/components/dashboard/data"
-import { leadActivities, leadContactStats, formatRelativeTime } from "./crm-data"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { getRelativeTime } from "@/lib/utils"
 import { LeadActivityTimeline } from "./lead-activity-timeline"
 import { LeadCommentsFeed } from "./lead-comments-feed"
 import { LeadContactCounters } from "./lead-contact-counters"
@@ -50,6 +53,29 @@ interface LeadApiData {
   lostReason: string | null; selectedBillingCycle: string | null
 }
 
+// API activity shape for the contact history tab
+interface ApiActivity {
+  id: string
+  action: string
+  details: {
+    type?: string
+    content?: string
+  } | null
+  user: {
+    id: string
+    name: string
+  } | null
+  createdAt: string
+}
+
+interface ActivityEntry {
+  id: string
+  type: string
+  userName: string
+  content: string
+  timestamp: string
+}
+
 interface LeadDetailEnhancedProps {
   lead: LeadApiData
   onBack: () => void
@@ -57,16 +83,49 @@ interface LeadDetailEnhancedProps {
 
 export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
   const { crmLeadTab, setCrmLeadTab } = useAdminStore()
-  const stats = leadContactStats[lead.id]
-  const activities = leadActivities.filter((a) => a.leadId === lead.id)
+  const [activities, setActivities] = useState<ActivityEntry[]>([])
+  const [activitiesLoading, setActivitiesLoading] = useState(true)
 
-  // Check for overdue follow-up
-  const hasOverdue = stats && stats.daysSinceLastContact > 3
+  // Fetch activities for the contact history tab
+  const fetchActivities = useCallback(async () => {
+    if (!lead.id) return
+    setActivitiesLoading(true)
+    try {
+      const res = await fetch(`/api/core/leads/${lead.id}/activities`, {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success && json.data?.activities) {
+        const mapped: ActivityEntry[] = (json.data.activities as ApiActivity[]).map((a) => ({
+          id: a.id,
+          type: a.details?.type || a.action.replace("lead.", ""),
+          userName: a.user?.name || "Unknown",
+          content: a.details?.content || "",
+          timestamp: a.createdAt,
+        }))
+        setActivities(mapped)
+      } else {
+        setActivities([])
+      }
+    } catch (err) {
+      console.error("Failed to fetch lead activities:", err)
+      setActivities([])
+    } finally {
+      setActivitiesLoading(false)
+    }
+  }, [lead.id])
+
+  useEffect(() => {
+    fetchActivities()
+  }, [fetchActivities])
 
   // Compute days since last contact from real data
   const daysSinceContact = lead.lastContactedAt
     ? Math.floor((Date.now() - new Date(lead.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24))
     : null
+
+  // Check for overdue follow-up
+  const hasOverdue = daysSinceContact !== null && daysSinceContact > 3
 
   return (
     <div className="space-y-4">
@@ -89,11 +148,11 @@ export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
       </div>
 
       {/* Overdue banner */}
-      {(hasOverdue || (daysSinceContact !== null && daysSinceContact > 3)) && (
+      {hasOverdue && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
           <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
           <p className="text-xs text-red-700">
-            <span className="font-semibold">Follow-up overdue!</span> Last contact was {stats?.daysSinceLastContact || daysSinceContact} days ago.
+            <span className="font-semibold">Follow-up overdue!</span> Last contact was {daysSinceContact} days ago.
           </p>
           <Button variant="outline" size="sm" className="h-6 text-[10px] ml-auto border-red-300 text-red-700 hover:bg-red-100">
             Contact Now
@@ -163,7 +222,7 @@ export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
           <Card>
             <CardContent className="p-4 space-y-3">
               <h4 className="text-sm font-semibold text-muted-foreground">Contact Summary</h4>
-              <LeadContactCounters leadId={lead.id} />
+              <LeadContactCounters leadId={lead.id} lastContactedAt={lead.lastContactedAt} />
             </CardContent>
           </Card>
 
@@ -300,7 +359,16 @@ export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {activities.length === 0 ? (
+                    {activitiesLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-6">
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                            <span className="text-sm text-muted-foreground">Loading...</span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : activities.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-6">
                           No contact history recorded
@@ -312,7 +380,7 @@ export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
                         .map((activity) => (
                           <TableRow key={activity.id}>
                             <TableCell className="text-xs whitespace-nowrap">
-                              {formatRelativeTime(activity.timestamp)}
+                              {getRelativeTime(activity.timestamp)}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-[10px]">

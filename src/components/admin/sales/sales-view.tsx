@@ -257,27 +257,52 @@ export function SalesView() {
   const effectiveSearch = searchQuery || localSearch
 
   // ---------------------------------------------------------------------------
-  // Fetch sales team from API
+  // Fetch sales team from API + leads data for per-rep stats
   // ---------------------------------------------------------------------------
   const fetchSalesTeam = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/sales-team", {
-        headers: getAuthHeaders(),
-      })
-      const json = await res.json()
-      if (json.success && Array.isArray(json.data)) {
-        // Map API data to SalesRep — leads/conversions default to 0 for now
-        const team: SalesRep[] = json.data.map((member: Record<string, unknown>) => ({
-          id: member.id as string,
-          name: member.name as string,
-          email: member.email as string,
-          phone: (member.phone as string) || "",
-          region: (member.region as string) || "",
-          target: Number(member.target) || 0,
-          achieved: Number(member.achieved) || 0,
-          leads: 0,
-          conversions: 0,
-        }))
+      // Fetch sales team and leads in parallel
+      const [teamRes, leadsRes] = await Promise.all([
+        fetch("/api/admin/sales-team", { headers: getAuthHeaders() }),
+        fetch("/api/core/leads?limit=200", { headers: getAuthHeaders() }),
+      ])
+      const teamJson = await teamRes.json()
+      const leadsJson = await leadsRes.json()
+
+      if (teamJson.success && Array.isArray(teamJson.data)) {
+        // Build a map of salesRepId -> { leads count, conversions count }
+        const leadsByRep: Record<string, { leads: number; conversions: number }> = {}
+        const conversionStages = ["ONBOARDING", "DEPLOYMENT", "ACTIVE"]
+
+        if (leadsJson.success && Array.isArray(leadsJson.data)) {
+          for (const lead of leadsJson.data as Array<Record<string, unknown>>) {
+            const salesRep = lead.salesRep as { id: string } | null
+            const repId = salesRep?.id
+            if (!repId) continue
+            if (!leadsByRep[repId]) leadsByRep[repId] = { leads: 0, conversions: 0 }
+            leadsByRep[repId].leads++
+            if (conversionStages.includes(lead.stage as string)) {
+              leadsByRep[repId].conversions++
+            }
+          }
+        }
+
+        // Map API data to SalesRep with real leads/conversions counts
+        const team: SalesRep[] = teamJson.data.map((member: Record<string, unknown>) => {
+          const repId = member.id as string
+          const repStats = leadsByRep[repId] || { leads: 0, conversions: 0 }
+          return {
+            id: repId,
+            name: member.name as string,
+            email: member.email as string,
+            phone: (member.phone as string) || "",
+            region: (member.region as string) || "",
+            target: Number(member.target) || 0,
+            achieved: Number(member.achieved) || 0,
+            leads: repStats.leads,
+            conversions: repStats.conversions,
+          }
+        })
         setSalesTeam(team)
       }
     } catch (err) {

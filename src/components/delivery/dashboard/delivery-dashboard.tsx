@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useDeliveryOrders, useUpdateDeliveryStatus, queryKeys } from "@/hooks/use-api"
 import { useDeliveryUpdates } from "@/hooks/use-realtime"
-import { setBusinessContext } from "@/lib/api-client"
+import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError, showApiError } from "@/lib/toast-utils"
 import { SkeletonList, EmptyState, ErrorState } from "@/components/ui/loading-states"
 import { ConnectionStatusBadge } from "@/components/ui/connection-status"
@@ -97,10 +97,8 @@ export function DeliveryDashboard() {
   const { setDeliveryPage, setSelectedOrderId } = useAdminStore()
   const [activeTab, setActiveTab] = useState<"active" | "completed">("active")
 
-  // Set business context
-  useEffect(() => {
-    setBusinessContext("biz_1")
-  }, [])
+  // Resolve business context from auth/store
+  const { businessId } = useBusinessContext()
 
   // Fetch orders using React Query
   const { data: activeData, isLoading: isLoadingActive, error: activeError, refetch: refetchActive } = useDeliveryOrders("active")

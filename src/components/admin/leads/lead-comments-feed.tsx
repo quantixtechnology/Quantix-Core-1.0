@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Select,
   SelectContent,
@@ -22,8 +23,10 @@ import {
   MessageCircle,
   CalendarPlus,
 } from "lucide-react"
-import { leadComments, formatRelativeTime } from "./crm-data"
 import type { CommentType } from "./crm-data"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { getRelativeTime } from "@/lib/utils"
+import { toast } from "sonner"
 
 const commentTypeConfig: Record<CommentType, { icon: React.ElementType; color: string; bgColor: string; label: string; borderClass: string }> = {
   comment: {
@@ -49,6 +52,36 @@ const commentTypeConfig: Record<CommentType, { icon: React.ElementType; color: s
   },
 }
 
+// API response comment shape
+interface ApiComment {
+  id: string
+  type: string
+  content: string
+  metadata?: Record<string, unknown>
+  user: {
+    id: string
+    name: string
+    email: string
+    avatar: string | null
+  } | null
+  createdAt: string
+}
+
+// Internal comment type matching the UI expectations
+interface LeadComment {
+  id: string
+  leadId: string
+  userId: string
+  userName: string
+  content: string
+  createdAt: string
+  type: CommentType
+}
+
+function isValidCommentType(t: string): t is CommentType {
+  return ["comment", "follow_up", "call_outcome"].includes(t)
+}
+
 interface LeadCommentsFeedProps {
   leadId: string
   maxHeight?: string
@@ -57,14 +90,73 @@ interface LeadCommentsFeedProps {
 export function LeadCommentsFeed({ leadId, maxHeight = "400px" }: LeadCommentsFeedProps) {
   const [commentType, setCommentType] = useState<CommentType>("comment")
   const [commentText, setCommentText] = useState("")
+  const [comments, setComments] = useState<LeadComment[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const comments = leadComments
-    .filter((c) => c.leadId === leadId)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const fetchComments = useCallback(async () => {
+    if (!leadId) return
+    setIsLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/core/leads/${leadId}/comments`, {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success && Array.isArray(json.data)) {
+        const mapped: LeadComment[] = (json.data as ApiComment[]).map((c) => ({
+          id: c.id,
+          leadId,
+          userId: c.user?.id || "",
+          userName: c.user?.name || "Unknown",
+          content: c.content,
+          createdAt: c.createdAt,
+          type: isValidCommentType(c.type) ? c.type : "comment",
+        }))
+        setComments(mapped)
+      } else {
+        setComments([])
+      }
+    } catch (err) {
+      console.error("Failed to fetch lead comments:", err)
+      setError("Failed to load comments")
+      setComments([])
+    } finally {
+      setIsLoading(false)
+    }
+  }, [leadId])
 
-  const handleAddComment = () => {
-    // In production, this would call an API
-    setCommentText("")
+  useEffect(() => {
+    fetchComments()
+  }, [fetchComments])
+
+  const handleAddComment = async () => {
+    if (!commentText.trim() || !leadId) return
+    setIsSubmitting(true)
+    try {
+      const res = await fetch(`/api/core/leads/${leadId}/comments`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          type: commentType,
+          content: commentText.trim(),
+        }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setCommentText("")
+        toast.success("Comment added")
+        fetchComments() // Refresh the list
+      } else {
+        toast.error(json.error || "Failed to add comment")
+      }
+    } catch (err) {
+      console.error("Failed to add comment:", err)
+      toast.error("Failed to add comment")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const getInitials = (name: string) => {
@@ -74,6 +166,35 @@ export function LeadCommentsFeed({ leadId, maxHeight = "400px" }: LeadCommentsFe
       .join("")
       .toUpperCase()
       .slice(0, 2)
+  }
+
+  const sortedComments = [...comments].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-3 rounded-lg border bg-card p-3">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-20 w-full" />
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="py-6 text-center text-sm text-muted-foreground">
+        {error}
+        <Button variant="link" size="sm" onClick={fetchComments} className="ml-2">
+          Retry
+        </Button>
+      </div>
+    )
   }
 
   return (
@@ -125,23 +246,23 @@ export function LeadCommentsFeed({ leadId, maxHeight = "400px" }: LeadCommentsFe
           <Button
             size="sm"
             className="h-7 text-xs gap-1"
-            disabled={!commentText.trim()}
+            disabled={!commentText.trim() || isSubmitting}
             onClick={handleAddComment}
           >
-            <Send className="h-3 w-3" /> Add
+            <Send className="h-3 w-3" /> {isSubmitting ? "Adding..." : "Add"}
           </Button>
         </div>
       </div>
 
       {/* Comments List */}
-      {comments.length === 0 ? (
+      {sortedComments.length === 0 ? (
         <div className="py-6 text-center text-sm text-muted-foreground">
           No comments yet. Add the first one above.
         </div>
       ) : (
         <ScrollArea style={{ maxHeight }}>
           <div className="space-y-3">
-            {comments.map((comment) => {
+            {sortedComments.map((comment) => {
               const config = commentTypeConfig[comment.type]
               const TypeIcon = config.icon
 
@@ -164,7 +285,7 @@ export function LeadCommentsFeed({ leadId, maxHeight = "400px" }: LeadCommentsFe
                           {config.label}
                         </Badge>
                         <span className="text-[11px] text-muted-foreground">
-                          {formatRelativeTime(comment.createdAt)}
+                          {getRelativeTime(comment.createdAt)}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">{comment.content}</p>

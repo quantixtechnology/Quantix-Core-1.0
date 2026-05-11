@@ -611,7 +611,7 @@ export function LeadsView() {
                   <Separator />
                   <div className="space-y-2">
                     <h4 className="text-xs font-semibold text-muted-foreground">Contact Summary</h4>
-                    <LeadContactCounters leadId={selectedLead.id} />
+                    <LeadContactCounters leadId={selectedLead.id} lastContactedAt={selectedLead.lastContactedAt} />
                   </div>
                   <Separator />
                   <div className="space-y-2">

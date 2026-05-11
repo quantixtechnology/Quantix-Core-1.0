@@ -260,18 +260,23 @@ export async function POST(request: Request) {
       .replace(/-+/g, '-')
       .slice(0, 60);
 
+    // Resolve storeId — use provided, or main store, or error if neither
+    const storeId = body.storeId || store?.id || null;
+
     // Create product with variants
     const product = await db.product.create({
       data: {
         businessId: body.businessId,
-        storeId: body.storeId || store?.id || null,
+        storeId,
         categoryId: body.categoryId || null,
         name: body.name,
         slug,
         description: body.description || null,
         shortDesc: body.shortDesc || null,
+        type: body.type || 'PHYSICAL',
         status: body.status || 'ACTIVE',
         sku: body.sku || null,
+        barcode: body.barcode || null,
         images: JSON.stringify(body.images || []),
         unit: body.unit || null,
         unitQuantity: body.unitQuantity || null,
@@ -296,6 +301,7 @@ export async function POST(request: Request) {
                 discountPrice: v.discountPrice ? Number(v.discountPrice) : null,
                 discountPercent: v.discountPercent ? Number(v.discountPercent) : null,
                 stock: Number(v.stock) || 0,
+                minStock: Number(v.minStock) || 0,
                 isDefault: i === 0,
                 isActive: true,
                 attributes: JSON.stringify(v.attributes || {}),
@@ -304,9 +310,9 @@ export async function POST(request: Request) {
           : {
               create: {
                 name: body.name,
-                price: 0,
-                mrp: 0,
-                stock: 0,
+                price: Number(body.price) || 0,
+                mrp: Number(body.mrp) || Number(body.price) || 0,
+                stock: Number(body.stock) || 0,
                 isDefault: true,
                 isActive: true,
                 attributes: '{}',
@@ -318,6 +324,29 @@ export async function POST(request: Request) {
         variants: true,
       },
     });
+
+    // Create inventory records for each variant if storeId is available
+    if (storeId) {
+      for (const variant of product.variants) {
+        const existingInventory = await db.inventory.findFirst({
+          where: { productId: product.id, variantId: variant.id, storeId },
+        });
+        if (!existingInventory) {
+          await db.inventory.create({
+            data: {
+              businessId: body.businessId,
+              storeId,
+              productId: product.id,
+              variantId: variant.id,
+              quantity: variant.stock,
+              minStock: 0,
+              maxStock: 1000,
+              status: variant.stock > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+            },
+          });
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

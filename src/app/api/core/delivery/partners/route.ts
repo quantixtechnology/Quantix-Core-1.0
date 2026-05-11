@@ -24,9 +24,14 @@ export async function GET(request: Request) {
 
     const where: Record<string, unknown> = {
       businessId,
-      ...(isOnline !== null && { isOnline: isOnline === 'true' }),
-      ...(isActive !== null && { isActive: isActive !== 'false' }),
     };
+
+    if (isOnline !== null) {
+      where.isOnline = isOnline === 'true';
+    }
+    if (isActive !== null) {
+      where.isActive = isActive === 'true';
+    }
 
     const partners = await db.deliveryPartner.findMany({
       where,

@@ -49,8 +49,8 @@ import {
 } from "@/components/ui/collapsible";
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { StatCard } from "@/components/admin/shared/stat-card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  notificationItems,
   defaultPreferences,
   eventTypeConfig,
   channelConfig,
@@ -66,6 +66,8 @@ import {
   ChevronDown, Eye, Send, RefreshCw,
 } from "lucide-react";
 import { getRelativeTime } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/admin-fetch";
+import { useAuthStore } from "@/stores/auth-store";
 
 // ============================================================================
 // Channel icon helper
@@ -80,13 +82,35 @@ function getChannelIcon(channel: NotificationChannel) {
   }
 }
 
+// Map API notification to NotificationItem
+function mapApiNotification(apiNotif: Record<string, unknown>): NotificationItem {
+  return {
+    id: apiNotif.id as string,
+    type: (apiNotif.type as NotificationEventType) || "SYSTEM",
+    channel: (apiNotif.channel as NotificationChannel) || "IN_APP",
+    title: (apiNotif.title as string) || "",
+    message: (apiNotif.message as string) || "",
+    recipientName: (apiNotif.recipientName as string) || "",
+    recipientId: (apiNotif.recipientId as string) || (apiNotif.userId as string) || "",
+    isRead: (apiNotif.isRead as boolean) || false,
+    isActionable: (apiNotif.isActionable as boolean) || false,
+    actionLabel: (apiNotif.actionLabel as string) || undefined,
+    actionUrl: (apiNotif.actionUrl as string) || undefined,
+    priority: (apiNotif.priority as "LOW" | "NORMAL" | "HIGH") || "NORMAL",
+    createdAt: (apiNotif.createdAt as string) || new Date().toISOString(),
+    metadata: (apiNotif.metadata as Record<string, unknown>) || {},
+  };
+}
+
 // ============================================================================
 // Component
 // ============================================================================
 
 export function NotificationCenter() {
   // ---- State ----
-  const [notifications, setNotifications] = useState<NotificationItem[]>(notificationItems);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [channelFilter, setChannelFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,6 +119,42 @@ export function NotificationCenter() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [desktopNotifRequested, setDesktopNotifRequested] = useState(false);
   const [desktopNotifEnabled, setDesktopNotifEnabled] = useState(false);
+
+  const { currentBusinessId } = useAuthStore();
+
+  // ---- Fetch notifications from API ----
+  const fetchNotifications = useCallback(async () => {
+    const businessId = currentBusinessId || (typeof window !== 'undefined' ? localStorage.getItem('quantix_business_id') : null);
+    if (!businessId) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/core/notifications?businessId=${businessId}&limit=50`, {
+        headers: getAuthHeaders(),
+      });
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const mapped = (json.data as Array<Record<string, unknown>>).map(mapApiNotification);
+        setNotifications(mapped);
+      } else {
+        setNotifications([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch notifications:", err);
+      setError("Failed to load notifications");
+      setNotifications([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentBusinessId]);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   // ---- Unread count ----
   const unreadCount = useMemo(() => notifications.filter((n) => !n.isRead).length, [notifications]);
@@ -174,8 +234,8 @@ export function NotificationCenter() {
   // Render: Notification item
   // ============================================================================
   const renderNotificationItem = (n: NotificationItem) => {
-    const typeConf = eventTypeConfig[n.type];
-    const channelConf = channelConfig[n.channel];
+    const typeConf = eventTypeConfig[n.type] || eventTypeConfig.SYSTEM;
+    const channelConf = channelConfig[n.channel] || channelConfig.IN_APP;
     const ChannelIcon = getChannelIcon(n.channel);
 
     return (
@@ -487,8 +547,36 @@ export function NotificationCenter() {
                 )}
               </div>
 
+              {/* Loading State */}
+              {isLoading && (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="flex gap-3 p-3">
+                      <Skeleton className="h-9 w-9 rounded-lg" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Error State */}
+              {error && !isLoading && (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                    <AlertTriangle className="h-6 w-6 text-red-500" />
+                  </div>
+                  <h3 className="mt-3 text-sm font-medium">{error}</h3>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={fetchNotifications}>
+                    <RefreshCw className="w-3 h-3 mr-1" /> Retry
+                  </Button>
+                </div>
+              )}
+
               {/* Notification List */}
-              {filteredNotifications.length === 0 ? (
+              {!isLoading && !error && filteredNotifications.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                     <BellOff className="h-6 w-6 text-muted-foreground" />
@@ -496,7 +584,8 @@ export function NotificationCenter() {
                   <h3 className="mt-3 text-sm font-medium">No notifications found</h3>
                   <p className="mt-1 text-xs text-muted-foreground">Try adjusting your filters</p>
                 </div>
-              ) : (
+              )}
+              {!isLoading && !error && filteredNotifications.length > 0 && (
                 <ScrollArea className="max-h-[600px] overflow-y-auto">
                   <div className="space-y-2 pr-3">
                     {filteredNotifications.map(renderNotificationItem)}

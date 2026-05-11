@@ -243,6 +243,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Persist to localStorage
       saveToStorage(newState);
 
+      // Also set quantix_business_id so api-client.ts and admin-fetch.ts
+      // can read the business context without waiting for useBusinessContext
+      if (currentBusinessId && typeof window !== 'undefined') {
+        localStorage.setItem('quantix_business_id', currentBusinessId);
+      }
+
       set(newState);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login failed";
@@ -307,6 +313,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       };
 
       saveToStorage(newState);
+
+      // Also set quantix_business_id so api-client.ts and admin-fetch.ts
+      // can read the business context without waiting for useBusinessContext
+      if (currentBusinessId && typeof window !== 'undefined') {
+        localStorage.setItem('quantix_business_id', currentBusinessId);
+      }
+
       set(newState);
     } catch (error) {
       const message = error instanceof Error ? error.message : "OTP login failed";

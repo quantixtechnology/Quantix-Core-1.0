@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,14 +21,45 @@ import {
   Phone,
   ChevronDown,
   Bell,
+  RefreshCw,
 } from "lucide-react"
-import { followUpReminders } from "./crm-data"
-import type { ReminderType } from "./crm-data"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { useAuthStore } from "@/stores/auth-store"
+
+type ReminderType = "PENDING" | "OVERDUE" | "INACTIVITY"
+
+interface FollowUpReminder {
+  id: string
+  leadId: string
+  leadName: string
+  type: ReminderType
+  scheduledDate: string
+  salesRepId: string
+  salesRepName: string
+}
 
 const reminderTypeConfig: Record<ReminderType, { icon: React.ElementType; color: string; bgColor: string; label: string }> = {
   PENDING: { icon: Clock, color: "text-amber-700", bgColor: "bg-amber-100", label: "Pending" },
   OVERDUE: { icon: AlertTriangle, color: "text-red-700", bgColor: "bg-red-100", label: "Overdue" },
   INACTIVITY: { icon: UserX, color: "text-slate-700", bgColor: "bg-slate-100", label: "Inactivity" },
+}
+
+// API activity shape for follow-ups
+interface ApiActivity {
+  id: string
+  action: string
+  details: {
+    type?: string
+    content?: string
+    leadName?: string
+    scheduledDate?: string
+    addedBy?: string
+  } | null
+  user: {
+    id: string
+    name: string
+  } | null
+  createdAt: string
 }
 
 interface FollowUpRemindersProps {
@@ -36,13 +68,109 @@ interface FollowUpRemindersProps {
 
 export function FollowUpReminders({ compact = false }: FollowUpRemindersProps) {
   const [isOpen, setIsOpen] = useState(true)
+  const [reminders, setReminders] = useState<FollowUpReminder[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const { currentBusinessId } = useAuthStore()
 
-  const overdue = followUpReminders.filter((r) => r.type === "OVERDUE")
-  const pending = followUpReminders.filter((r) => r.type === "PENDING")
-  const inactivity = followUpReminders.filter((r) => r.type === "INACTIVITY")
+  const fetchReminders = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      // Fetch leads that have followUpDate set
+      const res = await fetch("/api/core/leads?limit=100", {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
 
-  const pendingToday = pending.filter((r) => r.scheduledDate === "2025-01-20").length
-  const upcoming = pending.filter((r) => r.scheduledDate > "2025-01-20").length
+      if (json.success && Array.isArray(json.data)) {
+        const now = new Date()
+        const today = now.toISOString().split("T")[0]
+        const reminderList: FollowUpReminder[] = []
+
+        for (const lead of json.data as Array<Record<string, unknown>>) {
+          const followUpDate = lead.followUpDate as string | null
+          if (!followUpDate) continue
+
+          const leadId = lead.id as string
+          const leadName = lead.businessName as string
+          const salesRep = lead.salesRep as { id: string; name: string } | null
+          const salesRepId = salesRep?.id || ""
+          const salesRepName = salesRep?.name || "Unassigned"
+          const scheduledDate = followUpDate.split("T")[0]
+
+          let type: ReminderType
+          if (scheduledDate < today) {
+            type = "OVERDUE"
+          } else if (scheduledDate === today) {
+            type = "PENDING"
+          } else {
+            type = "PENDING"
+          }
+
+          // Check for inactivity (no lastContactedAt or very old)
+          const lastContactedAt = lead.lastContactedAt as string | null
+          const daysSinceContact = lastContactedAt
+            ? Math.floor((now.getTime() - new Date(lastContactedAt).getTime()) / (1000 * 60 * 60 * 24))
+            : 999
+
+          if (daysSinceContact > 7 && !followUpDate) {
+            type = "INACTIVITY"
+          }
+
+          reminderList.push({
+            id: `rem_${leadId}`,
+            leadId,
+            leadName,
+            type,
+            scheduledDate,
+            salesRepId,
+            salesRepName,
+          })
+        }
+
+        setReminders(reminderList)
+      } else {
+        setReminders([])
+      }
+    } catch (err) {
+      console.error("Failed to fetch follow-up reminders:", err)
+      setReminders([])
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchReminders()
+  }, [fetchReminders])
+
+  const overdue = reminders.filter((r) => r.type === "OVERDUE")
+  const pending = reminders.filter((r) => r.type === "PENDING")
+  const inactivity = reminders.filter((r) => r.type === "INACTIVITY")
+
+  const today = new Date().toISOString().split("T")[0]
+  const pendingToday = pending.filter((r) => r.scheduledDate === today).length
+  const upcoming = pending.filter((r) => r.scheduledDate > today).length
+
+  if (isLoading) {
+    return (
+      <Card className="border-l-4 border-l-amber-400">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-5 w-5 rounded" />
+            <div className="space-y-1">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -78,25 +206,44 @@ export function FollowUpReminders({ compact = false }: FollowUpRemindersProps) {
                 </div>
               </div>
             </div>
-            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={(e) => { e.stopPropagation(); fetchReminders() }}
+                title="Refresh"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </Button>
+              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
+            </div>
           </div>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <CardContent className="pt-0 pb-4 px-4">
             <ScrollArea className="max-h-72">
               <div className="space-y-2">
-                {/* Overdue first */}
-                {overdue.map((reminder) => (
-                  <ReminderItem key={reminder.id} reminder={reminder} />
-                ))}
-                {/* Then pending */}
-                {pending.map((reminder) => (
-                  <ReminderItem key={reminder.id} reminder={reminder} />
-                ))}
-                {/* Then inactivity */}
-                {inactivity.map((reminder) => (
-                  <ReminderItem key={reminder.id} reminder={reminder} />
-                ))}
+                {reminders.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-muted-foreground">
+                    No follow-up reminders
+                  </div>
+                ) : (
+                  <>
+                    {/* Overdue first */}
+                    {overdue.map((reminder) => (
+                      <ReminderItem key={reminder.id} reminder={reminder} />
+                    ))}
+                    {/* Then pending */}
+                    {pending.map((reminder) => (
+                      <ReminderItem key={reminder.id} reminder={reminder} />
+                    ))}
+                    {/* Then inactivity */}
+                    {inactivity.map((reminder) => (
+                      <ReminderItem key={reminder.id} reminder={reminder} />
+                    ))}
+                  </>
+                )}
               </div>
             </ScrollArea>
           </CardContent>
@@ -106,7 +253,7 @@ export function FollowUpReminders({ compact = false }: FollowUpRemindersProps) {
   )
 }
 
-function ReminderItem({ reminder }: { reminder: (typeof followUpReminders)[0] }) {
+function ReminderItem({ reminder }: { reminder: FollowUpReminder }) {
   const config = reminderTypeConfig[reminder.type]
   const TypeIcon = config.icon
   const isOverdue = reminder.type === "OVERDUE"

@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   ArrowRightLeft,
   MessageSquare,
@@ -16,10 +17,12 @@ import {
   ArrowRight,
   Filter,
 } from "lucide-react"
-import { leadActivities, formatRelativeTime, activityTypeConfig } from "./crm-data"
+import { activityTypeConfig } from "./crm-data"
 import type { ActivityType } from "./crm-data"
 import { leadStageColors } from "@/components/dashboard/data"
 import type { LeadStage } from "@/components/dashboard/data"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { getRelativeTime } from "@/lib/utils"
 
 const iconMap: Record<string, React.ElementType> = {
   ArrowRightLeft,
@@ -32,6 +35,79 @@ const iconMap: Record<string, React.ElementType> = {
   Rocket,
 }
 
+// API response activity shape
+interface ApiActivity {
+  id: string
+  action: string
+  details: {
+    type?: string
+    content?: string
+    metadata?: Record<string, string>
+    previousStage?: string
+    newStage?: string
+    leadName?: string
+    addedBy?: string
+  } | null
+  user: {
+    id: string
+    name: string
+    email: string
+    avatar: string | null
+  } | null
+  ip: string | null
+  createdAt: string
+}
+
+// Internal activity type matching the UI expectations
+interface LeadActivity {
+  id: string
+  leadId: string
+  type: ActivityType
+  userId: string
+  userName: string
+  timestamp: string
+  previousStage?: string
+  newStage?: string
+  content: string
+  metadata?: Record<string, string>
+}
+
+// Map API action string to ActivityType
+function actionToActivityType(action: string, detailsType?: string): ActivityType {
+  if (detailsType) {
+    const upper = detailsType.toUpperCase()
+    const validTypes: ActivityType[] = [
+      "STAGE_CHANGE", "COMMENT", "FOLLOW_UP", "CALL",
+      "WHATSAPP", "DEMO_SHARED", "PAYMENT_FOLLOW_UP", "ONBOARDING_NOTE"
+    ]
+    if (validTypes.includes(upper as ActivityType)) return upper as ActivityType
+  }
+  // Fallback: parse from action string like "lead.STAGE_CHANGE"
+  const suffix = action.replace("lead.", "").toUpperCase()
+  const validTypes: ActivityType[] = [
+    "STAGE_CHANGE", "COMMENT", "FOLLOW_UP", "CALL",
+    "WHATSAPP", "DEMO_SHARED", "PAYMENT_FOLLOW_UP", "ONBOARDING_NOTE"
+  ]
+  if (validTypes.includes(suffix as ActivityType)) return suffix as ActivityType
+  return "COMMENT"
+}
+
+function mapApiActivity(api: ApiActivity, leadId: string): LeadActivity {
+  const details = api.details || {}
+  return {
+    id: api.id,
+    leadId,
+    type: actionToActivityType(api.action, details.type),
+    userId: api.user?.id || "",
+    userName: api.user?.name || details.addedBy || "Unknown",
+    timestamp: api.createdAt,
+    previousStage: details.previousStage,
+    newStage: details.newStage,
+    content: details.content || "",
+    metadata: details.metadata,
+  }
+}
+
 interface LeadActivityTimelineProps {
   leadId: string
   maxHeight?: string
@@ -39,15 +115,75 @@ interface LeadActivityTimelineProps {
 
 export function LeadActivityTimeline({ leadId, maxHeight = "400px" }: LeadActivityTimelineProps) {
   const [filterType, setFilterType] = useState<ActivityType | "ALL">("ALL")
+  const [activities, setActivities] = useState<LeadActivity[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const activities = leadActivities
-    .filter((a) => a.leadId === leadId)
+  const fetchActivities = useCallback(async () => {
+    if (!leadId) return
+    setIsLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/core/leads/${leadId}/activities`, {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success && json.data?.activities) {
+        const mapped = (json.data.activities as ApiActivity[]).map((a) =>
+          mapApiActivity(a, leadId)
+        )
+        setActivities(mapped)
+      } else {
+        setActivities([])
+      }
+    } catch (err) {
+      console.error("Failed to fetch lead activities:", err)
+      setError("Failed to load activities")
+      setActivities([])
+    } finally {
+      setIsLoading(false)
+    }
+  }, [leadId])
+
+  useEffect(() => {
+    fetchActivities()
+  }, [fetchActivities])
+
+  const filteredActivities = activities
     .filter((a) => filterType === "ALL" || a.type === filterType)
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 
   const activityTypes: ActivityType[] = [
     "STAGE_CHANGE", "COMMENT", "FOLLOW_UP", "CALL", "WHATSAPP", "DEMO_SHARED", "PAYMENT_FOLLOW_UP", "ONBOARDING_NOTE"
   ]
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-6 w-16" />
+          <Skeleton className="h-6 w-20" />
+        </div>
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex gap-3">
+            <Skeleton className="h-5 w-5 rounded-full" />
+            <Skeleton className="h-16 flex-1" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        {error}
+        <Button variant="link" size="sm" onClick={fetchActivities} className="ml-2">
+          Retry
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
@@ -64,7 +200,7 @@ export function LeadActivityTimeline({ leadId, maxHeight = "400px" }: LeadActivi
         </Button>
         {activityTypes.map((type) => {
           const config = activityTypeConfig[type]
-          const count = leadActivities.filter((a) => a.leadId === leadId && a.type === type).length
+          const count = activities.filter((a) => a.type === type).length
           if (count === 0) return null
           return (
             <Button
@@ -82,7 +218,7 @@ export function LeadActivityTimeline({ leadId, maxHeight = "400px" }: LeadActivi
       </div>
 
       {/* Timeline */}
-      {activities.length === 0 ? (
+      {filteredActivities.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground">
           No activities recorded for this lead.
         </div>
@@ -93,7 +229,7 @@ export function LeadActivityTimeline({ leadId, maxHeight = "400px" }: LeadActivi
             <div className="absolute left-[11px] top-2 bottom-2 w-px bg-border" />
 
             <div className="space-y-4">
-              {activities.map((activity) => {
+              {filteredActivities.map((activity) => {
                 const config = activityTypeConfig[activity.type]
                 const IconComponent = iconMap[config.icon]
 
@@ -113,7 +249,7 @@ export function LeadActivityTimeline({ leadId, maxHeight = "400px" }: LeadActivi
                           {config.label}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {formatRelativeTime(activity.timestamp)}
+                          {getRelativeTime(activity.timestamp)}
                         </span>
                       </div>
 
