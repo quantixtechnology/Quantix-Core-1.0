@@ -48,6 +48,7 @@ import {
 } from "lucide-react"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 import { SkeletonTable } from "@/components/ui/loading-states"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
@@ -211,7 +212,7 @@ export function CustomersView() {
       if (!businessId) throw new Error('No business context')
       const response = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(customerData),
       })
       const data = await response.json()

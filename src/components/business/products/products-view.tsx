@@ -65,6 +65,7 @@ import {
 import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS } from "@/stores/admin-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 // Local type definitions
@@ -230,7 +231,7 @@ export function ProductsView() {
     mutationFn: async ({ productId, data }: { productId: string; data: Record<string, unknown> }) => {
       const response = await fetch(`/api/core/storefront/products/${encodeURIComponent(productId)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
       })
       const resp = await response.json()
@@ -251,6 +252,7 @@ export function ProductsView() {
     mutationFn: async (productId: string) => {
       const response = await fetch(`/api/core/storefront/products/${encodeURIComponent(productId)}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       })
       const data = await response.json()
       if (!data.success) throw new Error(data.error || 'Failed to delete product')
@@ -270,7 +272,7 @@ export function ProductsView() {
     mutationFn: async (productData: Record<string, unknown>) => {
       const response = await fetch('/api/core/storefront/products', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ ...productData, businessId }),
       })
       const data = await response.json()
@@ -291,7 +293,7 @@ export function ProductsView() {
     mutationFn: async (categoryData: Record<string, unknown>) => {
       const response = await fetch('/api/core/storefront/categories', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ ...categoryData, businessId }),
       })
       const data = await response.json()

@@ -51,6 +51,7 @@ import {
   X,
 } from "lucide-react"
 import { showSuccess, showError } from "@/lib/toast-utils"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -391,7 +392,7 @@ export function CreateOrderDialog({
 
       const res = await fetch("/api/core/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(body),
       })
 

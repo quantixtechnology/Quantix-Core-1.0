@@ -22,7 +22,10 @@ async function emitToRealtimeService(payload: {
   targetAll?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(`/api/emit?XTransformPort=${REALTIME_SERVICE_PORT}`, {
+    const baseUrl = process.env.NODE_ENV === 'production'
+      ? `http://localhost:${REALTIME_SERVICE_PORT}`
+      : `http://localhost:${REALTIME_SERVICE_PORT}`;
+    const response = await fetch(`${baseUrl}/api/emit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -192,7 +195,10 @@ export async function broadcastEvent(
   room?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(`/api/broadcast?XTransformPort=${REALTIME_SERVICE_PORT}`, {
+    const baseUrl = process.env.NODE_ENV === 'production'
+      ? `http://localhost:${REALTIME_SERVICE_PORT}`
+      : `http://localhost:${REALTIME_SERVICE_PORT}`;
+    const response = await fetch(`${baseUrl}/api/broadcast`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

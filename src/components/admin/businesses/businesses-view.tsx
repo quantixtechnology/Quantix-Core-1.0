@@ -31,6 +31,15 @@ import { useAdminStore } from "@/stores/admin-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 
+// ---- Plan data type ----
+interface PlanApiData {
+  id: string;
+  tier: string;
+  billingCycle: string;
+  price: number;
+  name: string;
+}
+
 // ---- API data types ----
 interface BusinessApiData {
   id: string; name: string; slug: string; businessType: string; status: string
@@ -90,6 +99,7 @@ export function BusinessesView() {
   const [createOpen, setCreateOpen] = useState(false)
   const [customPricing, setCustomPricing] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [plans, setPlans] = useState<PlanApiData[]>([])
 
   // Form state
   const [formName, setFormName] = useState("")
@@ -119,7 +129,18 @@ export function BusinessesView() {
     }
   }, [])
 
-  useEffect(() => { fetchBusinesses() }, [fetchBusinesses])
+  const fetchPlans = useCallback(async () => {
+    try {
+      const res = await fetch("/api/core/platform/plans")
+      if (!res.ok) return
+      const json = await res.json()
+      if (json.success) setPlans(json.data)
+    } catch {
+      // Plans fetch failure is non-critical — creation will fail gracefully
+    }
+  }, [])
+
+  useEffect(() => { fetchBusinesses(); fetchPlans() }, [fetchBusinesses, fetchPlans])
 
   const filteredBusinesses = useMemo(() => {
     return businesses.filter((biz) => {
@@ -152,6 +173,24 @@ export function BusinessesView() {
       toast.error("Please fill in required fields: Name, Slug, Business Type")
       return
     }
+    if (!formPlan) {
+      toast.error("Please select a plan")
+      return
+    }
+
+    // Parse formPlan (e.g. "STANDARD_MONTHLY") into tier + billingCycle
+    const [tierPart, cyclePart] = formPlan.split("_") as [string, string]
+    const billingCycle = cyclePart === "YEARLY" ? "YEARLY" as const : "MONTHLY" as const
+
+    // Look up planId from fetched plans
+    const matchingPlan = plans.find(
+      (p) => p.tier === tierPart && p.billingCycle === billingCycle
+    )
+    if (!matchingPlan) {
+      toast.error("Selected plan not found. Please refresh and try again.")
+      return
+    }
+
     setCreating(true)
     try {
       const res = await fetch("/api/core/businesses", {
@@ -159,6 +198,8 @@ export function BusinessesView() {
         headers: getAuthHeaders(),
         body: JSON.stringify({
           name: formName, slug: formSlug, businessType: formType,
+          planId: matchingPlan.id,
+          billingCycle,
           city: formCity, contactPhone: formPhone, contactEmail: formEmail,
           address: formAddress, gstNumber: formGST,
           customPrice: customPricing && formCustomAmount ? Number(formCustomAmount) : undefined,
@@ -247,13 +288,21 @@ export function BusinessesView() {
                       <SelectContent>{Object.entries(businessTypeConfig).map(([key, val]) => (<SelectItem key={key} value={key}>{val.label}</SelectItem>))}</SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2"><Label>Plan</Label>
+                  <div className="space-y-2"><Label>Plan *</Label>
                     <Select value={formPlan} onValueChange={setFormPlan}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="STANDARD_MONTHLY">Standard — ₹2,999/mo</SelectItem>
-                        <SelectItem value="PRO_MONTHLY">Pro — ₹4,999/mo</SelectItem>
-                        <SelectItem value="STANDARD_YEARLY">Standard — ₹30,000/yr</SelectItem>
-                        <SelectItem value="PRO_YEARLY">Pro — ₹49,999/yr</SelectItem>
+                        {plans.length > 0 ? plans.map((plan) => (
+                          <SelectItem key={plan.id} value={`${plan.tier}_${plan.billingCycle}`}>
+                            {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}
+                          </SelectItem>
+                        )) : (
+                          <>
+                            <SelectItem value="STANDARD_MONTHLY">Standard Monthly</SelectItem>
+                            <SelectItem value="PRO_MONTHLY">Pro Monthly</SelectItem>
+                            <SelectItem value="STANDARD_YEARLY">Standard Yearly</SelectItem>
+                            <SelectItem value="PRO_YEARLY">Pro Yearly</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>

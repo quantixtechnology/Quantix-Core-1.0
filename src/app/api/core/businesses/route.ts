@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   return withPlatformAccess(async (req) => {
     try {
-      const body = (await request.json()) as CreateBusinessRequest;
+      const body = (await req.json()) as CreateBusinessRequest;
 
       // Validate required fields
       if (!body.name || !body.slug || !body.businessType) {

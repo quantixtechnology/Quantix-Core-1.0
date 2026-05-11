@@ -1,10 +1,8 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { PageHeader } from "../shared/page-header"
 import { StatCard } from "../shared/stat-card"
-import { salesTeam, leads, leadStageColors } from "@/components/dashboard/data"
-import type { LeadStage } from "@/components/dashboard/data"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -50,8 +48,11 @@ import {
   Users,
   ArrowUpRight,
   DollarSign,
+  Loader2,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { toast } from "sonner"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,48 +67,6 @@ interface SalesRep {
   achieved: number
   leads: number
   conversions: number
-}
-
-// ---------------------------------------------------------------------------
-// Mock extended data for sales reps
-// ---------------------------------------------------------------------------
-const repRenewals: Record<string, number> = {
-  sales_1: 3,
-  sales_2: 5,
-}
-
-const repRecentActivity: Record<string, { action: string; time: string; detail: string }[]> = {
-  sales_1: [
-    { action: "Closed Deal", time: "2 hours ago", detail: "StyleHut Fashion signed monthly plan" },
-    { action: "Demo Shared", time: "5 hours ago", detail: "Sent demo link to GreenLeaf Organic" },
-    { action: "Follow-up Call", time: "Yesterday", detail: "Called TasteBud Restaurant - interested" },
-    { action: "Lost Lead", time: "2 days ago", detail: "HomeCare Plus went with competitor" },
-  ],
-  sales_2: [
-    { action: "Closed Deal", time: "1 hour ago", detail: "CleanPro Services went active" },
-    { action: "Demo Shared", time: "3 hours ago", detail: "Sent demo to BeautyBox Store" },
-    { action: "Payment Received", time: "6 hours ago", detail: "MedPlus Health paid yearly plan" },
-    { action: "Follow-up Call", time: "Yesterday", detail: "WashMaster Pro reviewing proposal" },
-  ],
-}
-
-const repRevenueMonths: Record<string, { month: string; revenue: number }[]> = {
-  sales_1: [
-    { month: "Aug", revenue: 45000 },
-    { month: "Sep", revenue: 62000 },
-    { month: "Oct", revenue: 78000 },
-    { month: "Nov", revenue: 55000 },
-    { month: "Dec", revenue: 90000 },
-    { month: "Jan", revenue: 55000 },
-  ],
-  sales_2: [
-    { month: "Aug", revenue: 70000 },
-    { month: "Sep", revenue: 85000 },
-    { month: "Oct", revenue: 92000 },
-    { month: "Nov", revenue: 110000 },
-    { month: "Dec", revenue: 95000 },
-    { month: "Jan", revenue: 68000 },
-  ],
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +95,7 @@ function formatCurrencyFull(value: number): string {
 }
 
 function getPerformanceLevel(achieved: number, target: number): "above" | "near" | "below" {
+  if (target === 0) return "below"
   const pct = (achieved / target) * 100
   if (pct >= 100) return "above"
   if (pct >= 75) return "near"
@@ -266,47 +226,14 @@ function MiniBarChart({ data }: { data: { month: string; revenue: number }[] }) 
 }
 
 // ---------------------------------------------------------------------------
-// Conversion Funnel Mock
-// ---------------------------------------------------------------------------
-function ConversionFunnel({ leads: repLeads }: { leads: typeof leads }) {
-  const funnelStages: { stage: LeadStage; label: string }[] = [
-    { stage: "LEAD", label: "Lead" },
-    { stage: "DEMO_SHARED", label: "Demo Shared" },
-    { stage: "NEGOTIATION", label: "Negotiation" },
-    { stage: "PAYMENT_PENDING", label: "Payment Pending" },
-    { stage: "PAYMENT_RECEIVED", label: "Payment Received" },
-    { stage: "ACTIVE", label: "Active" },
-  ]
-  const totalLeads = repLeads.length || 1
-  return (
-    <div className="space-y-2">
-      {funnelStages.map((fs) => {
-        const count = repLeads.filter((l) => l.stage === fs.stage).length
-        const pct = (count / totalLeads) * 100
-        return (
-          <div key={fs.stage} className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">{fs.label}</span>
-              <span className="font-medium">{count}</span>
-            </div>
-            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-emerald-500/70 rounded-full transition-all"
-                style={{ width: `${Math.max(pct, 2)}%` }}
-              />
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 export function SalesView() {
   const { searchQuery } = useAdminStore()
+
+  // API-driven state
+  const [salesTeam, setSalesTeam] = useState<SalesRep[]>([])
+  const [loading, setLoading] = useState(true)
 
   // Local state
   const [localSearch, setLocalSearch] = useState("")
@@ -319,6 +246,7 @@ export function SalesView() {
 
   // Add dialog
   const [addOpen, setAddOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [formName, setFormName] = useState("")
   const [formEmail, setFormEmail] = useState("")
   const [formPhone, setFormPhone] = useState("")
@@ -327,6 +255,41 @@ export function SalesView() {
 
   // Effective search combines global and local
   const effectiveSearch = searchQuery || localSearch
+
+  // ---------------------------------------------------------------------------
+  // Fetch sales team from API
+  // ---------------------------------------------------------------------------
+  const fetchSalesTeam = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/sales-team", {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success && Array.isArray(json.data)) {
+        // Map API data to SalesRep — leads/conversions default to 0 for now
+        const team: SalesRep[] = json.data.map((member: Record<string, unknown>) => ({
+          id: member.id as string,
+          name: member.name as string,
+          email: member.email as string,
+          phone: (member.phone as string) || "",
+          region: (member.region as string) || "",
+          target: Number(member.target) || 0,
+          achieved: Number(member.achieved) || 0,
+          leads: 0,
+          conversions: 0,
+        }))
+        setSalesTeam(team)
+      }
+    } catch (err) {
+      console.error("Failed to fetch sales team:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchSalesTeam()
+  }, [fetchSalesTeam])
 
   // ---------------------------------------------------------------------------
   // Filtered team
@@ -344,7 +307,7 @@ export function SalesView() {
         getPerformanceLevel(rep.achieved, rep.target) === performanceFilter
       return matchSearch && matchRegion && matchPerf
     })
-  }, [effectiveSearch, regionFilter, performanceFilter])
+  }, [salesTeam, effectiveSearch, regionFilter, performanceFilter])
 
   // ---------------------------------------------------------------------------
   // Summary stats
@@ -354,11 +317,6 @@ export function SalesView() {
   const totalLeads = salesTeam.reduce((s, r) => s + r.leads, 0)
   const totalConversions = salesTeam.reduce((s, r) => s + r.conversions, 0)
   const conversionRate = totalLeads > 0 ? ((totalConversions / totalLeads) * 100).toFixed(1) : "0"
-
-  // ---------------------------------------------------------------------------
-  // Leads assigned to a rep
-  // ---------------------------------------------------------------------------
-  const getLeadsForRep = (repName: string) => leads.filter((l) => l.salesRep === repName)
 
   // ---------------------------------------------------------------------------
   // Reset add form
@@ -372,8 +330,56 @@ export function SalesView() {
   }
 
   // ---------------------------------------------------------------------------
+  // Add Sales Rep handler
+  // ---------------------------------------------------------------------------
+  const handleAddSalesRep = async () => {
+    if (!formName || !formEmail || !formPhone || !formRegion || !formTarget) {
+      toast.error("Please fill in all fields")
+      return
+    }
+
+    setAdding(true)
+    try {
+      const res = await fetch("/api/admin/sales-team", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          name: formName,
+          email: formEmail,
+          phone: formPhone,
+          region: formRegion,
+          target: Number(formTarget),
+        }),
+      })
+      const json = await res.json()
+
+      if (json.success) {
+        toast.success(`${formName} has been added to the sales team`)
+        setAddOpen(false)
+        resetForm()
+        fetchSalesTeam() // Refetch the list
+      } else {
+        toast.error(json.error || "Failed to add sales rep")
+      }
+    } catch (err) {
+      console.error("Failed to add sales rep:", err)
+      toast.error("Failed to add sales rep. Please try again.")
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* ================================================================== */}
@@ -460,10 +466,19 @@ export function SalesView() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => { setAddOpen(false); resetForm() }}>
+                <Button variant="outline" onClick={() => { setAddOpen(false); resetForm() }} disabled={adding}>
                   Cancel
                 </Button>
-                <Button onClick={() => setAddOpen(false)}>Add Sales Rep</Button>
+                <Button onClick={handleAddSalesRep} disabled={adding}>
+                  {adding ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    "Add Sales Rep"
+                  )}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -590,12 +605,8 @@ export function SalesView() {
           {filteredTeam.map((rep) => {
             const level = getPerformanceLevel(rep.achieved, rep.target)
             const colors = getPerformanceColor(level)
-            const pct = Math.round((rep.achieved / rep.target) * 100)
+            const pct = rep.target > 0 ? Math.round((rep.achieved / rep.target) * 100) : 0
             const commission = rep.achieved * 0.05
-            const renewals = repRenewals[rep.id] || 0
-            const activeLeads = getLeadsForRep(rep.name).filter(
-              (l) => !["LOST", "CHURNED", "ACTIVE"].includes(l.stage)
-            ).length
 
             return (
               <Card
@@ -660,18 +671,14 @@ export function SalesView() {
                   <Separator className="my-4" />
 
                   {/* Stats Grid */}
-                  <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-md bg-muted/50 p-2">
-                      <p className="text-base font-bold">{activeLeads}</p>
-                      <p className="text-[9px] text-muted-foreground">Active</p>
+                      <p className="text-base font-bold">{rep.leads}</p>
+                      <p className="text-[9px] text-muted-foreground">Leads</p>
                     </div>
                     <div className="rounded-md bg-muted/50 p-2">
                       <p className="text-base font-bold text-emerald-600">{rep.conversions}</p>
                       <p className="text-[9px] text-muted-foreground">Won</p>
-                    </div>
-                    <div className="rounded-md bg-muted/50 p-2">
-                      <p className="text-base font-bold text-amber-600">{renewals}</p>
-                      <p className="text-[9px] text-muted-foreground">Renewals</p>
                     </div>
                     <div className="rounded-md bg-muted/50 p-2">
                       <p className="text-sm font-bold">{formatCurrency(Math.round(commission))}</p>
@@ -711,12 +718,8 @@ export function SalesView() {
             const rep = selectedRep
             const level = getPerformanceLevel(rep.achieved, rep.target)
             const colors = getPerformanceColor(level)
-            const pct = Math.round((rep.achieved / rep.target) * 100)
+            const pct = rep.target > 0 ? Math.round((rep.achieved / rep.target) * 100) : 0
             const commission = rep.achieved * 0.05
-            const repLeads = getLeadsForRep(rep.name)
-            const renewals = repRenewals[rep.id] || 0
-            const revenueData = repRevenueMonths[rep.id] || []
-            const activity = repRecentActivity[rep.id] || []
 
             return (
               <>
@@ -800,28 +803,14 @@ export function SalesView() {
 
                     <Separator />
 
-                    {/* Revenue Chart */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Revenue Trend (Last 6 Months)
-                      </h4>
-                      <Card className="shadow-none">
-                        <CardContent className="p-4">
-                          <MiniBarChart data={revenueData} />
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    <Separator />
-
-                    {/* Stats */}
+                    {/* Key Metrics */}
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         Key Metrics
                       </h4>
                       <div className="grid grid-cols-3 gap-3">
                         <div className="rounded-lg border p-3 text-center">
-                          <p className="text-xl font-bold">{repLeads.filter(l => !["LOST", "CHURNED", "ACTIVE"].includes(l.stage)).length}</p>
+                          <p className="text-xl font-bold">{rep.leads}</p>
                           <p className="text-[10px] text-muted-foreground">Active Leads</p>
                         </div>
                         <div className="rounded-lg border p-3 text-center">
@@ -829,56 +818,10 @@ export function SalesView() {
                           <p className="text-[10px] text-muted-foreground">Conversions</p>
                         </div>
                         <div className="rounded-lg border p-3 text-center">
-                          <p className="text-xl font-bold text-amber-600">{renewals}</p>
-                          <p className="text-[10px] text-muted-foreground">Renewals</p>
+                          <p className="text-xl font-bold">{formatCurrency(Math.round(commission))}</p>
+                          <p className="text-[10px] text-muted-foreground">Commission</p>
                         </div>
                       </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Assigned Leads */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Assigned Leads ({repLeads.length})
-                      </h4>
-                      {repLeads.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                          No leads assigned
-                        </div>
-                      ) : (
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
-                          {repLeads.map((lead) => (
-                            <div
-                              key={lead.id}
-                              className="rounded-lg border p-3 flex items-center justify-between"
-                            >
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium truncate">{lead.businessName}</p>
-                                <p className="text-[10px] text-muted-foreground">
-                                  {lead.contactName} &middot; {formatCurrency(lead.estimatedValue)}
-                                </p>
-                              </div>
-                              <Badge
-                                className={`text-[9px] shrink-0 ${leadStageColors[lead.stage as LeadStage] || "bg-slate-100 text-slate-700"}`}
-                                variant="secondary"
-                              >
-                                {lead.stage.replace(/_/g, " ")}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <Separator />
-
-                    {/* Conversion Funnel */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Conversion Funnel
-                      </h4>
-                      <ConversionFunnel leads={repLeads} />
                     </div>
 
                     <Separator />
@@ -911,27 +854,6 @@ export function SalesView() {
                             <p className="font-semibold text-amber-600">{formatCurrencyFull(Math.round(commission * 0.4))}</p>
                           </div>
                         </div>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Recent Activity */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Recent Activity
-                      </h4>
-                      <div className="space-y-2">
-                        {activity.map((act, idx) => (
-                          <div key={idx} className="flex items-start gap-3 py-2 border-b last:border-b-0">
-                            <div className="mt-1 flex h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium">{act.action}</p>
-                              <p className="text-xs text-muted-foreground">{act.detail}</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5">{act.time}</p>
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     </div>
                   </div>

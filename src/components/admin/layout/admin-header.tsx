@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, ArrowLeftRight, ShoppingBag, Menu } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +58,7 @@ interface AdminHeaderProps {
 
 export function AdminHeader({ onMobileMenuClick }: AdminHeaderProps) {
   const { activePage, searchQuery, setSearchQuery, setActivePage, setViewMode } = useAdminStore()
+  const { currentBusinessId } = useAuthStore()
   const { isMobile } = useResponsive()
 
   return (
@@ -101,7 +103,7 @@ export function AdminHeader({ onMobileMenuClick }: AdminHeaderProps) {
           />
         </div>
         <NotificationBell
-          businessId="biz_1"
+          businessId={currentBusinessId || ""}
           onViewAll={() => setActivePage("notifications")}
         />
         <DemoSwitcher />

@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
+import { hashPassword } from '@/lib/password-utils';
 import { NextResponse } from 'next/server';
 
 export async function POST() {
@@ -198,34 +199,38 @@ export async function POST() {
     const proPlan = createdPlans.find(p => p.tier === 'PRO' && p.billingCycle === 'MONTHLY');
 
     // =========================================================================
-    // 3. SUPER ADMIN USER
+    // 3. SUPER ADMIN USER (password: Admin@123)
     // =========================================================================
+    const adminPasswordHash = await hashPassword('Admin@123');
     const superAdmin = await db.user.upsert({
-      where: { email: 'admin@quantixtechnology.in' },
-      update: {},
+      where: { email: 'superadmin@quantixtechnology.in' },
+      update: { passwordHash: adminPasswordHash },
       create: {
-        email: 'admin@quantixtechnology.in',
+        email: 'superadmin@quantixtechnology.in',
         name: 'Quantix Super Admin',
         phone: '+919876543210',
-        authProvider: 'EMAIL_OTP',
+        passwordHash: adminPasswordHash,
+        authProvider: 'PASSWORD',
         emailVerified: true,
         phoneVerified: true,
         isActive: true,
       },
     });
-    summary.superAdmin = { id: superAdmin.id, email: superAdmin.email };
+    summary.superAdmin = { id: superAdmin.id, email: superAdmin.email, password: 'Admin@123' };
 
     // =========================================================================
-    // 4. SALES TEAM MEMBER
+    // 4. SALES TEAM MEMBER (password: Sales@123)
     // =========================================================================
+    const salesPasswordHash = await hashPassword('Sales@123');
     const salesUser = await db.user.upsert({
-      where: { email: 'sales@quantixtechnology.in' },
-      update: {},
+      where: { email: 'priya.sales@quantixtechnology.in' },
+      update: { passwordHash: salesPasswordHash },
       create: {
-        email: 'sales@quantixtechnology.in',
+        email: 'priya.sales@quantixtechnology.in',
         name: 'Priya Sharma',
         phone: '+919876543211',
-        authProvider: 'EMAIL_OTP',
+        passwordHash: salesPasswordHash,
+        authProvider: 'PASSWORD',
         emailVerified: true,
         phoneVerified: true,
         isActive: true,
@@ -238,7 +243,7 @@ export async function POST() {
       create: {
         userId: salesUser.id,
         name: 'Priya Sharma',
-        email: 'sales@quantixtechnology.in',
+        email: 'priya.sales@quantixtechnology.in',
         phone: '+919876543211',
         target: 500000,
         achieved: 125000,
@@ -246,47 +251,50 @@ export async function POST() {
         isActive: true,
       },
     });
-    summary.salesTeamMember = { id: salesMember.id, name: salesMember.name };
+    summary.salesTeamMember = { id: salesMember.id, name: salesMember.name, password: 'Sales@123' };
 
     // =========================================================================
-    // 5. SAMPLE GROCERY BUSINESS — FreshMart (ID: biz_1)
+    // 5. SAMPLE GROCERY BUSINESS — FreshMart
     // =========================================================================
-    const business = await db.business.upsert({
-      where: { id: 'biz_1' },
-      update: {},
-      create: {
-        id: 'biz_1',
-        name: 'FreshMart Grocery',
-        slug: 'freshmart-grocery',
-        businessType: 'GROCERY',
-        status: 'ACTIVE',
-        tagline: 'Fresh from Farm to Your Door',
-        description: 'Premium grocery store with fresh fruits, vegetables, dairy, and daily essentials delivered to your doorstep.',
-        gstNumber: '27AABCF1234A1Z5',
-        fssaiLicense: '12345678901234',
-        address: '42, MG Road, Andheri West',
-        city: 'Mumbai',
-        state: 'Maharashtra',
-        pincode: '400053',
-        country: 'India',
-        latitude: 19.1197,
-        longitude: 72.8464,
-        contactEmail: 'hello@freshmart.in',
-        contactPhone: '+919876543220',
-        supportEmail: 'support@freshmart.in',
-        supportPhone: '+919876543221',
-        primaryColor: '#10B981',
-        isOnline: true,
-        salesRepId: salesMember.id,
-        activatedAt: new Date(),
-        onboardedAt: new Date(),
-      },
-    });
+    let business = await db.business.findUnique({ where: { slug: 'freshmart-grocery' } });
+    const existingData = business ? await db.category.count({ where: { businessId: business.id } }) : 0;
+
+    if (!business) {
+      business = await db.business.create({
+        data: {
+          name: 'FreshMart Grocery',
+          slug: 'freshmart-grocery',
+          businessType: 'GROCERY',
+          status: 'ACTIVE',
+          tagline: 'Fresh from Farm to Your Door',
+          description: 'Premium grocery store with fresh fruits, vegetables, dairy, and daily essentials delivered to your doorstep.',
+          gstNumber: '27AABCF1234A1Z5',
+          fssaiLicense: '12345678901234',
+          address: '42, MG Road, Andheri West',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          pincode: '400053',
+          country: 'India',
+          latitude: 19.1197,
+          longitude: 72.8464,
+          contactEmail: 'hello@freshmart.in',
+          contactPhone: '+919876543220',
+          supportEmail: 'support@freshmart.in',
+          supportPhone: '+919876543221',
+          primaryColor: '#10B981',
+          isOnline: true,
+          salesRepId: salesMember.id,
+          activatedAt: new Date(),
+          onboardedAt: new Date(),
+        },
+      });
+    }
     summary.business = { id: business.id, name: business.name };
 
     // =========================================================================
     // 6. BUSINESS SUBSCRIPTION (Active — no trial per schema)
     // =========================================================================
+    if (existingData === 0) {
     const subscription = await db.businessSubscription.upsert({
       where: { businessId: business.id },
       update: {},
@@ -332,13 +340,76 @@ export async function POST() {
     summary.modules = defaultModules.map((m) => m.moduleKey);
 
     // =========================================================================
+    // 7b. BUSINESS OWNER & STORE MANAGER USERS
+    // =========================================================================
+    const ownerPasswordHash = await hashPassword('Owner@123');
+    const ownerUser = await db.user.upsert({
+      where: { email: 'owner@freshmart-grocery.in' },
+      update: { passwordHash: ownerPasswordHash },
+      create: {
+        email: 'owner@freshmart-grocery.in',
+        name: 'Rajesh Gupta',
+        phone: '+919876543222',
+        passwordHash: ownerPasswordHash,
+        authProvider: 'PASSWORD',
+        emailVerified: true,
+        phoneVerified: true,
+        isActive: true,
+      },
+    });
+
+    await db.businessUser.upsert({
+      where: { userId_businessId: { userId: ownerUser.id, businessId: business.id } },
+      update: {},
+      create: {
+        userId: ownerUser.id,
+        businessId: business.id,
+        role: 'CLIENT_OWNER',
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    });
+
+    const managerPasswordHash = await hashPassword('Staff@123');
+    const managerUser = await db.user.upsert({
+      where: { email: 'manager@freshmart-grocery.in' },
+      update: { passwordHash: managerPasswordHash },
+      create: {
+        email: 'manager@freshmart-grocery.in',
+        name: 'Amit Patel',
+        phone: '+919876543223',
+        passwordHash: managerPasswordHash,
+        authProvider: 'PASSWORD',
+        emailVerified: true,
+        phoneVerified: true,
+        isActive: true,
+      },
+    });
+
+    await db.businessUser.upsert({
+      where: { userId_businessId: { userId: managerUser.id, businessId: business.id } },
+      update: {},
+      create: {
+        userId: managerUser.id,
+        businessId: business.id,
+        role: 'STORE_MANAGER',
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    });
+
+    summary.businessOwner = { id: ownerUser.id, email: ownerUser.email, password: 'Owner@123' };
+    summary.storeManager = { id: managerUser.id, email: managerUser.email, password: 'Staff@123' };
+
+    // =========================================================================
     // 8. MAIN STORE WITH TIMINGS
     // =========================================================================
     const store = await db.store.upsert({
-      where: { id: 'store_freshmart_main' },
+      where: { businessId_slug: { businessId: business.id, slug: 'main-store' } },
       update: {},
       create: {
-        id: 'store_freshmart_main',
         businessId: business.id,
         name: 'FreshMart Main Store',
         slug: 'main-store',
@@ -545,10 +616,9 @@ export async function POST() {
     const createdCategories = [];
     for (const cat of categoriesData) {
       const category = await db.category.upsert({
-        where: { id: `cat_${business.id}_${cat.slug}` },
+        where: { businessId_slug: { businessId: business.id, slug: cat.slug } },
         update: { name: cat.name, description: cat.description, icon: cat.icon, sortOrder: cat.sortOrder },
         create: {
-          id: `cat_${business.id}_${cat.slug}`,
           businessId: business.id,
           name: cat.name,
           slug: cat.slug,
@@ -794,6 +864,10 @@ export async function POST() {
       createdOrders.push(order);
     }
     summary.orders = createdOrders.length;
+    } else {
+      summary.skippedBusinessData = true;
+      summary.message = 'Business data already exists — skipped re-seeding';
+    }
 
     // =========================================================================
     // RETURN SUMMARY

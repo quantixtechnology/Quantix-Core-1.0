@@ -134,14 +134,14 @@ export async function createBusiness(data: CreateBusinessRequest) {
   // 3. Find or use provided plan
   let planId = data.planId;
   if (!planId) {
-    // Default to MONTHLY plan
-    const monthlyPlan = await db.platformPlan.findUnique({
-      where: { billingCycle: 'MONTHLY' },
+    // Default to STANDARD MONTHLY plan using compound unique key
+    const defaultPlan = await db.platformPlan.findUnique({
+      where: { tier_billingCycle: { tier: 'STANDARD', billingCycle: 'MONTHLY' } },
     });
-    if (!monthlyPlan) {
-      throw new Error('No MONTHLY plan found. Please seed platform plans first.');
+    if (!defaultPlan) {
+      throw new Error('No STANDARD MONTHLY plan found. Please seed platform plans first.');
     }
-    planId = monthlyPlan.id;
+    planId = defaultPlan.id;
   }
 
   const plan = await db.platformPlan.findUnique({ where: { id: planId } });
@@ -204,7 +204,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
           : null,
         manualPriceOverride: hasOverride,
         overrideReason: data.overrideReason,
-        billingCycle: billingCycle === 'YEARLY' ? 'yearly' : 'monthly',
+        billingCycle: billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
         nextBillingDate: periodEnd,
@@ -236,7 +236,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
         stepKey: step.stepKey,
         stepName: step.stepName,
         status: 'PENDING',
-        order: step.order,
+        sortOrder: step.order,
       })),
     });
 
@@ -398,7 +398,7 @@ export async function getBusiness(businessId: string) {
       modules: true,
       domain: true,
       onboardingSteps: {
-        orderBy: { order: 'asc' },
+        orderBy: { sortOrder: 'asc' },
       },
       _count: {
         select: {
