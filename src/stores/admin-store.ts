@@ -112,6 +112,59 @@ export interface DemoBusiness {
 // DEMO BUSINESS PRESETS
 // ============================================================================
 
+// ============================================================================
+// DEMO-TO-REAL BUSINESS ID MAPPING
+// Maps demo business IDs to real database business IDs (cuid format)
+// ============================================================================
+
+export const DEMO_TO_REAL_BUSINESS_MAP: Record<string, string> = {
+  super_admin: "",           // No real business for super admin
+  standard_grocery: "",     // Will be resolved dynamically
+  standard_laundry: "",
+  pro_laundry: "",
+  pro_carwash: "",
+  // New slug-based IDs (used when selecting from business list)
+  "freshmart-grocery": "",
+  "tastybites-food": "",
+  "sparkleclean-laundry": "",
+  "autoglow-carwash": "",
+  "medquick-pharmacy": "",
+  "homefix-services": "",
+  "shopnow-ecommerce": "",
+  "glowup-cosmetics": "",
+  "freshmeat-direct": "",
+  "woodcraft-furniture": "",
+  "cityguide-directory": "",
+}
+
+// Map business type to the database slug for default demo selection
+const BUSINESS_TYPE_TO_SLUG: Record<string, string> = {
+  GROCERY: "freshmart-grocery",
+  FOOD_DELIVERY: "tastybites-food",
+  LAUNDRY: "sparkleclean-laundry",
+  CAR_WASH: "autoglow-carwash",
+  PHARMACY: "medquick-pharmacy",
+  HOME_SERVICES: "homefix-services",
+  ECOMMERCE: "shopnow-ecommerce",
+  COSMETICS: "glowup-cosmetics",
+  MEAT_DELIVERY: "freshmeat-direct",
+  FURNITURE: "woodcraft-furniture",
+  DIRECTORY: "cityguide-directory",
+}
+
+export function getSlugForDemoId(demoId: string): string | null {
+  // Direct slug mapping
+  if (BUSINESS_TYPE_TO_SLUG[demoId.toUpperCase()]) return BUSINESS_TYPE_TO_SLUG[demoId.toUpperCase()]
+  // Legacy demo IDs
+  const legacyMap: Record<string, string> = {
+    standard_grocery: "freshmart-grocery",
+    standard_laundry: "sparkleclean-laundry",
+    pro_laundry: "sparkleclean-laundry",
+    pro_carwash: "autoglow-carwash",
+  }
+  return legacyMap[demoId] || null
+}
+
 export const DEMO_BUSINESSES: DemoBusiness[] = [
   {
     id: "super_admin",
@@ -353,6 +406,9 @@ interface AdminState {
   // Current business context (for business owner view)
   currentBusinessId: string
   setCurrentBusinessId: (id: string) => void
+  // Business slug for DB lookups
+  currentBusinessSlug: string
+  setCurrentBusinessSlug: (slug: string) => void
   // Demo Business Context
   demoBusinessId: string
   setDemoBusinessId: (id: string) => void
@@ -400,11 +456,14 @@ export const useAdminStore = create<AdminState>((set) => ({
   setCustomerPage: (page) => set({ customerPage: page, searchQuery: "" }),
   deliveryPage: "login",
   setDeliveryPage: (page) => set({ deliveryPage: page }),
-  currentBusinessId: "biz_1",
+  currentBusinessId: "",
   setCurrentBusinessId: (id) => set({ currentBusinessId: id }),
-  // Demo Business Context
+  // Demo Business Context — used for UI context, sidebar config etc.
   demoBusinessId: "super_admin",
   setDemoBusinessId: (id) => set({ demoBusinessId: id }),
+  // Business slug — for looking up the real DB business ID
+  currentBusinessSlug: "",
+  setCurrentBusinessSlug: (slug: string) => set({ currentBusinessSlug: slug }),
   selectedProductId: null,
   setSelectedProductId: (id) => set({ selectedProductId: id }),
   selectedOrderId: null,

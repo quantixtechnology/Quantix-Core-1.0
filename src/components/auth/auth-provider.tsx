@@ -1,13 +1,18 @@
 // ============================================================================
 // Quantix Technology — Auth Provider Component
 // Initializes auth store from localStorage, sets up token refresh interval,
-// and handles token expiry gracefully
+// handles token expiry gracefully, and gates the app behind authentication
 // ============================================================================
 
 "use client";
 
 import React, { useEffect, useCallback, useRef } from "react";
 import { useAuthStore } from "@/stores/auth-store";
+import { useAdminStore, type ViewMode } from "@/stores/admin-store";
+import { setBusinessContext } from "@/lib/api-client";
+import { LoginPage } from "@/components/auth/login-page";
+import { Loader2 } from "lucide-react";
+import type { Role } from "@/lib/types";
 
 // ============================================================================
 // CONFIGURATION
@@ -16,8 +21,26 @@ import { useAuthStore } from "@/stores/auth-store";
 /** How often to refresh the access token (20 minutes) */
 const TOKEN_REFRESH_INTERVAL_MS = 20 * 60 * 1000;
 
-/** How early before token expiry to trigger a refresh (5 minutes) */
-const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+// ============================================================================
+// ROLE → VIEW MODE MAPPING
+// ============================================================================
+
+function getViewModeForRole(role: Role): ViewMode {
+  switch (role) {
+    case "QUANTIX_SUPER_ADMIN":
+    case "QUANTIX_SALES_TEAM":
+      return "super_admin";
+    case "CLIENT_OWNER":
+    case "STORE_MANAGER":
+      return "business_owner";
+    case "CUSTOMER":
+      return "customer";
+    case "DELIVERY_STAFF":
+      return "delivery_partner";
+    default:
+      return "super_admin";
+  }
+}
 
 // ============================================================================
 // AUTH PROVIDER COMPONENT
@@ -42,23 +65,51 @@ export function AuthProvider({
   const {
     initialize,
     isAuthenticated,
+    _isHydrated,
     refreshToken,
     refreshAuthToken,
     logout,
     user,
+    currentBusinessId,
   } = useAuthStore();
 
-  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isInitializedRef = useRef(false);
+  const { setViewMode, setCurrentBusinessId } = useAdminStore();
+
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
   const prevAuthStateRef = useRef(isAuthenticated);
+  const hasSyncedRef = useRef(false);
 
   // ─── Initialize auth store from localStorage ────────────────────────
   useEffect(() => {
-    if (!isInitializedRef.current) {
-      initialize();
-      isInitializedRef.current = true;
-    }
+    initialize();
   }, [initialize]);
+
+  // ─── Sync auth state with admin store on login/hydration ────────────
+  useEffect(() => {
+    if (isAuthenticated && user && !hasSyncedRef.current) {
+      hasSyncedRef.current = true;
+
+      const viewMode = getViewModeForRole(user.role as Role);
+      setViewMode(viewMode);
+
+      if (currentBusinessId) {
+        setCurrentBusinessId(currentBusinessId);
+        setBusinessContext(currentBusinessId);
+      }
+    }
+
+    if (!isAuthenticated) {
+      hasSyncedRef.current = false;
+    }
+  }, [
+    isAuthenticated,
+    user,
+    currentBusinessId,
+    setViewMode,
+    setCurrentBusinessId,
+  ]);
 
   // ─── Track auth state changes ───────────────────────────────────────
   useEffect(() => {
@@ -94,9 +145,6 @@ export function AuthProvider({
 
     // Only set up refresh if authenticated
     if (isAuthenticated && refreshToken) {
-      // Do an initial refresh on mount
-      handleTokenRefresh();
-
       // Set up interval for periodic refresh
       refreshIntervalRef.current = setInterval(() => {
         handleTokenRefresh();
@@ -115,7 +163,11 @@ export function AuthProvider({
   // ─── Handle page visibility change (refresh token when tab becomes active) ──
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && isAuthenticated && refreshToken) {
+      if (
+        document.visibilityState === "visible" &&
+        isAuthenticated &&
+        refreshToken
+      ) {
         handleTokenRefresh();
       }
     };
@@ -147,5 +199,25 @@ export function AuthProvider({
     };
   }, [isAuthenticated, logout, initialize, onSessionExpired]);
 
+  // ─── Not yet hydrated — show loading ────────────────────────────────
+  if (!_isHydrated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-emerald-50 via-white to-emerald-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+          <p className="text-sm text-muted-foreground">
+            Loading Quantix Core...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Not authenticated — show login page ────────────────────────────
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  // ─── Authenticated — show the app ───────────────────────────────────
   return <>{children}</>;
 }

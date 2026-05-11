@@ -25,7 +25,7 @@ import {
   LayoutDashboard,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
-import { leads, businessTypeConfig, leadStageColors } from "@/components/dashboard/data"
+import { businessTypeConfig, leadStageColors } from "@/components/dashboard/data"
 import type { BusinessType, LeadStage } from "@/components/dashboard/data"
 import { leadActivities, leadContactStats, formatRelativeTime } from "./crm-data"
 import { LeadActivityTimeline } from "./lead-activity-timeline"
@@ -37,27 +37,36 @@ const stageProgressMap: Record<LeadStage, number> = {
   LEAD: 0, DEMO_SHARED: 1, NEGOTIATION: 2, PAYMENT_PENDING: 3, PAYMENT_RECEIVED: 4, ONBOARDING: 5, DEPLOYMENT: 6, ACTIVE: 7, LOST: -1, CHURNED: -1
 }
 
+// Real API lead data type
+interface LeadApiData {
+  id: string; businessName: string; contactName: string; contactEmail: string
+  contactPhone: string; businessType: string; source: string; stage: string
+  estimatedValue: number | null; notes: string | null; followUpDate: string | null
+  lastContactedAt: string | null; tags: string; createdAt: string; updatedAt: string
+  salesRep: { id: string; name: string; email: string } | null
+  demoTenantId: string | null; demoSharedAt: string | null
+  negotiatedMonthlyPrice: number | null; negotiatedYearlyPrice: number | null
+  paymentVerifiedAt: string | null; convertedBusinessId: string | null; convertedAt: string | null
+  lostReason: string | null; selectedBillingCycle: string | null
+}
+
 interface LeadDetailEnhancedProps {
-  leadId: string
+  lead: LeadApiData
   onBack: () => void
 }
 
-export function LeadDetailEnhanced({ leadId, onBack }: LeadDetailEnhancedProps) {
+export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
   const { crmLeadTab, setCrmLeadTab } = useAdminStore()
-  const lead = leads.find((l) => l.id === leadId)
-  const stats = leadContactStats[leadId]
-  const activities = leadActivities.filter((a) => a.leadId === leadId)
+  const stats = leadContactStats[lead.id]
+  const activities = leadActivities.filter((a) => a.leadId === lead.id)
 
   // Check for overdue follow-up
   const hasOverdue = stats && stats.daysSinceLastContact > 3
 
-  if (!lead) {
-    return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Lead not found
-      </div>
-    )
-  }
+  // Compute days since last contact from real data
+  const daysSinceContact = lead.lastContactedAt
+    ? Math.floor((Date.now() - new Date(lead.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24))
+    : null
 
   return (
     <div className="space-y-4">
@@ -73,18 +82,18 @@ export function LeadDetailEnhanced({ leadId, onBack }: LeadDetailEnhancedProps) 
               {lead.stage.replace(/_/g, " ")}
             </Badge>
             <span className="text-xs text-muted-foreground">
-              {businessTypeConfig[lead.type as BusinessType]?.label || lead.type}
+              {businessTypeConfig[lead.businessType as BusinessType]?.label || lead.businessType}
             </span>
           </div>
         </div>
       </div>
 
       {/* Overdue banner */}
-      {hasOverdue && (
+      {(hasOverdue || (daysSinceContact !== null && daysSinceContact > 3)) && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
           <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
           <p className="text-xs text-red-700">
-            <span className="font-semibold">Follow-up overdue!</span> Last contact was {stats.daysSinceLastContact} days ago.
+            <span className="font-semibold">Follow-up overdue!</span> Last contact was {stats?.daysSinceLastContact || daysSinceContact} days ago.
           </p>
           <Button variant="outline" size="sm" className="h-6 text-[10px] ml-auto border-red-300 text-red-700 hover:bg-red-100">
             Contact Now
@@ -154,7 +163,7 @@ export function LeadDetailEnhanced({ leadId, onBack }: LeadDetailEnhancedProps) 
           <Card>
             <CardContent className="p-4 space-y-3">
               <h4 className="text-sm font-semibold text-muted-foreground">Contact Summary</h4>
-              <LeadContactCounters leadId={leadId} />
+              <LeadContactCounters leadId={lead.id} />
             </CardContent>
           </Card>
 
@@ -206,7 +215,7 @@ export function LeadDetailEnhanced({ leadId, onBack }: LeadDetailEnhancedProps) 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border p-2.5">
                   <p className="text-[10px] text-muted-foreground">Type</p>
-                  <p className="text-xs font-medium">{businessTypeConfig[lead.type as BusinessType]?.label || lead.type}</p>
+                  <p className="text-xs font-medium">{businessTypeConfig[lead.businessType as BusinessType]?.label || lead.businessType}</p>
                 </div>
                 <div className="rounded-lg border p-2.5">
                   <p className="text-[10px] text-muted-foreground">Source</p>
@@ -214,13 +223,46 @@ export function LeadDetailEnhanced({ leadId, onBack }: LeadDetailEnhancedProps) 
                 </div>
                 <div className="rounded-lg border p-2.5">
                   <p className="text-[10px] text-muted-foreground">Est. Value</p>
-                  <p className="text-xs font-medium">₹{lead.estimatedValue?.toLocaleString("en-IN")}</p>
+                  <p className="text-xs font-medium">{lead.estimatedValue ? `₹${lead.estimatedValue.toLocaleString("en-IN")}` : "—"}</p>
                 </div>
                 <div className="rounded-lg border p-2.5">
                   <p className="text-[10px] text-muted-foreground">Sales Rep</p>
-                  <p className="text-xs font-medium">{lead.salesRep}</p>
+                  <p className="text-xs font-medium">{lead.salesRep?.name || "Unassigned"}</p>
                 </div>
               </div>
+              {/* Additional real data fields */}
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                {lead.followUpDate && (
+                  <div className="rounded-lg border p-2.5">
+                    <p className="text-[10px] text-muted-foreground">Follow-up Date</p>
+                    <p className="text-xs font-medium">{new Date(lead.followUpDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+                  </div>
+                )}
+                {lead.selectedBillingCycle && (
+                  <div className="rounded-lg border p-2.5">
+                    <p className="text-[10px] text-muted-foreground">Billing Cycle</p>
+                    <p className="text-xs font-medium capitalize">{lead.selectedBillingCycle}</p>
+                  </div>
+                )}
+                {lead.negotiatedMonthlyPrice && (
+                  <div className="rounded-lg border p-2.5">
+                    <p className="text-[10px] text-muted-foreground">Negotiated Monthly</p>
+                    <p className="text-xs font-medium">₹{lead.negotiatedMonthlyPrice.toLocaleString("en-IN")}</p>
+                  </div>
+                )}
+                {lead.negotiatedYearlyPrice && (
+                  <div className="rounded-lg border p-2.5">
+                    <p className="text-[10px] text-muted-foreground">Negotiated Yearly</p>
+                    <p className="text-xs font-medium">₹{lead.negotiatedYearlyPrice.toLocaleString("en-IN")}</p>
+                  </div>
+                )}
+              </div>
+              {lead.notes && (
+                <div className="mt-3 rounded-lg border p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Notes</p>
+                  <p className="text-xs text-muted-foreground">{lead.notes}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -229,7 +271,7 @@ export function LeadDetailEnhanced({ leadId, onBack }: LeadDetailEnhancedProps) 
         <TabsContent value="timeline" className="mt-4">
           <Card>
             <CardContent className="p-4">
-              <LeadActivityTimeline leadId={leadId} maxHeight="500px" />
+              <LeadActivityTimeline leadId={lead.id} maxHeight="500px" />
             </CardContent>
           </Card>
         </TabsContent>
@@ -238,7 +280,7 @@ export function LeadDetailEnhanced({ leadId, onBack }: LeadDetailEnhancedProps) 
         <TabsContent value="comments" className="mt-4">
           <Card>
             <CardContent className="p-4">
-              <LeadCommentsFeed leadId={leadId} maxHeight="500px" />
+              <LeadCommentsFeed leadId={lead.id} maxHeight="500px" />
             </CardContent>
           </Card>
         </TabsContent>

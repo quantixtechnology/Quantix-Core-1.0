@@ -63,14 +63,16 @@ import {
   Receipt,
 } from "lucide-react"
 import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS } from "@/stores/admin-store"
-import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
+import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
-// Local type definitions (replacing mock data types)
+// Local type definitions
+
 type ProductStatus = "ACTIVE" | "INACTIVE" | "DRAFT" | "OUT_OF_STOCK"
 type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
 
-const BUSINESS_ID = "biz_1"
+
 
 // Workflow icon mapping for category dialog
 const workflowIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -193,66 +195,165 @@ function CategoryIcon({ icon, color, name }: { icon: string; color: string; name
 // Main Component
 // ---------------------------------------------------------------------------
 export function ProductsView() {
-  // Get demo business context
-  const { demoBusinessId } = useAdminStore()
+  // Get real business context
+  const { businessId, isLoading: contextLoading } = useBusinessContext()
+  const queryClient = useQueryClient()
 
-  // ---- Demo data based on business context ----
-  const demoProductList: Product[] = useMemo(() => {
-    return getDemoProducts(demoBusinessId).map((p) => ({
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      categoryId: p.categoryId,
-      category: p.category,
-      status: p.status as ProductStatus,
-      isVeg: p.isVeg,
-      isFeatured: p.isFeatured,
-      image: p.image,
-      variants: p.variants.map((v) => ({
-        id: v.id,
-        name: v.name,
-        sku: v.sku,
-        mrp: v.mrp,
-        price: v.price,
-        stock: v.stock,
-        isDefault: v.isDefault,
-      })),
+  // ---- Fetch products from API ----
+  const { data: productsResponse, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useQuery({
+    queryKey: ["products", businessId, "ALL"],
+    queryFn: async () => {
+      if (!businessId) return { data: [], pagination: { total: 0 } }
+      const response = await fetch(`/api/core/storefront/products?businessId=${encodeURIComponent(businessId)}&status=ALL&includeAllVariants=true&limit=100`)
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to fetch products')
+      return data
+    },
+    enabled: !!businessId,
+  })
+
+  // ---- Fetch categories from API ----
+  const { data: categoriesResponse, isLoading: categoriesLoading } = useQuery({
+    queryKey: ["categories", businessId],
+    queryFn: async () => {
+      if (!businessId) return { data: [] }
+      const response = await fetch(`/api/core/storefront/categories?businessId=${encodeURIComponent(businessId)}&includeInactive=true&productStatus=ALL`)
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to fetch categories')
+      return data
+    },
+    enabled: !!businessId,
+  })
+
+  // ---- Update product mutation ----
+  const updateProductMutation = useMutation({
+    mutationFn: async ({ productId, data }: { productId: string; data: Record<string, unknown> }) => {
+      const response = await fetch(`/api/core/storefront/products/${encodeURIComponent(productId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const resp = await response.json()
+      if (!resp.success) throw new Error(resp.error || 'Failed to update product')
+      return resp
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products", businessId] })
+      showSuccess("Product updated successfully")
+    },
+    onError: () => {
+      showError("Failed to update product")
+    },
+  })
+
+  // ---- Delete product mutation ----
+  const deleteProductMutation = useMutation({
+    mutationFn: async (productId: string) => {
+      const response = await fetch(`/api/core/storefront/products/${encodeURIComponent(productId)}`, {
+        method: 'DELETE',
+      })
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to delete product')
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products", businessId] })
+      showSuccess("Product deleted successfully")
+    },
+    onError: () => {
+      showError("Failed to delete product")
+    },
+  })
+
+  // ---- Create product mutation ----
+  const createProductMutation = useMutation({
+    mutationFn: async (productData: Record<string, unknown>) => {
+      const response = await fetch('/api/core/storefront/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...productData, businessId }),
+      })
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to create product')
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products", businessId] })
+      showSuccess("Product created successfully")
+    },
+    onError: () => {
+      showError("Failed to create product")
+    },
+  })
+
+  // ---- Create category mutation ----
+  const createCategoryMutation = useMutation({
+    mutationFn: async (categoryData: Record<string, unknown>) => {
+      const response = await fetch('/api/core/storefront/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...categoryData, businessId }),
+      })
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to create category')
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories", businessId] })
+      showSuccess("Category created successfully")
+    },
+    onError: () => {
+      showError("Failed to create category")
+    },
+  })
+
+  // Map API products to local Product type
+  const apiProductList: Product[] = useMemo(() => {
+    const rawData = productsResponse?.data
+    if (!Array.isArray(rawData)) return []
+    return rawData.map((p: Record<string, unknown>) => ({
+      id: String(p.id || ""),
+      name: String(p.name || ""),
+      slug: String(p.slug || ""),
+      categoryId: String(p.categoryId || ""),
+      category: p.category && typeof p.category === 'object' ? String((p.category as Record<string, unknown>).name || "") : String(p.category || ""),
+      status: String(p.status || "ACTIVE") as ProductStatus,
+      isVeg: Boolean(p.isVeg),
+      isFeatured: Boolean(p.isFeatured),
+      image: Array.isArray(p.images) && p.images.length > 0 ? String(p.images[0]) : "",
+      variants: Array.isArray(p.variants)
+        ? p.variants.map((v: Record<string, unknown>) => ({
+            id: String(v.id || ""),
+            name: String(v.name || ""),
+            sku: String(v.sku || ""),
+            mrp: Number(v.mrp) || 0,
+            price: Number(v.price) || 0,
+            stock: Number(v.stock) || 0,
+            isDefault: Boolean(v.isDefault),
+          }))
+        : [],
     }))
-  }, [demoBusinessId])
+  }, [productsResponse])
 
-  const demoCategoryList: Category[] = useMemo(() => {
-    const cats = getDemoCategories(demoBusinessId)
-    const prods = getDemoProducts(demoBusinessId)
-    return cats.map((c) => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug,
-      productCount: prods.filter((p) => p.categoryId === c.id).length,
-      icon: c.icon,
-      color: c.color,
-      sortOrder: c.sortOrder,
-      workflow: c.workflow,
+  // Map API categories to local Category type
+  const apiCategoryList: Category[] = useMemo(() => {
+    const rawData = categoriesResponse?.data
+    if (!Array.isArray(rawData)) return []
+    return rawData.map((c: Record<string, unknown>) => ({
+      id: String(c.id || ""),
+      name: String(c.name || ""),
+      slug: String(c.slug || ""),
+      productCount: Number(c.productCount || 0),
+      icon: String(c.icon || "📦"),
+      color: String(c.color || c.image || "#10B981"),
+      sortOrder: Number(c.sortOrder || 0),
+      workflow: String(c.workflow || c.workflowType || "ECOMMERCE") as WorkflowType,
     }))
-  }, [demoBusinessId])
+  }, [categoriesResponse])
 
-  // ---- Product state ----
-  const [productList, setProductList] = useState<Product[]>([])
-  const [categoryList, setCategoryList] = useState<Category[]>([])
-
-  // Sync: use local additions first, then fill from demo data
-  const syncedProductList = useMemo(() => {
-    const localOnly = productList.filter(
-      (lp) => !demoProductList.some((dp) => dp.id === lp.id)
-    )
-    return [...demoProductList, ...localOnly]
-  }, [demoProductList, productList])
-
-  const syncedCategoryList = useMemo(() => {
-    const localOnly = categoryList.filter(
-      (lc) => !demoCategoryList.some((dc) => dc.id === lc.id)
-    )
-    return [...demoCategoryList, ...localOnly]
-  }, [demoCategoryList, categoryList])
+  // Use API data directly
+  const syncedProductList = apiProductList
+  const syncedCategoryList = apiCategoryList
 
   // ---- Filter state ----
   const [searchQuery, setSearchQuery] = useState("")
@@ -414,56 +515,44 @@ export function ProductsView() {
 
     try {
       if (editingProduct) {
-        // Optimistic update: update local state immediately
-        setProductList((prev) =>
-          prev.map((p) =>
-            p.id === editingProduct.id
-              ? {
-                  ...p,
-                  name: formName,
-                  slug: formSlug,
-                  categoryId: formCategory,
-                  category: categoryObj?.name || p.category,
-                  status: formStatus as ProductStatus,
-                  isVeg: formIsVeg,
-                  isFeatured: formIsFeatured,
-                  variants: formVariants.map((fv, i) => ({
-                    id: p.variants[i]?.id || `var_new_${Date.now()}_${i}`,
-                    name: fv.name,
-                    sku: fv.sku,
-                    mrp: Number(fv.mrp) || 0,
-                    price: Number(fv.price) || 0,
-                    stock: Number(fv.stock) || 0,
-                    isDefault: i === 0,
-                  })),
-                }
-              : p
-          )
-        )
-        showSuccess("Product updated successfully")
+        // Update via API
+        await updateProductMutation.mutateAsync({
+          productId: editingProduct.id,
+          data: {
+            name: formName,
+            slug: formSlug || slugify(formName),
+            categoryId: formCategory,
+            status: formStatus,
+            isVeg: formIsVeg,
+            isFeatured: formIsFeatured,
+            variants: formVariants.map((fv) => ({
+              name: fv.name || formName,
+              sku: fv.sku,
+              price: Number(fv.price) || 0,
+              mrp: Number(fv.mrp) || 0,
+              stock: Number(fv.stock) || 0,
+            })),
+            workflowType: categoryObj?.workflow || "ECOMMERCE",
+          },
+        })
       } else {
-        const newProduct: Product = {
-          id: `prod_${Date.now()}`,
+        // Create via API
+        await createProductMutation.mutateAsync({
           name: formName,
           slug: formSlug || slugify(formName),
           categoryId: formCategory,
-          category: categoryObj?.name || "Unknown",
-          status: formStatus as ProductStatus,
+          status: formStatus,
           isVeg: formIsVeg,
           isFeatured: formIsFeatured,
-          image: "",
-          variants: formVariants.map((fv, i) => ({
-            id: `var_${Date.now()}_${i}`,
-            name: fv.name,
+          variants: formVariants.map((fv) => ({
+            name: fv.name || formName,
             sku: fv.sku,
-            mrp: Number(fv.mrp) || 0,
             price: Number(fv.price) || 0,
+            mrp: Number(fv.mrp) || 0,
             stock: Number(fv.stock) || 0,
-            isDefault: i === 0,
           })),
-        }
-        setProductList((prev) => [...prev, newProduct])
-        showSuccess("Product created successfully")
+          workflowType: categoryObj?.workflow || "ECOMMERCE",
+        })
       }
 
       setProductDialogOpen(false)
@@ -478,26 +567,27 @@ export function ProductsView() {
     if (!product) return
 
     const newStatus = product.status === "ACTIVE" ? "INACTIVE" : "ACTIVE"
-    // Optimistic update
-    setProductList((prev) =>
-      prev.map((p) =>
-        p.id === productId
-          ? { ...p, status: newStatus as ProductStatus }
-          : p
-      )
-    )
-    showSuccess(`Product ${newStatus === "ACTIVE" ? "activated" : "deactivated"}`)
+    try {
+      await updateProductMutation.mutateAsync({
+        productId,
+        data: { status: newStatus },
+      })
+    } catch {
+      // Error handled by mutation
+    }
   }
 
   const handleDeleteProduct = async () => {
     if (!deletingProduct) return
-    // Optimistic delete
-    setProductList((prev) => prev.filter((p) => p.id !== deletingProduct.id))
-    setDeleteDialogOpen(false)
-    setDeletingProduct(null)
-    setDetailOpen(false)
-    setSelectedProduct(null)
-    showSuccess("Product deleted")
+    try {
+      await deleteProductMutation.mutateAsync(deletingProduct.id)
+      setDeleteDialogOpen(false)
+      setDeletingProduct(null)
+      setDetailOpen(false)
+      setSelectedProduct(null)
+    } catch {
+      // Error handled by mutation
+    }
   }
 
   const openEditVariant = (variant: Variant, productId: string) => {
@@ -511,50 +601,38 @@ export function ProductsView() {
     setEditVariantDialogOpen(true)
   }
 
-  const handleSaveVariant = () => {
+  const handleSaveVariant = async () => {
     if (!editingVariant || !editVariantProductId) return
-    setProductList((prev) =>
-      prev.map((p) =>
-        p.id === editVariantProductId
+    try {
+      // Find the current product and update all its variants
+      const product = syncedProductList.find((p) => p.id === editVariantProductId)
+      if (!product) return
+
+      // Update the specific variant in the list
+      const updatedVariants = product.variants.map((v) =>
+        v.id === editingVariant.id
           ? {
-              ...p,
-              variants: p.variants.map((v) =>
-                v.id === editingVariant.id
-                  ? {
-                      ...v,
-                      name: variantFormName,
-                      sku: variantFormSku,
-                      mrp: Number(variantFormMrp) || 0,
-                      price: Number(variantFormPrice) || 0,
-                      stock: Number(variantFormStock) || 0,
-                    }
-                  : v
-              ),
+              name: variantFormName || v.name,
+              sku: variantFormSku || v.sku,
+              price: Number(variantFormPrice) || v.price,
+              mrp: Number(variantFormMrp) || v.mrp,
+              stock: Number(variantFormStock) || v.stock,
             }
-          : p
-      )
-    )
-    // Also update the selected product if it's open
-    if (selectedProduct && selectedProduct.id === editVariantProductId) {
-      setSelectedProduct((prev) =>
-        prev
-          ? {
-              ...prev,
-              variants: prev.variants.map((v) =>
-                v.id === editingVariant.id
-                  ? {
-                      ...v,
-                      name: variantFormName,
-                      sku: variantFormSku,
-                      mrp: Number(variantFormMrp) || 0,
-                      price: Number(variantFormPrice) || 0,
-                      stock: Number(variantFormStock) || 0,
-                    }
-                  : v
-              ),
+          : {
+              name: v.name,
+              sku: v.sku,
+              price: v.price,
+              mrp: v.mrp,
+              stock: v.stock,
             }
-          : null
       )
+
+      await updateProductMutation.mutateAsync({
+        productId: editVariantProductId,
+        data: { variants: updatedVariants },
+      })
+    } catch {
+      // Error handled by mutation
     }
     setEditVariantDialogOpen(false)
     setEditingVariant(null)
@@ -589,22 +667,22 @@ export function ProductsView() {
     setCatFormSlug(slugify(value))
   }
 
-  const handleSaveCategory = () => {
-    if (!catFormName) return
-    const newCategory: Category = {
-      id: `cat_${Date.now()}`,
-      name: catFormName,
-      slug: catFormSlug || slugify(catFormName),
-      productCount: 0,
-      icon: catFormIcon,
-      color: catFormColor,
-      sortOrder: Number(catFormSortOrder) || categoryList.length + 1,
-      workflow: catFormWorkflow,
+  const handleSaveCategory = async () => {
+    if (!catFormName || !businessId) return
+    try {
+      await createCategoryMutation.mutateAsync({
+        name: catFormName,
+        slug: catFormSlug || slugify(catFormName),
+        icon: catFormIcon,
+        color: catFormColor,
+        sortOrder: Number(catFormSortOrder) || undefined,
+        workflowType: catFormWorkflow,
+      })
+      setCategoryDialogOpen(false)
+      resetCategoryForm()
+    } catch {
+      showError("Failed to create category")
     }
-    setCategoryList((prev) => [...prev, newCategory])
-    setCategoryDialogOpen(false)
-    resetCategoryForm()
-    showSuccess("Category created successfully")
   }
 
   // ---- Category stats ----

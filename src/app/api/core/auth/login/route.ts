@@ -173,19 +173,29 @@ export async function POST(request: Request) {
       permissions: getPermissionsForRole(bu.role as Role),
     }));
 
-    // Create access token
+    // Create access token and store in database (so middleware can find it)
     const accessToken = createAccessToken();
+    const accessExpiresAt = new Date();
+    accessExpiresAt.setHours(accessExpiresAt.getHours() + 24); // Access token: 24 hours
 
-    // Create refresh token in database
+    await db.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: accessToken,
+        expiresAt: accessExpiresAt,
+      },
+    });
+
+    // Create refresh token in database (longer-lived)
     const refreshTokenValue = generateRefreshToken();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
+    const refreshExpiresAt = new Date();
+    refreshExpiresAt.setDate(refreshExpiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
 
     await db.refreshToken.create({
       data: {
         userId: user.id,
         token: refreshTokenValue,
-        expiresAt,
+        expiresAt: refreshExpiresAt,
       },
     });
 

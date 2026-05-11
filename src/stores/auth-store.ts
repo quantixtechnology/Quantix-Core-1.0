@@ -20,6 +20,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  _isHydrated: boolean; // Whether the store has been initialized from localStorage
 
   // Business context
   currentBusinessId: string | null;
@@ -167,6 +168,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   isLoading: false,
   error: null,
+  _isHydrated: false,
   currentBusinessId: null,
   currentBusinessName: null,
   currentRole: null,
@@ -189,7 +191,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         currentRole: stored.currentRole || null,
         permissions: stored.permissions || [],
         businesses: stored.businesses || [],
+        _isHydrated: true,
       });
+    } else {
+      set({ _isHydrated: true });
     }
   },
 

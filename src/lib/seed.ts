@@ -1,21 +1,21 @@
 // ============================================================================
-// Quantix Technology — Comprehensive Database Seed
+// Quantix Technology — Comprehensive Database Seed (v2)
 // MANAGED PLATFORM: Only Quantix creates businesses
+// Matches CURRENT Prisma schema exactly — no Platform model, no platformId,
+// no trial fields, correct enums, correct field names
 // ============================================================================
 
 import { db } from './db';
 import { hashPassword } from './password-utils';
-import { generateSlug } from './utils';
-import type { BusinessType } from './types';
 
 // ============================================================================
-// DEMO DATA — 11 businesses (one per category)
+// DEMO DATA — 11 businesses (one per BusinessType)
 // ============================================================================
 
 const DEMO_BUSINESSES: Array<{
   name: string;
   slug: string;
-  businessType: BusinessType;
+  businessType: string;
   description: string;
   primaryColor: string;
   tagline: string;
@@ -150,26 +150,29 @@ const DEMO_BUSINESSES: Array<{
 export async function seed() {
   console.log('🌱 Starting Quantix Platform seed...\n');
 
-  // 1. Create Platform
-  console.log('📦 Creating platform record...');
-  const platform = await db.platform.upsert({
-    where: { id: 'platform_1' },
-    update: {},
-    create: {
-      id: 'platform_1',
-      companyName: 'Quantix Technology',
-      tagline: 'Run Your Business Smarter',
-      website: 'www.quantixtechnology.in',
-      supportEmail: 'support@quantixtechnology.in',
-      supportPhone: '18001234567',
-      defaultCurrency: 'INR',
-      defaultLocale: 'en-IN',
-      defaultTimezone: 'Asia/Kolkata',
-      version: '2.0.0',
-      hostingProvider: 'replit',
-    },
-  });
-  console.log('  ✅ Platform created\n');
+  // 1. Create PlatformConfig (key-value store — replaces old Platform model)
+  console.log('📦 Creating platform config...');
+  const platformConfigs = [
+    { key: 'company_name', value: 'Quantix Technology', description: 'Platform company name' },
+    { key: 'tagline', value: 'Run Your Business Smarter', description: 'Platform tagline' },
+    { key: 'website', value: 'www.quantixtechnology.in', description: 'Platform website' },
+    { key: 'support_email', value: 'support@quantixtechnology.in', description: 'Support email' },
+    { key: 'support_phone', value: '18001234567', description: 'Support phone' },
+    { key: 'default_currency', value: 'INR', description: 'Default currency' },
+    { key: 'default_locale', value: 'en-IN', description: 'Default locale' },
+    { key: 'default_timezone', value: 'Asia/Kolkata', description: 'Default timezone' },
+    { key: 'version', value: '2.0.0', description: 'Platform version' },
+    { key: 'hosting_provider', value: 'replit', description: 'Hosting provider' },
+  ];
+
+  for (const config of platformConfigs) {
+    await db.platformConfig.upsert({
+      where: { key: config.key },
+      update: { value: config.value },
+      create: config,
+    });
+  }
+  console.log('  ✅ Platform configs created\n');
 
   // 2. Create Super Admin User
   console.log('👤 Creating super admin user...');
@@ -213,11 +216,11 @@ export async function seed() {
       },
     });
 
+    // SalesTeamMember has NO platformId
     const salesMember = await db.salesTeamMember.upsert({
       where: { userId: salesUser.id },
       update: {},
       create: {
-        platformId: platform.id,
         userId: salesUser.id,
         name: sData.name,
         email: sData.email,
@@ -234,26 +237,58 @@ export async function seed() {
   }
   console.log('');
 
-  // 4. Create Platform Plans
+  // 4. Create Platform Plans (4 plans: STANDARD_MONTHLY, STANDARD_YEARLY, PRO_MONTHLY, PRO_YEARLY)
   console.log('📋 Creating platform plans...');
   const planConfigs = [
-    { name: 'Starter', tier: 'STARTER' as const, monthlyPrice: 4999, yearlyPrice: 49999, description: 'Perfect for small businesses', maxStores: 1, maxProducts: 500, maxOrders: 1000, maxDeliveryPartners: 5, maxStaff: 10, hasPOS: true, hasDelivery: true, hasSubscription: false, hasCustomDomain: false, hasWhiteLabel: false, hasAdvancedReports: false, hasAPIAccess: false, features: ['1 Store', '500 Products', '1000 Orders/mo', 'Basic POS', 'Delivery'] },
-    { name: 'Professional', tier: 'PROFESSIONAL' as const, monthlyPrice: 9999, yearlyPrice: 99999, description: 'For growing businesses', maxStores: 3, maxProducts: 2000, maxOrders: 5000, maxDeliveryPartners: 15, maxStaff: 25, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: false, hasAdvancedReports: true, hasAPIAccess: false, features: ['3 Stores', '2000 Products', '5000 Orders/mo', 'Advanced POS', 'Subscriptions', 'Custom Domain', 'Reports'] },
-    { name: 'Enterprise', tier: 'ENTERPRISE' as const, monthlyPrice: 24999, yearlyPrice: 249999, description: 'For large businesses', maxStores: 999, maxProducts: 99999, maxOrders: 99999, maxDeliveryPartners: 999, maxStaff: 999, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true, hasAdvancedReports: true, hasAPIAccess: true, features: ['Unlimited Everything', 'White Label', 'API Access', 'Priority Support'] },
+    {
+      tier: 'STANDARD' as const, billingCycle: 'MONTHLY' as const,
+      name: 'Quantix Standard Monthly', price: 2999,
+      description: 'Standard plan — Ecommerce workflow, POS, Delivery',
+      maxStores: 2, maxProducts: 1000, maxOrders: 2000, maxDeliveryPartners: 10, maxStaff: 15,
+      features: ['2 Stores', '1000 Products', '2000 Orders/mo', 'Basic POS', 'Delivery', 'Ecommerce Workflow'],
+      hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
+      hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
+    },
+    {
+      tier: 'STANDARD' as const, billingCycle: 'YEARLY' as const,
+      name: 'Quantix Standard Yearly', price: 30000,
+      description: 'Standard plan yearly — Save ₹5,988',
+      maxStores: 2, maxProducts: 1000, maxOrders: 2000, maxDeliveryPartners: 10, maxStaff: 15,
+      features: ['2 Stores', '1000 Products', '2000 Orders/mo', 'Basic POS', 'Delivery', 'Ecommerce Workflow', 'Save ₹5,988/yr'],
+      hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
+      hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
+    },
+    {
+      tier: 'PRO' as const, billingCycle: 'MONTHLY' as const,
+      name: 'Quantix Pro Monthly', price: 4999,
+      description: 'Pro plan — All workflows, Subscriptions, Pickup, Appointment, Post-Service',
+      maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
+      features: ['5 Stores', '5000 Products', '10000 Orders/mo', 'Advanced POS', 'All Workflows', 'Custom Domain', 'Reports', 'API Access'],
+      hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
+      hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
+    },
+    {
+      tier: 'PRO' as const, billingCycle: 'YEARLY' as const,
+      name: 'Quantix Pro Yearly', price: 49999,
+      description: 'Pro plan yearly — Save ₹9,989',
+      maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
+      features: ['5 Stores', '5000 Products', '10000 Orders/mo', 'Advanced POS', 'All Workflows', 'Custom Domain', 'Reports', 'API Access', 'Save ₹9,989/yr'],
+      hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
+      hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
+    },
   ];
 
-  const planRecords: Array<{ id: string; tier: string; monthlyPrice: number }> = [];
+  // Use @@unique([tier, billingCycle]) for upsert
+  const planRecords: Array<{ id: string; tier: string; billingCycle: string; price: number }> = [];
   for (const planData of planConfigs) {
     const plan = await db.platformPlan.upsert({
-      where: { id: `plan_${planData.tier.toLowerCase()}` },
+      where: { tier_billingCycle: { tier: planData.tier, billingCycle: planData.billingCycle } },
       update: {},
       create: {
-        id: `plan_${planData.tier.toLowerCase()}`,
-        platformId: platform.id,
-        name: planData.name,
         tier: planData.tier,
-        monthlyPrice: planData.monthlyPrice,
-        yearlyPrice: planData.yearlyPrice,
+        billingCycle: planData.billingCycle,
+        name: planData.name,
+        price: planData.price,
         description: planData.description,
         features: JSON.stringify(planData.features),
         maxStores: planData.maxStores,
@@ -261,25 +296,35 @@ export async function seed() {
         maxOrders: planData.maxOrders,
         maxDeliveryPartners: planData.maxDeliveryPartners,
         maxStaff: planData.maxStaff,
-        hasPOS: planData.hasPOS,
-        hasDelivery: planData.hasDelivery,
-        hasSubscription: planData.hasSubscription,
-        hasCustomDomain: planData.hasCustomDomain,
-        hasWhiteLabel: planData.hasWhiteLabel,
-        hasAdvancedReports: planData.hasAdvancedReports,
-        hasAPIAccess: planData.hasAPIAccess,
-        sortOrder: planConfigs.indexOf(planData),
+        hasEcommerceWorkflow: planData.hasEcommerceWorkflow,
+        hasPickupWorkflow: planData.hasPickupWorkflow,
+        hasAppointmentWorkflow: planData.hasAppointmentWorkflow,
+        hasSubscriptionWorkflow: planData.hasSubscriptionWorkflow,
+        hasPostServiceWorkflow: planData.hasPostServiceWorkflow,
+        hasAdvancedWorkflowEngine: planData.hasAdvancedWorkflowEngine,
+        hasPOS: true,
+        hasDelivery: true,
+        hasSubscription: planData.tier === 'PRO',
+        hasCustomDomain: planData.tier === 'PRO',
+        hasWhiteLabel: false,
+        hasAdvancedReports: planData.tier === 'PRO',
+        hasAPIAccess: planData.tier === 'PRO',
+        isActive: true,
       },
     });
-    planRecords.push({ id: plan.id, tier: planData.tier, monthlyPrice: planData.monthlyPrice });
-    console.log(`  ✅ ${planData.name} (₹${planData.monthlyPrice}/mo)`);
+    planRecords.push({ id: plan.id, tier: planData.tier, billingCycle: planData.billingCycle, price: planData.price });
+    console.log(`  ✅ ${planData.name} (₹${planData.price})`);
   }
   console.log('');
 
-  // 5. Create Demo Businesses
+  // 5. Create Demo Businesses — NO platformId, NO trial fields, BusinessStatus enum
   console.log('🏢 Creating 11 demo businesses...');
-  const businessRecords: Array<{ id: string; businessType: BusinessType; slug: string }> = [];
-  const statuses = ['ONBOARDING', 'TRIAL', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'SUSPENDED', 'ACTIVE', 'CHURNED'] as const;
+  const businessRecords: Array<{ id: string; businessType: string; slug: string }> = [];
+  // BusinessStatus: ONBOARDING, ACTIVE, SUSPENDED, CHURNED — NO TRIAL
+  const statuses: Array<'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED'> = [
+    'ONBOARDING', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE',
+    'ACTIVE', 'ACTIVE', 'ACTIVE', 'SUSPENDED', 'ACTIVE', 'CHURNED',
+  ];
 
   for (let i = 0; i < DEMO_BUSINESSES.length; i++) {
     const bizData = DEMO_BUSINESSES[i];
@@ -288,12 +333,12 @@ export async function seed() {
       where: { slug: bizData.slug },
       update: {},
       create: {
-        platformId: platform.id,
+        // NO platformId
         salesRepId: i % 2 === 0 ? salesMembers[0]?.id : salesMembers[1]?.id,
         name: bizData.name,
         slug: bizData.slug,
-        businessType: bizData.businessType,
-        status: status as 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED',
+        businessType: bizData.businessType as any,
+        status: status as any,
         description: bizData.description,
         primaryColor: bizData.primaryColor,
         tagline: bizData.tagline,
@@ -312,11 +357,12 @@ export async function seed() {
         defaultCurrency: 'INR',
         defaultLocale: 'en-IN',
         timezone: 'Asia/Kolkata',
+        isOnline: status === 'ACTIVE',
         settings: JSON.stringify({ enableDelivery: true, enablePickup: true, enablePOS: true, orderPrefix: 'ORD', invoicePrefix: 'INV' }),
         features: JSON.stringify({ multiStore: true, pos: true, delivery: true, subscriptions: true, loyaltyPoints: true, promoCodes: true }),
+        // NO trialStartsAt / trialEndsAt — those fields don't exist
         activatedAt: status === 'ACTIVE' ? new Date() : null,
-        trialStartsAt: status === 'TRIAL' ? new Date() : null,
-        trialEndsAt: status === 'TRIAL' ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) : null,
+        onboardedAt: status === 'ACTIVE' ? new Date() : null,
       },
     });
     businessRecords.push({ id: business.id, businessType: bizData.businessType, slug: bizData.slug });
@@ -324,77 +370,97 @@ export async function seed() {
   }
   console.log('');
 
-  // 6. Create Business Subscriptions
+  // 6. Create Business Subscriptions — billingCycle is PlanBillingCycle enum, no trial fields
   console.log('💳 Creating business subscriptions...');
+  const now = new Date();
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+  const oneYear = 365 * 24 * 60 * 60 * 1000;
+
   for (let i = 0; i < businessRecords.length; i++) {
     const biz = businessRecords[i];
-    const status = statuses[i] || 'ACTIVE';
-    if (status === 'ONBOARDING' || status === 'CHURNED') continue;
+    const bizStatus = statuses[i] || 'ACTIVE';
+    if (bizStatus === 'ONBOARDING' || bizStatus === 'CHURNED') continue;
 
-    const planTier = i < 5 ? 'STARTER' : i < 9 ? 'PROFESSIONAL' : 'ENTERPRISE';
-    const plan = planRecords.find(p => p.tier === planTier);
+    // Assign plans: first 5 get STANDARD, rest get PRO; alternate monthly/yearly
+    const planTier = i < 5 ? 'STANDARD' : 'PRO';
+    const billingCycle: 'MONTHLY' | 'YEARLY' = i % 2 === 0 ? 'MONTHLY' : 'YEARLY';
+    const plan = planRecords.find(p => p.tier === planTier && p.billingCycle === billingCycle);
     if (!plan) continue;
 
-    const subStatus = status === 'TRIAL' ? 'TRIAL' : status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+    const periodEnd = billingCycle === 'MONTHLY' ? new Date(now.getTime() + thirtyDays) : new Date(now.getTime() + oneYear);
+    const subStatus: 'ACTIVE' | 'SUSPENDED' | 'PAST_DUE' = bizStatus === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+
     await db.businessSubscription.upsert({
       where: { businessId: biz.id },
       update: {},
       create: {
         businessId: biz.id,
         planId: plan.id,
-        status: subStatus as 'TRIAL' | 'ACTIVE' | 'SUSPENDED',
-        planPrice: plan.monthlyPrice,
-        billingCycle: i % 3 === 0 ? 'yearly' : 'monthly',
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        trialStart: subStatus === 'TRIAL' ? new Date() : null,
-        trialEnd: subStatus === 'TRIAL' ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) : null,
+        status: subStatus as any,
+        planPrice: plan.price,
+        billingCycle: billingCycle as any, // PlanBillingCycle enum
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        nextBillingDate: periodEnd,
+        nextPaymentAmount: plan.price,
+        lastPaymentDate: now,
+        lastPaymentAmount: plan.price,
+        paymentVerified: true,
+        paymentVerifiedAt: now,
+        paymentVerifiedBy: superAdmin.id,
         autoRenew: true,
+        // NO trialStart/trialEnd — those fields don't exist
       },
     });
   }
   console.log('  ✅ Business subscriptions created\n');
 
-  // 7. Create Domain Mappings
+  // 7. Create Domain Mappings — NO platformId, uses DomainStatus enum
   console.log('🌐 Creating domain mappings...');
-  for (const biz of businessRecords) {
-    const domainStatuses = ['ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'DNS_PROPAGATING', 'SSL_PENDING', 'ACTIVE', 'PENDING_DNS', 'ERROR'] as const;
-    const idx = businessRecords.indexOf(biz);
+  const domainStatuses: Array<'ACTIVE' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'PENDING_DNS' | 'ERROR'> = [
+    'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE',
+    'ACTIVE', 'DNS_PROPAGATING', 'SSL_PENDING', 'ACTIVE', 'PENDING_DNS', 'ERROR',
+  ];
+
+  for (let i = 0; i < businessRecords.length; i++) {
+    const biz = businessRecords[i];
+    const domainStatus = domainStatuses[i] || 'ACTIVE';
     await db.domainMapping.upsert({
       where: { businessId: biz.id },
       update: {},
       create: {
-        platformId: platform.id,
+        // NO platformId
         businessId: biz.id,
         domain: `${biz.slug}.quantixtechnology.in`,
         subdomain: biz.slug,
         isPrimary: true,
-        sslStatus: domainStatuses[idx] === 'ACTIVE' ? 'active' : 'pending',
-        status: domainStatuses[idx] as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR',
-        configuredBy: superAdmin.id,
+        sslStatus: domainStatus === 'ACTIVE' ? 'active' : 'pending',
+        status: domainStatus as any,
+        configuredBy: superAdmin.name,
         configuredAt: new Date(),
+        dnsProvider: 'cloudflare',
+        dnsConfig: JSON.stringify({ recordType: 'CNAME', ttl: 300 }),
       },
     });
   }
   console.log('  ✅ Domain mappings created\n');
 
-  // 8. Create Deployments
+  // 8. Create Deployments — NO platformId, uses DeploymentType/DeploymentStatus enums
   console.log('🚀 Creating deployments...');
+  const deploymentTypes: Array<'WEBSITE' | 'ADMIN_DASHBOARD'> = ['WEBSITE', 'ADMIN_DASHBOARD'];
   for (const biz of businessRecords) {
-    const deploymentTypes = ['WEBSITE', 'ADMIN_DASHBOARD'] as const;
     for (const dtype of deploymentTypes) {
       await db.deployment.create({
         data: {
-          platformId: platform.id,
+          // NO platformId
           businessId: biz.id,
-          type: dtype,
+          type: dtype as any,
           status: 'LIVE',
           environment: 'production',
           hostingProvider: 'replit',
           liveUrl: `https://${biz.slug}.quantixtechnology.in`,
           version: '2.0.0',
-          deployedBy: superAdmin.id,
+          deployedBy: superAdmin.name,
           deployedAt: new Date(),
           healthStatus: 'healthy',
         },
@@ -403,31 +469,31 @@ export async function seed() {
   }
   console.log('  ✅ Deployments created\n');
 
-  // 9. Create Leads in various stages
+  // 9. Create Leads — use `stage` (not `status`), LeadStage enum, no platformId
   console.log('📊 Creating leads...');
   const leadData = [
-    { businessName: 'SpiceHub Restaurant', contactName: 'Amit Patel', businessType: 'FOOD_DELIVERY' as BusinessType, source: 'GOOGLE_ADS' as const, status: 'NEW' as const, estimatedValue: 59988 },
-    { businessName: 'CleanPro Services', contactName: 'Neha Gupta', businessType: 'LAUNDRY' as BusinessType, source: 'META_ADS' as const, status: 'CONTACTED' as const, estimatedValue: 59988 },
-    { businessName: 'WashMaster', contactName: 'Vikram Singh', businessType: 'CAR_WASH' as BusinessType, source: 'DIRECT_REFERRAL' as const, status: 'QUALIFIED' as const, estimatedValue: 119988 },
-    { businessName: 'MediCare Plus', contactName: 'Dr. Sunita Rao', businessType: 'PHARMACY' as BusinessType, source: 'WEBSITE_INQUIRY' as const, status: 'PROPOSAL_SENT' as const, estimatedValue: 119988 },
-    { businessName: 'GreenBasket', contactName: 'Rajesh Nair', businessType: 'GROCERY' as BusinessType, source: 'WHATSAPP_INQUIRY' as const, status: 'NEGOTIATION' as const, estimatedValue: 59988 },
-    { businessName: 'HomeCare Solutions', contactName: 'Meera Joshi', businessType: 'HOME_SERVICES' as BusinessType, source: 'COLD_OUTREACH' as const, status: 'WON' as const, estimatedValue: 99988 },
-    { businessName: 'QuickMeat', contactName: 'Arjun Reddy', businessType: 'MEAT_DELIVERY' as BusinessType, source: 'PHONE_CALL' as const, status: 'LOST' as const, estimatedValue: 59988 },
-    { businessName: 'StyleBee Beauty', contactName: 'Pooja Malhotra', businessType: 'COSMETICS' as BusinessType, source: 'META_ADS' as const, status: 'FOLLOW_UP' as const, estimatedValue: 59988 },
+    { businessName: 'SpiceHub Restaurant', contactName: 'Amit Patel', businessType: 'FOOD_DELIVERY', source: 'GOOGLE_ADS' as const, stage: 'LEAD' as const, estimatedValue: 59988 },
+    { businessName: 'CleanPro Services', contactName: 'Neha Gupta', businessType: 'LAUNDRY', source: 'META_ADS' as const, stage: 'DEMO_SHARED' as const, estimatedValue: 59988 },
+    { businessName: 'WashMaster', contactName: 'Vikram Singh', businessType: 'CAR_WASH', source: 'DIRECT_REFERRAL' as const, stage: 'NEGOTIATION' as const, estimatedValue: 119988 },
+    { businessName: 'MediCare Plus', contactName: 'Dr. Sunita Rao', businessType: 'PHARMACY', source: 'WEBSITE_INQUIRY' as const, stage: 'PAYMENT_PENDING' as const, estimatedValue: 119988 },
+    { businessName: 'GreenBasket', contactName: 'Rajesh Nair', businessType: 'GROCERY', source: 'WHATSAPP_INQUIRY' as const, stage: 'PAYMENT_RECEIVED' as const, estimatedValue: 59988 },
+    { businessName: 'HomeCare Solutions', contactName: 'Meera Joshi', businessType: 'HOME_SERVICES', source: 'COLD_OUTREACH' as const, stage: 'ONBOARDING' as const, estimatedValue: 99988 },
+    { businessName: 'QuickMeat', contactName: 'Arjun Reddy', businessType: 'MEAT_DELIVERY', source: 'PHONE_CALL' as const, stage: 'LOST' as const, estimatedValue: 59988 },
+    { businessName: 'StyleBee Beauty', contactName: 'Pooja Malhotra', businessType: 'COSMETICS', source: 'META_ADS' as const, stage: 'DEMO_SHARED' as const, estimatedValue: 59988 },
   ];
 
   for (const ld of leadData) {
     await db.lead.create({
       data: {
-        platformId: platform.id,
+        // NO platformId
         salesRepId: salesMembers[leadData.indexOf(ld) % 2]?.id,
         businessName: ld.businessName,
         contactName: ld.contactName,
         contactEmail: `${ld.contactName.toLowerCase().replace(' ', '.')}@example.com`,
         contactPhone: `98${Math.floor(10000000 + Math.random() * 90000000)}`,
-        businessType: ld.businessType,
-        source: ld.source,
-        status: ld.status,
+        businessType: ld.businessType as any,
+        source: ld.source as any,
+        stage: ld.stage as any, // stage NOT status
         estimatedValue: ld.estimatedValue,
         notes: `Lead for ${ld.businessName}`,
         tags: JSON.stringify([ld.businessType.toLowerCase()]),
@@ -489,21 +555,22 @@ export async function seed() {
   const storeRecords: Array<{ id: string; businessId: string }> = [];
 
   for (const biz of businessRecords) {
+    const bizData = DEMO_BUSINESSES.find(b => b.slug === biz.slug);
     const mainStore = await db.store.upsert({
       where: { businessId_slug: { businessId: biz.id, slug: `${biz.slug}-main` } },
       update: {},
       create: {
         businessId: biz.id,
-        name: `${DEMO_BUSINESSES.find(b => b.slug === biz.slug)?.name || biz.slug} - Main`,
+        name: `${bizData?.name || biz.slug} - Main`,
         slug: `${biz.slug}-main`,
         code: 'STR01',
-        address: DEMO_BUSINESSES.find(b => b.slug === biz.slug)?.address,
-        city: DEMO_BUSINESSES.find(b => b.slug === biz.slug)?.city,
-        state: DEMO_BUSINESSES.find(b => b.slug === biz.slug)?.state,
-        pincode: DEMO_BUSINESSES.find(b => b.slug === biz.slug)?.pincode,
+        address: bizData?.address,
+        city: bizData?.city,
+        state: bizData?.state,
+        pincode: bizData?.pincode,
         country: 'India',
-        latitude: DEMO_BUSINESSES.find(b => b.slug === biz.slug)?.latitude,
-        longitude: DEMO_BUSINESSES.find(b => b.slug === biz.slug)?.longitude,
+        latitude: bizData?.latitude,
+        longitude: bizData?.longitude,
         isMainStore: true,
         deliveryRadius: 5.0,
         minOrderAmount: 0,
@@ -537,21 +604,134 @@ export async function seed() {
   }
   console.log('  ✅ Store timings created\n');
 
-  // 13. Create Categories & Products
+  // 13. Create Categories & Products — Category has workflowType
   console.log('📦 Creating categories & products...');
-  const categoryConfigs: Record<string, Array<{ name: string; slug: string }>> = {
-    GROCERY: [{ name: 'Rice & Grains', slug: 'rice-grains' }, { name: 'Dairy & Eggs', slug: 'dairy-eggs' }, { name: 'Pulses & Lentils', slug: 'pulses-lentils' }],
-    FOOD_DELIVERY: [{ name: 'North Indian', slug: 'north-indian' }, { name: 'South Indian', slug: 'south-indian' }, { name: 'Biryani', slug: 'biryani' }],
-    LAUNDRY: [{ name: 'Wash & Fold', slug: 'wash-fold' }, { name: 'Dry Cleaning', slug: 'dry-cleaning' }],
-    CAR_WASH: [{ name: 'Car Wash', slug: 'car-wash' }, { name: 'Detailing', slug: 'detailing' }],
-    PHARMACY: [{ name: 'Medicines', slug: 'medicines' }, { name: 'Health & Wellness', slug: 'health-wellness' }],
-    HOME_SERVICES: [{ name: 'Cleaning', slug: 'cleaning' }, { name: 'Appliance Repair', slug: 'appliance-repair' }],
-    ECOMMERCE: [{ name: 'Electronics', slug: 'electronics' }, { name: 'Fashion', slug: 'fashion' }],
-    COSMETICS: [{ name: 'Skincare', slug: 'skincare' }, { name: 'Makeup', slug: 'makeup' }],
-    MEAT_DELIVERY: [{ name: 'Chicken', slug: 'chicken' }, { name: 'Mutton', slug: 'mutton' }],
-    FURNITURE: [{ name: 'Living Room', slug: 'living-room' }, { name: 'Bedroom', slug: 'bedroom' }],
-    DIRECTORY: [{ name: 'Restaurants', slug: 'restaurants' }, { name: 'Services', slug: 'services' }],
+
+  // Map business types to appropriate workflow types for categories
+  const categoryConfigs: Record<string, Array<{ name: string; slug: string; workflowType: string }>> = {
+    GROCERY: [
+      { name: 'Rice & Grains', slug: 'rice-grains', workflowType: 'ECOMMERCE' },
+      { name: 'Dairy & Eggs', slug: 'dairy-eggs', workflowType: 'ECOMMERCE' },
+      { name: 'Pulses & Lentils', slug: 'pulses-lentils', workflowType: 'ECOMMERCE' },
+    ],
+    FOOD_DELIVERY: [
+      { name: 'North Indian', slug: 'north-indian', workflowType: 'ECOMMERCE' },
+      { name: 'South Indian', slug: 'south-indian', workflowType: 'ECOMMERCE' },
+      { name: 'Biryani', slug: 'biryani', workflowType: 'ECOMMERCE' },
+    ],
+    LAUNDRY: [
+      { name: 'Wash & Fold', slug: 'wash-fold', workflowType: 'PICKUP_DELIVERY' },
+      { name: 'Dry Cleaning', slug: 'dry-cleaning', workflowType: 'PICKUP_DELIVERY' },
+      { name: 'Subscription Plans', slug: 'subscription-plans', workflowType: 'SUBSCRIPTION' },
+    ],
+    CAR_WASH: [
+      { name: 'Car Wash', slug: 'car-wash', workflowType: 'APPOINTMENT' },
+      { name: 'Detailing', slug: 'detailing', workflowType: 'APPOINTMENT' },
+      { name: 'Subscription Plans', slug: 'subscription-plans', workflowType: 'SUBSCRIPTION' },
+      { name: 'Accessories', slug: 'accessories', workflowType: 'ECOMMERCE' },
+    ],
+    PHARMACY: [
+      { name: 'Medicines', slug: 'medicines', workflowType: 'ECOMMERCE' },
+      { name: 'Health & Wellness', slug: 'health-wellness', workflowType: 'ECOMMERCE' },
+    ],
+    HOME_SERVICES: [
+      { name: 'Cleaning', slug: 'cleaning', workflowType: 'APPOINTMENT' },
+      { name: 'Appliance Repair', slug: 'appliance-repair', workflowType: 'POST_SERVICE_BILLING' },
+      { name: 'Subscription Plans', slug: 'subscription-plans', workflowType: 'SUBSCRIPTION' },
+    ],
+    ECOMMERCE: [
+      { name: 'Electronics', slug: 'electronics', workflowType: 'ECOMMERCE' },
+      { name: 'Fashion', slug: 'fashion', workflowType: 'ECOMMERCE' },
+    ],
+    COSMETICS: [
+      { name: 'Skincare', slug: 'skincare', workflowType: 'ECOMMERCE' },
+      { name: 'Makeup', slug: 'makeup', workflowType: 'ECOMMERCE' },
+    ],
+    MEAT_DELIVERY: [
+      { name: 'Chicken', slug: 'chicken', workflowType: 'ECOMMERCE' },
+      { name: 'Mutton', slug: 'mutton', workflowType: 'ECOMMERCE' },
+    ],
+    FURNITURE: [
+      { name: 'Living Room', slug: 'living-room', workflowType: 'ECOMMERCE' },
+      { name: 'Bedroom', slug: 'bedroom', workflowType: 'ECOMMERCE' },
+    ],
+    DIRECTORY: [
+      { name: 'Restaurants', slug: 'restaurants', workflowType: 'ECOMMERCE' },
+      { name: 'Services', slug: 'services', workflowType: 'ECOMMERCE' },
+    ],
   };
+
+  // Define product configs outside the loop for reuse
+  const productConfigs: Record<string, Array<{
+      name: string; slug: string; unit: string; isVeg: boolean | null;
+      type: string; workflowType: string | null;
+      variants: Array<{ name: string; price: number; mrp: number; costPrice?: number; stock?: number }>;
+    }>> = {
+      GROCERY: [
+        { name: 'Organic Basmati Rice', slug: 'organic-basmati-rice', unit: 'kg', isVeg: true, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '1 kg', price: 180, mrp: 220, costPrice: 140, stock: 100 }, { name: '5 kg', price: 850, mrp: 1100, costPrice: 700, stock: 50 }] },
+        { name: 'Fresh Amul Butter', slug: 'fresh-amul-butter', unit: 'pack', isVeg: true, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '100g', price: 52, mrp: 56, costPrice: 42, stock: 200 }] },
+      ],
+      FOOD_DELIVERY: [
+        { name: 'Butter Chicken', slug: 'butter-chicken', unit: 'piece', isVeg: false, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: 'Regular', price: 280, mrp: 320, costPrice: 160, stock: 50 }] },
+        { name: 'Paneer Tikka Masala', slug: 'paneer-tikka-masala', unit: 'piece', isVeg: true, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: 'Regular', price: 240, mrp: 280, costPrice: 130, stock: 50 }] },
+      ],
+      LAUNDRY: [
+        { name: 'Wash & Fold', slug: 'wash-fold-service', unit: 'kg', isVeg: null, type: 'SERVICE', workflowType: 'PICKUP_DELIVERY',
+          variants: [{ name: 'Per Kg', price: 49, mrp: 59, costPrice: 20, stock: 999 }] },
+        { name: 'Dry Cleaning', slug: 'dry-cleaning-service', unit: 'piece', isVeg: null, type: 'SERVICE', workflowType: 'PICKUP_DELIVERY',
+          variants: [{ name: 'Shirt/Saree', price: 99, mrp: 129, costPrice: 45, stock: 999 }] },
+      ],
+      CAR_WASH: [
+        { name: 'Basic Car Wash', slug: 'basic-car-wash', unit: 'service', isVeg: null, type: 'SERVICE', workflowType: 'APPOINTMENT',
+          variants: [{ name: 'Hatchback', price: 299, mrp: 399, costPrice: 100, stock: 999 }, { name: 'Sedan', price: 399, mrp: 499, costPrice: 140, stock: 999 }] },
+        { name: 'Premium Detailing', slug: 'premium-detailing', unit: 'service', isVeg: null, type: 'SERVICE', workflowType: 'APPOINTMENT',
+          variants: [{ name: 'Hatchback', price: 1499, mrp: 1999, costPrice: 600, stock: 999 }] },
+      ],
+      PHARMACY: [
+        { name: 'Dolo 650mg', slug: 'dolo-650mg', unit: 'strip', isVeg: true, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '15 Tablets', price: 32, mrp: 35, costPrice: 24, stock: 500 }] },
+        { name: 'Crocin Advance', slug: 'crocin-advance', unit: 'strip', isVeg: true, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '20 Tablets', price: 28, mrp: 30, costPrice: 21, stock: 500 }] },
+      ],
+      HOME_SERVICES: [
+        { name: 'Deep Home Cleaning', slug: 'deep-home-cleaning', unit: 'service', isVeg: null, type: 'SERVICE', workflowType: 'APPOINTMENT',
+          variants: [{ name: '1 BHK', price: 1499, mrp: 1999, costPrice: 800, stock: 999 }, { name: '2 BHK', price: 1999, mrp: 2599, costPrice: 1100, stock: 999 }] },
+        { name: 'AC Service', slug: 'ac-service', unit: 'service', isVeg: null, type: 'SERVICE', workflowType: 'POST_SERVICE_BILLING',
+          variants: [{ name: 'Regular Service', price: 499, mrp: 699, costPrice: 250, stock: 999 }] },
+      ],
+      ECOMMERCE: [
+        { name: 'Wireless Earbuds', slug: 'wireless-earbuds', unit: 'piece', isVeg: null, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: 'Standard', price: 1299, mrp: 1999, costPrice: 700, stock: 100 }] },
+        { name: 'Cotton T-Shirt', slug: 'cotton-tshirt', unit: 'piece', isVeg: null, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: 'M', price: 499, mrp: 799, costPrice: 250, stock: 150 }, { name: 'L', price: 499, mrp: 799, costPrice: 250, stock: 150 }] },
+      ],
+      COSMETICS: [
+        { name: 'Vitamin C Serum', slug: 'vitamin-c-serum', unit: 'bottle', isVeg: null, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '30ml', price: 599, mrp: 799, costPrice: 280, stock: 80 }] },
+        { name: 'Matte Lipstick', slug: 'matte-lipstick', unit: 'piece', isVeg: null, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: 'Red', price: 349, mrp: 449, costPrice: 160, stock: 120 }] },
+      ],
+      MEAT_DELIVERY: [
+        { name: 'Chicken Breast', slug: 'chicken-breast', unit: 'kg', isVeg: false, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '500g', price: 180, mrp: 200, costPrice: 140, stock: 60 }, { name: '1 Kg', price: 340, mrp: 380, costPrice: 260, stock: 40 }] },
+        { name: 'Mutton Curry Cut', slug: 'mutton-curry-cut', unit: 'kg', isVeg: false, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '500g', price: 450, mrp: 500, costPrice: 340, stock: 30 }] },
+      ],
+      FURNITURE: [
+        { name: 'Sheesham Wood Sofa', slug: 'sheesham-wood-sofa', unit: 'piece', isVeg: null, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: '3-Seater', price: 24999, mrp: 34999, costPrice: 15000, stock: 5 }] },
+        { name: 'King Size Bed', slug: 'king-size-bed', unit: 'piece', isVeg: null, type: 'PHYSICAL', workflowType: null,
+          variants: [{ name: 'With Storage', price: 29999, mrp: 39999, costPrice: 18000, stock: 3 }] },
+      ],
+      DIRECTORY: [
+        { name: 'Premium Listing', slug: 'premium-listing', unit: 'month', isVeg: null, type: 'SUBSCRIPTION', workflowType: 'SUBSCRIPTION',
+          variants: [{ name: 'Monthly', price: 299, mrp: 499, costPrice: 50, stock: 999 }] },
+      ],
+    };
 
   for (const biz of businessRecords) {
     const cats = categoryConfigs[biz.businessType] || [];
@@ -560,57 +740,16 @@ export async function seed() {
       const cat = await db.category.upsert({
         where: { businessId_slug: { businessId: biz.id, slug: catData.slug } },
         update: {},
-        create: { businessId: biz.id, name: catData.name, slug: catData.slug, isActive: true },
+        create: {
+          businessId: biz.id,
+          name: catData.name,
+          slug: catData.slug,
+          workflowType: catData.workflowType as any,
+          isActive: true,
+        },
       });
       categoryRecords.push({ id: cat.id });
     }
-
-    // Create 2-3 products per business
-    const productConfigs: Record<string, Array<{ name: string; slug: string; unit: string; isVeg: boolean | null; variants: Array<{ name: string; price: number; mrp: number }> }>> = {
-      GROCERY: [
-        { name: 'Organic Basmati Rice', slug: 'organic-basmati-rice', unit: 'kg', isVeg: true, variants: [{ name: '1 kg', price: 180, mrp: 220 }, { name: '5 kg', price: 850, mrp: 1100 }] },
-        { name: 'Fresh Amul Butter', slug: 'fresh-amul-butter', unit: 'pack', isVeg: true, variants: [{ name: '100g', price: 52, mrp: 56 }] },
-      ],
-      FOOD_DELIVERY: [
-        { name: 'Butter Chicken', slug: 'butter-chicken', unit: 'piece', isVeg: false, variants: [{ name: 'Regular', price: 280, mrp: 320 }] },
-        { name: 'Paneer Tikka Masala', slug: 'paneer-tikka-masala', unit: 'piece', isVeg: true, variants: [{ name: 'Regular', price: 240, mrp: 280 }] },
-      ],
-      LAUNDRY: [
-        { name: 'Wash & Fold', slug: 'wash-fold', unit: 'kg', isVeg: null, variants: [{ name: 'Per Kg', price: 49, mrp: 59 }] },
-        { name: 'Dry Cleaning', slug: 'dry-cleaning', unit: 'piece', isVeg: null, variants: [{ name: 'Shirt/Saree', price: 99, mrp: 129 }] },
-      ],
-      CAR_WASH: [
-        { name: 'Basic Car Wash', slug: 'basic-car-wash', unit: 'service', isVeg: null, variants: [{ name: 'Hatchback', price: 299, mrp: 399 }, { name: 'Sedan', price: 399, mrp: 499 }] },
-        { name: 'Premium Detailing', slug: 'premium-detailing', unit: 'service', isVeg: null, variants: [{ name: 'Hatchback', price: 1499, mrp: 1999 }] },
-      ],
-      PHARMACY: [
-        { name: 'Dolo 650mg', slug: 'dolo-650mg', unit: 'strip', isVeg: true, variants: [{ name: '15 Tablets', price: 32, mrp: 35 }] },
-        { name: 'Crocin Advance', slug: 'crocin-advance', unit: 'strip', isVeg: true, variants: [{ name: '20 Tablets', price: 28, mrp: 30 }] },
-      ],
-      HOME_SERVICES: [
-        { name: 'Deep Home Cleaning', slug: 'deep-home-cleaning', unit: 'service', isVeg: null, variants: [{ name: '1 BHK', price: 1499, mrp: 1999 }, { name: '2 BHK', price: 1999, mrp: 2599 }] },
-        { name: 'AC Service', slug: 'ac-service', unit: 'service', isVeg: null, variants: [{ name: 'Regular Service', price: 499, mrp: 699 }] },
-      ],
-      ECOMMERCE: [
-        { name: 'Wireless Earbuds', slug: 'wireless-earbuds', unit: 'piece', isVeg: null, variants: [{ name: 'Standard', price: 1299, mrp: 1999 }] },
-        { name: 'Cotton T-Shirt', slug: 'cotton-tshirt', unit: 'piece', isVeg: null, variants: [{ name: 'M', price: 499, mrp: 799 }, { name: 'L', price: 499, mrp: 799 }] },
-      ],
-      COSMETICS: [
-        { name: 'Vitamin C Serum', slug: 'vitamin-c-serum', unit: 'bottle', isVeg: null, variants: [{ name: '30ml', price: 599, mrp: 799 }] },
-        { name: 'Matte Lipstick', slug: 'matte-lipstick', unit: 'piece', isVeg: null, variants: [{ name: 'Red', price: 349, mrp: 449 }] },
-      ],
-      MEAT_DELIVERY: [
-        { name: 'Chicken Breast', slug: 'chicken-breast', unit: 'kg', isVeg: false, variants: [{ name: '500g', price: 180, mrp: 200 }, { name: '1 Kg', price: 340, mrp: 380 }] },
-        { name: 'Mutton Curry Cut', slug: 'mutton-curry-cut', unit: 'kg', isVeg: false, variants: [{ name: '500g', price: 450, mrp: 500 }] },
-      ],
-      FURNITURE: [
-        { name: 'Sheesham Wood Sofa', slug: 'sheesham-wood-sofa', unit: 'piece', isVeg: null, variants: [{ name: '3-Seater', price: 24999, mrp: 34999 }] },
-        { name: 'King Size Bed', slug: 'king-size-bed', unit: 'piece', isVeg: null, variants: [{ name: 'With Storage', price: 29999, mrp: 39999 }] },
-      ],
-      DIRECTORY: [
-        { name: 'Premium Listing', slug: 'premium-listing', unit: 'month', isVeg: null, variants: [{ name: 'Monthly', price: 299, mrp: 499 }] },
-      ],
-    };
 
     const prods = productConfigs[biz.businessType] || [];
     for (const prodData of prods) {
@@ -624,8 +763,8 @@ export async function seed() {
           name: prodData.name,
           slug: prodData.slug,
           description: prodData.name,
-          type: biz.businessType === 'LAUNDRY' || biz.businessType === 'CAR_WASH' || biz.businessType === 'HOME_SERVICES' ? 'SERVICE' : 'PHYSICAL',
-          status: 'ACTIVE',
+          type: prodData.type as any, // ProductType enum
+          status: 'ACTIVE', // ProductStatus enum
           unit: prodData.unit,
           isVeg: prodData.isVeg,
           isFeatured: true,
@@ -633,24 +772,27 @@ export async function seed() {
           maxOrderQty: 100,
           images: JSON.stringify([]),
           tags: JSON.stringify([]),
+          workflowType: prodData.workflowType as any, // WorkflowType? — null inherits from category
           metadata: JSON.stringify({}),
         },
       });
 
       for (const vd of prodData.variants) {
-        await db.productVariant.upsert({
-          where: { productId_name: { productId: product.id, name: vd.name } },
-          update: {},
-          create: {
+        // ProductVariant has no @@unique constraint, use create
+        await db.productVariant.create({
+          data: {
             productId: product.id,
             name: vd.name,
             price: vd.price,
             mrp: vd.mrp,
+            costPrice: vd.costPrice || null,
             discountPrice: vd.price < vd.mrp ? vd.price : null,
             discountPercent: vd.price < vd.mrp ? Math.round(((vd.mrp - vd.price) / vd.mrp) * 100) : null,
             isDefault: prodData.variants.indexOf(vd) === 0,
             isActive: true,
             attributes: JSON.stringify({}),
+            stock: vd.stock || 0,
+            minStock: 5,
           },
         });
       }
@@ -659,14 +801,14 @@ export async function seed() {
   }
   console.log('');
 
-  // 14. Create Tax Configs (GST)
+  // 14. Create Tax Configs (GST) — use `rate` not `gstRate`, no `hsnCode`
   console.log('💰 Creating tax configurations...');
   const gstConfigs = [
-    { name: 'GST 0% (Exempt)', taxType: 'GST_0' as const, gstRate: 0, cgstRate: 0, sgstRate: 0, igstRate: 0, hsnCode: '0101', isDefault: true },
-    { name: 'GST 5%', taxType: 'GST_5' as const, gstRate: 5, cgstRate: 2.5, sgstRate: 2.5, igstRate: 5, hsnCode: '0201' },
-    { name: 'GST 12%', taxType: 'GST_12' as const, gstRate: 12, cgstRate: 6, sgstRate: 6, igstRate: 12, hsnCode: '1701' },
-    { name: 'GST 18%', taxType: 'GST_18' as const, gstRate: 18, cgstRate: 9, sgstRate: 9, igstRate: 18, hsnCode: '2106' },
-    { name: 'GST 28%', taxType: 'GST_28' as const, gstRate: 28, cgstRate: 14, sgstRate: 14, igstRate: 28, hsnCode: '2402' },
+    { name: 'GST 0% (Exempt)', taxType: 'GST_0', rate: 0, cgstRate: 0, sgstRate: 0, igstRate: 0, isDefault: true },
+    { name: 'GST 5%', taxType: 'GST_5', rate: 5, cgstRate: 2.5, sgstRate: 2.5, igstRate: 5 },
+    { name: 'GST 12%', taxType: 'GST_12', rate: 12, cgstRate: 6, sgstRate: 6, igstRate: 12 },
+    { name: 'GST 18%', taxType: 'GST_18', rate: 18, cgstRate: 9, sgstRate: 9, igstRate: 18 },
+    { name: 'GST 28%', taxType: 'GST_28', rate: 28, cgstRate: 14, sgstRate: 14, igstRate: 28 },
   ];
 
   for (const biz of businessRecords) {
@@ -676,13 +818,13 @@ export async function seed() {
           businessId: biz.id,
           name: taxData.name,
           taxType: taxData.taxType,
-          gstRate: taxData.gstRate,
+          rate: taxData.rate, // `rate` not `gstRate`
           cgstRate: taxData.cgstRate,
           sgstRate: taxData.sgstRate,
           igstRate: taxData.igstRate,
-          hsnCode: taxData.hsnCode,
           isActive: true,
           isDefault: taxData.isDefault || false,
+          // NO hsnCode — field doesn't exist
         },
       });
     }
@@ -695,12 +837,34 @@ export async function seed() {
     const store = storeRecords.find(s => s.businessId === biz.id);
     const bd = DEMO_BUSINESSES.find(b => b.slug === biz.slug);
 
-    await db.deliveryZone.create({ data: { businessId: biz.id, storeId: store?.id, name: 'Zone 1 - Near (3km)', zoneType: 'CIRCLE', centerLat: bd?.latitude || 0, centerLng: bd?.longitude || 0, radius: 3, deliveryFee: 20, minOrderAmount: 100, freeDeliveryAbove: 300, estimatedTime: 25, isActive: true } });
-    await db.deliveryZone.create({ data: { businessId: biz.id, storeId: store?.id, name: 'Zone 2 - Standard (5km)', zoneType: 'CIRCLE', centerLat: bd?.latitude || 0, centerLng: bd?.longitude || 0, radius: 5, deliveryFee: 35, minOrderAmount: 150, freeDeliveryAbove: 500, estimatedTime: 40, isActive: true } });
+    await db.deliveryZone.create({
+      data: {
+        businessId: biz.id, storeId: store?.id,
+        name: 'Zone 1 - Near (3km)', zoneType: 'CIRCLE',
+        centerLat: bd?.latitude || 0, centerLng: bd?.longitude || 0, radius: 3,
+        deliveryFee: 20, minOrderAmount: 100, freeDeliveryAbove: 300, estimatedTime: 25, isActive: true,
+      },
+    });
+    await db.deliveryZone.create({
+      data: {
+        businessId: biz.id, storeId: store?.id,
+        name: 'Zone 2 - Standard (5km)', zoneType: 'CIRCLE',
+        centerLat: bd?.latitude || 0, centerLng: bd?.longitude || 0, radius: 5,
+        deliveryFee: 35, minOrderAmount: 150, freeDeliveryAbove: 500, estimatedTime: 40, isActive: true,
+      },
+    });
 
     if (biz.businessType !== 'DIRECTORY') {
-      await db.deliveryPartner.upsert({ where: { businessId_phone: { businessId: biz.id, phone: '9901234567' } }, update: {}, create: { businessId: biz.id, name: 'Raju Kumar', phone: '9901234567', vehicleType: 'bike', vehicleNumber: 'MH01AB1234', isOnline: false, isActive: true } });
-      await db.deliveryPartner.upsert({ where: { businessId_phone: { businessId: biz.id, phone: '9902345678' } }, update: {}, create: { businessId: biz.id, name: 'Suresh Yadav', phone: '9902345678', vehicleType: 'bike', vehicleNumber: 'MH02CD5678', isOnline: true, isActive: true } });
+      await db.deliveryPartner.upsert({
+        where: { businessId_phone: { businessId: biz.id, phone: '9901234567' } },
+        update: {},
+        create: { businessId: biz.id, name: 'Raju Kumar', phone: '9901234567', vehicleType: 'bike', vehicleNumber: 'MH01AB1234', isOnline: false, isActive: true },
+      });
+      await db.deliveryPartner.upsert({
+        where: { businessId_phone: { businessId: biz.id, phone: '9902345678' } },
+        update: {},
+        create: { businessId: biz.id, name: 'Suresh Yadav', phone: '9902345678', vehicleType: 'bike', vehicleNumber: 'MH02CD5678', isOnline: true, isActive: true },
+      });
     }
   }
   console.log('  ✅ Delivery zones & partners created\n');
@@ -725,9 +889,12 @@ export async function seed() {
   }
   console.log('  ✅ Customers created\n');
 
-  // 17. Create Subscription Plans (Car Wash etc.)
+  // 17. Create Subscription Plans (Customer-facing: Car Wash, Laundry, etc.)
   console.log('📋 Creating subscription plans...');
-  const subscriptionConfigs: Record<string, Array<{ name: string; slug: string; serviceType: string; billingCycle: string; price: number; originalPrice: number; totalCredits: number; creditLabel: string; features: string[] }>> = {
+  const subscriptionConfigs: Record<string, Array<{
+    name: string; slug: string; serviceType: string; billingCycle: string;
+    price: number; originalPrice: number; totalCredits: number; creditLabel: string; features: string[];
+  }>> = {
     CAR_WASH: [
       { name: 'Basic Wash Plan', slug: 'basic-wash-plan', serviceType: 'CAR_WASH', billingCycle: 'MONTHLY', price: 999, originalPrice: 1499, totalCredits: 4, creditLabel: 'washes', features: ['4 Basic washes/month', 'Exterior wash only'] },
       { name: 'Premium Shine Plan', slug: 'premium-shine-plan', serviceType: 'CAR_WASH', billingCycle: 'MONTHLY', price: 1999, originalPrice: 2999, totalCredits: 8, creditLabel: 'washes', features: ['8 Premium washes/month', 'Interior + Exterior', 'Wax coating'] },
@@ -757,8 +924,8 @@ export async function seed() {
           businessId: biz.id,
           name: pd.name,
           slug: pd.slug,
-          serviceType: pd.serviceType as 'CAR_WASH' | 'HOME_SERVICE' | 'LAUNDRY' | 'GROCERY' | 'CUSTOM',
-          billingCycle: pd.billingCycle as 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY',
+          serviceType: pd.serviceType as any,
+          billingCycle: pd.billingCycle as any,
           price: pd.price,
           originalPrice: pd.originalPrice,
           totalCredits: pd.totalCredits,
@@ -772,13 +939,12 @@ export async function seed() {
   }
   console.log('  ✅ Subscription plans created\n');
 
-  // 18. Create Sample Orders
+  // 18. Create Sample Orders (first 6 businesses)
   console.log('📦 Creating sample orders...');
-  const now = new Date();
   const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   let orderCounter = 1;
 
-  for (const biz of businessRecords.slice(0, 6)) { // First 6 businesses get sample orders
+  for (const biz of businessRecords.slice(0, 6)) {
     const store = storeRecords.find(s => s.businessId === biz.id);
     if (!store) continue;
 
@@ -792,12 +958,17 @@ export async function seed() {
       if (!variant) continue;
 
       const orderNum = `ORD-${datePart}-${String(orderCounter++).padStart(4, '0')}`;
-      await db.order.create({
+      const orderType = biz.businessType === 'LAUNDRY' ? 'PICKUP_AND_DELIVERY' : 'DELIVERY';
+      const totalAmount = variant.price;
+      const taxRate = 5;
+      const taxAmount = Math.round(totalAmount * taxRate / 100 * 100) / 100;
+
+      const order = await db.order.create({
         data: {
           businessId: biz.id,
           storeId: store.id,
           orderNumber: orderNum,
-          orderType: biz.businessType === 'LAUNDRY' ? 'PICKUP_AND_DELIVERY' : 'DELIVERY',
+          orderType: orderType as any,
           status: 'DELIVERED',
           paymentStatus: 'COMPLETED',
           paymentMethod: 'UPI',
@@ -805,79 +976,170 @@ export async function seed() {
           customerName: cust.name,
           customerPhone: cust.phone,
           deliveryAddress: JSON.stringify({ city: 'Mumbai', state: 'Maharashtra', pincode: '400001' }),
-          subtotal: variant.price,
-          totalTax: Math.round(variant.price * 0.05 * 100) / 100,
-          cgstAmount: Math.round(variant.price * 0.025 * 100) / 100,
-          sgstAmount: Math.round(variant.price * 0.025 * 100) / 100,
+          subtotal: totalAmount,
+          totalTax: taxAmount,
+          cgstAmount: Math.round(taxAmount / 2 * 100) / 100,
+          sgstAmount: Math.round(taxAmount / 2 * 100) / 100,
+          totalAmount: totalAmount + taxAmount,
           deliveryFee: 30,
-          totalAmount: Math.round((variant.price + variant.price * 0.05 + 30) * 100) / 100,
-          confirmedAt: new Date(),
-          deliveredAt: new Date(),
-          items: {
-            create: {
-              productId: product.id,
-              variantId: variant.id,
-              productName: product.name,
-              variantName: variant.name,
-              quantity: 1,
-              unitPrice: variant.price,
-              mrp: variant.mrp,
-              totalPrice: variant.price,
-              totalMrp: variant.mrp,
-              gstRate: 5,
-              gstAmount: Math.round(variant.price * 0.05 * 100) / 100,
-              cgstAmount: Math.round(variant.price * 0.025 * 100) / 100,
-              sgstAmount: Math.round(variant.price * 0.025 * 100) / 100,
-            },
-          },
+          confirmedAt: new Date(now.getTime() - 2 * 60 * 60 * 1000),
+          deliveredAt: new Date(now.getTime() - 30 * 60 * 1000),
+        },
+      });
+
+      // Create order item
+      await db.orderItem.create({
+        data: {
+          orderId: order.id,
+          itemType: 'product',
+          itemId: product.id,
+          itemName: product.name,
+          variantName: variant.name,
+          quantity: 1,
+          unitPrice: variant.price,
+          mrp: variant.mrp,
+          discountPrice: variant.price < variant.mrp ? variant.price : null,
+          discountPercent: variant.price < variant.mrp ? Math.round(((variant.mrp - variant.price) / variant.mrp) * 100) : null,
+          totalPrice: variant.price,
+          totalMrp: variant.mrp,
+          gstRate: taxRate,
+          gstAmount: taxAmount,
+          cgstAmount: Math.round(taxAmount / 2 * 100) / 100,
+          sgstAmount: Math.round(taxAmount / 2 * 100) / 100,
+          isVeg: product.isVeg,
+          unit: product.unit,
+        },
+      });
+
+      // Create payment
+      await db.payment.create({
+        data: {
+          orderId: order.id,
+          businessId: biz.id,
+          amount: totalAmount + taxAmount,
+          method: 'UPI',
+          status: 'COMPLETED',
+          gatewayName: 'razorpay',
+          paidAt: new Date(now.getTime() - 30 * 60 * 1000),
+        },
+      });
+
+      // Create order status history
+      await db.orderStatusHistory.createMany({
+        data: [
+          { orderId: order.id, status: 'PENDING', note: 'Order placed', createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000) },
+          { orderId: order.id, status: 'CONFIRMED', note: 'Order confirmed', createdAt: new Date(now.getTime() - 1.5 * 60 * 60 * 1000) },
+          { orderId: order.id, status: 'OUT_FOR_DELIVERY', note: 'Out for delivery', createdAt: new Date(now.getTime() - 45 * 60 * 1000) },
+          { orderId: order.id, status: 'DELIVERED', note: 'Delivered successfully', createdAt: new Date(now.getTime() - 30 * 60 * 1000) },
+        ],
+      });
+
+      console.log(`  ✅ Order ${orderNum}`);
+    }
+  }
+  console.log('');
+
+  // 19. Create Payment Gateways for each business
+  console.log('💳 Creating payment gateways...');
+  for (const biz of businessRecords) {
+    await db.paymentGateway.upsert({
+      where: { businessId_name: { businessId: biz.id, name: 'Razorpay' } },
+      update: {},
+      create: {
+        businessId: biz.id,
+        name: 'Razorpay',
+        gateway: 'razorpay',
+        isActive: true,
+        isTestMode: true,
+        config: JSON.stringify({ key: 'test_key', enabled_methods: ['upi', 'card', 'netbanking', 'wallet'] }),
+      },
+    });
+  }
+  console.log('  ✅ Payment gateways created\n');
+
+  // 20. Create Business Modules
+  console.log('🔌 Creating business modules...');
+  const moduleMap: Record<string, Array<{ key: string; name: string }>> = {
+    GROCERY: [{ key: 'grocery', name: 'Grocery Store' }],
+    FOOD_DELIVERY: [{ key: 'restaurant', name: 'Restaurant & Food Delivery' }],
+    LAUNDRY: [{ key: 'laundry', name: 'Laundry & Dry Cleaning' }],
+    CAR_WASH: [{ key: 'car_wash', name: 'Car Wash & Detailing' }],
+    PHARMACY: [{ key: 'pharmacy', name: 'Pharmacy' }],
+    HOME_SERVICES: [{ key: 'home_services', name: 'Home Services' }],
+    ECOMMERCE: [{ key: 'ecommerce', name: 'E-Commerce' }],
+    COSMETICS: [{ key: 'cosmetics', name: 'Cosmetics & Beauty' }],
+    MEAT_DELIVERY: [{ key: 'meat_delivery', name: 'Meat Delivery' }],
+    FURNITURE: [{ key: 'furniture', name: 'Furniture' }],
+    DIRECTORY: [{ key: 'directory', name: 'Business Directory' }],
+  };
+
+  for (const biz of businessRecords) {
+    const modules = moduleMap[biz.businessType] || [];
+    for (const mod of modules) {
+      await db.businessModule.upsert({
+        where: { businessId_moduleKey: { businessId: biz.id, moduleKey: mod.key } },
+        update: {},
+        create: {
+          businessId: biz.id,
+          moduleKey: mod.key,
+          moduleName: mod.name,
+          status: 'ENABLED',
+          enabledAt: new Date(),
         },
       });
     }
   }
-  console.log('  ✅ Sample orders created\n');
+  console.log('  ✅ Business modules created\n');
 
-  // 19. Create POS Sessions
-  console.log('💳 Creating POS sessions...');
-  for (const biz of businessRecords.slice(0, 5)) {
-    const store = storeRecords.find(s => s.businessId === biz.id);
-    const owner = await db.businessUser.findFirst({ where: { businessId: biz.id, role: 'CLIENT_OWNER' } });
-    if (!store || !owner) continue;
+  // 21. Create Onboarding Steps
+  console.log('📋 Creating onboarding steps...');
+  const onboardingSteps = [
+    { stepKey: 'branding', stepName: 'Branding & Logo', sortOrder: 0 },
+    { stepKey: 'stores', stepName: 'Store Setup', sortOrder: 1 },
+    { stepKey: 'products', stepName: 'Product Catalog', sortOrder: 2 },
+    { stepKey: 'payment_gateway', stepName: 'Payment Gateway', sortOrder: 3 },
+    { stepKey: 'delivery_zones', stepName: 'Delivery Zones', sortOrder: 4 },
+    { stepKey: 'domain', stepName: 'Domain & Deployment', sortOrder: 5 },
+  ];
 
-    await db.pOSSession.create({
-      data: {
-        businessId: biz.id,
-        storeId: store.id,
-        operatorId: owner.userId,
-        sessionNumber: `POS-${now.getFullYear()}-${String(businessRecords.indexOf(biz) + 1).padStart(4, '0')}`,
-        status: 'OPEN',
-        openingBalance: 5000,
-        totalSales: Math.floor(Math.random() * 15000) + 5000,
-      },
-    });
+  for (const biz of businessRecords) {
+    const bizStatus = statuses[businessRecords.indexOf(biz)] || 'ACTIVE';
+    for (const step of onboardingSteps) {
+      const isCompleted = bizStatus === 'ACTIVE';
+      await db.onboardingStep.upsert({
+        where: { businessId_stepKey: { businessId: biz.id, stepKey: step.stepKey } },
+        update: {},
+        create: {
+          businessId: biz.id,
+          stepKey: step.stepKey,
+          stepName: step.stepName,
+          status: isCompleted ? 'COMPLETED' as any : 'PENDING' as any,
+          completedBy: isCompleted ? superAdmin.name : null,
+          completedAt: isCompleted ? new Date() : null,
+          sortOrder: step.sortOrder,
+        },
+      });
+    }
   }
-  console.log('  ✅ POS sessions created\n');
+  console.log('  ✅ Onboarding steps created\n');
 
   console.log('🎉 Seed completed successfully!\n');
-  console.log('📋 Demo Credentials:');
-  console.log('  Super Admin:    superadmin@quantixtechnology.in / Admin@123');
-  console.log('  Sales Team:     priya.sales@quantixtechnology.in / Sales@123');
-  console.log('                 ravi.sales@quantixtechnology.in / Sales@123');
-  console.log('  Business Owner: owner@{business-slug}.in / Owner@123');
-  console.log('  Store Manager:  manager@{business-slug}.in / Staff@123');
-  console.log('');
-  console.log('  Business Slugs: freshmart-grocery, tastybites-food, sparkleclean-laundry,');
-  console.log('                  autoglow-carwash, medquick-pharmacy, homefix-services,');
-  console.log('                  shopnow-ecommerce, glowup-cosmetics, freshmeat-direct,');
-  console.log('                  woodcraft-furniture, cityguide-directory');
-  console.log('');
+  console.log('📊 Summary:');
+  console.log(`  - Platform configs: ${platformConfigs.length}`);
+  console.log(`  - Platform plans: ${planConfigs.length}`);
+  console.log(`  - Sales team members: ${salesMembers.length}`);
+  console.log(`  - Businesses: ${businessRecords.length}`);
+  console.log(`  - Business subscriptions: ${businessRecords.length - 2}`); // minus ONBOARDING and CHURNED
+  console.log(`  - Domain mappings: ${businessRecords.length}`);
+  console.log(`  - Deployments: ${businessRecords.length * 2}`);
+  console.log(`  - Leads: ${leadData.length}`);
+  console.log(`  - Stores: ${storeRecords.length}`);
+  console.log(`  - Categories: ~${Object.values(categoryConfigs).reduce((a, b) => a + b.length, 0)}`);
+  console.log(`  - Products: ~${Object.values(productConfigs).reduce((a, b) => a + b.length, 0)}`);
+  console.log(`  - Tax configs: ${gstConfigs.length} per business`);
+  console.log(`  - Customers: ${sampleCustomers.length} per business`);
+  console.log(`  - Orders: created for first 6 businesses`);
+  console.log(`  - Payment gateways: 1 per business`);
+  console.log(`  - Business modules: 1 per business`);
+  console.log(`  - Onboarding steps: ${onboardingSteps.length} per business`);
 }
-
-// Run seed if called directly
-seed()
-  .catch((e) => {
-    console.error('Seed error:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await db.$disconnect();
-  });

@@ -76,19 +76,33 @@ export async function POST(request: Request) {
     // Delete the old refresh token
     await db.refreshToken.delete({ where: { id: tokenRecord.id } });
 
-    // Create a new access token
+    // Also delete any existing access tokens for this user (cleanup)
+    // Note: we can't easily do this without tracking which tokens are access vs refresh,
+    // so we rely on expiry for cleanup.
+
+    // Create a new access token and store in database
     const accessToken = createAccessToken();
+    const accessExpiresAt = new Date();
+    accessExpiresAt.setHours(accessExpiresAt.getHours() + 24); // Access token: 24 hours
+
+    await db.refreshToken.create({
+      data: {
+        userId: tokenRecord.userId,
+        token: accessToken,
+        expiresAt: accessExpiresAt,
+      },
+    });
 
     // Create a new refresh token (rotation)
     const newRefreshTokenValue = generateRefreshToken();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
+    const refreshExpiresAt = new Date();
+    refreshExpiresAt.setDate(refreshExpiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
 
     await db.refreshToken.create({
       data: {
         userId: tokenRecord.userId,
         token: newRefreshTokenValue,
-        expiresAt,
+        expiresAt: refreshExpiresAt,
       },
     });
 

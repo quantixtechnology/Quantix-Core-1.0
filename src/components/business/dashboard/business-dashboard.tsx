@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -32,18 +32,7 @@ import {
 } from "@/hooks/use-api"
 import { useOrderUpdates } from "@/hooks/use-realtime"
 import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
-import {
-  getDemoBusinessName,
-  getDemoDashboardStats,
-  getDemoDailySales,
-  getDemoHourlySales,
-  getDemoRecentActivity,
-  getDemoTopProducts,
-  getDemoCategories,
-  getDemoProducts,
-  getDemoCustomers,
-  getDemoBusinessOrders,
-} from "@/lib/demo-data"
+import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError, showOrderUpdate } from "@/lib/toast-utils"
 import { ConnectionStatusBadge } from "@/components/ui/connection-status"
 import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
@@ -53,7 +42,6 @@ import { StatCard } from "@/components/admin/shared/stat-card"
 import { useQueryClient } from "@tanstack/react-query"
 
 // Business context constants
-const BUSINESS_ID = "biz_1"
 
 // Chart configs
 const dailySalesConfig: ChartConfig = {
@@ -111,37 +99,75 @@ function getWorkflowBadgeText(workflow: string) {
 }
 
 export function BusinessDashboard() {
-  const { demoBusinessId, setBusinessPage } = useAdminStore()
-  const businessName = getDemoBusinessName(demoBusinessId)
+  const { businessId, businessName, isLoading: contextLoading } = useBusinessContext()
+  const { setBusinessPage } = useAdminStore()
   const [isRefreshing, setIsRefreshing] = useState(false)
   const queryClient = useQueryClient()
 
-  // Demo data — context-aware
-  const demoStats = getDemoDashboardStats(demoBusinessId)
-  const demoDailySales = getDemoDailySales(demoBusinessId)
-  const demoHourlySales = getDemoHourlySales(demoBusinessId)
-  const demoActivity = getDemoRecentActivity(demoBusinessId)
-  const demoTopProducts = getDemoTopProducts(demoBusinessId)
-  const demoCategories = getDemoCategories(demoBusinessId)
-  const demoProducts = getDemoProducts(demoBusinessId)
-  const demoCustomers = getDemoCustomers(demoBusinessId)
-  const demoOrders = getDemoBusinessOrders(demoBusinessId)
-
-  // Fetch business stats with auto-refresh every 30 seconds
-  const { data: statsData, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useBusinessStats(BUSINESS_ID, {
+  // ---- Fetch real dashboard stats from API ----
+  const { data: dashboardData, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery({
+    queryKey: ["business-dashboard", businessId],
+    queryFn: async () => {
+      if (!businessId) return null
+      const response = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/dashboard`)
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to fetch dashboard')
+      return data.data
+    },
+    enabled: !!businessId,
     refetchInterval: 30000,
   })
 
-  // Fetch orders for live orders section
+  // ---- Fetch orders from API ----
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useOrders(
-    { businessId: BUSINESS_ID, status: "PENDING,CONFIRMED", limit: 10 } as Record<string, unknown>,
+    { businessId, limit: 10 } as Record<string, unknown>,
     {
       refetchInterval: 30000,
+      enabled: !!businessId,
     }
   )
 
+  // ---- Fetch products from API ----
+  const { data: productsData } = useQuery({
+    queryKey: ["dashboard-products", businessId],
+    queryFn: async () => {
+      if (!businessId) return { data: [] }
+      const response = await fetch(`/api/core/storefront/products?businessId=${encodeURIComponent(businessId)}&status=ALL&limit=10`)
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to fetch products')
+      return data
+    },
+    enabled: !!businessId,
+  })
+
+  // ---- Fetch categories from API ----
+  const { data: categoriesData } = useQuery({
+    queryKey: ["dashboard-categories", businessId],
+    queryFn: async () => {
+      if (!businessId) return { data: [] }
+      const response = await fetch(`/api/core/storefront/categories?businessId=${encodeURIComponent(businessId)}&includeInactive=true&productStatus=ALL`)
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to fetch categories')
+      return data
+    },
+    enabled: !!businessId,
+  })
+
+  // ---- Fetch customers from API ----
+  const { data: customersData } = useQuery({
+    queryKey: ["dashboard-customers", businessId],
+    queryFn: async () => {
+      if (!businessId) return { data: [] }
+      const response = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers?limit=10`)
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to fetch customers')
+      return data
+    },
+    enabled: !!businessId,
+  })
+
   // Real-time order updates
-  const { latestOrder, orderCount } = useOrderUpdates(BUSINESS_ID)
+  const { latestOrder, orderCount } = useOrderUpdates(businessId)
 
   // Show toast when new order arrives via WebSocket
   useEffect(() => {
@@ -150,20 +176,123 @@ export function BusinessDashboard() {
     }
   }, [orderCount, latestOrder])
 
-  // Extract stats from API response — fall back to demo data
-  const stats = statsData?.data
+  // Extract stats from API response
+  const todayRevenue = dashboardData?.revenue?.today || 0
+  const todayOrders = dashboardData?.orders?.today || 0
+  const pendingOrders = dashboardData?.orders?.pending || 0
+  const totalCustomers = dashboardData?.customers?.total || 0
+  const totalProducts = dashboardData?.products?.total || 0
+  const totalOrders = dashboardData?.orders?.total || 0
+  const totalRevenue = dashboardData?.revenue?.total || 0
+  const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0
+  const lowStockProducts = useMemo(() => {
+    return productsList.filter((p: Record<string, unknown>) => {
+      const stock = Number((p as Record<string, unknown>).availableStock || 0)
+      return stock > 0 && stock <= 10
+    }).length
+  }, [productsList])
+  const activeStores = dashboardData?.stores?.total || 0
+  const totalDeliveryPartners = 0
+  const deliveryPartnersOnline = 0
 
-  // Merge API data with demo data (prefer API when available)
-  const todayRevenue = stats?.todayRevenue || demoStats.todayRevenue
-  const todayOrders = stats?.todayOrders || demoStats.todayOrders
-  const pendingOrders = stats?.pendingOrders || demoStats.pendingOrders
-  const totalCustomers = stats?.totalCustomers || demoStats.totalCustomers
-  const avgOrderValue = stats?.avgOrderValue || demoStats.avgOrderValue
-  const totalProducts = stats?.totalProducts || demoStats.totalProducts
-  const lowStockProducts = stats?.lowStockProducts || demoStats.lowStockProducts
-  const activeStores = stats?.activeStores || demoStats.activeStores
-  const totalDeliveryPartners = stats?.totalDeliveryPartners || demoStats.totalDeliveryPartners
-  const deliveryPartnersOnline = stats?.deliveryPartnersOnline || demoStats.deliveryPartnersOnline
+  // Map orders from API
+  const apiOrders: Record<string, unknown>[] = useMemo(() => {
+    if (!ordersData?.data) return []
+    const rawData = ordersData.data
+    if (!Array.isArray(rawData)) return []
+    return rawData
+  }, [ordersData])
+
+  // Map categories from API
+  const categoriesList = useMemo(() => {
+    if (!categoriesData?.data) return []
+    if (!Array.isArray(categoriesData.data)) return []
+    return categoriesData.data as Record<string, unknown>[]
+  }, [categoriesData])
+
+  // Map products from API
+  const productsList = useMemo(() => {
+    if (!productsData?.data) return []
+    if (!Array.isArray(productsData.data)) return []
+    return productsData.data as Record<string, unknown>[]
+  }, [productsData])
+
+  // Map customers from API
+  const customersList = useMemo(() => {
+    if (!customersData?.data) return []
+    if (!Array.isArray(customersData.data)) return []
+    return customersData.data as Record<string, unknown>[]
+  }, [customersData])
+
+  // Daily sales chart data — generate from orders
+  const dailySalesData = useMemo(() => {
+    // Group orders by date
+    const dateMap: Record<string, number> = {}
+    const now = new Date()
+    // Initialize last 7 days
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now)
+      d.setDate(d.getDate() - i)
+      const key = d.toISOString().split('T')[0]
+      dateMap[key] = 0
+    }
+    // Fill with order data
+    apiOrders.forEach((order) => {
+      const date = String(order.createdAt || '').split('T')[0]
+      if (dateMap[date] !== undefined) {
+        dateMap[date] += Number(order.totalAmount || 0)
+      }
+    })
+    return Object.entries(dateMap).map(([date, revenue]) => ({
+      date: new Date(date).toLocaleDateString('en-IN', { weekday: 'short' }),
+      revenue,
+    }))
+  }, [apiOrders])
+
+  // Hourly sales chart data — generate from today's orders
+  const hourlySalesData = useMemo(() => {
+    const hourMap: Record<number, number> = {}
+    for (let h = 8; h <= 22; h++) {
+      hourMap[h] = 0
+    }
+    const today = new Date().toDateString()
+    apiOrders.forEach((order) => {
+      const orderDate = new Date(String(order.createdAt || '')).toDateString()
+      if (orderDate === today) {
+        const hour = new Date(String(order.createdAt || '')).getHours()
+        if (hourMap[hour] !== undefined) {
+          hourMap[hour] += Number(order.totalAmount || 0)
+        }
+      }
+    })
+    return Object.entries(hourMap).map(([hour, revenue]) => ({
+      hour: `${hour.padStart(2, '0')}:00`,
+      revenue,
+    }))
+  }, [apiOrders])
+
+  // Recent activity from orders
+  const recentActivity = useMemo(() => {
+    return apiOrders.slice(0, 8).map((order, idx) => ({
+      id: String(order.id || idx),
+      type: "order",
+      message: `Order ${String(order.orderNumber || '')} — ₹${Number(order.totalAmount || 0).toLocaleString("en-IN")} by ${String(order.customerName || "Customer")}`,
+      time: order.createdAt ? new Date(String(order.createdAt)).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Just now",
+    }))
+  }, [apiOrders])
+
+  // Top products from product data — compute from real prices
+  const topProducts = useMemo(() => {
+    return productsList
+      .filter((p: Record<string, unknown>) => String(p.status) === 'ACTIVE')
+      .sort((a: Record<string, unknown>, b: Record<string, unknown>) => Number(b.isFeatured || 0) - Number(a.isFeatured || 0))
+      .slice(0, 5)
+      .map((p, idx) => ({
+        name: String(p.name || `Product ${idx + 1}`),
+        revenue: Number((p as Record<string, unknown>).defaultPrice || 0),
+        sold: Number((p as Record<string, unknown>).availableStock || 0),
+      }))
+  }, [productsList])
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -179,7 +308,7 @@ export function BusinessDashboard() {
   }, [refetchStats, refetchOrders])
 
   // Handle error state
-  if (statsError && !statsData) {
+  if (statsError && !dashboardData) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -273,7 +402,7 @@ export function BusinessDashboard() {
           </CardHeader>
           <CardContent>
             <ChartContainer config={dailySalesConfig} className="h-[280px] w-full">
-              <BarChart data={demoDailySales} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+              <BarChart data={dailySalesData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -315,7 +444,7 @@ export function BusinessDashboard() {
           </CardHeader>
           <CardContent>
             <ChartContainer config={hourlySalesConfig} className="h-[280px] w-full">
-              <AreaChart data={demoHourlySales} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+              <AreaChart data={hourlySalesData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                 <defs>
                   <linearGradient id="fillRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
@@ -366,7 +495,7 @@ export function BusinessDashboard() {
                 <Package className="h-4 w-4 text-primary" />
                 Product Catalog
               </CardTitle>
-              <CardDescription className="mt-1">{demoCategories.length} categories · {demoProducts.length} products · {demoProducts.filter(p => p.status === "ACTIVE").length} active</CardDescription>
+              <CardDescription className="mt-1">{categoriesList.length} categories · {productsList.length} products · {productsList.filter((p: Record<string, unknown>) => String(p.status) === 'ACTIVE').length} active</CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={() => setBusinessPage("products")}>
               View All
@@ -376,24 +505,25 @@ export function BusinessDashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {demoCategories.map((cat) => {
-              const catProducts = demoProducts.filter(p => p.categoryId === cat.id)
-              const isEmoji = cat.icon && /\p{Emoji}/u.test(cat.icon) && cat.icon.length <= 4
+            {categoriesList.map((cat) => {
+              const catProducts = productsList.filter((p: Record<string, unknown>) => String(p.categoryId) === String(cat.id))
+              const isEmoji = cat.icon && /\p{Emoji}/u.test(String(cat.icon)) && String(cat.icon).length <= 4
+              const catColor = String(cat.color || cat.image || '#10B981')
               return (
                 <div
                   key={cat.id}
                   className="flex flex-col items-center gap-2 rounded-lg border p-3 hover:shadow-md transition-shadow cursor-pointer"
                   onClick={() => setBusinessPage("products")}
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${cat.color}18`, color: cat.color }}>
-                    {isEmoji ? <span className="text-lg">{cat.icon}</span> : <Package className="h-5 w-5" />}
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: `${catColor}18`, color: catColor }}>
+                    {isEmoji ? <span className="text-lg">{String(cat.icon)}</span> : <Package className="h-5 w-5" />}
                   </div>
                   <div className="text-center">
-                    <p className="text-xs font-medium truncate max-w-[100px]">{cat.name}</p>
+                    <p className="text-xs font-medium truncate max-w-[100px]">{String(cat.name)}</p>
                     <p className="text-[10px] text-muted-foreground">{catProducts.length} products</p>
                   </div>
                   <Badge variant="outline" className="text-[9px]">
-                    {cat.workflow.replace(/_/g, " ")}
+                    {String(cat.workflow || cat.workflowType || "ECOMMERCE").replace(/_/g, " ")}
                   </Badge>
                 </div>
               )
@@ -418,30 +548,31 @@ export function BusinessDashboard() {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="space-y-2">
-            {demoProducts.slice(-5).reverse().map((product) => {
-              const defaultVariant = product.variants.find(v => v.isDefault) || product.variants[0]
-              const catInfo = demoCategories.find(c => c.id === product.categoryId)
-              const isEmoji = catInfo?.icon && /\p{Emoji}/u.test(catInfo.icon) && catInfo.icon.length <= 4
+            {productsList.slice(-5).reverse().map((product) => {
+              const defaultVariant = Array.isArray((product as Record<string, unknown>).variants) ? ((product as Record<string, unknown>).variants as Record<string, unknown>[]).find((v: Record<string, unknown>) => v.isDefault) || ((product as Record<string, unknown>).variants as Record<string, unknown>[])[0] : null
+              const catInfo = categoriesList.find((c: Record<string, unknown>) => String(c.id) === String((product as Record<string, unknown>).categoryId))
+              const isEmoji = catInfo?.icon && /\p{Emoji}/u.test(String(catInfo.icon)) && String(catInfo.icon).length <= 4
+              const catColor = catInfo ? String(catInfo.color || catInfo.image || '#f3f4f6') : '#f3f4f6'
               return (
                 <div key={product.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setBusinessPage("products")}>
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: catInfo ? `${catInfo.color}18` : "#f3f4f6", color: catInfo?.color || "#6b7280" }}>
-                      {isEmoji ? <span className="text-sm">{catInfo?.icon}</span> : <Package className="h-4 w-4" />}
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${catColor}18`, color: catColor }}>
+                      {isEmoji ? <span className="text-sm">{String(catInfo?.icon)}</span> : <Package className="h-4 w-4" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{product.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{product.category} · {defaultVariant?.name}</p>
+                      <p className="text-sm font-medium truncate">{String((product as Record<string, unknown>).name)}</p>
+                      <p className="text-[10px] text-muted-foreground">{String((product as Record<string, unknown>).category?.name || (product as Record<string, unknown>).category || "")} · {defaultVariant ? String(defaultVariant.name) : ""}</p>
                     </div>
                   </div>
                   <div className="text-right shrink-0 flex items-center gap-3">
                     <div>
-                      <p className="text-sm font-semibold">₹{defaultVariant?.price.toLocaleString("en-IN")}</p>
-                      {product.status === "ACTIVE" ? (
+                      <p className="text-sm font-semibold">₹{Number(defaultVariant?.price || 0).toLocaleString("en-IN")}</p>
+                      {String((product as Record<string, unknown>).status) === "ACTIVE" ? (
                         <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[9px] px-1.5 py-0">Active</Badge>
-                      ) : product.status === "OUT_OF_STOCK" ? (
+                      ) : String((product as Record<string, unknown>).status) === "OUT_OF_STOCK" ? (
                         <Badge className="bg-red-50 text-red-700 border-red-200 text-[9px] px-1.5 py-0">Out of Stock</Badge>
                       ) : (
-                        <Badge className="bg-slate-50 text-slate-700 border-slate-200 text-[9px] px-1.5 py-0">{product.status}</Badge>
+                        <Badge className="bg-slate-50 text-slate-700 border-slate-200 text-[9px] px-1.5 py-0">{String((product as Record<string, unknown>).status)}</Badge>
                       )}
                     </div>
                     <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -465,14 +596,14 @@ export function BusinessDashboard() {
               </div>
               <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-200 bg-emerald-50">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                {demoOrders.length} Active
+                {apiOrders.length} Active
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="p-0 px-6 pb-6">
             <ScrollArea className="max-h-96">
               <div className="space-y-3 pr-4">
-                {demoOrders.map((order) => (
+                {apiOrders.map((order: Record<string, unknown>) => { const orderWorkflow = String(order.workflowType || 'ECOMMERCE'); const orderType = String(order.orderType || ''); return (
                   <div
                     key={order.id}
                     className="flex flex-col gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/30"
@@ -480,22 +611,22 @@ export function BusinessDashboard() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-sm">{order.orderNumber}</span>
-                          <StatusBadge status={order.status} />
-                          <Badge variant="outline" className={`text-[9px] ${getWorkflowBadgeClasses(order.workflow)} ${getWorkflowBadgeText(order.workflow)}`}>
-                            {order.workflow.replace(/_/g, " ")}
+                          <span className="font-semibold text-sm">{String(order.orderNumber || '')}</span>
+                          <StatusBadge status={String(order.status || 'PENDING')} />
+                          <Badge variant="outline" className={`text-[9px] ${getWorkflowBadgeClasses(orderWorkflow)} ${getWorkflowBadgeText(orderWorkflow)}`}>
+                            {orderWorkflow.replace(/_/g, " ")}
                           </Badge>
-                          {order.type && (
+                          {orderType && (
                             <Badge variant="outline" className="text-[10px] border-violet-200 text-violet-600 bg-violet-50">
-                              {order.type}
+                              {orderType}
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">{order.customerName}</p>
+                        <p className="text-sm text-muted-foreground">{String(order.customerName || '')}</p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-semibold text-sm">₹{order.total.toLocaleString("en-IN")}</p>
-                        <p className="text-xs text-muted-foreground">{order.items.length} items</p>
+                        <p className="font-semibold text-sm">₹{Number(order.totalAmount || 0).toLocaleString("en-IN")}</p>
+                        <p className="text-xs text-muted-foreground">{Array.isArray(order.items) ? order.items.length : 0} items</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-2">
@@ -503,9 +634,9 @@ export function BusinessDashboard() {
                         <Clock className="h-3.5 w-3.5" />
                         {order.createdAt ? new Date(order.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Just now"}
                         <span className="text-muted-foreground/50">·</span>
-                        <span>{order.paymentMethod}</span>
+                        <span>{String(order.paymentMethod || 'UPI')}</span>
                       </div>
-                      {order.status === "PENDING" && (
+                      {String(order.status) === "PENDING" && (
                         <div className="flex items-center gap-2">
                           <button
                             className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
@@ -519,15 +650,15 @@ export function BusinessDashboard() {
                           </button>
                         </div>
                       )}
-                      {order.status === "CONFIRMED" && (
+                      {String(order.status) === "CONFIRMED" && (
                         <div className="flex items-center gap-1 text-xs text-sky-600">
                           <ArrowUpRight className="h-3.5 w-3.5" />
-                          {order.assignedTo ? `Assigned: ${order.assignedTo}` : "Assigning..."}
+                          Assigning...
                         </div>
                       )}
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             </ScrollArea>
             <Separator className="my-4" />
@@ -557,14 +688,14 @@ export function BusinessDashboard() {
           <CardContent className="p-0 px-6 pb-6">
             <ScrollArea className="max-h-96">
               <div className="space-y-1 pr-4">
-                {demoActivity.map((activity, index) => {
+                {recentActivity.map((activity, index) => {
                   const ActivityIcon = activityIconMap[activity.type] || Package
                   const colorClass = activityColorMap[activity.type] || "bg-slate-100 text-slate-600"
 
                   return (
                     <div key={activity.id} className="relative flex gap-3 pb-4">
                       {/* Timeline line */}
-                      {index < demoActivity.length - 1 && (
+                      {index < recentActivity.length - 1 && (
                         <div className="absolute left-[15px] top-9 h-full w-px bg-border" />
                       )}
                       {/* Icon */}
@@ -594,7 +725,7 @@ export function BusinessDashboard() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-2.5">
-              {demoTopProducts.slice(0, 5).map((product, index) => (
+              {topProducts.slice(0, 5).map((product, index) => (
                 <div key={index} className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-[10px] font-semibold text-emerald-600">
@@ -620,8 +751,9 @@ export function BusinessDashboard() {
           <CardContent className="pt-0">
             <div className="space-y-2.5">
               {(() => {
-                const workflowCounts = demoCategories.reduce((acc, cat) => {
-                  acc[cat.workflow] = (acc[cat.workflow] || 0) + 1
+                const workflowCounts = categoriesList.reduce((acc: Record<string, number>, cat) => {
+                  const wf = String((cat as Record<string, unknown>).workflow || (cat as Record<string, unknown>).workflowType || 'ECOMMERCE')
+                  acc[wf] = (acc[wf] || 0) + 1
                   return acc
                 }, {} as Record<string, number>)
                 return Object.entries(workflowCounts).map(([workflow, count]) => (
@@ -641,7 +773,7 @@ export function BusinessDashboard() {
               <Separator className="my-1" />
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Total Products</span>
-                <span className="text-sm font-medium">{demoProducts.length}</span>
+                <span className="text-sm font-medium">{productsList.length}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Low Stock</span>
@@ -695,7 +827,7 @@ export function BusinessDashboard() {
                   </div>
                   <span className="text-sm">Customers</span>
                 </div>
-                <span className="text-sm font-semibold">{demoCustomers.length}</span>
+                <span className="text-sm font-semibold">{customersList.length}</span>
               </div>
             </div>
           </CardContent>

@@ -14,36 +14,53 @@ import {
   BarChart3,
   Users,
 } from "lucide-react"
-import { leads, leadStageColors } from "@/components/dashboard/data"
+import { leadStageColors } from "@/components/dashboard/data"
 import type { LeadStage } from "@/components/dashboard/data"
 import { salesRepMetrics, stageFunnelData, leadContactStats, followUpReminders } from "./crm-data"
 
-interface SalesCrmReportsProps {
-  onClose?: () => void
+interface LeadData {
+  id: string; businessName: string; contactName: string; contactEmail: string
+  contactPhone: string; businessType: string; source: string; stage: string
+  estimatedValue: number | null; notes: string | null; followUpDate: string | null
+  lastContactedAt: string | null; tags: string; createdAt: string; updatedAt: string
+  salesRep: { id: string; name: string; email: string } | null
 }
 
-export function SalesCrmReports({ onClose }: SalesCrmReportsProps) {
-  // Leads contacted today (daysSinceLastContact === 0)
-  const contactedToday = Object.entries(leadContactStats).filter(
-    ([, stats]) => stats.daysSinceLastContact === 0
-  ).length
+interface SalesCrmReportsProps {
+  onClose?: () => void
+  leads?: LeadData[]
+}
 
-  // Pending follow-ups count
+export function SalesCrmReports({ onClose, leads: leadsProp }: SalesCrmReportsProps) {
+  // Use passed leads data if available, otherwise fall back to CRM mock data lookups
+  const leads = leadsProp || []
+
+  // Leads contacted today (lastContactedAt within 24h from real data)
+  const contactedToday = leads.filter((lead) => {
+    if (!lead.lastContactedAt) return false
+    const diffHours = (Date.now() - new Date(lead.lastContactedAt).getTime()) / (1000 * 60 * 60)
+    return diffHours <= 24
+  }).length
+
+  // Pending follow-ups count (leads with followUpDate in the future or from CRM data)
   const pendingFollowUps = followUpReminders.filter(
     (r) => r.type === "PENDING" || r.type === "OVERDUE"
   )
   const overdueCount = followUpReminders.filter((r) => r.type === "OVERDUE").length
 
-  // Hot leads (contacted in last 48 hours = daysSinceLastContact <= 2)
+  // Hot leads (contacted in last 48 hours)
   const hotLeads = leads.filter((lead) => {
-    const stats = leadContactStats[lead.id]
-    return stats && stats.daysSinceLastContact <= 2 && lead.stage !== "LOST" && lead.stage !== "CHURNED"
+    if (!lead.lastContactedAt) return false
+    const diffHours = (Date.now() - new Date(lead.lastContactedAt).getTime()) / (1000 * 60 * 60)
+    return diffHours <= 48 && lead.stage !== "LOST" && lead.stage !== "CHURNED" && lead.stage !== "ACTIVE"
   })
 
-  // Inactive leads (not contacted in 7+ days)
+  // Inactive leads (not contacted in 7+ days or never contacted)
   const inactiveLeads = leads.filter((lead) => {
-    const stats = leadContactStats[lead.id]
-    return stats && stats.daysSinceLastContact >= 7 && lead.stage !== "LOST" && lead.stage !== "CHURNED" && lead.stage !== "ACTIVE"
+    if (lead.stage === "LOST" || lead.stage === "CHURNED" || lead.stage === "ACTIVE") return false
+    if (!lead.lastContactedAt) return true // Never contacted
+    const diffDays = (Date.now() - new Date(lead.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24)
+    return diffDays >= 7
   })
 
   // Average touchpoints before conversion (mock)
@@ -207,13 +224,15 @@ export function SalesCrmReports({ onClose }: SalesCrmReportsProps) {
                   <div className="p-4 text-center text-xs text-muted-foreground">No inactive leads</div>
                 ) : (
                   inactiveLeads.map((lead) => {
-                    const stats = leadContactStats[lead.id]
+                    const daysSince = lead.lastContactedAt
+                      ? Math.floor((Date.now() - new Date(lead.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24))
+                      : null
                     return (
                       <div key={lead.id} className="flex items-center justify-between px-4 py-2 border-b last:border-0">
                         <div>
                           <p className="text-sm font-medium">{lead.businessName}</p>
                           <p className="text-[11px] text-muted-foreground">
-                            {stats ? `${stats.daysSinceLastContact} days ago` : "Never contacted"}
+                            {daysSince !== null ? `${daysSince} days ago` : "Never contacted"}
                           </p>
                         </div>
                         <Badge variant="outline" className="text-[10px] text-red-600 border-red-200">

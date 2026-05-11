@@ -15,6 +15,7 @@ import {
 import { NotificationBell } from "@/components/shared/notification-bell"
 import { useResponsive } from "@/hooks/use-responsive"
 import { DemoSwitcher } from "@/components/workflow/demo-switcher"
+import { UserMenu } from "@/components/auth/user-menu"
 
 const pageTitles: Record<string, string> = {
   dashboard: "Dashboard",
@@ -104,6 +105,7 @@ export function AdminHeader({ onMobileMenuClick }: AdminHeaderProps) {
           onViewAll={() => setActivePage("notifications")}
         />
         <DemoSwitcher />
+        <UserMenu />
       </div>
     </header>
   )

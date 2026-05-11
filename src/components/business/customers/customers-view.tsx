@@ -46,15 +46,13 @@ import {
   Eye,
   X,
 } from "lucide-react"
-import { useAdminStore, DEMO_BUSINESSES } from "@/stores/admin-store"
-import { getDemoCustomers, getDemoBusinessName } from "@/lib/demo-data"
+import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { SkeletonTable } from "@/components/ui/loading-states"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
 import { EmptyState } from "@/components/ui/loading-states"
-
-const BUSINESS_ID = "biz_1"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -190,49 +188,68 @@ function getOrderStatusColor(status: string) {
 // Main Component
 // ---------------------------------------------------------------------------
 export function CustomersView() {
-  // Get demo business context
-  const { demoBusinessId } = useAdminStore()
-  const businessName = getDemoBusinessName(demoBusinessId)
+  // Get real business context
+  const { businessId, businessName, isLoading: contextLoading } = useBusinessContext()
+  const queryClient = useQueryClient()
+
+  // ---- Fetch customers from API ----
+  const { data: customersResponse, isLoading: customersLoading, error: customersError, refetch: refetchCustomers } = useQuery({
+    queryKey: ["customers", businessId],
+    queryFn: async () => {
+      if (!businessId) return { data: [], pagination: { total: 0 } }
+      const response = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers?limit=100`)
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to fetch customers')
+      return data
+    },
+    enabled: !!businessId,
+  })
+
+  // ---- Create customer mutation ----
+  const createCustomerMutation = useMutation({
+    mutationFn: async (customerData: { name: string; email?: string; phone?: string }) => {
+      if (!businessId) throw new Error('No business context')
+      const response = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customerData),
+      })
+      const data = await response.json()
+      if (!data.success) throw new Error(data.error || 'Failed to create customer')
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers", businessId] })
+      showSuccess("Customer added successfully")
+    },
+    onError: () => {
+      showError("Failed to add customer")
+    },
+  })
+
+  // Map API customers to local type
+  const customerList: Customer[] = useMemo(() => {
+    const rawData = customersResponse?.data
+    if (!Array.isArray(rawData)) return []
+    return rawData.map((c: Record<string, unknown>) => ({
+      id: String(c.id || ""),
+      name: String(c.name || "Unknown"),
+      phone: String(c.phone || ""),
+      email: String(c.email || ""),
+      totalOrders: Number(c.totalOrders || c._count?.orders || 0),
+      totalSpent: Number(c.totalSpent || 0),
+      loyaltyPoints: Number(c.loyaltyPoints || 0),
+      tier: (String(c.tier || "BRONZE").toUpperCase() === "PLATINUM" ? "PLATINUM" : String(c.tier || "BRONZE") === "GOLD" ? "GOLD" : String(c.tier || "BRONZE") === "SILVER" ? "SILVER" : "BRONZE") as Tier,
+      lastOrder: c.lastOrderAt ? String(c.lastOrderAt) : c.createdAt ? String(c.createdAt) : new Date().toISOString(),
+      tags: (() => { try { const t = JSON.parse(String(c.tags || '[]')); return Array.isArray(t) ? t : []; } catch { return []; } })(),
+      addresses: [], // Addresses would need a separate fetch or include
+    }))
+  }, [customersResponse])
 
   // Business-specific form placeholders
   const customerPlaceholders = useMemo(() => {
-    switch (demoBusinessId) {
-      case "standard_grocery":
-        return { name: "e.g. Rajesh Kumar", address: "e.g. 42, MG Road, Bengaluru" }
-      case "standard_laundry":
-      case "pro_laundry":
-        return { name: "e.g. Regular Customer", address: "e.g. Flat No, Society Name, Bengaluru" }
-      case "pro_carwash":
-        return { name: "e.g. Car Owner Name", address: "e.g. Villa/Apt, Layout, Bengaluru" }
-      default:
-        return { name: "e.g. Priya Sharma", address: "Street, Area, City, Pincode" }
-    }
-  }, [demoBusinessId])
-
-  // ---- Demo customer data based on business context ----
-  const demoCustomerList: Customer[] = useMemo(() => {
-    return getDemoCustomers(demoBusinessId).map((c) => ({
-      id: c.id,
-      name: c.name,
-      phone: c.phone,
-      email: c.email,
-      totalOrders: c.totalOrders,
-      totalSpent: c.totalSpent,
-      loyaltyPoints: c.loyaltyPoints,
-      tier: c.tier,
-      lastOrder: c.lastOrder,
-      tags: c.tags || [],
-      addresses: c.addresses.map((a) => ({
-        id: a.id,
-        label: a.label,
-        line1: a.line1,
-        line2: a.line2,
-        city: a.city,
-        pincode: a.pincode,
-        isDefault: a.isDefault,
-      })),
-    }))
-  }, [demoBusinessId])
+    return { name: "e.g. Priya Sharma", address: "Street, Area, City, Pincode" }
+  }, [])
 
   // Local state
   const [searchQuery, setSearchQuery] = useState("")
@@ -254,7 +271,7 @@ export function CustomersView() {
   // Filtered & sorted customers
   // ---------------------------------------------------------------------------
   const filteredCustomers = useMemo(() => {
-    let result = demoCustomerList.filter((c) => {
+    let result = customerList.filter((c) => {
       const q = searchQuery.toLowerCase()
       const matchSearch =
         !searchQuery ||
@@ -278,31 +295,56 @@ export function CustomersView() {
     })
 
     return result
-  }, [demoCustomerList, searchQuery, tierFilter, sortBy])
+  }, [customerList, searchQuery, tierFilter, sortBy])
 
   // ---------------------------------------------------------------------------
   // Summary stats
   // ---------------------------------------------------------------------------
-  const totalCustomers = demoCustomerList.length
-  const activeThisMonth = demoCustomerList.filter(
+  const totalCustomers = customerList.length
+  const activeThisMonth = customerList.filter(
     (c) => {
       const d = new Date(c.lastOrder)
       const now = new Date()
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
     }
   ).length
-  const totalSpentAll = demoCustomerList.reduce((s, c) => s + c.totalSpent, 0)
-  const totalOrdersAll = demoCustomerList.reduce((s, c) => s + c.totalOrders, 0)
+  const totalSpentAll = customerList.reduce((s, c) => s + c.totalSpent, 0)
+  const totalOrdersAll = customerList.reduce((s, c) => s + c.totalOrders, 0)
   const avgOrderValue = totalOrdersAll > 0 ? Math.round(totalSpentAll / totalOrdersAll) : 0
-  const loyaltyMembers = demoCustomerList.filter(
+  const loyaltyMembers = customerList.filter(
     (c) => c.tier === "PLATINUM" || c.tier === "GOLD"
   ).length
 
   // ---------------------------------------------------------------------------
-  // Orders for a customer
+  // Orders for a customer — fetch from API
   // ---------------------------------------------------------------------------
-  // No API orders in demo mode
-  const getOrdersForCustomer = () => []
+  const [fetchedOrders, setFetchedOrders] = useState<{ id: string; orderNumber: string; status: string; total: number; createdAt: string; items: unknown[] }[]>([])
+
+  const openDetail = async (customer: Customer) => {
+    setSelectedCustomer(customer)
+    setDetailOpen(true)
+    // Fetch orders for this customer
+    if (businessId && customer.id) {
+      try {
+        const response = await fetch(`/api/core/orders?businessId=${encodeURIComponent(businessId)}&customerId=${encodeURIComponent(customer.id)}&limit=20`)
+        const data = await response.json()
+        if (data.success && Array.isArray(data.data)) {
+          setFetchedOrders(data.data.map((o: Record<string, unknown>) => ({
+            id: String(o.id || ""),
+            orderNumber: String(o.orderNumber || ""),
+            status: String(o.status || "PENDING"),
+            total: Number(o.totalAmount || 0),
+            createdAt: o.createdAt ? new Date(String(o.createdAt)).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "",
+            items: Array.isArray(o.items) ? o.items : [],
+          })))
+        } else {
+          setFetchedOrders([])
+        }
+      } catch {
+        setFetchedOrders([])
+      }
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Reset add form
@@ -312,14 +354,6 @@ export function CustomersView() {
     setFormPhone("")
     setFormEmail("")
     setFormAddress("")
-  }
-
-  // ---------------------------------------------------------------------------
-  // Open detail sheet
-  // ---------------------------------------------------------------------------
-  const openDetail = (customer: Customer) => {
-    setSelectedCustomer(customer)
-    setDetailOpen(true)
   }
 
   // ---------------------------------------------------------------------------
@@ -396,7 +430,20 @@ export function CustomersView() {
                 <Button variant="outline" onClick={() => { setAddOpen(false); resetForm() }}>
                   Cancel
                 </Button>
-                <Button onClick={() => setAddOpen(false)}>Add Customer</Button>
+                <Button onClick={async () => {
+                if (!formName) return
+                try {
+                  await createCustomerMutation.mutateAsync({
+                    name: formName,
+                    phone: formPhone || undefined,
+                    email: formEmail || undefined,
+                  })
+                  setAddOpen(false)
+                  resetForm()
+                } catch {
+                  // Error handled by mutation
+                }
+              }}>Add Customer</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -404,14 +451,14 @@ export function CustomersView() {
       />
 
       {/* Business Context Banner */}
-      {demoBusinessId !== "super_admin" && (
+      {businessName && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="p-3">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">{businessName}</span>
               <Badge variant="outline" className="text-[10px]">
-                {demoBusinessId.includes("grocery") ? "Grocery" : demoBusinessId.includes("laundry") ? "Laundry" : demoBusinessId.includes("carwash") ? "Car Wash" : "Business"} Customers
+                Business Customers
               </Badge>
             </div>
           </CardContent>
@@ -649,7 +696,7 @@ export function CustomersView() {
           {selectedCustomer && (() => {
             const customer = selectedCustomer
             const tierColors = getTierColors(customer.tier)
-            const customerOrders = getOrdersForCustomer()
+            const customerOrders = fetchedOrders
             const avgOrder = customer.totalOrders > 0
               ? Math.round(customer.totalSpent / customer.totalOrders)
               : 0

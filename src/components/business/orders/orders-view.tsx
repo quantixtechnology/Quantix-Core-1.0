@@ -30,6 +30,7 @@ import {
   Eye,
   RefreshCw,
   Workflow,
+  Plus,
 } from "lucide-react"
 import {
   useOrders,
@@ -43,12 +44,13 @@ import { StatusBadge } from "@/components/admin/shared/status-badge"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
 import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
-import { getDemoBusinessOrders } from "@/lib/demo-data"
+import { useBusinessContext } from "@/hooks/use-business-context"
+import { CreateOrderDialog } from "./create-order-dialog"
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const BUSINESS_ID = "biz_1"
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,7 +65,7 @@ type OrderStatus =
   | "DELIVERED"
   | "CANCELLED"
 
-type OrderType = "DELIVERY" | "POS" | "PICKUP" | "APPOINTMENT" | "SUBSCRIPTION"
+type OrderType = "DELIVERY" | "POS" | "PICKUP" | "PICKUP_AND_DELIVERY" | "APPOINTMENT" | "SUBSCRIPTION"
 
 interface OrderItem {
   name: string
@@ -159,7 +161,7 @@ function mapApiOrder(apiOrder: Record<string, unknown>): Order {
   return {
     id: String(apiOrder.id || ""),
     orderNumber: String(apiOrder.orderNumber || apiOrder.id || ""),
-    type: (String(apiOrder.orderType || "DELIVERY").toUpperCase() === "POS" ? "POS" : "DELIVERY") as OrderType,
+    type: (String(apiOrder.orderType || "DELIVERY") as OrderType),
     status: String(apiOrder.status || "PENDING") as OrderStatus,
     customerName: String(apiOrder.customerName || "Unknown"),
     customerPhone: String(apiOrder.customerPhone || ""),
@@ -187,79 +189,45 @@ function mapApiOrder(apiOrder: Record<string, unknown>): Order {
 // ---------------------------------------------------------------------------
 
 export function OrdersView() {
-  // Set business context on mount
-  const { demoBusinessId } = useAdminStore()
-  const demoOrdersRaw = getDemoBusinessOrders(demoBusinessId)
+  // Get real business ID from context
+  const { businessId, isLoading: contextLoading } = useBusinessContext()
 
-  // Map demo orders to local Order type
-  const demoOrdersList: Order[] = useMemo(() => {
-    return demoOrdersRaw.map((o) => ({
-      id: o.id,
-      orderNumber: o.orderNumber,
-      type: o.type as OrderType,
-      status: o.status as Order["status"],
-      customerName: o.customerName,
-      customerPhone: "",
-      items: o.items.map((item) => ({
-        name: item.name,
-        qty: item.quantity,
-        price: item.price,
-        variant: item.variant,
-      })),
-      subtotal: o.subtotal,
-      deliveryFee: o.deliveryFee,
-      tax: o.tax,
-      total: o.total,
-      paymentMethod: o.paymentMethod,
-      paymentStatus: o.paymentStatus,
-      createdAt: o.createdAt,
-      deliveryAddress: o.deliveryAddress || null,
-      assignedTo: o.assignedTo || null,
-      workflow: o.workflow,
-    }))
-  }, [demoBusinessId])
-
+  // Set business context for API client
   useEffect(() => {
-    setBusinessContext(BUSINESS_ID)
-  }, [])
+    if (businessId) {
+      setBusinessContext(businessId)
+    }
+  }, [businessId])
 
   // ---- API hooks ----
   const { data: ordersData, isLoading: ordersLoading, error: ordersError, refetch: refetchOrders } = useOrders(
-    { businessId: BUSINESS_ID, limit: 100 } as Record<string, unknown>,
+    { businessId, limit: 100 } as Record<string, unknown>,
     {
       refetchInterval: 30000,
+      enabled: !!businessId,
     }
   )
 
   const updateStatusMutation = useUpdateOrderStatus()
 
   // Real-time order updates
-  const { latestOrder, orderCount } = useOrderUpdates(BUSINESS_ID)
+  const { latestOrder, orderCount } = useOrderUpdates(businessId)
 
   // Show toast on real-time order updates
   useEffect(() => {
     if (latestOrder && latestOrder.orderNumber) {
       showOrderUpdate(latestOrder.status || "placed", latestOrder.orderNumber)
-      // Refetch orders to get latest data
       refetchOrders()
     }
   }, [orderCount, latestOrder, refetchOrders])
 
   // Map API data to local Order type
-  const apiOrders: Order[] = useMemo(() => {
+  const allOrders: Order[] = useMemo(() => {
     if (!ordersData?.data) return []
     const rawData = ordersData.data
     if (!Array.isArray(rawData)) return []
     return rawData.map((o: Record<string, unknown>) => mapApiOrder(o))
   }, [ordersData])
-
-  // Merge: prefer demo orders when demo context is active (business-type-aware),
-  // fall back to API data only when no demo context
-  const allOrders: Order[] = useMemo(() => {
-    if (demoOrdersList.length > 0) return demoOrdersList
-    if (apiOrders.length > 0) return apiOrders
-    return []
-  }, [demoOrdersList, apiOrders])
 
   // ---- State ----
   const [activeTab, setActiveTab] = useState("all")
@@ -277,6 +245,9 @@ export function OrdersView() {
     newStatus: OrderStatus
   } | null>(null)
   const [statusNotes, setStatusNotes] = useState("")
+
+  // Create order dialog
+  const [createOrderOpen, setCreateOrderOpen] = useState(false)
 
   // ---- Computed ----
   const pendingCount = allOrders.filter((o) => o.status === "PENDING").length
@@ -461,9 +432,7 @@ export function OrdersView() {
   }
 
   // ---- Error state ----
-  // NOTE: If API fails, we fall back to demo data instead of showing error
-  // Only show error if BOTH API and demo data are empty
-  if (ordersError && !ordersData && demoOrdersList.length === 0) {
+  if (ordersError && !ordersData) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -489,9 +458,18 @@ export function OrdersView() {
         description="Manage and track all customer orders"
         icon={ShoppingBag}
         action={
-          <Badge variant="secondary" className="text-sm px-3 py-1 bg-primary/10 text-primary hover:bg-primary/10">
-            {allOrders.length} orders
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-sm px-3 py-1 bg-primary/10 text-primary hover:bg-primary/10">
+              {allOrders.length} orders
+            </Badge>
+            <Button
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => setCreateOrderOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              New Order
+            </Button>
+          </div>
         }
       />
 
@@ -557,7 +535,9 @@ export function OrdersView() {
             <SelectContent>
               <SelectItem value="ALL">All Types</SelectItem>
               <SelectItem value="DELIVERY">Delivery</SelectItem>
+              <SelectItem value="PICKUP">Pickup</SelectItem>
               <SelectItem value="POS">POS</SelectItem>
+              <SelectItem value="PICKUP_AND_DELIVERY">Pickup & Delivery</SelectItem>
             </SelectContent>
           </Select>
           <Select value={paymentFilter} onValueChange={setPaymentFilter}>
@@ -933,6 +913,14 @@ export function OrdersView() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* ===== Create Order Dialog ===== */}
+      <CreateOrderDialog
+        open={createOrderOpen}
+        onOpenChange={setCreateOrderOpen}
+        businessId={businessId || ""}
+        onOrderCreated={() => refetchOrders()}
+      />
 
       {/* ===== Status Update Confirmation Dialog ===== */}
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>

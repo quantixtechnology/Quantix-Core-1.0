@@ -1,5 +1,7 @@
 "use client"
 
+import { AuthProvider } from "@/components/auth/auth-provider"
+import { useAuthStore } from "@/stores/auth-store"
 import { AdminLayout } from "@/components/admin/layout/admin-layout"
 import { BusinessLayout } from "@/components/business/layout/business-layout"
 import { CustomerLayout } from "@/components/customer/layout/customer-layout"
@@ -79,6 +81,14 @@ import { WorkflowConfigView } from "@/components/workflow/workflow-config-view"
 import { PlanComparison } from "@/components/workflow/plan-comparison"
 
 export default function Home() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  )
+}
+
+function AppContent() {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage } = useAdminStore()
 
   const renderSuperAdminPage = () => {
