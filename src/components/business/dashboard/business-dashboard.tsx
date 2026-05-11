@@ -39,7 +39,7 @@ import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
 import { StatusBadge } from "@/components/admin/shared/status-badge"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 // Business context constants
 
@@ -185,15 +185,6 @@ export function BusinessDashboard() {
   const totalOrders = dashboardData?.orders?.total || 0
   const totalRevenue = dashboardData?.revenue?.total || 0
   const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0
-  const lowStockProducts = useMemo(() => {
-    return productsList.filter((p: Record<string, unknown>) => {
-      const stock = Number((p as Record<string, unknown>).availableStock || 0)
-      return stock > 0 && stock <= 10
-    }).length
-  }, [productsList])
-  const activeStores = dashboardData?.stores?.total || 0
-  const totalDeliveryPartners = 0
-  const deliveryPartnersOnline = 0
 
   // Map orders from API
   const apiOrders: Record<string, unknown>[] = useMemo(() => {
@@ -216,6 +207,18 @@ export function BusinessDashboard() {
     if (!Array.isArray(productsData.data)) return []
     return productsData.data as Record<string, unknown>[]
   }, [productsData])
+
+  // Low stock products count (must come after productsList)
+  const lowStockProducts = useMemo(() => {
+    return productsList.filter((p: Record<string, unknown>) => {
+      const stock = Number((p as Record<string, unknown>).availableStock || 0)
+      return stock > 0 && stock <= 10
+    }).length
+  }, [productsList])
+
+  const activeStores = dashboardData?.stores?.total || 0
+  const totalDeliveryPartners = 0
+  const deliveryPartnersOnline = 0
 
   // Map customers from API
   const customersList = useMemo(() => {

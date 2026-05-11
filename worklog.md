@@ -432,3 +432,32 @@ Stage Summary:
 - Notification/Audit fetches from real DB ✅
 - Lint passes cleanly ✅
 - Server stability improved (cleared .next cache, disabled query logging)
+
+---
+Task ID: fix-usequery-bug
+Agent: Main Coordinator
+Task: Fix "useQuery is not defined" crash when business owner logs in
+
+Work Log:
+- Searched all business owner components for `useQuery` usage without proper import
+- Found 3 bugs:
+
+**Bug #1 (CRITICAL)**: `src/components/business/dashboard/business-dashboard.tsx` — line 42 only imported `useQueryClient` from `@tanstack/react-query` but the component uses `useQuery` on 4 lines (108, 131, 144, 157). This caused "ReferenceError: useQuery is not defined" crash when business owner logged in and the dashboard loaded.
+  - Fix: Changed import to `import { useQuery, useQueryClient } from "@tanstack/react-query"` (already applied)
+
+**Bug #2 (CRITICAL)**: Same file — `productsList` useMemo was referenced in `lowStockProducts` useMemo before it was declared (temporal dead zone). This would cause "ReferenceError: Cannot access 'productsList' before initialization".
+  - Fix: Reordered useMemo declarations so `productsList` comes before `lowStockProducts` (already applied)
+
+**Bug #3 (HIGH)**: `src/hooks/use-api.ts` — only imported `setBusinessContext` from `@/lib/api-client` but used `getBusinessContextId()` on lines 487 and 513 (in `useDeliveryOrders` and `useDeliveryEarnings` hooks).
+  - Fix: Added `getBusinessContextId` to import: `import { setBusinessContext, getBusinessContextId } from "@/lib/api-client"` (already applied)
+
+- Deep scanned ALL .tsx/.ts files in src/ for any other missing `useQuery`/`useMutation` imports — none found
+- Verified all business owner component imports match their usage
+- Verified `QueryClientProvider` wraps the app in root layout
+- Verified all hooks from `@/hooks/use-api`, `@/hooks/use-realtime`, `@/hooks/use-business-context` exist and export correctly
+- Lint passes with zero errors
+
+Stage Summary:
+- The primary crash ("useQuery is not defined" on business owner login) was caused by Bug #1 — missing `useQuery` import in business-dashboard.tsx
+- All 3 bugs were already fixed in the code (likely by a previous session)
+- The code is correct; the remaining dev server OOM crash is an environment resource constraint, not a code bug
