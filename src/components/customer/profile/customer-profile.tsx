@@ -1,11 +1,10 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useOrders } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
-import { getDemoBusinessName } from "@/lib/demo-data"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -22,12 +21,11 @@ import {
   Settings,
 } from "lucide-react"
 
-const BIZ_ID = "biz_1"
-
 export function CustomerProfile() {
   const {
     customerName,
-    demoBusinessId,
+    currentBusinessId,
+    currentBusinessName,
     setCustomerLoggedIn,
     setCustomerName,
     setCustomerPage,
@@ -42,8 +40,8 @@ export function CustomerProfile() {
   })
 
   useEffect(() => {
-    setBusinessContext(BIZ_ID)
-  }, [])
+    if (currentBusinessId) setBusinessContext(currentBusinessId)
+  }, [currentBusinessId])
 
   const orderCount = ordersData?.pagination?.total || 0
   const displayName = user?.name || customerName || "Guest User"
@@ -88,7 +86,7 @@ export function CustomerProfile() {
     },
     {
       id: "about",
-      label: `About ${getDemoBusinessName(demoBusinessId)}`,
+      label: `About ${currentBusinessName || "My Store"}`,
       desc: "App version 2.1.0",
       icon: Info,
       action: () => {},
@@ -221,7 +219,7 @@ export function CustomerProfile() {
 
       {/* App Info */}
       <div className="text-center mt-6 pb-2">
-        <p className="text-[10px] text-gray-300">{getDemoBusinessName(demoBusinessId)} v2.1.0</p>
+        <p className="text-[10px] text-gray-300">{currentBusinessName || "My Store"} v2.1.0</p>
         <p className="text-[10px] text-gray-300">Powered by Quantix Core</p>
       </div>
     </div>

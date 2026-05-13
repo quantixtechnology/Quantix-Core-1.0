@@ -42,7 +42,7 @@ import {
   Rows3, MonitorSmartphone, ChevronDown, ChevronUp, Loader2,
 } from "lucide-react"
 import { cn, formatCurrency } from "@/lib/utils"
-import { useAdminStore, DEMO_BUSINESSES } from "@/stores/admin-store"
+import { useAdminStore } from "@/stores/admin-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { showSuccess, showError } from "@/lib/toast-utils"
@@ -827,11 +827,21 @@ function useProductsInfinite(businessId: string, search: string) {
   return useInfiniteQuery({
     queryKey: ["pos-products-inf", businessId, search],
     queryFn: async ({ pageParam }) => {
-      const p = new URLSearchParams({ page: String(pageParam), limit: "60" })
+      const p = new URLSearchParams({
+        businessId,
+        page: String(pageParam),
+        limit: "60",
+        status: "ACTIVE",
+      })
       if (search) p.set("search", search)
-      const res = await fetch(`/api/core/businesses/${businessId}/products?${p}`, { headers: getAuthHeaders() })
+      const res = await fetch(`/api/core/storefront/products?${p}`, { headers: getAuthHeaders() })
       const json = await res.json()
-      return { items: (json.data ?? []) as Product[], total: (json.total ?? 0) as number, page: pageParam as number }
+      const total = json.pagination?.total ?? json.total ?? 0
+      // Debug: log resolved context on first page
+      if (pageParam === 1) {
+        console.log("[POS] businessId:", businessId, "| total products:", total, "| fetched:", (json.data ?? []).length, "| search:", search || "(none)")
+      }
+      return { items: (json.data ?? []) as Product[], total: total as number, page: pageParam as number }
     },
     initialPageParam: 1,
     getNextPageParam: (last, _, lp) => {
@@ -847,11 +857,10 @@ function useProductsInfinite(businessId: string, search: string) {
 
 export function POSEnterprise() {
   const { businessId } = useBusinessContext()
-  const { demoBusinessId } = useAdminStore()
+  const { currentBusinessType } = useAdminStore()
   const queryClient = useQueryClient()
 
-  const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId)
-  const businessType = demoBusiness?.businessType ?? "GROCERY"
+  const businessType = currentBusinessType || "GROCERY"
   const plugin = useMemo(() => getPlugin(businessType), [businessType])
 
   // ── Display Preferences ───────────────────────────────────────────────────

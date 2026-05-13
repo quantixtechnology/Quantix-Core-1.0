@@ -107,11 +107,11 @@ function generateBillNumber(prefix: string): string {
 
 export function POSView() {
   // Get demo business context
-  const { demoBusinessId } = useAdminStore()
+  const { currentBusinessType } = useAdminStore()
 
   // Demo data — context-aware fallbacks
   const demoProductsFallback = useMemo(() => {
-    return getDemoProducts(demoBusinessId).map((p) => ({
+    return getDemoProducts(currentBusinessType).map((p) => ({
       id: p.id,
       name: p.name,
       slug: p.slug,
@@ -131,11 +131,11 @@ export function POSView() {
         isDefault: v.isDefault,
       })),
     }))
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
   const demoCategoriesFallback = useMemo(() => {
-    const cats = getDemoCategories(demoBusinessId)
-    const prods = getDemoProducts(demoBusinessId)
+    const cats = getDemoCategories(currentBusinessType)
+    const prods = getDemoProducts(currentBusinessType)
     return cats.map((c) => ({
       id: c.id,
       name: c.name,
@@ -145,10 +145,10 @@ export function POSView() {
       color: c.color,
       sortOrder: c.sortOrder,
     }))
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
   const businessCustomers = useMemo(() => {
-    return getDemoCustomers(demoBusinessId).map((c) => ({
+    return getDemoCustomers(currentBusinessType).map((c) => ({
       id: c.id,
       name: c.name,
       phone: c.phone,
@@ -159,7 +159,7 @@ export function POSView() {
       tier: c.tier,
       lastOrder: c.lastOrder,
     }))
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
   // Set business context on mount
   useEffect(() => {
@@ -376,9 +376,9 @@ export function POSView() {
 
     setPaymentConfirmed(true);
     setSessionBillCount((prev) => prev + 1);
-    const billNum = generateBillNumber(getDemoOrderPrefix(demoBusinessId));
+    const billNum = generateBillNumber(getDemoOrderPrefix(currentBusinessType));
     setLastBillNumber(billNum);
-  }, [cart, selectedCustomerData, activePaymentMethod, createOrderMutation, sessionStartTime, demoBusinessId]);
+  }, [cart, selectedCustomerData, activePaymentMethod, createOrderMutation, sessionStartTime, currentBusinessType]);
 
   const openReceipt = useCallback(() => {
     setPaymentDialogOpen(false);
@@ -669,7 +669,7 @@ export function POSView() {
             disabled={cart.length === 0}
             onClick={() => {
               if (cart.length > 0) {
-                const billNum = lastBillNumber || generateBillNumber(getDemoOrderPrefix(demoBusinessId));
+                const billNum = lastBillNumber || generateBillNumber(getDemoOrderPrefix(currentBusinessType));
                 setLastBillNumber(billNum);
                 setReceiptDialogOpen(true);
               }
@@ -918,7 +918,7 @@ export function POSView() {
                   <div className="border-b border-dashed border-muted-foreground/30 pb-2 space-y-0.5">
                     <div className="flex justify-between">
                       <span>Bill No:</span>
-                      <span className="font-bold">{lastBillNumber || generateBillNumber(getDemoOrderPrefix(demoBusinessId))}</span>
+                      <span className="font-bold">{lastBillNumber || generateBillNumber(getDemoOrderPrefix(currentBusinessType))}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>Date:</span>
@@ -1025,7 +1025,7 @@ export function POSView() {
                   {/* Footer */}
                   <div className="text-center border-t border-dashed border-muted-foreground/30 pt-2 space-y-1">
                     <p className="font-bold text-[10px]">
-                      Thank you for visiting {getDemoStoreInfo(demoBusinessId).name}!
+                      Thank you for visiting {getDemoStoreInfo(currentBusinessType).name}!
                     </p>
                     <p className="text-[9px] text-muted-foreground">
                       Visit again · Fresh quality, best prices

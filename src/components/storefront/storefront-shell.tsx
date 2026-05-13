@@ -1,7 +1,6 @@
 'use client';
 
-import { useAdminStore, DEMO_BUSINESSES } from '@/stores/admin-store';
-import { getDemoBusinessName } from '@/lib/demo-data';
+import { useAdminStore, BUSINESS_TYPE_UI } from '@/stores/admin-store';
 import { CustomerLayout } from '@/components/customer/layout/customer-layout';
 import { CustomerHome } from '@/components/customer/home/customer-home';
 import { CustomerProducts } from '@/components/customer/products/customer-products';
@@ -62,9 +61,9 @@ function CustomerApp() {
 }
 
 export function StorefrontShell() {
-  const { demoBusinessId } = useAdminStore()
-  const businessName = getDemoBusinessName(demoBusinessId)
-  const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[1]
+  const { currentBusinessName, currentBusinessType } = useAdminStore()
+  const businessName = currentBusinessName || "My Store"
+  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -77,7 +76,7 @@ export function StorefrontShell() {
         <span className="text-[10px] text-slate-400">·</span>
         <span className="text-[10px] text-slate-400 font-medium">{businessName}</span>
         <span className="text-[10px] text-slate-400">·</span>
-        <span className="text-[10px] text-slate-400">{demoBusiness.planTier === "PRO" ? "⭐ Pro" : "Standard"} Plan</span>
+        <span className="text-[10px] text-slate-400">{typeUI.label} · Live</span>
       </div>
 
       {/* Storefront Container */}

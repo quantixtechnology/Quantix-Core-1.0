@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Plus, Minus, Leaf, Share2, Heart, Truck, Clock, ShieldCheck, Loader2 } from "lucide-react"
 
 export function CustomerProductDetail() {
-  const { selectedProductId, setSelectedProductId, setCustomerPage, demoBusinessId } = useAdminStore()
+  const { selectedProductId, setSelectedProductId, setCustomerPage, currentBusinessType } = useAdminStore()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(1)
@@ -34,7 +34,7 @@ export function CustomerProductDetail() {
 
   // Demo product from business context (business-type-aware)
   const demoProduct = useMemo(() => {
-    const allDemoProducts = getDemoProducts(demoBusinessId)
+    const allDemoProducts = getDemoProducts(currentBusinessType)
     const found = allDemoProducts.find((p) => p.id === selectedProductId)
     if (!found) return null
     return {
@@ -56,7 +56,7 @@ export function CustomerProductDetail() {
         isDefault: v.isDefault as boolean | undefined,
       })),
     }
-  }, [demoBusinessId, selectedProductId])
+  }, [currentBusinessType, selectedProductId])
 
   // Parse product from API
   const apiProduct = useMemo(() => {
@@ -126,7 +126,7 @@ export function CustomerProductDetail() {
   const relatedProducts = useMemo(() => {
     if (!product) return []
     // Try demo products first
-    const demoRelated = getDemoProducts(demoBusinessId)
+    const demoRelated = getDemoProducts(currentBusinessType)
       .filter((p) => p.categoryId === product.categoryId && p.id !== product.id && p.status === "ACTIVE")
       .slice(0, 4)
       .map((p) => ({
@@ -165,7 +165,7 @@ export function CustomerProductDetail() {
             }))
           : [],
       }))
-  }, [product, relatedData, demoBusinessId])
+  }, [product, relatedData, currentBusinessType])
 
   const handleAddToCart = () => {
     if (!product || !activeVariant) return

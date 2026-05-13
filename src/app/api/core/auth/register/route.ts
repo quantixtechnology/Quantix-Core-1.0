@@ -1,6 +1,12 @@
 // ============================================================================
 // Route: POST /api/core/auth/register
-// Register new user (CUSTOMER role only, when invited by a business)
+// Register a CUSTOMER user via OTP invite (business-initiated only).
+//
+// SECURITY POLICY:
+//   - No self-signup. No password creation by users.
+//   - Only CUSTOMER role can be registered via this endpoint.
+//   - Business staff accounts are created by admins via the staff API.
+//   - authProvider must be EMAIL_OTP or WHATSAPP_OTP (no PASSWORD).
 // ============================================================================
 
 import { db } from '@/lib/db';
@@ -16,6 +22,22 @@ export async function POST(request: Request) {
       businessId?: string;
       authProvider?: 'EMAIL_OTP' | 'WHATSAPP_OTP';
     };
+
+    // Block password-based self-signup
+    if ((body as Record<string, unknown>).password) {
+      return NextResponse.json(
+        { success: false, error: 'Self-signup with password is not allowed. Contact your administrator.' },
+        { status: 403 }
+      );
+    }
+
+    // Block any attempt to assign non-customer roles
+    if ((body as Record<string, unknown>).role && (body as Record<string, unknown>).role !== 'CUSTOMER') {
+      return NextResponse.json(
+        { success: false, error: 'Only CUSTOMER accounts can be created via this endpoint.' },
+        { status: 403 }
+      );
+    }
 
     // Validate required fields
     if (!name || !email) {
@@ -113,7 +135,7 @@ export async function POST(request: Request) {
     });
 
     // If businessId provided, create BusinessUser with CUSTOMER role
-    let businessUser = null;
+    let businessUser: { id: string; businessId: string; role: string } | null = null;
     if (businessId) {
       // Verify business exists
       const business = await db.business.findUnique({ where: { id: businessId } });
@@ -124,7 +146,7 @@ export async function POST(request: Request) {
         );
       }
 
-      businessUser = await db.businessUser.create({
+      const created = await db.businessUser.create({
         data: {
           userId: user.id,
           businessId,
@@ -132,6 +154,7 @@ export async function POST(request: Request) {
           acceptedAt: new Date(),
         },
       });
+      businessUser = { id: created.id, businessId: created.businessId, role: created.role };
 
       // Create Customer record for this business
       if (phone) {

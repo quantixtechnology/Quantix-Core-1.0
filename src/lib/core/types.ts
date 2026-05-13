@@ -288,6 +288,9 @@ export interface CreateBusinessRequest {
   manualPriceOverride?: boolean;
   overrideReason?: string;
   leadId?: string;
+  ownerEmail?: string;
+  ownerPassword?: string;
+  ownerName?: string;
 }
 
 export interface UpdateBusinessRequest extends Partial<CreateBusinessRequest> {

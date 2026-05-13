@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { getDemoCategories, getDemoProducts, getDemoBusinessName } from "@/lib/demo-data"
+import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -69,15 +69,15 @@ interface CategoryItem {
 }
 
 export function CustomerHome() {
-  const { setCustomerPage, setSelectedProductId, customerLoggedIn, demoBusinessId } = useAdminStore()
-  const businessName = getDemoBusinessName(demoBusinessId)
+  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType } = useAdminStore()
+  const businessName = currentBusinessName || "My Store"
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [currentBanner, setCurrentBanner] = useState(0)
 
   // ---- Demo data ----
   const demoCategories: CategoryItem[] = useMemo(() => {
-    return getDemoCategories(demoBusinessId).map((c) => ({
+    return getDemoCategories(currentBusinessType).map((c) => ({
       id: c.id,
       name: c.name,
       icon: c.icon,
@@ -85,10 +85,10 @@ export function CustomerHome() {
       slug: c.slug,
       productCount: 0,
     }))
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
   const demoProducts = useMemo(() => {
-    return getDemoProducts(demoBusinessId).filter((p) => p.status === "ACTIVE").map((p) => ({
+    return getDemoProducts(currentBusinessType).filter((p) => p.status === "ACTIVE").map((p) => ({
       id: p.id,
       name: p.name,
       categoryId: p.categoryId,
@@ -106,11 +106,11 @@ export function CustomerHome() {
         isDefault: v.isDefault,
       })),
     }))
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
   // Context-aware banners and offers
-  const banners = useMemo(() => getBanners(demoBusinessId), [demoBusinessId])
-  const offers = useMemo(() => getOffers(demoBusinessId), [demoBusinessId])
+  const banners = useMemo(() => getBanners(currentBusinessType), [currentBusinessType])
+  const offers = useMemo(() => getOffers(currentBusinessType), [currentBusinessType])
 
   // Auto-scroll banner
   useEffect(() => {

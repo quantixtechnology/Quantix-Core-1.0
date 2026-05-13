@@ -1,13 +1,11 @@
 "use client"
 
 import {
-  LayoutDashboard, Users, Building2, CreditCard, ClipboardList, Globe,
-  Monitor, UserCheck, Bell, Settings, Zap, ChevronDown,
+  LayoutDashboard, Users, Building2, CreditCard, Globe,
+  UserCheck, Bell, Settings, Zap, ChevronDown,
   Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
-  BarChart3, Wallet, HeadphonesIcon, Package, Warehouse, Tag,
-  Megaphone, Star, UserCog, MapPin, Receipt, Heart, Eye,
-  Truck
+  BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -33,6 +31,7 @@ const platformNavItems: { key: AdminPage; label: string; icon: React.ComponentTy
   { key: "payment-plugins", label: "Payment Plugins", icon: CreditCard },
   { key: "domains", label: "Domains & Deploys", icon: Globe },
   { key: "sales", label: "Sales Team", icon: Users },
+  { key: "platform-users", label: "User Management", icon: ShieldCheck },
 ]
 
 const mobileNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [

@@ -25,7 +25,6 @@ import { setBusinessContext } from "@/lib/api-client"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { useAdminStore } from "@/stores/admin-store"
-import { getDemoBusinessName, getDemoStoreInfo } from "@/lib/demo-data"
 
 const BUSINESS_ID = "biz_1"
 
@@ -79,11 +78,11 @@ export function StoreSettingsView() {
   }, [storesData])
 
   // General tab state - initialized with API data when available
-  const { demoBusinessId } = useAdminStore()
-  const [storeName, setStoreName] = useState(getDemoBusinessName(demoBusinessId))
-  const [storePhone, setStorePhone] = useState(getDemoStoreInfo(demoBusinessId).phone)
-  const [storeEmail, setStoreEmail] = useState(getDemoStoreInfo(demoBusinessId).email)
-  const [storeAddress, setStoreAddress] = useState(getDemoStoreInfo(demoBusinessId).name + "\n" + getDemoStoreInfo(demoBusinessId).address)
+  const { currentBusinessName } = useAdminStore()
+  const [storeName, setStoreName] = useState(currentBusinessName || "My Store")
+  const [storePhone, setStorePhone] = useState("")
+  const [storeEmail, setStoreEmail] = useState("")
+  const [storeAddress, setStoreAddress] = useState("")
   const [isOnline, setIsOnline] = useState(true)
   const [minOrder, setMinOrder] = useState("200")
   const [prepTime, setPrepTime] = useState("30")
@@ -114,7 +113,7 @@ export function StoreSettingsView() {
   const [autoPrint, setAutoPrint] = useState(true)
   const [printOnPayment, setPrintOnPayment] = useState(true)
   const [includeQr, setIncludeQr] = useState(true)
-  const [receiptHeader, setReceiptHeader] = useState(getDemoStoreInfo(demoBusinessId).name + "\n" + getDemoStoreInfo(demoBusinessId).address)
+  const [receiptHeader, setReceiptHeader] = useState(currentBusinessName ? `${currentBusinessName}\n` : "")
   const [receiptFooter, setReceiptFooter] = useState("Thank you for shopping with us!\nVisit again soon.")
   const [numCopies, setNumCopies] = useState("2")
 

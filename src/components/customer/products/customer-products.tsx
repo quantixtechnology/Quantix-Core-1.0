@@ -33,7 +33,7 @@ interface ProductItem {
 }
 
 export function CustomerProducts() {
-  const { setCustomerPage, setSelectedProductId, demoBusinessId } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, currentBusinessType } = useAdminStore()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -44,12 +44,12 @@ export function CustomerProducts() {
 
   // Dynamic fallback categories from business context
   const fallbackCategories = useMemo(() =>
-    getDemoCategories(demoBusinessId).map((c) => ({
+    getDemoCategories(currentBusinessType).map((c) => ({
       id: c.id,
       name: c.name,
       color: c.color,
     })),
-    [demoBusinessId]
+    [currentBusinessType]
   )
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export function CustomerProducts() {
 
   // Demo products from business context (business-type-aware)
   const demoProductsList: ProductItem[] = useMemo(() => {
-    return getDemoProducts(demoBusinessId)
+    return getDemoProducts(currentBusinessType)
       .filter((p) => p.status === "ACTIVE")
       .map((p) => ({
         id: p.id,
@@ -101,7 +101,7 @@ export function CustomerProducts() {
           isDefault: v.isDefault,
         })),
       }))
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
   // Parse products from API
   const apiProducts: ProductItem[] = useMemo(() => {

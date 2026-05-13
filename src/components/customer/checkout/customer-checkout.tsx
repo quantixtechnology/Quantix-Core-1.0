@@ -58,7 +58,7 @@ const defaultAddresses = [
 ]
 
 export function CustomerCheckout() {
-  const { setCustomerPage, setSelectedOrderId, demoBusinessId } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, currentBusinessId } = useAdminStore()
   const {
     items,
     subtotal: getSubtotal,
@@ -87,8 +87,8 @@ export function CustomerCheckout() {
   const { checkout: razorpayCheckout, isProcessing: razorpayProcessing } = useRazorpayCheckout()
 
   useEffect(() => {
-    setBusinessContext(demoBusinessId)
-  }, [])
+    if (currentBusinessId) setBusinessContext(currentBusinessId)
+  }, [currentBusinessId])
 
   const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 

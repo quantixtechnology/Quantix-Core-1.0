@@ -5,14 +5,15 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSendOtp, useVerifyOtp } from "@/hooks/use-api"
 import { showSuccess, showError } from "@/lib/toast-utils"
-import { getDemoBusinessName, getDemoBusinessTagline, getDemoBusinessInitials } from "@/lib/demo-data"
 import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "@/components/ui/input-otp"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Phone, ArrowLeft, Shield, Loader2 } from "lucide-react"
 
 export function CustomerAuth() {
-  const { setCustomerLoggedIn, setCustomerName, setCustomerPage, demoBusinessId } = useAdminStore()
+  const { setCustomerLoggedIn, setCustomerName, setCustomerPage, currentBusinessName: bizName } = useAdminStore()
+  const displayName = bizName || "My Store"
+  const displayInitials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
   const { loginWithOtp } = useAuthStore()
   const [step, setStep] = useState<"phone" | "otp">("phone")
   const [phone, setPhone] = useState("")
@@ -111,11 +112,11 @@ export function CustomerAuth() {
       {/* Top Section */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
         <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center shadow-lg mb-4">
-          <span className="text-emerald-600 font-extrabold text-2xl">{getDemoBusinessInitials(demoBusinessId)}</span>
+          <span className="text-emerald-600 font-extrabold text-2xl">{displayInitials}</span>
         </div>
-        <h1 className="text-2xl font-bold text-white mb-1">{getDemoBusinessName(demoBusinessId)}</h1>
+        <h1 className="text-2xl font-bold text-white mb-1">{displayName}</h1>
         <p className="text-emerald-100 text-sm text-center">
-          {getDemoBusinessTagline(demoBusinessId)}
+          Fresh groceries &amp; essentials delivered fast
         </p>
       </div>
 

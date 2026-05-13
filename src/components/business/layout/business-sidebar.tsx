@@ -2,11 +2,10 @@
 
 import {
   LayoutDashboard, ShoppingBag, Package, Monitor, Users, BarChart3,
-  Settings, ShoppingCart, Warehouse, Megaphone, Tag, Star, UserCog,
+  Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
-  Workflow, Zap, Droplets, Car,
+  Workflow, Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa,
 } from "lucide-react"
-import { useEffect } from "react"
 import {
   Sidebar,
   SidebarContent,
@@ -30,7 +29,13 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { useAdminStore, DEMO_BUSINESSES, getSlugForDemoId, type BusinessPage, type WorkflowType } from "@/stores/admin-store"
+import {
+  useAdminStore,
+  BUSINESS_TYPE_WORKFLOWS,
+  BUSINESS_TYPE_UI,
+  type BusinessPage,
+  type WorkflowType,
+} from "@/stores/admin-store"
 import { useResponsive } from "@/hooks/use-responsive"
 
 // Map workflow types to sidebar navigation items
@@ -73,6 +78,11 @@ const managementNavItems: { key: BusinessPage; label: string; icon: React.Compon
 const storefrontNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "storefront", label: "Storefront Preview", icon: Eye },
 ]
+
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  ShoppingCart, ShoppingBag, Zap, Droplets, Car, Truck, Calendar, CreditCard,
+  Receipt, Beef, Wrench, Sparkles, Sofa, MapPin,
+}
 
 function NavSection({
   title,
@@ -134,26 +144,17 @@ interface BusinessSidebarProps {
 }
 
 export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: BusinessSidebarProps) {
-  const { businessPage, setBusinessPage, demoBusinessId, setDemoBusinessId } = useAdminStore()
+  const { businessPage, setBusinessPage, currentBusinessName, currentBusinessType } = useAdminStore()
   const { isMobile } = useResponsive()
 
-  const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[1]
+  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const activeWorkflows = BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]
 
-  // If the current demoBusinessId has no real DB slug (e.g. "super_admin"),
-  // default to the first real business so useBusinessContext can resolve an ID.
-  useEffect(() => {
-    if (!getSlugForDemoId(demoBusinessId)) {
-      setDemoBusinessId(DEMO_BUSINESSES[1].id)
-    }
-  }, [demoBusinessId, setDemoBusinessId])
-  const activeWorkflows = demoBusiness.activeWorkflows
-
-  // Build workflow-specific nav items
+  // Build workflow-specific nav items (deduplicate by page key)
   const workflowNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = []
   const seen = new Set<string>()
   activeWorkflows.forEach((wf) => {
     workflowNavMap[wf]?.forEach((item) => {
-      const key = item.key + wf
       if (!seen.has(item.key)) {
         seen.add(item.key)
         workflowNavItems.push(item)
@@ -161,7 +162,6 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
     })
   })
 
-  // Always include workflow config
   const workflowConfigItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
     key: "workflow-config",
     label: "Workflow Config",
@@ -175,14 +175,9 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
     }
   }
 
-  // Business display info based on demo
-  const businessInitials = demoBusiness.name.split(" ").map(w => w[0]).join("").slice(0, 2)
-
-  // Map business type to correct icon
-  const businessIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-    Zap, ShoppingCart, Droplets, Car, Truck, Calendar, CreditCard, Receipt,
-  }
-  const BusinessIcon = businessIconMap[demoBusiness.icon] || ShoppingCart
+  const displayName = currentBusinessName || typeUI.label || "Business"
+  const businessInitials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
+  const BusinessIcon = iconMap[typeUI.icon] || ShoppingCart
 
   // Mobile: Sheet-based sidebar
   if (isMobile) {
@@ -191,13 +186,13 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
         <SheetContent side="left" className="w-[280px] p-0">
           <SheetHeader className="border-b p-4">
             <div className="flex items-center gap-3">
-              <div className={`flex size-10 items-center justify-center rounded-lg ${demoBusiness.color}`}>
+              <div className={`flex size-10 items-center justify-center rounded-lg ${typeUI.color}`}>
                 <BusinessIcon className="size-5" />
               </div>
               <div>
-                <SheetTitle className="text-left text-base font-bold">{demoBusiness.name}</SheetTitle>
+                <SheetTitle className="text-left text-base font-bold">{displayName}</SheetTitle>
                 <SheetDescription className="text-left text-xs flex items-center gap-1.5">
-                  {demoBusiness.planTier === "PRO" ? "⭐ Pro" : "Standard"} Admin
+                  {typeUI.label} Admin
                   <Badge variant="outline" className="text-[8px] px-1 py-0 h-3">
                     {activeWorkflows.length} workflows
                   </Badge>
@@ -216,11 +211,11 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
           <div className="border-t p-4">
             <div className="flex items-center gap-3">
               <Avatar className="h-10 w-10">
-                <AvatarFallback className={`${demoBusiness.color} text-sm`}>{businessInitials}</AvatarFallback>
+                <AvatarFallback className={`${typeUI.color} text-sm`}>{businessInitials}</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="truncate text-sm font-semibold">Business Owner</p>
-                <p className="truncate text-xs text-muted-foreground">{demoBusiness.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{displayName}</p>
               </div>
             </div>
           </div>
@@ -236,14 +231,12 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" className="hover:bg-sidebar-accent">
-              <div className={`flex aspect-square size-8 items-center justify-center rounded-lg ${demoBusiness.color}`}>
+              <div className={`flex aspect-square size-8 items-center justify-center rounded-lg ${typeUI.color}`}>
                 <BusinessIcon className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-bold">{demoBusiness.name}</span>
-                <span className="truncate text-xs text-muted-foreground flex items-center gap-1">
-                  {demoBusiness.planTier === "PRO" ? "⭐ Pro" : "Standard"} Admin
-                </span>
+                <span className="truncate font-bold">{displayName}</span>
+                <span className="truncate text-xs text-muted-foreground">{typeUI.label} Admin</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -264,6 +257,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
         <SidebarGroup>
           <SidebarGroupLabel className="flex items-center gap-1.5">
             Workflows
@@ -288,6 +282,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
         <SidebarGroup>
           <SidebarGroupLabel>Management</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -303,6 +298,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
         <SidebarGroup>
           <SidebarGroupLabel>Store</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -325,11 +321,11 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
           <SidebarMenuItem>
             <SidebarMenuButton size="lg">
               <Avatar className="h-8 w-8">
-                <AvatarFallback className={`${demoBusiness.color} text-xs`}>{businessInitials}</AvatarFallback>
+                <AvatarFallback className={`${typeUI.color} text-xs`}>{businessInitials}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">Business Owner</span>
-                <span className="truncate text-xs text-muted-foreground">{demoBusiness.name}</span>
+                <span className="truncate text-xs text-muted-foreground">{displayName}</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>

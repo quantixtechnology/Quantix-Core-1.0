@@ -3,13 +3,12 @@
 import React from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { getDemoBusinessName } from "@/lib/demo-data"
 import { Home, Grid3X3, ShoppingCart, ClipboardList, User, Search, Bell } from "lucide-react"
 
 export function CustomerLayout({ children }: { children: React.ReactNode }) {
-  const { customerPage, setCustomerPage, customerLoggedIn, setCustomerPage: navigate, demoBusinessId } = useAdminStore()
-  const businessName = getDemoBusinessName(demoBusinessId)
-  const businessInitials = businessName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const { customerPage, setCustomerPage, customerLoggedIn, setCustomerPage: navigate, currentBusinessName } = useAdminStore()
+  const businessName = currentBusinessName || "My Store"
+  const businessInitials = businessName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
   const totalItems = useCartStore((s) => s.totalItems())
 
   const handleTabPress = (page: "home" | "products" | "cart" | "orders" | "profile") => {

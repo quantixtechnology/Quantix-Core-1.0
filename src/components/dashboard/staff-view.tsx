@@ -1,213 +1,618 @@
-'use client'
+"use client"
 
+import { useState, useMemo, useCallback } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 import {
-  Card, CardContent, CardHeader, CardTitle,
-} from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog"
 import {
-  Users, UserCog, Plus, CheckCircle2,
-} from 'lucide-react'
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select"
+import {
+  Users, Plus, Search, RefreshCw, KeyRound, ShieldOff, ShieldCheck,
+  Copy, Check, AlertTriangle, UserCog,
+} from "lucide-react"
+import { toast } from "sonner"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { ROLE_LABELS, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission } from "@/lib/permissions"
+import { useAdminStore } from "@/stores/admin-store"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
-const stats = [
-  { label: 'Total Staff', value: '18', icon: Users, color: 'text-slate-600 bg-slate-50' },
-  { label: 'Active Now', value: '12', icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-  { label: 'Roles', value: '5', icon: UserCog, color: 'text-blue-600 bg-blue-50' },
-  { label: 'Avg Performance', value: '87%', icon: Users, color: 'text-amber-600 bg-amber-50' },
-]
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-type RoleKey = 'STORE_MANAGER' | 'DELIVERY_STAFF' | 'SALES' | 'SUPPORT' | 'ADMIN'
-
-const roleConfig: Record<RoleKey, { color: string; label: string }> = {
-  STORE_MANAGER: { color: 'bg-purple-100 text-purple-700', label: 'Store Manager' },
-  DELIVERY_STAFF: { color: 'bg-blue-100 text-blue-700', label: 'Delivery Staff' },
-  SALES: { color: 'bg-amber-100 text-amber-700', label: 'Sales' },
-  SUPPORT: { color: 'bg-cyan-100 text-cyan-700', label: 'Support' },
-  ADMIN: { color: 'bg-emerald-100 text-emerald-700', label: 'Admin' },
+interface StaffMember {
+  businessUserId: string
+  userId: string
+  name: string
+  email: string
+  phone: string | null
+  avatar: string | null
+  role: string
+  isActive: boolean
+  permissions: string[]
+  joinedAt: string | null
+  acceptedAt: string | null
+  lastLoginAt: string | null
+  createdAt: string
 }
 
-const staffMembers = [
-  { name: 'Anand Sharma', role: 'STORE_MANAGER' as RoleKey, email: 'anand@freshmart.in', status: 'ONLINE', performance: 92 },
-  { name: 'Ritu Patel', role: 'STORE_MANAGER' as RoleKey, email: 'ritu@freshmart.in', status: 'ONLINE', performance: 88 },
-  { name: 'Karan Singh', role: 'DELIVERY_STAFF' as RoleKey, email: 'karan@freshmart.in', status: 'ONLINE', performance: 95 },
-  { name: 'Deepak Joshi', role: 'DELIVERY_STAFF' as RoleKey, email: 'deepak@freshmart.in', status: 'ONLINE', performance: 78 },
-  { name: 'Meera Iyer', role: 'DELIVERY_STAFF' as RoleKey, email: 'meera@freshmart.in', status: 'OFFLINE', performance: 82 },
-  { name: 'Suresh Reddy', role: 'SALES' as RoleKey, email: 'suresh@freshmart.in', status: 'ONLINE', performance: 90 },
-  { name: 'Pooja Nair', role: 'SALES' as RoleKey, email: 'pooja@freshmart.in', status: 'OFFLINE', performance: 85 },
-  { name: 'Ravi Kumar', role: 'SUPPORT' as RoleKey, email: 'ravi@freshmart.in', status: 'ONLINE', performance: 91 },
-  { name: 'Swati Das', role: 'SUPPORT' as RoleKey, email: 'swati@freshmart.in', status: 'ONLINE', performance: 87 },
-  { name: 'Vikas Gupta', role: 'ADMIN' as RoleKey, email: 'vikas@freshmart.in', status: 'ONLINE', performance: 96 },
-  { name: 'Nisha Agarwal', role: 'DELIVERY_STAFF' as RoleKey, email: 'nisha@freshmart.in', status: 'ONLINE', performance: 84 },
-  { name: 'Pradeep M', role: 'DELIVERY_STAFF' as RoleKey, email: 'pradeep@freshmart.in', status: 'ONLINE', performance: 76 },
-  { name: 'Kavitha R', role: 'SUPPORT' as RoleKey, email: 'kavitha@freshmart.in', status: 'OFFLINE', performance: 89 },
-  { name: 'Rahul Verma', role: 'SALES' as RoleKey, email: 'rahul@freshmart.in', status: 'ONLINE', performance: 83 },
-  { name: 'Lakshmi S', role: 'DELIVERY_STAFF' as RoleKey, email: 'lakshmi@freshmart.in', status: 'OFFLINE', performance: 79 },
-  { name: 'Sandeep T', role: 'DELIVERY_STAFF' as RoleKey, email: 'sandeep@freshmart.in', status: 'ONLINE', performance: 88 },
-  { name: 'Divya K', role: 'SUPPORT' as RoleKey, email: 'divya@freshmart.in', status: 'OFFLINE', performance: 92 },
-  { name: 'Manoj P', role: 'DELIVERY_STAFF' as RoleKey, email: 'manoj@freshmart.in', status: 'OFFLINE', performance: 81 },
-]
+const ASSIGNABLE_ROLES = [
+  "STORE_MANAGER",
+  "BILLING_STAFF",
+  "INVENTORY_STAFF",
+  "SUPPORT_STAFF",
+  "DELIVERY_STAFF",
+] as const
 
-const roleDistribution = [
-  { role: 'STORE_MANAGER', count: 2, total: 18, color: 'bg-purple-500' },
-  { role: 'DELIVERY_STAFF', count: 8, total: 18, color: 'bg-blue-500' },
-  { role: 'SALES', count: 3, total: 18, color: 'bg-amber-500' },
-  { role: 'SUPPORT', count: 3, total: 18, color: 'bg-cyan-500' },
-  { role: 'ADMIN', count: 2, total: 18, color: 'bg-emerald-500' },
-]
-
-const permissions = [
-  { feature: 'Dashboard', STORE_MANAGER: true, DELIVERY_STAFF: false, SALES: true, SUPPORT: true, ADMIN: true },
-  { feature: 'Orders', STORE_MANAGER: true, DELIVERY_STAFF: true, SALES: false, SUPPORT: true, ADMIN: true },
-  { feature: 'Products', STORE_MANAGER: true, DELIVERY_STAFF: false, SALES: true, SUPPORT: false, ADMIN: true },
-  { feature: 'POS', STORE_MANAGER: true, DELIVERY_STAFF: false, SALES: false, SUPPORT: false, ADMIN: true },
-  { feature: 'Customers', STORE_MANAGER: true, DELIVERY_STAFF: false, SALES: true, SUPPORT: true, ADMIN: true },
-  { feature: 'Reports', STORE_MANAGER: true, DELIVERY_STAFF: false, SALES: false, SUPPORT: false, ADMIN: true },
-  { feature: 'Delivery', STORE_MANAGER: true, DELIVERY_STAFF: true, SALES: false, SUPPORT: false, ADMIN: true },
-  { feature: 'Settings', STORE_MANAGER: false, DELIVERY_STAFF: false, SALES: false, SUPPORT: false, ADMIN: true },
-  { feature: 'Staff Mgmt', STORE_MANAGER: true, DELIVERY_STAFF: false, SALES: false, SUPPORT: false, ADMIN: true },
-  { feature: 'Tax Config', STORE_MANAGER: false, DELIVERY_STAFF: false, SALES: false, SUPPORT: false, ADMIN: true },
-]
-
-function getPerfColor(score: number) {
-  if (score >= 90) return 'bg-emerald-500'
-  if (score >= 80) return 'bg-blue-500'
-  if (score >= 70) return 'bg-amber-500'
-  return 'bg-red-500'
+const roleColors: Record<string, string> = {
+  CLIENT_OWNER:    "bg-emerald-100 text-emerald-700",
+  STORE_MANAGER:   "bg-teal-100 text-teal-700",
+  BILLING_STAFF:   "bg-amber-100 text-amber-700",
+  INVENTORY_STAFF: "bg-orange-100 text-orange-700",
+  SUPPORT_STAFF:   "bg-sky-100 text-sky-700",
+  DELIVERY_STAFF:  "bg-gray-100 text-gray-700",
 }
 
-export function StaffView() {
+// ─── Credential box ───────────────────────────────────────────────────────────
+
+function CredentialBox({ email, password }: { email: string; password: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    navigator.clipboard.writeText(`Email: ${email}\nPassword: ${password}`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
   return (
-    <div className="animate-in fade-in duration-300 space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Staff Management</h2>
-        <Button variant="outline" size="sm" className="text-xs h-7">
-          <Plus className="size-3 mr-1" />Invite Staff
-        </Button>
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm space-y-1">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-semibold text-emerald-700">Login Credentials</span>
+        <button onClick={copy} className="text-emerald-600 hover:text-emerald-800">
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
       </div>
+      <div className="font-mono text-emerald-900 text-xs">{email}</div>
+      <div className="font-mono text-emerald-900 text-xs">{password}</div>
+    </div>
+  )
+}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map(s => (
-          <Card key={s.label} className="p-4">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${s.color}`}><s.icon className="size-4" /></div>
-              <div>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
-                <p className="text-xl font-bold">{s.value}</p>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+// ─── Permission Editor ────────────────────────────────────────────────────────
 
-      {/* Role Distribution */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">Role Distribution</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {roleDistribution.map(r => (
-              <div key={r.role} className="flex items-center gap-3">
-                <Badge className={`text-[10px] min-w-[100px] justify-center ${roleConfig[r.role as RoleKey].color}`}>
-                  {roleConfig[r.role as RoleKey].label}
-                </Badge>
-                <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${r.color} transition-all`}
-                    style={{ width: `${(r.count / r.total) * 100}%` }}
-                  />
-                </div>
-                <span className="text-xs font-semibold w-8 text-right">{r.count}</span>
+const BUSINESS_PERM_GROUPS = PERMISSION_GROUPS.filter(g =>
+  !["Platform", "Users"].includes(g.label)
+)
+
+function PermissionEditor({
+  current, onChange,
+}: { current: string[]; onChange: (p: string[]) => void }) {
+  const toggle = (perm: string) =>
+    onChange(current.includes(perm) ? current.filter(p => p !== perm) : [...current, perm])
+
+  return (
+    <div className="space-y-4">
+      {BUSINESS_PERM_GROUPS.map(group => (
+        <div key={group.label}>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            {group.label}
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            {group.permissions.map(perm => (
+              <div key={perm} className="flex items-center justify-between py-0.5">
+                <span className="text-sm">{PERMISSION_LABELS[perm as Permission] ?? perm}</span>
+                <Switch
+                  checked={current.includes(perm)}
+                  onCheckedChange={() => toggle(perm)}
+                  className="scale-90"
+                />
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      ))}
+    </div>
+  )
+}
 
-      {/* Staff List */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold">Staff Members</CardTitle>
-            <Badge variant="outline" className="text-[10px]">{staffMembers.length} total</Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-            {staffMembers.map(s => {
-              const rc = roleConfig[s.role as RoleKey]
-              return (
-                <div key={s.email} className="p-3 rounded-lg border flex items-start gap-3">
-                  <div className="size-9 rounded-full bg-muted flex items-center justify-center text-xs font-bold shrink-0">
-                    {s.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{s.name}</p>
-                      <Badge className={`text-[10px] ${rc.color}`}>{rc.label}</Badge>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground truncate">{s.email}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <Badge className={`text-[10px] ${s.status === 'ONLINE' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {s.status}
-                      </Badge>
-                      <div className="flex items-center gap-1 flex-1">
-                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${getPerfColor(s.performance)}`}
-                            style={{ width: `${s.performance}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] font-semibold">{s.performance}%</span>
-                      </div>
-                    </div>
-                  </div>
+// ─── Add Staff Dialog ─────────────────────────────────────────────────────────
+
+function AddStaffDialog({
+  businessId,
+  onCreated,
+}: { businessId: string; onCreated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "", password: "" })
+  const [loading, setLoading] = useState(false)
+  const [creds, setCreds] = useState<{ email: string; password: string } | null>(null)
+
+  const submit = async () => {
+    if (!form.name || !form.email || !form.role) {
+      toast.error("Name, email, and role are required")
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/core/businesses/${businessId}/staff`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone || undefined,
+          role: form.role,
+          password: form.password || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      setCreds(json.credentials)
+      toast.success("Staff member added")
+      onCreated()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClose = () => {
+    setOpen(false)
+    setCreds(null)
+    setForm({ name: "", email: "", phone: "", role: "", password: "" })
+  }
+
+  return (
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>
+        <Plus className="w-4 h-4 mr-1.5" /> Add Staff
+      </Button>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Staff Member</DialogTitle>
+            <DialogDescription>Credentials are admin-assigned. No self-signup.</DialogDescription>
+          </DialogHeader>
+
+          {creds ? (
+            <div className="space-y-4">
+              <CredentialBox email={creds.email} password={creds.password} />
+              <p className="text-xs text-muted-foreground">Share these credentials with the staff member securely.</p>
+              <DialogFooter>
+                <Button onClick={handleClose}>Done</Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Full Name *</Label>
+                <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Suresh Kumar" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email *</Label>
+                <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="suresh@example.com" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Phone</Label>
+                  <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+91..." />
                 </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                <div className="space-y-1.5">
+                  <Label>Role *</Label>
+                  <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      {ASSIGNABLE_ROLES.map(r => (
+                        <SelectItem key={r} value={r}>{ROLE_LABELS[r] ?? r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Password <span className="text-muted-foreground text-xs">(leave blank to auto-generate)</span></Label>
+                <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Auto-generated if blank" />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={handleClose}>Cancel</Button>
+                <Button onClick={submit} disabled={loading}>
+                  {loading ? <RefreshCw className="w-4 h-4 animate-spin mr-1.5" /> : <Plus className="w-4 h-4 mr-1.5" />}
+                  Add Staff
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
 
-      {/* Permissions Matrix */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">Permissions Matrix</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2 font-medium text-muted-foreground">Feature</th>
-                  {Object.values(roleConfig).map(r => (
-                    <th key={r.label} className="text-center p-2 font-medium text-muted-foreground whitespace-nowrap">{r.label}</th>
+// ─── Staff Detail Sheet ───────────────────────────────────────────────────────
+
+function StaffDetailSheet({
+  member,
+  businessId,
+  onClose,
+  onRefresh,
+}: {
+  member: StaffMember | null
+  businessId: string
+  onClose: () => void
+  onRefresh: () => void
+}) {
+  const qc = useQueryClient()
+  const [resetCreds, setResetCreds] = useState<{ email: string; password: string } | null>(null)
+  const [newPassword, setNewPassword] = useState("")
+  const [editPerms, setEditPerms] = useState<string[] | null>(null)
+
+  const resetMutation = useMutation({
+    mutationFn: async () => {
+      if (!member) return null
+      const res = await fetch(`/api/core/users/${member.userId}/reset-password`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: newPassword || undefined }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      return json as { credentials: { email: string; password: string } }
+    },
+    onSuccess: (data) => {
+      if (data) setResetCreds(data.credentials)
+      setNewPassword("")
+      toast.success("Password reset")
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Reset failed"),
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: async (active: boolean) => {
+      if (!member) return
+      const res = await fetch(`/api/core/users/${member.userId}/toggle-status`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ active }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+    },
+    onSuccess: (_data, active) => {
+      toast.success(active ? "Staff member activated" : "Staff member suspended")
+      qc.invalidateQueries({ queryKey: ["business-staff"] })
+      onRefresh()
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  })
+
+  const savePermsMutation = useMutation({
+    mutationFn: async () => {
+      if (!member || !editPerms) return
+      const res = await fetch(`/api/core/users/${member.userId}`, {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ permissions: editPerms, businessId }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+    },
+    onSuccess: () => {
+      toast.success("Permissions saved")
+      setEditPerms(null)
+      qc.invalidateQueries({ queryKey: ["business-staff"] })
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  })
+
+  if (!member) return null
+
+  return (
+    <Sheet open={!!member} onOpenChange={onClose}>
+      <SheetContent className="w-full sm:max-w-md flex flex-col p-0">
+        <SheetHeader className="px-6 py-4 border-b">
+          <SheetTitle>Staff Details</SheetTitle>
+          <SheetDescription>Manage access, password, and permissions</SheetDescription>
+        </SheetHeader>
+
+        <ScrollArea className="flex-1">
+          <div className="px-6 py-4 space-y-5">
+            <div className="flex items-center gap-3">
+              <Avatar className="w-12 h-12">
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {member.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <p className="font-semibold">{member.name}</p>
+                <p className="text-sm text-muted-foreground">{member.email}</p>
+                {member.phone && <p className="text-xs text-muted-foreground">{member.phone}</p>}
+              </div>
+              <Badge className={`text-[10px] border-0 ${roleColors[member.role] ?? "bg-gray-100 text-gray-700"}`}>
+                {ROLE_LABELS[member.role] ?? member.role}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-y-1.5 text-sm">
+              <span className="text-muted-foreground">Status</span>
+              <Badge className={`w-fit text-[10px] border-0 ${member.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                {member.isActive ? "Active" : "Suspended"}
+              </Badge>
+              <span className="text-muted-foreground">Last Login</span>
+              <span className="font-medium">
+                {member.lastLoginAt ? new Date(member.lastLoginAt).toLocaleDateString("en-IN") : "Never"}
+              </span>
+              <span className="text-muted-foreground">Joined</span>
+              <span className="font-medium">{new Date(member.createdAt).toLocaleDateString("en-IN")}</span>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">Account Status</p>
+              {member.isActive ? (
+                <Button
+                  variant="outline" size="sm"
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => toggleMutation.mutate(false)}
+                  disabled={toggleMutation.isPending}
+                >
+                  <ShieldOff className="w-4 h-4 mr-1.5" /> Suspend
+                </Button>
+              ) : (
+                <Button
+                  variant="outline" size="sm"
+                  className="text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                  onClick={() => toggleMutation.mutate(true)}
+                  disabled={toggleMutation.isPending}
+                >
+                  <ShieldCheck className="w-4 h-4 mr-1.5" /> Activate
+                </Button>
+              )}
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">Reset Password</p>
+              <p className="text-xs text-muted-foreground">Only you (Business Owner) can reset staff passwords.</p>
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  placeholder="New password (blank = auto)"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="text-sm"
+                />
+                <Button size="sm" variant="outline" onClick={() => resetMutation.mutate()} disabled={resetMutation.isPending}>
+                  <KeyRound className="w-4 h-4" />
+                </Button>
+              </div>
+              {resetCreds && <CredentialBox email={resetCreds.email} password={resetCreds.password} />}
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Permissions</p>
+                {editPerms === null ? (
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditPerms([...member.permissions])}>
+                    Edit
+                  </Button>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <Button size="sm" className="h-7 text-xs" onClick={() => savePermsMutation.mutate()} disabled={savePermsMutation.isPending}>
+                      Save
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditPerms(null)}>Cancel</Button>
+                  </div>
+                )}
+              </div>
+
+              {editPerms !== null ? (
+                <PermissionEditor current={editPerms} onChange={setEditPerms} />
+              ) : member.permissions.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {member.permissions.map(p => (
+                    <Badge key={p} variant="secondary" className="text-[10px]">
+                      {PERMISSION_LABELS[p as Permission] ?? p}
+                    </Badge>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {permissions.map(p => (
-                  <tr key={p.feature} className="border-b hover:bg-muted/50">
-                    <td className="p-2 font-medium">{p.feature}</td>
-                    {Object.keys(roleConfig).map(r => (
-                      <td key={r} className="text-center p-2">
-                        {p[r as RoleKey] ? (
-                          <CheckCircle2 className="size-4 text-emerald-500 mx-auto" />
-                        ) : (
-                          <div className="size-4 mx-auto rounded-full bg-gray-100 flex items-center justify-center">
-                            <div className="size-1.5 rounded-full bg-gray-300" />
-                          </div>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No custom permissions — using role defaults.</p>
+              )}
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// ─── Main Export ──────────────────────────────────────────────────────────────
+
+export function StaffView() {
+  const { currentBusinessId } = useAdminStore()
+  const qc = useQueryClient()
+  const [search, setSearch] = useState("")
+  const [roleFilter, setRoleFilter] = useState("ALL")
+  const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null)
+
+  const { data: staff = [], isLoading, refetch } = useQuery({
+    queryKey: ["business-staff", currentBusinessId, roleFilter],
+    queryFn: async () => {
+      if (!currentBusinessId) return []
+      const p = new URLSearchParams({ limit: "100" })
+      if (roleFilter !== "ALL") p.set("role", roleFilter)
+      const res = await fetch(`/api/core/businesses/${currentBusinessId}/staff?${p}`, {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      return json.data as StaffMember[]
+    },
+    enabled: !!currentBusinessId,
+    staleTime: 30_000,
+  })
+
+  const refresh = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["business-staff"] })
+    refetch()
+  }, [qc, refetch])
+
+  const filtered = useMemo(() => {
+    if (!search) return staff
+    const q = search.toLowerCase()
+    return staff.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.email.toLowerCase().includes(q) ||
+      (s.phone ?? "").includes(q)
+    )
+  }, [staff, search])
+
+  const stats = useMemo(() => ({
+    total: staff.length,
+    active: staff.filter(s => s.isActive).length,
+    roles: new Set(staff.map(s => s.role)).size,
+  }), [staff])
+
+  if (!currentBusinessId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-20 text-center">
+        <UserCog className="w-10 h-10 text-muted-foreground/40 mb-3" />
+        <p className="font-medium text-muted-foreground">No business selected</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-6 py-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10">
+            <UserCog className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold">Staff Management</h1>
+            <p className="text-xs text-muted-foreground">Manage your team — credentials are admin-assigned</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={refresh}>
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          <AddStaffDialog businessId={currentBusinessId} onCreated={refresh} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-0 border-b">
+        {[
+          { label: "Total Staff", value: stats.total, color: "text-foreground" },
+          { label: "Active",      value: stats.active, color: "text-emerald-600" },
+          { label: "Roles",       value: stats.roles,  color: "text-blue-600" },
+        ].map((s) => (
+          <div key={s.label} className="px-6 py-3 border-r last:border-r-0">
+            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs text-muted-foreground">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 px-6 py-3 border-b">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input className="pl-9 h-8 text-sm" placeholder="Search staff…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-40 h-8 text-sm"><SelectValue placeholder="All roles" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Roles</SelectItem>
+            {ASSIGNABLE_ROLES.map(r => (
+              <SelectItem key={r} value={r}>{ROLE_LABELS[r] ?? r}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-center gap-2 px-6 py-2 bg-amber-50 border-b border-amber-100">
+        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+        <p className="text-xs text-amber-700">
+          Staff cannot self-register or reset their own passwords. All access is controlled by you.
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="px-6 py-4 space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 p-4 border rounded-xl">
+                <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+                <div className="space-y-1.5 flex-1">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
+                <Skeleton className="h-5 w-20 rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Users className="w-10 h-10 text-muted-foreground/40 mb-3" />
+            <p className="font-medium text-muted-foreground">No staff members found</p>
+            <p className="text-sm text-muted-foreground/70 mt-1">Add your first staff member to get started</p>
+          </div>
+        ) : (
+          <div className="px-6 py-4 space-y-2">
+            {filtered.map((member) => (
+              <button
+                key={member.businessUserId}
+                onClick={() => setSelectedMember(member)}
+                className="w-full flex items-center gap-4 p-4 border rounded-xl text-left hover:border-primary/30 hover:bg-muted/40 transition-colors"
+              >
+                <Avatar className="w-10 h-10 shrink-0">
+                  <AvatarFallback className="text-sm bg-primary/10 text-primary font-semibold">
+                    {member.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm leading-tight">{member.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                  {member.phone && <p className="text-xs text-muted-foreground">{member.phone}</p>}
+                </div>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <Badge className={`text-[10px] border-0 ${roleColors[member.role] ?? "bg-gray-100 text-gray-700"}`}>
+                    {ROLE_LABELS[member.role] ?? member.role}
+                  </Badge>
+                  <Badge className={`text-[10px] border-0 ${member.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                    {member.isActive ? "Active" : "Suspended"}
+                  </Badge>
+                </div>
+                <div className="text-muted-foreground text-xs text-right shrink-0 min-w-[80px]">
+                  <p className="text-[10px]">Last login</p>
+                  <p>{member.lastLoginAt ? new Date(member.lastLoginAt).toLocaleDateString("en-IN") : "Never"}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <StaffDetailSheet
+        member={selectedMember}
+        businessId={currentBusinessId}
+        onClose={() => setSelectedMember(null)}
+        onRefresh={refresh}
+      />
     </div>
   )
 }

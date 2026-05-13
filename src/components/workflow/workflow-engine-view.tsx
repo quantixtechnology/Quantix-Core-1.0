@@ -13,9 +13,9 @@ import {
   BarChart3, Users, Package, Warehouse, Clock, Shield,
   Sparkles, Layers, Workflow,
 } from "lucide-react"
-import { useAdminStore, WORKFLOW_CONFIGS, DEMO_BUSINESSES, PLAN_CONFIGS, type WorkflowType, type DemoBusiness } from "@/stores/admin-store"
-import { getDemoCategories, getDemoProducts, getDemoBusinessName } from "@/lib/demo-data"
-import { DemoSwitcher } from "@/components/workflow/demo-switcher"
+import { useAdminStore, WORKFLOW_CONFIGS, BUSINESS_TYPE_WORKFLOWS, BUSINESS_TYPE_UI, PLAN_CONFIGS, type WorkflowType } from "@/stores/admin-store"
+import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
+import { ImpersonationBar } from "@/components/admin/shared/impersonation-bar"
 import { PlanComparison } from "@/components/workflow/plan-comparison"
 
 const workflowIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -49,13 +49,13 @@ const workflowStepMap: Record<WorkflowType, { steps: string[]; stepClass: string
   },
 }
 
-function WorkflowCard({ type, demoBusiness }: { type: WorkflowType; demoBusiness: DemoBusiness }) {
+function WorkflowCard({ type, activeWorkflows }: { type: WorkflowType; activeWorkflows: WorkflowType[] }) {
   const config = WORKFLOW_CONFIGS.find((w) => w.type === type)
   if (!config) return null
 
   const steps = workflowStepMap[type]
   const Icon = workflowIconMap[config.icon] || ShoppingCart
-  const isAllowed = demoBusiness.activeWorkflows.includes(type)
+  const isAllowed = activeWorkflows.includes(type)
 
   return (
     <Card className={`transition-all duration-200 ${isAllowed ? "hover:shadow-md" : "opacity-60"}`}>
@@ -120,76 +120,9 @@ function WorkflowCard({ type, demoBusiness }: { type: WorkflowType; demoBusiness
   )
 }
 
-function BusinessWorkflowMap({ demoBusiness }: { demoBusiness: DemoBusiness }) {
-  // Super Admin: show ALL businesses' category → workflow mappings
-  if (demoBusiness.id === "super_admin") {
-    const businessIds = ["standard_grocery", "standard_laundry", "pro_laundry", "pro_carwash"] as const
-    const businessMetadata: Record<string, { name: string; badgeClass: string; plan: string }> = {
-      standard_grocery: { name: "FreshMart Grocers", badgeClass: "bg-emerald-100 text-emerald-700 border-emerald-200", plan: "Standard" },
-      standard_laundry: { name: "QuickWash Laundry", badgeClass: "bg-sky-100 text-sky-700 border-sky-200", plan: "Standard" },
-      pro_laundry: { name: "ProWash Premium", badgeClass: "bg-sky-100 text-sky-700 border-sky-200", plan: "Pro" },
-      pro_carwash: { name: "SparkleCar Wash", badgeClass: "bg-amber-100 text-amber-700 border-amber-200", plan: "Pro" },
-    }
-
-    return (
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Layers className="h-4 w-4" />
-            Category → Workflow Assignment Map — All Businesses
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Super admin view: see how every business maps categories to workflows
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {businessIds.map((bizId) => {
-            const categories = getDemoCategories(bizId)
-            const products = getDemoProducts(bizId)
-            const meta = businessMetadata[bizId]
-            return (
-              <div key={bizId} className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Badge className={meta.badgeClass}>{meta.name}</Badge>
-                  <Badge variant="outline" className="text-[10px]">{meta.plan} Plan</Badge>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    {categories.length} categories · {products.length} products
-                  </span>
-                </div>
-                <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {categories.map((cat) => {
-                    const config = WORKFLOW_CONFIGS.find((w) => w.type === cat.workflow)
-                    const Icon = workflowIconMap[config?.icon || "ShoppingCart"] || ShoppingCart
-                    const catProducts = products.filter((p) => p.categoryId === cat.id)
-                    const isEmoji = cat.icon && /\p{Emoji}/u.test(cat.icon) && cat.icon.length <= 4
-                    return (
-                      <div key={cat.id} className="flex items-center gap-2 rounded-md border px-2.5 py-2">
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${cat.color}18`, color: cat.color }}>
-                          {isEmoji ? <span className="text-sm">{cat.icon}</span> : <Package className="h-4 w-4" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium truncate">{cat.name}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <Icon className={`h-3 w-3 shrink-0 ${config?.color || "text-muted-foreground"}`} />
-                            <span className="text-[10px] text-muted-foreground truncate">{config?.label || cat.workflow.replace(/_/g, " ")}</span>
-                            <span className="text-[9px] text-muted-foreground">· {catProducts.length}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
-    )
-  }
-
-  // Specific business: show that business's category → workflow mapping using actual demo data
-  const categories = getDemoCategories(demoBusiness.id)
-  const products = getDemoProducts(demoBusiness.id)
+function BusinessWorkflowMap({ businessType, businessName }: { businessType: string; businessName: string }) {
+  const categories = getDemoCategories(businessType)
+  const products = getDemoProducts(businessType)
 
   if (categories.length === 0) return null
 
@@ -201,7 +134,7 @@ function BusinessWorkflowMap({ demoBusiness }: { demoBusiness: DemoBusiness }) {
           Product → Workflow Assignment Map
         </CardTitle>
         <CardDescription className="text-xs">
-          How {demoBusiness.name} maps categories to workflows
+          How {businessName} maps categories to workflows
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -278,10 +211,13 @@ function SharedInfrastructure() {
 }
 
 export function WorkflowEngineView() {
-  const { demoBusinessId } = useAdminStore()
+  const { currentBusinessType, currentBusinessName } = useAdminStore()
   const [activeTab, setActiveTab] = useState("workflows")
 
-  const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[0]
+  const businessType = currentBusinessType || "GROCERY"
+  const typeUI = BUSINESS_TYPE_UI[businessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const activeWorkflows = (BUSINESS_TYPE_WORKFLOWS[businessType] || ["ECOMMERCE"]) as WorkflowType[]
+  const displayName = currentBusinessName || typeUI.label
 
   return (
     <div className="space-y-6">
@@ -296,7 +232,7 @@ export function WorkflowEngineView() {
             Configure workflow types per category/product — not per business type
           </p>
         </div>
-        <DemoSwitcher />
+        <ImpersonationBar />
       </div>
 
       {/* Current Business Context */}
@@ -304,27 +240,23 @@ export function WorkflowEngineView() {
         <CardContent className="p-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${demoBusiness.color}`}>
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${typeUI.color}`}>
                 {(() => {
-                  const Icon = workflowIconMap[demoBusiness.icon] || ShoppingCart
+                  const Icon = workflowIconMap[typeUI.icon] || ShoppingCart
                   return <Icon className="h-5 w-5" />
                 })()}
               </div>
               <div>
-                <p className="font-semibold text-sm">{demoBusiness.name}</p>
-                <p className="text-xs text-muted-foreground">{demoBusiness.description}</p>
+                <p className="font-semibold text-sm">{displayName}</p>
+                <p className="text-xs text-muted-foreground">{typeUI.description}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">
-                {demoBusiness.planTier === "PRO" ? (
-                  <><Sparkles className="h-3 w-3 mr-1 text-amber-500" /> Pro Plan</>
-                ) : (
-                  <>Standard Plan</>
-                )}
+                {typeUI.label}
               </Badge>
               <Badge variant="outline" className="text-xs">
-                {demoBusiness.activeWorkflows.length} Workflow{demoBusiness.activeWorkflows.length !== 1 ? "s" : ""}
+                {activeWorkflows.length} Workflow{activeWorkflows.length !== 1 ? "s" : ""}
               </Badge>
             </div>
           </div>
@@ -343,7 +275,7 @@ export function WorkflowEngineView() {
           {/* 5 Workflow Cards */}
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {WORKFLOW_CONFIGS.map((wf) => (
-              <WorkflowCard key={wf.type} type={wf.type} demoBusiness={demoBusiness} />
+              <WorkflowCard key={wf.type} type={wf.type} activeWorkflows={activeWorkflows} />
             ))}
           </div>
 
@@ -353,7 +285,7 @@ export function WorkflowEngineView() {
 
         <TabsContent value="assignment" className="space-y-6 mt-4">
           {/* Business-specific category → workflow mapping */}
-          <BusinessWorkflowMap demoBusiness={demoBusiness} />
+          <BusinessWorkflowMap businessType={businessType} businessName={displayName} />
 
           {/* Cross-business examples */}
           <Card>

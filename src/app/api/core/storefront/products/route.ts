@@ -187,6 +187,7 @@ export async function GET(request: Request) {
         defaultMrp: defaultVariant?.mrp || 0,
         stockStatus,
         availableStock,
+        metadata: JSON.parse((product as unknown as Record<string, string>).metadata || '{}') as Record<string, unknown>,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt,
       };

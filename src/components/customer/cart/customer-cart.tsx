@@ -22,10 +22,10 @@ import {
 } from "lucide-react"
 
 export function CustomerCart() {
-  const { setCustomerPage, demoBusinessId } = useAdminStore()
+  const { setCustomerPage, currentBusinessType } = useAdminStore()
 
   // Dynamic coupons from business context
-  const validCoupons = useMemo(() => getDemoCoupons(demoBusinessId), [demoBusinessId])
+  const validCoupons = useMemo(() => getDemoCoupons(currentBusinessType), [currentBusinessType])
   const {
     items,
     updateQuantity,

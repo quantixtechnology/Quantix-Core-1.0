@@ -76,7 +76,7 @@ function buildPaymentChartConfig(payments: { method: string }[]): ChartConfig {
 
 export function ReportsView() {
   const [dateRange, setDateRange] = useState("7d")
-  const { demoBusinessId } = useAdminStore()
+  const { currentBusinessType } = useAdminStore()
 
   // Set business context on mount
   useEffect(() => {
@@ -93,19 +93,19 @@ export function ReportsView() {
   const stats = statsData?.data
 
   // ---- Context-aware demo data ----
-  const dailySalesData = useMemo(() => getDemoDailySales(demoBusinessId), [demoBusinessId])
+  const dailySalesData = useMemo(() => getDemoDailySales(currentBusinessType), [currentBusinessType])
 
-  const hourlySalesData = useMemo(() => getDemoHourlySales(demoBusinessId), [demoBusinessId])
+  const hourlySalesData = useMemo(() => getDemoHourlySales(currentBusinessType), [currentBusinessType])
 
-  const topProducts = useMemo(() => getDemoTopProducts(demoBusinessId), [demoBusinessId])
+  const topProducts = useMemo(() => getDemoTopProducts(currentBusinessType), [currentBusinessType])
 
-  const paymentSummary = useMemo(() => getDemoPaymentSummary(demoBusinessId), [demoBusinessId])
+  const paymentSummary = useMemo(() => getDemoPaymentSummary(currentBusinessType), [currentBusinessType])
 
-  const orderTypeData = useMemo(() => getDemoOrderTypeData(demoBusinessId), [demoBusinessId])
+  const orderTypeData = useMemo(() => getDemoOrderTypeData(currentBusinessType), [currentBusinessType])
 
-  const orderStatusData = useMemo(() => getDemoOrderStatusData(demoBusinessId), [demoBusinessId])
+  const orderStatusData = useMemo(() => getDemoOrderStatusData(currentBusinessType), [currentBusinessType])
 
-  const categoryRevenueData = useMemo(() => getDemoCategoryRevenueData(demoBusinessId), [demoBusinessId])
+  const categoryRevenueData = useMemo(() => getDemoCategoryRevenueData(currentBusinessType), [currentBusinessType])
 
   // Dynamic chart configs based on business data
   const orderTypeChartConfig = useMemo(

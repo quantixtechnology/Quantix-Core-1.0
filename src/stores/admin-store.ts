@@ -2,6 +2,10 @@
 
 import { create } from "zustand"
 
+// ============================================================================
+// VIEW / ROUTING TYPES
+// ============================================================================
+
 export type ViewMode = "super_admin" | "business_owner" | "customer" | "delivery_partner"
 
 export type AdminPage =
@@ -11,23 +15,19 @@ export type AdminPage =
   | "subscriptions"
   | "onboarding"
   | "domains"
-  | "demo-tenants"
   | "sales"
   | "notifications"
   | "settings"
-  // Phase 6 — Deployment & Operations
   | "ops-dashboard"
   | "deployment-pipeline"
   | "build-automation"
   | "release-management"
   | "play-store"
   | "mobile-versions"
-  // Phase 6 — Client Operations
   | "client-assets"
   | "tenant-provisioning"
   | "product-import"
   | "onboarding-checklist"
-  // Phase 6 — System
   | "backup-monitoring"
   | "security-access"
   | "audit-logs"
@@ -35,10 +35,10 @@ export type AdminPage =
   | "revenue"
   | "support"
   | "mobile-apps"
-  // Workflow Engine
   | "workflow-engine"
   | "plan-management"
   | "payment-plugins"
+  | "platform-users"
 
 export type BusinessPage =
   | "dashboard"
@@ -58,10 +58,8 @@ export type BusinessPage =
   | "product-import"
   | "delivery-zones"
   | "storefront"
-  // Workflow Engine — Business Owner
   | "workflow-config"
   | "workflows"
-  // Payment
   | "gateway-config"
 
 export type CustomerPage =
@@ -90,7 +88,7 @@ export type DeliveryPage =
 // WORKFLOW TYPES
 // ============================================================================
 
-export type WorkflowType = 
+export type WorkflowType =
   | "ECOMMERCE"
   | "PICKUP_DELIVERY"
   | "APPOINTMENT"
@@ -99,174 +97,55 @@ export type WorkflowType =
 
 export type PlanTier = "STANDARD" | "PRO"
 
-export interface DemoBusiness {
-  id: string
-  name: string
-  businessType: string
-  planTier: PlanTier
-  icon: string
-  color: string
+// ============================================================================
+// BUSINESS TYPE → WORKFLOWS MAPPING
+// Replaces demo-based activeWorkflows — derives from real businessType
+// ============================================================================
+
+export const BUSINESS_TYPE_WORKFLOWS: Record<string, WorkflowType[]> = {
+  GROCERY:       ["ECOMMERCE", "PICKUP_DELIVERY"],
+  ECOMMERCE:     ["ECOMMERCE"],
+  FOOD_DELIVERY: ["ECOMMERCE", "PICKUP_DELIVERY"],
+  LAUNDRY:       ["ECOMMERCE", "PICKUP_DELIVERY", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
+  CAR_WASH:      ["ECOMMERCE", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
+  PHARMACY:      ["ECOMMERCE", "PICKUP_DELIVERY"],
+  HOME_SERVICES: ["APPOINTMENT", "POST_SERVICE_BILLING"],
+  MEAT_DELIVERY: ["ECOMMERCE", "PICKUP_DELIVERY"],
+  COSMETICS:     ["ECOMMERCE"],
+  FURNITURE:     ["ECOMMERCE"],
+  DIRECTORY:     ["ECOMMERCE"],
+  PLATFORM:      ["ECOMMERCE", "PICKUP_DELIVERY", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
+}
+
+// ============================================================================
+// BUSINESS TYPE → UI CONFIG (icons, colors, labels)
+// Replaces DEMO_BUSINESSES for display purposes only
+// ============================================================================
+
+export interface BusinessTypeUI {
+  icon: string           // lucide icon name
+  color: string          // tailwind bg+text classes
+  label: string          // human-readable label
   description: string
-  activeWorkflows: WorkflowType[]
-  categories: { name: string; workflow: WorkflowType }[]
+}
+
+export const BUSINESS_TYPE_UI: Record<string, BusinessTypeUI> = {
+  GROCERY:       { icon: "ShoppingCart", color: "bg-emerald-600 text-white", label: "Grocery",          description: "Fresh grocery & daily essentials" },
+  ECOMMERCE:     { icon: "ShoppingBag",  color: "bg-indigo-600 text-white",  label: "E-Commerce",       description: "Online retail store" },
+  FOOD_DELIVERY: { icon: "ChefHat",      color: "bg-orange-600 text-white",  label: "Food Delivery",    description: "Restaurant & cloud kitchen" },
+  LAUNDRY:       { icon: "Droplets",     color: "bg-sky-600 text-white",     label: "Laundry",          description: "Laundry & dry cleaning" },
+  CAR_WASH:      { icon: "Car",          color: "bg-amber-600 text-white",   label: "Car Wash",         description: "Car & bike wash services" },
+  PHARMACY:      { icon: "Pill",         color: "bg-teal-600 text-white",    label: "Pharmacy",         description: "Medical & pharmacy" },
+  HOME_SERVICES: { icon: "Wrench",       color: "bg-rose-600 text-white",    label: "Home Services",    description: "Repair & maintenance" },
+  MEAT_DELIVERY: { icon: "Beef",         color: "bg-red-700 text-white",     label: "Meat & Seafood",   description: "Fresh meat & seafood delivery" },
+  COSMETICS:     { icon: "Sparkles",     color: "bg-pink-600 text-white",    label: "Cosmetics",        description: "Beauty & personal care" },
+  FURNITURE:     { icon: "Sofa",         color: "bg-yellow-700 text-white",  label: "Furniture",        description: "Furniture & home decor" },
+  DIRECTORY:     { icon: "MapPin",       color: "bg-cyan-600 text-white",    label: "Directory",        description: "Local business directory" },
+  PLATFORM:      { icon: "Zap",          color: "bg-primary text-primary-foreground", label: "Platform Admin", description: "Quantix platform control" },
 }
 
 // ============================================================================
-// DEMO BUSINESS PRESETS
-// ============================================================================
-
-// ============================================================================
-// DEMO-TO-REAL BUSINESS ID MAPPING
-// Maps demo business IDs to real database business IDs (cuid format)
-// ============================================================================
-
-export const DEMO_TO_REAL_BUSINESS_MAP: Record<string, string> = {
-  super_admin: "",           // No real business for super admin
-  standard_grocery: "",     // Will be resolved dynamically
-  standard_laundry: "",
-  pro_laundry: "",
-  pro_carwash: "",
-  // New slug-based IDs (used when selecting from business list)
-  "freshmart-grocery": "",
-  "tastybites-food": "",
-  "sparkleclean-laundry": "",
-  "autoglow-carwash": "",
-  "medquick-pharmacy": "",
-  "homefix-services": "",
-  "shopnow-ecommerce": "",
-  "glowup-cosmetics": "",
-  "freshmeat-direct": "",
-  "woodcraft-furniture": "",
-  "cityguide-directory": "",
-}
-
-// Map business type to the database slug for default demo selection
-const BUSINESS_TYPE_TO_SLUG: Record<string, string> = {
-  GROCERY: "freshmart-grocery",
-  FOOD_DELIVERY: "tastybites-food",
-  LAUNDRY: "sparkleclean-laundry",
-  CAR_WASH: "autoglow-carwash",
-  PHARMACY: "medquick-pharmacy",
-  HOME_SERVICES: "homefix-services",
-  ECOMMERCE: "shopnow-ecommerce",
-  COSMETICS: "glowup-cosmetics",
-  MEAT_DELIVERY: "freshmeat-direct",
-  FURNITURE: "woodcraft-furniture",
-  DIRECTORY: "cityguide-directory",
-}
-
-export function getSlugForDemoId(demoId: string): string | null {
-  // Direct slug mapping by business type
-  if (BUSINESS_TYPE_TO_SLUG[demoId.toUpperCase()]) return BUSINESS_TYPE_TO_SLUG[demoId.toUpperCase()]
-  // Named business IDs → real DB slugs
-  const namedMap: Record<string, string> = {
-    standard_grocery: "freshmart-grocery",
-    standard_laundry: "sparkleclean-laundry",
-    pro_laundry:      "sparkleclean-laundry",
-    pro_carwash:      "autoglow-carwash",
-    royal_mart:       "royalmart",
-  }
-  return namedMap[demoId] || null
-}
-
-export const DEMO_BUSINESSES: DemoBusiness[] = [
-  {
-    id: "super_admin",
-    name: "Super Admin",
-    businessType: "PLATFORM",
-    planTier: "PRO",
-    icon: "Zap",
-    color: "bg-primary text-primary-foreground",
-    description: "Full platform control",
-    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
-    categories: [],
-  },
-  {
-    id: "standard_grocery",
-    name: "FreshMart Grocers",
-    businessType: "GROCERY",
-    planTier: "STANDARD",
-    icon: "ShoppingCart",
-    color: "bg-emerald-600 text-white",
-    description: "Standard Grocery — Ecommerce & Delivery",
-    activeWorkflows: ["ECOMMERCE"],
-    categories: [
-      { name: "Fruits & Vegetables", workflow: "ECOMMERCE" },
-      { name: "Dairy & Bakery", workflow: "ECOMMERCE" },
-      { name: "Snacks & Beverages", workflow: "ECOMMERCE" },
-      { name: "Household Items", workflow: "ECOMMERCE" },
-    ],
-  },
-  {
-    id: "standard_laundry",
-    name: "QuickWash Laundry",
-    businessType: "LAUNDRY",
-    planTier: "STANDARD",
-    icon: "Droplets",
-    color: "bg-sky-600 text-white",
-    description: "Standard Laundry — Ecommerce Only",
-    activeWorkflows: ["ECOMMERCE"],
-    categories: [
-      { name: "Wash & Fold", workflow: "ECOMMERCE" },
-      { name: "Dry Cleaning", workflow: "ECOMMERCE" },
-      { name: "Ironing", workflow: "ECOMMERCE" },
-    ],
-  },
-  {
-    id: "pro_laundry",
-    name: "ProWash Premium",
-    businessType: "LAUNDRY",
-    planTier: "PRO",
-    icon: "Droplets",
-    color: "bg-sky-700 text-white",
-    description: "Pro Laundry — Multiple Workflows",
-    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
-    categories: [
-      { name: "Standard Wash", workflow: "ECOMMERCE" },
-      { name: "Weight Wash", workflow: "POST_SERVICE_BILLING" },
-      { name: "Subscription Wash", workflow: "SUBSCRIPTION" },
-      { name: "Pickup & Delivery", workflow: "PICKUP_DELIVERY" },
-    ],
-  },
-  {
-    id: "pro_carwash",
-    name: "SparkleCar Wash",
-    businessType: "CAR_WASH",
-    planTier: "PRO",
-    icon: "Car",
-    color: "bg-amber-600 text-white",
-    description: "Pro Car Wash — All Workflows",
-    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
-    categories: [
-      { name: "Subscription Wash", workflow: "SUBSCRIPTION" },
-      { name: "Pickup Wash", workflow: "PICKUP_DELIVERY" },
-      { name: "Accessories", workflow: "ECOMMERCE" },
-      { name: "Appointment Wash", workflow: "APPOINTMENT" },
-      { name: "Detailing Service", workflow: "POST_SERVICE_BILLING" },
-    ],
-  },
-  {
-    id: "royal_mart",
-    name: "Royal Mart",
-    businessType: "GROCERY",
-    planTier: "PRO",
-    icon: "ShoppingCart",
-    color: "bg-violet-600 text-white",
-    description: "Pro Grocery — 3 Stores · Bangalore",
-    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY"],
-    categories: [
-      { name: "Fruits & Vegetables", workflow: "ECOMMERCE" },
-      { name: "Dairy & Bakery",      workflow: "ECOMMERCE" },
-      { name: "Staples & Grains",    workflow: "ECOMMERCE" },
-      { name: "Snacks & Beverages",  workflow: "ECOMMERCE" },
-      { name: "Personal Care",       workflow: "ECOMMERCE" },
-      { name: "Household Items",     workflow: "ECOMMERCE" },
-    ],
-  },
-]
-
-// ============================================================================
-// WORKFLOW CONFIG
+// WORKFLOW CONFIG (unchanged — used by workflow engine)
 // ============================================================================
 
 export interface WorkflowConfig {
@@ -340,7 +219,7 @@ export const WORKFLOW_CONFIGS: WorkflowConfig[] = [
 ]
 
 // ============================================================================
-// PLAN CONFIG
+// PLAN CONFIG (unchanged)
 // ============================================================================
 
 export interface PlanConfig {
@@ -406,35 +285,44 @@ export const PLAN_CONFIGS: PlanConfig[] = [
 ]
 
 // ============================================================================
-// STORE
+// STORE — Real tenant context, no demo/mock state
 // ============================================================================
 
 interface AdminState {
-  // View mode
+  // ── View routing ────────────────────────────────────────────────────────
   viewMode: ViewMode
   setViewMode: (mode: ViewMode) => void
-  // Super Admin
+  // ── Super Admin pages ───────────────────────────────────────────────────
   activePage: AdminPage
   setActivePage: (page: AdminPage) => void
-  // Business Owner
+  // ── Business Owner pages ────────────────────────────────────────────────
   businessPage: BusinessPage
   setBusinessPage: (page: BusinessPage) => void
-  // Customer App
+  // ── Customer App pages ──────────────────────────────────────────────────
   customerPage: CustomerPage
   setCustomerPage: (page: CustomerPage) => void
-  // Delivery Partner App
+  // ── Delivery Partner pages ──────────────────────────────────────────────
   deliveryPage: DeliveryPage
   setDeliveryPage: (page: DeliveryPage) => void
-  // Current business context (for business owner view)
+
+  // ── Real tenant context ─────────────────────────────────────────────────
+  // The real database business ID currently being viewed/managed
   currentBusinessId: string
   setCurrentBusinessId: (id: string) => void
-  // Business slug for DB lookups
+  // Business metadata for display — set when super admin impersonates or business owner logs in
+  currentBusinessName: string
+  currentBusinessType: string       // e.g. "GROCERY", "LAUNDRY"
   currentBusinessSlug: string
-  setCurrentBusinessSlug: (slug: string) => void
-  // Demo Business Context
-  demoBusinessId: string
-  setDemoBusinessId: (id: string) => void
-  // Selected items
+  // Set all business context at once (used by login, impersonation, business selection)
+  setCurrentBusiness: (id: string, name: string, type: string, slug?: string) => void
+  // Set business context for real business owner login (does NOT set isImpersonating)
+  setBusinessOwnerContext: (id: string, name: string, type: string, slug?: string) => void
+  // Clear business context (when super admin exits impersonation)
+  clearCurrentBusiness: () => void
+  // Whether super admin is currently impersonating a business
+  isImpersonating: boolean
+
+  // ── Selected items (CRM / detail panels) ───────────────────────────────
   selectedProductId: string | null
   setSelectedProductId: (id: string | null) => void
   selectedOrderId: string | null
@@ -445,32 +333,39 @@ interface AdminState {
   setSelectedBusinessId: (id: string | null) => void
   selectedSubscriptionId: string | null
   setSelectedSubscriptionId: (id: string | null) => void
-  // Shared
+
+  // ── Shared UI state ─────────────────────────────────────────────────────
   searchQuery: string
   setSearchQuery: (query: string) => void
   isCreateDialogOpen: boolean
   setIsCreateDialogOpen: (open: boolean) => void
   isDetailSheetOpen: boolean
   setIsDetailSheetOpen: (open: boolean) => void
-  // Customer auth state
+
+  // ── Customer auth state ─────────────────────────────────────────────────
   customerLoggedIn: boolean
   setCustomerLoggedIn: (val: boolean) => void
   customerName: string
   setCustomerName: (name: string) => void
-  // Delivery partner auth state
+
+  // ── Delivery partner auth state ─────────────────────────────────────────
   deliveryLoggedIn: boolean
   setDeliveryLoggedIn: (val: boolean) => void
   deliveryPartnerName: string
   setDeliveryPartnerName: (name: string) => void
-  // CRM detail mode
+
+  // ── CRM state ──────────────────────────────────────────────────────────
   crmLeadTab: string
   setCrmLeadTab: (tab: string) => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
+  // View
   viewMode: "super_admin",
   setViewMode: (mode) => set({ viewMode: mode, searchQuery: "", isCreateDialogOpen: false, isDetailSheetOpen: false }),
-  activePage: "workflow-engine",
+
+  // Pages
+  activePage: "dashboard",
   setActivePage: (page) => set({ activePage: page, searchQuery: "", selectedLeadId: null, selectedBusinessId: null, selectedSubscriptionId: null, isCreateDialogOpen: false, isDetailSheetOpen: false }),
   businessPage: "dashboard",
   setBusinessPage: (page) => set({ businessPage: page, searchQuery: "", isCreateDialogOpen: false, isDetailSheetOpen: false }),
@@ -478,14 +373,45 @@ export const useAdminStore = create<AdminState>((set) => ({
   setCustomerPage: (page) => set({ customerPage: page, searchQuery: "" }),
   deliveryPage: "login",
   setDeliveryPage: (page) => set({ deliveryPage: page }),
+
+  // Real tenant context
   currentBusinessId: "",
   setCurrentBusinessId: (id) => set({ currentBusinessId: id }),
-  // Demo Business Context — used for UI context, sidebar config etc.
-  demoBusinessId: "super_admin",
-  setDemoBusinessId: (id) => set({ demoBusinessId: id }),
-  // Business slug — for looking up the real DB business ID
+  currentBusinessName: "",
+  currentBusinessType: "",
   currentBusinessSlug: "",
-  setCurrentBusinessSlug: (slug: string) => set({ currentBusinessSlug: slug }),
+  setCurrentBusiness: (id, name, type, slug = "") => set({
+    currentBusinessId: id,
+    currentBusinessName: name,
+    currentBusinessType: type,
+    currentBusinessSlug: slug,
+    isImpersonating: true,
+    viewMode: "business_owner",
+    businessPage: "dashboard",
+    searchQuery: "",
+  }),
+  setBusinessOwnerContext: (id, name, type, slug = "") => set({
+    currentBusinessId: id,
+    currentBusinessName: name,
+    currentBusinessType: type,
+    currentBusinessSlug: slug,
+    isImpersonating: false,
+    viewMode: "business_owner",
+    businessPage: "dashboard",
+    searchQuery: "",
+  }),
+  clearCurrentBusiness: () => set({
+    currentBusinessId: "",
+    currentBusinessName: "",
+    currentBusinessType: "",
+    currentBusinessSlug: "",
+    isImpersonating: false,
+    viewMode: "super_admin",
+    searchQuery: "",
+  }),
+  isImpersonating: false,
+
+  // Selected items
   selectedProductId: null,
   setSelectedProductId: (id) => set({ selectedProductId: id }),
   selectedOrderId: null,
@@ -496,20 +422,28 @@ export const useAdminStore = create<AdminState>((set) => ({
   setSelectedBusinessId: (id) => set({ selectedBusinessId: id, isDetailSheetOpen: id !== null }),
   selectedSubscriptionId: null,
   setSelectedSubscriptionId: (id) => set({ selectedSubscriptionId: id, isDetailSheetOpen: id !== null }),
+
+  // Shared UI
   searchQuery: "",
   setSearchQuery: (query) => set({ searchQuery: query }),
   isCreateDialogOpen: false,
   setIsCreateDialogOpen: (open) => set({ isCreateDialogOpen: open }),
   isDetailSheetOpen: false,
   setIsDetailSheetOpen: (open) => set({ isDetailSheetOpen: open }),
+
+  // Customer
   customerLoggedIn: false,
   setCustomerLoggedIn: (val) => set({ customerLoggedIn: val }),
   customerName: "",
   setCustomerName: (name) => set({ customerName: name }),
+
+  // Delivery
   deliveryLoggedIn: false,
   setDeliveryLoggedIn: (val) => set({ deliveryLoggedIn: val }),
   deliveryPartnerName: "",
   setDeliveryPartnerName: (name) => set({ deliveryPartnerName: name }),
+
+  // CRM
   crmLeadTab: "timeline",
   setCrmLeadTab: (tab) => set({ crmLeadTab: tab }),
 }))

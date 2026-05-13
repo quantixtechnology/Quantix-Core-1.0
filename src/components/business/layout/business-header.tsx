@@ -4,18 +4,12 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, ShoppingBag, Menu } from "lucide-react"
-import { useAdminStore, type ViewMode } from "@/stores/admin-store"
+import { Search, Menu } from "lucide-react"
+import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { NotificationBell } from "@/components/shared/notification-bell"
 import { useResponsive } from "@/hooks/use-responsive"
-import { DemoSwitcher } from "@/components/workflow/demo-switcher"
+import { ImpersonationBar } from "@/components/admin/shared/impersonation-bar"
 import { UserMenu } from "@/components/auth/user-menu"
 
 const pageTitles: Record<string, string> = {
@@ -35,7 +29,7 @@ interface BusinessHeaderProps {
 }
 
 export function BusinessHeader({ onMobileMenuClick }: BusinessHeaderProps) {
-  const { businessPage, searchQuery, setSearchQuery, viewMode, setViewMode, setActivePage } = useAdminStore()
+  const { businessPage, searchQuery, setSearchQuery, setActivePage } = useAdminStore()
   const { currentBusinessId } = useAuthStore()
   const { isMobile } = useResponsive()
 
@@ -85,7 +79,7 @@ export function BusinessHeader({ onMobileMenuClick }: BusinessHeaderProps) {
           businessId={currentBusinessId || ""}
           onViewAll={() => setActivePage("notifications")}
         />
-        <DemoSwitcher />
+        <ImpersonationBar />
         <UserMenu />
       </div>
     </header>

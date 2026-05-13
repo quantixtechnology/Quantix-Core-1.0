@@ -1,17 +1,14 @@
 "use client"
 
-import React, { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useOrders } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
-import { getDemoBusinessName } from "@/lib/demo-data"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState, EmptyState } from "@/components/ui/loading-states"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { ClipboardList, ChevronRight, Package } from "lucide-react"
-import type { OrderStatus } from "@/lib/types"
 
 const statusColors: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -39,16 +36,13 @@ interface OrderItem {
 }
 
 export function CustomerOrders() {
-  const { setCustomerPage, setSelectedOrderId, demoBusinessId } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentBusinessName } = useAdminStore()
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState<TabFilter>("active")
 
-  // Use dynamic business ID from admin store
-  const BIZ_ID = "biz_1"
-
   useEffect(() => {
-    setBusinessContext(BIZ_ID)
-  }, [])
+    if (currentBusinessId) setBusinessContext(currentBusinessId)
+  }, [currentBusinessId])
 
   // Fetch orders - use customerId filter if available
   const { data: ordersData, isLoading: ordersLoading, error: ordersError, refetch } = useOrders({
@@ -60,19 +54,22 @@ export function CustomerOrders() {
   const orders: OrderItem[] = useMemo(() => {
     if (!ordersData?.data) return []
     const ords = Array.isArray(ordersData.data) ? ordersData.data : []
-    return ords.map((o: Record<string, unknown>) => ({
-      id: o.id as string,
-      orderNumber: o.orderNumber as string,
-      status: o.status as string,
-      orderType: o.orderType as string,
-      totalAmount: o.totalAmount as number,
-      createdAt: o.createdAt as string,
-      customerName: o.customerName as string | null,
-      store: (o.store as { id: string; name: string }) || { id: "", name: getDemoBusinessName(demoBusinessId) },
-      _count: o._count as { items: number } | undefined,
-      items: o.items as Array<{ name: string; qty: number; price: number }> | undefined,
-    }))
-  }, [ordersData, demoBusinessId])
+    return ords.map((raw) => {
+      const o = raw as unknown as Record<string, unknown>
+      return {
+        id: o.id as string,
+        orderNumber: o.orderNumber as string,
+        status: o.status as string,
+        orderType: o.orderType as string,
+        totalAmount: o.totalAmount as number,
+        createdAt: o.createdAt as string,
+        customerName: o.customerName as string | null,
+        store: (o.store as { id: string; name: string }) || { id: "", name: currentBusinessName || "My Store" },
+        _count: o._count as { items: number } | undefined,
+        items: o.items as Array<{ name: string; qty: number; price: number }> | undefined,
+      }
+    })
+  }, [ordersData, currentBusinessName])
 
   const filteredOrders = useMemo(() => {
     switch (activeTab) {

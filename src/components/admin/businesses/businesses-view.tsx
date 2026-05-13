@@ -28,6 +28,7 @@ import {
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
+import { ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 
@@ -86,7 +87,7 @@ function formatCurrency(value: number): string {
 }
 
 export function BusinessesView() {
-  const { searchQuery } = useAdminStore()
+  const { searchQuery, setCurrentBusiness } = useAdminStore()
   const [businesses, setBusinesses] = useState<BusinessApiData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -475,6 +476,10 @@ export function BusinessesView() {
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)}>
+                              <ExternalLink className="size-3" />
+                              Manage
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -504,8 +509,14 @@ export function BusinessesView() {
                         {biz.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="space-y-1">
-                      <SheetTitle className="text-lg">{biz.name}</SheetTitle>
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <SheetTitle className="text-lg">{biz.name}</SheetTitle>
+                        <Button size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => { setDetailOpen(false); setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}>
+                          <ExternalLink className="size-3" />
+                          Manage Business
+                        </Button>
+                      </div>
                       <SheetDescription className="flex items-center gap-2">
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium" style={{ borderColor: typeConf?.color, color: typeConf?.color }}>{typeConf?.label}</Badge>
                         <StatusBadge status={biz.status} />

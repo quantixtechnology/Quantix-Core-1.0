@@ -11,7 +11,7 @@ import {
   RefreshCw, Eye, TrendingDown, Warehouse,
 } from 'lucide-react'
 import { useAdminStore } from '@/stores/admin-store'
-import { getDemoProducts, getDemoCategories } from '@/lib/demo-data'
+import { getDemoProducts } from '@/lib/demo-data'
 import { PageHeader } from '@/components/admin/shared/page-header'
 
 const stockStatus: Record<string, string> = {
@@ -21,11 +21,11 @@ const stockStatus: Record<string, string> = {
 }
 
 export function InventoryView() {
-  const { demoBusinessId } = useAdminStore()
+  const { currentBusinessType } = useAdminStore()
 
   // Build inventory from context-aware demo products
   const { inventory, stats } = useMemo(() => {
-    const products = getDemoProducts(demoBusinessId)
+    const products = getDemoProducts(currentBusinessType)
 
     // Map products to inventory items
     const items = products.map((p) => {
@@ -59,7 +59,7 @@ export function InventoryView() {
     ]
 
     return { inventory: items, stats: computedStats }
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
   const lowStockItems = inventory.filter(i => i.status !== 'in_stock')
 

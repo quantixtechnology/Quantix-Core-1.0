@@ -107,26 +107,26 @@ function generateBillNumber(prefix: string): string {
 
 export function POSProduction() {
   // Get demo business context
-  const { demoBusinessId } = useAdminStore()
+  const { currentBusinessType } = useAdminStore()
 
   // Demo data — context-aware
-  const products = useMemo(() => getDemoProducts(demoBusinessId).map((p) => ({
+  const products = useMemo(() => getDemoProducts(currentBusinessType).map((p) => ({
     id: p.id, name: p.name, slug: p.slug, categoryId: p.categoryId, category: p.category,
     status: p.status, isVeg: p.isVeg, isFeatured: p.isFeatured, image: p.image,
     variants: p.variants.map((v) => ({ id: v.id, name: v.name, sku: v.sku, mrp: v.mrp, price: v.price, stock: v.stock, isDefault: v.isDefault })),
-  })), [demoBusinessId])
+  })), [currentBusinessType])
 
   const categories = useMemo(() => {
-    const cats = getDemoCategories(demoBusinessId)
-    const prods = getDemoProducts(demoBusinessId)
+    const cats = getDemoCategories(currentBusinessType)
+    const prods = getDemoProducts(currentBusinessType)
     return cats.map((c) => ({ id: c.id, name: c.name, slug: c.slug, productCount: prods.filter((p) => p.categoryId === c.id).length, icon: c.icon, color: c.color, sortOrder: c.sortOrder }))
-  }, [demoBusinessId])
+  }, [currentBusinessType])
 
-  const businessCustomers = useMemo(() => getDemoCustomers(demoBusinessId).map((c) => ({
+  const businessCustomers = useMemo(() => getDemoCustomers(currentBusinessType).map((c) => ({
     id: c.id, name: c.name, phone: c.phone, email: c.email, totalOrders: c.totalOrders, totalSpent: c.totalSpent, loyaltyPoints: c.loyaltyPoints, tier: c.tier, lastOrder: c.lastOrder,
-  })), [demoBusinessId])
+  })), [currentBusinessType])
 
-  const businessOrders = useMemo(() => getDemoBusinessOrders(demoBusinessId), [demoBusinessId])
+  const businessOrders = useMemo(() => getDemoBusinessOrders(currentBusinessType), [currentBusinessType])
 
   // ---- Core State ----
   const [searchQuery, setSearchQuery] = useState("");
@@ -360,7 +360,7 @@ export function POSProduction() {
   const confirmPayment = useCallback(() => {
     setPaymentConfirmed(true);
     setSessionBillCount((prev) => prev + 1);
-    const billNum = generateBillNumber(getDemoOrderPrefix(demoBusinessId));
+    const billNum = generateBillNumber(getDemoOrderPrefix(currentBusinessType));
     setLastBillNumber(billNum);
 
     // Track session totals
@@ -1062,7 +1062,7 @@ export function POSProduction() {
 
   // ---- Thermal receipt data for print dialog ----
   const receiptOrderData = useMemo(() => ({
-    orderNumber: lastBillNumber || generateBillNumber(getDemoOrderPrefix(demoBusinessId)),
+    orderNumber: lastBillNumber || generateBillNumber(getDemoOrderPrefix(currentBusinessType)),
     date: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
     time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }),
     cashier: "Counter 1",
@@ -1089,7 +1089,7 @@ export function POSProduction() {
     customerPhone: selectedCustomerData?.phone,
   }), [cart, cartSummary, discountAmount, totalAmount, activePaymentMethod, selectedCustomerData, lastBillNumber]);
 
-  const storeInfo = useMemo(() => getDemoStoreInfo(demoBusinessId), [demoBusinessId]);
+  const storeInfo = useMemo(() => getDemoStoreInfo(currentBusinessType), [currentBusinessType]);
 
   const receiptBusinessData = useMemo(() => ({
     name: storeInfo.name,

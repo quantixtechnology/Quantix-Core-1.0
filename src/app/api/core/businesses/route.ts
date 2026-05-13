@@ -119,9 +119,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const business = await createBusiness(body);
+      const result = await createBusiness(body);
 
-      return createSuccessResponse(business, 201);
+      return createSuccessResponse(result, 201);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to create business';
       const status = message.includes('already exists') || message.includes('not found') ? 409 : 500;

@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import dynamic from "next/dynamic"
 import { AuthProvider } from "@/components/auth/auth-provider"
 import { useAuthStore } from "@/stores/auth-store"
@@ -28,10 +29,10 @@ const BusinessesView = dynamic(() => import("@/components/admin/businesses/busin
 const SubscriptionsView = dynamic(() => import("@/components/admin/subscriptions/subscriptions-view").then(m => ({ default: m.SubscriptionsView })), { loading: () => <PageLoader /> })
 const OnboardingView = dynamic(() => import("@/components/admin/onboarding/onboarding-view").then(m => ({ default: m.OnboardingView })), { loading: () => <PageLoader /> })
 const DomainsView = dynamic(() => import("@/components/admin/domains/domains-view").then(m => ({ default: m.DomainsView })), { loading: () => <PageLoader /> })
-const DemoTenantsView = dynamic(() => import("@/components/admin/demo-tenants/demo-tenants-view").then(m => ({ default: m.DemoTenantsView })), { loading: () => <PageLoader /> })
 const SalesView = dynamic(() => import("@/components/admin/sales/sales-view").then(m => ({ default: m.SalesView })), { loading: () => <PageLoader /> })
 const NotificationsView = dynamic(() => import("@/components/admin/notifications/notifications-view").then(m => ({ default: m.NotificationsView })), { loading: () => <PageLoader /> })
 const SettingsView = dynamic(() => import("@/components/admin/settings/settings-view").then(m => ({ default: m.SettingsView })), { loading: () => <PageLoader /> })
+const PlatformUsersView = dynamic(() => import("@/components/admin/users/platform-users-view").then(m => ({ default: m.PlatformUsersView })), { loading: () => <PageLoader /> })
 
 // ── Deployment & Operations (lazy) ────────────────────────────────────────
 const OpsDashboardView = dynamic(() => import("@/components/dashboard/ops-dashboard-view").then(m => ({ default: m.OpsDashboardView })), { loading: () => <PageLoader /> })
@@ -117,7 +118,29 @@ export default function Home() {
 }
 
 function AppContent() {
-  const { viewMode, activePage, businessPage, customerPage, deliveryPage } = useAdminStore()
+  const { viewMode, activePage, businessPage, customerPage, deliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
+  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType } = useAuthStore()
+
+  // Sync viewMode from auth session on mount / auth change
+  useEffect(() => {
+    if (!isAuthenticated) return
+    if (currentRole === "QUANTIX_SUPER_ADMIN" || currentRole === "PLATFORM_ADMIN" || currentRole === "QUANTIX_SALES_TEAM") {
+      if (viewMode !== "super_admin") setViewMode("super_admin")
+    } else if (
+      currentRole === "CLIENT_OWNER" || currentRole === "STORE_MANAGER" ||
+      currentRole === "BILLING_STAFF" || currentRole === "INVENTORY_STAFF" ||
+      currentRole === "SUPPORT_STAFF"
+    ) {
+      if (currentBusinessId && viewMode !== "business_owner") {
+        setBusinessOwnerContext(currentBusinessId, currentBusinessName || "", currentBusinessType || "")
+      }
+    } else if (currentRole === "CUSTOMER") {
+      if (viewMode !== "customer") setViewMode("customer")
+    } else if (currentRole === "DELIVERY_STAFF") {
+      if (viewMode !== "delivery_partner") setViewMode("delivery_partner")
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, currentRole, currentBusinessId])
 
   const renderSuperAdminPage = () => {
     switch (activePage) {
@@ -133,8 +156,8 @@ function AppContent() {
       case "subscriptions": return <SubscriptionsView />
       case "onboarding": return <OnboardingView />
       case "domains": return <DomainsView />
-      case "demo-tenants": return <DemoTenantsView />
       case "sales": return <SalesView />
+      case "platform-users": return <PlatformUsersView />
       case "notifications": return <NotificationsView />
       case "settings": return <SettingsView />
       // Mobile & Apps

@@ -37,7 +37,7 @@ interface Address {
 
 export function CustomerAddresses() {
   const { user } = useAuthStore()
-  const { demoBusinessId } = useAdminStore()
+  const { currentBusinessId } = useAdminStore()
   const [addresses, setAddresses] = useState<Address[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,8 +52,8 @@ export function CustomerAddresses() {
   })
 
   useEffect(() => {
-    setBusinessContext(demoBusinessId)
-  }, [demoBusinessId])
+    if (currentBusinessId) setBusinessContext(currentBusinessId)
+  }, [currentBusinessId])
 
   // Fetch customer addresses
   const fetchAddresses = useCallback(async () => {

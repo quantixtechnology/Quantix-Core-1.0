@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
+import { hashPassword } from '@/lib/password-utils';
 import type {
   BusinessListFilters,
   BusinessStats,
@@ -286,6 +287,35 @@ export async function createBusiness(data: CreateBusinessRequest) {
       });
     }
 
+    // Create owner user and BusinessUser record
+    const ownerEmail = data.ownerEmail || `owner@${data.slug}.in`;
+    const rawPassword = data.ownerPassword || `${data.name.replace(/[^a-zA-Z0-9]/g, '')}@123`;
+    const ownerPasswordHash = await hashPassword(rawPassword);
+    const ownerName = data.ownerName || `${data.name} Owner`;
+
+    const ownerUser = await tx.user.create({
+      data: {
+        email: ownerEmail,
+        name: ownerName,
+        phone: data.contactPhone || null,
+        passwordHash: ownerPasswordHash,
+        authProvider: 'PASSWORD',
+        emailVerified: false,
+        isActive: true,
+      },
+    });
+
+    await tx.businessUser.create({
+      data: {
+        userId: ownerUser.id,
+        businessId: business.id,
+        role: 'CLIENT_OWNER',
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    });
+
     // Log activity
     await tx.activityLog.create({
       data: {
@@ -300,15 +330,24 @@ export async function createBusiness(data: CreateBusinessRequest) {
           planPrice,
           customPrice: data.customPrice,
           leadId: data.leadId,
+          ownerEmail,
         }),
       },
     });
 
-    return business;
+    return { business, ownerEmail, ownerPassword: rawPassword, ownerUserId: ownerUser.id };
   });
 
-  // Return the created business with relations
-  return getBusiness(result.id);
+  // Return the created business with relations plus owner credentials
+  const business = await getBusiness(result.business.id);
+  return {
+    ...business,
+    ownerCredentials: {
+      email: result.ownerEmail,
+      password: result.ownerPassword,
+      userId: result.ownerUserId,
+    },
+  };
 }
 
 // ============================================================================
@@ -552,7 +591,7 @@ export async function updateBusinessStatus(
   }
 
   // Update subscription status in tandem
-  const subscriptionStatusMap: Record<string, string> = {
+  const subscriptionStatusMap: Record<string, 'ACTIVE' | 'SUSPENDED' | 'CANCELLED'> = {
     ACTIVE: 'ACTIVE',
     SUSPENDED: 'SUSPENDED',
     CHURNED: 'CANCELLED',
@@ -636,7 +675,7 @@ export async function toggleOnline(businessId: string, isOnline: boolean) {
 export async function getOnboardingProgress(businessId: string): Promise<OnboardingProgress> {
   const steps = await db.onboardingStep.findMany({
     where: { businessId },
-    orderBy: { order: 'asc' },
+    orderBy: { sortOrder: 'asc' },
   });
 
   const totalSteps = steps.length;

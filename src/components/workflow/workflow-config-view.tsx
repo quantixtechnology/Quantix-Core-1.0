@@ -40,7 +40,7 @@ import {
   Layers,
   Settings,
 } from "lucide-react"
-import { useAdminStore, WORKFLOW_CONFIGS, DEMO_BUSINESSES, type WorkflowType } from "@/stores/admin-store"
+import { useAdminStore, WORKFLOW_CONFIGS, BUSINESS_TYPE_WORKFLOWS, BUSINESS_TYPE_UI, type WorkflowType } from "@/stores/admin-store"
 
 const workflowIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   ShoppingCart,
@@ -211,9 +211,11 @@ function WorkflowStatusCard({
 }
 
 export function WorkflowConfigView() {
-  const { demoBusinessId } = useAdminStore()
-  const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[0]
-  const businessCategories = BUSINESS_CATEGORIES[demoBusinessId] || []
+  const { currentBusinessType, currentBusinessName } = useAdminStore()
+  const activeWorkflows: WorkflowType[] = (BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]) as WorkflowType[]
+  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const displayName = currentBusinessName || typeUI?.label || "Business"
+  const businessCategories = BUSINESS_CATEGORIES[currentBusinessType] || BUSINESS_CATEGORIES["standard_grocery"] || []
 
   const [categories, setCategories] = useState<WorkflowCategory[]>(
     businessCategories.map((cat) => ({ ...cat, active: true, designation: "Sales Team" }))
@@ -223,7 +225,7 @@ export function WorkflowConfigView() {
   const [categoryForm, setCategoryForm] = useState<WorkflowCategory>({
     id: "",
     name: "",
-    workflow: demoBusiness.activeWorkflows[0] ?? "ECOMMERCE",
+    workflow: "ECOMMERCE",
     products: 0,
     active: true,
     designation: "Sales Team",
@@ -252,7 +254,7 @@ export function WorkflowConfigView() {
     setCategoryForm({
       id: `new-${Date.now()}`,
       name: "",
-      workflow: demoBusiness.activeWorkflows[0] ?? "ECOMMERCE",
+      workflow: activeWorkflows[0] ?? "ECOMMERCE",
       products: 0,
       active: true,
       designation: "Sales Team",
@@ -334,7 +336,7 @@ export function WorkflowConfigView() {
   const canDeleteCategory =
     Boolean(selectedCategory) &&
     (selectedCategory?.products === 0 || Boolean(deleteReassignCategoryId)) &&
-    !(selectedCategory?.products > 0 && availableReassignCategories.length === 0)
+    !((selectedCategory?.products ?? 0) > 0 && availableReassignCategories.length === 0)
 
   const handleAddCategory = openAddDialog
 
@@ -356,14 +358,14 @@ export function WorkflowConfigView() {
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-semibold text-sm">{demoBusiness.name}</p>
+              <p className="font-semibold text-sm">{displayName}</p>
               <p className="text-xs text-muted-foreground">
-                {demoBusiness.planTier === "PRO" ? "Pro Plan — All Workflows Available" : "Standard Plan — Ecommerce Only"}
+                {activeWorkflows.length > 1 ? "Pro Plan — All Workflows Available" : "Standard Plan — Ecommerce Only"}
               </p>
             </div>
             <div className="flex items-center gap-2">
               {WORKFLOW_CONFIGS.map((wf) => {
-                const isAllowed = demoBusiness.activeWorkflows.includes(wf.type)
+                const isAllowed = activeWorkflows.includes(wf.type)
                 const Icon = workflowIconMap[wf.icon] || ShoppingCart
                 return (
                   <div
@@ -414,7 +416,7 @@ export function WorkflowConfigView() {
                 <CategoryWorkflowRow
                   key={cat.id}
                   category={cat}
-                  allowedWorkflows={demoBusiness.activeWorkflows}
+                  allowedWorkflows={activeWorkflows}
                   onWorkflowChange={handleWorkflowChange}
                   onToggleActive={handleToggleActive}
                   onEdit={openEditDialog}
@@ -561,14 +563,14 @@ export function WorkflowConfigView() {
               key={wf.type}
               workflowType={wf.type}
               categories={workflowGroups[wf.type]}
-              isActive={demoBusiness.activeWorkflows.includes(wf.type)}
+              isActive={activeWorkflows.includes(wf.type)}
             />
           ))}
         </div>
       </div>
 
       {/* Upgrade Prompt for Standard users */}
-      {demoBusiness.planTier === "STANDARD" && (
+      {activeWorkflows.length === 1 && (
         <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
           <CardContent className="p-5">
             <div className="flex items-start gap-4">

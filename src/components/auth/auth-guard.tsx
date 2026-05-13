@@ -5,7 +5,7 @@
 
 "use client";
 
-import React, { useEffect, useRef, useSyncExternalStore } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/stores/auth-store";
 import { useAdminStore, type ViewMode } from "@/stores/admin-store";
 import type { Role } from "@/lib/types";
@@ -32,13 +32,6 @@ interface AuthGuardProps {
 // ============================================================================
 // MAPPING: ViewMode → default login route behavior
 // ============================================================================
-
-const VIEW_MODE_LOGIN_PAGES: Record<ViewMode, string> = {
-  super_admin: "dashboard",
-  business_owner: "dashboard",
-  customer: "auth",
-  delivery_partner: "login",
-};
 
 // ============================================================================
 // INITIALIZED TRACKER (module-level to persist across renders)
