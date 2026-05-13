@@ -25,12 +25,14 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 }
 
 export function DemoSwitcher() {
-  const { demoBusinessId, setDemoBusinessId, setViewMode } = useAdminStore()
+  const { demoBusinessId, setDemoBusinessId, setViewMode, setCurrentBusinessId } = useAdminStore()
 
   const currentBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[0]
   const CurrentIcon = iconMap[currentBusiness.icon] || Zap
 
   const handleSelect = (business: DemoBusiness) => {
+    // Clear cached ID so useBusinessContext re-resolves from the new slug
+    setCurrentBusinessId("")
     setDemoBusinessId(business.id)
     if (business.id === "super_admin") {
       setViewMode("super_admin")

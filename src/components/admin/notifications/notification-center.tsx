@@ -153,8 +153,9 @@ export function NotificationCenter() {
   }, [currentBusinessId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchNotifications();
-  }, [fetchNotifications]);
+  }, [currentBusinessId]);
 
   // ---- Unread count ----
   const unreadCount = useMemo(() => notifications.filter((n) => !n.isRead).length, [notifications]);

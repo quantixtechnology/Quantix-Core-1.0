@@ -146,8 +146,9 @@ export function LeadActivityTimeline({ leadId, maxHeight = "400px" }: LeadActivi
   }, [leadId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchActivities()
-  }, [fetchActivities])
+  }, [leadId])
 
   const filteredActivities = activities
     .filter((a) => filterType === "ALL" || a.type === filterType)

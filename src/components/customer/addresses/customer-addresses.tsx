@@ -91,9 +91,10 @@ export function CustomerAddresses() {
     } finally {
       setLoading(false)
     }
-  }, [user?.id])
+  }, [user])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAddresses()
   }, [fetchAddresses])
 

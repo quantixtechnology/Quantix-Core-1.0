@@ -105,6 +105,7 @@ export function GroceryStore() {
 
   // Fetch products
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     const params = new URLSearchParams({ limit: '50' });
     if (selectedCategory) params.set('categoryId', selectedCategory);

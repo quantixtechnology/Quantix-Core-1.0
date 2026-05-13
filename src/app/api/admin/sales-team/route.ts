@@ -11,18 +11,33 @@ import { hashPassword } from '@/lib/password-utils';
 import { withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const searchParams = new URL(request.url).searchParams;
+    const activeFilter = searchParams.get('active');
+    const where: Record<string, unknown> = {};
+
+    if (activeFilter === 'true') {
+      where.isActive = true;
+    } else if (activeFilter === 'false') {
+      where.isActive = false;
+    }
+
     const salesTeam = await db.salesTeamMember.findMany({
-      where: { isActive: true },
+      where,
       select: {
         id: true,
+        userId: true,
         name: true,
         email: true,
         phone: true,
         region: true,
+        designation: true,
+        reportingManager: true,
+        commissionPercent: true,
         target: true,
         achieved: true,
+        isActive: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -43,7 +58,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, email, phone, region, target } = body;
+    const { name, email, phone, region, designation, reportingManager, commissionPercent, target, isActive } = body;
 
     // Validate required fields
     if (!name || !email || !phone || !region || target === undefined || target === null) {
@@ -76,7 +91,7 @@ export async function POST(request: NextRequest) {
           passwordHash,
           authProvider: 'EMAIL_OTP',
           emailVerified: true,
-          isActive: true,
+          isActive: isActive !== undefined ? Boolean(isActive) : true,
         },
       });
 
@@ -88,9 +103,12 @@ export async function POST(request: NextRequest) {
           email,
           phone,
           region,
+          designation: designation || null,
+          reportingManager: reportingManager || null,
+          commissionPercent: commissionPercent !== undefined ? Number(commissionPercent) : 5,
           target: Number(target),
           achieved: 0,
-          isActive: true,
+          isActive: isActive !== undefined ? Boolean(isActive) : true,
         },
       });
 
@@ -125,6 +143,7 @@ export async function PATCH(request: NextRequest) {
       }
 
       const body = await req.json();
+      const action = new URL(req.url).searchParams.get('action');
 
       const existing = await db.salesTeamMember.findUnique({
         where: { id: memberId },
@@ -132,6 +151,15 @@ export async function PATCH(request: NextRequest) {
 
       if (!existing) {
         return createErrorResponse('Sales team member not found', 404);
+      }
+
+      if (action === 'reset-password' && existing.userId) {
+        const passwordHash = await hashPassword('Quantix@123');
+        await db.user.update({
+          where: { id: existing.userId },
+          data: { passwordHash },
+        });
+        return createSuccessResponse({ message: 'Password reset to default successfully' });
       }
 
       if (body.email && body.email !== existing.email) {
@@ -151,6 +179,9 @@ export async function PATCH(request: NextRequest) {
             ...(body.email && { email: body.email }),
             ...(body.phone && { phone: body.phone }),
             ...(body.region && { region: body.region }),
+            ...(body.designation !== undefined && { designation: body.designation || null }),
+            ...(body.reportingManager !== undefined && { reportingManager: body.reportingManager || null }),
+            ...(body.commissionPercent !== undefined && { commissionPercent: Number(body.commissionPercent) }),
             ...(body.target !== undefined && { target: Number(body.target) }),
             ...(body.achieved !== undefined && { achieved: Number(body.achieved) }),
             ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),

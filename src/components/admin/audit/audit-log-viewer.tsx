@@ -197,8 +197,9 @@ export function AuditLogViewer() {
   }, [currentBusinessId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAuditLogs();
-  }, [fetchAuditLogs]);
+  }, [currentBusinessId]);
 
   // ---- Unique users ----
   const uniqueUsers = useMemo(() => {

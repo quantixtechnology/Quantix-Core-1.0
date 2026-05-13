@@ -289,6 +289,7 @@ model Business {
   salesRepId        String?
   salesRep          SalesTeamMember? @relation("SalesRepClients", fields: [salesRepId], references: [id])
   paymentGateways   PaymentGateway[]
+  gatewayAccess     BusinessGatewayAccess[]
   payments          Payment[]
   subscriptionPlans SubscriptionPlan[]
   customerSubscriptions CustomerSubscription[]
@@ -478,6 +479,7 @@ model User {
   refreshTokens   RefreshToken[]
   activityLogs    ActivityLog[]
   salesProfile    SalesTeamMember?
+  customerNotes   CustomerNote[]
 }
 
 model OTPCode {
@@ -527,17 +529,29 @@ enum Role {
   CUSTOMER               // End customer — only self-registerable role
 }
 
+enum CustomerPermission {
+  VIEW_CUSTOMERS
+  EDIT_CUSTOMERS
+  DELETE_CUSTOMERS
+  EXPORT_CUSTOMERS
+  EDIT_LOYALTY
+  VIEW_ORDERS
+  EDIT_ORDERS
+  VIEW_REVENUE
+}
+
 model BusinessUser {
-  id         String   @id @default(cuid())
-  userId     String
-  businessId String
-  role       Role
-  storeId    String?
-  isActive   Boolean  @default(true)
-  invitedAt  DateTime?  // Invited by Quantix or Client Owner
-  acceptedAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  businessId   String
+  role         Role
+  storeId      String?
+  permissions  String   @default("[]") // JSON array of CustomerPermission
+  isActive     Boolean  @default(true)
+  invitedAt    DateTime?  // Invited by Quantix or Client Owner
+  acceptedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -932,6 +946,48 @@ model PaymentGateway {
 }
 
 // ============================================================================
+// PLATFORM PAYMENT PLUGIN REGISTRY (Super Admin controlled)
+// Controls which payment gateways are available globally and per business.
+// ============================================================================
+
+model PlatformPaymentPlugin {
+  id                  String   @id @default(cuid())
+  gateway             String   @unique  // "razorpay" | "phonepe" | "paytm" etc.
+  displayName         String            // "Razorpay", "PhonePe Business"
+  description         String?
+  isGloballyEnabled   Boolean  @default(false)
+  supportedMethods    String   @default("[]")   // JSON: ["UPI","CARD","NETBANKING"]
+  configSchema        String   @default("{}")   // JSON schema for credential fields
+  webhookPath         String?
+  docsUrl             String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  businessAccess      BusinessGatewayAccess[]
+}
+
+// Per-business gateway assignment and permission control (Super Admin sets this)
+model BusinessGatewayAccess {
+  id            String   @id @default(cuid())
+  businessId    String
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pluginId      String
+  plugin        PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+  isAssigned    Boolean  @default(false)   // Super Admin assigned gateway to this business
+  canConfigure  Boolean  @default(false)   // Business Owner can edit credentials
+  isActive      Boolean  @default(false)   // Business has activated this gateway
+  config        String   @default("{}")    // Admin-provided config when canConfigure=false
+  notes         String?
+  assignedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([businessId, pluginId])
+  @@index([businessId])
+  @@index([pluginId])
+}
+
+// ============================================================================
 // SECTION 14: SUBSCRIPTION ENGINE (Platform → Business)
 // ONLY 2 fixed plans: ₹4,999/mo and ₹49,999/yr
 // Super Admin can override pricing per customer.
@@ -1204,6 +1260,10 @@ model Customer {
   phone         String?
   avatar        String?
   gstNumber     String?
+  dateOfBirth   DateTime?
+  gender        String?  // "MALE", "FEMALE", "OTHER"
+  loyaltyTier   String   @default("BRONZE") // "BRONZE", "SILVER", "GOLD", "PLATINUM"
+  notes         String   @default("")
   loyaltyPoints Int      @default(0)
   totalOrders   Int      @default(0)
   totalSpent    Float    @default(0)
@@ -1221,6 +1281,7 @@ model Customer {
   orders        Order[]
   subscriptions CustomerSubscription[]
   invoices      Invoice[]
+  customerNotes CustomerNote[]
 
   @@unique([businessId, phone])
   @@index([businessId])
@@ -1249,6 +1310,22 @@ model Address {
   customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  userId     String
+  content    String
+  isPrivate  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([customerId])
+  @@index([userId])
 }
 
 // ============================================================================
@@ -1423,16 +1500,19 @@ model PromoCode {
 model SalesTeamMember {
   id          String   @id @default(cuid())
   userId      String   @unique
-  name        String
-  email       String
-  phone       String
-  avatar      String?
-  target      Float    @default(0)
-  achieved    Float    @default(0)
-  region      String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  name               String
+  email              String
+  phone              String
+  avatar             String?
+  designation        String?
+  region             String?
+  reportingManager   String?
+  commissionPercent  Float    @default(0)
+  target             Float    @default(0)
+  achieved           Float    @default(0)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   user        User     @relation(fields: [userId], references: [id])
   leads       Lead[]

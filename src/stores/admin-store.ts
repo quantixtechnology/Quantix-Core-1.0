@@ -38,6 +38,7 @@ export type AdminPage =
   // Workflow Engine
   | "workflow-engine"
   | "plan-management"
+  | "payment-plugins"
 
 export type BusinessPage =
   | "dashboard"
@@ -60,6 +61,8 @@ export type BusinessPage =
   // Workflow Engine — Business Owner
   | "workflow-config"
   | "workflows"
+  // Payment
+  | "gateway-config"
 
 export type CustomerPage =
   | "auth"
@@ -153,16 +156,17 @@ const BUSINESS_TYPE_TO_SLUG: Record<string, string> = {
 }
 
 export function getSlugForDemoId(demoId: string): string | null {
-  // Direct slug mapping
+  // Direct slug mapping by business type
   if (BUSINESS_TYPE_TO_SLUG[demoId.toUpperCase()]) return BUSINESS_TYPE_TO_SLUG[demoId.toUpperCase()]
-  // Legacy demo IDs
-  const legacyMap: Record<string, string> = {
+  // Named business IDs → real DB slugs
+  const namedMap: Record<string, string> = {
     standard_grocery: "freshmart-grocery",
     standard_laundry: "sparkleclean-laundry",
-    pro_laundry: "sparkleclean-laundry",
-    pro_carwash: "autoglow-carwash",
+    pro_laundry:      "sparkleclean-laundry",
+    pro_carwash:      "autoglow-carwash",
+    royal_mart:       "royalmart",
   }
-  return legacyMap[demoId] || null
+  return namedMap[demoId] || null
 }
 
 export const DEMO_BUSINESSES: DemoBusiness[] = [
@@ -239,6 +243,24 @@ export const DEMO_BUSINESSES: DemoBusiness[] = [
       { name: "Accessories", workflow: "ECOMMERCE" },
       { name: "Appointment Wash", workflow: "APPOINTMENT" },
       { name: "Detailing Service", workflow: "POST_SERVICE_BILLING" },
+    ],
+  },
+  {
+    id: "royal_mart",
+    name: "Royal Mart",
+    businessType: "GROCERY",
+    planTier: "PRO",
+    icon: "ShoppingCart",
+    color: "bg-violet-600 text-white",
+    description: "Pro Grocery — 3 Stores · Bangalore",
+    activeWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY"],
+    categories: [
+      { name: "Fruits & Vegetables", workflow: "ECOMMERCE" },
+      { name: "Dairy & Bakery",      workflow: "ECOMMERCE" },
+      { name: "Staples & Grains",    workflow: "ECOMMERCE" },
+      { name: "Snacks & Beverages",  workflow: "ECOMMERCE" },
+      { name: "Personal Care",       workflow: "ECOMMERCE" },
+      { name: "Household Items",     workflow: "ECOMMERCE" },
     ],
   },
 ]

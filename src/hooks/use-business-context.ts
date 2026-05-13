@@ -2,99 +2,118 @@
 
 // ============================================================================
 // Business Context Hook
-// Resolves the real database business ID from the admin store's currentBusinessId
-// or by looking up the business slug from the API.
+//
+// Resolution priority (first match wins):
+//   1. adminStore.currentBusinessId  — super admin explicit impersonation
+//   2. authStore.currentBusinessId   — authenticated business owner session
+//   3. Slug lookup from demoBusinessId — dev / demo switcher mode
+//   4. Empty string                  — no context (super admin, no selection)
+//
+// NOTE: localStorage is NOT used as a fallback. Stale localStorage caused
+// "business not found" errors when the DB was re-seeded. The slug cache is
+// in-memory (cleared on page refresh) so it's always fresh per session.
 // ============================================================================
 
 import { useState, useEffect, useCallback } from "react"
 import { useAdminStore, getSlugForDemoId } from "@/stores/admin-store"
-import { setBusinessContext, getBusinessContextId } from "@/lib/api-client"
+import { useAuthStore } from "@/stores/auth-store"
+import { setBusinessContext } from "@/lib/api-client"
 
-// Cache of slug -> businessId mappings
+// In-memory slug → real DB ID cache. Clears on page refresh — intentionally.
 const slugCache: Record<string, string> = {}
 
-/**
- * Hook to get the real database business ID for the current business context.
- * 
- * Returns:
- * - businessId: The real database business ID (cuid), or empty string if not resolved yet
- * - isLoading: Whether we're currently resolving the business ID
- * - error: Any error that occurred during resolution
- * - businessName: The resolved business name
- */
 export function useBusinessContext() {
-  const { currentBusinessId, demoBusinessId, currentBusinessSlug } = useAdminStore()
-  const [resolvedId, setResolvedId] = useState<string>(currentBusinessId || "")
+  const {
+    currentBusinessId: adminBusinessId,
+    demoBusinessId,
+    currentBusinessSlug,
+    setCurrentBusinessId,
+  } = useAdminStore()
+
+  const {
+    currentBusinessId: authBusinessId,
+    currentBusinessName: authBusinessName,
+    isAuthenticated,
+  } = useAuthStore()
+
+  // Synchronous initial value from whichever store already has data
+  const [resolvedId, setResolvedId] = useState<string>(
+    () => adminBusinessId || authBusinessId || ""
+  )
   const [businessName, setBusinessName] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const resolveBusinessId = useCallback(async () => {
-    // If we already have a real business ID (cuid format, starts with "cmp" or similar), use it
-    if (currentBusinessId && currentBusinessId.length > 10 && currentBusinessId !== "biz_1") {
-      setResolvedId(currentBusinessId)
-      setBusinessContext(currentBusinessId)
+    // ── 1. Super admin explicit impersonation ─────────────────────────────
+    if (adminBusinessId) {
+      setResolvedId(adminBusinessId)
+      setBusinessContext(adminBusinessId)
       setIsLoading(false)
       return
     }
 
-    // Try to get from localStorage (set by auth store)
-    const storedBusinessId = getBusinessContextId()
-    if (storedBusinessId && storedBusinessId.length > 10) {
-      setResolvedId(storedBusinessId)
-      setBusinessContext(storedBusinessId)
+    // ── 2. Authenticated business owner session ────────────────────────────
+    if (isAuthenticated && authBusinessId) {
+      setResolvedId(authBusinessId)
+      setBusinessContext(authBusinessId)
+      if (authBusinessName) setBusinessName(authBusinessName)
       setIsLoading(false)
       return
     }
 
-    // Try to resolve by slug
+    // ── 3. Demo / dev mode: resolve slug → real DB ID ─────────────────────
     const slug = currentBusinessSlug || getSlugForDemoId(demoBusinessId)
-    if (!slug) {
-      // Super admin — no business context
-      setResolvedId("")
-      setIsLoading(false)
-      return
-    }
-
-    // Check cache
-    if (slugCache[slug]) {
-      setResolvedId(slugCache[slug])
-      setBusinessContext(slugCache[slug])
-      setIsLoading(false)
-      return
-    }
-
-    // Fetch from API
-    setIsLoading(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/core/businesses?slug=${encodeURIComponent(slug)}&limit=1`)
-      const data = await response.json()
-      if (data.success && data.data && Array.isArray(data.data) && data.data.length > 0) {
-        const biz = data.data[0]
-        slugCache[slug] = biz.id
-        setResolvedId(biz.id)
-        setBusinessName(biz.name)
-        setBusinessContext(biz.id)
-      } else if (data.success && data.data && !Array.isArray(data.data)) {
-        // Single business response
-        const biz = data.data
-        slugCache[slug] = biz.id
-        setResolvedId(biz.id)
-        setBusinessName(biz.name)
-        setBusinessContext(biz.id)
-      } else {
-        setError(`Business not found for slug: ${slug}`)
-        setResolvedId("")
+    if (slug) {
+      // In-memory cache hit — avoids redundant fetches within a session
+      if (slugCache[slug]) {
+        const cached = slugCache[slug]
+        setResolvedId(cached)
+        setBusinessContext(cached)
+        setCurrentBusinessId(cached)
+        setIsLoading(false)
+        return
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to resolve business ID"
-      setError(message)
-      setResolvedId("")
-    } finally {
-      setIsLoading(false)
+
+      setIsLoading(true)
+      setError(null)
+      try {
+        const res = await fetch(
+          `/api/core/businesses?slug=${encodeURIComponent(slug)}&limit=1`
+        )
+        const data = await res.json()
+        const biz = Array.isArray(data.data) ? data.data[0] : data.data
+        if (data.success && biz?.id) {
+          slugCache[slug] = biz.id
+          setResolvedId(biz.id)
+          setBusinessName(biz.name ?? "")
+          setBusinessContext(biz.id)
+          setCurrentBusinessId(biz.id) // cache in admin store for this session
+        } else {
+          setError(`Business not found for slug: ${slug}`)
+          setResolvedId("")
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to resolve business")
+        setResolvedId("")
+      } finally {
+        setIsLoading(false)
+      }
+      return
     }
-  }, [currentBusinessId, demoBusinessId, currentBusinessSlug])
+
+    // ── 4. No context — super admin with no business selected ─────────────
+    setResolvedId("")
+    setIsLoading(false)
+  }, [
+    adminBusinessId,
+    authBusinessId,
+    authBusinessName,
+    isAuthenticated,
+    demoBusinessId,
+    currentBusinessSlug,
+    setCurrentBusinessId,
+  ])
 
   useEffect(() => {
     resolveBusinessId()

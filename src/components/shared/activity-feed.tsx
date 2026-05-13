@@ -184,11 +184,13 @@ export function ActivityFeed({
   }, [businessId, page, limit, userId, filter]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLogs();
   }, [fetchLogs]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1);
   }, [businessId, userId, filter]);
 

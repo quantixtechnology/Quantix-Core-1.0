@@ -111,6 +111,10 @@ export async function POST(
       phone?: string;
       avatar?: string;
       gstNumber?: string;
+      dateOfBirth?: string;
+      gender?: string;
+      loyaltyTier?: string;
+      notes?: string;
       tags?: string[];
       metadata?: Record<string, unknown>;
       userId?: string;
@@ -154,6 +158,10 @@ export async function POST(
         phone: body.phone,
         avatar: body.avatar,
         gstNumber: body.gstNumber,
+        dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : undefined,
+        gender: body.gender,
+        loyaltyTier: body.loyaltyTier || 'BRONZE',
+        notes: body.notes || '',
         tags: body.tags ? JSON.stringify(body.tags) : '[]',
         metadata: body.metadata ? JSON.stringify(body.metadata) : '{}',
       },

@@ -62,7 +62,6 @@ const AuditLogsView = dynamic(() => import("@/components/dashboard/audit-logs-vi
 const BusinessDashboard = dynamic(() => import("@/components/business/dashboard/business-dashboard").then(m => ({ default: m.BusinessDashboard })), { loading: () => <PageLoader /> })
 const OrdersView = dynamic(() => import("@/components/business/orders/orders-view").then(m => ({ default: m.OrdersView })), { loading: () => <PageLoader /> })
 const ProductsView = dynamic(() => import("@/components/business/products/products-view").then(m => ({ default: m.ProductsView })), { loading: () => <PageLoader /> })
-const POSView = dynamic(() => import("@/components/business/pos/pos-view").then(m => ({ default: m.POSView })), { loading: () => <PageLoader /> })
 const CustomersView = dynamic(() => import("@/components/business/customers/customers-view").then(m => ({ default: m.CustomersView })), { loading: () => <PageLoader /> })
 const ReportsView = dynamic(() => import("@/components/business/reports/reports-view").then(m => ({ default: m.ReportsView })), { loading: () => <PageLoader /> })
 const StoreSettingsView = dynamic(() => import("@/components/business/settings/store-settings").then(m => ({ default: m.StoreSettingsView })), { loading: () => <PageLoader /> })
@@ -104,6 +103,11 @@ const WorkflowEngineView = dynamic(() => import("@/components/workflow/workflow-
 const WorkflowConfigView = dynamic(() => import("@/components/workflow/workflow-config-view").then(m => ({ default: m.WorkflowConfigView })), { loading: () => <PageLoader /> })
 const PlanComparison = dynamic(() => import("@/components/workflow/plan-comparison").then(m => ({ default: m.PlanComparison })), { loading: () => <PageLoader /> })
 
+// ── Payment (lazy) ────────────────────────────────────────────────────────
+const PaymentPluginsView = dynamic(() => import("@/components/admin/payment-plugins/payment-plugins-view").then(m => ({ default: m.PaymentPluginsView })), { loading: () => <PageLoader /> })
+const GatewayConfigView = dynamic(() => import("@/components/business/payment/gateway-config-view").then(m => ({ default: m.GatewayConfigView })), { loading: () => <PageLoader /> })
+const POSEnterprise = dynamic(() => import("@/components/business/pos/pos-enterprise").then(m => ({ default: m.POSEnterprise })), { loading: () => <PageLoader /> })
+
 export default function Home() {
   return (
     <AuthProvider>
@@ -120,6 +124,8 @@ function AppContent() {
       // Workflow Engine
       case "workflow-engine": return <WorkflowEngineView />
       case "plan-management": return <PlanComparison />
+      // Payment
+      case "payment-plugins": return <PaymentPluginsView />
       // Core
       case "dashboard": return <DashboardView />
       case "leads": return <LeadsView />
@@ -163,7 +169,7 @@ function AppContent() {
       case "orders": return <OrdersView />
       case "products": return <ProductsView />
       case "inventory": return <InventoryView />
-      case "pos": return <POSView />
+      case "pos": return <POSEnterprise />
       case "customers": return <CustomersView />
       case "reports": return <ReportsView />
       case "settings": return <StoreSettingsView />
@@ -179,6 +185,8 @@ function AppContent() {
       // Workflow Engine
       case "workflow-config": return <WorkflowConfigView />
       case "workflows": return <WorkflowEngineView />
+      // Payment
+      case "gateway-config": return <GatewayConfigView />
       default: return <BusinessDashboard />
     }
   }

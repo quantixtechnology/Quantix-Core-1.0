@@ -126,6 +126,17 @@ export async function PUT(
       updateData.autoRenew = body.autoRenew;
     }
 
+    // Period dates
+    if (body.currentPeriodStart) {
+      updateData.currentPeriodStart = new Date(body.currentPeriodStart as string);
+    }
+    if (body.currentPeriodEnd) {
+      updateData.currentPeriodEnd = new Date(body.currentPeriodEnd as string);
+    }
+    if (body.nextBillingDate) {
+      updateData.nextBillingDate = new Date(body.nextBillingDate as string);
+    }
+
     // Custom price override
     if (body.customPrice !== undefined) {
       const result = await overrideSubscriptionPricing({

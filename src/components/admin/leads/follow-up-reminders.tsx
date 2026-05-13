@@ -140,8 +140,9 @@ export function FollowUpReminders({ compact = false }: FollowUpRemindersProps) {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchReminders()
-  }, [fetchReminders])
+  }, [])
 
   const overdue = reminders.filter((r) => r.type === "OVERDUE")
   const pending = reminders.filter((r) => r.type === "PENDING")

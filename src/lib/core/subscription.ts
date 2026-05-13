@@ -412,8 +412,8 @@ export async function reactivatePlatformSubscription(
     return { success: false, error: 'Subscription not found' };
   }
 
-  if (subscription.status !== 'SUSPENDED') {
-    return { success: false, error: 'Only suspended subscriptions can be reactivated' };
+  if (subscription.status !== 'SUSPENDED' && subscription.status !== 'EXPIRED') {
+    return { success: false, error: 'Only suspended or expired subscriptions can be reactivated' };
   }
 
   const now = new Date();

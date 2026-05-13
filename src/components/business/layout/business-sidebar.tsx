@@ -6,6 +6,7 @@ import {
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
   Workflow, Zap, Droplets, Car,
 } from "lucide-react"
+import { useEffect } from "react"
 import {
   Sidebar,
   SidebarContent,
@@ -29,7 +30,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { useAdminStore, DEMO_BUSINESSES, type BusinessPage, type WorkflowType } from "@/stores/admin-store"
+import { useAdminStore, DEMO_BUSINESSES, getSlugForDemoId, type BusinessPage, type WorkflowType } from "@/stores/admin-store"
 import { useResponsive } from "@/hooks/use-responsive"
 
 // Map workflow types to sidebar navigation items
@@ -48,7 +49,7 @@ const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; i
     { key: "staff", label: "Technicians", icon: UserCog },
   ],
   SUBSCRIPTION: [
-    { key: "customers", label: "Subscribers", icon: Users },
+    { key: "customers", label: "Customers", icon: Users },
     { key: "offers", label: "Subscription Plans", icon: CreditCard },
   ],
   POST_SERVICE_BILLING: [
@@ -61,6 +62,7 @@ const managementNavItems: { key: BusinessPage; label: string; icon: React.Compon
   { key: "customers", label: "Customers", icon: Users },
   { key: "product-import", label: "Product Import", icon: Upload },
   { key: "pos", label: "POS Billing", icon: Monitor },
+  { key: "gateway-config", label: "Payment Gateways", icon: CreditCard },
   { key: "marketing", label: "Marketing", icon: Megaphone },
   { key: "tax", label: "Tax & GST", icon: Receipt },
   { key: "loyalty", label: "Loyalty Program", icon: Heart },
@@ -132,10 +134,18 @@ interface BusinessSidebarProps {
 }
 
 export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: BusinessSidebarProps) {
-  const { businessPage, setBusinessPage, demoBusinessId } = useAdminStore()
+  const { businessPage, setBusinessPage, demoBusinessId, setDemoBusinessId } = useAdminStore()
   const { isMobile } = useResponsive()
 
   const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[1]
+
+  // If the current demoBusinessId has no real DB slug (e.g. "super_admin"),
+  // default to the first real business so useBusinessContext can resolve an ID.
+  useEffect(() => {
+    if (!getSlugForDemoId(demoBusinessId)) {
+      setDemoBusinessId(DEMO_BUSINESSES[1].id)
+    }
+  }, [demoBusinessId, setDemoBusinessId])
   const activeWorkflows = demoBusiness.activeWorkflows
 
   // Build workflow-specific nav items

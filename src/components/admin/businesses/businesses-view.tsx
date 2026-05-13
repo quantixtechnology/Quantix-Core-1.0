@@ -100,6 +100,7 @@ export function BusinessesView() {
   const [customPricing, setCustomPricing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [plans, setPlans] = useState<PlanApiData[]>([])
+  const [activatingBusiness, setActivatingBusiness] = useState(false)
 
   // Form state
   const [formName, setFormName] = useState("")
@@ -146,7 +147,10 @@ export function BusinessesView() {
     }
   }, [])
 
-  useEffect(() => { fetchBusinesses(); fetchPlans() }, [fetchBusinesses, fetchPlans])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchBusinesses(); fetchPlans()
+  }, [])
 
   const filteredBusinesses = useMemo(() => {
     return businesses.filter((biz) => {
@@ -245,6 +249,43 @@ export function BusinessesView() {
       }
     } catch {
       toast.error("Failed to toggle online status")
+    }
+  }
+
+  const handleActivateBusiness = async (biz: BusinessApiData) => {
+    setActivatingBusiness(true)
+    try {
+      if (biz.status !== "ACTIVE") {
+        const res = await fetch(`/api/core/businesses/${biz.id}/status`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ status: "ACTIVE" }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "Failed to activate business")
+          return
+        }
+        toast.success("Business activated successfully")
+      } else if (biz.subscription && biz.subscription.status !== "ACTIVE") {
+        const res = await fetch(`/api/core/businesses/${biz.id}/subscription/reactivate`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "Failed to reactivate subscription")
+          return
+        }
+        toast.success("Subscription reactivated successfully")
+      } else {
+        toast.success("Business is already active")
+      }
+      fetchBusinesses()
+    } catch {
+      toast.error("Failed to activate business")
+    } finally {
+      setActivatingBusiness(false)
     }
   }
 
@@ -520,7 +561,18 @@ export function BusinessesView() {
                     <Separator />
                     {/* Subscription */}
                     <div className="space-y-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscription</h4>
+                      <div className="flex items-center justify-between gap-3">
+                        <div><h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscription</h4></div>
+                        {(biz.status !== "ACTIVE" || (sub && sub.status !== "ACTIVE")) && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleActivateBusiness(biz)}
+                            disabled={activatingBusiness}
+                          >
+                            {biz.status !== "ACTIVE" ? "Activate Business" : "Reactivate Subscription"}
+                          </Button>
+                        )}
+                      </div>
                       {sub ? (
                         <div className="rounded-lg border p-4 space-y-3">
                           <div className="flex items-center justify-between">

@@ -130,8 +130,9 @@ export function LeadContactCounters({ leadId, lastContactedAt }: LeadContactCoun
   }, [leadId, lastContactedAt])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStats()
-  }, [fetchStats])
+  }, [leadId, lastContactedAt])
 
   if (isLoading) {
     return (

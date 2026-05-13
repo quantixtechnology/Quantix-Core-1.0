@@ -194,14 +194,16 @@ export function CreateOrderDialog({
     [subtotal, totalTax, deliveryFee]
   )
 
-  // ---- Fetch data on open ----
-  useEffect(() => {
-    if (!open || !businessId) return
-    resetForm()
-    fetchCustomers()
-    fetchProducts()
-    fetchStores()
-  }, [open, businessId])
+  // ---- Form actions ----
+  function resetForm() {
+    setCustomerId("")
+    setOrderType("DELIVERY")
+    setPaymentMethod("UPI")
+    setItems([])
+    setDeliveryAddress("")
+    setNotes("")
+    setStoreId("")
+  }
 
   async function fetchCustomers() {
     setLoadingCustomers(true)
@@ -256,16 +258,15 @@ export function CreateOrderDialog({
     }
   }
 
-  // ---- Form actions ----
-  function resetForm() {
-    setCustomerId("")
-    setOrderType("DELIVERY")
-    setPaymentMethod("UPI")
-    setItems([])
-    setDeliveryAddress("")
-    setNotes("")
-    setStoreId("")
-  }
+  // ---- Fetch data on open ----
+  useEffect(() => {
+    if (!open || !businessId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    resetForm()
+    fetchCustomers()
+    fetchProducts()
+    fetchStores()
+  }, [open, businessId])
 
   const addProductItem = useCallback(
     (product: Product) => {

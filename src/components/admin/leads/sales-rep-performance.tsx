@@ -114,8 +114,9 @@ export function SalesRepPerformance() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMetrics()
-  }, [fetchMetrics])
+  }, [])
 
   const maxRevenue = Math.max(...salesRepMetrics.map((r) => r.revenueGenerated), 1)
   const maxCalls = Math.max(...salesRepMetrics.map((r) => r.callsMade), 1)

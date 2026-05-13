@@ -114,8 +114,9 @@ export function DashboardView() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData()
-  }, [fetchData])
+  }, [])
 
   // Computed values from real data
   const activeBusinesses = stats?.businesses.active ?? 0

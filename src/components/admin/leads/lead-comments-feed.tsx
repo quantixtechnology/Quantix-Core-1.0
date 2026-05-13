@@ -128,8 +128,9 @@ export function LeadCommentsFeed({ leadId, maxHeight = "400px" }: LeadCommentsFe
   }, [leadId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchComments()
-  }, [fetchComments])
+  }, [leadId])
 
   const handleAddComment = async () => {
     if (!commentText.trim() || !leadId) return

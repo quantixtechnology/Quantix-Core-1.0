@@ -65,12 +65,10 @@ export function AuthGuard({
     useAdminStore();
 
   // Stable unique ID for this guard instance
-  const guardIdRef = useRef<string | null>(null);
-  if (guardIdRef.current === null) {
+  const guardId = useMemo(() => {
     guardIdCounter++;
-    guardIdRef.current = `guard-${guardIdCounter}`;
-  }
-  const guardId = guardIdRef.current;
+    return `guard-${guardIdCounter}`;
+  }, []);
 
   const hasInitialized = initializedGuards.has(guardId);
 

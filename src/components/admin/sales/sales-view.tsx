@@ -59,14 +59,19 @@ import { toast } from "sonner"
 // ---------------------------------------------------------------------------
 interface SalesRep {
   id: string
+  userId?: string
   name: string
   email: string
   phone: string
   region: string
+  designation?: string
+  reportingManager?: string
+  commissionPercent: number
   target: number
   achieved: number
   leads: number
   conversions: number
+  isActive: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +139,7 @@ function getInitials(name: string) {
 // Commission Tracking Card
 // ---------------------------------------------------------------------------
 function CommissionTrackingSection({ team }: { team: SalesRep[] }) {
-  const totalCommissions = team.reduce((sum, rep) => sum + rep.achieved * 0.05, 0)
+  const totalCommissions = team.reduce((sum, rep) => sum + rep.achieved * (rep.commissionPercent / 100), 0)
   const pendingPayouts = totalCommissions * 0.4
   const earnedThisMonth = totalCommissions * 0.6
 
@@ -145,7 +150,7 @@ function CommissionTrackingSection({ team }: { team: SalesRep[] }) {
           <DollarSign className="h-4 w-4 text-emerald-600" />
           <CardTitle className="text-sm font-semibold">Commission Tracking</CardTitle>
         </div>
-        <CardDescription className="text-xs">Sales rep commission overview — 5% of achieved revenue</CardDescription>
+        <CardDescription className="text-xs">Sales rep commission overview — default commission rates per rep</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -186,7 +191,7 @@ function CommissionTrackingSection({ team }: { team: SalesRep[] }) {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold">{formatCurrencyFull(Math.round(commission))}</p>
-                  <p className="text-[10px] text-muted-foreground">5% of {formatCurrency(rep.achieved)}</p>
+                  <p className="text-[10px] text-muted-foreground">{rep.commissionPercent}% of {formatCurrency(rep.achieved)}</p>
                 </div>
               </div>
             )
@@ -251,7 +256,32 @@ export function SalesView() {
   const [formEmail, setFormEmail] = useState("")
   const [formPhone, setFormPhone] = useState("")
   const [formRegion, setFormRegion] = useState("")
+  const [formDesignation, setFormDesignation] = useState("")
+  const [formReportingManager, setFormReportingManager] = useState("")
+  const [formCommissionPercent, setFormCommissionPercent] = useState("5")
   const [formTarget, setFormTarget] = useState("")
+  const [formStatus, setFormStatus] = useState("Active")
+
+  const [editOpen, setEditOpen] = useState(false)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [editFormName, setEditFormName] = useState("")
+  const [editFormEmail, setEditFormEmail] = useState("")
+  const [editFormPhone, setEditFormPhone] = useState("")
+  const [editFormRegion, setEditFormRegion] = useState("")
+  const [editFormDesignation, setEditFormDesignation] = useState("")
+  const [editFormReportingManager, setEditFormReportingManager] = useState("")
+  const [editFormCommissionPercent, setEditFormCommissionPercent] = useState("5")
+  const [editFormTarget, setEditFormTarget] = useState("")
+  const [editFormStatus, setEditFormStatus] = useState("Active")
+
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [assignLeadsLoading, setAssignLeadsLoading] = useState(false)
+  const [assignableLeads, setAssignableLeads] = useState<Array<{ id: string; businessName: string; contactName: string; salesRepId?: string }>>([])
+  const [selectedAssignLeadIds, setSelectedAssignLeadIds] = useState<string[]>([])
+
+  const [auditOpen, setAuditOpen] = useState(false)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditLogs, setAuditLogs] = useState<Array<{ id: string; createdAt: string; action: string; details: string | null }>>([])
 
   // Effective search combines global and local
   const effectiveSearch = searchQuery || localSearch
@@ -293,12 +323,17 @@ export function SalesView() {
           const repStats = leadsByRep[repId] || { leads: 0, conversions: 0 }
           return {
             id: repId,
+            userId: member.userId as string | undefined,
             name: member.name as string,
             email: member.email as string,
             phone: (member.phone as string) || "",
             region: (member.region as string) || "",
+            designation: (member.designation as string) || "",
+            reportingManager: (member.reportingManager as string) || "",
+            commissionPercent: Number(member.commissionPercent) || 5,
             target: Number(member.target) || 0,
             achieved: Number(member.achieved) || 0,
+            isActive: Boolean(member.isActive),
             leads: repStats.leads,
             conversions: repStats.conversions,
           }
@@ -313,8 +348,9 @@ export function SalesView() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSalesTeam()
-  }, [fetchSalesTeam])
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Filtered team
@@ -351,7 +387,11 @@ export function SalesView() {
     setFormEmail("")
     setFormPhone("")
     setFormRegion("")
+    setFormDesignation("")
+    setFormReportingManager("")
+    setFormCommissionPercent("5")
     setFormTarget("")
+    setFormStatus("Active")
   }
 
   // ---------------------------------------------------------------------------
@@ -373,7 +413,11 @@ export function SalesView() {
           email: formEmail,
           phone: formPhone,
           region: formRegion,
+          designation: formDesignation,
+          reportingManager: formReportingManager,
+          commissionPercent: Number(formCommissionPercent),
           target: Number(formTarget),
+          isActive: formStatus === "Active",
         }),
       })
       const json = await res.json()
@@ -392,6 +436,199 @@ export function SalesView() {
     } finally {
       setAdding(false)
     }
+  }
+
+  const prepareEditForm = (rep: SalesRep) => {
+    setEditFormName(rep.name)
+    setEditFormEmail(rep.email)
+    setEditFormPhone(rep.phone)
+    setEditFormRegion(rep.region)
+    setEditFormDesignation(rep.designation || "")
+    setEditFormReportingManager(rep.reportingManager || "")
+    setEditFormCommissionPercent(String(rep.commissionPercent || 5))
+    setEditFormTarget(String(rep.target || 0))
+    setEditFormStatus(rep.isActive ? "Active" : "Inactive")
+  }
+
+  const handleOpenRepDetail = (rep: SalesRep) => {
+    setSelectedRep(rep)
+    setDetailOpen(true)
+  }
+
+  const handleOpenEdit = () => {
+    if (!selectedRep) return
+    prepareEditForm(selectedRep)
+    setEditOpen(true)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!selectedRep) return
+    setIsSavingEdit(true)
+    try {
+      const res = await fetch(`/api/admin/sales-team?id=${selectedRep.id}`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          name: editFormName,
+          email: editFormEmail,
+          phone: editFormPhone,
+          region: editFormRegion,
+          designation: editFormDesignation,
+          reportingManager: editFormReportingManager,
+          commissionPercent: Number(editFormCommissionPercent),
+          target: Number(editFormTarget),
+          isActive: editFormStatus === "Active",
+        }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success("Sales rep updated")
+        setEditOpen(false)
+        setSelectedRep(null)
+        fetchSalesTeam()
+      } else {
+        toast.error(json.error || "Failed to update sales rep")
+      }
+    } catch (err) {
+      console.error("Failed to update sales rep:", err)
+      toast.error("Failed to update sales rep. Please try again.")
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  const handleDeactivateRep = async () => {
+    if (!selectedRep) return
+    setIsSavingEdit(true)
+    try {
+      const res = await fetch(`/api/admin/sales-team?id=${selectedRep.id}`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ isActive: false }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success(`${selectedRep.name} has been deactivated`)
+        setSelectedRep(null)
+        setDetailOpen(false)
+        fetchSalesTeam()
+      } else {
+        toast.error(json.error || "Failed to deactivate sales rep")
+      }
+    } catch (err) {
+      console.error("Failed to deactivate sales rep:", err)
+      toast.error("Failed to deactivate sales rep")
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  const handleResetPassword = async () => {
+    if (!selectedRep) return
+    setIsSavingEdit(true)
+    try {
+      const res = await fetch(`/api/admin/sales-team?id=${selectedRep.id}&action=reset-password`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success("Password reset to default successfully")
+      } else {
+        toast.error(json.error || "Failed to reset password")
+      }
+    } catch (err) {
+      console.error("Failed to reset password:", err)
+      toast.error("Failed to reset password")
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  const handleOpenAssignLeads = async () => {
+    if (!selectedRep) return
+    setSelectedAssignLeadIds([])
+    setAssignableLeads([])
+    setAssignLeadsLoading(true)
+    setAssignOpen(true)
+    try {
+      const res = await fetch(`/api/core/leads?limit=200`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success && Array.isArray(json.data)) {
+        setAssignableLeads(
+          json.data
+            .filter((lead: any) => lead.salesRep?.id !== selectedRep.id)
+            .map((lead: any) => ({
+              id: lead.id,
+              businessName: lead.businessName,
+              contactName: lead.contactName,
+              salesRepId: lead.salesRep?.id,
+            }))
+        )
+      }
+    } catch (err) {
+      console.error("Failed to fetch assignable leads:", err)
+    } finally {
+      setAssignLeadsLoading(false)
+    }
+  }
+
+  const handleAssignSelectedLeads = async () => {
+    if (!selectedRep || selectedAssignLeadIds.length === 0) return
+    setAssignLeadsLoading(true)
+    try {
+      await Promise.allSettled(
+        selectedAssignLeadIds.map((leadId) =>
+          fetch(`/api/core/leads/${leadId}`, {
+            method: "PATCH",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ salesRepId: selectedRep.id }),
+          })
+        )
+      )
+      toast.success(`Assigned ${selectedAssignLeadIds.length} lead(s) to ${selectedRep.name}`)
+      setAssignOpen(false)
+      setSelectedAssignLeadIds([])
+      fetchSalesTeam()
+    } catch (err) {
+      console.error("Failed to assign leads:", err)
+      toast.error("Failed to assign leads")
+    } finally {
+      setAssignLeadsLoading(false)
+    }
+  }
+
+  const fetchAuditLogs = async (repId: string) => {
+    setAuditLoading(true)
+    try {
+      const res = await fetch(`/api/core/audit?entity=SalesTeamMember&limit=20`, {
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success && Array.isArray(json.data)) {
+        setAuditLogs(
+          json.data
+            .filter((log: any) => log.entityId === repId)
+            .map((log: any) => ({
+              id: log.id,
+              createdAt: log.createdAt,
+              action: log.action,
+              details: log.details,
+            }))
+        )
+      }
+    } catch (err) {
+      console.error("Failed to fetch audit logs:", err)
+      toast.error("Failed to load audit history")
+    } finally {
+      setAuditLoading(false)
+    }
+  }
+
+  const handleOpenAudit = async () => {
+    if (!selectedRep) return
+    setAuditOpen(true)
+    await fetchAuditLogs(selectedRep.id)
   }
 
   // ---------------------------------------------------------------------------
@@ -487,6 +724,47 @@ export function SalesView() {
                       value={formTarget}
                       onChange={(e) => setFormTarget(e.target.value)}
                     />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Designation</Label>
+                    <Input
+                      placeholder="e.g. Senior Account Executive"
+                      value={formDesignation}
+                      onChange={(e) => setFormDesignation(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Reporting Manager</Label>
+                    <Input
+                      placeholder="e.g. Rahul Verma"
+                      value={formReportingManager}
+                      onChange={(e) => setFormReportingManager(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Commission %</Label>
+                    <Input
+                      placeholder="e.g. 5"
+                      type="number"
+                      value={formCommissionPercent}
+                      onChange={(e) => setFormCommissionPercent(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={formStatus} onValueChange={setFormStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </div>
@@ -631,17 +909,14 @@ export function SalesView() {
             const level = getPerformanceLevel(rep.achieved, rep.target)
             const colors = getPerformanceColor(level)
             const pct = rep.target > 0 ? Math.round((rep.achieved / rep.target) * 100) : 0
-            const commission = rep.achieved * 0.05
+            const commission = rep.achieved * (rep.commissionPercent / 100)
 
             return (
               <Card
                 key={rep.id}
                 className="cursor-pointer hover:shadow-lg transition-all duration-200 group border-l-4"
                 style={{ borderLeftColor: level === "above" ? "#10B981" : level === "near" ? "#F59E0B" : "#EF4444" }}
-                onClick={() => {
-                  setSelectedRep(rep)
-                  setDetailOpen(true)
-                }}
+                onClick={() => handleOpenRepDetail(rep)}
               >
                 <CardContent className="p-5">
                   {/* Header: Avatar + Name + Badge */}
@@ -713,7 +988,7 @@ export function SalesView() {
 
                   {/* Commission detail */}
                   <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span>5% commission on achieved</span>
+                    <span>{rep.commissionPercent}% commission on achieved</span>
                     <span className="font-medium text-foreground">{formatCurrencyFull(Math.round(commission))}</span>
                   </div>
                 </CardContent>
@@ -738,37 +1013,55 @@ export function SalesView() {
           if (!open) setSelectedRep(null)
         }}
       >
-        <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
+        <SheetContent className="w-full max-w-[520px] max-h-screen p-0 overflow-hidden">
           {selectedRep && (() => {
             const rep = selectedRep
             const level = getPerformanceLevel(rep.achieved, rep.target)
             const colors = getPerformanceColor(level)
             const pct = rep.target > 0 ? Math.round((rep.achieved / rep.target) * 100) : 0
-            const commission = rep.achieved * 0.05
+            const commission = rep.achieved * (rep.commissionPercent / 100)
 
             return (
-              <>
-                <SheetHeader className="px-6 pt-6 pb-4 border-b">
+              <div className="flex h-full min-h-0 flex-col">
+                <SheetHeader className="px-6 pt-6 pb-4 border-b bg-background">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-12 w-12">
                       <AvatarFallback className={`text-base font-bold ${colors.badge}`}>
                         {getInitials(rep.name)}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="space-y-1">
-                      <SheetTitle className="text-lg">{rep.name}</SheetTitle>
-                      <SheetDescription className="flex items-center gap-2">
+                    <div className="space-y-1 min-w-0">
+                      <SheetTitle className="text-lg truncate">{rep.name}</SheetTitle>
+                      <SheetDescription className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <Badge className={`text-[10px] ${colors.badge}`} variant="secondary">
                           {getPerformanceLabel(level)}
                         </Badge>
-                        <span className="text-xs text-muted-foreground">{rep.region}</span>
+                        <span>{rep.region}</span>
                       </SheetDescription>
                     </div>
                   </div>
                 </SheetHeader>
 
-                <ScrollArea className="h-[calc(100vh-120px)]">
-                  <div className="space-y-6 p-6">
+                <div className="px-6 pb-4 border-b bg-background">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="secondary" size="sm" onClick={handleOpenEdit}>
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={handleDeactivateRep}>
+                      {rep.isActive ? "Deactivate" : "Reactivate"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleOpenAssignLeads}>
+                      Assign Leads
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleOpenAudit}>
+                      Activity Logs
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <ScrollArea className="h-full overflow-y-auto">
+                    <div className="space-y-4 p-4">
                     {/* Contact Information */}
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -792,6 +1085,29 @@ export function SalesView() {
                       </div>
                     </div>
 
+                    <div className="rounded-lg border p-3 bg-muted/50">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Status</p>
+                          <Badge variant={rep.isActive ? "secondary" : "outline"} className="text-[10px] py-1">
+                            {rep.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Designation</p>
+                          <p className="font-medium">{rep.designation || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Reporting Manager</p>
+                          <p className="font-medium">{rep.reportingManager || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Commission %</p>
+                          <p className="font-medium">{rep.commissionPercent}%</p>
+                        </div>
+                      </div>
+                    </div>
+
                     <Separator />
 
                     {/* Performance Overview */}
@@ -800,14 +1116,14 @@ export function SalesView() {
                         Performance Overview
                       </h4>
                       <div className="grid grid-cols-2 gap-3">
-                        <Card className="shadow-none">
+                        <Card className="shadow-none border">
                           <CardContent className="p-3 text-center">
                             <Target className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
                             <p className="text-lg font-bold">{formatCurrency(rep.target)}</p>
                             <p className="text-[10px] text-muted-foreground">Target</p>
                           </CardContent>
                         </Card>
-                        <Card className="shadow-none">
+                        <Card className="shadow-none border">
                           <CardContent className="p-3 text-center">
                             <TrendingUp className={`h-4 w-4 mx-auto mb-1 ${colors.text}`} />
                             <p className={`text-lg font-bold ${colors.text}`}>{formatCurrency(rep.achieved)}</p>
@@ -856,10 +1172,10 @@ export function SalesView() {
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         Commission Details
                       </h4>
-                      <div className="rounded-lg border p-4 space-y-3">
-                        <div className="flex items-center gap-2 mb-2">
+                      <div className="rounded-lg border p-3 space-y-3">
+                        <div className="flex items-center gap-2 mb-1">
                           <Award className="h-4 w-4 text-amber-600" />
-                          <span className="text-sm font-semibold">5% Commission Structure</span>
+                          <span className="text-sm font-semibold">{rep.commissionPercent}% Commission Structure</span>
                         </div>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div>
@@ -868,7 +1184,7 @@ export function SalesView() {
                           </div>
                           <div>
                             <p className="text-[10px] text-muted-foreground">Commission Rate</p>
-                            <p className="font-medium">5%</p>
+                            <p className="font-medium">{rep.commissionPercent}%</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-muted-foreground">Total Commission</p>
@@ -883,11 +1199,195 @@ export function SalesView() {
                     </div>
                   </div>
                 </ScrollArea>
-              </>
+                </div>
+
+                <div className="sticky bottom-0 z-10 border-t bg-background px-6 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="secondary" size="sm" onClick={handleOpenEdit}>
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={handleDeactivateRep}>
+                      {rep.isActive ? "Deactivate" : "Reactivate"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleOpenAssignLeads}>
+                      Assign Leads
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleOpenAudit}>
+                      Activity Logs
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )
           })()}
         </SheetContent>
       </Sheet>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Sales Rep</DialogTitle>
+            <DialogDescription>Update sales rep profile and status</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input value={editFormName} onChange={(e) => setEditFormName(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input value={editFormEmail} type="email" onChange={(e) => setEditFormEmail(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input value={editFormPhone} onChange={(e) => setEditFormPhone(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Region</Label>
+                <Select value={editFormRegion} onValueChange={setEditFormRegion}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select region" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {regions.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Target Amount (₹)</Label>
+                <Input type="number" value={editFormTarget} onChange={(e) => setEditFormTarget(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Designation</Label>
+                <Input value={editFormDesignation} onChange={(e) => setEditFormDesignation(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Reporting Manager</Label>
+                <Input value={editFormReportingManager} onChange={(e) => setEditFormReportingManager(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Commission %</Label>
+                <Input type="number" value={editFormCommissionPercent} onChange={(e) => setEditFormCommissionPercent(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={editFormStatus} onValueChange={setEditFormStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={isSavingEdit}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={isSavingEdit}>
+              {isSavingEdit ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Assign Leads</DialogTitle>
+            <DialogDescription>Select leads to assign to the selected rep</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {assignLeadsLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {assignableLeads.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No leads available for assignment.</p>
+                ) : (
+                  assignableLeads.map((lead) => (
+                    <div key={lead.id} className="rounded-lg border p-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">{lead.businessName}</p>
+                        <p className="text-[10px] text-muted-foreground">{lead.contactName}</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={selectedAssignLeadIds.includes(lead.id)}
+                        onChange={(e) => {
+                          setSelectedAssignLeadIds((current) =>
+                            e.target.checked ? [...current, lead.id] : current.filter((id) => id !== lead.id)
+                          )
+                        }}
+                        className="h-4 w-4 rounded border"
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignOpen(false)} disabled={assignLeadsLoading}>
+              Cancel
+            </Button>
+            <Button onClick={handleAssignSelectedLeads} disabled={assignLeadsLoading || selectedAssignLeadIds.length === 0}>
+              {assignLeadsLoading ? "Assigning..." : `Assign ${selectedAssignLeadIds.length} lead(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={auditOpen} onOpenChange={setAuditOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Activity History</DialogTitle>
+            <DialogDescription>Recent audit logs for this sales rep</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            {auditLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No activity logs found for this rep.</p>
+            ) : (
+              <div className="space-y-2">
+                {auditLogs.map((log) => (
+                  <div key={log.id} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>{new Date(log.createdAt).toLocaleString()}</span>
+                      <Badge className="text-[10px]" variant="secondary">
+                        {log.action}
+                      </Badge>
+                    </div>
+                    {log.details && <p className="mt-2 text-sm">{log.details}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setAuditOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

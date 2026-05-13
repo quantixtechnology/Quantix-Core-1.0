@@ -20,6 +20,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
 import {
   CreditCard, Plus, Search, X, IndianRupee, AlertTriangle, CheckCircle2,
   FileText, ArrowUpRight, RefreshCw, Shield,
@@ -52,12 +53,27 @@ interface PlatformPlanData {
 }
 
 type SubscriptionStatus = "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "CANCELLED" | "EXPIRED"
+type SubscriptionDisplayStatus = SubscriptionStatus | "PENDING_ACTIVATION"
 
-const subscriptionStatuses: SubscriptionStatus[] = ["ACTIVE", "PAST_DUE", "SUSPENDED", "CANCELLED", "EXPIRED"]
+const subscriptionStatuses: SubscriptionDisplayStatus[] = ["ACTIVE", "PENDING_ACTIVATION", "PAST_DUE", "SUSPENDED", "EXPIRED", "CANCELLED"]
 
-function getSubscriptionStatusColor(status: SubscriptionStatus): string {
-  const map: Record<SubscriptionStatus, string> = { ACTIVE: "text-emerald-700", PAST_DUE: "text-amber-700", SUSPENDED: "text-red-700", CANCELLED: "text-slate-500", EXPIRED: "text-slate-500" }
+function getSubscriptionStatusColor(status: SubscriptionDisplayStatus): string {
+  const map: Record<SubscriptionDisplayStatus, string> = {
+    ACTIVE: "text-emerald-700",
+    PENDING_ACTIVATION: "text-violet-700",
+    PAST_DUE: "text-amber-700",
+    SUSPENDED: "text-red-700",
+    CANCELLED: "text-slate-500",
+    EXPIRED: "text-slate-500",
+  }
   return map[status] || "text-slate-700"
+}
+
+function getSubscriptionDisplayStatus(subscription: SubscriptionApiData): SubscriptionDisplayStatus {
+  if (subscription.status === "ACTIVE" && subscription.business?.status === "ONBOARDING") {
+    return "PENDING_ACTIVATION"
+  }
+  return subscription.status as SubscriptionDisplayStatus
 }
 
 function formatCurrency(amount: number): string { return `₹${amount.toLocaleString("en-IN")}` }
@@ -82,6 +98,23 @@ export function SubscriptionsView() {
   const [overrideApprover, setOverrideApprover] = useState("")
   const [submittingOverride, setSubmittingOverride] = useState(false)
 
+  const [detailBusinessStatus, setDetailBusinessStatus] = useState<string>("")
+  const [detailSubscriptionStatus, setDetailSubscriptionStatus] = useState<SubscriptionDisplayStatus>("ACTIVE")
+  const [detailPlanId, setDetailPlanId] = useState<string>("")
+  const [detailBillingCycle, setDetailBillingCycle] = useState<string>("MONTHLY")
+  const [detailStartDate, setDetailStartDate] = useState<string>("")
+  const [detailExpiryDate, setDetailExpiryDate] = useState<string>("")
+  const [detailCustomPrice, setDetailCustomPrice] = useState<string>("")
+  const [detailActivationStatus, setDetailActivationStatus] = useState(false)
+  const [detailSaving, setDetailSaving] = useState(false)
+  const [billingHistory, setBillingHistory] = useState<any[]>([])
+  const [loadingBillingHistory, setLoadingBillingHistory] = useState(false)
+  const [billingHistoryOpen, setBillingHistoryOpen] = useState(true)
+
+  // Toggle states for subscription and business online
+  const [subscriptionActive, setSubscriptionActive] = useState(false)
+  const [businessOnline, setBusinessOnline] = useState(false)
+
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -98,12 +131,15 @@ export function SubscriptionsView() {
     } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData()
+  }, [])
 
   const stats = useMemo(() => {
     if (apiStats) return apiStats
     const active = subscriptions.filter(s => s.status === "ACTIVE").length
-    const overdue = subscriptions.filter(s => s.status === "PAST_DUE").length
+    const pastDue = subscriptions.filter(s => s.status === "PAST_DUE").length
     const suspended = subscriptions.filter(s => s.status === "SUSPENDED").length
     let monthlyMRR = 0; let yearlyProjected = 0
     for (const s of subscriptions.filter(s => s.status === "ACTIVE" || s.status === "PAST_DUE")) {
@@ -111,13 +147,14 @@ export function SubscriptionsView() {
       const isMonthly = s.billingCycle === "MONTHLY" || s.billingCycle === "monthly"
       if (isMonthly) { monthlyMRR += price; yearlyProjected += price * 12 } else { monthlyMRR += Math.round(price / 12); yearlyProjected += price }
     }
-    return { total: subscriptions.length, active, overdue, suspended, monthlyMRR, yearlyProjected }
+    return { total: subscriptions.length, active, pastDue, suspended, monthlyMRR, yearlyProjected }
   }, [subscriptions, apiStats])
 
   const filteredSubscriptions = useMemo(() => {
     return subscriptions.filter((sub) => {
       const matchSearch = !searchQuery || sub.business?.name?.toLowerCase().includes(searchQuery.toLowerCase()) || sub.id.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchStatus = statusFilter === "all" || sub.status === statusFilter
+      const displayStatus = getSubscriptionDisplayStatus(sub)
+      const matchStatus = statusFilter === "all" || displayStatus === statusFilter
       const matchBilling = billingFilter === "all" || (sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly" ? "MONTHLY" : "YEARLY") === billingFilter
       return matchSearch && matchStatus && matchBilling
     })
@@ -154,6 +191,322 @@ export function SubscriptionsView() {
       setSubmittingOverride(false)
     }
   }
+
+  const formatInputDate = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toISOString().slice(0, 10)
+    } catch {
+      return ""
+    }
+  }
+
+  const loadBillingHistory = async (businessId: string) => {
+    setLoadingBillingHistory(true)
+    try {
+      const res = await fetch(`/api/core/businesses/${businessId}/subscription`)
+      if (!res.ok) return
+      const json = await res.json()
+      if (json.success) {
+        setBillingHistory(json.data.billingHistory || [])
+      }
+    } catch {
+      // ignore silently
+    } finally {
+      setLoadingBillingHistory(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedSubscription || !detailOpen) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDetailBusinessStatus(selectedSubscription.business?.status || "ONBOARDING")
+    setDetailSubscriptionStatus(getSubscriptionDisplayStatus(selectedSubscription))
+    setDetailPlanId(selectedSubscription.plan?.id || "")
+    setDetailBillingCycle(selectedSubscription.billingCycle === "YEARLY" ? "YEARLY" : "MONTHLY")
+    setDetailStartDate(formatInputDate(selectedSubscription.currentPeriodStart))
+    setDetailExpiryDate(formatInputDate(selectedSubscription.currentPeriodEnd))
+    setDetailCustomPrice(selectedSubscription.customPrice ? selectedSubscription.customPrice.toString() : "")
+    setDetailActivationStatus(selectedSubscription.business?.status === "ACTIVE")
+    setBillingHistory([])
+    loadBillingHistory(selectedSubscription.businessId)
+
+    // Set toggle states
+    setSubscriptionActive(selectedSubscription.status === "ACTIVE")
+    setBusinessOnline(selectedSubscription.business?.status === "ACTIVE")
+  }, [selectedSubscription, detailOpen])
+
+  const handleActivateSubscription = async (subscription: SubscriptionApiData) => {
+    try {
+      if (subscription.business?.status !== "ACTIVE") {
+        const res = await fetch(`/api/core/businesses/${subscription.businessId}/status`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ status: "ACTIVE" }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "Failed to activate business")
+          return
+        }
+        toast.success("Business activated successfully")
+      } else if (subscription.status !== "ACTIVE") {
+        const res = await fetch(`/api/core/businesses/${subscription.businessId}/subscription/reactivate`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "Failed to reactivate subscription")
+          return
+        }
+        toast.success("Subscription reactivated successfully")
+      } else {
+        toast.success("Subscription is already active")
+      }
+      fetchData()
+    } catch {
+      toast.error("Failed to activate subscription")
+    }
+  }
+
+  const handleSuspendSubscription = async (subscription: SubscriptionApiData) => {
+    try {
+      const res = await fetch(`/api/core/businesses/${subscription.businessId}/status`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status: "SUSPENDED", reason: "Suspended from subscription admin" }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) {
+        toast.error(json.error || "Failed to suspend subscription")
+        return
+      }
+      toast.success("Subscription suspended successfully")
+      fetchData()
+    } catch {
+      toast.error("Failed to suspend subscription")
+    }
+  }
+
+  const handleSubscriptionActiveToggle = async (active: boolean) => {
+    if (!selectedSubscription) return
+
+    setSubscriptionActive(active)
+    if (!active) {
+      // When subscription becomes SUSPENDED, business goes offline
+      setBusinessOnline(false)
+    }
+
+    try {
+      if (active) {
+        // Activate subscription
+        if (selectedSubscription.business?.status !== "ACTIVE") {
+          const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/status`, {
+            method: "PUT",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ status: "ACTIVE" }),
+          })
+          const json = await res.json()
+          if (!res.ok || !json.success) {
+            toast.error(json.error || "Failed to activate business")
+            setSubscriptionActive(false)
+            return
+          }
+        }
+        if (selectedSubscription.status !== "ACTIVE") {
+          const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/subscription/reactivate`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+          })
+          const json = await res.json()
+          if (!res.ok || !json.success) {
+            toast.error(json.error || "Failed to reactivate subscription")
+            setSubscriptionActive(false)
+            return
+          }
+        }
+        toast.success("Subscription activated successfully")
+      } else {
+        // Suspend subscription
+        const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/status`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ status: "SUSPENDED", reason: "Suspended via subscription toggle" }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "Failed to suspend subscription")
+          setSubscriptionActive(true)
+          return
+        }
+        toast.success("Subscription suspended successfully")
+      }
+      fetchData()
+    } catch {
+      toast.error("Failed to update subscription status")
+      setSubscriptionActive(!active)
+    }
+  }
+
+  const handleBusinessOnlineToggle = async (online: boolean) => {
+    if (!selectedSubscription) return
+
+    setBusinessOnline(online)
+
+    try {
+      const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/toggle-online`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ isOnline: online }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) {
+        toast.error(json.error || "Failed to toggle online status")
+        setBusinessOnline(!online)
+        return
+      }
+      toast.success(`Business ${online ? "is now online" : "is now offline"}`)
+      fetchData()
+    } catch {
+      toast.error("Failed to toggle online status")
+      setBusinessOnline(!online)
+    }
+  }
+
+  const handleRenewSubscription = async (subscription: SubscriptionApiData) => {
+    try {
+      const now = new Date()
+      const nextEnd = new Date(now)
+      if (subscription.billingCycle === "YEARLY" || subscription.billingCycle === "yearly") {
+        nextEnd.setFullYear(nextEnd.getFullYear() + 1)
+      } else {
+        nextEnd.setMonth(nextEnd.getMonth() + 1)
+      }
+      const res = await fetch(`/api/core/businesses/${subscription.businessId}/subscription`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          currentPeriodStart: now.toISOString(),
+          currentPeriodEnd: nextEnd.toISOString(),
+          nextBillingDate: nextEnd.toISOString(),
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) {
+        toast.error(json.error || "Failed to renew subscription")
+        return
+      }
+      toast.success("Subscription renewed successfully")
+      fetchData()
+    } catch {
+      toast.error("Failed to renew subscription")
+    }
+  }
+
+  const handleSaveSubscriptionChanges = async () => {
+    if (!selectedSubscription) return
+    setDetailSaving(true)
+    try {
+      const updates: Record<string, unknown> = {}
+      const businessUpdates: Record<string, unknown> = {}
+
+      // Use toggle states for subscription and business status
+      const currentDisplayStatus = getSubscriptionDisplayStatus(selectedSubscription)
+      const targetSubscriptionStatus = subscriptionActive ? "ACTIVE" : "SUSPENDED"
+      const targetBusinessStatus = businessOnline ? "ACTIVE" : (subscriptionActive ? selectedSubscription.business?.status : "SUSPENDED")
+
+      if (targetSubscriptionStatus !== currentDisplayStatus) {
+        if (targetSubscriptionStatus === "ACTIVE") {
+          if (selectedSubscription.business.status !== "ACTIVE") {
+            businessUpdates.status = "ACTIVE"
+          }
+        } else if (targetSubscriptionStatus === "SUSPENDED") {
+          businessUpdates.status = "SUSPENDED"
+        }
+      }
+
+      if (targetBusinessStatus && targetBusinessStatus !== selectedSubscription.business.status) {
+        businessUpdates.status = targetBusinessStatus
+      }
+
+      if (detailPlanId && detailPlanId !== selectedSubscription.plan?.id) {
+        updates.planId = detailPlanId
+      }
+
+      if (detailBillingCycle && detailBillingCycle !== selectedSubscription.billingCycle) {
+        updates.billingCycle = detailBillingCycle.toLowerCase()
+      }
+
+      if (detailCustomPrice) {
+        const customValue = Number(detailCustomPrice)
+        if (!Number.isNaN(customValue) && customValue >= 0) {
+          updates.customPrice = customValue
+          updates.overrideReason = detailCustomPrice !== (selectedSubscription.customPrice?.toString() || "") ? "Updated via admin" : selectedSubscription.overrideReason
+        }
+      }
+
+      if (detailStartDate) {
+        updates.currentPeriodStart = new Date(detailStartDate)
+      }
+      if (detailExpiryDate) {
+        updates.currentPeriodEnd = new Date(detailExpiryDate)
+      }
+
+      if (Object.keys(businessUpdates).length > 0) {
+        const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/status`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ status: businessUpdates.status }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "Failed to update business status")
+          return
+        }
+        toast.success("Business status updated")
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/subscription`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(updates),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "Failed to update subscription")
+          return
+        }
+        toast.success("Subscription updated successfully")
+      }
+
+      if (targetSubscriptionStatus === "ACTIVE" && selectedSubscription.status !== "ACTIVE" && selectedSubscription.business.status === "ACTIVE") {
+        const reactivateRes = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/subscription/reactivate`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+        })
+        const reactivateJson = await reactivateRes.json()
+        if (!reactivateRes.ok || !reactivateJson.success) {
+          toast.error(reactivateJson.error || "Failed to reactivate subscription")
+          return
+        }
+        toast.success("Subscription reactivated successfully")
+      }
+
+      if (Object.keys(businessUpdates).length === 0 && Object.keys(updates).length === 0) {
+        toast.success("No changes to save")
+      }
+
+      fetchData()
+      setDetailOpen(false)
+    } catch {
+      toast.error("Failed to save subscription changes")
+    } finally {
+      setDetailSaving(false)
+    }
+  }
+
+  const selectedPlan = platformPlans.find((plan) => plan.id === detailPlanId) || platformPlans.find((plan) => plan.id === selectedSubscription?.plan?.id)
 
   if (loading) {
     return (
@@ -226,7 +579,7 @@ export function SubscriptionsView() {
         <StatCard title="Active Subscriptions" value={stats.active} change={`${stats.total} total`} changeType="neutral" icon={CheckCircle2} iconColor="text-emerald-600" iconBg="bg-emerald-50" />
         <StatCard title="Monthly MRR" value={formatCurrency(stats.monthlyMRR)} change={`${subscriptions.filter(s => s.billingCycle === "MONTHLY" || s.billingCycle === "monthly").length} monthly subs`} changeType="positive" icon={IndianRupee} iconColor="text-sky-600" iconBg="bg-sky-50" />
         <StatCard title="Yearly Revenue" value={formatCurrency(stats.yearlyProjected)} change={`${subscriptions.filter(s => s.billingCycle === "YEARLY" || s.billingCycle === "yearly").length} yearly subs`} changeType="neutral" icon={ArrowUpRight} iconColor="text-amber-600" iconBg="bg-amber-50" />
-        <StatCard title="Overdue" value={stats.overdue} change={stats.suspended > 0 ? `${stats.suspended} suspended` : "No suspensions"} changeType={stats.overdue > 0 ? "negative" : "neutral"} icon={AlertTriangle} iconColor="text-red-600" iconBg="bg-red-50" />
+        <StatCard title="Overdue" value={stats.pastDue} change={stats.suspended > 0 ? `${stats.suspended} suspended` : "No suspensions"} changeType={stats.pastDue > 0 ? "negative" : "neutral"} icon={AlertTriangle} iconColor="text-red-600" iconBg="bg-red-50" />
       </div>
 
       {/* Filter Bar */}
@@ -284,11 +637,16 @@ export function SubscriptionsView() {
                       <TableCell>
                         <CurrencyBadge amount={sub.customPrice || sub.planPrice} override={!!sub.customPrice} original={sub.customPrice ? sub.planPrice : undefined} />
                       </TableCell>
-                      <TableCell><StatusBadge status={sub.status} /></TableCell>
+                      <TableCell><StatusBadge status={getSubscriptionDisplayStatus(sub)} /></TableCell>
                       <TableCell><span className="text-sm">{formatDate(sub.nextBillingDate)}</span></TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}>View</Button>
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}>
+                            <FileText className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -302,91 +660,212 @@ export function SubscriptionsView() {
 
       {/* Detail Sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
-        <SheetContent className="w-[520px] sm:max-w-[520px]">
+        <SheetContent className="w-full max-w-[min(560px,90vw)] xl:max-w-[30vw]">
           {selectedSubscription && (
             <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">{selectedSubscription.business?.name || "Unknown"}<StatusBadge status={selectedSubscription.status} /></SheetTitle>
-                <SheetDescription>
-                  {selectedSubscription.plan?.name || "Unknown"} Plan · {(selectedSubscription.billingCycle === "MONTHLY" || selectedSubscription.billingCycle === "monthly") ? "Monthly" : "Yearly"} billing
-                </SheetDescription>
+              <SheetHeader className="gap-4 pb-0 px-4 pt-4">
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900">{selectedSubscription.business?.name || "Unknown"}</h3>
+                        <p className="text-sm text-muted-foreground">{selectedSubscription.plan?.name || "Unknown"} · {(selectedSubscription.billingCycle === "MONTHLY" || selectedSubscription.billingCycle === "monthly") ? "Monthly" : "Yearly"} billing</p>
+                      </div>
+                      <StatusBadge status={getSubscriptionDisplayStatus(selectedSubscription)} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-muted-foreground">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-slate-700">Plan</span>
+                          <span className="text-sm">{selectedSubscription.plan?.name || "Unknown"}</span>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-slate-700">Cycle</span>
+                          <span className="text-sm">{(selectedSubscription.billingCycle === "MONTHLY" || selectedSubscription.billingCycle === "monthly") ? "Monthly" : "Yearly"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Subscription Active</p>
+                        <p className="text-sm font-semibold text-slate-900">{subscriptionActive ? "Enabled" : "Disabled"}</p>
+                      </div>
+                      <Switch
+                        checked={subscriptionActive}
+                        onCheckedChange={handleSubscriptionActiveToggle}
+                      />
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Business Online</p>
+                        <p className="text-sm font-semibold text-slate-900">{businessOnline ? "Online" : "Offline"}</p>
+                      </div>
+                      <Switch
+                        checked={businessOnline}
+                        onCheckedChange={handleBusinessOnlineToggle}
+                        disabled={!subscriptionActive}
+                      />
+                    </div>
+                  </div>
+                </div>
               </SheetHeader>
-              <ScrollArea className="mt-6 h-[calc(100vh-180px)]">
-                <div className="space-y-6 pr-4">
-                  {/* Subscription Overview */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Subscription Overview</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Plan</p><p className="text-sm font-medium">{selectedSubscription.plan?.name || "Unknown"} ({selectedSubscription.plan?.tier})</p></div>
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Billing Cycle</p><p className="text-sm font-medium">{(selectedSubscription.billingCycle === "MONTHLY" || selectedSubscription.billingCycle === "monthly") ? "Monthly" : "Yearly"}</p></div>
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Status</p><div className="mt-1"><StatusBadge status={selectedSubscription.status} /></div></div>
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Next Billing</p><p className="text-sm font-medium">{formatDate(selectedSubscription.nextBillingDate)}</p></div>
+              <ScrollArea className="mt-3 h-[calc(100vh-220px)] px-4">
+                <div className="space-y-4 pb-4">
+                  <div className="grid gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Business Status</Label>
+                        <Select value={detailBusinessStatus} onValueChange={setDetailBusinessStatus}>
+                          <SelectTrigger className="w-full h-9 mt-2"><SelectValue placeholder="Status" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ONBOARDING">ONBOARDING</SelectItem>
+                            <SelectItem value="ACTIVE">ACTIVE</SelectItem>
+                            <SelectItem value="SUSPENDED">SUSPENDED</SelectItem>
+                            <SelectItem value="CHURNED">CHURNED</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Subscription Status</Label>
+                        <Select value={detailSubscriptionStatus} onValueChange={(value) => setDetailSubscriptionStatus(value as SubscriptionDisplayStatus)}>
+                          <SelectTrigger className="w-full h-9 mt-2"><SelectValue placeholder="Subscription status" /></SelectTrigger>
+                          <SelectContent>
+                            {subscriptionStatuses.map((status) => (<SelectItem key={status} value={status}>{status.replace(/_/g, " ")}</SelectItem>))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Plan Type</Label>
+                        <Select value={detailPlanId} onValueChange={setDetailPlanId}>
+                          <SelectTrigger className="w-full h-9 mt-2"><SelectValue placeholder="Select plan" /></SelectTrigger>
+                          <SelectContent>
+                            {platformPlans.map((plan) => (
+                              <SelectItem key={plan.id} value={plan.id}>{plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Billing Cycle</Label>
+                        <Select value={detailBillingCycle} onValueChange={setDetailBillingCycle}>
+                          <SelectTrigger className="w-full h-9 mt-2"><SelectValue placeholder="Billing cycle" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MONTHLY">Monthly</SelectItem>
+                            <SelectItem value="YEARLY">Yearly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Period Start</Label>
+                        <Input type="date" value={detailStartDate} onChange={(e) => setDetailStartDate(e.target.value)} className="mt-2 h-9" />
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Expiry Date</Label>
+                        <Input type="date" value={detailExpiryDate} onChange={(e) => setDetailExpiryDate(e.target.value)} className="mt-2 h-9" />
+                      </div>
                     </div>
                   </div>
-                  <Separator />
-                  {/* Pricing Details */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Pricing Details</h4>
-                    <Card className={selectedSubscription.customPrice ? "border-orange-200 bg-orange-50/30" : ""}>
-                      <CardContent className="p-4 space-y-3">
-                        <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Base Price</span><span className="text-sm font-medium">{formatCurrency(selectedSubscription.planPrice)}</span></div>
-                        {selectedSubscription.customPrice ? (
-                          <>
-                            <Separator />
-                            <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Custom Price</span>
-                              <div className="flex items-center gap-2"><span className="text-sm font-bold text-orange-700">{formatCurrency(selectedSubscription.customPrice)}</span>
-                                <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100 text-[10px] border-0">CUSTOM</Badge></div>
-                            </div>
-                            <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Discount</span>
-                              <span className="text-sm font-medium text-emerald-600">-{formatCurrency(selectedSubscription.planPrice - selectedSubscription.customPrice)}
-                                {selectedSubscription.discountPercentage && <span className="text-xs text-muted-foreground ml-1">({selectedSubscription.discountPercentage}% off)</span>}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Override</span>
-                              <Badge variant="outline" className="text-xs text-orange-600 border-orange-200">Manual Override Active</Badge>
-                            </div>
-                            {selectedSubscription.overrideReason && (
-                              <div><p className="text-xs text-muted-foreground mt-1">Reason: {selectedSubscription.overrideReason}</p></div>
-                            )}
-                          </>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-900">Pricing Snapshot</h4>
+                        <p className="text-xs text-muted-foreground">Compact pricing and override details</p>
+                      </div>
+                      <Badge variant="secondary" className="text-xs">{selectedSubscription.manualPriceOverride ? "Override" : "Standard"}</Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Base price</p>
+                        <p className="mt-2 text-sm font-semibold">{formatCurrency(selectedSubscription.planPrice)}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Custom price</Label>
+                        <Input type="number" value={detailCustomPrice} onChange={(e) => setDetailCustomPrice(e.target.value)} className="mt-2 h-9" />
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Effective price</p>
+                        <p className="mt-2 text-sm font-semibold text-orange-700">{formatCurrency(Math.max(0, Number(detailCustomPrice || selectedSubscription.customPrice || selectedSubscription.planPrice)))}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <Label className="text-xs font-semibold text-slate-600 uppercase">Override reason</Label>
+                        <Textarea value={selectedSubscription.overrideReason || ""} readOnly className="mt-2 h-20 resize-none" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Period start</p>
+                      <p className="mt-2 text-sm font-semibold">{formatDate(selectedSubscription.currentPeriodStart)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Period end</p>
+                      <p className="mt-2 text-sm font-semibold">{formatDate(selectedSubscription.currentPeriodEnd)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Last payment</p>
+                      <p className="mt-2 text-sm font-semibold">{selectedSubscription.lastPaymentDate ? formatDate(selectedSubscription.lastPaymentDate) : "—"}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Last amount</p>
+                      <p className="mt-2 text-sm font-semibold">{selectedSubscription.lastPaymentAmount ? formatCurrency(selectedSubscription.lastPaymentAmount) : "—"}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <button type="button" className="flex w-full items-center justify-between text-sm font-semibold text-slate-900" onClick={() => setBillingHistoryOpen((prev) => !prev)}>
+                      <span>Billing History</span>
+                      <span className="text-xs text-muted-foreground">{billingHistoryOpen ? "Collapse" : "Expand"}</span>
+                    </button>
+                    {billingHistoryOpen && (
+                      <div className="mt-3 space-y-2">
+                        {loadingBillingHistory ? (
+                          <div className="rounded-lg border border-dashed p-3"><Skeleton className="h-20 w-full" /></div>
+                        ) : billingHistory.length === 0 ? (
+                          <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">No billing history available</div>
                         ) : (
-                          <>
-                            <Separator />
-                            <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Effective Price</span><span className="text-sm font-bold">{formatCurrency(selectedSubscription.planPrice)}</span></div>
-                            <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Override</span><span className="text-xs text-muted-foreground">No override applied</span></div>
-                          </>
+                          <div className="space-y-2">
+                            {billingHistory.map((record: any) => (
+                              <div key={record.id} className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Amount</p>
+                                  <p className="mt-1 text-sm font-semibold">{formatCurrency(record.amount)}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">{new Date(record.dueDate).toLocaleDateString("en-IN")}</p>
+                                  <p className="text-sm">{record.description || record.status}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>
+                    )}
                   </div>
-                  <Separator />
-                  {/* Period Info */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Billing Period</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Period Start</p><p className="text-sm font-medium">{formatDate(selectedSubscription.currentPeriodStart)}</p></div>
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Period End</p><p className="text-sm font-medium">{formatDate(selectedSubscription.currentPeriodEnd)}</p></div>
-                      {selectedSubscription.lastPaymentDate && (
-                        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Last Payment</p><p className="text-sm font-medium">{formatDate(selectedSubscription.lastPaymentDate)}</p></div>
-                      )}
-                      {selectedSubscription.lastPaymentAmount && (
-                        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Last Amount</p><p className="text-sm font-medium">{formatCurrency(selectedSubscription.lastPaymentAmount)}</p></div>
-                      )}
-                    </div>
-                  </div>
-                  <Separator />
-                  {/* Actions */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Actions</h4>
+                  <div className="grid grid-cols-1 gap-2">
                     <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" size="sm" className="gap-2" onClick={handleOpenOverride}><IndianRupee className="h-3.5 w-3.5" /> Override Pricing</Button>
-                      <Button variant="outline" size="sm" className="gap-2"><FileText className="h-3.5 w-3.5" /> Send Invoice</Button>
-                      <Button variant="outline" size="sm" className="gap-2 text-amber-700 hover:text-amber-800 hover:bg-amber-50"><AlertTriangle className="h-3.5 w-3.5" /> Suspend</Button>
-                      <Button variant="outline" size="sm" className="gap-2 text-red-700 hover:text-red-800 hover:bg-red-50"><X className="h-3.5 w-3.5" /> Cancel</Button>
+                      <Button variant="outline" size="sm" className="h-9 gap-2" onClick={handleOpenOverride}><IndianRupee className="h-3.5 w-3.5" /> Apply Discount</Button>
+                      <Button variant="outline" size="sm" className="h-9 gap-2" onClick={() => handleRenewSubscription(selectedSubscription)}><RefreshCw className="h-3.5 w-3.5" /> Renew</Button>
                     </div>
                   </div>
                 </div>
               </ScrollArea>
+              <div className="sticky bottom-0 z-10 border-t border-slate-200 bg-background/90 px-4 py-3 backdrop-blur-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <Button onClick={handleSaveSubscriptionChanges} disabled={detailSaving} className="w-full sm:w-auto">
+                    {detailSaving ? "Saving…" : "Save Changes"}
+                  </Button>
+                  <Button variant={subscriptionActive ? "destructive" : "secondary"} onClick={() => subscriptionActive ? handleSuspendSubscription(selectedSubscription) : handleActivateSubscription(selectedSubscription)} className="w-full sm:w-auto">
+                    {subscriptionActive ? "Suspend" : "Activate"}
+                  </Button>
+                </div>
+              </div>
             </>
           )}
         </SheetContent>

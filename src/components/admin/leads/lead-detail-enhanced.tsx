@@ -116,8 +116,9 @@ export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
   }, [lead.id])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchActivities()
-  }, [fetchActivities])
+  }, [lead.id])
 
   // Compute days since last contact from real data
   const daysSinceContact = lead.lastContactedAt

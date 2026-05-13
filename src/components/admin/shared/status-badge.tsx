@@ -21,6 +21,7 @@ const colorMap: Record<string, string> = {
   // Subscription status
   PAST_DUE: "bg-amber-100 text-amber-700 hover:bg-amber-100",
   EXPIRED: "bg-slate-100 text-slate-500 hover:bg-slate-100",
+  PENDING_ACTIVATION: "bg-violet-100 text-violet-700 hover:bg-violet-100",
   CANCELLED: "bg-slate-100 text-slate-500 hover:bg-slate-100",
   // Domain status
   PENDING_DNS: "bg-amber-100 text-amber-700 hover:bg-amber-100",

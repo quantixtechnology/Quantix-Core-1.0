@@ -74,6 +74,10 @@ export async function PUT(
       phone?: string;
       avatar?: string;
       gstNumber?: string;
+      dateOfBirth?: string;
+      gender?: string;
+      loyaltyTier?: string;
+      notes?: string;
       isActive?: boolean;
       tags?: string[];
       metadata?: Record<string, unknown>;
@@ -108,11 +112,15 @@ export async function PUT(
     // Build update data
     const updateData: Record<string, unknown> = {};
 
-    const directFields = ['name', 'email', 'phone', 'avatar', 'gstNumber', 'isActive', 'loyaltyPoints'] as const;
+    const directFields = ['name', 'email', 'phone', 'avatar', 'gstNumber', 'gender', 'loyaltyTier', 'notes', 'isActive', 'loyaltyPoints'] as const;
     for (const field of directFields) {
       if ((body as Record<string, unknown>)[field] !== undefined) {
         updateData[field] = (body as Record<string, unknown>)[field];
       }
+    }
+
+    if (body.dateOfBirth !== undefined) {
+      updateData.dateOfBirth = body.dateOfBirth ? new Date(body.dateOfBirth) : null;
     }
 
     if (body.tags) {

@@ -30,6 +30,7 @@ const platformNavItems: { key: AdminPage; label: string; icon: React.ComponentTy
   { key: "leads", label: "Sales & Leads", icon: UserCheck },
   { key: "subscriptions", label: "Subscriptions", icon: CreditCard },
   { key: "plan-management", label: "Plan Management", icon: Receipt },
+  { key: "payment-plugins", label: "Payment Plugins", icon: CreditCard },
   { key: "domains", label: "Domains & Deploys", icon: Globe },
   { key: "sales", label: "Sales Team", icon: Users },
 ]

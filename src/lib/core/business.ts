@@ -602,14 +602,22 @@ export async function updateBusinessStatus(
  * Toggle business online/offline status.
  */
 export async function toggleOnline(businessId: string, isOnline: boolean) {
-  const business = await db.business.findUnique({ where: { id: businessId } });
+  const business = await db.business.findUnique({
+    where: { id: businessId },
+    include: { businessSubscription: true },
+  });
+
   if (!business) {
     throw new Error(`Business "${businessId}" not found`);
   }
 
-  // Suspended businesses cannot go online
-  if (isOnline && business.status === 'SUSPENDED') {
-    throw new Error('Cannot set a suspended business online. Activate it first.');
+  if (isOnline) {
+    if (business.status === 'SUSPENDED') {
+      throw new Error('Cannot set a suspended business online. Activate it first.');
+    }
+    if (!business.businessSubscription || business.businessSubscription.status !== 'ACTIVE') {
+      throw new Error('Cannot set business online without an active subscription. Activate the subscription first.');
+    }
   }
 
   return db.business.update({

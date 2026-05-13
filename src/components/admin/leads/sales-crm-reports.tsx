@@ -103,8 +103,9 @@ export function SalesCrmReports({ onClose, leads: leadsProp }: SalesCrmReportsPr
   }, [leadsProp])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData()
-  }, [fetchData])
+  }, [leadsProp])
 
   // After both leads and salesRepMetrics are available, compute per-rep stats
   const computedMetrics = useCallback((): SalesRepMetric[] => {

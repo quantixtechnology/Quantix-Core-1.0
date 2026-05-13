@@ -1,11 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -14,9 +23,22 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  ShoppingCart, Truck, Calendar, CreditCard, Receipt,
-  Plus, Edit, Trash2, ChevronRight, ArrowRight, Check,
-  Lock, AlertCircle, Workflow, Layers, Settings,
+  ShoppingCart,
+  Truck,
+  Calendar,
+  CreditCard,
+  Receipt,
+  Plus,
+  Edit,
+  Trash2,
+  ChevronRight,
+  ArrowRight,
+  Check,
+  Lock,
+  AlertCircle,
+  Workflow,
+  Layers,
+  Settings,
 } from "lucide-react"
 import { useAdminStore, WORKFLOW_CONFIGS, DEMO_BUSINESSES, type WorkflowType } from "@/stores/admin-store"
 
@@ -26,6 +48,15 @@ const workflowIconMap: Record<string, React.ComponentType<{ className?: string }
   Calendar,
   CreditCard,
   Receipt,
+}
+
+interface WorkflowCategory {
+  id: string
+  name: string
+  workflow: WorkflowType
+  products: number
+  active: boolean
+  designation?: string
 }
 
 // Demo category data per business
@@ -59,30 +90,46 @@ const BUSINESS_CATEGORIES: Record<string, { id: string; name: string; workflow: 
 function CategoryWorkflowRow({
   category,
   allowedWorkflows,
-  planTier,
+  onWorkflowChange,
+  onToggleActive,
+  onEdit,
+  onDelete,
 }: {
-  category: { id: string; name: string; workflow: WorkflowType; products: number }
+  category: WorkflowCategory
   allowedWorkflows: WorkflowType[]
-  planTier: string
+  onWorkflowChange: (id: string, workflow: WorkflowType) => void
+  onToggleActive: (id: string) => void
+  onEdit: (category: WorkflowCategory) => void
+  onDelete: (category: WorkflowCategory) => void
 }) {
   const config = WORKFLOW_CONFIGS.find((w) => w.type === category.workflow)
   const Icon = workflowIconMap[config?.icon || "ShoppingCart"] || ShoppingCart
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30 transition-colors">
+    <div className="group flex items-center justify-between gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30 transition-colors">
       <div className="flex items-center gap-3 min-w-0">
         <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${config?.bgColor || "bg-muted"} border`}>
           <Icon className={`h-4 w-4 ${config?.color || "text-muted-foreground"}`} />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-medium truncate">{category.name}</p>
-          <p className="text-xs text-muted-foreground">{category.products} products</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>{category.products} products</span>
+            <Badge className={`rounded-full px-2 py-0.5 text-[10px] ${category.active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600"}`}>
+              {category.active ? "Active" : "Inactive"}
+            </Badge>
+            {category.designation && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-700">
+                {category.designation}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <Select defaultValue={category.workflow}>
-          <SelectTrigger className="w-[180px] h-8 text-xs">
+        <Select value={category.workflow} onValueChange={(value) => onWorkflowChange(category.id, value as WorkflowType)}>
+          <SelectTrigger className="w-[170px] h-8 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -101,6 +148,14 @@ function CategoryWorkflowRow({
             })}
           </SelectContent>
         </Select>
+
+        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => onEdit(category)}>
+          <Edit className="h-4 w-4" />
+        </Button>
+        <Button size="icon" variant="outline" className="h-8 w-8 text-destructive" onClick={() => onDelete(category)}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+        <Switch checked={category.active} onCheckedChange={() => onToggleActive(category.id)} aria-label="Toggle category active state" />
       </div>
     </div>
   )
@@ -158,22 +213,130 @@ function WorkflowStatusCard({
 export function WorkflowConfigView() {
   const { demoBusinessId } = useAdminStore()
   const demoBusiness = DEMO_BUSINESSES.find((b) => b.id === demoBusinessId) || DEMO_BUSINESSES[0]
-  const categories = BUSINESS_CATEGORIES[demoBusinessId] || []
+  const businessCategories = BUSINESS_CATEGORIES[demoBusinessId] || []
 
-  // Group categories by workflow
-  const workflowGroups: Record<WorkflowType, { name: string }[]> = {
-    ECOMMERCE: [],
-    PICKUP_DELIVERY: [],
-    APPOINTMENT: [],
-    SUBSCRIPTION: [],
-    POST_SERVICE_BILLING: [],
+  const [categories, setCategories] = useState<WorkflowCategory[]>(
+    businessCategories.map((cat) => ({ ...cat, active: true, designation: "Sales Team" }))
+  )
+  const [activeDialog, setActiveDialog] = useState<"add" | "edit" | "delete" | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<WorkflowCategory | null>(null)
+  const [categoryForm, setCategoryForm] = useState<WorkflowCategory>({
+    id: "",
+    name: "",
+    workflow: demoBusiness.activeWorkflows[0] ?? "ECOMMERCE",
+    products: 0,
+    active: true,
+    designation: "Sales Team",
+  })
+  const [deleteReassignCategoryId, setDeleteReassignCategoryId] = useState("")
+
+  const workflowGroups = useMemo(() => {
+    const groups: Record<WorkflowType, { name: string }[]> = {
+      ECOMMERCE: [],
+      PICKUP_DELIVERY: [],
+      APPOINTMENT: [],
+      SUBSCRIPTION: [],
+      POST_SERVICE_BILLING: [],
+    }
+
+    categories.forEach((cat) => {
+      if (groups[cat.workflow]) {
+        groups[cat.workflow].push({ name: cat.name })
+      }
+    })
+
+    return groups
+  }, [categories])
+
+  const openAddDialog = () => {
+    setCategoryForm({
+      id: `new-${Date.now()}`,
+      name: "",
+      workflow: demoBusiness.activeWorkflows[0] ?? "ECOMMERCE",
+      products: 0,
+      active: true,
+      designation: "Sales Team",
+    })
+    setSelectedCategory(null)
+    setActiveDialog("add")
   }
 
-  categories.forEach((cat) => {
-    if (workflowGroups[cat.workflow]) {
-      workflowGroups[cat.workflow].push({ name: cat.name })
-    }
-  })
+  const openEditDialog = (category: WorkflowCategory) => {
+    setSelectedCategory(category)
+    setCategoryForm({ ...category })
+    setActiveDialog("edit")
+  }
+
+  const openDeleteDialog = (category: WorkflowCategory) => {
+    setSelectedCategory(category)
+    setDeleteReassignCategoryId(
+      categories.find((cat) => cat.id !== category.id)?.id ?? ""
+    )
+    setActiveDialog("delete")
+  }
+
+  const closeDialog = () => {
+    setSelectedCategory(null)
+    setActiveDialog(null)
+    setDeleteReassignCategoryId("")
+  }
+
+  const handleWorkflowChange = (id: string, workflow: WorkflowType) => {
+    setCategories((current) =>
+      current.map((cat) => (cat.id === id ? { ...cat, workflow } : cat))
+    )
+  }
+
+  const handleToggleActive = (id: string) => {
+    setCategories((current) =>
+      current.map((cat) => (cat.id === id ? { ...cat, active: !cat.active } : cat))
+    )
+  }
+
+  const handleSaveCategory = () => {
+    if (!categoryForm.name.trim()) return
+
+    setCategories((current) => {
+      if (activeDialog === "edit" && selectedCategory) {
+        return current.map((cat) =>
+          cat.id === selectedCategory.id ? { ...cat, ...categoryForm } : cat
+        )
+      }
+
+      return [...current, categoryForm]
+    })
+
+    closeDialog()
+  }
+
+  const handleConfirmDelete = () => {
+    if (!selectedCategory) return
+
+    setCategories((current) => {
+      const newCategories = current.filter((cat) => cat.id !== selectedCategory.id)
+      if (selectedCategory.products > 0 && deleteReassignCategoryId) {
+        return newCategories.map((cat) =>
+          cat.id === deleteReassignCategoryId
+            ? { ...cat, products: cat.products + selectedCategory.products }
+            : cat
+        )
+      }
+      return newCategories
+    })
+
+    closeDialog()
+  }
+
+  const availableReassignCategories = categories.filter(
+    (cat) => cat.id !== selectedCategory?.id
+  )
+
+  const canDeleteCategory =
+    Boolean(selectedCategory) &&
+    (selectedCategory?.products === 0 || Boolean(deleteReassignCategoryId)) &&
+    !(selectedCategory?.products > 0 && availableReassignCategories.length === 0)
+
+  const handleAddCategory = openAddDialog
 
   return (
     <div className="space-y-6">
@@ -232,7 +395,7 @@ export function WorkflowConfigView() {
                 Select which workflow each category uses. Products inherit their category&apos;s workflow.
               </CardDescription>
             </div>
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleAddCategory}>
               <Plus className="h-3.5 w-3.5" />
               Add Category
             </Button>
@@ -252,13 +415,139 @@ export function WorkflowConfigView() {
                   key={cat.id}
                   category={cat}
                   allowedWorkflows={demoBusiness.activeWorkflows}
-                  planTier={demoBusiness.planTier}
+                  onWorkflowChange={handleWorkflowChange}
+                  onToggleActive={handleToggleActive}
+                  onEdit={openEditDialog}
+                  onDelete={openDeleteDialog}
                 />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={activeDialog === "add" || activeDialog === "edit"} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{activeDialog === "edit" ? "Edit Category" : "Add Category"}</DialogTitle>
+            <DialogDescription>
+              Configure category details, workflow assignment, and safe reassignments.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="category-name">Category name</Label>
+                <Input
+                  id="category-name"
+                  value={categoryForm.name}
+                  onChange={(event) => setCategoryForm({ ...categoryForm, name: event.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="category-designation">Designation</Label>
+                <Input
+                  id="category-designation"
+                  value={categoryForm.designation ?? ""}
+                  onChange={(event) => setCategoryForm({ ...categoryForm, designation: event.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="category-workflow">Workflow</Label>
+                <Select
+                  value={categoryForm.workflow}
+                  onValueChange={(value) => setCategoryForm({ ...categoryForm, workflow: value as WorkflowType })}
+                >
+                  <SelectTrigger id="category-workflow" className="h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WORKFLOW_CONFIGS.map((wf) => (
+                      <SelectItem key={wf.type} value={wf.type}>
+                        {wf.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">Status</p>
+                  <p className="text-xs text-muted-foreground">Keep this category active for storefront use.</p>
+                </div>
+                <Switch
+                  checked={categoryForm.active}
+                  onCheckedChange={(checked) => setCategoryForm({ ...categoryForm, active: checked })}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+            <Button onClick={handleSaveCategory}>{activeDialog === "edit" ? "Save changes" : "Create category"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={activeDialog === "delete"} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Category</DialogTitle>
+            <DialogDescription>
+              Remove a category safely without losing product assignments.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedCategory && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border bg-slate-50 p-4 text-sm">
+                <p className="font-semibold">{selectedCategory.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedCategory.products} product{selectedCategory.products === 1 ? "" : "s"} currently assigned.
+                </p>
+              </div>
+              {selectedCategory.products > 0 ? (
+                availableReassignCategories.length > 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Reassign products before deleting</p>
+                    <Select value={deleteReassignCategoryId} onValueChange={setDeleteReassignCategoryId}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Choose target category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableReassignCategories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                    Cannot delete this category because it still has products and no other category is available to reassign.
+                  </div>
+                )
+              ) : (
+                <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
+                  This category has no active product assignments and can be deleted immediately.
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!canDeleteCategory}
+              onClick={handleConfirmDelete}
+            >
+              Delete Category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Workflow Status Grid */}
       <div>
