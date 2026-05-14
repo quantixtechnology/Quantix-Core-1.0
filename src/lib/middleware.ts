@@ -6,7 +6,7 @@
 import type { NextRequest } from 'next/server';
 import type { ZodSchema } from 'zod';
 import type { Role, Permission, BusinessContext } from './types';
-import { hasPermission, hasAnyPermission, getPermissionsForRole, isPlatformRole } from './permissions';
+import { getPermissionsForRole } from './permissions';
 import { db } from './db';
 
 // ============================================================================
@@ -134,10 +134,10 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
     let businessId: string | undefined;
     let storeId: string | undefined;
 
-    if (user.salesProfile) {
-      role = 'QUANTIX_SALES_TEAM';
-    } else if (user.email.endsWith('@quantixtechnology.in') && user.businessUsers.length === 0) {
-      role = 'QUANTIX_SUPER_ADMIN';
+    // Use platformRole when set (authoritative — same logic as login route)
+    const platRoles = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
+    if (user.platformRole && platRoles.includes(user.platformRole)) {
+      role = user.platformRole as Role;
     } else if (user.businessUsers.length > 0) {
       const targetBU = businessIdHeader
         ? user.businessUsers.find(bu => bu.business.id === businessIdHeader)
@@ -228,14 +228,14 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
 
           // Single permission check
           if (config.requiredPermission) {
-            if (!hasPermission(user.role, config.requiredPermission)) {
+            if (!user.permissions.includes(config.requiredPermission)) {
               return createErrorResponse('Insufficient permissions', 403);
             }
           }
 
           // Multiple permissions check
           if (config.requiredPermissions && config.requiredPermissions.length > 0) {
-            if (!hasAnyPermission(user.role, config.requiredPermissions)) {
+            if (!config.requiredPermissions.some((p) => user.permissions.includes(p))) {
               return createErrorResponse('Insufficient permissions', 403);
             }
           }

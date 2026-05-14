@@ -1,7 +1,6 @@
 // ============================================================================
 // Route: POST /api/core/auth/login
-// Email + Password authentication with rate limiting
-// Returns user, access token, refresh token, businesses, and permissions
+// Email + Password authentication
 // ============================================================================
 
 import { db } from '@/lib/db';
@@ -12,46 +11,44 @@ import { logAuthActivity } from '@/lib/core/audit';
 import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
 
-// Rate limit: 20 attempts per 15 minutes per email
 const RATE_LIMIT_CONFIG = { windowMs: 15 * 60 * 1000, maxRequests: 20 };
-
-// Refresh token expiry: 7 days
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+
+const PLATFORM_ROLES = [
+  'QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM',
+  'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM',
+];
 
 function generateRefreshToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let token = '';
-  for (let i = 0; i < 64; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
+  for (let i = 0; i < 64; i++) token += chars.charAt(Math.floor(Math.random() * chars.length));
   return token;
 }
 
 export async function POST(request: Request) {
+  let normalizedEmail = '';
   try {
     const body = await request.json();
     const { email, password } = body as { email: string; password: string };
 
-    // Validate required fields
     if (!email || !password) {
-      return NextResponse.json(
-        { success: false, error: 'Email and password are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Email and password are required' }, { status: 400 });
     }
 
-    // Rate limiting by email
-    const rateLimitError = checkRateLimit(`login:${email.toLowerCase()}`, RATE_LIMIT_CONFIG);
+    // Always normalize: trim whitespace + lowercase
+    normalizedEmail = email.toLowerCase().trim();
+
+    console.log(`[login] Attempt for: ${normalizedEmail}`);
+
+    const rateLimitError = checkRateLimit(`login:${normalizedEmail}`, RATE_LIMIT_CONFIG);
     if (rateLimitError) {
-      return NextResponse.json(
-        { success: false, error: rateLimitError },
-        { status: 429 }
-      );
+      return NextResponse.json({ success: false, error: rateLimitError }, { status: 429 });
     }
 
-    // Find user with business associations — explicit select avoids schema-mismatch errors
-    const user = await db.user.findUnique({
-      where: { email: email.toLowerCase() },
+    // Primary lookup: exact match on normalized email
+    let user = await db.user.findUnique({
+      where: { email: normalizedEmail },
       select: {
         id: true, name: true, email: true, avatar: true,
         passwordHash: true, isActive: true, platformRole: true,
@@ -60,55 +57,74 @@ export async function POST(request: Request) {
           select: {
             role: true, storeId: true,
             business: {
-              select: {
-                id: true, name: true, slug: true,
-                businessType: true, status: true,
-                primaryColor: true, logo: true,
-              },
+              select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true },
             },
             store: { select: { id: true, name: true } },
           },
         },
-        salesProfile: {
-          select: { id: true, name: true, region: true, isActive: true },
-        },
+        salesProfile: { select: { id: true, name: true, region: true, isActive: true } },
       },
     });
 
-    if (!user || !user.passwordHash) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
-        { status: 401 }
-      );
+    // SQLite fallback: case-insensitive search via raw SQL
+    // Handles any stored emails that are not yet normalized to lowercase
+    if (!user) {
+      console.log(`[login] Exact match failed. Trying LOWER() fallback for: ${normalizedEmail}`);
+      const rows = await db.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM User WHERE LOWER(email) = ${normalizedEmail} LIMIT 1
+      `;
+      if (rows.length > 0) {
+        user = await db.user.findUnique({
+          where: { id: rows[0].id },
+          select: {
+            id: true, name: true, email: true, avatar: true,
+            passwordHash: true, isActive: true, platformRole: true,
+            businessUsers: {
+              where: { isActive: true },
+              select: {
+                role: true, storeId: true,
+                business: {
+                  select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true },
+                },
+                store: { select: { id: true, name: true } },
+              },
+            },
+            salesProfile: { select: { id: true, name: true, region: true, isActive: true } },
+          },
+        });
+        if (user) {
+          console.log(`[login] LOWER() fallback found user: ${user.email} (stored email differs from input)`);
+        }
+      }
     }
 
+    if (!user || !user.passwordHash) {
+      console.log(`[login] FAIL — user not found or no password hash for: ${normalizedEmail}`);
+      return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
+    }
+
+    console.log(`[login] User found: ${user.email} (id=${user.id}), isActive=${user.isActive}, platformRole=${user.platformRole ?? 'none'}`);
+
     if (!user.isActive) {
-      return NextResponse.json(
-        { success: false, error: 'Account is deactivated. Please contact support.' },
-        { status: 403 }
-      );
+      console.log(`[login] FAIL — account deactivated: ${user.email}`);
+      return NextResponse.json({ success: false, error: 'Account is deactivated. Please contact support.' }, { status: 403 });
     }
 
     // Verify password
     const isValid = await verifyPassword(password, user.passwordHash);
+    console.log(`[login] Password comparison result: ${isValid ? 'VALID' : 'INVALID'} for ${user.email}`);
+
     if (!isValid) {
-      // Log failed login attempt
       try {
-        await logAuthActivity(null, 'auth.login_failed', { email: email.toLowerCase(), reason: 'invalid_password' }, request as unknown as { headers?: { get(name: string): string | null } });
+        await logAuthActivity(null, 'auth.login_failed', { email: normalizedEmail, reason: 'invalid_password' }, request as unknown as { headers?: { get(name: string): string | null } });
       } catch { /* audit logging is non-blocking */ }
-      return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
-        { status: 401 }
-      );
+      return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
     }
 
     // Update last login
-    await db.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
+    await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
-    // Determine role and business context
+    // Determine role
     let role: Role = 'CUSTOMER';
     let businessId: string | undefined;
     let businessName: string | undefined;
@@ -117,17 +133,10 @@ export async function POST(request: Request) {
     let storeId: string | undefined;
     let isPlatformAdmin = false;
 
-    const PLATFORM_ROLES = [
-      'QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM',
-      'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM',
-    ];
-
     if (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) {
-      // Platform staff — role stored directly on User.platformRole
       role = user.platformRole as Role;
       isPlatformAdmin = true;
     } else if (user.businessUsers.length > 0) {
-      // Business staff — role stored in BusinessUser
       const primaryBU = user.businessUsers[0];
       role = primaryBU.role as Role;
       businessId = primaryBU.business.id;
@@ -136,39 +145,25 @@ export async function POST(request: Request) {
       businessSlug = primaryBU.business.slug;
       storeId = primaryBU.storeId || undefined;
 
-      // Business must be in valid status
       const validStatuses = ['ONBOARDING', 'ACTIVE'];
       if (!validStatuses.includes(primaryBU.business.status)) {
-        return NextResponse.json(
-          { success: false, error: 'Your business account is not active. Please contact Quantix support.' },
-          { status: 403 }
-        );
+        return NextResponse.json({ success: false, error: 'Your business account is not active. Please contact Quantix support.' }, { status: 403 });
       }
     } else if (user.email.toLowerCase().endsWith('@quantixtechnology.in')) {
-      // Fallback for seeded super admin that may not have platformRole set yet
+      // Fallback for super admin without platformRole set
       role = 'QUANTIX_SUPER_ADMIN';
       isPlatformAdmin = true;
     }
 
+    console.log(`[login] SUCCESS — user=${user.id}, email=${user.email}, role=${role}, isPlatformAdmin=${isPlatformAdmin}`);
+
     const permissions: Permission[] = getPermissionsForRole(role);
 
-    // Build user session object
     const sessionUser = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      avatar: user.avatar,
-      role,
-      businessId,
-      businessName,
-      businessType,
-      businessSlug,
-      storeId,
-      permissions,
-      isPlatformAdmin,
+      id: user.id, name: user.name, email: user.email, avatar: user.avatar,
+      role, businessId, businessName, businessType, businessSlug, storeId, permissions, isPlatformAdmin,
     };
 
-    // Build businesses array
     const businesses = user.businessUsers.map((bu) => ({
       businessId: bu.business.id,
       businessName: bu.business.name,
@@ -180,40 +175,20 @@ export async function POST(request: Request) {
       permissions: getPermissionsForRole(bu.role as Role),
     }));
 
-    // Create access token and store in database (so middleware can find it)
+    // Create access token (stored in DB for middleware validation)
     const accessToken = createAccessToken();
     const accessExpiresAt = new Date();
-    accessExpiresAt.setHours(accessExpiresAt.getHours() + 24); // Access token: 24 hours
+    accessExpiresAt.setHours(accessExpiresAt.getHours() + 24);
+    await db.refreshToken.create({ data: { userId: user.id, token: accessToken, expiresAt: accessExpiresAt } });
 
-    await db.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: accessToken,
-        expiresAt: accessExpiresAt,
-      },
-    });
-
-    // Create refresh token in database (longer-lived)
+    // Create refresh token
     const refreshTokenValue = generateRefreshToken();
     const refreshExpiresAt = new Date();
     refreshExpiresAt.setDate(refreshExpiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
+    await db.refreshToken.create({ data: { userId: user.id, token: refreshTokenValue, expiresAt: refreshExpiresAt } });
 
-    await db.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: refreshTokenValue,
-        expiresAt: refreshExpiresAt,
-      },
-    });
-
-    // Log successful login
     try {
-      await logAuthActivity(user.id, 'auth.login', {
-        email: user.email,
-        role,
-        businessId: businessId || null,
-        isPlatformAdmin,
-      }, request as unknown as { headers?: { get(name: string): string | null } });
+      await logAuthActivity(user.id, 'auth.login', { email: user.email, role, businessId: businessId || null, isPlatformAdmin }, request as unknown as { headers?: { get(name: string): string | null } });
     } catch { /* audit logging is non-blocking */ }
 
     return NextResponse.json({
@@ -225,20 +200,12 @@ export async function POST(request: Request) {
         businesses,
         permissions,
         salesProfile: user.salesProfile
-          ? {
-              id: user.salesProfile.id,
-              name: user.salesProfile.name,
-              region: user.salesProfile.region,
-              isActive: user.salesProfile.isActive,
-            }
+          ? { id: user.salesProfile.id, name: user.salesProfile.name, region: user.salesProfile.region, isActive: user.salesProfile.isActive }
           : null,
       },
     });
   } catch (error) {
-    console.error('[auth/login] Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Login failed. Please try again.' },
-      { status: 500 }
-    );
+    console.error(`[login] Unexpected error for ${normalizedEmail}:`, error);
+    return NextResponse.json({ success: false, error: 'Login failed. Please try again.' }, { status: 500 });
   }
 }

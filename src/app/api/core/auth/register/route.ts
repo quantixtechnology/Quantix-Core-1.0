@@ -47,8 +47,11 @@ export async function POST(request: Request) {
       );
     }
 
+    // Always normalize email: lowercase + trim
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Check if user already exists
-    const existingUser = await db.user.findUnique({ where: { email } });
+    const existingUser = await db.user.findUnique({ where: { email: normalizedEmail } });
     if (existingUser) {
       // If user exists and businessId provided, just add them to the business
       if (businessId) {
@@ -89,7 +92,7 @@ export async function POST(request: Request) {
                 businessId,
                 userId: existingUser.id,
                 name,
-                email,
+                email: normalizedEmail,
                 phone,
               },
             });
@@ -125,7 +128,7 @@ export async function POST(request: Request) {
     const provider = authProvider || 'EMAIL_OTP';
     const user = await db.user.create({
       data: {
-        email,
+        email: normalizedEmail,
         phone: phone || null,
         name,
         authProvider: provider,
@@ -163,7 +166,7 @@ export async function POST(request: Request) {
             businessId,
             userId: user.id,
             name,
-            email,
+            email: normalizedEmail,
             phone,
           },
         });
