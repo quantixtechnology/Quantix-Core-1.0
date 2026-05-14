@@ -50,17 +50,7 @@ jobs:
             echo "⚠️  Attempt $i/3 failed — retrying in 15s..."
             [ $i -lt 3 ] && sleep 15
           done
-          echo ""
           echo "❌ CANNOT REACH $HOST:$PORT AFTER 3 ATTEMPTS"
-          echo ""
-          echo "Likely causes:"
-          echo "  1. Hostinger firewall blocking GitHub Actions IPs"
-          echo "     → Hostinger panel → VPS → Firewall → Allow port $PORT from 0.0.0.0/0"
-          echo "  2. SSH service not running on VPS"
-          echo "     → Connect via Hostinger console → sudo systemctl start ssh"
-          echo "  3. VPS_HOST secret has wrong IP"
-          echo "     → Check Hostinger dashboard for correct public IPv4"
-          echo "  4. VPS_PORT secret is wrong (default is 22)"
           exit 1
 
       # ── Step 4: Deploy via SSH ────────────────────────────────────────────────
@@ -96,10 +86,17 @@ jobs:
 
             if [ ! -d "$PROJECT" ]; then
               echo "❌ Directory not found: $PROJECT"
-              echo "   Set the PROJECT_PATH secret in GitHub → Settings → Secrets"
               exit 1
             fi
             cd "$PROJECT"
+
+            # ── Pin DATABASE_URL to an absolute path for this entire deploy ───
+            # This eliminates any ambiguity about which SQLite file is used
+            # regardless of working directory changes by Node/Next.js standalone.
+            DB_FILE="$PROJECT/prisma/db/custom.db"
+            export DATABASE_URL="file:$DB_FILE"
+            echo "DB     : $DB_FILE"
+            echo "DB URL : $DATABASE_URL"
 
             # ── Git pull ──────────────────────────────────────────────────────
             echo ""
@@ -124,11 +121,50 @@ jobs:
             npx prisma db push --accept-data-loss
             echo "✅ Prisma schema synced"
 
+            # ── Ensure super admin exists (create if missing, never wipes password) ──
+            echo ""
+            echo "── Super Admin ──────────────────────────────────────────────"
+            node -e "
+              const { PrismaClient } = require('@prisma/client');
+              const bcrypt = require('bcryptjs');
+              const db = new PrismaClient();
+              async function main() {
+                const existing = await db.user.findUnique({ where: { email: 'superadmin@quantixtechnology.in' }, select: { id: true, email: true, isActive: true, platformRole: true } });
+                if (existing) {
+                  // User exists — only ensure isActive and platformRole are correct
+                  await db.user.update({ where: { id: existing.id }, data: { isActive: true, platformRole: 'QUANTIX_SUPER_ADMIN' } });
+                  console.log('Admin exists:', existing.email, '| active:', existing.isActive, '| role:', existing.platformRole);
+                } else {
+                  // User missing — create with default password Admin@123
+                  const hash = await bcrypt.hash('Admin@123', 12);
+                  await db.user.create({ data: { email: 'superadmin@quantixtechnology.in', name: 'Quantix Super Admin', passwordHash: hash, platformRole: 'QUANTIX_SUPER_ADMIN', authProvider: 'PASSWORD', emailVerified: true, phoneVerified: true, isActive: true } });
+                  console.log('Admin CREATED with default password Admin@123');
+                }
+                await db.\$disconnect();
+              }
+              main().catch(e => { console.error('Admin init error:', e.message); process.exit(0); });
+            "
+            echo "✅ Super admin verified"
+
             # ── Next.js build ─────────────────────────────────────────────────
             echo ""
             echo "── next build ───────────────────────────────────────────────"
             npm run build 2>&1
             echo "✅ Build complete"
+
+            # ── Update .env in standalone output to use absolute DB path ──────
+            # Next.js standalone server may chdir — ensure it always finds the DB
+            STANDALONE_DIR="$PROJECT/.next/standalone"
+            if [ -d "$STANDALONE_DIR" ]; then
+              echo "DATABASE_URL=file:$DB_FILE" > "$STANDALONE_DIR/.env"
+              echo "PORT=3000"                  >> "$STANDALONE_DIR/.env"
+              echo "HOSTNAME=0.0.0.0"           >> "$STANDALONE_DIR/.env"
+              # Carry over any other env vars the app needs
+              if [ -f "$PROJECT/.env" ]; then
+                grep -v "^DATABASE_URL\|^PORT\|^HOSTNAME" "$PROJECT/.env" >> "$STANDALONE_DIR/.env" 2>/dev/null || true
+              fi
+              echo "✅ Standalone .env written (DB_URL absolute)"
+            fi
 
             # ── PM2 restart ───────────────────────────────────────────────────
             echo ""
@@ -150,17 +186,14 @@ jobs:
             # ── Health check ──────────────────────────────────────────────────
             echo ""
             echo "── Health check ─────────────────────────────────────────────"
-            echo "Waiting 10s for app to boot..."
-            sleep 10
+            echo "Waiting 15s for app to boot..."
+            sleep 15
             HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 http://localhost:3000 2>/dev/null || echo "000")
             if [[ "$HTTP" =~ ^(200|301|302|307|308)$ ]]; then
               echo "✅ App is healthy (HTTP $HTTP)"
             else
-              echo "⚠️  Health check returned HTTP $HTTP — showing last PM2 logs:"
+              echo "⚠️  Health check returned HTTP $HTTP"
               pm2 logs quantix --lines 40 --nostream 2>/dev/null || true
-              echo ""
-              echo "   If the app is still starting up this is normal."
-              echo "   Check live logs: pm2 logs quantix"
             fi
 
             echo ""
