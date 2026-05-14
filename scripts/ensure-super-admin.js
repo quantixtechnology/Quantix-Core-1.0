@@ -1,25 +1,33 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
+const ADMIN_EMAIL = 'superadmin@quantixtechnology.in';
+const ADMIN_PASSWORD = 'Quantix@Admin2024';
+
 const db = new PrismaClient();
 
 async function main() {
+  const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+
   const existing = await db.user.findUnique({
-    where: { email: 'superadmin@quantixtechnology.in' },
-    select: { id: true, email: true, isActive: true, platformRole: true },
+    where: { email: ADMIN_EMAIL },
+    select: { id: true, email: true },
   });
 
   if (existing) {
     await db.user.update({
       where: { id: existing.id },
-      data: { isActive: true, platformRole: 'QUANTIX_SUPER_ADMIN' },
+      data: {
+        isActive: true,
+        platformRole: 'QUANTIX_SUPER_ADMIN',
+        passwordHash: hash,
+      },
     });
-    console.log('Admin exists:', existing.email, '| active:', existing.isActive, '| role:', existing.platformRole);
+    console.log('Admin updated — password reset to deploy default');
   } else {
-    const hash = await bcrypt.hash('Admin@123', 12);
     await db.user.create({
       data: {
-        email: 'superadmin@quantixtechnology.in',
+        email: ADMIN_EMAIL,
         name: 'Quantix Super Admin',
         passwordHash: hash,
         platformRole: 'QUANTIX_SUPER_ADMIN',
@@ -29,7 +37,7 @@ async function main() {
         isActive: true,
       },
     });
-    console.log('Admin CREATED with default password Admin@123');
+    console.log('Admin CREATED with deploy default password');
   }
 
   await db.$disconnect();
