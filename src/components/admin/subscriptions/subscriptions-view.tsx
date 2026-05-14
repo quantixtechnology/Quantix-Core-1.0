@@ -5,9 +5,8 @@ import { PageHeader } from "../shared/page-header"
 import { StatCard } from "../shared/stat-card"
 import { StatusBadge, CurrencyBadge } from "../shared/status-badge"
 import { EmptyState } from "../shared/empty-state"
-import { businessTypeConfig } from "@/components/dashboard/data"
 import { useAdminStore } from "@/stores/admin-store"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -16,13 +15,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
 import {
-  CreditCard, Plus, Search, X, IndianRupee, AlertTriangle, CheckCircle2,
-  FileText, ArrowUpRight, RefreshCw, Shield,
+  CreditCard, Search, X, IndianRupee, AlertTriangle, CheckCircle2,
+  ArrowUpRight, RefreshCw, Shield, Pencil, PauseCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -52,21 +52,9 @@ interface PlatformPlanData {
 }
 
 type SubscriptionStatus = "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "CANCELLED" | "EXPIRED"
-type SubscriptionDisplayStatus = SubscriptionStatus | "PENDING_ACTIVATION"
+type SubscriptionDisplayStatus = SubscriptionStatus | "PENDING_ACTIVATION" | "PAUSED"
 
-const subscriptionStatuses: SubscriptionDisplayStatus[] = ["ACTIVE", "PENDING_ACTIVATION", "PAST_DUE", "SUSPENDED", "EXPIRED", "CANCELLED"]
-
-function getSubscriptionStatusColor(status: SubscriptionDisplayStatus): string {
-  const map: Record<SubscriptionDisplayStatus, string> = {
-    ACTIVE: "text-emerald-700",
-    PENDING_ACTIVATION: "text-violet-700",
-    PAST_DUE: "text-amber-700",
-    SUSPENDED: "text-red-700",
-    CANCELLED: "text-slate-500",
-    EXPIRED: "text-slate-500",
-  }
-  return map[status] || "text-slate-700"
-}
+const subscriptionStatuses: SubscriptionDisplayStatus[] = ["ACTIVE", "PENDING_ACTIVATION", "PAUSED", "PAST_DUE", "SUSPENDED", "EXPIRED", "CANCELLED"]
 
 function getSubscriptionDisplayStatus(subscription: SubscriptionApiData): SubscriptionDisplayStatus {
   if (subscription.status === "ACTIVE" && subscription.business?.status === "ONBOARDING") {
@@ -77,6 +65,7 @@ function getSubscriptionDisplayStatus(subscription: SubscriptionApiData): Subscr
 
 function formatCurrency(amount: number): string { return `₹${amount.toLocaleString("en-IN")}` }
 function formatDate(dateStr: string): string { try { return new Date(dateStr).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) } catch { return dateStr } }
+function formatInputDate(dateStr: string) { try { return new Date(dateStr).toISOString().slice(0, 10) } catch { return "" } }
 
 export function SubscriptionsView() {
   const { searchQuery } = useAdminStore()
@@ -97,6 +86,7 @@ export function SubscriptionsView() {
   const [overrideApprover, setOverrideApprover] = useState("")
   const [submittingOverride, setSubmittingOverride] = useState(false)
 
+  // Edit drawer state
   const [detailBusinessStatus, setDetailBusinessStatus] = useState<string>("")
   const [detailSubscriptionStatus, setDetailSubscriptionStatus] = useState<SubscriptionDisplayStatus>("ACTIVE")
   const [detailPlanId, setDetailPlanId] = useState<string>("")
@@ -104,7 +94,8 @@ export function SubscriptionsView() {
   const [detailStartDate, setDetailStartDate] = useState<string>("")
   const [detailExpiryDate, setDetailExpiryDate] = useState<string>("")
   const [detailCustomPrice, setDetailCustomPrice] = useState<string>("")
-  const [detailActivationStatus, setDetailActivationStatus] = useState(false)
+  const [detailNotes, setDetailNotes] = useState<string>("")
+  const [detailAutoRenew, setDetailAutoRenew] = useState<boolean>(true)
   const [detailSaving, setDetailSaving] = useState(false)
   const [billingHistory, setBillingHistory] = useState<any[]>([])
   const [loadingBillingHistory, setLoadingBillingHistory] = useState(false)
@@ -125,10 +116,7 @@ export function SubscriptionsView() {
     } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchData()
-  }, [])
+  useEffect(() => { fetchData() }, [])
 
   const stats = useMemo(() => {
     if (apiStats) return apiStats
@@ -181,17 +169,7 @@ export function SubscriptionsView() {
       }
     } catch {
       toast.error("Failed to apply pricing override")
-    } finally {
-      setSubmittingOverride(false)
-    }
-  }
-
-  const formatInputDate = (dateStr: string) => {
-    try {
-      return new Date(dateStr).toISOString().slice(0, 10)
-    } catch {
-      return ""
-    }
+    } finally { setSubmittingOverride(false) }
   }
 
   const loadBillingHistory = async (businessId: string) => {
@@ -200,19 +178,12 @@ export function SubscriptionsView() {
       const res = await fetch(`/api/core/businesses/${businessId}/subscription`)
       if (!res.ok) return
       const json = await res.json()
-      if (json.success) {
-        setBillingHistory(json.data.billingHistory || [])
-      }
-    } catch {
-      // ignore silently
-    } finally {
-      setLoadingBillingHistory(false)
-    }
+      if (json.success) setBillingHistory(json.data.billingHistory || [])
+    } catch { } finally { setLoadingBillingHistory(false) }
   }
 
   useEffect(() => {
     if (!selectedSubscription || !detailOpen) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDetailBusinessStatus(selectedSubscription.business?.status || "ONBOARDING")
     setDetailSubscriptionStatus(getSubscriptionDisplayStatus(selectedSubscription))
     setDetailPlanId(selectedSubscription.plan?.id || "")
@@ -220,63 +191,11 @@ export function SubscriptionsView() {
     setDetailStartDate(formatInputDate(selectedSubscription.currentPeriodStart))
     setDetailExpiryDate(formatInputDate(selectedSubscription.currentPeriodEnd))
     setDetailCustomPrice(selectedSubscription.customPrice ? selectedSubscription.customPrice.toString() : "")
-    setDetailActivationStatus(selectedSubscription.business?.status === "ACTIVE")
+    setDetailNotes(selectedSubscription.notes || "")
+    setDetailAutoRenew(selectedSubscription.autoRenew)
     setBillingHistory([])
     loadBillingHistory(selectedSubscription.businessId)
   }, [selectedSubscription, detailOpen])
-
-  const handleActivateSubscription = async (subscription: SubscriptionApiData) => {
-    try {
-      if (subscription.business?.status !== "ACTIVE") {
-        const res = await fetch(`/api/core/businesses/${subscription.businessId}/status`, {
-          method: "PUT",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ status: "ACTIVE" }),
-        })
-        const json = await res.json()
-        if (!res.ok || !json.success) {
-          toast.error(json.error || "Failed to activate business")
-          return
-        }
-        toast.success("Business activated successfully")
-      } else if (subscription.status !== "ACTIVE") {
-        const res = await fetch(`/api/core/businesses/${subscription.businessId}/subscription/reactivate`, {
-          method: "POST",
-          headers: getAuthHeaders(),
-        })
-        const json = await res.json()
-        if (!res.ok || !json.success) {
-          toast.error(json.error || "Failed to reactivate subscription")
-          return
-        }
-        toast.success("Subscription reactivated successfully")
-      } else {
-        toast.success("Subscription is already active")
-      }
-      fetchData()
-    } catch {
-      toast.error("Failed to activate subscription")
-    }
-  }
-
-  const handleSuspendSubscription = async (subscription: SubscriptionApiData) => {
-    try {
-      const res = await fetch(`/api/core/businesses/${subscription.businessId}/status`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ status: "SUSPENDED", reason: "Suspended from subscription admin" }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.success) {
-        toast.error(json.error || "Failed to suspend subscription")
-        return
-      }
-      toast.success("Subscription suspended successfully")
-      fetchData()
-    } catch {
-      toast.error("Failed to suspend subscription")
-    }
-  }
 
   const handleRenewSubscription = async (subscription: SubscriptionApiData) => {
     try {
@@ -288,8 +207,7 @@ export function SubscriptionsView() {
         nextEnd.setMonth(nextEnd.getMonth() + 1)
       }
       const res = await fetch(`/api/core/businesses/${subscription.businessId}/subscription`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
+        method: "PUT", headers: getAuthHeaders(),
         body: JSON.stringify({
           currentPeriodStart: now.toISOString(),
           currentPeriodEnd: nextEnd.toISOString(),
@@ -297,15 +215,9 @@ export function SubscriptionsView() {
         }),
       })
       const json = await res.json()
-      if (!res.ok || !json.success) {
-        toast.error(json.error || "Failed to renew subscription")
-        return
-      }
-      toast.success("Subscription renewed successfully")
-      fetchData()
-    } catch {
-      toast.error("Failed to renew subscription")
-    }
+      if (!res.ok || !json.success) { toast.error(json.error || "Failed to renew subscription"); return }
+      toast.success("Subscription renewed successfully"); fetchData()
+    } catch { toast.error("Failed to renew subscription") }
   }
 
   const handleSaveSubscriptionChanges = async () => {
@@ -318,102 +230,75 @@ export function SubscriptionsView() {
 
       if (detailSubscriptionStatus !== currentDisplayStatus) {
         if (detailSubscriptionStatus === "ACTIVE") {
-          if (selectedSubscription.business.status !== "ACTIVE") {
-            businessUpdates.status = "ACTIVE"
-          }
+          if (selectedSubscription.business.status !== "ACTIVE") businessUpdates.status = "ACTIVE"
         } else if (detailSubscriptionStatus === "PENDING_ACTIVATION") {
           businessUpdates.status = "ONBOARDING"
         } else if (detailSubscriptionStatus === "SUSPENDED") {
           businessUpdates.status = "SUSPENDED"
-        } else {
-          toast.error("Subscription status changes to this state are not supported from this editor.")
-          setDetailSaving(false)
-          return
+        } else if (detailSubscriptionStatus === "PAUSED") {
+          businessUpdates.status = "SUSPENDED"
+          updates.notes = (detailNotes ? detailNotes + "\n" : "") + "[Paused by admin]"
         }
       }
 
-      if (detailBusinessStatus && detailBusinessStatus !== selectedSubscription.business.status) {
+      if (detailBusinessStatus && detailBusinessStatus !== selectedSubscription.business.status && !businessUpdates.status) {
         businessUpdates.status = detailBusinessStatus
       }
 
-      if (detailPlanId && detailPlanId !== selectedSubscription.plan?.id) {
-        updates.planId = detailPlanId
-      }
-
-      if (detailBillingCycle && detailBillingCycle !== selectedSubscription.billingCycle) {
-        updates.billingCycle = detailBillingCycle.toLowerCase()
-      }
-
+      if (detailPlanId && detailPlanId !== selectedSubscription.plan?.id) updates.planId = detailPlanId
+      if (detailBillingCycle && detailBillingCycle !== selectedSubscription.billingCycle) updates.billingCycle = detailBillingCycle.toLowerCase()
       if (detailCustomPrice) {
         const customValue = Number(detailCustomPrice)
         if (!Number.isNaN(customValue) && customValue >= 0) {
           updates.customPrice = customValue
-          updates.overrideReason = detailCustomPrice !== (selectedSubscription.customPrice?.toString() || "") ? "Updated via admin" : selectedSubscription.overrideReason
+          updates.overrideReason = "Updated via admin"
         }
       }
-
-      if (detailStartDate) {
-        updates.currentPeriodStart = new Date(detailStartDate)
-      }
-      if (detailExpiryDate) {
-        updates.currentPeriodEnd = new Date(detailExpiryDate)
-      }
+      if (detailStartDate) updates.currentPeriodStart = new Date(detailStartDate)
+      if (detailExpiryDate) updates.currentPeriodEnd = new Date(detailExpiryDate)
+      if (detailNotes !== (selectedSubscription.notes || "") && detailSubscriptionStatus !== "PAUSED") updates.notes = detailNotes
+      if (detailAutoRenew !== selectedSubscription.autoRenew) updates.autoRenew = detailAutoRenew
 
       if (Object.keys(businessUpdates).length > 0) {
         const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/status`, {
-          method: "PUT",
-          headers: getAuthHeaders(),
+          method: "PUT", headers: getAuthHeaders(),
           body: JSON.stringify({ status: businessUpdates.status }),
         })
         const json = await res.json()
-        if (!res.ok || !json.success) {
-          toast.error(json.error || "Failed to update business status")
-          return
-        }
-        toast.success("Business status updated")
+        if (!res.ok || !json.success) { toast.error(json.error || "Failed to update business status"); return }
       }
 
       if (Object.keys(updates).length > 0) {
         const res = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/subscription`, {
-          method: "PUT",
-          headers: getAuthHeaders(),
+          method: "PUT", headers: getAuthHeaders(),
           body: JSON.stringify(updates),
         })
         const json = await res.json()
-        if (!res.ok || !json.success) {
-          toast.error(json.error || "Failed to update subscription")
-          return
-        }
-        toast.success("Subscription updated successfully")
+        if (!res.ok || !json.success) { toast.error(json.error || "Failed to update subscription"); return }
       }
 
       if (detailSubscriptionStatus === "ACTIVE" && selectedSubscription.status !== "ACTIVE" && selectedSubscription.business.status === "ACTIVE") {
         const reactivateRes = await fetch(`/api/core/businesses/${selectedSubscription.businessId}/subscription/reactivate`, {
-          method: "POST",
-          headers: getAuthHeaders(),
+          method: "POST", headers: getAuthHeaders(),
         })
         const reactivateJson = await reactivateRes.json()
-        if (!reactivateRes.ok || !reactivateJson.success) {
-          toast.error(reactivateJson.error || "Failed to reactivate subscription")
-          return
-        }
-        toast.success("Subscription reactivated successfully")
+        if (!reactivateRes.ok || !reactivateJson.success) { toast.error(reactivateJson.error || "Failed to reactivate subscription"); return }
       }
 
-      if (Object.keys(businessUpdates).length === 0 && Object.keys(updates).length === 0) {
-        toast.success("No changes to save")
-      }
-
+      toast.success("Subscription saved successfully")
       fetchData()
       setDetailOpen(false)
     } catch {
       toast.error("Failed to save subscription changes")
-    } finally {
-      setDetailSaving(false)
-    }
+    } finally { setDetailSaving(false) }
   }
 
-  const selectedPlan = platformPlans.find((plan) => plan.id === detailPlanId) || platformPlans.find((plan) => plan.id === selectedSubscription?.plan?.id)
+  // ── Status toggle helpers ──────────────────────────────────────────────────
+  const statusOptions: { value: SubscriptionDisplayStatus; label: string; active: string; hover: string }[] = [
+    { value: "ACTIVE", label: "Active", active: "bg-emerald-600 text-white border-emerald-600", hover: "hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300" },
+    { value: "PAUSED", label: "Paused", active: "bg-amber-500 text-white border-amber-500", hover: "hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300" },
+    { value: "SUSPENDED", label: "Suspended", active: "bg-red-600 text-white border-red-600", hover: "hover:bg-red-50 hover:text-red-700 hover:border-red-300" },
+  ]
 
   if (loading) {
     return (
@@ -520,38 +405,44 @@ export function SubscriptionsView() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Business Name</TableHead>
+                  <TableRow className="text-xs">
+                    <TableHead>Business</TableHead>
                     <TableHead>Plan</TableHead>
-                    <TableHead>Billing Cycle</TableHead>
-                    <TableHead>Plan Price</TableHead>
-                    <TableHead>Custom Price</TableHead>
+                    <TableHead>Cycle</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Effective</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Next Billing</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="w-[72px] text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredSubscriptions.map((sub) => (
-                    <TableRow key={sub.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}>
+                    <TableRow
+                      key={sub.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}
+                    >
                       <TableCell>
-                        <div className="font-medium">{sub.business?.name || "Unknown"}</div>
+                        <div className="font-medium text-sm">{sub.business?.name || "Unknown"}</div>
                         <div className="text-xs text-muted-foreground">{sub.business?.businessType || ""}</div>
                       </TableCell>
                       <TableCell><Badge variant="outline" className="text-xs">{sub.plan?.name || sub.plan?.tier || "Unknown"}</Badge></TableCell>
                       <TableCell><span className="text-sm">{(sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly") ? "Monthly" : "Yearly"}</span></TableCell>
                       <TableCell><span className="text-sm font-medium">{formatCurrency(sub.planPrice)}</span></TableCell>
-                      <TableCell>
-                        <CurrencyBadge amount={sub.customPrice || sub.planPrice} override={!!sub.customPrice} original={sub.customPrice ? sub.planPrice : undefined} />
-                      </TableCell>
+                      <TableCell><CurrencyBadge amount={sub.customPrice || sub.planPrice} override={!!sub.customPrice} original={sub.customPrice ? sub.planPrice : undefined} /></TableCell>
                       <TableCell><StatusBadge status={getSubscriptionDisplayStatus(sub)} /></TableCell>
                       <TableCell><span className="text-sm">{formatDate(sub.nextBillingDate)}</span></TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}>Edit Subscription</Button>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleActivateSubscription(sub)}>Activate</Button>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-red-700 hover:text-red-800 hover:bg-red-50" onClick={() => handleSuspendSubscription(sub)}>Suspend</Button>
-                        </div>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          title="Edit Subscription"
+                          onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -562,150 +453,238 @@ export function SubscriptionsView() {
         </Card>
       )}
 
-      {/* Detail Sheet */}
+      {/* ── Edit Subscription Drawer ─────────────────────────────────────── */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
-        <SheetContent className="w-[520px] sm:max-w-[520px]">
+        <SheetContent className="w-[540px] sm:max-w-[540px] flex flex-col p-0">
           {selectedSubscription && (
             <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">{selectedSubscription.business?.name || "Unknown"}<StatusBadge status={getSubscriptionDisplayStatus(selectedSubscription)} /></SheetTitle>
-                <SheetDescription>
-                  {selectedSubscription.plan?.name || "Unknown"} Plan · {(selectedSubscription.billingCycle === "MONTHLY" || selectedSubscription.billingCycle === "monthly") ? "Monthly" : "Yearly"} billing
-                </SheetDescription>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" className="gap-2" onClick={() => handleActivateSubscription(selectedSubscription)}><CheckCircle2 className="h-3.5 w-3.5" /> Activate</Button>
-                  <Button size="sm" variant="outline" className="gap-2" onClick={() => handleSuspendSubscription(selectedSubscription)}><AlertTriangle className="h-3.5 w-3.5" /> Suspend</Button>
-                  <Button size="sm" variant="default" className="gap-2" onClick={handleSaveSubscriptionChanges} disabled={detailSaving}>{detailSaving ? "Saving..." : "Save changes"}</Button>
+              {/* Drawer Header */}
+              <SheetHeader className="px-6 pt-6 pb-4 border-b">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <SheetTitle className="text-base font-semibold leading-tight">{selectedSubscription.business?.name || "Unknown"}</SheetTitle>
+                    <SheetDescription className="text-xs mt-0.5">
+                      {selectedSubscription.plan?.name} Plan · {(selectedSubscription.billingCycle === "MONTHLY" || selectedSubscription.billingCycle === "monthly") ? "Monthly" : "Yearly"} Billing
+                    </SheetDescription>
+                  </div>
+                  <StatusBadge status={getSubscriptionDisplayStatus(selectedSubscription)} />
                 </div>
               </SheetHeader>
-              <ScrollArea className="mt-6 h-[calc(100vh-180px)]">
-                <div className="space-y-6 pr-4">
-                  {/* Subscription Overview */}
+
+              {/* Drawer Body */}
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="px-6 py-5 space-y-6">
+
+                  {/* ── Section: Status Management ───────────────────────── */}
                   <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Subscription Overview</h4>
-                    <div className="grid gap-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Plan</p><p className="text-sm font-medium">{selectedSubscription.plan?.name || "Unknown"} ({selectedSubscription.plan?.tier})</p></div>
-                        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Next Billing</p><p className="text-sm font-medium">{formatDate(selectedSubscription.nextBillingDate)}</p></div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status Management</p>
+
+                    {/* Status toggle */}
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Subscription Status</Label>
+                      <div className="flex rounded-lg border overflow-hidden divide-x">
+                        {statusOptions.map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setDetailSubscriptionStatus(opt.value)}
+                            className={`flex-1 py-2 text-xs font-semibold transition-colors border-0 ${
+                              detailSubscriptionStatus === opt.value ? opt.active : `text-muted-foreground bg-background ${opt.hover}`
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2"><Label>Business Status</Label>
-                          <Select value={detailBusinessStatus} onValueChange={setDetailBusinessStatus}>
-                            <SelectTrigger className="w-full h-9"><SelectValue placeholder="Status" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="ONBOARDING">ONBOARDING</SelectItem>
-                              <SelectItem value="ACTIVE">ACTIVE</SelectItem>
-                              <SelectItem value="SUSPENDED">SUSPENDED</SelectItem>
-                              <SelectItem value="CHURNED">CHURNED</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2"><Label>Subscription Status</Label>
-                          <Select value={detailSubscriptionStatus} onValueChange={(value) => setDetailSubscriptionStatus(value as SubscriptionDisplayStatus)}>
-                            <SelectTrigger className="w-full h-9"><SelectValue placeholder="Subscription status" /></SelectTrigger>
-                            <SelectContent>
-                              {subscriptionStatuses.map((status) => (<SelectItem key={status} value={status}>{status.replace(/_/g, " ")}</SelectItem>))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2"><Label>Plan Type</Label>
-                          <Select value={detailPlanId} onValueChange={setDetailPlanId}>
-                            <SelectTrigger className="w-full h-9"><SelectValue placeholder="Select plan" /></SelectTrigger>
-                            <SelectContent>
-                              {platformPlans.map((plan) => (
-                                <SelectItem key={plan.id} value={plan.id}>{plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2"><Label>Billing Cycle</Label>
-                          <Select value={detailBillingCycle} onValueChange={setDetailBillingCycle}>
-                            <SelectTrigger className="w-full h-9"><SelectValue placeholder="Billing cycle" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="MONTHLY">Monthly</SelectItem>
-                              <SelectItem value="YEARLY">Yearly</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2"><Label>Period Start</Label><Input type="date" value={detailStartDate} onChange={(e) => setDetailStartDate(e.target.value)} /></div>
-                        <div className="space-y-2"><Label>Expiry Date</Label><Input type="date" value={detailExpiryDate} onChange={(e) => setDetailExpiryDate(e.target.value)} /></div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2"><Label>Implementation Charge</Label><Input readOnly value={`₹${selectedPlan?.implementationCharge?.toLocaleString("en-IN") || "0"}`} className="bg-muted" /></div>
-                        <div className="space-y-2"><Label>Activation Status</Label><div className="rounded-lg border p-3"><span className="text-sm font-medium">{selectedSubscription.business?.status === "ACTIVE" ? "Activated" : "Inactive"}</span></div></div>
-                      </div>
+                      {detailSubscriptionStatus === "PAUSED" && (
+                        <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
+                          <PauseCircle className="h-3 w-3" /> Subscription will be paused (mapped to Suspended with pause note)
+                        </p>
+                      )}
                     </div>
-                  </div>
-                  <Separator />
-                  {/* Pricing Details */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Pricing Details</h4>
-                    <Card className={selectedSubscription.customPrice ? "border-orange-200 bg-orange-50/30" : ""}>
-                      <CardContent className="p-4 space-y-3">
-                        <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Base Price</span><span className="text-sm font-medium">{formatCurrency(selectedSubscription.planPrice)}</span></div>
-                        <Separator />
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-2"><Label>Custom Price (₹)</Label><Input type="number" value={detailCustomPrice} onChange={(e) => setDetailCustomPrice(e.target.value)} /></div>
-                          <div className="space-y-2"><Label>Override Reason</Label><Input value={detailActivationStatus ? selectedSubscription.overrideReason || "" : detailSubscriptionStatus === "PENDING_ACTIVATION" ? "Pending activation" : selectedSubscription.overrideReason || ""} readOnly className="bg-muted" /></div>
-                        </div>
-                        {detailCustomPrice && Number(detailCustomPrice) >= 0 && (
-                          <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Effective Price</span><span className="text-sm font-bold text-orange-700">{formatCurrency(Math.max(0, Number(detailCustomPrice)))}</span></div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
-                  <Separator />
-                  {/* Period Info */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Billing Period</h4>
+
+                    {/* Business status + Auto-renew row */}
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Period Start</p><p className="text-sm font-medium">{formatDate(selectedSubscription.currentPeriodStart)}</p></div>
-                      <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Period End</p><p className="text-sm font-medium">{formatDate(selectedSubscription.currentPeriodEnd)}</p></div>
-                      {selectedSubscription.lastPaymentDate && (
-                        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Last Payment</p><p className="text-sm font-medium">{formatDate(selectedSubscription.lastPaymentDate)}</p></div>
-                      )}
-                      {selectedSubscription.lastPaymentAmount && (
-                        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Last Amount</p><p className="text-sm font-medium">{formatCurrency(selectedSubscription.lastPaymentAmount)}</p></div>
-                      )}
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Business Status</Label>
+                        <Select value={detailBusinessStatus} onValueChange={setDetailBusinessStatus}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ONBOARDING">Onboarding</SelectItem>
+                            <SelectItem value="ACTIVE">Active</SelectItem>
+                            <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                            <SelectItem value="CHURNED">Churned</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-end pb-1">
+                        <div className="flex items-center justify-between w-full rounded-lg border px-3 py-2 h-8">
+                          <span className="text-xs font-medium">Auto-Renew</span>
+                          <Switch checked={detailAutoRenew} onCheckedChange={setDetailAutoRenew} className="scale-75" />
+                        </div>
+                      </div>
                     </div>
                   </div>
+
                   <Separator />
-                  {/* Billing History */}
+
+                  {/* ── Section: Plan & Billing ───────────────────────────── */}
                   <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Billing History</h4>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plan & Billing</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Change Plan</Label>
+                        <Select value={detailPlanId} onValueChange={setDetailPlanId}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select plan" /></SelectTrigger>
+                          <SelectContent>
+                            {platformPlans.map((plan) => (
+                              <SelectItem key={plan.id} value={plan.id}>
+                                {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Billing Cycle</Label>
+                        <Select value={detailBillingCycle} onValueChange={setDetailBillingCycle}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MONTHLY">Monthly</SelectItem>
+                            <SelectItem value="YEARLY">Yearly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Period Start</Label>
+                        <Input type="date" value={detailStartDate} onChange={(e) => setDetailStartDate(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Renewal Date</Label>
+                        <Input type="date" value={detailExpiryDate} onChange={(e) => setDetailExpiryDate(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    </div>
+                    {/* Quick renew */}
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200" onClick={() => handleRenewSubscription(selectedSubscription)}>
+                      <RefreshCw className="h-3 w-3" /> Renew for Next Period
+                    </Button>
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Section: Custom Pricing ───────────────────────────── */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Custom Pricing</p>
+                    <div className="rounded-lg border bg-muted/30 px-4 py-3 flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Base Plan Price</span>
+                      <span className="text-sm font-semibold">{formatCurrency(selectedSubscription.planPrice)}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Custom Price (₹)</Label>
+                        <Input
+                          type="number"
+                          value={detailCustomPrice}
+                          onChange={(e) => setDetailCustomPrice(e.target.value)}
+                          placeholder={selectedSubscription.planPrice.toString()}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Effective Price</Label>
+                        <div className={`h-8 rounded-md border px-3 flex items-center text-xs font-semibold ${detailCustomPrice && Number(detailCustomPrice) !== selectedSubscription.planPrice ? "text-orange-700 bg-orange-50 border-orange-200" : "text-muted-foreground bg-muted"}`}>
+                          {detailCustomPrice && !Number.isNaN(Number(detailCustomPrice)) ? formatCurrency(Math.max(0, Number(detailCustomPrice))) : formatCurrency(selectedSubscription.planPrice)}
+                          {detailCustomPrice && Number(detailCustomPrice) !== selectedSubscription.planPrice && (
+                            <Badge className="ml-1.5 bg-orange-100 text-orange-700 hover:bg-orange-100 text-[9px] border-0 h-4">CUSTOM</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleOpenOverride}>
+                      <IndianRupee className="h-3 w-3" /> Apply Discount Override
+                    </Button>
+                    {selectedSubscription.overrideReason && (
+                      <p className="text-xs text-muted-foreground">Override reason: {selectedSubscription.overrideReason}</p>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Section: Notes ────────────────────────────────────── */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Internal Notes</p>
+                    <Textarea
+                      value={detailNotes}
+                      onChange={(e) => setDetailNotes(e.target.value)}
+                      placeholder="Add internal notes about this subscription (not visible to the business)..."
+                      rows={3}
+                      className="text-xs resize-none"
+                    />
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Section: Billing Period (read-only) ───────────────── */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Billing Period</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "Period Start", value: formatDate(selectedSubscription.currentPeriodStart) },
+                        { label: "Period End", value: formatDate(selectedSubscription.currentPeriodEnd) },
+                        { label: "Next Billing", value: formatDate(selectedSubscription.nextBillingDate) },
+                        { label: "Last Payment", value: selectedSubscription.lastPaymentDate ? formatDate(selectedSubscription.lastPaymentDate) : "—" },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="rounded-lg border px-3 py-2">
+                          <p className="text-[10px] text-muted-foreground">{label}</p>
+                          <p className="text-xs font-medium mt-0.5">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedSubscription.lastPaymentAmount && (
+                      <div className="rounded-lg border px-3 py-2">
+                        <p className="text-[10px] text-muted-foreground">Last Payment Amount</p>
+                        <p className="text-xs font-medium mt-0.5">{formatCurrency(selectedSubscription.lastPaymentAmount)}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Section: Billing History ──────────────────────────── */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Billing History</p>
                     {loadingBillingHistory ? (
-                      <div className="rounded-lg border p-4"><Skeleton className="h-20 w-full" /></div>
+                      <Skeleton className="h-16 w-full rounded-lg" />
                     ) : billingHistory.length === 0 ? (
-                      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No billing history available</div>
+                      <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground text-center">No billing history available</div>
                     ) : (
                       <div className="space-y-2">
                         {billingHistory.map((record: any) => (
-                          <div key={record.id} className="rounded-lg border p-3">
-                            <div className="flex items-center justify-between"><span className="text-sm font-medium">₹{record.amount.toLocaleString("en-IN")}</span><span className="text-xs text-muted-foreground">{new Date(record.dueDate).toLocaleDateString("en-IN")}</span></div>
-                            <p className="text-xs text-muted-foreground">{record.description || record.status}</p>
+                          <div key={record.id} className="rounded-lg border px-3 py-2 flex items-center justify-between">
+                            <div>
+                              <p className="text-xs font-medium">₹{record.amount.toLocaleString("en-IN")}</p>
+                              <p className="text-[10px] text-muted-foreground">{record.description || record.status}</p>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">{new Date(record.dueDate).toLocaleDateString("en-IN")}</span>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-                  <Separator />
-                  {/* Actions */}
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-muted-foreground">Subscription Actions</h4>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" size="sm" className="gap-2" onClick={handleOpenOverride}><IndianRupee className="h-3.5 w-3.5" /> Apply Discount</Button>
-                      <Button variant="outline" size="sm" className="gap-2"><FileText className="h-3.5 w-3.5" /> View Billing History</Button>
-                      <Button variant="outline" size="sm" className="gap-2 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50" onClick={() => handleRenewSubscription(selectedSubscription)}><RefreshCw className="h-3.5 w-3.5" /> Renew</Button>
-                      <Button variant="outline" size="sm" className="gap-2 text-amber-700 hover:text-amber-800 hover:bg-amber-50" onClick={() => handleSuspendSubscription(selectedSubscription)}><AlertTriangle className="h-3.5 w-3.5" /> Suspend</Button>
-                      <Button variant="outline" size="sm" className="gap-2 text-sky-700 hover:text-sky-800 hover:bg-sky-50" onClick={() => handleActivateSubscription(selectedSubscription)}><CheckCircle2 className="h-3.5 w-3.5" /> Activate</Button>
-                    </div>
-                  </div>
                 </div>
               </ScrollArea>
+
+              {/* Drawer Footer */}
+              <SheetFooter className="px-6 py-4 border-t bg-background">
+                <div className="flex w-full items-center gap-2">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => setDetailOpen(false)}>Cancel</Button>
+                  <Button size="sm" className="flex-1" onClick={handleSaveSubscriptionChanges} disabled={detailSaving}>
+                    {detailSaving ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </SheetFooter>
             </>
           )}
         </SheetContent>
@@ -714,7 +693,8 @@ export function SubscriptionsView() {
       {/* Pricing Override Dialog */}
       <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Override Pricing</DialogTitle>
+          <DialogHeader>
+            <DialogTitle>Override Pricing</DialogTitle>
             <DialogDescription>Set a custom price for {selectedSubscription?.business?.name}. This will override the standard plan price.</DialogDescription>
           </DialogHeader>
           {selectedSubscription && (
@@ -725,19 +705,23 @@ export function SubscriptionsView() {
               </div>
               <Separator />
               <div className="space-y-2"><Label>Base Price (₹)</Label><Input value={overrideBasePrice} readOnly className="bg-muted" /><p className="text-xs text-muted-foreground">Standard plan price — cannot be modified</p></div>
-              <div className="space-y-2"><Label>Discount Amount (₹)</Label>
+              <div className="space-y-2">
+                <Label>Discount Amount (₹)</Label>
                 <Input type="number" min={0} max={overrideBasePrice} value={overrideDiscount || ""} onChange={(e) => { const val = parseInt(e.target.value) || 0; setOverrideDiscount(Math.min(val, overrideBasePrice)) }} placeholder="0" />
                 <p className="text-xs text-muted-foreground">{overrideDiscount > 0 ? `${Math.round((overrideDiscount / overrideBasePrice) * 100)}% discount` : "Enter the discount amount"}</p>
               </div>
-              <div className="space-y-2"><Label>Final Price (₹)</Label>
+              <div className="space-y-2">
+                <Label>Final Price (₹)</Label>
                 <div className="flex items-center gap-2">
                   <Input value={formatCurrency(overrideFinalPrice)} readOnly className={`font-bold ${overrideDiscount > 0 ? "text-orange-700 bg-orange-50" : "bg-muted"}`} />
                   {overrideDiscount > 0 && <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100 text-[10px] border-0 shrink-0">CUSTOM</Badge>}
                 </div>
               </div>
               <div className="space-y-2"><Label>Reason for Override *</Label><Textarea value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="e.g., Long-term customer loyalty discount, early adopter pricing..." rows={3} /></div>
-              <div className="space-y-2"><Label>Approved By *</Label>
-                <Select value={overrideApprover} onValueChange={setOverrideApprover}><SelectTrigger><SelectValue placeholder="Select approver" /></SelectTrigger>
+              <div className="space-y-2">
+                <Label>Approved By *</Label>
+                <Select value={overrideApprover} onValueChange={setOverrideApprover}>
+                  <SelectTrigger><SelectValue placeholder="Select approver" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Priya Sharma">Priya Sharma — Sales Lead</SelectItem>
                     <SelectItem value="Rahul Verma">Rahul Verma — Sales Lead</SelectItem>
