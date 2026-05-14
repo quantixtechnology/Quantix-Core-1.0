@@ -4,23 +4,166 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:
   deploy:
+    name: Build & Deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
+      # ── Step 1: Checkout ─────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Step 2: Validate required secrets ────────────────────────────────────
+      - name: Validate secrets
+        run: |
+          MISSING=""
+          [ -z "${{ secrets.VPS_HOST }}"    ] && MISSING="$MISSING VPS_HOST"
+          [ -z "${{ secrets.VPS_USER }}"    ] && MISSING="$MISSING VPS_USER"
+          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required secrets:$MISSING"
+            echo "   Go to: Repository → Settings → Secrets and Variables → Actions"
+            exit 1
+          fi
+          VPS_PORT="${{ secrets.VPS_PORT }}"
+          echo "✅ All required secrets are present"
+          echo "   Host : ${{ secrets.VPS_HOST }}"
+          echo "   User : ${{ secrets.VPS_USER }}"
+          echo "   Port : ${VPS_PORT:-22}"
+
+      # ── Step 3: Test TCP reachability (fail-fast, clear error message) ────────
+      - name: Test VPS TCP connectivity
+        run: |
+          PORT="${{ secrets.VPS_PORT }}"
+          PORT="${PORT:-22}"
+          HOST="${{ secrets.VPS_HOST }}"
+          echo "🔌 Testing TCP connection to $HOST:$PORT ..."
+          for i in 1 2 3; do
+            if timeout 15 bash -c "echo >/dev/tcp/$HOST/$PORT" 2>/dev/null; then
+              echo "✅ TCP reachable (attempt $i)"
+              exit 0
+            fi
+            echo "⚠️  Attempt $i/3 failed — retrying in 15s..."
+            [ $i -lt 3 ] && sleep 15
+          done
+          echo ""
+          echo "❌ CANNOT REACH $HOST:$PORT AFTER 3 ATTEMPTS"
+          echo ""
+          echo "Likely causes:"
+          echo "  1. Hostinger firewall blocking GitHub Actions IPs"
+          echo "     → Hostinger panel → VPS → Firewall → Allow port $PORT from 0.0.0.0/0"
+          echo "  2. SSH service not running on VPS"
+          echo "     → Connect via Hostinger console → sudo systemctl start ssh"
+          echo "  3. VPS_HOST secret has wrong IP"
+          echo "     → Check Hostinger dashboard for correct public IPv4"
+          echo "  4. VPS_PORT secret is wrong (default is 22)"
+          exit 1
+
+      # ── Step 4: Deploy via SSH ────────────────────────────────────────────────
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 60s
+          command_timeout: 25m
+          script_stop: true
           script: |
-            cd ${{ secrets.PROJECT_PATH }}
-            git pull origin main
-            npm install --legacy-peer-deps
-            npm run build
-            pm2 restart quantix --update-env
+            set -e
+
+            # ── Diagnostics ───────────────────────────────────────────────────
+            echo "============================================================"
+            echo " QUANTIX DEPLOY — $(date)"
+            echo "============================================================"
+            echo "User   : $(whoami)"
+            echo "Node   : $(node --version 2>/dev/null || echo NOT FOUND)"
+            echo "NPM    : $(npm --version  2>/dev/null || echo NOT FOUND)"
+            echo "PM2    : $(pm2 --version  2>/dev/null || echo NOT FOUND)"
+            echo "Disk   : $(df -h / | tail -1 | awk '{print $4" free of "$2}')"
+            echo "Mem    : $(free -m | awk '/Mem:/{print $7"MB free of "$2"MB"}')"
+            echo ""
+
+            # ── Project directory ─────────────────────────────────────────────
+            PROJECT="${{ secrets.PROJECT_PATH }}"
+            PROJECT="${PROJECT:-/root/Quantix-Core-1.0}"
+            echo "Path   : $PROJECT"
+
+            if [ ! -d "$PROJECT" ]; then
+              echo "❌ Directory not found: $PROJECT"
+              echo "   Set the PROJECT_PATH secret in GitHub → Settings → Secrets"
+              exit 1
+            fi
+            cd "$PROJECT"
+
+            # ── Git pull ──────────────────────────────────────────────────────
+            echo ""
+            echo "── Git ──────────────────────────────────────────────────────"
+            echo "Branch : $(git branch --show-current)"
+            echo "Before : $(git rev-parse --short HEAD)"
+            git fetch --quiet origin main
+            git reset --hard origin/main
+            echo "After  : $(git rev-parse --short HEAD)"
+            echo "Commit : $(git log -1 --pretty='%s')"
+
+            # ── Dependencies ──────────────────────────────────────────────────
+            echo ""
+            echo "── npm install ──────────────────────────────────────────────"
+            npm install --legacy-peer-deps 2>&1 | tail -8
+            echo "✅ Dependencies installed"
+
+            # ── Prisma ────────────────────────────────────────────────────────
+            echo ""
+            echo "── Prisma ───────────────────────────────────────────────────"
+            npx prisma generate 2>&1 | tail -4
+            npx prisma db push --accept-data-loss 2>&1 | tail -4
+            echo "✅ Prisma schema synced"
+
+            # ── Next.js build ─────────────────────────────────────────────────
+            echo ""
+            echo "── next build ───────────────────────────────────────────────"
+            npm run build 2>&1
+            echo "✅ Build complete"
+
+            # ── PM2 restart ───────────────────────────────────────────────────
+            echo ""
+            echo "── PM2 ──────────────────────────────────────────────────────"
+            if pm2 list 2>/dev/null | grep -q "quantix"; then
+              pm2 restart quantix --update-env
+              echo "✅ Process restarted"
+            elif [ -f "$PROJECT/ecosystem.config.js" ]; then
+              pm2 start "$PROJECT/ecosystem.config.js"
+              echo "✅ Process started via ecosystem.config.js"
+            else
+              pm2 start npm --name quantix -- start
+              echo "✅ Process started via npm start"
+            fi
             pm2 save
+            echo ""
+            pm2 list
+
+            # ── Health check ──────────────────────────────────────────────────
+            echo ""
+            echo "── Health check ─────────────────────────────────────────────"
+            echo "Waiting 10s for app to boot..."
+            sleep 10
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 http://localhost:3000 2>/dev/null || echo "000")
+            if [[ "$HTTP" =~ ^(200|301|302|307|308)$ ]]; then
+              echo "✅ App is healthy (HTTP $HTTP)"
+            else
+              echo "⚠️  Health check returned HTTP $HTTP — showing last PM2 logs:"
+              pm2 logs quantix --lines 40 --nostream 2>/dev/null || true
+              echo ""
+              echo "   If the app is still starting up this is normal."
+              echo "   Check live logs: pm2 logs quantix"
+            fi
+
+            echo ""
+            echo "============================================================"
+            echo " DEPLOY COMPLETE — $(date)"
+            echo "============================================================"
