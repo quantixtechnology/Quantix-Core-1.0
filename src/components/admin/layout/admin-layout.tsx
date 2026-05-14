@@ -9,19 +9,21 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   return (
-    <SidebarProvider>
-      <AppSidebar
-        mobileOpen={mobileSidebarOpen}
-        onMobileOpenChange={setMobileSidebarOpen}
-      />
-      <SidebarInset>
-        <AdminHeader onMobileMenuClick={() => setMobileSidebarOpen(true)} />
-        <main className="flex-1 overflow-auto">
-          <div className="p-4 md:p-6">
-            {children}
-          </div>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="dark">
+      <SidebarProvider>
+        <AppSidebar
+          mobileOpen={mobileSidebarOpen}
+          onMobileOpenChange={setMobileSidebarOpen}
+        />
+        <SidebarInset>
+          <AdminHeader onMobileMenuClick={() => setMobileSidebarOpen(true)} />
+          <main className="flex-1 overflow-auto">
+            <div className="p-4 md:p-6">
+              {children}
+            </div>
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    </div>
   )
 }

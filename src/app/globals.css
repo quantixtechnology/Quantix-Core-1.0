@@ -43,6 +43,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ─── Light theme (business-facing) ─────────────────────────────────────── */
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -78,40 +79,60 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* ─── Quantix Admin Dark Theme ──────────────────────────────────────────── */
+/* Deep Navy #020B3D · Royal Blue #155BDB · Cyan #25B8F5 · Orange #FF8A1F   */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Backgrounds — layered navy depth */
+  --background:        oklch(0.13 0.055 264);   /* #0e1a55 content area  */
+  --foreground:        oklch(0.94 0.012 240);   /* near-white text        */
+  --card:              oklch(0.16 0.055 264);   /* card surfaces          */
+  --card-foreground:   oklch(0.94 0.012 240);
+  --popover:           oklch(0.14 0.055 264);
+  --popover-foreground:oklch(0.94 0.012 240);
+
+  /* Primary — Royal Blue #155BDB */
+  --primary:           oklch(0.47 0.20 262);
+  --primary-foreground:oklch(0.98 0 0);
+
+  /* Secondary */
+  --secondary:         oklch(0.19 0.055 264);
+  --secondary-foreground:oklch(0.90 0.015 240);
+
+  /* Muted */
+  --muted:             oklch(0.19 0.05 264);
+  --muted-foreground:  oklch(0.57 0.04 240);
+
+  /* Accent — Cyan #25B8F5 */
+  --accent:            oklch(0.72 0.12 224);
+  --accent-foreground: oklch(0.98 0 0);
+
+  /* Destructive — Orange #FF8A1F */
+  --destructive:       oklch(0.73 0.17 50);
+
+  /* Borders & inputs */
+  --border:  oklch(1 0 0 / 7%);
+  --input:   oklch(1 0 0 / 10%);
+  --ring:    oklch(0.47 0.20 262);
+
+  /* Charts — brand palette */
+  --chart-1: oklch(0.47 0.20 262);   /* Royal Blue  */
+  --chart-2: oklch(0.72 0.12 224);   /* Cyan        */
+  --chart-3: oklch(0.73 0.17 50);    /* Orange      */
+  --chart-4: oklch(0.62 0.17 295);   /* Purple      */
+  --chart-5: oklch(0.65 0.16 340);   /* Pink        */
+
+  /* Sidebar — deep navy #020B3D */
+  --sidebar:                    oklch(0.085 0.055 264);
+  --sidebar-foreground:         oklch(0.88 0.02 240);
+  --sidebar-primary:            oklch(0.47 0.20 262);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent:             oklch(0.14 0.055 264);
+  --sidebar-accent-foreground:  oklch(0.95 0.01 240);
+  --sidebar-border:             oklch(1 0 0 / 6%);
+  --sidebar-ring:               oklch(0.47 0.20 262);
 }
 
+/* ─── Base ──────────────────────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -122,13 +143,31 @@
   }
 }
 
-/* Smooth scrolling */
+/* ─── Admin nav active glow ─────────────────────────────────────────────── */
+.admin-nav-active {
+  position: relative;
+  background: linear-gradient(90deg, rgba(21,91,219,0.22) 0%, rgba(21,91,219,0.06) 100%);
+  border-left: 2px solid #155BDB;
+  color: #ffffff !important;
+}
+.admin-nav-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse 80% 60% at 0% 50%, rgba(37,184,245,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.admin-nav-active svg {
+  color: #25B8F5 !important;
+}
+
+/* ─── Smooth scrolling & accessibility ──────────────────────────────────── */
 html {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Touch targets - minimum 44px for coarse pointer devices */
 @media (pointer: coarse) {
   button, a, [role="button"] {
     min-height: 44px;
@@ -136,7 +175,6 @@ html {
   }
 }
 
-/* Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

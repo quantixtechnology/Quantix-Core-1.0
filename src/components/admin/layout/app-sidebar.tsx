@@ -18,6 +18,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAdminStore, type AdminPage } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useState } from "react"
 
@@ -84,7 +85,7 @@ function CollapsibleSection({
     <div className="mb-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+        className="flex w-full items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#25B8F5]/60 hover:text-[#25B8F5] transition-colors"
         aria-expanded={isOpen}
       >
         {title}
@@ -98,8 +99,10 @@ function CollapsibleSection({
               <button
                 key={item.key}
                 onClick={() => onNavigate(item.key)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-[36px] ${
-                  isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all min-h-[36px] ${
+                  isActive
+                    ? "admin-nav-active"
+                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                 }`}
               >
                 <item.icon className="shrink-0 size-4" />
@@ -120,7 +123,14 @@ interface AppSidebarProps {
 
 export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSidebarProps) {
   const { activePage, setActivePage } = useAdminStore()
+  const { user } = useAuthStore()
   const { isMobile } = useResponsive()
+
+  const userInitials = user?.name
+    ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+    : "QT"
+  const userName = user?.name ?? "Quantix Admin"
+  const userEmail = user?.email ?? "admin@quantix.in"
 
   const handleNavigate = (page: AdminPage) => {
     setActivePage(page)
@@ -130,7 +140,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   const sections = [
     { title: "Platform Control", items: platformNavItems, open: true },
     { title: "Mobile & Apps", items: mobileNavItems, open: true },
-    { title: "Deployment & Operations", items: deployNavItems, open: false },
+    { title: "Deployment & Ops", items: deployNavItems, open: false },
     { title: "Client Operations", items: clientNavItems, open: false },
     { title: "Platform Operations", items: opsNavItems, open: false },
     { title: "System", items: systemNavItems, open: false },
@@ -139,29 +149,42 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   if (isMobile) {
     return (
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent side="left" className="w-[280px] p-0">
-          <SheetHeader className="border-b p-4">
+        <SheetContent side="left" className="w-[280px] p-0 bg-sidebar border-sidebar-border">
+          <SheetHeader className="border-b border-sidebar-border p-4">
             <div className="flex items-center gap-3">
-              <img src="/logo.svg" alt="Quantix" className="size-10 rounded-lg" />
+              <img src="/logo.svg" alt="Quantix" className="size-10 rounded-xl" />
               <div>
-                <SheetTitle className="text-left text-base font-bold">Quantix Core</SheetTitle>
-                <SheetDescription className="text-left text-xs">Platform Admin</SheetDescription>
+                <SheetTitle className="text-left text-sm font-bold text-sidebar-foreground">
+                  QUANTIX CORE
+                </SheetTitle>
+                <SheetDescription className="text-left text-[10px] text-[#25B8F5]/70 font-medium tracking-wider uppercase">
+                  Platform Admin
+                </SheetDescription>
               </div>
             </div>
           </SheetHeader>
-          <ScrollArea className="flex-1 px-1 py-3">
+          <ScrollArea className="flex-1 px-1 py-3 h-[calc(100vh-130px)]">
             {sections.map((s) => (
-              <CollapsibleSection key={s.title} title={s.title} items={s.items} activePage={activePage} onNavigate={handleNavigate} defaultOpen={s.open} />
+              <CollapsibleSection
+                key={s.title}
+                title={s.title}
+                items={s.items}
+                activePage={activePage}
+                onNavigate={handleNavigate}
+                defaultOpen={s.open}
+              />
             ))}
           </ScrollArea>
-          <div className="border-t p-4">
+          <div className="border-t border-sidebar-border p-4">
             <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10">
-                <AvatarFallback className="bg-primary text-primary-foreground text-sm">QT</AvatarFallback>
+              <Avatar className="h-9 w-9">
+                <AvatarFallback className="bg-[#155BDB] text-white text-xs font-bold">
+                  {userInitials}
+                </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="truncate text-sm font-semibold">Quantix Admin</p>
-                <p className="truncate text-xs text-muted-foreground">admin@quantix.in</p>
+                <p className="truncate text-sm font-semibold text-sidebar-foreground">{userName}</p>
+                <p className="truncate text-xs text-sidebar-foreground/50">{userEmail}</p>
               </div>
             </div>
           </div>
@@ -171,15 +194,23 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   }
 
   return (
-    <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="p-4">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarHeader className="p-3 border-b border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="hover:bg-sidebar-accent">
-              <img src="/logo.svg" alt="Quantix" className="size-8 rounded-lg shrink-0" />
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-bold">Quantix Core</span>
-                <span className="truncate text-xs text-muted-foreground">Platform Admin</span>
+            <SidebarMenuButton
+              size="lg"
+              className="hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent gap-3"
+              tooltip="Quantix Core Platform"
+            >
+              <img src="/logo.svg" alt="Quantix" className="size-8 rounded-xl shrink-0" />
+              <div className="grid flex-1 text-left leading-tight">
+                <span className="truncate text-xs font-bold tracking-wider text-sidebar-foreground uppercase">
+                  Quantix Core
+                </span>
+                <span className="truncate text-[10px] font-medium text-[#25B8F5]/70 tracking-widest uppercase">
+                  Platform Admin
+                </span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -189,37 +220,49 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
       <SidebarContent>
         {sections.map((s) => (
           <SidebarGroup key={s.title}>
-            <SidebarGroupLabel>{s.title}</SidebarGroupLabel>
+            <SidebarGroupLabel className="text-[10px] font-bold tracking-widest text-[#25B8F5]/60 uppercase px-3">
+              {s.title}
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {s.items.map((item) => (
-                  <SidebarMenuItem key={item.key}>
-                    <SidebarMenuButton
-                      isActive={activePage === item.key}
-                      onClick={() => setActivePage(item.key)}
-                      tooltip={item.label}
-                    >
-                      <item.icon className="size-4" />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {s.items.map((item) => {
+                  const isActive = activePage === item.key
+                  return (
+                    <SidebarMenuItem key={item.key}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setActivePage(item.key)}
+                        tooltip={item.label}
+                        className={isActive ? "admin-nav-active" : ""}
+                      >
+                        <item.icon className="size-4" />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="p-4">
+      <SidebarFooter className="p-3 border-t border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">QT</AvatarFallback>
+            <SidebarMenuButton
+              size="lg"
+              className="hover:bg-sidebar-accent"
+              tooltip={`${userName} · ${userEmail}`}
+            >
+              <Avatar className="h-8 w-8 shrink-0">
+                <AvatarFallback className="bg-[#155BDB] text-white text-xs font-bold">
+                  {userInitials}
+                </AvatarFallback>
               </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">Quantix Admin</span>
-                <span className="truncate text-xs text-muted-foreground">admin@quantix.in</span>
+              <div className="grid flex-1 text-left leading-tight">
+                <span className="truncate text-sm font-semibold text-sidebar-foreground">{userName}</span>
+                <span className="truncate text-xs text-sidebar-foreground/50">{userEmail}</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
