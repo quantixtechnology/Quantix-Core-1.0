@@ -28,6 +28,7 @@ import {
   Clock, Target, RefreshCw, AlertTriangle, MessageCircle,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { LeadContactCounters } from "./lead-contact-counters"
 import { LeadActivityTimeline } from "./lead-activity-timeline"
 import { SalesCrmReports } from "./sales-crm-reports"
@@ -75,6 +76,8 @@ const sourceLabels: Record<string, string> = {
 
 export function LeadsView() {
   const { searchQuery, setCrmLeadTab } = useAdminStore()
+  const { permissions } = useAuthStore()
+  const canEdit = permissions.includes("leads:edit" as never)
   const [leads, setLeads] = useState<LeadApiData[]>([])
   const [salesTeam, setSalesTeam] = useState<SalesTeamMember[]>([])
   const [loading, setLoading] = useState(true)
@@ -414,7 +417,7 @@ export function LeadsView() {
           <div className="flex items-center gap-2">
             <Button variant="outline" className="gap-2" onClick={() => { setCrmReportsOpen(true); setCrmTab("reports") }}><BarChart3 className="h-4 w-4" />CRM Reports</Button>
             <Button variant="outline" className="gap-2" onClick={() => { setCrmReportsOpen(true); setCrmTab("performance") }}><Trophy className="h-4 w-4" />Rep Performance</Button>
-            <Button className="gap-2" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" />Add Lead</Button>
+            {canEdit && <Button className="gap-2" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" />Add Lead</Button>}
           </div>
         }
       />
@@ -565,9 +568,9 @@ export function LeadsView() {
                         <TableCell className="text-xs">{lead.salesRep?.name || "Unassigned"}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-0.5">
-                            <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => handleOpenStageEdit(lead)} title="Change Stage"><Pencil className="h-3 w-3" /></Button>
-                            <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => handleOpenReassign(lead)} title="Reassign Rep"><UserCheck className="h-3 w-3" /></Button>
-                            {nextStage && (
+                            {canEdit && <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => handleOpenStageEdit(lead)} title="Change Stage"><Pencil className="h-3 w-3" /></Button>}
+                            {canEdit && <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => handleOpenReassign(lead)} title="Reassign Rep"><UserCheck className="h-3 w-3" /></Button>}
+                            {canEdit && nextStage && (
                               <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => { setSelectedLead(lead); setAdvanceOpen(true) }}>
                                 <ArrowRight className="h-3 w-3" />
                               </Button>
@@ -602,7 +605,7 @@ export function LeadsView() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Button variant="outline" size="sm" className="gap-1.5 text-[10px] h-7" onClick={() => handleOpenStageEdit(selectedLead)}><Pencil className="h-3 w-3" /> Stage</Button>
+                    {canEdit && <Button variant="outline" size="sm" className="gap-1.5 text-[10px] h-7" onClick={() => handleOpenStageEdit(selectedLead)}><Pencil className="h-3 w-3" /> Stage</Button>}
                     <Button variant="outline" size="sm" className="gap-1.5 text-[10px] h-7" onClick={() => handleViewFullDetail(selectedLead)}><Maximize2 className="h-3 w-3" /> Full</Button>
                   </div>
                 </div>
@@ -645,7 +648,7 @@ export function LeadsView() {
                         <h4 className="text-xs font-semibold text-muted-foreground">Business Details</h4>
                         <p className="text-[10px] text-muted-foreground">Compact metadata grid</p>
                       </div>
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px]" onClick={() => handleOpenReassign(selectedLead)}>Reassign</Button>
+                      {canEdit && <Button variant="ghost" size="sm" className="h-7 text-[10px]" onClick={() => handleOpenReassign(selectedLead)}>Reassign</Button>}
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
                       {[
@@ -668,7 +671,7 @@ export function LeadsView() {
                         <h4 className="text-xs font-semibold text-muted-foreground">Pipeline Progress</h4>
                         <p className="text-[10px] text-muted-foreground">Horizontal stage tracker</p>
                       </div>
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1.5" onClick={() => handleOpenStageEdit(selectedLead)}><Pencil className="h-3 w-3" /> Edit</Button>
+                      {canEdit && <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1.5" onClick={() => handleOpenStageEdit(selectedLead)}><Pencil className="h-3 w-3" /> Edit</Button>}
                     </div>
                     <div className="flex gap-2 overflow-x-auto pb-1">
                       {allStages.map((stage, idx) => {

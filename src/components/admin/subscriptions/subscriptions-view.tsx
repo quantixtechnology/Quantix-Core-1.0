@@ -6,6 +6,7 @@ import { StatCard } from "../shared/stat-card"
 import { StatusBadge, CurrencyBadge } from "../shared/status-badge"
 import { EmptyState } from "../shared/empty-state"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -69,6 +70,10 @@ function formatInputDate(dateStr: string) { try { return new Date(dateStr).toISO
 
 export function SubscriptionsView() {
   const { searchQuery } = useAdminStore()
+  const { permissions } = useAuthStore()
+  const canEdit = permissions.includes("subscriptions:edit" as never)
+  const canOverridePrice = permissions.includes("subscriptions:override_price" as never)
+  const canManagePlans = permissions.includes("subscriptions:edit" as never)
   const [subscriptions, setSubscriptions] = useState<SubscriptionApiData[]>([])
   const [platformPlans, setPlatformPlans] = useState<PlatformPlanData[]>([])
   const [apiStats, setApiStats] = useState<{ total: number; active: number; pastDue: number; suspended: number; monthlyMRR: number; yearlyProjected: number } | null>(null)
@@ -332,7 +337,7 @@ export function SubscriptionsView() {
         title="Subscription Management"
         description="Manage platform subscriptions, billing, and pricing overrides"
         icon={CreditCard}
-        action={
+        action={canManagePlans ? (
           <Dialog open={managePlansOpen} onOpenChange={setManagePlansOpen}>
             <DialogTrigger asChild><Button className="gap-2"><Shield className="h-4 w-4" /> Manage Plans</Button></DialogTrigger>
             <DialogContent className="max-w-lg">
@@ -363,7 +368,7 @@ export function SubscriptionsView() {
               <DialogFooter><Button variant="outline" onClick={() => setManagePlansOpen(false)}>Close</Button></DialogFooter>
             </DialogContent>
           </Dialog>
-        }
+        ) : undefined}
       />
 
       {/* Summary Stat Cards */}
@@ -433,17 +438,19 @@ export function SubscriptionsView() {
                       <TableCell><CurrencyBadge amount={sub.customPrice || sub.planPrice} override={!!sub.customPrice} original={sub.customPrice ? sub.planPrice : undefined} /></TableCell>
                       <TableCell><StatusBadge status={getSubscriptionDisplayStatus(sub)} /></TableCell>
                       <TableCell><span className="text-sm">{formatDate(sub.nextBillingDate)}</span></TableCell>
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          title="Edit Subscription"
-                          onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            title="Edit Subscription"
+                            onClick={() => { setSelectedSubscription(sub); setDetailOpen(true) }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -602,9 +609,11 @@ export function SubscriptionsView() {
                         </div>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleOpenOverride}>
-                      <IndianRupee className="h-3 w-3" /> Apply Discount Override
-                    </Button>
+                    {canOverridePrice && (
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleOpenOverride}>
+                        <IndianRupee className="h-3 w-3" /> Apply Discount Override
+                      </Button>
+                    )}
                     {selectedSubscription.overrideReason && (
                       <p className="text-xs text-muted-foreground">Override reason: {selectedSubscription.overrideReason}</p>
                     )}
@@ -679,10 +688,12 @@ export function SubscriptionsView() {
               {/* Drawer Footer */}
               <SheetFooter className="px-6 py-4 border-t bg-background">
                 <div className="flex w-full items-center gap-2">
-                  <Button variant="outline" size="sm" className="flex-1" onClick={() => setDetailOpen(false)}>Cancel</Button>
-                  <Button size="sm" className="flex-1" onClick={handleSaveSubscriptionChanges} disabled={detailSaving}>
-                    {detailSaving ? "Saving..." : "Save Changes"}
-                  </Button>
+                  <Button variant="outline" size="sm" className={canEdit ? "flex-1" : "w-full"} onClick={() => setDetailOpen(false)}>Close</Button>
+                  {canEdit && (
+                    <Button size="sm" className="flex-1" onClick={handleSaveSubscriptionChanges} disabled={detailSaving}>
+                      {detailSaving ? "Saving..." : "Save Changes"}
+                    </Button>
+                  )}
                 </div>
               </SheetFooter>
             </>

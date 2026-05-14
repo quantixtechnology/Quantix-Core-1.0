@@ -30,6 +30,7 @@ import {
 } from "lucide-react"
 import { AvatarImage } from "@/components/ui/avatar"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 
@@ -89,6 +90,9 @@ function formatCurrency(value: number): string {
 
 export function BusinessesView() {
   const { searchQuery, setCurrentBusiness } = useAdminStore()
+  const { permissions } = useAuthStore()
+  const canCreate = permissions.includes("businesses:create" as never)
+  const canEdit = permissions.includes("businesses:edit" as never)
   const [businesses, setBusinesses] = useState<BusinessApiData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -386,7 +390,7 @@ export function BusinessesView() {
         title="Business Management"
         description="Manage all platform businesses, subscriptions, and configurations"
         icon={Building2}
-        action={
+        action={canCreate ? (
           <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetForm() }}>
             <DialogTrigger asChild>
               <Button className="gap-2"><Plus className="h-4 w-4" /> Create Business</Button>
@@ -502,7 +506,7 @@ export function BusinessesView() {
               )}
             </DialogContent>
           </Dialog>
-        }
+        ) : undefined}
       />
 
       {/* Filter Bar */}
@@ -772,7 +776,7 @@ export function BusinessesView() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Branding & Domain</h4>
-                        {!brandingOpen && (
+                        {!brandingOpen && canEdit && (
                           <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openBrandingEditor(biz)}>
                             <Palette className="size-3" /> Edit
                           </Button>
