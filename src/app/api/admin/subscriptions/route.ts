@@ -1,16 +1,18 @@
 // ============================================================================
 // Route: GET /api/admin/subscriptions
 // Returns all business subscriptions with business + plan info for the admin panel
-// No auth required — internal admin route
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 
-export async function GET(request: NextRequest) {
+export const GET = withMiddleware({
+  requireAuth: true,
+  requiredPermission: 'subscriptions:view',
+})(async (req) => {
   try {
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(req.url);
     const statusParam = searchParams.get('status');
     const billingCycleParam = searchParams.get('billingCycle');
     const search = searchParams.get('search');
@@ -98,4 +100,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

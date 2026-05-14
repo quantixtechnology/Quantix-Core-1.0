@@ -8,12 +8,15 @@
 
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
-import { withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
+import { withMiddleware, withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest) {
+export const GET = withMiddleware({
+  requireAuth: true,
+  requiredPermission: 'sales:view',
+})(async (req) => {
   try {
-    const searchParams = new URL(request.url).searchParams;
+    const searchParams = new URL(req.url).searchParams;
     const activeFilter = searchParams.get('active');
     const where: Record<string, unknown> = {};
 
@@ -53,11 +56,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withMiddleware({
+  requireAuth: true,
+  requiredRoles: ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN'],
+})(async (req) => {
   try {
-    const body = await request.json();
+    const body = await req.json();
     const { name, email, phone, region, designation, reportingManager, commissionPercent, target, isActive, password } = body;
 
     // Validate required fields
@@ -129,7 +135,7 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 // ============================================================================
 // PATCH /api/admin/sales-team?id=memberId — Update sales team member

@@ -22,6 +22,61 @@ function PageLoader() {
   )
 }
 
+function AccessDenied() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-3">
+      <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+        <span className="text-xl font-bold text-muted-foreground">&#x1F512;</span>
+      </div>
+      <h2 className="text-base font-semibold text-foreground">Access Denied</h2>
+      <p className="text-sm text-muted-foreground">You don&apos;t have permission to view this page.</p>
+    </div>
+  )
+}
+
+const SUPER_ADMIN_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
+
+const PAGE_PERMISSIONS: Record<string, { permission?: string; superAdminOnly?: boolean }> = {
+  "workflow-engine":      { permission: "platform:manage_deployments" },
+  "plan-management":      { superAdminOnly: true },
+  "payment-plugins":      { superAdminOnly: true },
+  "leads":                { permission: "leads:view" },
+  "businesses":           { permission: "businesses:view" },
+  "subscriptions":        { permission: "subscriptions:view" },
+  "onboarding":           { permission: "businesses:create" },
+  "domains":              { permission: "platform:manage_domains" },
+  "sales":                { permission: "sales:view" },
+  "platform-users":       { permission: "users:view" },
+  "roles-permissions":    { superAdminOnly: true },
+  "notifications":        { permission: "notifications:view" },
+  "settings":             { superAdminOnly: true },
+  "mobile-apps":          { permission: "platform:manage_deployments" },
+  "ops-dashboard":        { permission: "platform:manage_deployments" },
+  "deployment-pipeline":  { permission: "platform:manage_deployments" },
+  "build-automation":     { permission: "platform:manage_deployments" },
+  "release-management":   { permission: "platform:manage_deployments" },
+  "play-store":           { permission: "platform:manage_deployments" },
+  "mobile-versions":      { permission: "platform:manage_deployments" },
+  "client-assets":        { permission: "businesses:edit" },
+  "tenant-provisioning":  { permission: "businesses:create" },
+  "product-import":       { permission: "businesses:edit" },
+  "onboarding-checklist": { permission: "businesses:edit" },
+  "platform-analytics":   { permission: "platform:view_analytics" },
+  "revenue":              { permission: "subscriptions:view" },
+  "support":              { permission: "leads:view" },
+  "backup-monitoring":    { superAdminOnly: true },
+  "security-access":      { permission: "platform:security" },
+  "audit-logs":           { permission: "platform:audit_logs" },
+}
+
+function canAccessPage(page: string, permissions: string[], role: string): boolean {
+  const req = PAGE_PERMISSIONS[page]
+  if (!req) return true
+  if (req.superAdminOnly) return SUPER_ADMIN_ROLES.has(role)
+  if (req.permission) return permissions.includes(req.permission)
+  return true
+}
+
 // ── Admin pages (lazy) ────────────────────────────────────────────────────
 const DashboardView = dynamic(() => import("@/components/admin/dashboard/dashboard-view").then(m => ({ default: m.DashboardView })), { loading: () => <PageLoader /> })
 const LeadsView = dynamic(() => import("@/components/admin/leads/leads-view").then(m => ({ default: m.LeadsView })), { loading: () => <PageLoader /> })
@@ -120,7 +175,7 @@ export default function Home() {
 
 function AppContent() {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
-  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType } = useAuthStore()
+  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated } = useAuthStore()
 
   // Sync viewMode from auth session on mount / auth change
   useEffect(() => {
@@ -144,6 +199,9 @@ function AppContent() {
   }, [isAuthenticated, currentRole, currentBusinessId])
 
   const renderSuperAdminPage = () => {
+    if (activePage !== "dashboard" && !canAccessPage(activePage, permissions as string[], currentRole || "")) {
+      return <AccessDenied />
+    }
     switch (activePage) {
       // Workflow Engine
       case "workflow-engine": return <WorkflowEngineView />
@@ -261,6 +319,10 @@ function AppContent() {
   }
 
   if (viewMode === "business_owner") {
+    if (_isHydrated && !(permissions as string[]).includes("businesses:impersonate")) {
+      setViewMode("super_admin")
+      return null
+    }
     return (
       <BusinessLayout>
         {renderBusinessPage()}

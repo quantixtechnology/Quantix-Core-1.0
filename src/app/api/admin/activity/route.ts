@@ -1,16 +1,17 @@
 // ============================================================================
 // Route: GET /api/admin/activity
 // Returns recent platform activity for the admin dashboard
-// No auth required — internal admin route
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 
-export async function GET(request: NextRequest) {
+export const GET = withMiddleware({
+  requireAuth: true,
+})(async (req) => {
   try {
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(req.url);
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const businessId = searchParams.get('businessId');
 
@@ -50,4 +51,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

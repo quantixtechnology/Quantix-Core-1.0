@@ -94,8 +94,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   ],
   QUANTIX_SALES_TEAM: [
     "leads:view", "leads:edit",
-    "businesses:view", "businesses:impersonate",
-    "subscriptions:view",
+    "businesses:view",
     "sales:view", "sales:edit",
     "notifications:view",
   ],

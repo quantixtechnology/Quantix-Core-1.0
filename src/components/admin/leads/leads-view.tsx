@@ -116,7 +116,7 @@ export function LeadsView() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/admin/leads?limit=100")
+      const res = await fetch("/api/admin/leads?limit=100", { headers: getAuthHeaders() })
       if (!res.ok) throw new Error("Failed to fetch leads")
       const json = await res.json()
       if (json.success) setLeads(json.data)
@@ -129,7 +129,7 @@ export function LeadsView() {
 
   const fetchSalesTeam = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/sales-team?active=true")
+      const res = await fetch("/api/admin/sales-team?active=true", { headers: getAuthHeaders() })
       if (res.ok) {
         const json = await res.json()
         if (json.success) setSalesTeam(json.data)

@@ -1,13 +1,15 @@
 // ============================================================================
 // Route: GET /api/admin/stats
 // Returns platform dashboard statistics for the admin panel
-// No auth required — internal admin route
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 
-export async function GET() {
+export const GET = withMiddleware({
+  requireAuth: true,
+})(async (_req) => {
   try {
     const [
       totalBusinesses,
@@ -140,4 +142,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-}
+});

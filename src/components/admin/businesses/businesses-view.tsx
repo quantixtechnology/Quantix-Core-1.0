@@ -93,6 +93,7 @@ export function BusinessesView() {
   const { permissions } = useAuthStore()
   const canCreate = permissions.includes("businesses:create" as never)
   const canEdit = permissions.includes("businesses:edit" as never)
+  const canImpersonate = permissions.includes("businesses:impersonate" as never)
   const [businesses, setBusinesses] = useState<BusinessApiData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -609,14 +610,16 @@ export function BusinessesView() {
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
-                            <Button
-                              variant="outline" size="sm"
-                              className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400"
-                              onClick={() => setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)}
-                            >
-                              <LogIn className="size-3" />
-                              Login As
-                            </Button>
+                            {canImpersonate && (
+                              <Button
+                                variant="outline" size="sm"
+                                className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400"
+                                onClick={() => setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)}
+                              >
+                                <LogIn className="size-3" />
+                                Login As
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -650,14 +653,16 @@ export function BusinessesView() {
                     <div className="space-y-1 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <SheetTitle className="text-lg">{biz.name}</SheetTitle>
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs gap-1 shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
-                          onClick={() => { setDetailOpen(false); setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}
-                        >
-                          <LogIn className="size-3" />
-                          Login as Business
-                        </Button>
+                        {canImpersonate && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs gap-1 shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={() => { setDetailOpen(false); setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}
+                          >
+                            <LogIn className="size-3" />
+                            Login as Business
+                          </Button>
+                        )}
                       </div>
                       <SheetDescription className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium" style={{ borderColor: typeConf?.color, color: typeConf?.color }}>{typeConf?.label}</Badge>

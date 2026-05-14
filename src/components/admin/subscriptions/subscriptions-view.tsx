@@ -108,7 +108,7 @@ export function SubscriptionsView() {
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const res = await fetch("/api/admin/subscriptions")
+      const res = await fetch("/api/admin/subscriptions", { headers: getAuthHeaders() })
       if (!res.ok) throw new Error("Failed to fetch subscriptions")
       const json = await res.json()
       if (json.success) {
