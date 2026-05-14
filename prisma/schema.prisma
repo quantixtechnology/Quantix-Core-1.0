@@ -466,6 +466,7 @@ model User {
   emailVerified   Boolean      @default(false)
   phoneVerified   Boolean      @default(false)
   isActive        Boolean      @default(true)
+  platformRole    Role?                        // Set for platform staff; null for business users
   fcmToken        String?
   lastLoginAt     DateTime?
   metadata        String       @default("{}")
@@ -517,14 +518,24 @@ model RefreshToken {
 
 // ============================================================================
 // SECTION 9: ROLES & PERMISSIONS
-// 6 roles. CLIENT_OWNER is invited — cannot create businesses.
+// Platform roles: stored on User.platformRole (no businessId required)
+// Business roles: stored on BusinessUser.role (scoped to a business)
 // ============================================================================
 
 enum Role {
+  // ── Platform Team (Quantix internal) ─────────────────────────────────────
   QUANTIX_SUPER_ADMIN    // Full platform control, creates businesses, overrides pricing
+  PLATFORM_ADMIN         // Platform operations and support management
   QUANTIX_SALES_TEAM     // Manages leads, demos, negotiations
+  SUPPORT_TEAM           // Quantix platform support team
+  DEPLOYMENT_TEAM        // Deployment, onboarding, and technical operations
+  FINANCE_TEAM           // Finance, billing oversight, and revenue reporting
+  // ── Business Staff (scoped per tenant) ───────────────────────────────────
   CLIENT_OWNER           // Business owner — invited after payment, CANNOT create businesses
   STORE_MANAGER          // Manages store operations
+  BILLING_STAFF          // Handles billing and payments within a business
+  INVENTORY_STAFF        // Manages inventory within a business
+  SUPPORT_STAFF          // Business-level customer support staff
   DELIVERY_STAFF         // Handles deliveries
   CUSTOMER               // End customer — only self-registerable role
 }

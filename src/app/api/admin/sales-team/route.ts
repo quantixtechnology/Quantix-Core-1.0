@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     // Create User + SalesTeamMember in a transaction
     const result = await db.$transaction(async (tx) => {
-      // Create the User record
+      // Create the User record with platformRole so they appear in User Management
       const user = await tx.user.create({
         data: {
           email,
@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
           authProvider: 'EMAIL_OTP',
           emailVerified: true,
           isActive: isActive !== undefined ? Boolean(isActive) : true,
+          platformRole: 'QUANTIX_SALES_TEAM',
         },
       });
 
@@ -198,6 +199,7 @@ export async function PATCH(request: NextRequest) {
               ...(body.email && { email: body.email }),
               ...(body.phone && { phone: body.phone }),
               ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
+              platformRole: 'QUANTIX_SALES_TEAM', // ensure role is always set
             },
           });
         }

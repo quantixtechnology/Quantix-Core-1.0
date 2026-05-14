@@ -57,10 +57,12 @@ interface UserDetail extends PlatformUser {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "ALL",         label: "All Staff",        scope: "PLATFORM" },
-  { key: "ADMIN",       label: "Admins",            scope: "PLATFORM", role: "QUANTIX_SUPER_ADMIN" },
-  { key: "SALES",       label: "Sales",             scope: "PLATFORM", role: "QUANTIX_SALES_TEAM" },
-  { key: "SUPPORT",     label: "Support",           scope: "PLATFORM", role: "SUPPORT_STAFF" },
+  { key: "ALL",        label: "All Staff",   scope: "PLATFORM", role: undefined },
+  { key: "ADMIN",      label: "Admins",      scope: "PLATFORM", role: "QUANTIX_SUPER_ADMIN" },
+  { key: "SALES",      label: "Sales",       scope: "PLATFORM", role: "QUANTIX_SALES_TEAM" },
+  { key: "SUPPORT",    label: "Support",     scope: "PLATFORM", role: "SUPPORT_TEAM" },
+  { key: "DEPLOYMENT", label: "Deployment",  scope: "PLATFORM", role: "DEPLOYMENT_TEAM" },
+  { key: "FINANCE",    label: "Finance",     scope: "PLATFORM", role: "FINANCE_TEAM" },
 ] as const
 type TabKey = typeof TABS[number]["key"]
 
@@ -81,20 +83,24 @@ const roleColors: Record<string, string> = {
   QUANTIX_SUPER_ADMIN: "bg-red-100 text-red-700",
   PLATFORM_ADMIN:      "bg-purple-100 text-purple-700",
   QUANTIX_SALES_TEAM:  "bg-blue-100 text-blue-700",
-  CLIENT_OWNER:        "bg-emerald-100 text-emerald-700",
-  STORE_MANAGER:       "bg-teal-100 text-teal-700",
+  SUPPORT_TEAM:        "bg-sky-100 text-sky-700",
+  DEPLOYMENT_TEAM:     "bg-indigo-100 text-indigo-700",
+  FINANCE_TEAM:        "bg-emerald-100 text-emerald-700",
+  CLIENT_OWNER:        "bg-teal-100 text-teal-700",
+  STORE_MANAGER:       "bg-cyan-100 text-cyan-700",
   BILLING_STAFF:       "bg-amber-100 text-amber-700",
   INVENTORY_STAFF:     "bg-orange-100 text-orange-700",
-  SUPPORT_STAFF:       "bg-sky-100 text-sky-700",
+  SUPPORT_STAFF:       "bg-pink-100 text-pink-700",
   DELIVERY_STAFF:      "bg-gray-100 text-gray-700",
   CUSTOMER:            "bg-slate-100 text-slate-600",
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
 
-async function fetchUsers(scope: string, search: string): Promise<PlatformUser[]> {
+async function fetchUsers(scope: string, search: string, role?: string): Promise<PlatformUser[]> {
   const p = new URLSearchParams({ scope, limit: "100" })
   if (search) p.set("search", search)
+  if (role)   p.set("role", role)
   const res = await fetch(`/api/core/users?${p}`, { headers: getAuthHeaders() })
   const json = await res.json()
   if (!json.success) throw new Error(json.error)
@@ -284,9 +290,15 @@ function CompactPermissionEditor({
 
 function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "", password: "" })
+  const [form, setForm] = useState({
+    name: "", email: "", phone: "", role: "", password: "",
+    region: "Pan India", target: "", commissionPercent: "5",
+    designation: "", reportingManager: "",
+  })
   const [loading, setLoading] = useState(false)
   const [creds, setCreds] = useState<{ email: string; password: string } | null>(null)
+
+  const isSales = form.role === "QUANTIX_SALES_TEAM"
 
   const submit = async () => {
     if (!form.name || !form.email || !form.role) {
@@ -299,15 +311,25 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: form.name, email: form.email,
-          phone: form.phone || undefined, role: form.role,
-          password: form.password || undefined,
+          name:              form.name,
+          email:             form.email,
+          phone:             form.phone || undefined,
+          role:              form.role,
+          password:          form.password || undefined,
+          // Sales-specific fields (ignored for non-sales roles)
+          ...(isSales && {
+            region:            form.region || "Pan India",
+            target:            form.target ? Number(form.target) : 0,
+            commissionPercent: Number(form.commissionPercent) || 5,
+            designation:       form.designation || undefined,
+            reportingManager:  form.reportingManager || undefined,
+          }),
         }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       setCreds(json.credentials)
-      toast.success("User created")
+      toast.success("User created successfully")
       onCreated()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create user")
@@ -319,7 +341,7 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
   const handleClose = () => {
     setOpen(false)
     setCreds(null)
-    setForm({ name: "", email: "", phone: "", role: "", password: "" })
+    setForm({ name: "", email: "", phone: "", role: "", password: "", region: "Pan India", target: "", commissionPercent: "5", designation: "", reportingManager: "" })
   }
 
   return (
@@ -328,7 +350,7 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
         <Plus className="w-4 h-4 mr-1.5" /> Create User
       </Button>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Platform User</DialogTitle>
             <DialogDescription>All credentials are admin-assigned. No self-signup.</DialogDescription>
@@ -337,7 +359,7 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
           {creds ? (
             <div className="space-y-3">
               <CredentialBox email={creds.email} password={creds.password} onDismiss={handleClose} />
-              <p className="text-xs text-muted-foreground">Share these credentials securely.</p>
+              <p className="text-xs text-muted-foreground">Share these credentials securely. Password will not be shown again.</p>
               <DialogFooter><Button onClick={handleClose}>Done</Button></DialogFooter>
             </div>
           ) : (
@@ -349,7 +371,7 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
                 </div>
                 <div className="col-span-2 space-y-1">
                   <Label className="text-xs">Email *</Label>
-                  <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="rahul@example.com" className="h-8" />
+                  <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="rahul@quantixtechnology.in" className="h-8" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Phone</Label>
@@ -361,20 +383,56 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
                     <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select role" /></SelectTrigger>
                     <SelectContent>
                       <p className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">Platform Team</p>
-                      {PLATFORM_ROLES.map((r: string) => <SelectItem key={r} value={r} className="text-xs">{ROLE_LABELS[r] ?? r}</SelectItem>)}
+                      {PLATFORM_ROLES.map((r: string) => (
+                        <SelectItem key={r} value={r} className="text-xs">
+                          {ROLE_LABELS[r] ?? r}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="col-span-2 space-y-1">
                   <Label className="text-xs">Password <span className="text-muted-foreground">(blank = auto)</span></Label>
-                  <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Auto-generated if blank" className="h-8" />
+                  <Input type="text" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Auto-generated if blank" className="h-8 font-mono" />
                 </div>
+
+                {/* Sales-specific fields shown only when role = QUANTIX_SALES_TEAM */}
+                {isSales && (
+                  <>
+                    <div className="col-span-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 mt-1 border-t pt-2">Sales Profile</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Region</Label>
+                      <Select value={form.region} onValueChange={v => setForm(f => ({ ...f, region: v }))}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {["North India","South India","East India","West India","Central India","Pan India"].map(r => (
+                            <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Target (₹)</Label>
+                      <Input type="number" value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} placeholder="500000" className="h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Designation</Label>
+                      <Input value={form.designation} onChange={e => setForm(f => ({ ...f, designation: e.target.value }))} placeholder="Account Executive" className="h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Commission %</Label>
+                      <Input type="number" value={form.commissionPercent} onChange={e => setForm(f => ({ ...f, commissionPercent: e.target.value }))} className="h-8" />
+                    </div>
+                  </>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" size="sm" onClick={handleClose}>Cancel</Button>
                 <Button size="sm" onClick={submit} disabled={loading}>
                   {loading ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
-                  Create
+                  Create User
                 </Button>
               </DialogFooter>
             </div>
@@ -853,11 +911,12 @@ export function PlatformUsersView() {
   }, [])
 
   const activeTabDef = TABS.find(t => t.key === activeTab)
-  const scope = activeTabDef?.scope ?? "PLATFORM"
+  const scope   = activeTabDef?.scope ?? "PLATFORM"
+  const tabRole = activeTabDef?.role   ?? undefined
 
   const { data: users = [], isLoading, refetch } = useQuery({
-    queryKey: ["platform-users", scope, debouncedSearch],
-    queryFn: () => fetchUsers(scope, debouncedSearch),
+    queryKey: ["platform-users", scope, tabRole, debouncedSearch],
+    queryFn: () => fetchUsers(scope, debouncedSearch, tabRole),
     staleTime: 30_000,
   })
 

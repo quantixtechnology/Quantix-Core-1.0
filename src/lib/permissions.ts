@@ -26,6 +26,9 @@ export type PlatformRole =
   | "QUANTIX_SUPER_ADMIN"
   | "PLATFORM_ADMIN"
   | "QUANTIX_SALES_TEAM"
+  | "SUPPORT_TEAM"
+  | "DEPLOYMENT_TEAM"
+  | "FINANCE_TEAM"
   | "CLIENT_OWNER"
   | "STORE_MANAGER"
   | "BILLING_STAFF"
@@ -39,6 +42,9 @@ export const ROLE_LABELS: Record<string, string> = {
   QUANTIX_SUPER_ADMIN:  "Super Admin",
   PLATFORM_ADMIN:       "Platform Admin",
   QUANTIX_SALES_TEAM:   "Sales Team",
+  SUPPORT_TEAM:         "Support Team",
+  DEPLOYMENT_TEAM:      "Deployment Team",
+  FINANCE_TEAM:         "Finance Team",
   CLIENT_OWNER:         "Business Owner",
   STORE_MANAGER:        "Store Manager",
   BILLING_STAFF:        "Billing Staff",
@@ -48,14 +54,17 @@ export const ROLE_LABELS: Record<string, string> = {
   CUSTOMER:             "Customer",
 }
 
-// Which roles are platform-level (Quantix team)
+// Which roles are platform-level (Quantix internal team — stored on User.platformRole)
 export const PLATFORM_ROLES: PlatformRole[] = [
   "QUANTIX_SUPER_ADMIN",
   "PLATFORM_ADMIN",
   "QUANTIX_SALES_TEAM",
+  "SUPPORT_TEAM",
+  "DEPLOYMENT_TEAM",
+  "FINANCE_TEAM",
 ]
 
-// Which roles are business-level (client staff)
+// Which roles are business-level (client staff — stored on BusinessUser.role)
 export const BUSINESS_ROLES: PlatformRole[] = [
   "CLIENT_OWNER",
   "STORE_MANAGER",
@@ -88,6 +97,27 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "businesses:view", "businesses:impersonate",
     "subscriptions:view",
     "sales:view", "sales:edit",
+    "notifications:view",
+  ],
+  SUPPORT_TEAM: [
+    "leads:view",
+    "businesses:view",
+    "orders:view",
+    "customers:view", "customers:edit",
+    "notifications:view", "notifications:send",
+    "platform:audit_logs",
+  ],
+  DEPLOYMENT_TEAM: [
+    "businesses:view",
+    "platform:manage_deployments",
+    "platform:audit_logs",
+    "notifications:view",
+  ],
+  FINANCE_TEAM: [
+    "subscriptions:view", "subscriptions:edit",
+    "billing:view", "billing:edit",
+    "reports:view", "reports:export",
+    "platform:view_analytics",
     "notifications:view",
   ],
   CLIENT_OWNER: [
