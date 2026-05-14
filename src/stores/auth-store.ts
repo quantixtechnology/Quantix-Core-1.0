@@ -38,6 +38,7 @@ interface AuthState {
     role: Role;
     storeId: string | null;
     storeName: string | null;
+    permissions?: Permission[];
   }>;
 
   // Actions
@@ -45,6 +46,7 @@ interface AuthState {
   loginWithOtp: (phone: string, otp: string) => Promise<void>;
   logout: () => void;
   refreshAuthToken: () => Promise<void>;
+  syncPermissions: () => Promise<void>;
   switchBusiness: (businessId: string) => void;
   setToken: (token: string) => void;
   clearError: () => void;
@@ -193,8 +195,50 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         businesses: stored.businesses || [],
         _isHydrated: true,
       });
+      // Sync fresh permissions from DB in background — doesn't block render
+      get().syncPermissions().catch(() => null);
     } else {
       set({ _isHydrated: true });
+    }
+  },
+
+  // ─── Sync permissions from DB via /me ───────────────────────────────
+  syncPermissions: async () => {
+    const { user } = get();
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/core/auth/me?userId=${user.id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.success) return;
+
+      const freshPermissions: Permission[] = data.data.permissions ?? [];
+      const freshBusinesses = (data.data.businesses ?? []).map((bu: {
+        businessId: string;
+        role: Role;
+        permissions: Permission[];
+        business: { name: string; slug: string; businessType: BusinessType; primaryColor?: string; logo?: string };
+        storeId: string | null;
+        store?: { id: string; name: string } | null;
+      }) => ({
+        businessId: bu.businessId,
+        businessName: bu.business.name,
+        businessType: bu.business.businessType as BusinessType,
+        businessSlug: bu.business.slug,
+        role: bu.role as Role,
+        storeId: bu.storeId,
+        storeName: bu.store?.name ?? null,
+        permissions: bu.permissions,
+      }));
+
+      const updates: Partial<AuthState> = {
+        permissions: freshPermissions,
+        businesses: freshBusinesses,
+      };
+      saveToStorage(updates);
+      set(updates);
+    } catch {
+      // Non-critical — stale permissions remain until next login
     }
   },
 

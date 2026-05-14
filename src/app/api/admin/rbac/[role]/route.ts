@@ -53,6 +53,29 @@ export async function PUT(req: Request, { params }: Ctx) {
       create: { role, permissions, updatedBy: body.userId ?? null },
     });
 
+    // Invalidate active tokens for all users with this role so they must
+    // re-authenticate and receive fresh permissions. Exclude the admin
+    // making the change so their own session is not interrupted.
+    if (added.length > 0 || removed.length > 0) {
+      const platformRoles = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
+      let affectedUserIds: string[] = [];
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (platformRoles.includes(role)) {
+        const users = await db.user.findMany({ where: { platformRole: role as any }, select: { id: true } });
+        affectedUserIds = users.map(u => u.id);
+      } else {
+        const bus = await db.businessUser.findMany({ where: { role: role as any, isActive: true }, select: { userId: true } });
+        affectedUserIds = [...new Set(bus.map(bu => bu.userId))];
+      }
+
+      // Keep the admin's own session alive
+      const idsToInvalidate = affectedUserIds.filter(id => id !== body.userId);
+      if (idsToInvalidate.length > 0) {
+        await db.refreshToken.deleteMany({ where: { userId: { in: idsToInvalidate } } }).catch(() => null);
+      }
+    }
+
     // Write audit entry
     if (added.length > 0 || removed.length > 0) {
       await db.permissionChangeLog.create({

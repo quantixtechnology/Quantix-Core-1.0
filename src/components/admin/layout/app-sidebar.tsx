@@ -36,64 +36,74 @@ const sidebarVars = {
   "--sidebar-ring": "#2563EB",
 } as React.CSSProperties
 
-const platformNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "dashboard",        label: "Dashboard",       icon: LayoutDashboard },
-  { key: "workflow-engine",  label: "Workflow Engine",  icon: Workflow },
-  { key: "businesses",       label: "Businesses",       icon: Building2 },
-  { key: "leads",            label: "Sales & Leads",    icon: UserCheck },
-  { key: "subscriptions",    label: "Subscriptions",    icon: CreditCard },
-  { key: "plan-management",  label: "Plan Management",  icon: Receipt },
-  { key: "payment-plugins",  label: "Payment Plugins",  icon: CreditCard },
-  { key: "domains",          label: "Domains & Deploys",icon: Globe },
-  { key: "sales",            label: "Sales Team",       icon: Users },
-  { key: "platform-users",   label: "User Management",  icon: ShieldCheck },
+type NavItem = {
+  key: AdminPage
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  permission?: string      // required permission key from user's permissions array
+  superAdminOnly?: boolean // only QUANTIX_SUPER_ADMIN or PLATFORM_ADMIN
+}
+
+const platformNavItems: NavItem[] = [
+  { key: "dashboard",        label: "Dashboard",        icon: LayoutDashboard },
+  { key: "workflow-engine",  label: "Workflow Engine",  icon: Workflow,    permission: "platform:manage_deployments" },
+  { key: "businesses",       label: "Businesses",       icon: Building2,   permission: "businesses:view" },
+  { key: "leads",            label: "Sales & Leads",    icon: UserCheck,   permission: "leads:view" },
+  { key: "subscriptions",    label: "Subscriptions",    icon: CreditCard,  permission: "subscriptions:view" },
+  { key: "plan-management",  label: "Plan Management",  icon: Receipt,     superAdminOnly: true },
+  { key: "payment-plugins",  label: "Payment Plugins",  icon: CreditCard,  superAdminOnly: true },
+  { key: "domains",          label: "Domains & Deploys",icon: Globe,       permission: "platform:manage_domains" },
+  { key: "sales",            label: "Sales Team",       icon: Users,       permission: "sales:view" },
+  { key: "platform-users",   label: "User Management",  icon: ShieldCheck, permission: "users:view" },
 ]
 
-const mobileNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone },
+const mobileNavItems: NavItem[] = [
+  { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone, permission: "platform:manage_deployments" },
 ]
 
-const deployNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "ops-dashboard",       label: "Operations Dashboard", icon: Activity },
-  { key: "deployment-pipeline", label: "Deployment Pipeline",  icon: Rocket },
-  { key: "build-automation",    label: "Build Automation",     icon: Hammer },
-  { key: "release-management",  label: "Release Management",   icon: GitBranch },
-  { key: "play-store",          label: "Play Store",           icon: PlayCircle },
-  { key: "mobile-versions",     label: "Version Control",      icon: Smartphone },
+const deployNavItems: NavItem[] = [
+  { key: "ops-dashboard",       label: "Operations Dashboard", icon: Activity,   permission: "platform:manage_deployments" },
+  { key: "deployment-pipeline", label: "Deployment Pipeline",  icon: Rocket,     permission: "platform:manage_deployments" },
+  { key: "build-automation",    label: "Build Automation",     icon: Hammer,     permission: "platform:manage_deployments" },
+  { key: "release-management",  label: "Release Management",   icon: GitBranch,  permission: "platform:manage_deployments" },
+  { key: "play-store",          label: "Play Store",           icon: PlayCircle, permission: "platform:manage_deployments" },
+  { key: "mobile-versions",     label: "Version Control",      icon: Smartphone, permission: "platform:manage_deployments" },
 ]
 
-const clientNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "client-assets",       label: "Client Assets",        icon: Image },
-  { key: "tenant-provisioning", label: "Tenant Provisioning",  icon: Workflow },
-  { key: "product-import",      label: "Product Import",       icon: Upload },
-  { key: "onboarding-checklist",label: "Onboarding Checklist", icon: FileCheck },
+const clientNavItems: NavItem[] = [
+  { key: "client-assets",       label: "Client Assets",        icon: Image,      permission: "businesses:edit" },
+  { key: "tenant-provisioning", label: "Tenant Provisioning",  icon: Workflow,   permission: "businesses:create" },
+  { key: "product-import",      label: "Product Import",       icon: Upload,     permission: "businesses:edit" },
+  { key: "onboarding-checklist",label: "Onboarding Checklist", icon: FileCheck,  permission: "businesses:edit" },
 ]
 
-const opsNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "platform-analytics", label: "Analytics & Reports",  icon: BarChart3 },
-  { key: "revenue",            label: "Revenue & Payouts",    icon: Wallet },
-  { key: "support",            label: "Support & Tickets",    icon: HeadphonesIcon },
-  { key: "notifications",      label: "Notifications",        icon: Bell },
+const opsNavItems: NavItem[] = [
+  { key: "platform-analytics", label: "Analytics & Reports",  icon: BarChart3,      permission: "platform:view_analytics" },
+  { key: "revenue",            label: "Revenue & Payouts",    icon: Wallet,         permission: "subscriptions:view" },
+  { key: "support",            label: "Support & Tickets",    icon: HeadphonesIcon, permission: "leads:view" },
+  { key: "notifications",      label: "Notifications",        icon: Bell,           permission: "notifications:view" },
 ]
 
-const systemNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "roles-permissions",  label: "Roles & Permissions",  icon: KeyRound },
-  { key: "backup-monitoring",  label: "Backup & Monitoring",  icon: Server },
-  { key: "security-access",    label: "Security & Access",    icon: Lock },
-  { key: "audit-logs",         label: "Audit Logs",           icon: ScrollText },
-  { key: "settings",           label: "Settings",             icon: Settings },
+const systemNavItems: NavItem[] = [
+  { key: "roles-permissions", label: "Roles & Permissions", icon: KeyRound,  superAdminOnly: true },
+  { key: "backup-monitoring", label: "Backup & Monitoring", icon: Server,    superAdminOnly: true },
+  { key: "security-access",   label: "Security & Access",   icon: Lock,      permission: "platform:security" },
+  { key: "audit-logs",        label: "Audit Logs",          icon: ScrollText,permission: "platform:audit_logs" },
+  { key: "settings",          label: "Settings",            icon: Settings,  superAdminOnly: true },
 ]
 
 function CollapsibleSection({
   title, items, activePage, onNavigate, defaultOpen = false,
 }: {
   title: string
-  items: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[]
+  items: NavItem[]
   activePage: AdminPage
   onNavigate: (page: AdminPage) => void
   defaultOpen?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
+
+  if (items.length === 0) return null
 
   return (
     <div className="mb-1">
@@ -135,9 +145,11 @@ interface AppSidebarProps {
   onMobileOpenChange?: (open: boolean) => void
 }
 
+const SUPER_ADMIN_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
+
 export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSidebarProps) {
   const { activePage, setActivePage } = useAdminStore()
-  const { user } = useAuthStore()
+  const { user, permissions } = useAuthStore()
   const { isMobile } = useResponsive()
 
   const userInitials = user?.name
@@ -146,18 +158,28 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   const userName = user?.name ?? "Quantix Admin"
   const userEmail = user?.email ?? "admin@quantix.in"
 
+  const isSuperAdmin = user?.role ? SUPER_ADMIN_ROLES.has(user.role) : false
+
+  function filterItems(items: NavItem[]): NavItem[] {
+    return items.filter((item) => {
+      if (item.superAdminOnly && !isSuperAdmin) return false
+      if (item.permission && !permissions.includes(item.permission as never)) return false
+      return true
+    })
+  }
+
   const handleNavigate = (page: AdminPage) => {
     setActivePage(page)
     if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }
 
   const sections = [
-    { title: "Platform Control",   items: platformNavItems, open: true },
-    { title: "Mobile & Apps",      items: mobileNavItems,   open: true },
-    { title: "Deployment & Ops",   items: deployNavItems,   open: false },
-    { title: "Client Operations",  items: clientNavItems,   open: false },
-    { title: "Platform Ops",       items: opsNavItems,      open: false },
-    { title: "System",             items: systemNavItems,   open: false },
+    { title: "Platform Control",  items: filterItems(platformNavItems), open: true },
+    { title: "Mobile & Apps",     items: filterItems(mobileNavItems),   open: true },
+    { title: "Deployment & Ops",  items: filterItems(deployNavItems),   open: false },
+    { title: "Client Operations", items: filterItems(clientNavItems),   open: false },
+    { title: "Platform Ops",      items: filterItems(opsNavItems),      open: false },
+    { title: "System",            items: filterItems(systemNavItems),   open: false },
   ]
 
   if (isMobile) {
@@ -247,7 +269,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
       </SidebarHeader>
 
       <SidebarContent className="py-3 gap-0">
-        {sections.map((s) => (
+        {sections.filter((s) => s.items.length > 0).map((s) => (
           <SidebarGroup key={s.title} className="px-2 py-0 mb-3">
             <SidebarGroupLabel
               className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 h-auto py-1"

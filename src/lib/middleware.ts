@@ -6,8 +6,8 @@
 import type { NextRequest } from 'next/server';
 import type { ZodSchema } from 'zod';
 import type { Role, Permission, BusinessContext } from './types';
-import { getPermissionsForRole } from './permissions';
 import { db } from './db';
+import { getDbPermissionsForRole } from './db-permissions';
 
 // ============================================================================
 // TYPES
@@ -111,7 +111,12 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
       where: { token },
       include: {
         user: {
-          include: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            isActive: true,
+            platformRole: true,
             businessUsers: {
               where: { isActive: true },
               include: {
@@ -158,7 +163,7 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
       role,
       businessId: businessId || businessIdHeader || undefined,
       storeId,
-      permissions: getPermissionsForRole(role),
+      permissions: await getDbPermissionsForRole(role) as Permission[],
       isPlatformAdmin: platAdmin,
     };
   } catch {

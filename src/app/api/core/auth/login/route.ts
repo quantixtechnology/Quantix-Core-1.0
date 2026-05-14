@@ -5,7 +5,7 @@
 
 import { db } from '@/lib/db';
 import { verifyPassword, createAccessToken } from '@/lib/password-utils';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { getDbPermissionsForRole } from '@/lib/db-permissions';
 import { checkRateLimit } from '@/lib/middleware';
 import { logAuthActivity } from '@/lib/core/audit';
 import { NextResponse } from 'next/server';
@@ -157,14 +157,14 @@ export async function POST(request: Request) {
 
     console.log(`[login] SUCCESS — user=${user.id}, email=${user.email}, role=${role}, isPlatformAdmin=${isPlatformAdmin}`);
 
-    const permissions: Permission[] = getPermissionsForRole(role);
+    const permissions: Permission[] = await getDbPermissionsForRole(role) as Permission[];
 
     const sessionUser = {
       id: user.id, name: user.name, email: user.email, avatar: user.avatar,
       role, businessId, businessName, businessType, businessSlug, storeId, permissions, isPlatformAdmin,
     };
 
-    const businesses = user.businessUsers.map((bu) => ({
+    const businesses = await Promise.all(user.businessUsers.map(async (bu) => ({
       businessId: bu.business.id,
       businessName: bu.business.name,
       businessType: bu.business.businessType as BusinessType,
@@ -172,8 +172,8 @@ export async function POST(request: Request) {
       role: bu.role as Role,
       storeId: bu.storeId || null,
       storeName: bu.store?.name || null,
-      permissions: getPermissionsForRole(bu.role as Role),
-    }));
+      permissions: await getDbPermissionsForRole(bu.role) as Permission[],
+    })));
 
     // Create access token (stored in DB for middleware validation)
     const accessToken = createAccessToken();
