@@ -204,12 +204,13 @@ export async function POST() {
     const adminPasswordHash = await hashPassword('Admin@123');
     const superAdmin = await db.user.upsert({
       where: { email: 'superadmin@quantixtechnology.in' },
-      update: { passwordHash: adminPasswordHash },
+      update: { passwordHash: adminPasswordHash, platformRole: 'QUANTIX_SUPER_ADMIN', isActive: true },
       create: {
         email: 'superadmin@quantixtechnology.in',
         name: 'Quantix Super Admin',
         phone: '+919876543210',
         passwordHash: adminPasswordHash,
+        platformRole: 'QUANTIX_SUPER_ADMIN',
         authProvider: 'PASSWORD',
         emailVerified: true,
         phoneVerified: true,
