@@ -414,10 +414,34 @@ export async function updateBusiness(
     updateData.businessType = data.businessType;
   }
 
-  return db.business.update({
+  const updated = await db.business.update({
     where: { id: businessId },
     data: updateData,
   });
+
+  // Handle domain upsert (only when domain is explicitly provided)
+  if (data.domain !== undefined && data.domain !== '') {
+    const existingByDomain = await db.domainMapping.findUnique({ where: { domain: data.domain } });
+    if (existingByDomain && existingByDomain.businessId !== businessId) {
+      throw new Error(`Domain "${data.domain}" is already mapped to another business`);
+    }
+    await db.domainMapping.upsert({
+      where: { businessId },
+      create: {
+        businessId,
+        domain: data.domain,
+        subdomain: data.subdomain ?? null,
+        status: 'PENDING_DNS',
+      },
+      update: {
+        domain: data.domain,
+        subdomain: data.subdomain !== undefined ? data.subdomain : undefined,
+        status: 'PENDING_DNS',
+      },
+    });
+  }
+
+  return updated;
 }
 
 // ============================================================================

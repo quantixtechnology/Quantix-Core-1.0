@@ -26,8 +26,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
-  LogIn, Copy, Check, Hash,
+  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette,
 } from "lucide-react"
+import { AvatarImage } from "@/components/ui/avatar"
 import { useAdminStore } from "@/stores/admin-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -46,7 +47,7 @@ interface BusinessApiData {
   id: string; name: string; slug: string; businessType: string; status: string
   city: string | null; state: string | null; address: string | null
   contactEmail: string | null; contactPhone: string | null; gstNumber: string | null
-  isOnline: boolean; primaryColor: string; createdAt: string; onboardedAt: string | null; activatedAt: string | null
+  isOnline: boolean; primaryColor: string; logo: string | null; createdAt: string; onboardedAt: string | null; activatedAt: string | null
   subscription: {
     id: string; status: string; planPrice: number; customPrice: number | null
     discountPercentage: number | null; manualPriceOverride: boolean; overrideReason: string | null
@@ -103,6 +104,14 @@ export function BusinessesView() {
   const [plans, setPlans] = useState<PlanApiData[]>([])
   const [activatingBusiness, setActivatingBusiness] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // Branding & domain edit state
+  const [brandingOpen, setBrandingOpen] = useState(false)
+  const [editLogo, setEditLogo] = useState("")
+  const [editDomain, setEditDomain] = useState("")
+  const [editSubdomain, setEditSubdomain] = useState("")
+  const [editPrimaryColor, setEditPrimaryColor] = useState("")
+  const [savingBranding, setSavingBranding] = useState(false)
   const [createdResult, setCreatedResult] = useState<{
     businessId: string; ownerEmail: string; ownerPassword: string
   } | null>(null)
@@ -253,6 +262,42 @@ export function BusinessesView() {
       toast.error(err instanceof Error ? err.message : "Failed to create business")
     } finally {
       setCreating(false)
+    }
+  }
+
+  const openBrandingEditor = (biz: BusinessApiData) => {
+    setEditLogo(biz.logo ?? "")
+    setEditDomain(biz.domain?.domain ?? "")
+    setEditSubdomain("")
+    setEditPrimaryColor(biz.primaryColor ?? "#10B981")
+    setBrandingOpen(true)
+  }
+
+  const handleSaveBranding = async (biz: BusinessApiData) => {
+    setSavingBranding(true)
+    try {
+      const body: Record<string, unknown> = {
+        logo: editLogo || null,
+        primaryColor: editPrimaryColor,
+      }
+      if (editDomain) {
+        body.domain = editDomain
+        body.subdomain = editSubdomain || undefined
+      }
+      const res = await fetch(`/api/core/businesses/${biz.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save")
+      toast.success("Branding & domain saved")
+      setBrandingOpen(false)
+      fetchBusinesses()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save")
+    } finally {
+      setSavingBranding(false)
     }
   }
 
@@ -581,7 +626,7 @@ export function BusinessesView() {
       )}
 
       {/* Business Detail Sheet */}
-      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) setSelectedBusiness(null) }}>
+      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false) } }}>
         <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
           {selectedBusiness && (() => {
             const biz = selectedBusiness
@@ -593,6 +638,7 @@ export function BusinessesView() {
                 <SheetHeader className="px-6 pt-6 pb-4 border-b">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-11 w-11">
+                      <AvatarImage src={biz.logo ?? undefined} alt={biz.name} className="object-contain" />
                       <AvatarFallback className="text-sm font-semibold" style={{ backgroundColor: typeConf ? `${typeConf.color}18` : undefined, color: typeConf?.color }}>
                         {biz.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                       </AvatarFallback>
@@ -705,18 +751,11 @@ export function BusinessesView() {
                         </div>
                       ) : (<div className="rounded-lg border border-dashed p-4 text-center"><p className="text-sm text-muted-foreground">No active subscription</p></div>)}
                     </div>
-                    <Separator />
-                    {/* Domain & Deployments */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Domain & Deployment</h4>
-                      <div className="space-y-2">
-                        {biz.domain ? (
-                          <div className="rounded-lg border p-3 flex items-center justify-between">
-                            <div><p className="text-[10px] text-muted-foreground">Domain</p><p className="text-sm font-medium">{biz.domain.domain}</p></div>
-                            <StatusBadge status={biz.domain.status} />
-                          </div>
-                        ) : (<div className="rounded-lg border border-dashed p-3 text-center"><p className="text-xs text-muted-foreground">No domain configured</p></div>)}
-                        {biz.deployments.length > 0 && (
+                    {biz.deployments.length > 0 && (
+                      <>
+                        <Separator />
+                        <div className="space-y-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deployments</h4>
                           <div className="space-y-1.5">
                             {biz.deployments.map((dep) => (
                               <div key={dep.id} className="rounded-lg border p-2.5 flex items-center justify-between">
@@ -725,8 +764,121 @@ export function BusinessesView() {
                               </div>
                             ))}
                           </div>
+                        </div>
+                      </>
+                    )}
+                    <Separator />
+                    {/* Branding & Domain */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Branding & Domain</h4>
+                        {!brandingOpen && (
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openBrandingEditor(biz)}>
+                            <Palette className="size-3" /> Edit
+                          </Button>
                         )}
                       </div>
+
+                      {brandingOpen ? (
+                        <div className="rounded-lg border p-4 space-y-4">
+                          {/* Logo URL */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium flex items-center gap-1.5"><ImageIcon className="size-3" /> Business Logo URL</Label>
+                            <Input
+                              placeholder="https://example.com/logo.png"
+                              value={editLogo}
+                              onChange={(e) => setEditLogo(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                            {editLogo && (
+                              <div className="flex items-center gap-3 rounded-lg border border-dashed p-2 bg-muted/30">
+                                <img src={editLogo} alt="Preview" className="h-10 w-10 rounded object-contain bg-white border" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                                <p className="text-[10px] text-muted-foreground">Logo preview</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Domain */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium flex items-center gap-1.5"><Globe className="size-3" /> Custom Domain</Label>
+                            <Input
+                              placeholder="e.g. royalmart.in"
+                              value={editDomain}
+                              onChange={(e) => setEditDomain(e.target.value)}
+                              className="h-8 text-xs font-mono"
+                            />
+                            <p className="text-[10px] text-muted-foreground">Enter the domain without https://. DNS must point to the server.</p>
+                          </div>
+
+                          {/* Subdomain */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Subdomain <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                            <Input
+                              placeholder="e.g. app or store"
+                              value={editSubdomain}
+                              onChange={(e) => setEditSubdomain(e.target.value)}
+                              className="h-8 text-xs font-mono"
+                            />
+                          </div>
+
+                          {/* Primary Color */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium flex items-center gap-1.5"><Palette className="size-3" /> Brand Color</Label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={editPrimaryColor}
+                                onChange={(e) => setEditPrimaryColor(e.target.value)}
+                                className="h-8 w-10 cursor-pointer rounded border p-0.5"
+                              />
+                              <Input
+                                value={editPrimaryColor}
+                                onChange={(e) => setEditPrimaryColor(e.target.value)}
+                                className="h-8 text-xs font-mono flex-1"
+                                placeholder="#10B981"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-1">
+                            <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => setBrandingOpen(false)} disabled={savingBranding}>
+                              Cancel
+                            </Button>
+                            <Button size="sm" className="h-7 text-xs flex-1 gap-1" onClick={() => handleSaveBranding(biz)} disabled={savingBranding}>
+                              <Save className="size-3" />{savingBranding ? "Saving…" : "Save Changes"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {biz.logo ? (
+                            <div className="rounded-lg border p-3 flex items-center gap-3">
+                              <img src={biz.logo} alt="Logo" className="h-10 w-10 rounded object-contain bg-white border" />
+                              <div><p className="text-[10px] text-muted-foreground">Logo</p><p className="text-xs font-mono truncate max-w-[220px]">{biz.logo}</p></div>
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-dashed p-3 text-center">
+                              <ImageIcon className="size-4 text-muted-foreground mx-auto mb-1" />
+                              <p className="text-xs text-muted-foreground">No logo set</p>
+                            </div>
+                          )}
+                          {biz.domain ? (
+                            <div className="rounded-lg border p-3 flex items-center justify-between">
+                              <div className="flex items-center gap-2"><Globe className="size-3.5 text-muted-foreground" /><div><p className="text-[10px] text-muted-foreground">Domain</p><p className="text-sm font-mono font-medium">{biz.domain.domain}</p></div></div>
+                              <StatusBadge status={biz.domain.status} />
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-dashed p-3 text-center">
+                              <Globe className="size-4 text-muted-foreground mx-auto mb-1" />
+                              <p className="text-xs text-muted-foreground">No domain configured</p>
+                            </div>
+                          )}
+                          <div className="rounded-lg border p-3 flex items-center gap-2">
+                            <div className="size-5 rounded-full border" style={{ backgroundColor: biz.primaryColor }} />
+                            <div><p className="text-[10px] text-muted-foreground">Brand Color</p><p className="text-xs font-mono">{biz.primaryColor}</p></div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <Separator />
                     {/* Business Details */}
