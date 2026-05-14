@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, email, phone, region, designation, reportingManager, commissionPercent, target, isActive } = body;
+    const { name, email, phone, region, designation, reportingManager, commissionPercent, target, isActive, password } = body;
 
     // Validate required fields
     if (!name || !email || !phone || !region || target === undefined || target === null) {
@@ -77,8 +77,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Hash default password
-    const passwordHash = await hashPassword('Quantix@123');
+    // Use provided password or auto-generate
+    const rawPassword = (typeof password === 'string' && password.trim()) ? password.trim() : `Quantix@${Math.floor(1000 + Math.random() * 9000)}`;
+    const passwordHash = await hashPassword(rawPassword);
 
     // Create User + SalesTeamMember in a transaction
     const result = await db.$transaction(async (tx) => {
@@ -118,6 +119,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: result,
+      credentials: { email, password: rawPassword },
     });
   } catch (error) {
     console.error('[admin/sales-team] POST Error:', error);
@@ -234,20 +236,18 @@ export async function DELETE(request: NextRequest) {
       }
 
       await db.$transaction(async (tx) => {
-        await tx.salesTeamMember.update({
+        await tx.salesTeamMember.delete({
           where: { id: memberId },
-          data: { isActive: false },
         });
 
         if (existing.userId) {
-          await tx.user.update({
+          await tx.user.delete({
             where: { id: existing.userId },
-            data: { isActive: false },
           });
         }
       });
 
-      return createSuccessResponse({ message: 'Sales team member deactivated' });
+      return createSuccessResponse({ message: 'Sales team member deleted' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to delete sales team member';
       return createErrorResponse(message, 500);

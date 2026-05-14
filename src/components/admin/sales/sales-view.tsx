@@ -49,6 +49,9 @@ import {
   ArrowUpRight,
   DollarSign,
   Loader2,
+  Trash2,
+  Copy,
+  Check,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -261,6 +264,12 @@ export function SalesView() {
   const [formCommissionPercent, setFormCommissionPercent] = useState("5")
   const [formTarget, setFormTarget] = useState("")
   const [formStatus, setFormStatus] = useState("Active")
+  const [formPassword, setFormPassword] = useState("")
+  const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null)
+  const [copiedCreds, setCopiedCreds] = useState(false)
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const [editOpen, setEditOpen] = useState(false)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
@@ -392,6 +401,9 @@ export function SalesView() {
     setFormCommissionPercent("5")
     setFormTarget("")
     setFormStatus("Active")
+    setFormPassword("")
+    setCreatedCredentials(null)
+    setCopiedCreds(false)
   }
 
   // ---------------------------------------------------------------------------
@@ -399,7 +411,7 @@ export function SalesView() {
   // ---------------------------------------------------------------------------
   const handleAddSalesRep = async () => {
     if (!formName || !formEmail || !formPhone || !formRegion || !formTarget) {
-      toast.error("Please fill in all fields")
+      toast.error("Please fill in all required fields")
       return
     }
 
@@ -418,15 +430,15 @@ export function SalesView() {
           commissionPercent: Number(formCommissionPercent),
           target: Number(formTarget),
           isActive: formStatus === "Active",
+          password: formPassword || undefined,
         }),
       })
       const json = await res.json()
 
       if (json.success) {
-        toast.success(`${formName} has been added to the sales team`)
-        setAddOpen(false)
-        resetForm()
-        fetchSalesTeam() // Refetch the list
+        toast.success(`${formName} added to sales team`)
+        setCreatedCredentials(json.credentials)
+        fetchSalesTeam()
       } else {
         toast.error(json.error || "Failed to add sales rep")
       }
@@ -435,6 +447,31 @@ export function SalesView() {
       toast.error("Failed to add sales rep. Please try again.")
     } finally {
       setAdding(false)
+    }
+  }
+
+  const handleDeleteRep = async () => {
+    if (!selectedRep) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/admin/sales-team?id=${selectedRep.id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success(`${selectedRep.name} has been removed from the sales team`)
+        setDeleteConfirmOpen(false)
+        setDetailOpen(false)
+        setSelectedRep(null)
+        fetchSalesTeam()
+      } else {
+        toast.error(json.error || "Failed to delete sales rep")
+      }
+    } catch {
+      toast.error("Failed to delete sales rep")
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -665,124 +702,119 @@ export function SalesView() {
                 Add Sales Rep
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add Sales Representative</DialogTitle>
                 <DialogDescription>
-                  Add a new member to the sales team
+                  Create a new sales team member with login credentials
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label>Full Name</Label>
-                  <Input
-                    placeholder="e.g. Priya Sharma"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                  />
+
+              {createdCredentials ? (
+                /* ── Success: show credentials ── */
+                <div className="space-y-4 py-2">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+                    <p className="text-sm font-semibold text-emerald-800">Sales rep added successfully</p>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Login Credentials</p>
+                      <div className="bg-white rounded border border-emerald-200 p-3 font-mono text-sm space-y-1">
+                        <p className="text-emerald-900">{createdCredentials.email}</p>
+                        <p className="text-emerald-900 font-bold">{createdCredentials.password}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`Email: ${createdCredentials.email}\nPassword: ${createdCredentials.password}`)
+                          setCopiedCreds(true)
+                          setTimeout(() => setCopiedCreds(false), 2000)
+                        }}
+                        className="flex items-center gap-1.5 text-xs text-emerald-700 hover:text-emerald-900"
+                      >
+                        {copiedCreds ? <><Check className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> Copy credentials</>}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-emerald-700">Share these credentials securely. The password will not be shown again.</p>
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={() => { setAddOpen(false); resetForm() }}>Done</Button>
+                  </DialogFooter>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Email</Label>
-                    <Input
-                      placeholder="name@quantixtechnology.in"
-                      type="email"
-                      value={formEmail}
-                      onChange={(e) => setFormEmail(e.target.value)}
-                    />
+              ) : (
+                /* ── Creation form ── */
+                <>
+                  <div className="grid gap-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Full Name *</Label>
+                      <Input placeholder="e.g. Priya Sharma" value={formName} onChange={(e) => setFormName(e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Email *</Label>
+                        <Input placeholder="name@quantixtechnology.in" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Phone *</Label>
+                        <Input placeholder="+91 98765 43210" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Password <span className="text-muted-foreground font-normal">(blank = auto-generated)</span></Label>
+                      <Input
+                        type="text"
+                        placeholder="Leave blank to auto-generate"
+                        value={formPassword}
+                        onChange={(e) => setFormPassword(e.target.value)}
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Region *</Label>
+                        <Select value={formRegion} onValueChange={setFormRegion}>
+                          <SelectTrigger><SelectValue placeholder="Select region" /></SelectTrigger>
+                          <SelectContent>{regions.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Target Amount (₹) *</Label>
+                        <Input placeholder="e.g. 500000" type="number" value={formTarget} onChange={(e) => setFormTarget(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Designation</Label>
+                        <Input placeholder="e.g. Senior Account Executive" value={formDesignation} onChange={(e) => setFormDesignation(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Reporting Manager</Label>
+                        <Input placeholder="e.g. Rahul Verma" value={formReportingManager} onChange={(e) => setFormReportingManager(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Commission %</Label>
+                        <Input placeholder="e.g. 5" type="number" value={formCommissionPercent} onChange={(e) => setFormCommissionPercent(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Status</Label>
+                        <Select value={formStatus} onValueChange={setFormStatus}>
+                          <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Active">Active</SelectItem>
+                            <SelectItem value="Inactive">Inactive</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Phone</Label>
-                    <Input
-                      placeholder="+91 98765 43210"
-                      value={formPhone}
-                      onChange={(e) => setFormPhone(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Region</Label>
-                    <Select value={formRegion} onValueChange={setFormRegion}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select region" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {regions.map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {r}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Target Amount (₹)</Label>
-                    <Input
-                      placeholder="e.g. 500000"
-                      type="number"
-                      value={formTarget}
-                      onChange={(e) => setFormTarget(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Designation</Label>
-                    <Input
-                      placeholder="e.g. Senior Account Executive"
-                      value={formDesignation}
-                      onChange={(e) => setFormDesignation(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Reporting Manager</Label>
-                    <Input
-                      placeholder="e.g. Rahul Verma"
-                      value={formReportingManager}
-                      onChange={(e) => setFormReportingManager(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Commission %</Label>
-                    <Input
-                      placeholder="e.g. 5"
-                      type="number"
-                      value={formCommissionPercent}
-                      onChange={(e) => setFormCommissionPercent(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select value={formStatus} onValueChange={setFormStatus}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Active">Active</SelectItem>
-                        <SelectItem value="Inactive">Inactive</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => { setAddOpen(false); resetForm() }} disabled={adding}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAddSalesRep} disabled={adding}>
-                  {adding ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Adding...
-                    </>
-                  ) : (
-                    "Add Sales Rep"
-                  )}
-                </Button>
-              </DialogFooter>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => { setAddOpen(false); resetForm() }} disabled={adding}>Cancel</Button>
+                    <Button onClick={handleAddSalesRep} disabled={adding}>
+                      {adding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding...</> : "Add Sales Rep"}
+                    </Button>
+                  </DialogFooter>
+                </>
+              )}
             </DialogContent>
           </Dialog>
         }
@@ -1056,6 +1088,10 @@ export function SalesView() {
                     <Button variant="outline" size="sm" onClick={handleOpenAudit}>
                       Activity Logs
                     </Button>
+                    <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Delete
+                    </Button>
                   </div>
                 </div>
 
@@ -1214,6 +1250,10 @@ export function SalesView() {
                     </Button>
                     <Button variant="outline" size="sm" onClick={handleOpenAudit}>
                       Activity Logs
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Delete
                     </Button>
                   </div>
                 </div>
@@ -1385,6 +1425,29 @@ export function SalesView() {
           </div>
           <DialogFooter>
             <Button onClick={() => setAuditOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Delete Sales Rep
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              Do you actually want to delete <strong>{selectedRep?.name}</strong>? This will permanently remove them from the sales team and revoke their login access.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteRep} disabled={deleting}>
+              {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</> : "Yes, Delete"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
