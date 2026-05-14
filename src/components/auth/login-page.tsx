@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Loader2, LogIn, Zap } from "lucide-react";
+import { Loader2, LogIn } from "lucide-react";
 import type { Role } from "@/lib/types";
 
 function getViewModeForRole(role: Role): ViewMode {
@@ -73,8 +73,8 @@ export function LoginPage() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo & Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-600 shadow-lg shadow-emerald-600/25 mb-4">
-            <Zap className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl overflow-hidden shadow-lg shadow-black/20 mb-4">
+            <img src="/logo.svg" alt="Quantix" className="w-full h-full" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Quantix Core Platform

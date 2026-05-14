@@ -2,7 +2,7 @@
 
 import {
   LayoutDashboard, Users, Building2, CreditCard, Globe,
-  UserCheck, Bell, Settings, Zap, ChevronDown,
+  UserCheck, Bell, Settings, ChevronDown,
   Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
@@ -142,9 +142,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
         <SheetContent side="left" className="w-[280px] p-0">
           <SheetHeader className="border-b p-4">
             <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Zap className="size-5" />
-              </div>
+              <img src="/logo.svg" alt="Quantix" className="size-10 rounded-lg" />
               <div>
                 <SheetTitle className="text-left text-base font-bold">Quantix Core</SheetTitle>
                 <SheetDescription className="text-left text-xs">Platform Admin</SheetDescription>
@@ -178,9 +176,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" className="hover:bg-sidebar-accent">
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Zap className="size-4" />
-              </div>
+              <img src="/logo.svg" alt="Quantix" className="size-8 rounded-lg shrink-0" />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-bold">Quantix Core</span>
                 <span className="truncate text-xs text-muted-foreground">Platform Admin</span>
