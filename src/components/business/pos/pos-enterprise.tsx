@@ -995,7 +995,6 @@ export function POSEnterprise() {
           customerPhone: ledgerPhone ?? customerPhone ?? undefined,
           customerName: customerName ?? undefined,
           paymentMethod: method,
-          posSessionId: `pos_session_${Date.now()}`,
           items: cart.map((i) => ({
             itemType: "PRODUCT",
             itemId: i.productId,
