@@ -24,7 +24,7 @@ export async function GET(_request: Request, { params }: Params) {
       select: {
         id: true, name: true, email: true, phone: true, avatar: true,
         isActive: true, authProvider: true, emailVerified: true,
-        createdAt: true, lastLoginAt: true, platformRole: true,
+        createdAt: true, lastLoginAt: true, platformRole: true, platformPermissions: true,
         salesProfile: {
           select: {
             id: true, region: true, target: true, achieved: true,
@@ -63,6 +63,7 @@ export async function PUT(request: Request, { params }: Params) {
       role?: string;
       businessId?: string;
       permissions?: string[];
+      platformPermissions?: string[];
     };
 
     const user = await db.user.findUnique({ where: { id: userId } });
@@ -78,6 +79,11 @@ export async function PUT(request: Request, { params }: Params) {
     // If updating to a platform role, store it on the user itself
     if (body.role && PLATFORM_ROLES.includes(body.role)) {
       updateData.platformRole = body.role as Role;
+    }
+
+    // Save custom platform-level permissions for platform team members
+    if (body.platformPermissions !== undefined) {
+      updateData.platformPermissions = JSON.stringify(body.platformPermissions);
     }
 
     const updated = await db.user.update({ where: { id: userId }, data: updateData });

@@ -466,8 +466,9 @@ model User {
   emailVerified   Boolean      @default(false)
   phoneVerified   Boolean      @default(false)
   isActive        Boolean      @default(true)
-  platformRole    Role?                        // Set for platform staff; null for business users
-  fcmToken        String?
+  platformRole        Role?                    // Set for platform staff; null for business users
+  platformPermissions String?                  // JSON array of custom permissions for platform users
+  fcmToken            String?
   lastLoginAt     DateTime?
   metadata        String       @default("{}")
   createdAt       DateTime     @default(now())

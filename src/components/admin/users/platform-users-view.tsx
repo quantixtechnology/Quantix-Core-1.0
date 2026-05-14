@@ -33,7 +33,8 @@ import {
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import {
-  ROLE_LABELS, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission,
+  ROLE_LABELS, PERMISSION_GROUPS, PERMISSION_LABELS, ROLE_PERMISSIONS,
+  ADMIN_NAV_PERMISSIONS, type Permission,
 } from "@/lib/permissions"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
@@ -48,10 +49,58 @@ interface PlatformUser {
 
 interface UserDetail extends PlatformUser {
   authProvider: string; emailVerified: boolean
+  platformPermissions: string | null
   businessUsers: Array<{
     id: string; role: string; businessId: string; isActive: boolean; permissions: string
     business: { id: string; name: string; slug: string; businessType: string; status: string }
   }>
+}
+
+// Platform-relevant permission groups (for platform team members)
+const PLATFORM_PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] = [
+  {
+    label: "Leads & Sales CRM",
+    permissions: ["leads:view", "leads:edit", "leads:delete", "sales:view", "sales:edit"],
+  },
+  {
+    label: "Business Management",
+    permissions: ["businesses:view", "businesses:create", "businesses:edit", "businesses:delete", "businesses:impersonate"],
+  },
+  {
+    label: "Subscriptions",
+    permissions: ["subscriptions:view", "subscriptions:edit", "subscriptions:override_price"],
+  },
+  {
+    label: "Platform Admin Pages",
+    permissions: ["platform:view_analytics", "platform:manage_deployments", "platform:manage_domains", "platform:audit_logs", "platform:security"],
+  },
+  {
+    label: "User Management",
+    permissions: ["users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate"],
+  },
+  {
+    label: "Notifications",
+    permissions: ["notifications:view", "notifications:send"],
+  },
+  {
+    label: "Reports",
+    permissions: ["reports:view", "reports:export"],
+  },
+]
+
+// Map permissions → which admin sidebar pages they unlock
+const PAGE_LABELS: Partial<Record<string, string>> = {
+  "leads:view":                  "Sales & Leads",
+  "businesses:view":             "Businesses",
+  "subscriptions:view":          "Subscriptions",
+  "sales:view":                  "Sales Team",
+  "users:view":                  "User Management",
+  "platform:view_analytics":     "Analytics & Reports",
+  "platform:manage_deployments": "Deployment Pages",
+  "platform:manage_domains":     "Domains & Deploys",
+  "platform:audit_logs":         "Audit Logs",
+  "platform:security":           "Security & Access",
+  "notifications:view":          "Notifications",
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -75,9 +124,7 @@ const PLATFORM_ROLES = [
   "FINANCE_TEAM",
 ]
 
-const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap(g => g.permissions as string[])
-const VIEW_ONLY_PERMS = ALL_PERMISSIONS.filter(p => p.endsWith(":view"))
-const POS_PRESET      = ["pos:access", "orders:view", "products:view", "customers:view", "reports:view"]
+const POS_PRESET = ["pos:access", "orders:view", "products:view", "customers:view", "reports:view"]
 
 const roleColors: Record<string, string> = {
   QUANTIX_SUPER_ADMIN: "bg-red-100 text-red-700",
@@ -190,9 +237,12 @@ function AccordionSection({
 // ─── Compact Permission Editor ────────────────────────────────────────────────
 
 function CompactPermissionEditor({
-  current, onChange,
-}: { current: string[]; onChange: (p: string[]) => void }) {
+  current, onChange, groups: groupsProp,
+}: { current: string[]; onChange: (p: string[]) => void; groups?: { label: string; permissions: Permission[] }[] }) {
   const [search, setSearch] = useState("")
+  const groups = groupsProp ?? PERMISSION_GROUPS
+  const allPerms = groups.flatMap(g => g.permissions as string[])
+  const viewOnlyPerms = allPerms.filter(p => p.endsWith(":view"))
 
   const toggle = (perm: string) =>
     onChange(current.includes(perm) ? current.filter(p => p !== perm) : [...current, perm])
@@ -200,9 +250,9 @@ function CompactPermissionEditor({
   const applyPreset = (perms: string[]) => onChange(perms)
 
   const filteredGroups = useMemo(() => {
-    if (!search) return PERMISSION_GROUPS
+    if (!search) return groups
     const q = search.toLowerCase()
-    return PERMISSION_GROUPS.map(g => ({
+    return groups.map(g => ({
       ...g,
       permissions: g.permissions.filter(p =>
         (PERMISSION_LABELS[p as Permission] ?? p).toLowerCase().includes(q)
@@ -234,8 +284,8 @@ function CompactPermissionEditor({
         <div className="flex items-center gap-1 flex-wrap">
           <span className="text-[10px] text-muted-foreground mr-0.5">Preset:</span>
           {[
-            { label: "Full Access",  fn: () => applyPreset([...ALL_PERMISSIONS]) },
-            { label: "View Only",    fn: () => applyPreset([...VIEW_ONLY_PERMS]) },
+            { label: "Full Access",  fn: () => applyPreset([...allPerms]) },
+            { label: "View Only",    fn: () => applyPreset([...viewOnlyPerms]) },
             { label: "POS Only",     fn: () => applyPreset([...POS_PRESET]) },
             { label: "Clear All",    fn: () => applyPreset([]) },
           ].map(p => (
@@ -457,10 +507,12 @@ function UserDetailSheet({
   const [newPassword, setNewPassword] = useState("")
   const [editPermissions, setEditPermissions] = useState<string[] | null>(null)
   const [selectedBizId, setSelectedBizId] = useState<string | null>(null)
+  const [platformEditPerms, setPlatformEditPerms] = useState<string[] | null>(null)
   const [sections, setSections] = useState({
     passwordReset: false,
     businessAccess: true,
     permissions: false,
+    platformPerms: false,
   })
 
   const toggle = (k: keyof typeof sections) =>
@@ -543,6 +595,46 @@ function UserDetailSheet({
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   })
+
+  const savePlatformPermMutation = useMutation({
+    mutationFn: async () => {
+      if (!platformEditPerms) return
+      const res = await fetch(`/api/core/users/${userId}`, {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ platformPermissions: platformEditPerms }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+    },
+    onSuccess: () => {
+      toast.success("Platform permissions saved")
+      setPlatformEditPerms(null)
+      qc.invalidateQueries({ queryKey: ["user-detail", userId] })
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  })
+
+  const initPlatformPermEdit = (u: UserDetail) => {
+    let perms: string[]
+    if (u.platformPermissions) {
+      try { perms = JSON.parse(u.platformPermissions) as string[] } catch { perms = [] }
+    } else {
+      // fallback to role defaults
+      perms = (ROLE_PERMISSIONS[u.role ?? ""] ?? []) as string[]
+    }
+    setPlatformEditPerms(perms)
+    setSections(s => ({ ...s, platformPerms: true }))
+  }
+
+  // Pages unlocked by current platform permissions
+  const unlockedPages = useMemo(() => {
+    if (!platformEditPerms) return []
+    return Object.entries(ADMIN_NAV_PERMISSIONS)
+      .filter(([, perm]) => platformEditPerms.includes(perm))
+      .map(([page]) => PAGE_LABELS[Object.values(ADMIN_NAV_PERMISSIONS).find(p => p === ADMIN_NAV_PERMISSIONS[page]) ?? ""] ?? page)
+      .filter(Boolean)
+  }, [platformEditPerms])
 
   const initPermEdit = (bu: NonNullable<UserDetail["businessUsers"]>[0]) => {
     setSelectedBizId(bu.businessId)
@@ -831,29 +923,98 @@ function UserDetailSheet({
                 </div>
               </AccordionSection>
 
-              {/* ── Permissions ────────────────────────────────── */}
+              {/* ── Business Permissions ───────────────────────── */}
               <AccordionSection
-                label="Permissions"
+                label="Business Role Permissions"
                 isOpen={sections.permissions}
                 onToggle={() => toggle("permissions")}
                 rightSlot={
                   editPermissions !== null ? (
-                    <Badge className="text-[9px] bg-primary/10 text-primary border-0 h-4 px-1.5">
-                      Editing
-                    </Badge>
+                    <Badge className="text-[9px] bg-primary/10 text-primary border-0 h-4 px-1.5">Editing</Badge>
                   ) : undefined
                 }
               >
                 {editPermissions !== null ? (
-                  <CompactPermissionEditor
-                    current={editPermissions}
-                    onChange={setEditPermissions}
-                  />
+                  <CompactPermissionEditor current={editPermissions} onChange={setEditPermissions} />
                 ) : (
                   <div className="px-4 pb-3 pt-1">
+                    {user.businessUsers.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">No business associations — use Platform Permissions below.</p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        Click <span className="font-semibold text-foreground">Perms</span> on a business above to edit permissions for that role.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </AccordionSection>
+
+              {/* ── Platform Page Permissions ───────────────────── */}
+              <AccordionSection
+                label="Platform Page Permissions"
+                isOpen={sections.platformPerms}
+                onToggle={() => toggle("platformPerms")}
+                rightSlot={
+                  platformEditPerms !== null ? (
+                    <Badge className="text-[9px] bg-primary/10 text-primary border-0 h-4 px-1.5">Editing</Badge>
+                  ) : (
+                    <button
+                      onClick={() => initPlatformPermEdit(user)}
+                      className="text-[10px] px-1.5 py-px rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Edit
+                    </button>
+                  )
+                }
+              >
+                {platformEditPerms !== null ? (
+                  <>
+                    {/* Page visibility preview */}
+                    {unlockedPages.length > 0 && (
+                      <div className="px-4 pt-2 pb-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Pages this user can access</p>
+                        <div className="flex flex-wrap gap-1">
+                          {unlockedPages.map(p => (
+                            <span key={p} className="text-[10px] px-1.5 py-px rounded bg-emerald-50 text-emerald-700 border border-emerald-200">{p}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <CompactPermissionEditor
+                      current={platformEditPerms}
+                      onChange={(p) => setPlatformEditPerms(p)}
+                      groups={PLATFORM_PERMISSION_GROUPS}
+                    />
+                  </>
+                ) : (
+                  <div className="px-4 pb-3 pt-1 space-y-2">
                     <p className="text-[11px] text-muted-foreground">
-                      Click <span className="font-semibold text-foreground">Perms</span> on a business above to edit permissions for that role.
+                      Controls which admin pages and actions this platform team member can access.
+                      Defaults to role permissions if not customized.
                     </p>
+                    {user.platformPermissions && (() => {
+                      try {
+                        const perms = JSON.parse(user.platformPermissions) as string[]
+                        const pages = Object.entries(ADMIN_NAV_PERMISSIONS)
+                          .filter(([, perm]) => perms.includes(perm))
+                          .map(([page]) => PAGE_LABELS[Object.values(ADMIN_NAV_PERMISSIONS).find(p => p === ADMIN_NAV_PERMISSIONS[page]) ?? ""] ?? page)
+                          .filter(Boolean)
+                        if (pages.length === 0) return null
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {pages.map(p => (
+                              <span key={p} className="text-[10px] px-1.5 py-px rounded bg-emerald-50 text-emerald-700 border border-emerald-200">{p}</span>
+                            ))}
+                          </div>
+                        )
+                      } catch { return null }
+                    })()}
+                    <button
+                      onClick={() => initPlatformPermEdit(user)}
+                      className="text-[11px] font-medium text-primary hover:underline"
+                    >
+                      Edit platform permissions →
+                    </button>
                   </div>
                 )}
               </AccordionSection>
@@ -865,28 +1026,29 @@ function UserDetailSheet({
           )}
         </div>
 
-        {/* ── STICKY FOOTER — only when editing permissions ──────── */}
-        {editPermissions !== null && (
+        {/* ── STICKY FOOTER — editing business or platform permissions ── */}
+        {(editPermissions !== null || platformEditPerms !== null) && (
           <div className="shrink-0 border-t bg-background px-4 py-2 flex items-center gap-2">
-            <Button
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => savePermMutation.mutate()}
-              disabled={savePermMutation.isPending}
-            >
-              {savePermMutation.isPending && <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />}
-              Save Permissions
-            </Button>
-            <Button
-              variant="ghost" size="sm"
-              className="h-7 text-xs"
-              onClick={() => { setEditPermissions(null); setSelectedBizId(null) }}
-            >
-              Cancel
-            </Button>
-            <span className="ml-auto text-[10px] text-muted-foreground">
-              {editPermissions.length} permission{editPermissions.length !== 1 ? "s" : ""} selected
-            </span>
+            {editPermissions !== null && (
+              <>
+                <Button size="sm" className="h-7 text-xs" onClick={() => savePermMutation.mutate()} disabled={savePermMutation.isPending}>
+                  {savePermMutation.isPending && <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />}
+                  Save Business Perms
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditPermissions(null); setSelectedBizId(null) }}>Cancel</Button>
+                <span className="ml-auto text-[10px] text-muted-foreground">{editPermissions.length} selected</span>
+              </>
+            )}
+            {platformEditPerms !== null && (
+              <>
+                <Button size="sm" className="h-7 text-xs" onClick={() => savePlatformPermMutation.mutate()} disabled={savePlatformPermMutation.isPending}>
+                  {savePlatformPermMutation.isPending && <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />}
+                  Save Platform Perms
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setPlatformEditPerms(null)}>Cancel</Button>
+                <span className="ml-auto text-[10px] text-muted-foreground">{platformEditPerms.length} selected</span>
+              </>
+            )}
           </div>
         )}
 
