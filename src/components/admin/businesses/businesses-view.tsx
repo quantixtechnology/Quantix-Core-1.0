@@ -26,9 +26,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
+  LogIn, Copy, Check, Hash,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
-import { ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 
@@ -102,6 +102,17 @@ export function BusinessesView() {
   const [creating, setCreating] = useState(false)
   const [plans, setPlans] = useState<PlanApiData[]>([])
   const [activatingBusiness, setActivatingBusiness] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [createdResult, setCreatedResult] = useState<{
+    businessId: string; ownerEmail: string; ownerPassword: string
+  } | null>(null)
+
+  const copyBusinessId = (slug: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(slug)
+    setCopiedId(slug)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
 
   // Form state
   const [formName, setFormName] = useState("")
@@ -115,6 +126,9 @@ export function BusinessesView() {
   const [formGST, setFormGST] = useState("")
   const [formCustomAmount, setFormCustomAmount] = useState("")
   const [formCustomReason, setFormCustomReason] = useState("")
+  const [formOwnerName, setFormOwnerName] = useState("")
+  const [formOwnerEmail, setFormOwnerEmail] = useState("")
+  const [formOwnerPassword, setFormOwnerPassword] = useState("")
 
   const fetchBusinesses = useCallback(async () => {
     setLoading(true)
@@ -172,6 +186,8 @@ export function BusinessesView() {
     setFormName(""); setFormSlug(""); setFormType(""); setFormPlan("")
     setFormCity(""); setFormPhone(""); setFormEmail(""); setFormAddress("")
     setFormGST(""); setCustomPricing(false); setFormCustomAmount(""); setFormCustomReason("")
+    setFormOwnerName(""); setFormOwnerEmail(""); setFormOwnerPassword("")
+    setCreatedResult(null)
   }
 
   const handleNameChange = (value: string) => {
@@ -215,13 +231,19 @@ export function BusinessesView() {
           address: formAddress, gstNumber: formGST,
           customPrice: customPricing && formCustomAmount ? Number(formCustomAmount) : undefined,
           overrideReason: customPricing ? formCustomReason : undefined,
+          ownerName: formOwnerName || undefined,
+          ownerEmail: formOwnerEmail || undefined,
+          ownerPassword: formOwnerPassword || undefined,
         }),
       })
       const json = await res.json()
       if (json.success) {
         toast.success("Business created successfully")
-        setCreateOpen(false)
-        resetForm()
+        setCreatedResult({
+          businessId: formSlug,
+          ownerEmail: json.data?.ownerCredentials?.email ?? formOwnerEmail,
+          ownerPassword: json.data?.ownerCredentials?.password ?? "—",
+        })
         fetchBusinesses()
       } else {
         const errMsg = json.error || json.message || "Failed to create business"
@@ -329,59 +351,110 @@ export function BusinessesView() {
                 <DialogTitle>Create New Business</DialogTitle>
                 <DialogDescription>Onboard a new business onto the Quantix platform</DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Business Name *</Label><Input placeholder="e.g. FreshMart Grocers" value={formName} onChange={(e) => handleNameChange(e.target.value)} /></div>
-                  <div className="space-y-2"><Label>Slug *</Label><Input placeholder="Auto-generated" value={formSlug} onChange={(e) => setFormSlug(e.target.value)} /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Business Type *</Label>
-                    <Select value={formType} onValueChange={setFormType}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                      <SelectContent>{Object.entries(businessTypeConfig).map(([key, val]) => (<SelectItem key={key} value={key}>{val.label}</SelectItem>))}</SelectContent>
-                    </Select>
+
+              {createdResult ? (
+                /* ── Success screen ── */
+                <div className="space-y-4 py-2">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+                    <p className="text-sm font-semibold text-emerald-800">Business created successfully</p>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business ID</p>
+                      <p className="font-mono text-sm font-bold text-emerald-900">{createdResult.businessId}</p>
+                    </div>
+                    <Separator className="border-emerald-200" />
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Owner Credentials</p>
+                      <p className="font-mono text-sm text-emerald-900">{createdResult.ownerEmail}</p>
+                      <p className="font-mono text-sm text-emerald-900">{createdResult.ownerPassword}</p>
+                    </div>
+                    <p className="text-[11px] text-emerald-700">Share these credentials securely with the business owner. This password will not be shown again.</p>
                   </div>
-                  <div className="space-y-2"><Label>Plan *</Label>
-                    <Select value={formPlan} onValueChange={setFormPlan}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
-                      <SelectContent>
-                        {plans.length > 0 ? plans.map((plan) => (
-                          <SelectItem key={plan.id} value={`${plan.tier}_${plan.billingCycle}`}>
-                            {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}
-                          </SelectItem>
-                        )) : (
-                          <>
-                            <SelectItem value="STANDARD_MONTHLY">Standard Monthly</SelectItem>
-                            <SelectItem value="PRO_MONTHLY">Pro Monthly</SelectItem>
-                            <SelectItem value="STANDARD_YEARLY">Standard Yearly</SelectItem>
-                            <SelectItem value="PRO_YEARLY">Pro Yearly</SelectItem>
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
+                  <DialogFooter>
+                    <Button onClick={() => { setCreateOpen(false); resetForm() }}>Done</Button>
+                  </DialogFooter>
+                </div>
+              ) : (
+                /* ── Creation form ── */
+                <>
+                  <div className="grid gap-4 py-4">
+                    {/* Business Info */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Business Name *</Label><Input placeholder="e.g. FreshMart Grocers" value={formName} onChange={(e) => handleNameChange(e.target.value)} /></div>
+                      <div className="space-y-2">
+                        <Label>Business ID (Slug) *</Label>
+                        <Input placeholder="Auto-generated" value={formSlug} onChange={(e) => setFormSlug(e.target.value)} />
+                        {formSlug && <p className="text-[10px] text-muted-foreground font-mono">ID: {formSlug}</p>}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Business Type *</Label>
+                        <Select value={formType} onValueChange={setFormType}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                          <SelectContent>{Object.entries(businessTypeConfig).map(([key, val]) => (<SelectItem key={key} value={key}>{val.label}</SelectItem>))}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2"><Label>Plan *</Label>
+                        <Select value={formPlan} onValueChange={setFormPlan}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
+                          <SelectContent>
+                            {plans.length > 0 ? plans.map((plan) => (
+                              <SelectItem key={plan.id} value={`${plan.tier}_${plan.billingCycle}`}>
+                                {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}
+                              </SelectItem>
+                            )) : (
+                              <>
+                                <SelectItem value="STANDARD_MONTHLY">Standard Monthly</SelectItem>
+                                <SelectItem value="PRO_MONTHLY">Pro Monthly</SelectItem>
+                                <SelectItem value="STANDARD_YEARLY">Standard Yearly</SelectItem>
+                                <SelectItem value="PRO_YEARLY">Pro Yearly</SelectItem>
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>City</Label><Input placeholder="e.g. Mumbai" value={formCity} onChange={(e) => setFormCity(e.target.value)} /></div>
+                      <div className="space-y-2"><Label>Phone</Label><Input placeholder="+91 98765 43210" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} /></div>
+                    </div>
+                    <div className="space-y-2"><Label>Business Email</Label><Input placeholder="contact@business.in" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Address</Label><Textarea placeholder="Full business address" rows={2} value={formAddress} onChange={(e) => setFormAddress(e.target.value)} /></div>
+                    <div className="space-y-2"><Label>GST Number</Label><Input placeholder="e.g. 27AABCF1234A1Z5" value={formGST} onChange={(e) => setFormGST(e.target.value)} /></div>
+
+                    <Separator />
+
+                    {/* Owner Account */}
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold">Business Owner Account</p>
+                      <p className="text-[11px] text-muted-foreground">Set the primary owner login credentials. Leave password blank to auto-generate.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Owner Name</Label><Input placeholder="e.g. Rahul Sharma" value={formOwnerName} onChange={(e) => setFormOwnerName(e.target.value)} /></div>
+                      <div className="space-y-2"><Label>Owner Email *</Label><Input placeholder="owner@business.in" type="email" value={formOwnerEmail} onChange={(e) => setFormOwnerEmail(e.target.value)} /></div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Owner Password <span className="text-muted-foreground font-normal">(blank = auto-generated)</span></Label>
+                      <Input type="text" placeholder="Leave blank to auto-generate" value={formOwnerPassword} onChange={(e) => setFormOwnerPassword(e.target.value)} className="font-mono" />
+                    </div>
+
+                    <Separator />
+
+                    {/* Custom Pricing */}
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5"><Label className="text-sm font-medium">Custom Pricing</Label><p className="text-xs text-muted-foreground">Override default plan pricing</p></div>
+                      <Switch checked={customPricing} onCheckedChange={setCustomPricing} />
+                    </div>
+                    {customPricing && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2"><Label>Custom Amount (₹)</Label><Input placeholder="e.g. 3999" type="number" value={formCustomAmount} onChange={(e) => setFormCustomAmount(e.target.value)} /></div>
+                        <div className="space-y-2"><Label>Reason</Label><Input placeholder="e.g. Promotional discount" value={formCustomReason} onChange={(e) => setFormCustomReason(e.target.value)} /></div>
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>City</Label><Input placeholder="e.g. Mumbai" value={formCity} onChange={(e) => setFormCity(e.target.value)} /></div>
-                  <div className="space-y-2"><Label>Phone</Label><Input placeholder="+91 98765 43210" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} /></div>
-                </div>
-                <div className="space-y-2"><Label>Email</Label><Input placeholder="admin@business.in" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} /></div>
-                <div className="space-y-2"><Label>Address</Label><Textarea placeholder="Full business address" rows={2} value={formAddress} onChange={(e) => setFormAddress(e.target.value)} /></div>
-                <div className="space-y-2"><Label>GST Number</Label><Input placeholder="e.g. 27AABCF1234A1Z5" value={formGST} onChange={(e) => setFormGST(e.target.value)} /></div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5"><Label className="text-sm font-medium">Custom Pricing</Label><p className="text-xs text-muted-foreground">Override default plan pricing</p></div>
-                  <Switch checked={customPricing} onCheckedChange={setCustomPricing} />
-                </div>
-                {customPricing && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Custom Amount (₹)</Label><Input placeholder="e.g. 3999" type="number" value={formCustomAmount} onChange={(e) => setFormCustomAmount(e.target.value)} /></div>
-                    <div className="space-y-2"><Label>Reason</Label><Input placeholder="e.g. Promotional discount" value={formCustomReason} onChange={(e) => setFormCustomReason(e.target.value)} /></div>
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm() }}>Cancel</Button>
-                <Button onClick={handleCreateBusiness} disabled={creating}>{creating ? "Creating..." : "Create Business"}</Button>
-              </DialogFooter>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm() }}>Cancel</Button>
+                    <Button onClick={handleCreateBusiness} disabled={creating}>{creating ? "Creating..." : "Create Business"}</Button>
+                  </DialogFooter>
+                </>
+              )}
             </DialogContent>
           </Dialog>
         }
@@ -453,6 +526,17 @@ export function BusinessesView() {
                                 </Badge>
                                 {biz.city && <span className="text-xs text-muted-foreground flex items-center gap-0.5"><MapPin className="h-2.5 w-2.5" />{biz.city}</span>}
                               </div>
+                              <button
+                                type="button"
+                                onClick={(e) => copyBusinessId(biz.slug, e)}
+                                className="flex items-center gap-1 mt-0.5 text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors group"
+                              >
+                                <Hash className="h-2.5 w-2.5" />
+                                {biz.slug}
+                                {copiedId === biz.slug
+                                  ? <Check className="h-2.5 w-2.5 text-emerald-600" />
+                                  : <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                              </button>
                             </div>
                           </div>
                         </TableCell>
@@ -476,9 +560,13 @@ export function BusinessesView() {
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
-                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)}>
-                              <ExternalLink className="size-3" />
-                              Manage
+                            <Button
+                              variant="outline" size="sm"
+                              className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400"
+                              onClick={() => setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)}
+                            >
+                              <LogIn className="size-3" />
+                              Login As
                             </Button>
                           </div>
                         </TableCell>
@@ -512,17 +600,33 @@ export function BusinessesView() {
                     <div className="space-y-1 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <SheetTitle className="text-lg">{biz.name}</SheetTitle>
-                        <Button size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => { setDetailOpen(false); setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}>
-                          <ExternalLink className="size-3" />
-                          Manage Business
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs gap-1 shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+                          onClick={() => { setDetailOpen(false); setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}
+                        >
+                          <LogIn className="size-3" />
+                          Login as Business
                         </Button>
                       </div>
-                      <SheetDescription className="flex items-center gap-2">
+                      <SheetDescription className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium" style={{ borderColor: typeConf?.color, color: typeConf?.color }}>{typeConf?.label}</Badge>
                         <StatusBadge status={biz.status} />
                         {biz.isOnline ? <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium"><Wifi className="h-3 w-3" /> Online</span>
                           : <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium"><WifiOff className="h-3 w-3" /> Offline</span>}
                       </SheetDescription>
+                      {/* Business ID — tenant identifier */}
+                      <button
+                        type="button"
+                        onClick={(e) => copyBusinessId(biz.slug, e)}
+                        className="flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors group w-fit"
+                      >
+                        <Hash className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-[11px] font-mono font-medium text-muted-foreground">{biz.slug}</span>
+                        {copiedId === biz.slug
+                          ? <Check className="h-3 w-3 text-emerald-600" />
+                          : <Copy className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />}
+                      </button>
                     </div>
                   </div>
                 </SheetHeader>
@@ -629,6 +733,19 @@ export function BusinessesView() {
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Details</h4>
                       <div className="space-y-2">
+                        <div className="rounded-lg border p-3 bg-muted/30">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Business ID (Tenant Identifier)</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-mono font-semibold text-foreground">{biz.slug}</p>
+                            <button
+                              type="button"
+                              onClick={(e) => copyBusinessId(biz.slug, e)}
+                              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {copiedId === biz.slug ? <><Check className="h-3 w-3 text-emerald-600" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+                            </button>
+                          </div>
+                        </div>
                         <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Address</p><p className="text-sm">{biz.address || `${biz.city || ""}, ${biz.state || ""} India`}</p></div>
                         <div className="grid grid-cols-2 gap-2">
                           <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">GST</p><p className="text-sm font-mono">{biz.gstNumber || "—"}</p></div>

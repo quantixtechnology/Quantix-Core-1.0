@@ -57,14 +57,21 @@ interface UserDetail extends PlatformUser {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: "ALL",      label: "All Users",      scope: "ALL" },
-  { key: "PLATFORM", label: "Platform Team",  scope: "PLATFORM" },
-  { key: "BUSINESS", label: "Business Users", scope: "BUSINESS" },
+  { key: "ALL",         label: "All Staff",        scope: "PLATFORM" },
+  { key: "ADMIN",       label: "Admins",            scope: "PLATFORM", role: "QUANTIX_SUPER_ADMIN" },
+  { key: "SALES",       label: "Sales",             scope: "PLATFORM", role: "QUANTIX_SALES_TEAM" },
+  { key: "SUPPORT",     label: "Support",           scope: "PLATFORM", role: "SUPPORT_STAFF" },
 ] as const
 type TabKey = typeof TABS[number]["key"]
 
-const PLATFORM_ROLES = ["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM"]
-const BUSINESS_ROLES = ["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "DELIVERY_STAFF"]
+const PLATFORM_ROLES = [
+  "QUANTIX_SUPER_ADMIN",
+  "PLATFORM_ADMIN",
+  "QUANTIX_SALES_TEAM",
+  "SUPPORT_TEAM",
+  "DEPLOYMENT_TEAM",
+  "FINANCE_TEAM",
+]
 
 const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap(g => g.permissions as string[])
 const VIEW_ONLY_PERMS = ALL_PERMISSIONS.filter(p => p.endsWith(":view"))
@@ -353,11 +360,8 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
                   <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select role" /></SelectTrigger>
                     <SelectContent>
-                      <p className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">Platform</p>
-                      {PLATFORM_ROLES.map(r => <SelectItem key={r} value={r} className="text-xs">{ROLE_LABELS[r] ?? r}</SelectItem>)}
-                      <Separator className="my-1" />
-                      <p className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">Business</p>
-                      {BUSINESS_ROLES.map(r => <SelectItem key={r} value={r} className="text-xs">{ROLE_LABELS[r] ?? r}</SelectItem>)}
+                      <p className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">Platform Team</p>
+                      {PLATFORM_ROLES.map((r: string) => <SelectItem key={r} value={r} className="text-xs">{ROLE_LABELS[r] ?? r}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -848,7 +852,8 @@ export function PlatformUsersView() {
     return () => clearTimeout(t)
   }, [])
 
-  const scope = TABS.find(t => t.key === activeTab)?.scope ?? "ALL"
+  const activeTabDef = TABS.find(t => t.key === activeTab)
+  const scope = activeTabDef?.scope ?? "PLATFORM"
 
   const { data: users = [], isLoading, refetch } = useQuery({
     queryKey: ["platform-users", scope, debouncedSearch],
@@ -865,7 +870,7 @@ export function PlatformUsersView() {
     total: users.length,
     active: users.filter(u => u.isActive).length,
     suspended: users.filter(u => !u.isActive).length,
-    platform: users.filter(u => u.role && PLATFORM_ROLES.includes(u.role)).length,
+    admins: users.filter(u => u.role === "QUANTIX_SUPER_ADMIN" || u.role === "PLATFORM_ADMIN").length,
   }), [users])
 
   return (
@@ -877,8 +882,8 @@ export function PlatformUsersView() {
             <Users className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <h1 className="text-base font-bold leading-tight">User Management</h1>
-            <p className="text-[11px] text-muted-foreground">Admin-controlled access — no self-signup</p>
+            <h1 className="text-base font-bold leading-tight">Platform Team Management</h1>
+            <p className="text-[11px] text-muted-foreground">Quantix internal staff only — no self-signup</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -895,7 +900,7 @@ export function PlatformUsersView() {
           { label: "Total",    value: stats.total,     color: "text-foreground" },
           { label: "Active",   value: stats.active,    color: "text-emerald-600" },
           { label: "Suspended",value: stats.suspended, color: "text-red-600" },
-          { label: "Platform", value: stats.platform,  color: "text-blue-600" },
+          { label: "Admins",   value: stats.admins,    color: "text-blue-600" },
         ].map(s => (
           <div key={s.label} className="px-5 py-2 border-r last:border-r-0">
             <p className={`text-xl font-bold leading-tight ${s.color}`}>{s.value}</p>
