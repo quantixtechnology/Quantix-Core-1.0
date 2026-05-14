@@ -22,6 +22,18 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useState } from "react"
 
+// CSS variables scoped to the sidebar so the rest of the app stays light
+const sidebarVars = {
+  "--sidebar": "#020B3D",
+  "--sidebar-foreground": "rgba(220, 230, 255, 0.90)",
+  "--sidebar-accent": "rgba(255, 255, 255, 0.07)",
+  "--sidebar-accent-foreground": "rgba(255, 255, 255, 0.95)",
+  "--sidebar-border": "rgba(255, 255, 255, 0.08)",
+  "--sidebar-primary": "#155BDB",
+  "--sidebar-primary-foreground": "#ffffff",
+  "--sidebar-ring": "#155BDB",
+} as React.CSSProperties
+
 const platformNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "workflow-engine", label: "Workflow Engine", icon: Workflow },
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -85,7 +97,8 @@ function CollapsibleSection({
     <div className="mb-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[#25B8F5]/60 hover:text-[#25B8F5] transition-colors"
+        className="flex w-full items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors"
+        style={{ color: "rgba(37,184,245,0.65)" }}
         aria-expanded={isOpen}
       >
         {title}
@@ -99,11 +112,12 @@ function CollapsibleSection({
               <button
                 key={item.key}
                 onClick={() => onNavigate(item.key)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all min-h-[36px] ${
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all min-h-[36px] ${
                   isActive
-                    ? "admin-nav-active"
-                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    ? "admin-nav-active font-bold"
+                    : "font-semibold hover:bg-white/8"
                 }`}
+                style={isActive ? undefined : { color: "rgba(255,255,255,0.75)" }}
               >
                 <item.icon className="shrink-0 size-4" />
                 <span className="text-xs">{item.label}</span>
@@ -149,15 +163,22 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   if (isMobile) {
     return (
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent side="left" className="w-[280px] p-0 bg-sidebar border-sidebar-border">
-          <SheetHeader className="border-b border-sidebar-border p-4">
+        <SheetContent
+          side="left"
+          className="w-[280px] p-0"
+          style={{ ...sidebarVars, background: "#020B3D", borderColor: "rgba(255,255,255,0.08)" }}
+        >
+          <SheetHeader className="p-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
             <div className="flex items-center gap-3">
               <img src="/logo.svg" alt="Quantix" className="size-10 rounded-xl" />
               <div>
-                <SheetTitle className="text-left text-sm font-bold text-sidebar-foreground">
+                <SheetTitle className="text-left text-sm font-bold text-white">
                   QUANTIX CORE
                 </SheetTitle>
-                <SheetDescription className="text-left text-[10px] text-[#25B8F5]/70 font-medium tracking-wider uppercase">
+                <SheetDescription
+                  className="text-left text-[10px] font-bold tracking-widest uppercase"
+                  style={{ color: "rgba(37,184,245,0.70)" }}
+                >
                   Platform Admin
                 </SheetDescription>
               </div>
@@ -175,16 +196,16 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
               />
             ))}
           </ScrollArea>
-          <div className="border-t border-sidebar-border p-4">
+          <div className="p-4" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
             <div className="flex items-center gap-3">
               <Avatar className="h-9 w-9">
-                <AvatarFallback className="bg-[#155BDB] text-white text-xs font-bold">
+                <AvatarFallback className="text-xs font-bold text-white" style={{ background: "#155BDB" }}>
                   {userInitials}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="truncate text-sm font-semibold text-sidebar-foreground">{userName}</p>
-                <p className="truncate text-xs text-sidebar-foreground/50">{userEmail}</p>
+                <p className="truncate text-sm font-bold text-white">{userName}</p>
+                <p className="truncate text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>{userEmail}</p>
               </div>
             </div>
           </div>
@@ -194,21 +215,24 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   }
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <SidebarHeader className="p-3 border-b border-sidebar-border">
+    <Sidebar collapsible="icon" className="border-r" style={sidebarVars}>
+      <SidebarHeader className="p-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
-              className="hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent gap-3"
+              className="hover:bg-white/8 gap-3"
               tooltip="Quantix Core Platform"
             >
               <img src="/logo.svg" alt="Quantix" className="size-8 rounded-xl shrink-0" />
               <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-xs font-bold tracking-wider text-sidebar-foreground uppercase">
+                <span className="truncate text-xs font-bold tracking-wider text-white uppercase">
                   Quantix Core
                 </span>
-                <span className="truncate text-[10px] font-medium text-[#25B8F5]/70 tracking-widest uppercase">
+                <span
+                  className="truncate text-[10px] font-bold tracking-widest uppercase"
+                  style={{ color: "rgba(37,184,245,0.70)" }}
+                >
                   Platform Admin
                 </span>
               </div>
@@ -220,7 +244,10 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
       <SidebarContent>
         {sections.map((s) => (
           <SidebarGroup key={s.title}>
-            <SidebarGroupLabel className="text-[10px] font-bold tracking-widest text-[#25B8F5]/60 uppercase px-3">
+            <SidebarGroupLabel
+              className="text-[10px] font-bold tracking-widest uppercase px-3"
+              style={{ color: "rgba(37,184,245,0.60)" }}
+            >
               {s.title}
             </SidebarGroupLabel>
             <SidebarGroupContent>
@@ -233,7 +260,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
                         isActive={isActive}
                         onClick={() => setActivePage(item.key)}
                         tooltip={item.label}
-                        className={isActive ? "admin-nav-active" : ""}
+                        className={`font-semibold ${isActive ? "admin-nav-active !font-bold" : "!text-white/75 hover:!text-white hover:!bg-white/8"}`}
                       >
                         <item.icon className="size-4" />
                         <span>{item.label}</span>
@@ -247,22 +274,22 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="p-3 border-t border-sidebar-border">
+      <SidebarFooter className="p-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
-              className="hover:bg-sidebar-accent"
+              className="hover:!bg-white/8"
               tooltip={`${userName} · ${userEmail}`}
             >
               <Avatar className="h-8 w-8 shrink-0">
-                <AvatarFallback className="bg-[#155BDB] text-white text-xs font-bold">
+                <AvatarFallback className="text-xs font-bold text-white" style={{ background: "#155BDB" }}>
                   {userInitials}
                 </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-sm font-semibold text-sidebar-foreground">{userName}</span>
-                <span className="truncate text-xs text-sidebar-foreground/50">{userEmail}</span>
+                <span className="truncate text-sm font-bold text-white">{userName}</span>
+                <span className="truncate text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>{userEmail}</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
