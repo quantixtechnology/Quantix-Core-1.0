@@ -33,9 +33,14 @@ export type BusinessStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
 
 /** Platform roles for the MANAGED model */
 export type Role =
+  // Platform team (stored on User.platformRole)
   | 'QUANTIX_SUPER_ADMIN'
   | 'PLATFORM_ADMIN'
   | 'QUANTIX_SALES_TEAM'
+  | 'SUPPORT_TEAM'
+  | 'DEPLOYMENT_TEAM'
+  | 'FINANCE_TEAM'
+  // Business staff (stored on BusinessUser.role)
   | 'CLIENT_OWNER'
   | 'STORE_MANAGER'
   | 'BILLING_STAFF'

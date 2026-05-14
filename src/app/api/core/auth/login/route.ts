@@ -49,30 +49,29 @@ export async function POST(request: Request) {
       );
     }
 
-    // Find user with business associations
+    // Find user with business associations — explicit select avoids schema-mismatch errors
     const user = await db.user.findUnique({
       where: { email: email.toLowerCase() },
-      include: {
+      select: {
+        id: true, name: true, email: true, avatar: true,
+        passwordHash: true, isActive: true, platformRole: true,
         businessUsers: {
           where: { isActive: true },
-          include: {
+          select: {
+            role: true, storeId: true,
             business: {
               select: {
-                id: true,
-                name: true,
-                slug: true,
-                businessType: true,
-                status: true,
-                primaryColor: true,
-                logo: true,
+                id: true, name: true, slug: true,
+                businessType: true, status: true,
+                primaryColor: true, logo: true,
               },
             },
-            store: {
-              select: { id: true, name: true },
-            },
+            store: { select: { id: true, name: true } },
           },
         },
-        salesProfile: true,
+        salesProfile: {
+          select: { id: true, name: true, region: true, isActive: true },
+        },
       },
     });
 
@@ -118,13 +117,17 @@ export async function POST(request: Request) {
     let storeId: string | undefined;
     let isPlatformAdmin = false;
 
-    if (user.salesProfile) {
-      role = 'QUANTIX_SALES_TEAM';
-      isPlatformAdmin = true;
-    } else if (user.email.endsWith('@quantixtechnology.in') && user.businessUsers.length === 0) {
-      role = 'QUANTIX_SUPER_ADMIN';
+    const PLATFORM_ROLES = [
+      'QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM',
+      'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM',
+    ];
+
+    if (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) {
+      // Platform staff — role stored directly on User.platformRole
+      role = user.platformRole as Role;
       isPlatformAdmin = true;
     } else if (user.businessUsers.length > 0) {
+      // Business staff — role stored in BusinessUser
       const primaryBU = user.businessUsers[0];
       role = primaryBU.role as Role;
       businessId = primaryBU.business.id;
@@ -141,6 +144,10 @@ export async function POST(request: Request) {
           { status: 403 }
         );
       }
+    } else if (user.email.toLowerCase().endsWith('@quantixtechnology.in')) {
+      // Fallback for seeded super admin that may not have platformRole set yet
+      role = 'QUANTIX_SUPER_ADMIN';
+      isPlatformAdmin = true;
     }
 
     const permissions: Permission[] = getPermissionsForRole(role);

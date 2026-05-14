@@ -75,7 +75,7 @@ jobs:
           command_timeout: 25m
           script_stop: true
           script: |
-            set -e
+            set -eo pipefail
 
             # ── Diagnostics ───────────────────────────────────────────────────
             echo "============================================================"
@@ -120,8 +120,8 @@ jobs:
             # ── Prisma ────────────────────────────────────────────────────────
             echo ""
             echo "── Prisma ───────────────────────────────────────────────────"
-            npx prisma generate 2>&1 | tail -4
-            npx prisma db push --accept-data-loss 2>&1 | tail -4
+            npx prisma generate
+            npx prisma db push --accept-data-loss
             echo "✅ Prisma schema synced"
 
             # ── Next.js build ─────────────────────────────────────────────────
