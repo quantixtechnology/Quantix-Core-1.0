@@ -969,12 +969,43 @@ export function POSEnterprise() {
     return Array.from(methods)
   }, [gatewayData])
 
+  const { data: storesData } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["pos-stores", businessId],
+    queryFn: async () => {
+      const res = await fetch(`/api/core/stores?businessId=${businessId}`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      return (json.data ?? []) as { id: string; name: string }[]
+    },
+    enabled: !!businessId,
+    staleTime: 60_000,
+  })
+  const defaultStoreId = storesData?.[0]?.id ?? ""
+
   const placeOrderMutation = useMutation({
-    mutationFn: async ({ method, splits, tendered, ledgerPhone }: { method: PaymentMethod; splits: SplitEntry[]; tendered: number; ledgerPhone?: string }) => {
-      const res = await fetch(`/api/core/businesses/${businessId}/orders`, {
+    mutationFn: async ({ method, splits: _splits, tendered: _tendered, ledgerPhone }: { method: PaymentMethod; splits: SplitEntry[]; tendered: number; ledgerPhone?: string }) => {
+      if (!defaultStoreId) throw new Error("No store found for this business. Please set up a store first.")
+      const res = await fetch(`/api/core/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ items: cart.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity, unitPrice: i.discountPrice ?? i.unitPrice })), paymentMethod: method, paymentSplits: method === "SPLIT" ? splits : undefined, customerPhone: ledgerPhone ?? customerPhone ?? undefined, customerName: customerName ?? undefined, amountTendered: tendered, source: "POS", workflow: plugin.id, orderContext }),
+        body: JSON.stringify({
+          businessId,
+          storeId: defaultStoreId,
+          orderType: "POS",
+          orderSource: "pos",
+          customerPhone: ledgerPhone ?? customerPhone ?? undefined,
+          customerName: customerName ?? undefined,
+          paymentMethod: method,
+          posSessionId: `pos_session_${Date.now()}`,
+          items: cart.map((i) => ({
+            itemType: "PRODUCT",
+            itemId: i.productId,
+            itemName: i.productName,
+            variantName: i.variantName,
+            quantity: i.quantity,
+            unitPrice: i.discountPrice ?? i.unitPrice,
+            mrp: i.mrp,
+          })),
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? "Order failed")
