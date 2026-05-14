@@ -1801,3 +1801,32 @@ model InventoryLog {
   @@index([inventoryId])
   @@index([createdAt])
 }
+
+// ── Enterprise RBAC ──────────────────────────────────────────────────────────
+
+model RolePermission {
+  id          String   @id @default(cuid())
+  role        String   @unique          // role identifier e.g. "PLATFORM_ADMIN"
+  permissions Json                      // string[] of permission keys
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?                   // userId who last saved
+
+  @@index([role])
+}
+
+model PermissionChangeLog {
+  id          String   @id @default(cuid())
+  role        String
+  changedBy   String                    // userId
+  changedByEmail String?
+  oldPerms    Json                      // previous permission array
+  newPerms    Json                      // new permission array
+  added       Json                      // keys added in this change
+  removed     Json                      // keys removed in this change
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([role])
+  @@index([changedBy])
+  @@index([createdAt])
+}

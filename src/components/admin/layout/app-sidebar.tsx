@@ -5,7 +5,7 @@ import {
   UserCheck, Bell, Settings, Zap, ChevronDown,
   Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
-  BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck,
+  BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -62,6 +62,7 @@ const opsNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ 
 ]
 
 const systemNavItems: { key: AdminPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "roles-permissions", label: "Roles & Permissions", icon: KeyRound },
   { key: "backup-monitoring", label: "Backup & Monitoring", icon: Server },
   { key: "security-access", label: "Security & Access", icon: Lock },
   { key: "audit-logs", label: "Audit Logs", icon: ScrollText },

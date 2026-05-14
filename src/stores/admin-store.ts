@@ -39,6 +39,7 @@ export type AdminPage =
   | "plan-management"
   | "payment-plugins"
   | "platform-users"
+  | "roles-permissions"
 
 export type BusinessPage =
   | "dashboard"

@@ -33,6 +33,7 @@ const SalesView = dynamic(() => import("@/components/admin/sales/sales-view").th
 const NotificationsView = dynamic(() => import("@/components/admin/notifications/notifications-view").then(m => ({ default: m.NotificationsView })), { loading: () => <PageLoader /> })
 const SettingsView = dynamic(() => import("@/components/admin/settings/settings-view").then(m => ({ default: m.SettingsView })), { loading: () => <PageLoader /> })
 const PlatformUsersView = dynamic(() => import("@/components/admin/users/platform-users-view").then(m => ({ default: m.PlatformUsersView })), { loading: () => <PageLoader /> })
+const PermissionMatrixView = dynamic(() => import("@/components/admin/rbac/permission-matrix-view").then(m => ({ default: m.PermissionMatrixView })), { loading: () => <PageLoader /> })
 
 // ── Deployment & Operations (lazy) ────────────────────────────────────────
 const OpsDashboardView = dynamic(() => import("@/components/dashboard/ops-dashboard-view").then(m => ({ default: m.OpsDashboardView })), { loading: () => <PageLoader /> })
@@ -158,6 +159,7 @@ function AppContent() {
       case "domains": return <DomainsView />
       case "sales": return <SalesView />
       case "platform-users": return <PlatformUsersView />
+      case "roles-permissions": return <PermissionMatrixView />
       case "notifications": return <NotificationsView />
       case "settings": return <SettingsView />
       // Mobile & Apps
