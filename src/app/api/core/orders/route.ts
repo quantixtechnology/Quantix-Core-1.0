@@ -1,35 +1,67 @@
 // ============================================================================
 // QUANTIX CORE — Orders API
-// GET  /api/core/orders          — List orders with filtering
-// POST /api/core/orders          — Create order
+// GET  /api/core/orders — List orders (auth required, store-isolated for STORE_MANAGER)
+// POST /api/core/orders — Create order (auth required)
+//
+// STORE ISOLATION:
+//   STORE_MANAGER  → forced WHERE storeId = user.storeId  (backend-enforced, not frontend)
+//   CLIENT_OWNER   → all stores for their business
+//   QUANTIX_SUPER_ADMIN / PLATFORM_ADMIN → any business via query param
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { createOrder, listOrders } from '@/lib/core/order';
-import { emitOrderEvent } from '@/lib/realtime-emitter';
+import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
 
-export async function GET(request: Request) {
+// ============================================================================
+// GET — List orders with store isolation
+// ============================================================================
+
+export const GET = withMiddleware({ requireAuth: true })(async (req) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('businessId');
+    const user = req.user!;
+    const { searchParams } = new URL(req.url);
 
-    if (!businessId) {
-      return NextResponse.json(
-        { success: false, error: 'businessId is required' },
-        { status: 400 }
-      );
+    // Resolve businessId — platform admins pass it as a query param;
+    // business staff use their auth context (prevents cross-tenant leakage)
+    let businessId: string;
+    if (user.isPlatformAdmin) {
+      const qb = searchParams.get('businessId');
+      if (!qb) {
+        return NextResponse.json(
+          { success: false, error: 'businessId query parameter is required' },
+          { status: 400 }
+        );
+      }
+      businessId = qb;
+    } else {
+      if (!user.businessId) {
+        return NextResponse.json(
+          { success: false, error: 'No business context found for this user' },
+          { status: 400 }
+        );
+      }
+      businessId = user.businessId;
     }
 
-    // Parse comma-separated status values into array
+    // Parse comma-separated filter values
     const statusParam = searchParams.get('status');
     const orderTypeParam = searchParams.get('orderType');
     const paymentStatusParam = searchParams.get('paymentStatus');
+
+    // STORE_MANAGER: backend-enforced storeId filter — cannot be overridden by query param
+    const requestedStoreId = searchParams.get('storeId') || undefined;
+    const enforcedStoreId =
+      user.role === 'STORE_MANAGER' && user.storeId
+        ? user.storeId
+        : requestedStoreId;
 
     const result = await listOrders(businessId, {
       status: statusParam ? statusParam.split(',') : undefined,
       orderType: orderTypeParam ? orderTypeParam.split(',') : undefined,
       paymentStatus: paymentStatusParam ? paymentStatusParam.split(',') : undefined,
-      storeId: searchParams.get('storeId') || undefined,
+      storeId: enforcedStoreId,
       customerId: searchParams.get('customerId') || undefined,
       dateFrom: searchParams.get('dateFrom') || undefined,
       dateTo: searchParams.get('dateTo') || undefined,
@@ -50,19 +82,18 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
-}
+});
 
-export async function POST(request: Request) {
+// ============================================================================
+// POST — Create order (admin/staff; customer orders go via /storefront/orders)
+// ============================================================================
+
+export const POST = withMiddleware({ requireAuth: true })(async (req) => {
   try {
-    const body = await request.json();
+    const user = req.user!;
+    const body = await req.json();
 
     // Validate required fields
-    if (!body.businessId) {
-      return NextResponse.json(
-        { success: false, error: 'businessId is required' },
-        { status: 400 }
-      );
-    }
     if (!body.storeId) {
       return NextResponse.json(
         { success: false, error: 'storeId is required' },
@@ -82,7 +113,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate each item has required fields
+    // Resolve businessId
+    const businessId: string = user.isPlatformAdmin
+      ? body.businessId
+      : (user.businessId ?? body.businessId);
+
+    if (!businessId) {
+      return NextResponse.json(
+        { success: false, error: 'businessId is required' },
+        { status: 400 }
+      );
+    }
+
+    // STORE_MANAGER may only create orders for their assigned store
+    if (user.role === 'STORE_MANAGER' && user.storeId && body.storeId !== user.storeId) {
+      return NextResponse.json(
+        { success: false, error: 'You can only create orders for your assigned store' },
+        { status: 403 }
+      );
+    }
+
+    // Validate each item
     for (const item of body.items) {
       if (!item.itemType || !item.itemId || !item.itemName) {
         return NextResponse.json(
@@ -105,10 +156,10 @@ export async function POST(request: Request) {
     }
 
     const order = await createOrder({
-      businessId: body.businessId,
+      businessId,
       storeId: body.storeId,
       orderType: body.orderType,
-      orderSource: body.orderSource || 'online',
+      orderSource: body.orderSource || 'admin',
       customerId: body.customerId,
       customerName: body.customerName,
       customerPhone: body.customerPhone,
@@ -154,15 +205,13 @@ export async function POST(request: Request) {
       })),
     });
 
-    // Emit real-time event after successful order creation
+    // Emit real-time event — scoped to business and store
     try {
-      await emitOrderEvent(body.businessId, 'order:created', {
+      await emitStoreOrderEvent(businessId, body.storeId, 'order:created', {
         orderId: order.id,
         orderNumber: (order as Record<string, unknown>).orderNumber,
         orderType: body.orderType,
-        orderSource: body.orderSource || 'online',
-        customerId: body.customerId,
-        customerName: body.customerName,
+        orderSource: body.orderSource || 'admin',
         totalAmount: (order as Record<string, unknown>).totalAmount,
         status: (order as Record<string, unknown>).status,
       });
@@ -170,11 +219,10 @@ export async function POST(request: Request) {
       console.error('[Orders API] Failed to emit order:created event:', emitErr);
     }
 
-    return NextResponse.json({
-      success: true,
-      data: order,
-      message: 'Order created successfully',
-    }, { status: 201 });
+    return NextResponse.json(
+      { success: true, data: order, message: 'Order created successfully' },
+      { status: 201 }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create order';
     return NextResponse.json(
@@ -182,4 +230,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
+});

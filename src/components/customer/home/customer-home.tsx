@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import { useProducts, useCategories } from "@/hooks/use-api"
+import { useNearestStore } from "@/hooks/use-nearest-store"
+import { setBusinessContext } from "@/lib/api-client"
 import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -28,8 +31,6 @@ import {
   Leaf,
 } from "lucide-react"
 
-const BIZ_ID = "biz_1"
-
 import { getBanners, getOffers } from "@/components/customer/data"
 
 const categoryIcons: Record<string, React.ReactNode> = {
@@ -46,19 +47,6 @@ const categoryIcons: Record<string, React.ReactNode> = {
 }
 
 // Fallback categories for when API categories are loading or unavailable
-const fallbackCategories = [
-  { id: "cat_1", name: "Fruits & Vegetables", icon: "Apple", color: "#10B981" },
-  { id: "cat_2", name: "Dairy & Eggs", icon: "Milk", color: "#3B82F6" },
-  { id: "cat_3", name: "Bakery", icon: "Croissant", color: "#F59E0B" },
-  { id: "cat_4", name: "Snacks & Chips", icon: "Cookie", color: "#EF4444" },
-  { id: "cat_5", name: "Beverages", icon: "Coffee", color: "#8B5CF6" },
-  { id: "cat_6", name: "Rice & Grains", icon: "Wheat", color: "#D97706" },
-  { id: "cat_7", name: "Spices & Masala", icon: "Flame", color: "#DC2626" },
-  { id: "cat_8", name: "Personal Care", icon: "Sparkles", color: "#EC4899" },
-  { id: "cat_9", name: "Cleaning", icon: "SprayCan", color: "#0891B2" },
-  { id: "cat_10", name: "Frozen Foods", icon: "Snowflake", color: "#6366F1" },
-]
-
 interface CategoryItem {
   id: string
   name: string
@@ -69,13 +57,33 @@ interface CategoryItem {
 }
 
 export function CustomerHome() {
-  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType, currentBusinessId, currentStoreId } = useAdminStore()
+  const storeId = currentStoreId || undefined
   const businessName = currentBusinessName || "My Store"
-  const { addItem, items, updateQuantity, removeItem } = useCartStore()
+  const { addItem, items, updateQuantity, removeItem, setCartStoreId } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [currentBanner, setCurrentBanner] = useState(0)
 
-  // ---- Demo data ----
+  const bizId = currentBusinessId || ""
+
+  // Auto-resolve nearest store via GPS if no storeId is set yet
+  useNearestStore()
+
+  // Set business context for API calls whenever bizId changes
+  useEffect(() => {
+    if (bizId) setBusinessContext(bizId)
+  }, [bizId])
+
+  // Sync store ID into cart store so checkout always sends the right storeId
+  useEffect(() => {
+    if (currentStoreId) setCartStoreId(currentStoreId)
+  }, [currentStoreId, setCartStoreId])
+
+  // Live API data
+  const { data: productsData } = useProducts(bizId, { status: "ACTIVE", limit: 50, storeId })
+  const { data: categoriesData } = useCategories(bizId)
+
+  // Demo fallback data (business-type-aware)
   const demoCategories: CategoryItem[] = useMemo(() => {
     return getDemoCategories(currentBusinessType).map((c) => ({
       id: c.id,
@@ -108,6 +116,50 @@ export function CustomerHome() {
     }))
   }, [currentBusinessType])
 
+  // Resolve live categories, fall back to demo
+  const categories: CategoryItem[] = useMemo(() => {
+    const live = categoriesData?.data
+    if (Array.isArray(live) && live.length > 0) {
+      return (live as unknown as Record<string, unknown>[]).map((c) => ({
+        id: c.id as string,
+        name: c.name as string,
+        icon: (c.icon as string | undefined) || "Leaf",
+        color: (c.color as string | undefined) || "#10B981",
+        slug: c.slug as string | undefined,
+        productCount: (c._count as Record<string, number> | undefined)?.products || 0,
+      }))
+    }
+    return demoCategories
+  }, [categoriesData, demoCategories])
+
+  // Resolve live products, fall back to demo
+  const allProducts = useMemo(() => {
+    const live = productsData?.data
+    if (Array.isArray(live) && live.length > 0) {
+      return (live as unknown as Record<string, unknown>[]).map((p) => ({
+        id: p.id as string,
+        name: p.name as string,
+        categoryId: (p.category as Record<string, string> | undefined)?.id || (p.categoryId as string) || "",
+        category: (p.category as Record<string, string> | undefined)?.name || "",
+        status: p.status as string,
+        isVeg: p.isVeg as boolean | null,
+        isFeatured: p.isFeatured as boolean,
+        image: Array.isArray(p.images) && (p.images as string[]).length > 0 ? (p.images as string[])[0] : "",
+        variants: Array.isArray(p.variants)
+          ? (p.variants as unknown as Record<string, unknown>[]).map((v) => ({
+              id: v.id as string,
+              name: v.name as string,
+              price: v.price as number,
+              mrp: (v.mrp as number) || (v.price as number),
+              stock: v.stock as number | undefined,
+              isDefault: v.isDefault as boolean | undefined,
+            }))
+          : [],
+      }))
+    }
+    return demoProducts
+  }, [productsData, demoProducts])
+
   // Context-aware banners and offers
   const banners = useMemo(() => getBanners(currentBusinessType), [currentBusinessType])
   const offers = useMemo(() => getOffers(currentBusinessType), [currentBusinessType])
@@ -120,9 +172,8 @@ export function CustomerHome() {
     return () => clearInterval(interval)
   }, [banners.length])
 
-  const categories = demoCategories
-  const featuredProducts = demoProducts.filter((p) => p.isFeatured)
-  const recentProducts = demoProducts.slice(0, 4)
+  const featuredProducts = allProducts.filter((p) => p.isFeatured)
+  const recentProducts = allProducts.slice(0, 4)
 
   const getCartQty = useCallback(
     (productId: string, variantId: string) => {
@@ -132,7 +183,7 @@ export function CustomerHome() {
     [items]
   )
 
-  const handleAddToCart = (product: typeof demoProducts[0]) => {
+  const handleAddToCart = (product: typeof allProducts[0]) => {
     const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
     if (!defaultVariant) return
     addItem({

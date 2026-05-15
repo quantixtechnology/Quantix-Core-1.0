@@ -287,10 +287,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Persist to localStorage
       saveToStorage(newState);
 
-      // Also set quantix_business_id so api-client.ts and admin-fetch.ts
-      // can read the business context without waiting for useBusinessContext
-      if (currentBusinessId && typeof window !== 'undefined') {
-        localStorage.setItem('quantix_business_id', currentBusinessId);
+      // Also set quantix_business_id / quantix_store_id so api-client.ts
+      // and the realtime hook can read context without waiting for useBusinessContext
+      if (typeof window !== 'undefined') {
+        if (currentBusinessId) localStorage.setItem('quantix_business_id', currentBusinessId);
+        const primaryStoreId = primaryBusiness?.storeId || null;
+        if (primaryStoreId) localStorage.setItem('quantix_store_id', primaryStoreId);
+        else localStorage.removeItem('quantix_store_id');
       }
 
       set(newState);
@@ -358,10 +361,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       saveToStorage(newState);
 
-      // Also set quantix_business_id so api-client.ts and admin-fetch.ts
-      // can read the business context without waiting for useBusinessContext
-      if (currentBusinessId && typeof window !== 'undefined') {
-        localStorage.setItem('quantix_business_id', currentBusinessId);
+      if (typeof window !== 'undefined') {
+        if (currentBusinessId) localStorage.setItem('quantix_business_id', currentBusinessId);
+        const primaryStoreId = primaryBusiness?.storeId || null;
+        if (primaryStoreId) localStorage.setItem('quantix_store_id', primaryStoreId);
+        else localStorage.removeItem('quantix_store_id');
       }
 
       set(newState);
@@ -388,6 +392,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     clearStorage();
+    if (typeof window !== "undefined") localStorage.removeItem("quantix_store_id");
     set({
       user: null,
       token: null,
@@ -459,9 +464,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       role: targetBusiness.role,
     };
 
-    // Update business context in localStorage for api-client
+    // Update business context in localStorage for api-client + realtime hook
     if (typeof window !== "undefined") {
       localStorage.setItem("quantix_business_id", businessId);
+      if (targetBusiness.storeId) localStorage.setItem("quantix_store_id", targetBusiness.storeId);
+      else localStorage.removeItem("quantix_store_id");
     }
 
     const updates: Partial<AuthState> = {

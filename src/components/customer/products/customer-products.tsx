@@ -33,14 +33,13 @@ interface ProductItem {
 }
 
 export function CustomerProducts() {
-  const { setCustomerPage, setSelectedProductId, currentBusinessType } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, currentBusinessType, currentBusinessId, currentStoreId } = useAdminStore()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<"default" | "price-low" | "price-high" | "discount">("default")
 
-  // Use dynamic business ID from admin store
-  const BIZ_ID = "biz_1"
+  const BIZ_ID = currentBusinessId || ""
 
   // Dynamic fallback categories from business context
   const fallbackCategories = useMemo(() =>
@@ -53,12 +52,13 @@ export function CustomerProducts() {
   )
 
   useEffect(() => {
-    setBusinessContext(BIZ_ID)
-  }, [])
+    if (BIZ_ID) setBusinessContext(BIZ_ID)
+  }, [BIZ_ID])
 
   // Fetch products with filters
   const { data: productsData, isLoading: productsLoading, error: productsError, refetch } = useProducts(BIZ_ID, {
     status: "ACTIVE",
+    ...(currentStoreId ? { storeId: currentStoreId } : {}),
     ...(selectedCategory ? { categoryId: selectedCategory } : {}),
     ...(searchQuery ? { search: searchQuery } : {}),
     limit: 50,
@@ -107,7 +107,7 @@ export function CustomerProducts() {
   const apiProducts: ProductItem[] = useMemo(() => {
     if (!productsData?.data) return []
     const prods = Array.isArray(productsData.data) ? productsData.data : []
-    return prods.map((p: Record<string, unknown>) => ({
+    return prods.map((p) => ({
       id: p.id as string,
       name: p.name as string,
       categoryId: (p.category as Record<string, string>)?.id || "",

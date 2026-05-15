@@ -1,99 +1,92 @@
 // ============================================================================
 // QUANTIX CORE — Delivery Partners API
-// GET  /api/core/delivery/partners  — List delivery partners for a business
-// POST /api/core/delivery/partners  — Create delivery partner
+// GET  /api/core/delivery/partners  — List delivery partners (auth required)
+// POST /api/core/delivery/partners  — Create delivery partner (CLIENT_OWNER+)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
-export async function GET(request: Request) {
+export const GET = withMiddleware({ requireAuth: true })(async (req) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('businessId');
+    const user = req.user!;
+    const { searchParams } = new URL(req.url);
 
-    if (!businessId) {
-      return NextResponse.json(
-        { success: false, error: 'businessId is required' },
-        { status: 400 }
-      );
+    // Resolve businessId
+    let businessId: string;
+    if (user.isPlatformAdmin) {
+      const qb = searchParams.get('businessId');
+      if (!qb) {
+        return NextResponse.json(
+          { success: false, error: 'businessId is required' },
+          { status: 400 }
+        );
+      }
+      businessId = qb;
+    } else {
+      if (!user.businessId) {
+        return NextResponse.json(
+          { success: false, error: 'No business context found for this user' },
+          { status: 400 }
+        );
+      }
+      businessId = user.businessId;
     }
 
     const isOnline = searchParams.get('isOnline');
     const isActive = searchParams.get('isActive');
 
-    const where: Record<string, unknown> = {
-      businessId,
-    };
-
-    if (isOnline !== null) {
-      where.isOnline = isOnline === 'true';
-    }
-    if (isActive !== null) {
-      where.isActive = isActive === 'true';
-    }
+    const where: Record<string, unknown> = { businessId };
+    if (isOnline !== null) where.isOnline = isOnline === 'true';
+    if (isActive !== null) where.isActive = isActive === 'true';
 
     const partners = await db.deliveryPartner.findMany({
       where,
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({
-      success: true,
-      data: partners,
-    });
+    return NextResponse.json({ success: true, data: partners });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to list delivery partners';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req) => {
   try {
-    const body = await request.json();
+    const user = req.user!;
+    const body = await req.json();
 
-    if (!body.businessId) {
-      return NextResponse.json(
-        { success: false, error: 'businessId is required' },
-        { status: 400 }
-      );
-    }
     if (!body.name) {
-      return NextResponse.json(
-        { success: false, error: 'name is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'name is required' }, { status: 400 });
     }
     if (!body.phone) {
-      return NextResponse.json(
-        { success: false, error: 'phone is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'phone is required' }, { status: 400 });
     }
 
-    // Check for duplicate phone within business
+    const businessId: string = user.isPlatformAdmin
+      ? (body.businessId ?? user.businessId ?? '')
+      : (user.businessId ?? '');
+
+    if (!businessId) {
+      return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
+    }
+
     const existing = await db.deliveryPartner.findUnique({
-      where: {
-        businessId_phone: {
-          businessId: body.businessId,
-          phone: body.phone,
-        },
-      },
+      where: { businessId_phone: { businessId, phone: body.phone } },
     });
 
     if (existing) {
       return NextResponse.json(
-        { success: false, error: 'A delivery partner with this phone number already exists for this business' },
-        { status: 400 }
+        { success: false, error: 'A delivery partner with this phone number already exists' },
+        { status: 409 }
       );
     }
 
     const partner = await db.deliveryPartner.create({
       data: {
-        businessId: body.businessId,
+        businessId,
         userId: body.userId,
         name: body.name,
         phone: body.phone,
@@ -111,16 +104,12 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      data: partner,
-      message: 'Delivery partner created successfully',
-    }, { status: 201 });
+    return NextResponse.json(
+      { success: true, data: partner, message: 'Delivery partner created successfully' },
+      { status: 201 }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create delivery partner';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

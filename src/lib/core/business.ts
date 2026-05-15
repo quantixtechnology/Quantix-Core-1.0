@@ -186,7 +186,14 @@ export async function createBusiness(data: CreateBusinessRequest) {
         supportEmail: data.supportEmail,
         supportPhone: data.supportPhone,
         salesRepId: data.salesRepId,
-        settings: '{}',
+        settings: JSON.stringify({
+          ecommerceConfig: {
+            banners: [],
+            theme: 'default',
+            homepageStyle: 'grid',
+            font: 'inter',
+          },
+        }),
         features: '{}',
         notificationConfig: '{}',
       },
@@ -241,9 +248,9 @@ export async function createBusiness(data: CreateBusinessRequest) {
       })),
     });
 
-    // Create main store
+    // Create main store with delivery config + default timings
     const storeSlug = data.slug;
-    await tx.store.create({
+    const mainStore = await tx.store.create({
       data: {
         businessId: business.id,
         name: `${data.name} - Main Store`,
@@ -257,24 +264,39 @@ export async function createBusiness(data: CreateBusinessRequest) {
         email: data.contactEmail,
         status: 'ACTIVE',
         posEnabled: true,
+        deliveryRadius: 5.0,
+        deliveryFee: 0,
+        minOrderAmount: 0,
+        preparationTime: 30,
         settings: '{}',
         printerConfig: '{}',
         operatingHours: '{}',
       },
     });
 
-    // Create domain mapping if domain provided
-    if (data.domain) {
-      await tx.domainMapping.create({
-        data: {
-          businessId: business.id,
-          domain: data.domain,
-          subdomain: data.subdomain,
-          isPrimary: true,
-          status: 'PENDING_DNS',
-        },
-      });
-    }
+    // Auto-create default 9am–9pm timings for all 7 days
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    await tx.storeTiming.createMany({
+      data: DAY_NAMES.map((_, day) => ({
+        storeId: mainStore.id,
+        day,
+        openTime: '09:00',
+        closeTime: '21:00',
+        isClosed: false,
+      })),
+    });
+
+    // Always create a domain mapping — use custom domain if provided, otherwise auto-generate subdomain
+    const storefrontBaseDomain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixshop.in';
+    await tx.domainMapping.create({
+      data: {
+        businessId: business.id,
+        domain: data.domain || `${data.slug}.${storefrontBaseDomain}`,
+        subdomain: data.subdomain || data.slug,
+        isPrimary: true,
+        status: 'PENDING_DNS',
+      },
+    });
 
     // Update lead if provided
     if (data.leadId) {

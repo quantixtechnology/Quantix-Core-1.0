@@ -8,8 +8,28 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { withMiddleware, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
+
+interface ResolvedOrderItem {
+  itemType: string;
+  itemId: string;
+  itemName: string;
+  variantName: string | undefined;
+  sku: string | undefined;
+  barcode: string | undefined;
+  quantity: number;
+  unitPrice: number;
+  mrp: number | null;
+  discountPrice: number | undefined;
+  discountPercent: number | undefined;
+  gstRate: number;
+  isVeg: boolean | null | undefined;
+  unit: string | null | undefined;
+  specialInstructions: string | undefined;
+  customizations: string | undefined;
+}
 
 export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
   async (req) => {
@@ -75,7 +95,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
       });
 
       // Resolve product details for each item
-      const resolvedItems = [];
+      const resolvedItems: ResolvedOrderItem[] = [];
       for (const item of body.items) {
         const product = await db.product.findUnique({
           where: { id: item.productId },
@@ -255,6 +275,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
             data: JSON.stringify({
               orderId: order.id,
               orderNumber: order.orderNumber,
+              storeId: body.storeId,
             }),
           },
         });
@@ -262,22 +283,14 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         console.error('[Storefront Orders] Notification error:', notifErr);
       }
 
-      // Broadcast order:created via WebSocket
+      // Emit store-scoped real-time event — store staff only see their store's orders
       try {
-        await fetch('/api/emit?XTransformPort=3003', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            businessId,
-            event: 'order:created',
-            data: {
-              orderId: order.id,
-              orderNumber: order.orderNumber,
-              orderType: body.orderType,
-              totalAmount: order.totalAmount,
-              customerName: customer?.name || user.name,
-            },
-          }),
+        await emitStoreOrderEvent(businessId, body.storeId, 'order:created', {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          orderType: body.orderType,
+          totalAmount: order.totalAmount,
+          customerName: customer?.name || user.name,
         });
       } catch (wsErr) {
         console.error('[Storefront Orders] WebSocket broadcast error:', wsErr);

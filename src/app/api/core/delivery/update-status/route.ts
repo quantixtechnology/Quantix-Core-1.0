@@ -4,14 +4,15 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { verifyOtp } from '@/lib/core/delivery';
 import { sendDeliveryNotification } from '@/lib/core/notification';
-import { emitDeliveryEvent, emitOrderEvent } from '@/lib/realtime-emitter';
+import { emitDeliveryEvent, emitStoreOrderEvent } from '@/lib/realtime-emitter';
 
-export async function PUT(request: Request) {
+export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY_STAFF', 'CLIENT_OWNER', 'STORE_MANAGER', 'QUANTIX_SUPER_ADMIN'] })(async (req) => {
   try {
-    const body = await request.json();
+    const body = await req.json();
 
     if (!body.deliveryId) {
       return NextResponse.json(
@@ -172,7 +173,7 @@ export async function PUT(request: Request) {
 
       // If the order status was also synced, emit order:status_changed
       if (mappedOrderStatus) {
-        await emitOrderEvent(delivery.order.businessId, 'order:status_changed', {
+        await emitStoreOrderEvent(delivery.order.businessId, delivery.order.storeId, 'order:status_changed', {
           orderId: delivery.orderId,
           orderNumber: delivery.order.orderNumber,
           newStatus: mappedOrderStatus,
@@ -213,4 +214,4 @@ export async function PUT(request: Request) {
       { status: 500 }
     );
   }
-}
+});

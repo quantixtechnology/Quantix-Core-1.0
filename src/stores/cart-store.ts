@@ -16,8 +16,10 @@ export interface CartItem {
 
 interface CartState {
   items: CartItem[]
+  storeId: string | null
   couponCode: string | null
   couponDiscount: number
+  setCartStoreId: (id: string) => void
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void
   removeItem: (productId: string, variantId: string) => void
   updateQuantity: (productId: string, variantId: string, quantity: number) => void
@@ -33,8 +35,11 @@ interface CartState {
 
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
+  storeId: null,
   couponCode: null,
   couponDiscount: 0,
+
+  setCartStoreId: (id) => set({ storeId: id }),
 
   addItem: (item) => {
     set((state) => {
@@ -78,7 +83,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     }))
   },
 
-  clearCart: () => set({ items: [], couponCode: null, couponDiscount: 0 }),
+  clearCart: () => set({ items: [], storeId: null, couponCode: null, couponDiscount: 0 }),
 
   applyCoupon: (code, discount) => set({ couponCode: code, couponDiscount: discount }),
   removeCoupon: () => set({ couponCode: null, couponDiscount: 0 }),

@@ -33,7 +33,7 @@ import {
   Loader2,
 } from "lucide-react"
 
-const STORE_ID = "store_1"
+// STORE_ID resolved dynamically from admin store (set by StorefrontParamDetector or store selection)
 
 // Local address data (can be replaced with API later)
 const defaultAddresses = [
@@ -58,9 +58,10 @@ const defaultAddresses = [
 ]
 
 export function CustomerCheckout() {
-  const { setCustomerPage, setSelectedOrderId, currentBusinessId } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentStoreId } = useAdminStore()
   const {
     items,
+    storeId: cartStoreId,
     subtotal: getSubtotal,
     deliveryFee: getDeliveryFee,
     total: getTotal,
@@ -79,7 +80,7 @@ export function CustomerCheckout() {
   const [selectedAddress, setSelectedAddress] = useState(defaultAddresses[0]?.id || "")
   const [paymentMethod, setPaymentMethod] = useState<"upi" | "card" | "cod">("upi")
   const [deliveryInstructions, setDeliveryInstructions] = useState("")
-  const [showSuccess, setShowSuccess] = useState(false)
+  const [orderPlaced, setOrderPlaced] = useState(false)
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null)
   const [placing, setPlacing] = useState(false)
 
@@ -110,7 +111,7 @@ export function CustomerCheckout() {
 
       // Create order via API
       const orderData = {
-        storeId: STORE_ID,
+        storeId: cartStoreId || currentStoreId,
         orderType: "DELIVERY" as const,
         paymentMethod: apiPaymentMethod,
         customerId: user?.id,
@@ -124,7 +125,7 @@ export function CustomerCheckout() {
 
       const result = await createOrderMutation.mutateAsync(orderData)
 
-      const orderId = (result.data as Record<string, unknown>)?.id as string || `order_${Date.now()}`
+      const orderId = (result.data as unknown as Record<string, unknown>)?.id as string || `order_${Date.now()}`
       setCreatedOrderId(orderId)
 
       // Handle payment
@@ -138,25 +139,25 @@ export function CustomerCheckout() {
             customerPhone: undefined,
             onSuccess: (paymentId, _orderId) => {
               showSuccess("Payment successful!", "Your order has been placed and payment confirmed.")
-              setShowSuccess(true)
+              setOrderPlaced(true)
               setPlacing(false)
             },
             onFailure: (error) => {
               showError("Payment failed", error)
               // Order was created but payment failed — still show success with COD fallback
-              setShowSuccess(true)
+              setOrderPlaced(true)
               setPlacing(false)
             },
           })
         } catch {
           // Razorpay failed/cancelled — order still created, switch to COD
           showSuccess("Order placed!", "Payment will be collected on delivery (COD).")
-          setShowSuccess(true)
+          setOrderPlaced(true)
           setPlacing(false)
         }
       } else {
         // COD — order already created
-        setShowSuccess(true)
+        setOrderPlaced(true)
         setPlacing(false)
       }
     } catch (error) {
@@ -166,7 +167,7 @@ export function CustomerCheckout() {
   }
 
   const handleOrderSuccess = () => {
-    setShowSuccess(false)
+    setOrderPlaced(false)
     if (createdOrderId) {
       setSelectedOrderId(createdOrderId)
     }
@@ -393,7 +394,7 @@ export function CustomerCheckout() {
       </div>
 
       {/* Success Dialog */}
-      <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
+      <Dialog open={orderPlaced} onOpenChange={setOrderPlaced}>
         <DialogContent className="max-w-sm mx-auto rounded-2xl">
           <DialogHeader>
             <DialogTitle className="sr-only">Order Placed</DialogTitle>
@@ -411,7 +412,7 @@ export function CustomerCheckout() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowSuccess(false)
+                  setOrderPlaced(false)
                   clearCart()
                   setCustomerPage("home")
                 }}

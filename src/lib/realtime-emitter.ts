@@ -51,7 +51,7 @@ async function emitToRealtimeService(payload: {
 // ============================================================================
 
 /**
- * Emit an order-related event to a business room
+ * Emit an order-related event to a business room.
  * Events: order:created, order:updated, order:status_changed, order:cancelled
  */
 export async function emitOrderEvent(
@@ -68,6 +68,40 @@ export async function emitOrderEvent(
       timestamp: new Date().toISOString(),
     },
   });
+}
+
+/**
+ * Emit an order event scoped to BOTH the business room and the specific store room.
+ * Store room pattern: business:{businessId}:store:{storeId}
+ *
+ * Use this for all order lifecycle events so STORE_MANAGER clients only receive
+ * events for their assigned store, while CLIENT_OWNER clients (subscribed to
+ * the business room) still receive everything.
+ */
+export async function emitStoreOrderEvent(
+  businessId: string,
+  storeId: string,
+  event: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  const payload = {
+    ...data,
+    businessId,
+    storeId,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Emit to business-level room (CLIENT_OWNER, platform admins)
+  await emitToRealtimeService({ event, businessId, data: payload });
+
+  // Emit to store-scoped room (STORE_MANAGER, DELIVERY_STAFF for that store)
+  if (storeId) {
+    await emitToRealtimeService({
+      event,
+      room: `business:${businessId}:store:${storeId}`,
+      data: payload,
+    });
+  }
 }
 
 // ============================================================================

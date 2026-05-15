@@ -111,6 +111,8 @@ interface UseRealtimeOptions {
   businessId?: string;
   /** User ID to join personal room */
   userId?: string;
+  /** Store ID — lets server join STORE_MANAGER clients to their store room */
+  storeId?: string;
   /** Whether to auto-connect (default: true) */
   autoConnect?: boolean;
   /** Whether to auto-update React Query cache (default: true) */
@@ -157,6 +159,7 @@ async function getSocketIo() {
 
 const AUTH_TOKEN_KEY = "quantix_auth_token";
 const BUSINESS_ID_KEY = "quantix_business_id";
+const STORE_ID_KEY = "quantix_store_id";
 
 function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -166,6 +169,11 @@ function getAuthToken(): string | null {
 function getStoredBusinessId(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(BUSINESS_ID_KEY);
+}
+
+function getStoredStoreId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(STORE_ID_KEY);
 }
 
 // ============================================================================
@@ -187,6 +195,7 @@ class SocketManager {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private currentBusinessId: string | null = null;
   private currentUserId: string | null = null;
+  private currentStoreId: string | null = null;
 
   static getInstance(): SocketManager {
     if (!SocketManager.instance) {
@@ -269,14 +278,16 @@ class SocketManager {
     }
   }
 
-  async connect(businessId?: string, userId?: string) {
+  async connect(businessId?: string, userId?: string, storeId?: string) {
     // Store current IDs for reconnection
     if (businessId) this.currentBusinessId = businessId;
     if (userId) this.currentUserId = userId;
+    if (storeId) this.currentStoreId = storeId;
 
     // Use stored values if not provided
     const bid = this.currentBusinessId || getStoredBusinessId();
     const uid = this.currentUserId;
+    const sid = this.currentStoreId || getStoredStoreId();
 
     // Get auth token
     const token = getAuthToken();
@@ -298,12 +309,14 @@ class SocketManager {
         query: {
           businessId: bid || "",
           userId: uid || "",
+          storeId: sid || "",
           role: "",
           token: token || "",
         },
         auth: {
           businessId: bid,
           userId: uid,
+          storeId: sid,
           token,
         },
       });
@@ -447,7 +460,7 @@ class SocketManager {
     this.setConnectionStatus("reconnecting");
 
     this.reconnectTimer = setTimeout(() => {
-      this.connect(this.currentBusinessId || undefined, this.currentUserId || undefined);
+      this.connect(this.currentBusinessId || undefined, this.currentUserId || undefined, this.currentStoreId || undefined);
     }, delay);
   }
 }
@@ -562,7 +575,7 @@ function useCacheInvalidation() {
 // ============================================================================
 
 export function useRealtime(options: UseRealtimeOptions = {}): UseRealtimeReturn {
-  const { businessId, userId, autoConnect = true, autoInvalidate = true } = options;
+  const { businessId, userId, storeId, autoConnect = true, autoInvalidate = true } = options;
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
   const [lastEvent, setLastEvent] = useState<RealtimePayload | null>(null);
@@ -575,28 +588,23 @@ export function useRealtime(options: UseRealtimeOptions = {}): UseRealtimeReturn
       setIsConnected(status === "connected");
       setConnectionStatus(status);
     });
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, []);
 
   // Subscribe to last event
   useEffect(() => {
     const unsubscribe = manager.current.onLastEventChange(setLastEvent);
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, []);
 
   // Auto-connect on mount with auth token and business context
   useEffect(() => {
     if (autoConnect) {
-      // Read business context from localStorage if not provided
       const effectiveBusinessId = businessId || getStoredBusinessId() || undefined;
-      manager.current.connect(effectiveBusinessId, userId);
+      manager.current.connect(effectiveBusinessId, userId, storeId);
     }
-
-    return () => {
-      // Don't disconnect on unmount — let the singleton persist
-      // Individual component subscriptions are cleaned up via the unsubscribe functions
-    };
-  }, [autoConnect, businessId, userId]);
+    // Don't disconnect on unmount — let the singleton persist
+  }, [autoConnect, businessId, userId, storeId]);
 
   // Auto-invalidate React Query cache
   useEffect(() => {
@@ -638,8 +646,8 @@ export function useRealtime(options: UseRealtimeOptions = {}): UseRealtimeReturn
   // Reconnect function
   const reconnect = useCallback(() => {
     const effectiveBusinessId = businessId || getStoredBusinessId() || undefined;
-    manager.current.connect(effectiveBusinessId, userId);
-  }, [businessId, userId]);
+    manager.current.connect(effectiveBusinessId, userId, storeId);
+  }, [businessId, userId, storeId]);
 
   // Disconnect function
   const disconnect = useCallback(() => {
@@ -669,7 +677,7 @@ export function useRealtime(options: UseRealtimeOptions = {}): UseRealtimeReturn
 /**
  * Hook for tracking order updates for a specific business
  */
-export function useOrderUpdates(businessId: string): {
+export function useOrderUpdates(businessId: string, storeId?: string): {
   latestOrder: OrderUpdate | null;
   orderCount: number;
 } {
@@ -680,7 +688,10 @@ export function useOrderUpdates(businessId: string): {
   useEffect(() => {
     const handleOrderEvent = (payload: RealtimePayload) => {
       const data = (payload.data || {}) as OrderUpdate;
-      if (data.businessId === businessId || !data.businessId) {
+      const bizMatch = data.businessId === businessId || !data.businessId;
+      // If a storeId filter is provided (STORE_MANAGER), only accept events for that store
+      const storeMatch = !storeId || !data.storeId || data.storeId === storeId;
+      if (bizMatch && storeMatch) {
         setLatestOrder(data);
         setOrderCount((prev) => prev + 1);
       }

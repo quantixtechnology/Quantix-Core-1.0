@@ -48,7 +48,23 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
     throw new Error(`Business "${businessId}" not found`);
   }
 
-  // 2. Check slug uniqueness within business
+  // 2. Enforce subscription store limit — read plan.maxStores (never hardcode plan names)
+  const subscription = await db.businessSubscription.findUnique({
+    where: { businessId },
+    include: { plan: true },
+  });
+  if (subscription?.plan) {
+    const maxStores = subscription.plan.maxStores;
+    const currentCount = business._count.stores;
+    // maxStores <= 0 is treated as unlimited
+    if (maxStores > 0 && currentCount >= maxStores) {
+      throw new Error(
+        `Store limit reached. Your current plan allows ${maxStores} store${maxStores === 1 ? '' : 's'}. Upgrade your plan to add more stores.`
+      );
+    }
+  }
+
+  // 3. Check slug uniqueness within business
   const slugExists = await db.store.findUnique({
     where: { businessId_slug: { businessId, slug: data.slug } },
   });

@@ -1,82 +1,66 @@
 // ============================================================================
 // QUANTIX CORE — Delivery Partner Detail API
-// GET    /api/core/delivery/partners/[partnerId] — Get single partner
-// PATCH  /api/core/delivery/partners/[partnerId] — Update partner details
-// DELETE /api/core/delivery/partners/[partnerId] — Soft delete partner
+// GET    /api/core/delivery/partners/[partnerId] — Get single partner (auth required)
+// PATCH  /api/core/delivery/partners/[partnerId] — Update partner (CLIENT_OWNER+)
+// DELETE /api/core/delivery/partners/[partnerId] — Soft delete partner (CLIENT_OWNER+)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<Record<string, string | string[]>> }
-) {
+export const GET = withMiddleware({ requireAuth: true })(async (req, context) => {
   try {
-    const { partnerId } = await params;
+    const params = await context?.params;
+    const partnerId = params?.partnerId as string;
 
-    if (!partnerId || typeof partnerId !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'Invalid partner ID' },
-        { status: 400 }
-      );
+    if (!partnerId) {
+      return NextResponse.json({ success: false, error: 'Invalid partner ID' }, { status: 400 });
     }
 
-    const partner = await db.deliveryPartner.findUnique({
-      where: { id: partnerId },
-    });
+    const user = req.user!;
+    const partner = await db.deliveryPartner.findUnique({ where: { id: partnerId } });
 
     if (!partner) {
-      return NextResponse.json(
-        { success: false, error: 'Delivery partner not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: 'Delivery partner not found' }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      data: partner,
-    });
+    // Verify partner belongs to user's business
+    if (!user.isPlatformAdmin && partner.businessId !== user.businessId) {
+      return NextResponse.json({ success: false, error: 'Delivery partner not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data: partner });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get delivery partner';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<Record<string, string | string[]>> }
-) {
+export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'STORE_MANAGER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req, context) => {
   try {
-    const { partnerId } = await params;
+    const params = await context?.params;
+    const partnerId = params?.partnerId as string;
 
-    if (!partnerId || typeof partnerId !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'Invalid partner ID' },
-        { status: 400 }
-      );
+    if (!partnerId) {
+      return NextResponse.json({ success: false, error: 'Invalid partner ID' }, { status: 400 });
     }
 
-    // Verify partner exists
-    const existing = await db.deliveryPartner.findUnique({
-      where: { id: partnerId },
-    });
+    const user = req.user!;
+    const existing = await db.deliveryPartner.findUnique({ where: { id: partnerId } });
 
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Delivery partner not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: 'Delivery partner not found' }, { status: 404 });
     }
 
-    const body = await request.json();
+    // Verify partner belongs to user's business
+    if (!user.isPlatformAdmin && existing.businessId !== user.businessId) {
+      return NextResponse.json({ success: false, error: 'Delivery partner not found' }, { status: 404 });
+    }
 
-    // Build update data — only include fields that are provided
+    const body = await req.json();
+
     const updateData: Record<string, unknown> = {};
-
     if (body.name !== undefined) updateData.name = body.name;
     if (body.email !== undefined) updateData.email = body.email;
     if (body.vehicleType !== undefined) updateData.vehicleType = body.vehicleType;
@@ -91,84 +75,52 @@ export async function PATCH(
     if (body.fcmToken !== undefined) updateData.fcmToken = body.fcmToken;
     if (body.bankAccount !== undefined) updateData.bankAccount = body.bankAccount;
 
-    // If phone is being changed, check for duplicates within business
     if (body.phone && body.phone !== existing.phone) {
       const phoneInUse = await db.deliveryPartner.findUnique({
-        where: {
-          businessId_phone: {
-            businessId: existing.businessId,
-            phone: body.phone,
-          },
-        },
+        where: { businessId_phone: { businessId: existing.businessId, phone: body.phone } },
       });
       if (phoneInUse) {
         return NextResponse.json(
           { success: false, error: 'A delivery partner with this phone number already exists for this business' },
-          { status: 400 }
+          { status: 409 }
         );
       }
     }
 
-    const updated = await db.deliveryPartner.update({
-      where: { id: partnerId },
-      data: updateData,
-    });
+    const updated = await db.deliveryPartner.update({ where: { id: partnerId }, data: updateData });
 
-    return NextResponse.json({
-      success: true,
-      data: updated,
-      message: 'Delivery partner updated successfully',
-    });
+    return NextResponse.json({ success: true, data: updated, message: 'Delivery partner updated successfully' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update delivery partner';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<Record<string, string | string[]>> }
-) {
+export const DELETE = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req, context) => {
   try {
-    const { partnerId } = await params;
+    const params = await context?.params;
+    const partnerId = params?.partnerId as string;
 
-    if (!partnerId || typeof partnerId !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'Invalid partner ID' },
-        { status: 400 }
-      );
+    if (!partnerId) {
+      return NextResponse.json({ success: false, error: 'Invalid partner ID' }, { status: 400 });
     }
 
-    // Verify partner exists
-    const existing = await db.deliveryPartner.findUnique({
-      where: { id: partnerId },
-    });
+    const user = req.user!;
+    const existing = await db.deliveryPartner.findUnique({ where: { id: partnerId } });
 
     if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Delivery partner not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: 'Delivery partner not found' }, { status: 404 });
     }
 
-    // Soft delete — set isActive to false
-    await db.deliveryPartner.update({
-      where: { id: partnerId },
-      data: { isActive: false },
-    });
+    if (!user.isPlatformAdmin && existing.businessId !== user.businessId) {
+      return NextResponse.json({ success: false, error: 'Delivery partner not found' }, { status: 404 });
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Delivery partner deactivated successfully',
-    });
+    await db.deliveryPartner.update({ where: { id: partnerId }, data: { isActive: false } });
+
+    return NextResponse.json({ success: true, message: 'Delivery partner deactivated successfully' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to deactivate delivery partner';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

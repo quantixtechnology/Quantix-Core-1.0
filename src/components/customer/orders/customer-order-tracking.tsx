@@ -58,7 +58,7 @@ export function CustomerOrderTracking() {
   // Parse order from API
   const order = useMemo(() => {
     if (!orderData?.data) return null
-    const o = orderData.data as Record<string, unknown>
+    const o = orderData.data as unknown as Record<string, unknown>
     return {
       id: o.id as string,
       orderNumber: o.orderNumber as string,

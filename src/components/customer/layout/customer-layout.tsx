@@ -6,10 +6,15 @@ import { useCartStore } from "@/stores/cart-store"
 import { Home, Grid3X3, ShoppingCart, ClipboardList, User, Search, Bell } from "lucide-react"
 
 export function CustomerLayout({ children }: { children: React.ReactNode }) {
-  const { customerPage, setCustomerPage, customerLoggedIn, setCustomerPage: navigate, currentBusinessName } = useAdminStore()
+  const { customerPage, setCustomerPage, customerLoggedIn, setCustomerPage: navigate, currentBusinessName, currentBusinessPrimaryColor } = useAdminStore()
   const businessName = currentBusinessName || "My Store"
   const businessInitials = businessName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
   const totalItems = useCartStore((s) => s.totalItems())
+
+  // Brand color: use business primary color or fall back to emerald-500
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
+  const headerStyle = { backgroundColor: brandColor }
+  const activeStyle = { color: brandColor }
 
   const handleTabPress = (page: "home" | "products" | "cart" | "orders" | "profile") => {
     if (!customerLoggedIn && page !== "home") {
@@ -45,32 +50,32 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-md bg-white min-h-screen flex flex-col relative">
         {/* Top Header */}
         {showHeader && (
-          <header className="sticky top-0 z-50 bg-emerald-500 text-white px-4 py-3 flex items-center justify-between shadow-sm">
+          <header className="sticky top-0 z-50 text-white px-4 py-3 flex items-center justify-between shadow-sm" style={headerStyle}>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-                <span className="text-emerald-600 font-bold text-sm">{businessInitials}</span>
+                <span className="font-bold text-sm" style={activeStyle}>{businessInitials}</span>
               </div>
               <div>
                 <h1 className="text-sm font-bold leading-tight">{businessName.split(' ')[0]}</h1>
-                <p className="text-[10px] text-emerald-100 leading-tight">{businessName.split(' ').slice(1).join(' ') || 'Store'}</p>
+                <p className="text-[10px] text-white/70 leading-tight">{businessName.split(' ').slice(1).join(' ') || 'Store'}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <button
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-emerald-600 transition-colors"
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
                 onClick={() => navigate("home")}
                 aria-label="Search"
               >
                 <Search className="w-5 h-5" />
               </button>
               <button
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-emerald-600 transition-colors"
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
                 aria-label="Notifications"
               >
                 <Bell className="w-5 h-5" />
               </button>
               <button
-                className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-emerald-600 transition-colors"
+                className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
                 onClick={() => handleTabPress("cart")}
                 aria-label="Cart"
               >
@@ -102,14 +107,15 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
                     key={tab.id}
                     onClick={() => handleTabPress(tab.page)}
                     className={`flex flex-col items-center justify-center py-1.5 px-3 min-w-[60px] transition-colors ${
-                      isActive ? "text-emerald-600" : "text-gray-400"
+                      isActive ? "" : "text-gray-400"
                     }`}
+                    style={isActive ? activeStyle : undefined}
                     aria-label={tab.label}
                   >
                     <div className="relative">
                       <Icon className={`w-5 h-5 ${isActive ? "stroke-[2.5px]" : ""}`} />
                       {tab.id === "cart" && totalItems > 0 && (
-                        <span className="absolute -top-1.5 -right-2 bg-emerald-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
+                        <span className="absolute -top-1.5 -right-2 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5" style={{ backgroundColor: brandColor }}>
                           {totalItems > 99 ? "99+" : totalItems}
                         </span>
                       )}
@@ -118,7 +124,7 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
                       {tab.label}
                     </span>
                     {isActive && (
-                      <div className="w-1 h-1 rounded-full bg-emerald-500 mt-0.5" />
+                      <div className="w-1 h-1 rounded-full mt-0.5" style={{ backgroundColor: brandColor }} />
                     )}
                   </button>
                 )

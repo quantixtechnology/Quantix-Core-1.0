@@ -44,6 +44,7 @@ import { StatusBadge } from "@/components/admin/shared/status-badge"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
 import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { CreateOrderDialog } from "./create-order-dialog"
 
@@ -190,7 +191,9 @@ function mapApiOrder(apiOrder: Record<string, unknown>): Order {
 
 export function OrdersView() {
   // Get real business ID from context
-  const { businessId, isLoading: contextLoading } = useBusinessContext()
+  const { businessId } = useBusinessContext()
+  const { user } = useAuthStore()
+  const userStoreId = user?.storeId || undefined
 
   // Set business context for API client
   useEffect(() => {
@@ -210,8 +213,8 @@ export function OrdersView() {
 
   const updateStatusMutation = useUpdateOrderStatus()
 
-  // Real-time order updates
-  const { latestOrder, orderCount } = useOrderUpdates(businessId)
+  // Real-time order updates — pass storeId so STORE_MANAGER only sees their store's events
+  const { latestOrder, orderCount } = useOrderUpdates(businessId, userStoreId)
 
   // Show toast on real-time order updates
   useEffect(() => {
@@ -226,7 +229,7 @@ export function OrdersView() {
     if (!ordersData?.data) return []
     const rawData = ordersData.data
     if (!Array.isArray(rawData)) return []
-    return rawData.map((o: Record<string, unknown>) => mapApiOrder(o))
+    return (rawData as unknown as Record<string, unknown>[]).map((o) => mapApiOrder(o))
   }, [ordersData])
 
   // ---- State ----
@@ -274,7 +277,7 @@ export function OrdersView() {
       }
       const allowed = tabMap[activeTab]
       if (allowed) {
-        result = result.filter((o) => allowed.includes(o.status))
+        result = result.filter((o) => allowed.includes(o.status as OrderStatus))
       }
     }
 
@@ -664,7 +667,7 @@ export function OrdersView() {
                               <span className="text-xs font-medium">{order.paymentMethod}</span>
                             </TableCell>
                             <TableCell>
-                              <OrderStatusBadge status={order.status} />
+                              <OrderStatusBadge status={order.status as OrderStatus} />
                             </TableCell>
                             <TableCell>
                               <span className="text-xs text-muted-foreground">
@@ -706,7 +709,7 @@ export function OrdersView() {
                   <SheetTitle className="text-lg font-bold">
                     {selectedOrder.orderNumber}
                   </SheetTitle>
-                  <OrderStatusBadge status={selectedOrder.status} />
+                  <OrderStatusBadge status={selectedOrder.status as OrderStatus} />
                 </div>
                 <SheetDescription>
                   Order placed on {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString("en-IN") : "N/A"}
@@ -850,7 +853,7 @@ export function OrdersView() {
                     <Card>
                       <CardContent className="p-4">
                         <div className="space-y-0">
-                          {getTimelineSteps(selectedOrder.status).map((t, idx, arr) => (
+                          {getTimelineSteps(selectedOrder.status as OrderStatus).map((t, idx, arr) => (
                             <div key={t.step} className="flex gap-3">
                               {/* Dot + Line */}
                               <div className="flex flex-col items-center">

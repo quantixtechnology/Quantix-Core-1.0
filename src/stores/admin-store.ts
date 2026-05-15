@@ -58,6 +58,7 @@ export type BusinessPage =
   | "loyalty"
   | "product-import"
   | "delivery-zones"
+  | "stores"
   | "storefront"
   | "workflow-config"
   | "workflows"
@@ -314,6 +315,11 @@ interface AdminState {
   currentBusinessName: string
   currentBusinessType: string       // e.g. "GROCERY", "LAUNDRY"
   currentBusinessSlug: string
+  currentBusinessPrimaryColor: string  // hex, e.g. "#10B981"
+  setCurrentBusinessPrimaryColor: (color: string) => void
+  // Active store within the current business (set by storefront detection or store selection)
+  currentStoreId: string
+  setCurrentStoreId: (id: string) => void
   // Set all business context at once (used by login, impersonation, business selection)
   setCurrentBusiness: (id: string, name: string, type: string, slug?: string) => void
   // Set business context for real business owner login (does NOT set isImpersonating)
@@ -378,9 +384,13 @@ export const useAdminStore = create<AdminState>((set) => ({
   // Real tenant context
   currentBusinessId: "",
   setCurrentBusinessId: (id) => set({ currentBusinessId: id }),
+  currentStoreId: "",
+  setCurrentStoreId: (id) => set({ currentStoreId: id }),
   currentBusinessName: "",
   currentBusinessType: "",
   currentBusinessSlug: "",
+  currentBusinessPrimaryColor: "",
+  setCurrentBusinessPrimaryColor: (color) => set({ currentBusinessPrimaryColor: color }),
   setCurrentBusiness: (id, name, type, slug = "") => set({
     currentBusinessId: id,
     currentBusinessName: name,
@@ -406,6 +416,8 @@ export const useAdminStore = create<AdminState>((set) => ({
     currentBusinessName: "",
     currentBusinessType: "",
     currentBusinessSlug: "",
+    currentBusinessPrimaryColor: "",
+    currentStoreId: "",
     isImpersonating: false,
     viewMode: "super_admin",
     searchQuery: "",

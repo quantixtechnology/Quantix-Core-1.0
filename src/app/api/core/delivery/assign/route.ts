@@ -4,13 +4,15 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { findNearestDeliveryPartner } from '@/lib/core/delivery';
 import { emitDeliveryEvent, emitOrderEvent } from '@/lib/realtime-emitter';
 
-export async function POST(request: Request) {
+export const POST = withMiddleware({ requireAuth: true })(async (req) => {
   try {
-    const body = await request.json();
+    const body = await req.json();
+    const user = req.user!;
 
     if (!body.orderId) {
       return NextResponse.json(
@@ -41,6 +43,23 @@ export async function POST(request: Request) {
         { success: false, error: 'Order not found' },
         { status: 404 }
       );
+    }
+
+    // Enforce tenant + store isolation
+    if (!user.isPlatformAdmin) {
+      if (order.businessId !== user.businessId) {
+        return NextResponse.json(
+          { success: false, error: 'Order not found' },
+          { status: 404 }
+        );
+      }
+      // STORE_MANAGER can only assign delivery for orders belonging to their store
+      if (user.role === 'STORE_MANAGER' && user.storeId && order.storeId !== user.storeId) {
+        return NextResponse.json(
+          { success: false, error: 'You can only assign delivery for orders in your store' },
+          { status: 403 }
+        );
+      }
     }
 
     if (!order.delivery) {
@@ -193,4 +212,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
+});

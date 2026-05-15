@@ -300,6 +300,21 @@ export interface UpdateBusinessRequest extends Partial<CreateBusinessRequest> {
   notificationConfig?: Record<string, unknown>;
 }
 
+export interface StoreTimingInput {
+  day: number; // 0 = Sunday, 6 = Saturday
+  openTime: string;
+  closeTime: string;
+  isClosed?: boolean;
+}
+
+export interface DefaultStoreTiming {
+  day: number;
+  dayName: string;
+  openTime: string;
+  closeTime: string;
+  isClosed: boolean;
+}
+
 export interface CreateStoreRequest {
   name: string;
   slug: string;
@@ -419,6 +434,7 @@ export interface ProductFilter {
   status?: ProductStatus | ProductStatus[];
   type?: ProductType | ProductType[];
   categoryId?: string | string[];
+  storeId?: string;
   isVeg?: boolean;
   isFeatured?: boolean;
   isPopular?: boolean;

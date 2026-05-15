@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, Suspense } from "react"
 import dynamic from "next/dynamic"
+import { useSearchParams } from "next/navigation"
 import { AuthProvider } from "@/components/auth/auth-provider"
 import { useAuthStore } from "@/stores/auth-store"
 import { AdminLayout } from "@/components/admin/layout/admin-layout"
@@ -9,6 +10,35 @@ import { BusinessLayout } from "@/components/business/layout/business-layout"
 import { CustomerLayout } from "@/components/customer/layout/customer-layout"
 import { DeliveryLayout } from "@/components/delivery/layout/delivery-layout"
 import { useAdminStore } from "@/stores/admin-store"
+
+// ── Storefront subdomain detector ────────────────────────────────────────
+// Reads ?_storefront=<slug> injected by next.config.ts rewrites when
+// a visitor lands on <slug>.quantixshop.in. Fetches store-context and
+// switches the app into customer mode for that business.
+function StorefrontParamDetector() {
+  const searchParams = useSearchParams()
+  const slug = searchParams.get("_storefront")
+  const { setCurrentBusiness, setViewMode, setCurrentStoreId, setCurrentBusinessPrimaryColor } = useAdminStore()
+  const { isAuthenticated } = useAuthStore()
+
+  useEffect(() => {
+    if (!slug || isAuthenticated) return
+    fetch(`/api/core/storefront/store-context?slug=${encodeURIComponent(slug)}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json.success || !json.data?.business) return
+        const biz = json.data.business
+        setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
+        if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
+        if (json.data.store?.id) setCurrentStoreId(json.data.store.id)
+        setViewMode("customer")
+      })
+      .catch(() => {/* non-fatal */})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, isAuthenticated])
+
+  return null
+}
 
 // ── Loading fallback ──────────────────────────────────────────────────────
 function PageLoader() {
@@ -132,6 +162,7 @@ const StaffView = dynamic(() => import("@/components/dashboard/staff-view").then
 const TaxView = dynamic(() => import("@/components/dashboard/tax-view").then(m => ({ default: m.TaxView })), { loading: () => <PageLoader /> })
 const LoyaltyView = dynamic(() => import("@/components/dashboard/loyalty-view").then(m => ({ default: m.LoyaltyView })), { loading: () => <PageLoader /> })
 const DeliveryZonesView = dynamic(() => import("@/components/dashboard/delivery-zones-view").then(m => ({ default: m.DeliveryZonesView })), { loading: () => <PageLoader /> })
+const StoresView = dynamic(() => import("@/components/business/stores/stores-view").then(m => ({ default: m.StoresView })), { loading: () => <PageLoader /> })
 
 // ── Customer App (lazy) ───────────────────────────────────────────────────
 const CustomerAuth = dynamic(() => import("@/components/customer/auth/customer-auth").then(m => ({ default: m.CustomerAuth })), { loading: () => <PageLoader /> })
@@ -264,6 +295,7 @@ function AppContent() {
       case "loyalty": return <LoyaltyView />
       case "product-import": return <ProductImportView />
       case "delivery-zones": return <DeliveryZonesView />
+      case "stores": return <StoresView />
       case "storefront": return <StorefrontShell />
       // Workflow Engine
       case "workflow-config": return <WorkflowConfigView />
@@ -304,9 +336,12 @@ function AppContent() {
 
   if (viewMode === "customer") {
     return (
-      <CustomerLayout>
-        {renderCustomerPage()}
-      </CustomerLayout>
+      <>
+        <Suspense fallback={null}><StorefrontParamDetector /></Suspense>
+        <CustomerLayout>
+          {renderCustomerPage()}
+        </CustomerLayout>
+      </>
     )
   }
 
@@ -331,8 +366,11 @@ function AppContent() {
   }
 
   return (
-    <AdminLayout>
-      {renderSuperAdminPage()}
-    </AdminLayout>
+    <>
+      <Suspense fallback={null}><StorefrontParamDetector /></Suspense>
+      <AdminLayout>
+        {renderSuperAdminPage()}
+      </AdminLayout>
+    </>
   )
 }

@@ -1,29 +1,52 @@
 // ============================================================================
 // QUANTIX CORE — Delivery Zones API
-// GET  /api/core/delivery/zones  — List delivery zones for a business
-// POST /api/core/delivery/zones  — Create delivery zone
+// GET  /api/core/delivery/zones  — List delivery zones (auth required)
+// POST /api/core/delivery/zones  — Create delivery zone (CLIENT_OWNER+)
+//
+// STORE ISOLATION:
+//   STORE_MANAGER → only zones for their assigned storeId
+//   CLIENT_OWNER  → all zones for their business
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
-export async function GET(request: Request) {
+export const GET = withMiddleware({ requireAuth: true })(async (req) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('businessId');
+    const user = req.user!;
+    const { searchParams } = new URL(req.url);
 
-    if (!businessId) {
-      return NextResponse.json(
-        { success: false, error: 'businessId is required' },
-        { status: 400 }
-      );
+    let businessId: string;
+    if (user.isPlatformAdmin) {
+      const qb = searchParams.get('businessId');
+      if (!qb) {
+        return NextResponse.json(
+          { success: false, error: 'businessId is required' },
+          { status: 400 }
+        );
+      }
+      businessId = qb;
+    } else {
+      if (!user.businessId) {
+        return NextResponse.json(
+          { success: false, error: 'No business context found for this user' },
+          { status: 400 }
+        );
+      }
+      businessId = user.businessId;
     }
 
-    const storeId = searchParams.get('storeId');
+    // STORE_MANAGER: force filter to their assigned store
+    const requestedStoreId = searchParams.get('storeId') || undefined;
+    const enforcedStoreId =
+      user.role === 'STORE_MANAGER' && user.storeId
+        ? user.storeId
+        : requestedStoreId;
 
     const where: Record<string, unknown> = {
       businessId,
-      ...(storeId && { storeId }),
+      ...(enforcedStoreId && { storeId: enforcedStoreId }),
     };
 
     const zones = await db.deliveryZone.findMany({
@@ -31,34 +54,20 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({
-      success: true,
-      data: zones,
-    });
+    return NextResponse.json({ success: true, data: zones });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to list delivery zones';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function POST(request: Request) {
+export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req) => {
   try {
-    const body = await request.json();
+    const user = req.user!;
+    const body = await req.json();
 
-    if (!body.businessId) {
-      return NextResponse.json(
-        { success: false, error: 'businessId is required' },
-        { status: 400 }
-      );
-    }
     if (!body.name) {
-      return NextResponse.json(
-        { success: false, error: 'name is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'name is required' }, { status: 400 });
     }
     if (!body.zoneType || !['CIRCLE', 'POLYGON', 'PINCODE'].includes(body.zoneType)) {
       return NextResponse.json(
@@ -67,7 +76,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate zone-type-specific fields
     if (body.zoneType === 'CIRCLE') {
       if (!body.centerLat || !body.centerLng || !body.radius) {
         return NextResponse.json(
@@ -87,9 +95,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const businessId: string = user.isPlatformAdmin
+      ? (body.businessId ?? user.businessId ?? '')
+      : (user.businessId ?? '');
+
+    if (!businessId) {
+      return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
+    }
+
     const zone = await db.deliveryZone.create({
       data: {
-        businessId: body.businessId,
+        businessId,
         storeId: body.storeId,
         name: body.name,
         zoneType: body.zoneType,
@@ -106,16 +122,12 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      data: zone,
-      message: 'Delivery zone created successfully',
-    }, { status: 201 });
+    return NextResponse.json(
+      { success: true, data: zone, message: 'Delivery zone created successfully' },
+      { status: 201 }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create delivery zone';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

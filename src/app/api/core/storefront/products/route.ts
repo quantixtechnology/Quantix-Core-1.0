@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const businessId = searchParams.get('businessId') || request.headers.get('x-business-id');
+    const storeId = searchParams.get('storeId') || undefined;
     const categoryId = searchParams.get('categoryId');
     const search = searchParams.get('search');
     const statusParam = searchParams.get('status'); // e.g. "ALL" or "ACTIVE,INACTIVE,DRAFT"
@@ -71,6 +72,18 @@ export async function GET(request: Request) {
       ];
     }
 
+    // When storeId is provided: only return products that have inventory at that store.
+    // This is the core of store-aware product listing — customers only see what their
+    // assigned store can fulfil.
+    if (storeId) {
+      where.inventory = {
+        some: {
+          storeId,
+          status: { not: 'DISCONTINUED' },
+        },
+      };
+    }
+
     const [products, total] = await Promise.all([
       db.product.findMany({
         where,
@@ -103,6 +116,8 @@ export async function GET(request: Request) {
             orderBy: [{ isDefault: 'desc' }, { price: 'asc' }],
           },
           inventory: {
+            // When scoped to a store, only return that store's inventory rows
+            where: storeId ? { storeId } : undefined,
             select: {
               storeId: true,
               quantity: true,
@@ -198,6 +213,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       data: storefrontProducts,
+      // Echo back the storeId used so the client can confirm store context
+      storeId: storeId || null,
       pagination: {
         page,
         limit,

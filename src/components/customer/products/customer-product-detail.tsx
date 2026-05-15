@@ -13,18 +13,17 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Plus, Minus, Leaf, Share2, Heart, Truck, Clock, ShieldCheck, Loader2 } from "lucide-react"
 
 export function CustomerProductDetail() {
-  const { selectedProductId, setSelectedProductId, setCustomerPage, currentBusinessType } = useAdminStore()
+  const { selectedProductId, setSelectedProductId, setCustomerPage, currentBusinessType, currentBusinessId } = useAdminStore()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [isWishlisted, setIsWishlisted] = useState(false)
 
-  // Use dynamic business ID from admin store
-  const BIZ_ID = "biz_1"
+  const BIZ_ID = currentBusinessId || ""
 
   useEffect(() => {
-    setBusinessContext(BIZ_ID)
-  }, [])
+    if (BIZ_ID) setBusinessContext(BIZ_ID)
+  }, [BIZ_ID])
 
   // Fetch single product by ID
   const { data: productData, isLoading: productLoading, error: productError, refetch } = useProduct(selectedProductId || "")
@@ -61,7 +60,7 @@ export function CustomerProductDetail() {
   // Parse product from API
   const apiProduct = useMemo(() => {
     if (!productData?.data) return null
-    const p = productData.data as Record<string, unknown>
+    const p = productData.data as unknown as Record<string, unknown>
     return {
       id: p.id as string,
       name: p.name as string,
@@ -144,14 +143,14 @@ export function CustomerProductDetail() {
     if (demoRelated.length > 0) return demoRelated
     // Fall back to API data
     if (!relatedData?.data) return []
-    const prods = Array.isArray(relatedData.data) ? relatedData.data : []
+    const prods = (Array.isArray(relatedData.data) ? relatedData.data : []) as unknown as Record<string, unknown>[]
     return prods
-      .filter((p: Record<string, unknown>) => {
+      .filter((p) => {
         const catId = (p.category as Record<string, string>)?.id
         return catId === product.categoryId && p.id !== product.id && p.status === "ACTIVE"
       })
       .slice(0, 4)
-      .map((p: Record<string, unknown>) => ({
+      .map((p) => ({
         id: p.id as string,
         name: p.name as string,
         category: (p.category as Record<string, string>)?.name || "",
