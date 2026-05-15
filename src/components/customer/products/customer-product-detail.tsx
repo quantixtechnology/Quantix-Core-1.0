@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, Plus, Minus, Leaf, Share2, Heart, Truck, Clock, ShieldCheck, Loader2 } from "lucide-react"
 
 export function CustomerProductDetail() {
-  const { selectedProductId, setSelectedProductId, setCustomerPage, currentBusinessType, currentBusinessId } = useAdminStore()
+  const { selectedProductId, setSelectedProductId, setCustomerPage, currentBusinessType, currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(1)
@@ -304,9 +305,10 @@ export function CustomerProductDetail() {
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                     variant.id === activeVariant.id
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                      ? ""
                       : "border-gray-200 text-gray-600 hover:border-gray-300"
                   }`}
+                  style={variant.id === activeVariant.id ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : undefined}
                 >
                   {variant.name}
                   <span className="ml-1 text-[10px] opacity-70">{formatPrice(variant.price)}</span>
@@ -322,21 +324,24 @@ export function CustomerProductDetail() {
           {savings > 0 && (
             <>
               <span className="text-base text-gray-400 line-through">{formatPrice(activeVariant.mrp)}</span>
-              <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
+              <Badge className="text-white text-[10px]" style={{ backgroundColor: brandColor }}>
                 {savingsPercent}% OFF
               </Badge>
             </>
           )}
         </div>
         {savings > 0 && (
-          <p className="text-xs text-emerald-600 font-medium mt-1">
+          <p className="text-xs font-medium mt-1" style={{ color: brandColor }}>
             You save {formatPrice(savings)} on this item
           </p>
         )}
 
         {/* Stock */}
         <div className="mt-3 flex items-center gap-1.5">
-          <div className={`w-2 h-2 rounded-full ${isOutOfStock ? "bg-red-500" : (activeVariant.stock !== undefined && activeVariant.stock < 10) ? "bg-amber-500" : "bg-emerald-500"}`} />
+          <div
+            className={`w-2 h-2 rounded-full ${isOutOfStock ? "bg-red-500" : (activeVariant.stock !== undefined && activeVariant.stock < 10) ? "bg-amber-500" : ""}`}
+            style={!isOutOfStock && !(activeVariant.stock !== undefined && activeVariant.stock < 10) ? { backgroundColor: brandColor } : undefined}
+          />
           <span className="text-xs text-gray-500">
             {isOutOfStock ? "Out of stock" : (activeVariant.stock !== undefined && activeVariant.stock < 10) ? `Only ${activeVariant.stock} left` : "In Stock"}
           </span>
@@ -370,15 +375,15 @@ export function CustomerProductDetail() {
         {/* Delivery Info */}
         <div className="mt-5 grid grid-cols-3 gap-3">
           <div className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3">
-            <Truck className="w-5 h-5 text-emerald-500" />
+            <Truck className="w-5 h-5" style={{ color: brandColor }} />
             <span className="text-[10px] text-gray-600 text-center">Free delivery above ₹500</span>
           </div>
           <div className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3">
-            <Clock className="w-5 h-5 text-emerald-500" />
+            <Clock className="w-5 h-5" style={{ color: brandColor }} />
             <span className="text-[10px] text-gray-600 text-center">30 min delivery</span>
           </div>
           <div className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-500" />
+            <ShieldCheck className="w-5 h-5" style={{ color: brandColor }} />
             <span className="text-[10px] text-gray-600 text-center">Quality assured</span>
           </div>
         </div>
@@ -436,14 +441,15 @@ export function CustomerProductDetail() {
           {cartQty === 0 ? (
             <Button
               onClick={handleAddToCart}
-              className="w-full h-11 text-sm font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600"
+              className="w-full h-11 text-sm font-bold rounded-xl text-white"
+              style={{ backgroundColor: brandColor }}
             >
               <Plus className="w-4 h-4 mr-2" />
               Add to Cart — {formatPrice(activeVariant.price * quantity)}
             </Button>
           ) : (
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-between bg-emerald-500 rounded-xl h-11 flex-1 px-2">
+              <div className="flex items-center justify-between rounded-xl h-11 flex-1 px-2" style={{ backgroundColor: brandColor }}>
                 <button
                   onClick={() =>
                     cartQty === 1

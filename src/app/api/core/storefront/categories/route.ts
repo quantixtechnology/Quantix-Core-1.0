@@ -1,15 +1,13 @@
 // ============================================================================
 // QUANTIX CORE — Storefront Categories API
-// GET /api/core/storefront/categories — Public category listing
-// POST /api/core/storefront/categories — Create category (admin)
-//
-// No auth required
-// Returns categories with product counts
-// Pass includeInactive=true to include inactive categories (admin use)
+// GET /api/core/storefront/categories — Public category listing (no auth)
+// POST /api/core/storefront/categories — Create category (auth required)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 
 export async function GET(request: Request) {
   try {
@@ -39,21 +37,24 @@ export async function GET(request: Request) {
     }
 
     // Build where clause
-    const catWhere: Record<string, unknown> = { businessId };
+    const catWhere: Prisma.CategoryWhereInput = { businessId };
     if (!includeInactive) {
       catWhere.isActive = true;
     }
+
+    const productWhere: Prisma.ProductWhereInput | undefined =
+      productStatus === 'ALL' ? undefined : { status: productStatus as Prisma.EnumProductStatusFilter };
 
     // Get categories with product counts
     const categories = await db.category.findMany({
       where: catWhere,
       include: {
         products: {
-          where: productStatus === 'ALL' ? {} : { status: productStatus },
+          where: productWhere,
           select: { id: true },
         },
         children: {
-          where: includeInactive ? {} : { isActive: true },
+          where: includeInactive ? undefined : { isActive: true },
           select: {
             id: true,
             name: true,
@@ -64,7 +65,7 @@ export async function GET(request: Request) {
             isActive: true,
             workflowType: true,
             products: {
-              where: productStatus === 'ALL' ? {} : { status: productStatus },
+              where: productWhere,
               select: { id: true },
             },
           },
@@ -115,17 +116,25 @@ export async function GET(request: Request) {
 }
 
 // ============================================================================
-// POST — Create a new category (admin)
+// POST — Create a new category (auth required: CLIENT_OWNER+)
 // ============================================================================
-export async function POST(request: Request) {
+export const POST = withMiddleware({
+  requireAuth: true,
+  requiredRoles: ['CLIENT_OWNER', 'STORE_MANAGER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'],
+})(async (req) => {
   try {
-    const body = await request.json();
+    const body = await req.json();
+    const user = req.user!;
 
     if (!body.businessId) {
       return NextResponse.json(
         { success: false, error: 'businessId is required' },
         { status: 400 }
       );
+    }
+
+    if (!user.isPlatformAdmin && user.businessId !== body.businessId) {
+      return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
     if (!body.name) {
@@ -135,18 +144,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify business exists
-    const business = await db.business.findUnique({
-      where: { id: body.businessId },
-    });
+    const business = await db.business.findUnique({ where: { id: body.businessId } });
     if (!business) {
-      return NextResponse.json(
-        { success: false, error: 'Business not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
-    // Generate slug if not provided
     const slug = body.slug || body.name
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
@@ -154,7 +156,6 @@ export async function POST(request: Request) {
       .replace(/-+/g, '-')
       .slice(0, 60);
 
-    // Get the max sortOrder for this business's categories
     const maxSortCategory = await db.category.findFirst({
       where: { businessId: body.businessId, parentId: null },
       orderBy: { sortOrder: 'desc' },
@@ -183,9 +184,6 @@ export async function POST(request: Request) {
     }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create category';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

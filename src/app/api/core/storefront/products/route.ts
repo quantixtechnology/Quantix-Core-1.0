@@ -1,14 +1,11 @@
 // ============================================================================
 // QUANTIX CORE — Storefront Products API
-// GET /api/core/storefront/products — Public product listing for customer app
-// POST /api/core/storefront/products — Create product (admin)
-//
-// No auth required (public browsing)
-// Only returns ACTIVE products from ACTIVE businesses by default
-// Pass status=ALL or comma-separated statuses to include non-active products (admin)
+// GET /api/core/storefront/products — Public product listing (no auth)
+// POST /api/core/storefront/products — Create product (auth required)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
 export async function GET(request: Request) {
@@ -234,17 +231,25 @@ export async function GET(request: Request) {
 }
 
 // ============================================================================
-// POST — Create a new product (admin)
+// POST — Create a new product (auth required: CLIENT_OWNER+)
 // ============================================================================
-export async function POST(request: Request) {
+export const POST = withMiddleware({
+  requireAuth: true,
+  requiredRoles: ['CLIENT_OWNER', 'STORE_MANAGER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'],
+})(async (req) => {
   try {
-    const body = await request.json();
+    const body = await req.json();
+    const user = req.user!;
 
     if (!body.businessId) {
       return NextResponse.json(
         { success: false, error: 'businessId is required' },
         { status: 400 }
       );
+    }
+
+    if (!user.isPlatformAdmin && user.businessId !== body.businessId) {
+      return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
     if (!body.name) {
@@ -254,23 +259,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify business exists
-    const business = await db.business.findUnique({
-      where: { id: body.businessId },
-    });
+    const business = await db.business.findUnique({ where: { id: body.businessId } });
     if (!business) {
-      return NextResponse.json(
-        { success: false, error: 'Business not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
-    // Find the main store for this business
-    const store = await db.store.findFirst({
-      where: { businessId: body.businessId },
-    });
+    const store = await db.store.findFirst({ where: { businessId: body.businessId } });
 
-    // Generate slug if not provided
     const slug = body.slug || body.name
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
@@ -278,10 +273,8 @@ export async function POST(request: Request) {
       .replace(/-+/g, '-')
       .slice(0, 60);
 
-    // Resolve storeId — use provided, or main store, or error if neither
     const storeId = body.storeId || store?.id || null;
 
-    // Create product with variants
     const product = await db.product.create({
       data: {
         businessId: body.businessId,
@@ -343,7 +336,6 @@ export async function POST(request: Request) {
       },
     });
 
-    // Create inventory records for each variant if storeId is available
     if (storeId) {
       for (const variant of product.variants) {
         const existingInventory = await db.inventory.findFirst({
@@ -373,9 +365,6 @@ export async function POST(request: Request) {
     }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create product';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

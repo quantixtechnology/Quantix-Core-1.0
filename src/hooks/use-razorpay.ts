@@ -246,9 +246,10 @@ export function useRazorpayCheckout(): RazorpayCheckoutResult {
         };
 
         const rzp = new RazorpayClass(razorpayOptions);
-        rzp.on('payment.failed', function (response: { error: { code: string; description: string; reason: string } }) {
-          const errMsg = response.error.description || 'Payment failed';
-          console.error('[Razorpay Checkout] Payment failed:', response.error);
+        rzp.on('payment.failed', function (response: Record<string, unknown>) {
+          const errPayload = response.error as { code: string; description: string; reason: string } | undefined;
+          const errMsg = errPayload?.description || 'Payment failed';
+          console.error('[Razorpay Checkout] Payment failed:', errPayload);
           showError('Payment failed', errMsg);
           setError(errMsg);
           onFailure?.(errMsg);

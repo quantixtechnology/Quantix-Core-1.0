@@ -249,7 +249,7 @@ export async function POST(
           const planBillingCycle = billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
 
           // Find the appropriate platform plan
-          const plan = await db.platformPlan.findUnique({
+          const plan = await db.platformPlan.findFirst({
             where: { billingCycle: planBillingCycle },
           });
 

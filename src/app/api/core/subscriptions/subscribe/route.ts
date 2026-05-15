@@ -1,59 +1,41 @@
 // ============================================================================
 // QUANTIX CORE — Subscribe Customer API
-// POST /api/core/subscriptions/subscribe — Subscribe customer to plan
+// POST /api/core/subscriptions/subscribe — Subscribe customer to plan (CLIENT_OWNER+)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { subscribeCustomerToPlan } from '@/lib/core/subscription';
 
-export async function POST(request: Request) {
+export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'STORE_MANAGER', 'QUANTIX_SUPER_ADMIN'] })(async (req) => {
   try {
-    const body = await request.json();
+    const user = req.user!;
+    const body = await req.json();
 
-    if (!body.businessId) {
-      return NextResponse.json(
-        { success: false, error: 'businessId is required' },
-        { status: 400 }
-      );
-    }
-    if (!body.customerId) {
-      return NextResponse.json(
-        { success: false, error: 'customerId is required' },
-        { status: 400 }
-      );
-    }
-    if (!body.planId) {
-      return NextResponse.json(
-        { success: false, error: 'planId is required' },
-        { status: 400 }
-      );
-    }
+    const businessId: string = user.isPlatformAdmin
+      ? (body.businessId ?? user.businessId ?? '')
+      : (user.businessId ?? '');
+
+    if (!businessId) return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
+    if (!body.customerId) return NextResponse.json({ success: false, error: 'customerId is required' }, { status: 400 });
+    if (!body.planId) return NextResponse.json({ success: false, error: 'planId is required' }, { status: 400 });
 
     const result = await subscribeCustomerToPlan({
-      businessId: body.businessId,
+      businessId,
       customerId: body.customerId,
       planId: body.planId,
       paymentMethodId: body.paymentMethodId,
       autoRenew: body.autoRenew,
     });
 
-    if (!result.success) {
-      return NextResponse.json(
-        { success: false, error: result.error },
-        { status: 400 }
-      );
-    }
+    if (!result.success) return NextResponse.json({ success: false, error: result.error }, { status: 400 });
 
-    return NextResponse.json({
-      success: true,
-      data: result.data,
-      message: 'Customer subscribed to plan successfully',
-    }, { status: 201 });
+    return NextResponse.json(
+      { success: true, data: result.data, message: 'Customer subscribed to plan successfully' },
+      { status: 201 }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to subscribe customer';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

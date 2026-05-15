@@ -58,7 +58,8 @@ const defaultAddresses = [
 ]
 
 export function CustomerCheckout() {
-  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentStoreId } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentStoreId, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const {
     items,
     storeId: cartStoreId,
@@ -195,12 +196,12 @@ export function CustomerCheckout() {
         <div className="bg-white border border-gray-100 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-emerald-600" />
+              <MapPin className="w-4 h-4" style={{ color: brandColor }} />
               <span className="text-sm font-bold text-gray-900">Delivery Address</span>
             </div>
             <button
               onClick={() => setCustomerPage("addresses")}
-              className="text-xs text-emerald-600 font-medium flex items-center gap-0.5"
+              className="text-xs font-medium flex items-center gap-0.5" style={{ color: brandColor }}
             >
               Change <ChevronRight className="w-3 h-3" />
             </button>
@@ -209,13 +210,14 @@ export function CustomerCheckout() {
             <div
               className={`p-3 rounded-lg border transition-colors cursor-pointer ${
                 selectedAddress === activeAddress.id
-                  ? "border-emerald-300 bg-emerald-50"
+                  ? "border-gray-200"
                   : "border-gray-200"
               }`}
+              style={selectedAddress === activeAddress.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
               onClick={() => setSelectedAddress(activeAddress.id)}
             >
               <div className="flex items-center gap-1.5 mb-1">
-                <Badge className="bg-emerald-500 text-white text-[9px] px-1.5 py-0 h-4">
+                <Badge className="text-white text-[9px] px-1.5 py-0 h-4" style={{ backgroundColor: brandColor }}>
                   {activeAddress.label}
                 </Badge>
                 {activeAddress.isDefault && (
@@ -235,11 +237,8 @@ export function CustomerCheckout() {
                 .map((addr) => (
                   <div
                     key={addr.id}
-                    className={`p-3 rounded-lg border transition-colors cursor-pointer ${
-                      selectedAddress === addr.id
-                        ? "border-emerald-300 bg-emerald-50"
-                        : "border-gray-200"
-                    }`}
+                    className="p-3 rounded-lg border transition-colors cursor-pointer border-gray-200"
+                    style={selectedAddress === addr.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
                     onClick={() => setSelectedAddress(addr.id)}
                   >
                     <div className="flex items-center gap-1.5 mb-1">
@@ -262,7 +261,7 @@ export function CustomerCheckout() {
       <div className="px-4 mb-4">
         <div className="bg-white border border-gray-100 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
-            <CreditCard className="w-4 h-4 text-emerald-600" />
+            <CreditCard className="w-4 h-4" style={{ color: brandColor }} />
             <span className="text-sm font-bold text-gray-900">Payment Method</span>
           </div>
           <div className="space-y-2">
@@ -276,30 +275,28 @@ export function CustomerCheckout() {
                 <button
                   key={method.id}
                   onClick={() => setPaymentMethod(method.id)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
-                    paymentMethod === method.id
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-gray-200"
-                  }`}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left border-gray-200"
+                  style={paymentMethod === method.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
                 >
                   <div
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      paymentMethod === method.id ? "bg-emerald-100" : "bg-gray-100"
-                    }`}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center"
+                    style={paymentMethod === method.id ? { backgroundColor: `${brandColor}20` } : { backgroundColor: '#f3f4f6' }}
                   >
-                    <Icon className={`w-4 h-4 ${paymentMethod === method.id ? "text-emerald-600" : "text-gray-500"}`} />
+                    <Icon
+                      className="w-4 h-4"
+                      style={paymentMethod === method.id ? { color: brandColor } : { color: '#6b7280' }}
+                    />
                   </div>
                   <div className="flex-1">
                     <p className="text-xs font-medium text-gray-800">{method.label}</p>
                     <p className="text-[10px] text-gray-400">{method.desc}</p>
                   </div>
                   <div
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      paymentMethod === method.id ? "border-emerald-500" : "border-gray-300"
-                    }`}
+                    className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
+                    style={paymentMethod === method.id ? { borderColor: brandColor } : { borderColor: '#d1d5db' }}
                   >
                     {paymentMethod === method.id && (
-                      <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full" />
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: brandColor }} />
                     )}
                   </div>
                 </button>
@@ -313,7 +310,7 @@ export function CustomerCheckout() {
       <div className="px-4 mb-4">
         <div className="bg-white border border-gray-100 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
-            <MessageSquare className="w-4 h-4 text-emerald-600" />
+            <MessageSquare className="w-4 h-4" style={{ color: brandColor }} />
             <span className="text-sm font-bold text-gray-900">Delivery Instructions</span>
           </div>
           <Input
@@ -329,7 +326,7 @@ export function CustomerCheckout() {
       <div className="px-4 mb-4">
         <div className="bg-white border border-gray-100 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Package className="w-4 h-4 text-emerald-600" />
+            <Package className="w-4 h-4" style={{ color: brandColor }} />
             <span className="text-sm font-bold text-gray-900">Order Summary</span>
           </div>
           <div className="space-y-2 mb-3">
@@ -350,20 +347,20 @@ export function CustomerCheckout() {
             </div>
             {totalSavings > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-emerald-600">Savings</span>
-                <span className="text-xs text-emerald-600">-{formatPrice(totalSavings)}</span>
+                <span className="text-xs" style={{ color: brandColor }}>Savings</span>
+                <span className="text-xs" style={{ color: brandColor }}>-{formatPrice(totalSavings)}</span>
               </div>
             )}
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Delivery</span>
-              <span className={`text-xs ${deliveryFee === 0 ? "text-emerald-600" : ""}`}>
+              <span className="text-xs" style={deliveryFee === 0 ? { color: brandColor } : undefined}>
                 {deliveryFee === 0 ? "FREE" : formatPrice(deliveryFee)}
               </span>
             </div>
             {couponDiscount > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-emerald-600">Coupon ({couponCode})</span>
-                <span className="text-xs text-emerald-600">-{formatPrice(couponDiscount)}</span>
+                <span className="text-xs" style={{ color: brandColor }}>Coupon ({couponCode})</span>
+                <span className="text-xs" style={{ color: brandColor }}>-{formatPrice(couponDiscount)}</span>
               </div>
             )}
             <Separator />
@@ -380,7 +377,8 @@ export function CustomerCheckout() {
         <Button
           onClick={handlePlaceOrder}
           disabled={placing || razorpayProcessing || items.length === 0}
-          className="w-full h-12 text-sm font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 disabled:text-gray-400"
+          className="w-full h-12 text-sm font-bold rounded-xl text-white disabled:bg-gray-200 disabled:text-gray-400"
+          style={{ backgroundColor: brandColor }}
         >
           {placing || razorpayProcessing ? (
             <span className="flex items-center gap-2">
@@ -400,8 +398,8 @@ export function CustomerCheckout() {
             <DialogTitle className="sr-only">Order Placed</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center py-4 text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4">
-              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: `${brandColor}20` }}>
+              <CheckCircle2 className="w-8 h-8" style={{ color: brandColor }} />
             </div>
             <h2 className="text-lg font-bold text-gray-900 mb-1">Order Placed!</h2>
             <p className="text-sm text-gray-500 mb-1">Your order has been confirmed</p>
@@ -422,7 +420,8 @@ export function CustomerCheckout() {
               </Button>
               <Button
                 onClick={handleOrderSuccess}
-                className="flex-1 h-10 rounded-xl text-xs bg-emerald-500 hover:bg-emerald-600"
+                className="flex-1 h-10 rounded-xl text-xs text-white"
+                style={{ backgroundColor: brandColor }}
               >
                 Track Order
               </Button>

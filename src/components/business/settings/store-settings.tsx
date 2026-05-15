@@ -72,7 +72,7 @@ export function StoreSettingsView() {
     if (!storesData?.data) return null
     const rawData = storesData.data
     if (Array.isArray(rawData) && rawData.length > 0) {
-      return rawData[0] as Record<string, unknown>
+      return rawData[0] as unknown as Record<string, unknown>
     }
     return null
   }, [storesData])

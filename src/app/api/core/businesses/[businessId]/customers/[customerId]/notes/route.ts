@@ -1,114 +1,67 @@
 // ============================================================================
 // QUANTIX CORE — Customer Notes API
-// GET  /api/core/businesses/[businessId]/customers/[customerId]/notes  — List notes
-// POST /api/core/businesses/[businessId]/customers/[customerId]/notes  — Create note
+// GET  /api/core/businesses/[businessId]/customers/[customerId]/notes  (auth)
+// POST /api/core/businesses/[businessId]/customers/[customerId]/notes  (CLIENT_OWNER+)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ businessId: string; customerId: string }> }
-) {
+export const GET = withMiddleware({ requireAuth: true })(async (req, context) => {
   try {
-    const { businessId, customerId } = await params;
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    const customerId = params?.customerId as string;
 
-    // Verify customer belongs to business
-    const customer = await db.customer.findFirst({
-      where: { id: customerId, businessId },
-    });
-
-    if (!customer) {
-      return NextResponse.json(
-        { success: false, error: 'Customer not found' },
-        { status: 404 }
-      );
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
     }
+
+    const customer = await db.customer.findFirst({ where: { id: customerId, businessId } });
+    if (!customer) return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
 
     const notes = await db.customerNote.findMany({
       where: { customerId },
-      include: {
-        user: { select: { id: true, name: true, avatar: true } },
-      },
+      include: { user: { select: { id: true, name: true, avatar: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({
-      success: true,
-      data: notes,
-    });
+    return NextResponse.json({ success: true, data: notes });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to list notes';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ businessId: string; customerId: string }> }
-) {
+export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'STORE_MANAGER', 'SUPPORT_STAFF', 'QUANTIX_SUPER_ADMIN'] })(async (req, context) => {
   try {
-    const { businessId, customerId } = await params;
-    const body = (await request.json()) as {
-      content: string;
-      isPrivate?: boolean;
-    };
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    const customerId = params?.customerId as string;
 
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
+    }
+
+    const body = (await req.json()) as { content: string; isPrivate?: boolean };
     if (!body.content?.trim()) {
-      return NextResponse.json(
-        { success: false, error: 'Note content is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Note content is required' }, { status: 400 });
     }
 
-    // Verify customer belongs to business
-    const customer = await db.customer.findFirst({
-      where: { id: customerId, businessId },
-    });
-
-    if (!customer) {
-      return NextResponse.json(
-        { success: false, error: 'Customer not found' },
-        { status: 404 }
-      );
-    }
-
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
+    const customer = await db.customer.findFirst({ where: { id: customerId, businessId } });
+    if (!customer) return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
 
     const note = await db.customerNote.create({
-      data: {
-        customerId,
-        userId,
-        content: body.content.trim(),
-        isPrivate: body.isPrivate || false,
-      },
-      include: {
-        user: { select: { id: true, name: true, avatar: true } },
-      },
+      data: { customerId, userId: user.id, content: body.content.trim(), isPrivate: body.isPrivate || false },
+      include: { user: { select: { id: true, name: true, avatar: true } } },
     });
 
-    return NextResponse.json(
-      { success: true, data: note, message: 'Note created successfully' },
-      { status: 201 }
-    );
+    return NextResponse.json({ success: true, data: note, message: 'Note created successfully' }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create note';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

@@ -903,7 +903,7 @@ export function useBusinessStats(
 ) {
   return useQuery<ApiResponse<BusinessStats>, AppError>({
     queryKey: queryKeys.businesses.stats(businessId),
-    queryFn: () => businessApi.getDashboard(businessId) as Promise<ApiResponse<BusinessStats>>,
+    queryFn: () => businessApi.getDashboard(businessId) as unknown as Promise<ApiResponse<BusinessStats>>,
     enabled: !!businessId,
     ...options,
   });

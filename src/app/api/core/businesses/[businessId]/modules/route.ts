@@ -1,59 +1,48 @@
 // ============================================================================
 // QUANTIX CORE — Business Modules API
-// GET  /api/core/businesses/[businessId]/modules  — List business modules
-// PUT  /api/core/businesses/[businessId]/modules  — Enable/disable module
+// GET  /api/core/businesses/[businessId]/modules  — List modules (auth required)
+// PUT  /api/core/businesses/[businessId]/modules  — Enable/disable module (platform admin)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { getBusinessModules, enableModule, disableModule } from '@/lib/core/platform';
 import type { ModuleKey, ModuleStatus } from '@/lib/core/types';
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ businessId: string }> }
-) {
+export const GET = withMiddleware({ requireAuth: true })(async (req, context) => {
   try {
-    const { businessId } = await params;
-    const modules = await getBusinessModules(businessId);
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    if (!businessId) return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
 
-    return NextResponse.json({
-      success: true,
-      data: modules,
-    });
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
+    }
+
+    const modules = await getBusinessModules(businessId);
+    return NextResponse.json({ success: true, data: modules });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to list modules';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ businessId: string }> }
-) {
+export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req, context) => {
   try {
-    const { businessId } = await params;
-    const body = (await request.json()) as {
-      moduleKey: ModuleKey;
-      status: 'ENABLED' | 'DISABLED';
-      config?: Record<string, unknown>;
-    };
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    if (!businessId) return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
+
+    const body = (await req.json()) as { moduleKey: ModuleKey; status: 'ENABLED' | 'DISABLED'; config?: Record<string, unknown> };
 
     if (!body.moduleKey || !body.status) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields: moduleKey, status' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Missing required fields: moduleKey, status' }, { status: 400 });
     }
 
     const validStatuses: ModuleStatus[] = ['ENABLED', 'DISABLED'];
     if (!validStatuses.includes(body.status)) {
-      return NextResponse.json(
-        { success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, { status: 400 });
     }
 
     if (body.status === 'ENABLED') {
@@ -62,9 +51,7 @@ export async function PUT(
       await disableModule(businessId, body.moduleKey);
     }
 
-    // Return updated modules list
     const modules = await getBusinessModules(businessId);
-
     return NextResponse.json({
       success: true,
       data: modules,
@@ -72,10 +59,6 @@ export async function PUT(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update module';
-    const status = message.includes('Unknown module') ? 400 : 500;
-    return NextResponse.json(
-      { success: false, error: message },
-      { status }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: message.includes('Unknown module') ? 400 : 500 });
   }
-}
+});

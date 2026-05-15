@@ -335,10 +335,10 @@ export const PLATFORM_PLANS = {
  * Should be called during platform initialization.
  * Safe to call multiple times — uses upsert.
  */
-export async function seedPlatformPlans(platformId: string): Promise<void> {
+export async function seedPlatformPlans(_platformId?: string): Promise<void> {
   for (const [key, plan] of Object.entries(PLATFORM_PLANS)) {
     await db.platformPlan.upsert({
-      where: { billingCycle: plan.billingCycle },
+      where: { tier_billingCycle: { tier: 'STANDARD', billingCycle: plan.billingCycle } },
       update: {
         price: plan.price,
         name: plan.name,
@@ -346,7 +346,7 @@ export async function seedPlatformPlans(platformId: string): Promise<void> {
         features: JSON.stringify(plan.features),
       },
       create: {
-        platformId,
+        tier: 'STANDARD',
         billingCycle: plan.billingCycle,
         price: plan.price,
         name: plan.name,
@@ -535,7 +535,7 @@ export async function enableDefaultModules(businessId: string, businessType: Bus
  * Returns the plan record from the database.
  */
 export async function getPlatformPlan(billingCycle: PlanBillingCycle) {
-  return db.platformPlan.findUnique({
+  return db.platformPlan.findFirst({
     where: { billingCycle },
   });
 }

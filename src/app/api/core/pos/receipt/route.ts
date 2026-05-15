@@ -1,68 +1,45 @@
 // ============================================================================
 // QUANTIX CORE — POS Receipt API
-// POST /api/core/pos/receipt — Generate thermal receipt
+// POST /api/core/pos/receipt — Generate thermal receipt (auth required)
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { generateThermalReceipt, numberToWords, calculatePOSCart } from '@/lib/core/pos';
 
-export async function POST(request: Request) {
+export const POST = withMiddleware({ requireAuth: true })(async (req) => {
   try {
-    const body = await request.json();
+    const body = await req.json();
 
     if (!body.orderId) {
-      return NextResponse.json(
-        { success: false, error: 'orderId is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'orderId is required' }, { status: 400 });
     }
 
     const paperSize = body.paperSize || '80mm';
     if (!['58mm', '80mm', 'A4'].includes(paperSize)) {
-      return NextResponse.json(
-        { success: false, error: 'paperSize must be 58mm, 80mm, or A4' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'paperSize must be 58mm, 80mm, or A4' }, { status: 400 });
     }
 
-    // Fetch order with items and business
+    const user = req.user!;
     const order = await db.order.findUnique({
       where: { id: body.orderId },
       include: {
         items: true,
         business: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-            city: true,
-            gstNumber: true,
-            fssaiLicense: true,
-            contactPhone: true,
-            contactEmail: true,
-          },
+          select: { id: true, name: true, address: true, city: true, gstNumber: true, fssaiLicense: true, contactPhone: true, contactEmail: true },
         },
-        store: {
-          select: {
-            name: true,
-            address: true,
-            city: true,
-            phone: true,
-            gstNumber: true,
-          },
-        },
+        store: { select: { name: true, address: true, city: true, phone: true, gstNumber: true } },
       },
     });
 
-    if (!order) {
-      return NextResponse.json(
-        { success: false, error: 'Order not found' },
-        { status: 404 }
-      );
+    if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+
+    // Verify order belongs to user's business
+    if (!user.isPlatformAdmin && order.businessId !== user.businessId) {
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
     }
 
-    // Calculate tax breakdown for receipt
     const cartItems = order.items.map((item) => ({
       productId: item.itemId,
       productName: item.itemName,
@@ -121,15 +98,9 @@ export async function POST(request: Request) {
       amountInWords: numberToWords(Math.round(order.totalAmount)),
     });
 
-    return NextResponse.json({
-      success: true,
-      data: receipt,
-    });
+    return NextResponse.json({ success: true, data: receipt });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate receipt';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

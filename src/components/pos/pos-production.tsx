@@ -473,7 +473,7 @@ export function POSProduction() {
                     variant="outline"
                     size="sm"
                     className="h-7 w-7 p-0"
-                    onClick={() => updateQuantity(item.variantId, -1)}
+                    onClick={() => updateQuantity(item.variantId!, -1)}
                   >
                     <Minus className="w-3 h-3" />
                   </Button>
@@ -484,7 +484,7 @@ export function POSProduction() {
                     variant="outline"
                     size="sm"
                     className="h-7 w-7 p-0"
-                    onClick={() => updateQuantity(item.variantId, 1)}
+                    onClick={() => updateQuantity(item.variantId!, 1)}
                   >
                     <Plus className="w-3 h-3" />
                   </Button>
@@ -498,7 +498,7 @@ export function POSProduction() {
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                  onClick={() => removeItem(item.variantId)}
+                  onClick={() => removeItem(item.variantId!)}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
@@ -1178,7 +1178,7 @@ export function POSProduction() {
 
           {/* Category Pills */}
           <div className="border-b px-3 py-2 bg-muted/30">
-            <ScrollArea className="w-full" orientation="horizontal">
+            <ScrollArea className="w-full">
               <div className="flex gap-1.5 pb-0.5">
                 <Button
                   size="sm"

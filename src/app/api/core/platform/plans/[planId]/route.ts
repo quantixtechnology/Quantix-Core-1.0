@@ -1,124 +1,74 @@
 // ============================================================================
 // Route: GET/PUT /api/core/platform/plans/[planId]
-// Get single platform plan / Update platform plan (QUANTIX_SUPER_ADMIN only)
+// GET — Get single platform plan (platform admin)
+// PUT — Update platform plan (QUANTIX_SUPER_ADMIN only)
 // ============================================================================
 
 import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
-
-// Helper: Check if request is from QUANTIX_SUPER_ADMIN
-function isSuperAdmin(request: Request): boolean {
-  const role = request.headers.get('x-user-role');
-  return role === 'QUANTIX_SUPER_ADMIN';
-}
+import { withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
+import type { NextRequest } from 'next/server';
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ planId: string }> }
 ) {
-  try {
-    const { planId } = await params;
+  return withPlatformAccess(async (_req) => {
+    try {
+      const { planId } = await params;
 
-    const plan = await db.platformPlan.findUnique({
-      where: { id: planId },
-    });
+      const plan = await db.platformPlan.findUnique({ where: { id: planId } });
+      if (!plan) return createErrorResponse('Plan not found', 404);
 
-    if (!plan) {
-      return NextResponse.json(
-        { success: false, error: 'Plan not found' },
-        { status: 404 }
-      );
+      return createSuccessResponse({ ...plan, features: JSON.parse(plan.features) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch plan';
+      return createErrorResponse(message, 500);
     }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...plan,
-        features: JSON.parse(plan.features),
-      },
-    });
-  } catch (error) {
-    console.error('[plan-detail] Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch plan' },
-      { status: 500 }
-    );
-  }
+  })(request);
 }
 
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ planId: string }> }
 ) {
-  try {
-    // Check admin access
-    if (!isSuperAdmin(request)) {
-      return NextResponse.json(
-        { success: false, error: 'Only QUANTIX_SUPER_ADMIN can update plans' },
-        { status: 403 }
-      );
-    }
-
-    const { planId } = await params;
-    const body = await request.json();
-
-    // Verify plan exists
-    const existing = await db.platformPlan.findUnique({ where: { id: planId } });
-    if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Plan not found' },
-        { status: 404 }
-      );
-    }
-
-    // Build update data (only allow specific fields)
-    const updateData: Record<string, unknown> = {};
-    const allowedFields = [
-      'name', 'monthlyPrice', 'yearlyPrice', 'description',
-      'maxStores', 'maxProducts', 'maxOrders', 'maxDeliveryPartners', 'maxStaff',
-      'hasPOS', 'hasDelivery', 'hasSubscription', 'hasCustomDomain',
-      'hasWhiteLabel', 'hasAdvancedReports', 'hasAPIAccess',
-      'isActive', 'isPublic', 'sortOrder',
-    ];
-
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        updateData[field] = body[field];
+  return withPlatformAccess(async (req) => {
+    try {
+      if (req.user?.role !== 'QUANTIX_SUPER_ADMIN') {
+        return createErrorResponse('Only QUANTIX_SUPER_ADMIN can update plans', 403);
       }
+
+      const { planId } = await params;
+      const body = await req.json();
+
+      const existing = await db.platformPlan.findUnique({ where: { id: planId } });
+      if (!existing) return createErrorResponse('Plan not found', 404);
+
+      const updateData: Record<string, unknown> = {};
+      const allowedFields = [
+        'name', 'price', 'description',
+        'maxStores', 'maxProducts', 'maxOrders', 'maxDeliveryPartners', 'maxStaff',
+        'hasPOS', 'hasDelivery', 'hasSubscription', 'hasCustomDomain',
+        'hasWhiteLabel', 'hasAdvancedReports', 'hasAPIAccess',
+        'isActive', 'sortOrder',
+      ];
+
+      for (const field of allowedFields) {
+        if (body[field] !== undefined) updateData[field] = body[field];
+      }
+
+      if (body.features !== undefined) {
+        updateData.features = typeof body.features === 'string' ? body.features : JSON.stringify(body.features);
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return createErrorResponse('No valid fields to update', 400);
+      }
+
+      const updated = await db.platformPlan.update({ where: { id: planId }, data: updateData });
+      return createSuccessResponse({ ...updated, features: JSON.parse(updated.features) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update plan';
+      return createErrorResponse(message, 500);
     }
-
-    // Handle features as JSON string
-    if (body.features !== undefined) {
-      updateData.features = typeof body.features === 'string'
-        ? body.features
-        : JSON.stringify(body.features);
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'No valid fields to update' },
-        { status: 400 }
-      );
-    }
-
-    const updated = await db.platformPlan.update({
-      where: { id: planId },
-      data: updateData,
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...updated,
-        features: JSON.parse(updated.features),
-      },
-      message: 'Plan updated successfully',
-    });
-  } catch (error) {
-    console.error('[plan-update] Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update plan' },
-      { status: 500 }
-    );
-  }
+  })(request);
 }

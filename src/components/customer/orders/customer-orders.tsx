@@ -15,7 +15,7 @@ const statusColors: Record<string, string> = {
   CONFIRMED: "bg-blue-100 text-blue-700",
   PREPARING: "bg-purple-100 text-purple-700",
   OUT_FOR_DELIVERY: "bg-orange-100 text-orange-700",
-  DELIVERED: "bg-emerald-100 text-emerald-700",
+  DELIVERED: "",
   CANCELLED: "bg-red-100 text-red-700",
   READY_FOR_PICKUP: "bg-teal-100 text-teal-700",
 }
@@ -36,7 +36,8 @@ interface OrderItem {
 }
 
 export function CustomerOrders() {
-  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentBusinessName } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentBusinessName, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState<TabFilter>("active")
 
@@ -183,7 +184,10 @@ export function CustomerOrders() {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-gray-900">{order.orderNumber}</span>
-                  <Badge className={`${statusColors[order.status] || "bg-gray-100 text-gray-700"} text-[9px] px-1.5 py-0 h-4 border-0`}>
+                  <Badge
+                    className={`${statusColors[order.status] || "bg-gray-100 text-gray-700"} text-[9px] px-1.5 py-0 h-4 border-0`}
+                    style={order.status === "DELIVERED" ? { backgroundColor: `${brandColor}20`, color: brandColor } : undefined}
+                  >
                     {order.status.replace(/_/g, " ")}
                   </Badge>
                 </div>
@@ -212,9 +216,9 @@ export function CustomerOrders() {
               </div>
 
               {order.status === "OUT_FOR_DELIVERY" && (
-                <div className="mt-2 bg-emerald-50 rounded-lg px-3 py-2 flex items-center gap-2">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  <span className="text-[10px] text-emerald-700 font-medium">
+                <div className="mt-2 rounded-lg px-3 py-2 flex items-center gap-2" style={{ backgroundColor: `${brandColor}0d` }}>
+                  <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: brandColor }} />
+                  <span className="text-[10px] font-medium" style={{ color: brandColor }}>
                     Your order is on the way!
                   </span>
                 </div>

@@ -33,7 +33,8 @@ interface ProductItem {
 }
 
 export function CustomerProducts() {
-  const { setCustomerPage, setSelectedProductId, currentBusinessType, currentBusinessId, currentStoreId } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, currentBusinessType, currentBusinessId, currentStoreId, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -238,10 +239,9 @@ export function CustomerProducts() {
         <button
           onClick={() => setSelectedCategory(null)}
           className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-            !selectedCategory
-              ? "bg-emerald-500 text-white"
-              : "bg-gray-100 text-gray-600"
+            !selectedCategory ? "text-white" : "bg-gray-100 text-gray-600"
           }`}
+          style={!selectedCategory ? { backgroundColor: brandColor } : undefined}
         >
           All
         </button>
@@ -345,7 +345,7 @@ export function CustomerProducts() {
                       </div>
                     )}
                     {savings > 0 && !isOutOfStock && (
-                      <Badge className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[9px] px-1 py-0 h-4">
+                      <Badge className="absolute top-1.5 right-1.5 text-white text-[9px] px-1 py-0 h-4" style={{ backgroundColor: brandColor }}>
                         {Math.round((savings / defaultVariant.mrp) * 100)}% OFF
                       </Badge>
                     )}
@@ -372,14 +372,15 @@ export function CustomerProducts() {
                       {cartQty === 0 ? (
                         <Button
                           onClick={() => handleAddToCart(product)}
-                          className="w-full h-7 text-xs font-semibold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 rounded-lg"
+                          className="w-full h-7 text-xs font-semibold border rounded-lg"
+                          style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderColor: `${brandColor}40` }}
                           variant="ghost"
                           size="sm"
                         >
                           ADD
                         </Button>
                       ) : (
-                        <div className="flex items-center justify-between bg-emerald-500 rounded-lg h-7 px-1">
+                        <div className="flex items-center justify-between rounded-lg h-7 px-1" style={{ backgroundColor: brandColor }}>
                           <button
                             onClick={() =>
                               cartQty === 1

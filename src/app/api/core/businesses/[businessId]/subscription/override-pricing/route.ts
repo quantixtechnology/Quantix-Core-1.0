@@ -94,7 +94,7 @@ export async function POST(
 
       return createSuccessResponse({
         subscription: updated,
-        message: `Pricing overridden to ₹${body.customPrice.toLocaleString('en-IN')} ${subscription.billingCycle === 'yearly' ? '/year' : '/month'}`,
+        message: `Pricing overridden to ₹${body.customPrice.toLocaleString('en-IN')} ${subscription.billingCycle === 'YEARLY' ? '/year' : '/month'}`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to override pricing';
@@ -171,7 +171,7 @@ export async function DELETE(
 
       return createSuccessResponse({
         subscription: updated,
-        message: `Pricing override removed. Subscription reverted to standard plan price: ₹${subscription.planPrice.toLocaleString('en-IN')} ${subscription.billingCycle === 'yearly' ? '/year' : '/month'}`,
+        message: `Pricing override removed. Subscription reverted to standard plan price: ₹${subscription.planPrice.toLocaleString('en-IN')} ${subscription.billingCycle === 'YEARLY' ? '/year' : '/month'}`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to remove pricing override';

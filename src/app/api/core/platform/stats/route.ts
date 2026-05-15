@@ -1,89 +1,48 @@
 // ============================================================================
 // Route: GET /api/core/platform/stats
-// Returns platform dashboard statistics
+// Returns platform dashboard statistics (platform admin only)
 // ============================================================================
 
 import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
+import { withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
+import type { NextRequest } from 'next/server';
 
-export async function GET() {
-  try {
-    // Run all count queries in parallel for performance
-    const [
-      totalBusinesses,
-      activeBusinesses,
-      totalCustomers,
-      totalOrders,
-      totalRevenueResult,
-      totalLeads,
-      activeLeads,
-      recentOrders,
-    ] = await Promise.all([
-      // Total businesses
-      db.business.count(),
-
-      // Active businesses
-      db.business.count({
-        where: { status: 'ACTIVE' },
-      }),
-
-      // Total customers
-      db.customer.count(),
-
-      // Total orders
-      db.order.count(),
-
-      // Total revenue (sum of totalAmount for completed/paid orders)
-      db.order.aggregate({
-        _sum: { totalAmount: true },
-        where: { paymentStatus: 'COMPLETED' },
-      }),
-
-      // Total leads
-      db.lead.count(),
-
-      // Active leads (not LOST or CHURNED)
-      db.lead.count({
-        where: {
-          stage: {
-            notIn: ['LOST', 'CHURNED'],
-          },
-        },
-      }),
-
-      // Recent orders (last 30 days)
-      db.order.count({
-        where: {
-          createdAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-          },
-        },
-      }),
-    ]);
-
-    const totalRevenue = totalRevenueResult._sum.totalAmount ?? 0;
-
-    return NextResponse.json({
-      success: true,
-      data: {
+export async function GET(request: NextRequest) {
+  return withPlatformAccess(async (_req) => {
+    try {
+      const [
         totalBusinesses,
         activeBusinesses,
         totalCustomers,
         totalOrders,
-        totalRevenue,
+        totalRevenueResult,
         totalLeads,
         activeLeads,
         recentOrders,
-      },
-    });
-  } catch (error) {
-    console.error('[platform/stats] Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: `Failed to fetch stats: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      },
-      { status: 500 }
-    );
-  }
+      ] = await Promise.all([
+        db.business.count(),
+        db.business.count({ where: { status: 'ACTIVE' } }),
+        db.customer.count(),
+        db.order.count(),
+        db.order.aggregate({ _sum: { totalAmount: true }, where: { paymentStatus: 'COMPLETED' } }),
+        db.lead.count(),
+        db.lead.count({ where: { stage: { notIn: ['LOST', 'CHURNED'] } } }),
+        db.order.count({ where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } }),
+      ]);
+
+      return createSuccessResponse({
+        totalBusinesses,
+        activeBusinesses,
+        totalCustomers,
+        totalOrders,
+        totalRevenue: totalRevenueResult._sum.totalAmount ?? 0,
+        totalLeads,
+        activeLeads,
+        recentOrders,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch stats';
+      return createErrorResponse(message, 500);
+    }
+  })(request);
 }

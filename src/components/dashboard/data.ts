@@ -83,8 +83,8 @@ export const leadStageColors: Record<LeadStage, string> = {
 
 // Platform Plans — Only 2 fixed plans
 export const platformPlans = [
-  { id: 'plan_monthly', name: 'Quantix Monthly', billingCycle: 'MONTHLY', price: 4999, maxStores: 5, maxProducts: 5000, maxOrders: 10000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true },
-  { id: 'plan_yearly', name: 'Quantix Yearly', billingCycle: 'YEARLY', price: 49999, maxStores: 5, maxProducts: 5000, maxOrders: 10000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true },
+  { id: 'plan_monthly', name: 'Quantix Standard', billingCycle: 'MONTHLY', price: 4999, tier: 'STANDARD', monthlyPrice: 4999, yearlyPrice: 49999, maxStores: 5, maxProducts: 5000, maxOrders: 10000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true },
+  { id: 'plan_yearly', name: 'Quantix Professional', billingCycle: 'YEARLY', price: 49999, tier: 'PROFESSIONAL', monthlyPrice: 4166, yearlyPrice: 49999, maxStores: 5, maxProducts: 5000, maxOrders: 10000, hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true, hasWhiteLabel: true },
 ];
 
 // Businesses

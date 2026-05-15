@@ -48,7 +48,7 @@ export type RealtimeEvent =
   | "product:updated"
   | "product:stock_changed";
 
-interface RealtimePayload {
+export interface RealtimePayload {
   event: RealtimeEvent;
   data: Record<string, unknown>;
   timestamp: string;

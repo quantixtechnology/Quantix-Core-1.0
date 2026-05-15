@@ -1,7 +1,7 @@
 // ============================================================================
 // QUANTIX CORE — Business Staff API
-// GET  /api/core/businesses/[businessId]/staff  — List all staff for a business
-// POST /api/core/businesses/[businessId]/staff  — Create business staff member
+// GET  /api/core/businesses/[businessId]/staff  — List staff (CLIENT_OWNER+)
+// POST /api/core/businesses/[businessId]/staff  — Create staff member (CLIENT_OWNER+)
 //
 // Business Owners can manage STORE_MANAGER, BILLING_STAFF, INVENTORY_STAFF,
 // SUPPORT_STAFF, DELIVERY_STAFF under their own businessId.
@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -19,26 +20,24 @@ const BUSINESS_STAFF_ROLES = [
   'INVENTORY_STAFF', 'SUPPORT_STAFF', 'DELIVERY_STAFF',
 ];
 
-type Params = { params: Promise<{ businessId: string }> };
-
-// ============================================================================
-// GET — List staff for a business
-// ============================================================================
-export async function GET(request: Request, { params }: Params) {
+export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req, context) => {
   try {
-    const { businessId } = await params;
-    const { searchParams } = new URL(request.url);
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    if (!businessId) return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
+
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
+    }
+
+    const { searchParams } = new URL(req.url);
     const roleFilter = searchParams.get('role');
     const statusFilter = searchParams.get('status');
     const search = searchParams.get('search');
 
-    const business = await db.business.findUnique({
-      where: { id: businessId },
-      select: { id: true },
-    });
-    if (!business) {
-      return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
-    }
+    const business = await db.business.findUnique({ where: { id: businessId }, select: { id: true } });
+    if (!business) return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
 
     const where: Record<string, unknown> = { businessId };
     if (roleFilter) where.role = roleFilter;
@@ -83,63 +82,46 @@ export async function GET(request: Request, { params }: Params) {
       createdAt: bu.createdAt,
     }));
 
-    return NextResponse.json({
-      success: true,
-      data: result,
-      total: result.length,
-    });
+    return NextResponse.json({ success: true, data: result, total: result.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to list staff';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-// ============================================================================
-// POST — Create business staff member
-// ============================================================================
-export async function POST(request: Request, { params }: Params) {
+export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req, context) => {
   try {
-    const { businessId } = await params;
-    const body = await request.json() as {
-      name: string;
-      email: string;
-      phone?: string;
-      role: string;
-      password?: string;
-      permissions?: string[];
-    };
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    if (!businessId) return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
 
-    if (!body.name || !body.email || !body.role) {
-      return NextResponse.json(
-        { success: false, error: 'name, email, and role are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!BUSINESS_STAFF_ROLES.includes(body.role)) {
-      return NextResponse.json(
-        { success: false, error: `Invalid staff role: ${body.role}` },
-        { status: 400 }
-      );
-    }
-
-    const business = await db.business.findUnique({
-      where: { id: businessId },
-      select: { id: true, name: true },
-    });
-    if (!business) {
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
       return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
-    // Check if email is already used
-    let user = await db.user.findUnique({ where: { email: body.email } });
+    const body = await req.json() as {
+      name: string; email: string; phone?: string; role: string;
+      password?: string; permissions?: string[];
+    };
 
+    if (!body.name || !body.email || !body.role) {
+      return NextResponse.json({ success: false, error: 'name, email, and role are required' }, { status: 400 });
+    }
+
+    if (!BUSINESS_STAFF_ROLES.includes(body.role)) {
+      return NextResponse.json({ success: false, error: `Invalid staff role: ${body.role}` }, { status: 400 });
+    }
+
+    const business = await db.business.findUnique({ where: { id: businessId }, select: { id: true, name: true } });
+    if (!business) return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
+
+    let dbUser = await db.user.findUnique({ where: { email: body.email } });
     const rawPassword = body.password || `${body.name.replace(/[^a-zA-Z0-9]/g, '')}@123`;
 
-    if (user) {
-      // User already exists — check if already in this business
+    if (dbUser) {
       const existing = await db.businessUser.findUnique({
-        where: { userId_businessId: { userId: user.id, businessId } },
+        where: { userId_businessId: { userId: dbUser.id, businessId } },
       });
       if (existing) {
         return NextResponse.json(
@@ -147,20 +129,14 @@ export async function POST(request: Request, { params }: Params) {
           { status: 409 }
         );
       }
-      // Reset their password to the new admin-assigned one
       const passwordHash = await hashPassword(rawPassword);
-      await db.user.update({ where: { id: user.id }, data: { passwordHash, isActive: true } });
+      await db.user.update({ where: { id: dbUser.id }, data: { passwordHash, isActive: true } });
     } else {
       const passwordHash = await hashPassword(rawPassword);
-      user = await db.user.create({
+      dbUser = await db.user.create({
         data: {
-          name: body.name,
-          email: body.email,
-          phone: body.phone || null,
-          passwordHash,
-          authProvider: 'PASSWORD',
-          emailVerified: false,
-          isActive: true,
+          name: body.name, email: body.email, phone: body.phone || null,
+          passwordHash, authProvider: 'PASSWORD', emailVerified: false, isActive: true,
         },
       });
     }
@@ -169,22 +145,15 @@ export async function POST(request: Request, { params }: Params) {
 
     const businessUser = await db.businessUser.create({
       data: {
-        userId: user.id,
-        businessId,
-        role: body.role as Role,
+        userId: dbUser.id, businessId, role: body.role as Role,
         permissions: JSON.stringify(defaultPermissions),
-        isActive: true,
-        invitedAt: new Date(),
-        acceptedAt: new Date(),
+        isActive: true, invitedAt: new Date(), acceptedAt: new Date(),
       },
     });
 
     await db.activityLog.create({
       data: {
-        businessId,
-        action: 'staff.created',
-        entity: 'BusinessUser',
-        entityId: businessUser.id,
+        businessId, action: 'staff.created', entity: 'BusinessUser', entityId: businessUser.id,
         details: JSON.stringify({ email: body.email, role: body.role }),
       },
     }).catch(() => null);
@@ -192,24 +161,15 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({
       success: true,
       data: {
-        businessUserId: businessUser.id,
-        userId: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: body.role,
-        businessId,
-        isActive: true,
-        permissions: defaultPermissions,
+        businessUserId: businessUser.id, userId: dbUser.id,
+        name: dbUser.name, email: dbUser.email, phone: dbUser.phone,
+        role: body.role, businessId, isActive: true, permissions: defaultPermissions,
       },
-      credentials: {
-        email: user.email,
-        password: rawPassword,
-      },
+      credentials: { email: dbUser.email, password: rawPassword },
       message: 'Staff member created successfully',
     }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create staff member';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

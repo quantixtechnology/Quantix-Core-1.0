@@ -71,9 +71,9 @@ export function SalesView() {
         <div className="overflow-x-auto">
           <div className="flex gap-3 min-w-[900px]">
             {pipelineColumns.map(col => {
-              const colLeads = leads.filter(l => l.status === col.status);
+              const colLeads = leads.filter(l => l.stage === col.stage);
               return (
-                <div key={col.status} className="flex-1 min-w-[140px]">
+                <div key={col.stage} className="flex-1 min-w-[140px]">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-slate-700">{col.label}</span>
                     <Badge variant="secondary" className="text-[9px] h-4">{colLeads.length}</Badge>

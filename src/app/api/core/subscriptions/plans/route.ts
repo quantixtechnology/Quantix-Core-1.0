@@ -1,11 +1,10 @@
 // ============================================================================
 // QUANTIX CORE — Platform Subscription Plans API
-// GET  /api/core/subscriptions/plans  — Get the 2 fixed platform plans
+// GET  /api/core/subscriptions/plans  — Get the 2 fixed platform plans (auth required)
 //
 // BUSINESS MODEL:
 //   ONLY 2 plans: ₹4,999/mo (MONTHLY) and ₹49,999/yr (YEARLY)
 //   If no plans exist in DB, seed them automatically.
-//   NO trial, NO custom plan creation through this endpoint.
 //
 // Note: This endpoint returns PLATFORM plans (Quantix → Business).
 //       For customer-facing subscription plans (Business → Customer),
@@ -13,81 +12,52 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { PRICING_PLANS } from '@/lib/constants';
 
-// ============================================================================
-// Seed helper — ensures the 2 platform plans exist
-// ============================================================================
-
 async function ensurePlansSeeded() {
   const existingCount = await db.platformPlan.count();
+  if (existingCount >= 2) return;
 
-  if (existingCount >= 2) {
-    return; // Plans already seeded
-  }
-
-  // Seed the 2 fixed plans
   for (const plan of PRICING_PLANS) {
     await db.platformPlan.upsert({
-      where: { billingCycle: plan.billingCycle },
+      where: { tier_billingCycle: { tier: 'STANDARD', billingCycle: plan.billingCycle } },
       update: {
-        name: plan.name,
-        price: plan.price,
-        description: plan.description,
-        features: JSON.stringify(plan.features),
-        maxStores: plan.maxStores,
-        maxProducts: plan.maxProducts,
-        maxOrders: plan.maxOrders,
-        maxDeliveryPartners: plan.maxDeliveryPartners,
-        maxStaff: plan.maxStaff,
-        hasPOS: plan.hasPOS,
-        hasDelivery: plan.hasDelivery,
-        hasSubscription: plan.hasSubscription,
-        hasCustomDomain: plan.hasCustomDomain,
-        hasWhiteLabel: plan.hasWhiteLabel,
-        hasAdvancedReports: plan.hasAdvancedReports,
-        hasAPIAccess: plan.hasAPIAccess,
-        isActive: true,
+        name: plan.name, price: plan.price, description: plan.description,
+        features: JSON.stringify(plan.features), maxStores: plan.maxStores,
+        maxProducts: plan.maxProducts, maxOrders: plan.maxOrders,
+        maxDeliveryPartners: plan.maxDeliveryPartners, maxStaff: plan.maxStaff,
+        hasPOS: plan.hasPOS, hasDelivery: plan.hasDelivery,
+        hasSubscription: plan.hasSubscription, hasCustomDomain: plan.hasCustomDomain,
+        hasWhiteLabel: plan.hasWhiteLabel, hasAdvancedReports: plan.hasAdvancedReports,
+        hasAPIAccess: plan.hasAPIAccess, isActive: true,
       },
       create: {
-        billingCycle: plan.billingCycle,
-        name: plan.name,
-        price: plan.price,
-        description: plan.description,
-        features: JSON.stringify(plan.features),
-        maxStores: plan.maxStores,
-        maxProducts: plan.maxProducts,
-        maxOrders: plan.maxOrders,
-        maxDeliveryPartners: plan.maxDeliveryPartners,
-        maxStaff: plan.maxStaff,
-        hasPOS: plan.hasPOS,
-        hasDelivery: plan.hasDelivery,
-        hasSubscription: plan.hasSubscription,
-        hasCustomDomain: plan.hasCustomDomain,
-        hasWhiteLabel: plan.hasWhiteLabel,
-        hasAdvancedReports: plan.hasAdvancedReports,
-        hasAPIAccess: plan.hasAPIAccess,
-        isActive: true,
+        tier: 'STANDARD', billingCycle: plan.billingCycle, name: plan.name, price: plan.price,
+        description: plan.description, features: JSON.stringify(plan.features),
+        maxStores: plan.maxStores, maxProducts: plan.maxProducts, maxOrders: plan.maxOrders,
+        maxDeliveryPartners: plan.maxDeliveryPartners, maxStaff: plan.maxStaff,
+        hasPOS: plan.hasPOS, hasDelivery: plan.hasDelivery,
+        hasSubscription: plan.hasSubscription, hasCustomDomain: plan.hasCustomDomain,
+        hasWhiteLabel: plan.hasWhiteLabel, hasAdvancedReports: plan.hasAdvancedReports,
+        hasAPIAccess: plan.hasAPIAccess, isActive: true,
       },
     });
   }
 }
 
-// ============================================================================
-// GET /api/core/subscriptions/plans
-// Returns the 2 fixed platform plans (MONTHLY and YEARLY)
-// Also supports ?businessId= for backwards compat with customer plans
-// ============================================================================
-
-export async function GET(request: Request) {
+export const GET = withMiddleware({ requireAuth: true })(async (req) => {
   try {
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(req.url);
     const businessId = searchParams.get('businessId');
 
-    // If businessId is provided, return customer-facing subscription plans
-    // (backwards compatibility with existing behavior)
     if (businessId) {
+      const user = req.user!;
+      if (!user.isPlatformAdmin && user.businessId !== businessId) {
+        return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
+      }
+
       const serviceType = searchParams.get('serviceType');
       const isActive = searchParams.get('isActive');
 
@@ -103,26 +73,16 @@ export async function GET(request: Request) {
         orderBy: { sortOrder: 'asc' },
       });
 
-      return NextResponse.json({
-        success: true,
-        data: plans,
-      });
+      return NextResponse.json({ success: true, data: plans });
     }
 
-    // ========================================
-    // Return PLATFORM plans (the 2 fixed plans)
-    // ========================================
-
-    // Ensure plans are seeded
     await ensurePlansSeeded();
 
-    // Fetch the 2 platform plans
     const platformPlans = await db.platformPlan.findMany({
       where: { isActive: true },
       orderBy: { price: 'asc' },
     });
 
-    // Parse features from JSON strings
     const formattedPlans = platformPlans.map((plan) => ({
       ...plan,
       features: typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features,
@@ -137,21 +97,13 @@ export async function GET(request: Request) {
         noTrial: true,
         superAdminCanOverridePricing: true,
         plans: formattedPlans.map((p) => ({
-          id: p.id,
-          billingCycle: p.billingCycle,
-          name: p.name,
-          price: p.price,
-          priceDisplay: p.billingCycle === 'MONTHLY'
-            ? '₹4,999/month'
-            : '₹49,999/year',
+          id: p.id, billingCycle: p.billingCycle, name: p.name, price: p.price,
+          priceDisplay: p.billingCycle === 'MONTHLY' ? '₹4,999/month' : '₹49,999/year',
         })),
       },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to list subscription plans';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

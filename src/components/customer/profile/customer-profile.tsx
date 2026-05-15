@@ -26,11 +26,13 @@ export function CustomerProfile() {
     customerName,
     currentBusinessId,
     currentBusinessName,
+    currentBusinessPrimaryColor,
     setCustomerLoggedIn,
     setCustomerName,
     setCustomerPage,
     setViewMode,
   } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { user, logout } = useAuthStore()
 
   // Fetch order count for stats
@@ -120,29 +122,29 @@ export function CustomerProfile() {
   return (
     <div className="pb-4">
       {/* Profile Header */}
-      <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 mx-4 mt-3 rounded-2xl p-5 text-white">
+      <div className="mx-4 mt-3 rounded-2xl p-5 text-white" style={{ background: `linear-gradient(to bottom right, ${brandColor}, ${brandColor}cc)` }}>
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
             <User className="w-8 h-8 text-white" />
           </div>
           <div>
             <h2 className="text-lg font-bold">{displayName}</h2>
-            {displayPhone && <p className="text-sm text-emerald-100">{displayPhone}</p>}
-            {displayEmail && <p className="text-xs text-emerald-200">{displayEmail}</p>}
+            {displayPhone && <p className="text-sm text-white/70">{displayPhone}</p>}
+            {displayEmail && <p className="text-xs text-white/60">{displayEmail}</p>}
           </div>
         </div>
         <div className="mt-4 flex items-center gap-4">
           <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5 flex-1 text-center">
             <p className="text-lg font-bold">{orderCount}</p>
-            <p className="text-[10px] text-emerald-100">Orders</p>
+            <p className="text-[10px] text-white/70">Orders</p>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5 flex-1 text-center">
             <p className="text-lg font-bold">GOLD</p>
-            <p className="text-[10px] text-emerald-100">Tier</p>
+            <p className="text-[10px] text-white/70">Tier</p>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5 flex-1 text-center">
             <p className="text-lg font-bold">1,420</p>
-            <p className="text-[10px] text-emerald-100">Points</p>
+            <p className="text-[10px] text-white/70">Points</p>
           </div>
         </div>
       </div>

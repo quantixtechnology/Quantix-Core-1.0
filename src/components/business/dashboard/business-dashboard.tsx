@@ -191,7 +191,7 @@ export function BusinessDashboard() {
     if (!ordersData?.data) return []
     const rawData = ordersData.data
     if (!Array.isArray(rawData)) return []
-    return rawData
+    return rawData as unknown as Record<string, unknown>[]
   }, [ordersData])
 
   // Map categories from API
@@ -514,7 +514,7 @@ export function BusinessDashboard() {
               const catColor = String(cat.color || cat.image || '#10B981')
               return (
                 <div
-                  key={cat.id}
+                  key={String(cat.id)}
                   className="flex flex-col items-center gap-2 rounded-lg border p-3 hover:shadow-md transition-shadow cursor-pointer"
                   onClick={() => setBusinessPage("products")}
                 >
@@ -557,14 +557,14 @@ export function BusinessDashboard() {
               const isEmoji = catInfo?.icon && /\p{Emoji}/u.test(String(catInfo.icon)) && String(catInfo.icon).length <= 4
               const catColor = catInfo ? String(catInfo.color || catInfo.image || '#f3f4f6') : '#f3f4f6'
               return (
-                <div key={product.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setBusinessPage("products")}>
+                <div key={String(product.id)} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setBusinessPage("products")}>
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${catColor}18`, color: catColor }}>
                       {isEmoji ? <span className="text-sm">{String(catInfo?.icon)}</span> : <Package className="h-4 w-4" />}
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{String((product as Record<string, unknown>).name)}</p>
-                      <p className="text-[10px] text-muted-foreground">{String((product as Record<string, unknown>).category?.name || (product as Record<string, unknown>).category || "")} · {defaultVariant ? String(defaultVariant.name) : ""}</p>
+                      <p className="text-[10px] text-muted-foreground">{String(((product as Record<string, unknown>).category as { name?: string } | null)?.name || (product as Record<string, unknown>).category || "")} · {defaultVariant ? String(defaultVariant.name) : ""}</p>
                     </div>
                   </div>
                   <div className="text-right shrink-0 flex items-center gap-3">
@@ -608,7 +608,7 @@ export function BusinessDashboard() {
               <div className="space-y-3 pr-4">
                 {apiOrders.map((order: Record<string, unknown>) => { const orderWorkflow = String(order.workflowType || 'ECOMMERCE'); const orderType = String(order.orderType || ''); return (
                   <div
-                    key={order.id}
+                    key={String(order.id)}
                     className="flex flex-col gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/30"
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -635,7 +635,7 @@ export function BusinessDashboard() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Clock className="h-3.5 w-3.5" />
-                        {order.createdAt ? new Date(order.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Just now"}
+                        {order.createdAt ? new Date(order.createdAt as string | number | Date).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Just now"}
                         <span className="text-muted-foreground/50">·</span>
                         <span>{String(order.paymentMethod || 'UPI')}</span>
                       </div>

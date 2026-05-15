@@ -8,8 +8,25 @@
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { NextResponse } from 'next/server';
+import type { PlatformConfig, PlatformPlan, Customer, Category, Order } from '@prisma/client';
+
+type SeedProduct = {
+  id: string; name: string; slug: string;
+  mrp: number; sellingPrice: number; gstRate: number; isVeg: boolean; unit: string;
+  [key: string]: unknown;
+};
+type SeedOrderItem = {
+  itemType: string; itemId: string; itemName: string; quantity: number;
+  unitPrice: number; mrp: number; discountPrice: number | null; discountPercent: number | null;
+  totalPrice: number; totalMrp: number; gstRate: number; gstAmount: number;
+  cgstAmount: number; sgstAmount: number; isVeg: boolean; unit: string;
+};
 
 export async function POST() {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ success: false, error: 'Seed endpoint is disabled in production' }, { status: 403 });
+  }
+
   try {
     const summary: Record<string, unknown> = {};
 
@@ -31,7 +48,7 @@ export async function POST() {
       { key: 'platform.gst_enabled', value: 'true', description: 'GST billing enabled' },
     ];
 
-    const createdConfigs = [];
+    const createdConfigs: PlatformConfig[] = [];
     for (const config of platformConfigs) {
       const result = await db.platformConfig.upsert({
         where: { key: config.key },
@@ -160,7 +177,7 @@ export async function POST() {
       },
     ];
 
-    const createdPlans = [];
+    const createdPlans: PlatformPlan[] = [];
     for (const plan of plans) {
       const result = await db.platformPlan.upsert({
         where: { tier_billingCycle: { tier: plan.tier, billingCycle: plan.billingCycle } },
@@ -544,7 +561,7 @@ export async function POST() {
       { name: 'Sandeep Menon', email: 'sandeep.menon@gmail.com', phone: '+919876543308' },
     ];
 
-    const createdCustomers = [];
+    const createdCustomers: Customer[] = [];
     const addressesData = [
       { label: 'Home', addressLine1: '101, Sunshine Apartments', addressLine2: 'JVLR, Andheri West', city: 'Mumbai', state: 'Maharashtra', pincode: '400053', landmark: 'Near Metro Station' },
       { label: 'Home', addressLine1: '205, Green Valley', addressLine2: 'Lokhandwala, Andheri West', city: 'Mumbai', state: 'Maharashtra', pincode: '400053', landmark: 'Opposite City Mall' },
@@ -612,7 +629,7 @@ export async function POST() {
       { name: 'Frozen Foods', slug: 'frozen-foods', description: 'Frozen snacks, ice cream and ready-to-eat', icon: '🧊', sortOrder: 12 },
     ];
 
-    const createdCategories = [];
+    const createdCategories: Category[] = [];
     for (const cat of categoriesData) {
       const category = await db.category.upsert({
         where: { businessId_slug: { businessId: business.id, slug: cat.slug } },
@@ -680,7 +697,7 @@ export async function POST() {
       { name: 'Red Chilli Powder', slug: 'red-chilli-powder', catSlug: 'spices-masala', mrp: 72, price: 65, gstRate: 5, unit: '100g', isVeg: true },
     ];
 
-    const createdProducts = [];
+    const createdProducts: SeedProduct[] = [];
     for (let idx = 0; idx < productsData.length; idx++) {
       const prod = productsData[idx];
       const categoryId = `cat_${business.id}_${prod.catSlug}`;
@@ -775,7 +792,7 @@ export async function POST() {
       [{ prodSlug: 'green-apples', qty: 1 }, { prodSlug: 'amul-ghee', qty: 1 }, { prodSlug: 'surf-excel-matic', qty: 1 }],
     ];
 
-    const createdOrders = [];
+    const createdOrders: Order[] = [];
     for (let i = 0; i < 5; i++) {
       const customer = createdCustomers[i];
       const oStatus = orderStatuses[i];
@@ -784,7 +801,7 @@ export async function POST() {
       // Calculate totals
       let subtotal = 0;
       let totalTax = 0;
-      const orderItemsData = [];
+      const orderItemsData: SeedOrderItem[] = [];
 
       for (const item of items) {
         const product = createdProducts.find(p => p.slug === item.prodSlug);

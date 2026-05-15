@@ -1,160 +1,104 @@
 // ============================================================================
 // QUANTIX CORE — Customer Address Detail API
-// GET  /api/core/businesses/[businessId]/customers/[customerId]/addresses/[addressId]  — Get address
-// PUT  /api/core/businesses/[businessId]/customers/[customerId]/addresses/[addressId]  — Update address
-// DELETE /api/core/businesses/[businessId]/customers/[customerId]/addresses/[addressId]  — Delete address
+// GET    /api/core/businesses/[businessId]/customers/[customerId]/addresses/[addressId]
+// PUT    /api/core/businesses/[businessId]/customers/[customerId]/addresses/[addressId]
+// DELETE /api/core/businesses/[businessId]/customers/[customerId]/addresses/[addressId]
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ businessId: string; customerId: string; addressId: string }> }
-) {
+export const GET = withMiddleware({ requireAuth: true })(async (req, context) => {
   try {
-    const { businessId, customerId, addressId } = await params;
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    const customerId = params?.customerId as string;
+    const addressId = params?.addressId as string;
 
-    // Verify address belongs to customer and business
-    const address = await db.address.findFirst({
-      where: {
-        id: addressId,
-        customerId,
-        customer: { businessId },
-      },
-    });
-
-    if (!address) {
-      return NextResponse.json(
-        { success: false, error: 'Address not found' },
-        { status: 404 }
-      );
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: 'Address not found' }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      data: address,
+    const address = await db.address.findFirst({
+      where: { id: addressId, customerId, customer: { businessId } },
     });
+
+    if (!address) return NextResponse.json({ success: false, error: 'Address not found' }, { status: 404 });
+
+    return NextResponse.json({ success: true, data: address });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get address';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ businessId: string; customerId: string; addressId: string }> }
-) {
+export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'STORE_MANAGER', 'BILLING_STAFF', 'QUANTIX_SUPER_ADMIN'] })(async (req, context) => {
   try {
-    const { businessId, customerId, addressId } = await params;
-    const body = (await request.json()) as {
-      addressLine1?: string;
-      addressLine2?: string;
-      city?: string;
-      state?: string;
-      pincode?: string;
-      country?: string;
-      latitude?: number;
-      longitude?: number;
-      landmark?: string;
-      instructions?: string;
-      isDefault?: boolean;
-    };
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    const customerId = params?.customerId as string;
+    const addressId = params?.addressId as string;
 
-    // Verify address belongs to customer and business
-    const existing = await db.address.findFirst({
-      where: {
-        id: addressId,
-        customerId,
-        customer: { businessId },
-      },
-    });
-
-    if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Address not found' },
-        { status: 404 }
-      );
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: 'Address not found' }, { status: 404 });
     }
 
-    // If setting as default, unset other defaults
+    const existing = await db.address.findFirst({
+      where: { id: addressId, customerId, customer: { businessId } },
+    });
+    if (!existing) return NextResponse.json({ success: false, error: 'Address not found' }, { status: 404 });
+
+    const body = (await req.json()) as {
+      addressLine1?: string; addressLine2?: string; city?: string; state?: string;
+      pincode?: string; country?: string; latitude?: number; longitude?: number;
+      landmark?: string; instructions?: string; isDefault?: boolean;
+    };
+
     if (body.isDefault) {
-      await db.address.updateMany({
-        where: { customerId, id: { not: addressId } },
-        data: { isDefault: false },
-      });
+      await db.address.updateMany({ where: { customerId, id: { not: addressId } }, data: { isDefault: false } });
     }
 
     const address = await db.address.update({
       where: { id: addressId },
       data: {
-        addressLine1: body.addressLine1,
-        addressLine2: body.addressLine2,
-        city: body.city,
-        state: body.state,
-        pincode: body.pincode,
-        country: body.country,
-        latitude: body.latitude,
-        longitude: body.longitude,
-        landmark: body.landmark,
-        instructions: body.instructions,
-        isDefault: body.isDefault,
+        addressLine1: body.addressLine1, addressLine2: body.addressLine2,
+        city: body.city, state: body.state, pincode: body.pincode, country: body.country,
+        latitude: body.latitude, longitude: body.longitude,
+        landmark: body.landmark, instructions: body.instructions, isDefault: body.isDefault,
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      data: address,
-      message: 'Address updated successfully',
-    });
+    return NextResponse.json({ success: true, data: address, message: 'Address updated successfully' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update address';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ businessId: string; customerId: string; addressId: string }> }
-) {
+export const DELETE = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'STORE_MANAGER', 'QUANTIX_SUPER_ADMIN'] })(async (req, context) => {
   try {
-    const { businessId, customerId, addressId } = await params;
+    const params = await context?.params;
+    const businessId = params?.businessId as string;
+    const customerId = params?.customerId as string;
+    const addressId = params?.addressId as string;
 
-    // Verify address belongs to customer and business
-    const existing = await db.address.findFirst({
-      where: {
-        id: addressId,
-        customerId,
-        customer: { businessId },
-      },
-    });
-
-    if (!existing) {
-      return NextResponse.json(
-        { success: false, error: 'Address not found' },
-        { status: 404 }
-      );
+    const user = req.user!;
+    if (!user.isPlatformAdmin && user.businessId !== businessId) {
+      return NextResponse.json({ success: false, error: 'Address not found' }, { status: 404 });
     }
 
-    await db.address.delete({
-      where: { id: addressId },
+    const existing = await db.address.findFirst({
+      where: { id: addressId, customerId, customer: { businessId } },
     });
+    if (!existing) return NextResponse.json({ success: false, error: 'Address not found' }, { status: 404 });
 
-    return NextResponse.json({
-      success: true,
-      message: 'Address deleted successfully',
-    });
+    await db.address.delete({ where: { id: addressId } });
+    return NextResponse.json({ success: true, message: 'Address deleted successfully' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete address';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

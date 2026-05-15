@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Phone, ArrowLeft, Shield, Loader2 } from "lucide-react"
 
 export function CustomerAuth() {
-  const { setCustomerLoggedIn, setCustomerName, setCustomerPage, currentBusinessName: bizName } = useAdminStore()
+  const { setCustomerLoggedIn, setCustomerName, setCustomerPage, currentBusinessName: bizName, currentBusinessPrimaryColor } = useAdminStore()
   const displayName = bizName || "My Store"
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const displayInitials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
   const { loginWithOtp } = useAuthStore()
   const [step, setStep] = useState<"phone" | "otp">("phone")
@@ -108,14 +109,14 @@ export function CustomerAuth() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-500 to-emerald-600 flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ background: `linear-gradient(to bottom, ${brandColor}, ${brandColor}dd)` }}>
       {/* Top Section */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
         <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center shadow-lg mb-4">
-          <span className="text-emerald-600 font-extrabold text-2xl">{displayInitials}</span>
+          <span className="font-extrabold text-2xl" style={{ color: brandColor }}>{displayInitials}</span>
         </div>
         <h1 className="text-2xl font-bold text-white mb-1">{displayName}</h1>
-        <p className="text-emerald-100 text-sm text-center">
+        <p className="text-white/80 text-sm text-center">
           Fresh groceries &amp; essentials delivered fast
         </p>
       </div>
@@ -149,7 +150,7 @@ export function CustomerAuth() {
                   setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
                   setError(null)
                 }}
-                className="pl-20 h-12 text-base rounded-xl border-gray-200 focus:border-emerald-500 focus:ring-emerald-500"
+                className="pl-20 h-12 text-base rounded-xl border-gray-200"
                 maxLength={10}
               />
             </div>
@@ -157,7 +158,8 @@ export function CustomerAuth() {
             <Button
               onClick={handleSendOTP}
               disabled={phone.length < 10 || loading}
-              className="w-full h-12 text-base font-semibold rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 disabled:text-gray-400"
+              className="w-full h-12 text-base font-semibold rounded-xl text-white disabled:bg-gray-200 disabled:text-gray-400"
+              style={{ backgroundColor: brandColor }}
             >
               {loading ? (
                 <span className="flex items-center gap-2">
@@ -171,8 +173,8 @@ export function CustomerAuth() {
 
             <p className="text-[11px] text-gray-400 text-center mt-4 leading-relaxed">
               By continuing, you agree to our{" "}
-              <span className="text-emerald-600">Terms of Service</span> &{" "}
-              <span className="text-emerald-600">Privacy Policy</span>
+              <span style={{ color: brandColor }}>Terms of Service</span> &{" "}
+              <span style={{ color: brandColor }}>Privacy Policy</span>
             </p>
           </>
         ) : (
@@ -217,7 +219,8 @@ export function CustomerAuth() {
             <Button
               onClick={handleVerifyOTP}
               disabled={otp.length < 6 || loading}
-              className="w-full h-12 text-base font-semibold rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-200 disabled:text-gray-400"
+              className="w-full h-12 text-base font-semibold rounded-xl text-white disabled:bg-gray-200 disabled:text-gray-400"
+              style={{ backgroundColor: brandColor }}
             >
               {loading ? (
                 <span className="flex items-center gap-2">
@@ -234,7 +237,7 @@ export function CustomerAuth() {
               <p className="text-[11px] text-gray-400">
                 Didn&apos;t receive?{" "}
                 <button
-                  className="text-emerald-600 font-medium"
+                  className="font-medium" style={{ color: brandColor }}
                   onClick={handleSendOTP}
                 >
                   Resend OTP

@@ -247,8 +247,8 @@ export async function checkServiceability(params: {
     distance: Math.round(nearestDistance * 10) / 10,
     deliveryFee,
     estimatedTime,
-    freeDeliveryAbove,
-    minOrderAmount,
+    freeDeliveryAbove: freeDeliveryAbove ?? undefined,
+    minOrderAmount: minOrderAmount ?? undefined,
     matchedZoneId: matchedZone?.id,
     matchedZoneName: matchedZone?.name,
   };

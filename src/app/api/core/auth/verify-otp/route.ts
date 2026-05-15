@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     });
 
     // Find or create user
-    let user = null;
+    let user: Awaited<ReturnType<typeof db.user.findUnique>> = null;
     if (email) {
       user = await db.user.findUnique({ where: { email } });
     } else if (phone) {

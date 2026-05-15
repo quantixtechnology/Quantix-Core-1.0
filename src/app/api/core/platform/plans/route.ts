@@ -1,33 +1,29 @@
 // ============================================================================
 // Route: GET /api/core/platform/plans
-// List all active platform subscription plans
+// List all active platform subscription plans (platform admin only)
 // ============================================================================
 
 import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
+import { withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
+import type { NextRequest } from 'next/server';
 
-export async function GET() {
-  try {
-    const plans = await db.platformPlan.findMany({
-      where: { isActive: true },
-      orderBy: { price: 'asc' },
-    });
+export async function GET(request: NextRequest) {
+  return withPlatformAccess(async (_req) => {
+    try {
+      const plans = await db.platformPlan.findMany({
+        where: { isActive: true },
+        orderBy: { price: 'asc' },
+      });
 
-    // Parse JSON features field
-    const parsedPlans = plans.map((plan) => ({
-      ...plan,
-      features: JSON.parse(plan.features),
-    }));
+      const parsedPlans = plans.map((plan) => ({
+        ...plan,
+        features: JSON.parse(plan.features),
+      }));
 
-    return NextResponse.json({
-      success: true,
-      data: parsedPlans,
-    });
-  } catch (error) {
-    console.error('[plans] Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch platform plans' },
-      { status: 500 }
-    );
-  }
+      return createSuccessResponse(parsedPlans);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch platform plans';
+      return createErrorResponse(message, 500);
+    }
+  })(request);
 }

@@ -73,7 +73,7 @@ export function loadRazorpayScript(): Promise<boolean> {
  */
 export function isRazorpayLoaded(): boolean {
   if (typeof window === 'undefined') return false;
-  return typeof (window as Record<string, unknown>)[RAZORPAY_GLOBAL_KEY] !== 'undefined';
+  return typeof (window as unknown as Record<string, unknown>)[RAZORPAY_GLOBAL_KEY] !== 'undefined';
 }
 
 /**
@@ -82,5 +82,5 @@ export function isRazorpayLoaded(): boolean {
  */
 export function getRazorpayInstance(): unknown {
   if (typeof window === 'undefined') return null;
-  return (window as Record<string, unknown>)[RAZORPAY_GLOBAL_KEY] || null;
+  return (window as unknown as Record<string, unknown>)[RAZORPAY_GLOBAL_KEY] || null;
 }

@@ -13,6 +13,7 @@ import {
 import { db } from '@/lib/db';
 import type { NextRequest } from 'next/server';
 import type { LeadSource, LeadStage, BusinessType } from '@/lib/types';
+import type { Business, DemoTenant } from '@prisma/client';
 
 // ============================================================================
 // GET /api/core/leads/[leadId] — Get lead details
@@ -40,7 +41,7 @@ export async function GET(
       }
 
       // If lead has a convertedBusinessId, include basic business info
-      let convertedBusiness = null;
+      let convertedBusiness: Pick<Business, 'id' | 'name' | 'slug' | 'status' | 'businessType'> | null = null;
       if (lead.convertedBusinessId) {
         convertedBusiness = await db.business.findUnique({
           where: { id: lead.convertedBusinessId },
@@ -55,7 +56,7 @@ export async function GET(
       }
 
       // If lead has a demoTenantId, include basic demo tenant info
-      let demoTenant = null;
+      let demoTenant: Pick<DemoTenant, 'id' | 'name' | 'slug' | 'status' | 'accessUrl' | 'sessionExpiresAt'> | null = null;
       if (lead.demoTenantId) {
         demoTenant = await db.demoTenant.findUnique({
           where: { id: lead.demoTenantId },

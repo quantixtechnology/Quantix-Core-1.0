@@ -98,7 +98,7 @@ function PageErrorFallback({ error, onRetry, title, description }: ErrorFallback
             </summary>
             <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs">
               {error.message}
-              {appError.data && "\n" + JSON.stringify(appError.data, null, 2)}
+              {appError.data != null && "\n" + JSON.stringify(appError.data as Record<string, unknown>, null, 2)}
             </pre>
           </details>
         )}

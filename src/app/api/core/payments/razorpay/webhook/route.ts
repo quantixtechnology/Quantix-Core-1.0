@@ -50,9 +50,10 @@ export async function POST(request: Request) {
 
     const event = JSON.parse(body) as Record<string, unknown>;
     const eventType = event.event as string;
-    const eventPayload = event.payload?.payment?.entity
-      || event.payload?.refund?.entity
-      || event.payload?.order?.entity
+    const eventPayloadRoot = event.payload as { payment?: { entity?: unknown }; refund?: { entity?: unknown }; order?: { entity?: unknown } } | undefined;
+    const eventPayload = eventPayloadRoot?.payment?.entity
+      || eventPayloadRoot?.refund?.entity
+      || eventPayloadRoot?.order?.entity
       || {};
     const payload = eventPayload as Record<string, unknown>;
 

@@ -117,10 +117,34 @@ export const ROLES: Record<Role, { label: string; description: string; level: nu
     level: 100,
     scope: 'platform',
   },
+  PLATFORM_ADMIN: {
+    label: 'Platform Admin',
+    description: 'Platform administration — manages businesses and platform config',
+    level: 95,
+    scope: 'platform',
+  },
   QUANTIX_SALES_TEAM: {
     label: 'Quantix Sales Team',
     description: 'Lead management, onboarding tracking, follow-ups, renewal tracking',
     level: 90,
+    scope: 'platform',
+  },
+  SUPPORT_TEAM: {
+    label: 'Support Team',
+    description: 'Customer and business support, issue resolution',
+    level: 70,
+    scope: 'platform',
+  },
+  DEPLOYMENT_TEAM: {
+    label: 'Deployment Team',
+    description: 'Business deployment, onboarding setup, technical configuration',
+    level: 75,
+    scope: 'platform',
+  },
+  FINANCE_TEAM: {
+    label: 'Finance Team',
+    description: 'Billing, invoicing, payment reconciliation',
+    level: 70,
     scope: 'platform',
   },
   CLIENT_OWNER: {
@@ -133,6 +157,24 @@ export const ROLES: Record<Role, { label: string; description: string; level: nu
     label: 'Store Manager',
     description: 'Store operations, order handling, inventory management',
     level: 60,
+    scope: 'business',
+  },
+  BILLING_STAFF: {
+    label: 'Billing Staff',
+    description: 'Handles billing operations and payment processing',
+    level: 40,
+    scope: 'business',
+  },
+  INVENTORY_STAFF: {
+    label: 'Inventory Staff',
+    description: 'Manages stock, inventory updates, and product availability',
+    level: 40,
+    scope: 'business',
+  },
+  SUPPORT_STAFF: {
+    label: 'Support Staff',
+    description: 'Customer support, order queries, complaints',
+    level: 35,
     scope: 'business',
   },
   DELIVERY_STAFF: {
@@ -181,6 +223,7 @@ export const PAYMENT_METHODS: Record<PaymentMethod, { label: string; icon: strin
   WALLET: { label: 'Wallet', icon: 'Wallet', description: 'Digital wallet payment' },
   COD: { label: 'Cash on Delivery', icon: 'Package', description: 'Pay on delivery' },
   CREDIT: { label: 'Store Credit', icon: 'Coins', description: 'Store credit / loyalty points' },
+  MIXED: { label: 'Mixed', icon: 'Layers', description: 'Multiple payment methods used' },
 };
 
 // ============================================================================

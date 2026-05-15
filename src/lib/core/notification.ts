@@ -125,11 +125,10 @@ export async function sendNotification(params: SendNotificationParams): Promise<
       }
     }
 
+    const refreshed = await db.notification.findUnique({ where: { id: notification.id } });
     return {
       success: true,
-      notification: mapNotificationToInfo(
-        await db.notification.findUnique({ where: { id: notification.id } })!
-      ),
+      notification: refreshed ? mapNotificationToInfo(refreshed) : undefined,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error creating notification';

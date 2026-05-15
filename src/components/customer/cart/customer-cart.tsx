@@ -22,7 +22,8 @@ import {
 } from "lucide-react"
 
 export function CustomerCart() {
-  const { setCustomerPage, currentBusinessType } = useAdminStore()
+  const { setCustomerPage, currentBusinessType, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
 
   // Dynamic coupons from business context
   const validCoupons = useMemo(() => getDemoCoupons(currentBusinessType), [currentBusinessType])
@@ -86,7 +87,8 @@ export function CustomerCart() {
         </p>
         <Button
           onClick={() => setCustomerPage("home")}
-          className="bg-emerald-500 hover:bg-emerald-600 rounded-xl px-6"
+          className="rounded-xl px-6 text-white"
+          style={{ backgroundColor: brandColor }}
         >
           Start Shopping
         </Button>
@@ -120,9 +122,9 @@ export function CustomerCart() {
         </div>
       )}
       {subtotal >= 500 && deliveryFee === 0 && (
-        <div className="mx-4 mb-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center gap-2">
-          <Truck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-          <p className="text-[11px] text-emerald-700 font-medium">You get FREE delivery on this order!</p>
+        <div className="mx-4 mb-3 rounded-xl p-3 flex items-center gap-2 border" style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}25` }}>
+          <Truck className="w-4 h-4 flex-shrink-0" style={{ color: brandColor }} />
+          <p className="text-[11px] font-medium" style={{ color: brandColor }}>You get FREE delivery on this order!</p>
         </div>
       )}
 
@@ -203,17 +205,17 @@ export function CustomerCart() {
       <div className="px-4 mb-4">
         <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
           <div className="flex items-center gap-2 mb-2">
-            <Tag className="w-4 h-4 text-emerald-600" />
+            <Tag className="w-4 h-4" style={{ color: brandColor }} />
             <span className="text-xs font-medium text-gray-700">Apply Coupon</span>
           </div>
           {couponCode ? (
-            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between rounded-lg px-3 py-2 border" style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}25` }}>
               <div>
-                <span className="text-xs font-bold text-emerald-700">{couponCode}</span>
-                <span className="text-[10px] text-emerald-600 ml-2">-{formatPrice(couponDiscount)}</span>
+                <span className="text-xs font-bold" style={{ color: brandColor }}>{couponCode}</span>
+                <span className="text-[10px] ml-2" style={{ color: brandColor }}>-{formatPrice(couponDiscount)}</span>
               </div>
               <button onClick={handleRemoveCoupon}>
-                <X className="w-3.5 h-3.5 text-emerald-600" />
+                <X className="w-3.5 h-3.5" style={{ color: brandColor }} />
               </button>
             </div>
           ) : (
@@ -233,7 +235,8 @@ export function CustomerCart() {
                   onClick={handleApplyCoupon}
                   disabled={!couponInput.trim()}
                   variant="outline"
-                  className="h-9 text-xs font-semibold rounded-lg border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+                  className="h-9 text-xs font-semibold rounded-lg"
+                  style={{ borderColor: `${brandColor}50`, color: brandColor }}
                 >
                   Apply
                 </Button>
@@ -242,7 +245,7 @@ export function CustomerCart() {
                 <p className="text-[10px] text-red-500 mt-1">{couponError}</p>
               )}
               {couponSuccess && (
-                <p className="text-[10px] text-emerald-600 mt-1">{couponSuccess}</p>
+                <p className="text-[10px] mt-1" style={{ color: brandColor }}>{couponSuccess}</p>
               )}
             </>
           )}
@@ -260,20 +263,20 @@ export function CustomerCart() {
             </div>
             {totalSavings > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-emerald-600">Savings</span>
-                <span className="text-xs font-medium text-emerald-600">-{formatPrice(totalSavings)}</span>
+                <span className="text-xs" style={{ color: brandColor }}>Savings</span>
+                <span className="text-xs font-medium" style={{ color: brandColor }}>-{formatPrice(totalSavings)}</span>
               </div>
             )}
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Delivery Fee</span>
-              <span className={`text-xs font-medium ${deliveryFee === 0 ? "text-emerald-600" : ""}`}>
+              <span className="text-xs font-medium" style={deliveryFee === 0 ? { color: brandColor } : undefined}>
                 {deliveryFee === 0 ? "FREE" : formatPrice(deliveryFee)}
               </span>
             </div>
             {couponDiscount > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-emerald-600">Coupon Discount</span>
-                <span className="text-xs font-medium text-emerald-600">-{formatPrice(couponDiscount)}</span>
+                <span className="text-xs" style={{ color: brandColor }}>Coupon Discount</span>
+                <span className="text-xs font-medium" style={{ color: brandColor }}>-{formatPrice(couponDiscount)}</span>
               </div>
             )}
             <Separator />
@@ -283,9 +286,9 @@ export function CustomerCart() {
             </div>
           </div>
           {totalSavings > 0 && (
-            <div className="mt-3 bg-emerald-50 rounded-lg px-3 py-2 flex items-center gap-1.5">
-              <Badge className="bg-emerald-500 text-white text-[9px] px-1 py-0 h-4">SAVING</Badge>
-              <span className="text-xs text-emerald-700 font-medium">
+            <div className="mt-3 rounded-lg px-3 py-2 flex items-center gap-1.5" style={{ backgroundColor: `${brandColor}0d` }}>
+              <Badge className="text-white text-[9px] px-1 py-0 h-4" style={{ backgroundColor: brandColor }}>SAVING</Badge>
+              <span className="text-xs font-medium" style={{ color: brandColor }}>
                 You&apos;re saving {formatPrice(totalSavings)} on this order
               </span>
             </div>
@@ -297,7 +300,8 @@ export function CustomerCart() {
       <div className="px-4">
         <Button
           onClick={() => setCustomerPage("checkout")}
-          className="w-full h-12 text-sm font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600"
+          className="w-full h-12 text-sm font-bold rounded-xl text-white"
+          style={{ backgroundColor: brandColor }}
         >
           Proceed to Checkout
           <ArrowRight className="w-4 h-4 ml-2" />

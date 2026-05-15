@@ -37,7 +37,8 @@ interface Address {
 
 export function CustomerAddresses() {
   const { user } = useAuthStore()
-  const { currentBusinessId } = useAdminStore()
+  const { currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const [addresses, setAddresses] = useState<Address[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -197,7 +198,8 @@ export function CustomerAddresses() {
         <h2 className="text-lg font-bold">My Addresses</h2>
         <Button
           size="sm"
-          className="h-8 text-xs bg-emerald-500 hover:bg-emerald-600 text-white"
+          className="h-8 text-xs text-white"
+          style={{ backgroundColor: brandColor }}
           onClick={() => setShowAddDialog(true)}
         >
           <Plus className="h-3 w-3 mr-1" />
@@ -226,18 +228,18 @@ export function CustomerAddresses() {
             <Card key={addr.id} className="border border-gray-100 shadow-sm">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                  <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${brandColor}12` }}>
                     {addr.label === "Home" ? (
-                      <Home className="h-5 w-5 text-emerald-500" />
+                      <Home className="h-5 w-5" style={{ color: brandColor }} />
                     ) : (
-                      <Building2 className="h-5 w-5 text-emerald-500" />
+                      <Building2 className="h-5 w-5" style={{ color: brandColor }} />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-gray-900">{addr.label}</span>
                       {addr.isDefault && (
-                        <Badge className="bg-emerald-50 text-emerald-600 border-0 text-[10px] h-5">Default</Badge>
+                        <Badge className="border-0 text-[10px] h-5" style={{ backgroundColor: `${brandColor}12`, color: brandColor }}>Default</Badge>
                       )}
                     </div>
                     <p className="text-sm text-gray-600 mt-0.5">{addr.line1}, {addr.line2}</p>
@@ -276,10 +278,9 @@ export function CustomerAddresses() {
                   key={label}
                   onClick={() => setNewAddress((prev) => ({ ...prev, label }))}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    newAddress.label === label
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                      : "border-gray-200 text-gray-600"
+                    newAddress.label === label ? "" : "border-gray-200 text-gray-600"
                   }`}
+                  style={newAddress.label === label ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : undefined}
                 >
                   {label}
                 </button>
@@ -315,7 +316,8 @@ export function CustomerAddresses() {
             <Button
               onClick={handleAddAddress}
               disabled={!newAddress.line1 || !newAddress.pincode || saving}
-              className="w-full h-10 rounded-xl text-xs bg-emerald-500 hover:bg-emerald-600"
+              className="w-full h-10 rounded-xl text-xs text-white"
+              style={{ backgroundColor: brandColor }}
             >
               {saving ? (
                 <span className="flex items-center gap-2">

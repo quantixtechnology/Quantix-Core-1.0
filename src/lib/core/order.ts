@@ -562,7 +562,7 @@ export async function updateOrderStatus(
 
     // Update delivery status in tandem if applicable
     if (['DELIVERY', 'PICKUP_AND_DELIVERY'].includes(order.orderType)) {
-      const deliveryStatusMap: Record<string, string> = {
+      const deliveryStatusMap: Record<string, 'ASSIGNED' | 'ON_THE_WAY' | 'DELIVERED' | 'CANCELLED'> = {
         CONFIRMED: 'ASSIGNED',
         OUT_FOR_DELIVERY: 'ON_THE_WAY',
         DELIVERED: 'DELIVERED',

@@ -150,7 +150,7 @@ export async function createPlatformSubscription(params: {
       discountPercentage,
       manualPriceOverride: hasOverride,
       overrideReason: params.overrideReason,
-      billingCycle: params.billingCycle === 'MONTHLY' ? 'monthly' : 'yearly',
+      billingCycle: params.billingCycle,
       currentPeriodStart: now,
       currentPeriodEnd: periodEnd,
       nextBillingDate: periodEnd,
@@ -205,12 +205,12 @@ export async function processBillingCycle(subscriptionId: string): Promise<Billi
       status: 'pending',
       invoiceNumber,
       dueDate: subscription.nextBillingDate,
-      description: `${subscription.billingCycle === 'yearly' ? 'Annual' : 'Monthly'} subscription - ${subscription.plan.name}`,
+      description: `${subscription.billingCycle === 'YEARLY' ? 'Annual' : 'Monthly'} subscription - ${subscription.plan.name}`,
     },
   });
 
   // Calculate new period
-  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
+  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY';
   const newPeriodEnd = calculatePeriodEnd(now, billingCycle);
 
   // Update subscription for next billing cycle
@@ -417,7 +417,7 @@ export async function reactivatePlatformSubscription(
   }
 
   const now = new Date();
-  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
+  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY';
   const newPeriodEnd = calculatePeriodEnd(now, billingCycle);
   const effectivePrice = subscription.customPrice ?? subscription.planPrice;
 
@@ -877,7 +877,6 @@ export function calculatePeriodEnd(
       end.setDate(end.getDate() + 7);
       break;
     case 'MONTHLY':
-    case 'monthly':
       end.setMonth(end.getMonth() + 1);
       break;
     case 'QUARTERLY':
@@ -887,7 +886,6 @@ export function calculatePeriodEnd(
       end.setMonth(end.getMonth() + 6);
       break;
     case 'YEARLY':
-    case 'yearly':
       end.setFullYear(end.getFullYear() + 1);
       break;
   }

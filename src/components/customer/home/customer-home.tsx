@@ -57,7 +57,8 @@ interface CategoryItem {
 }
 
 export function CustomerHome() {
-  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType, currentBusinessId, currentStoreId } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType, currentBusinessId, currentStoreId, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const storeId = currentStoreId || undefined
   const businessName = currentBusinessName || "My Store"
   const { addItem, items, updateQuantity, removeItem, setCartStoreId } = useCartStore()
@@ -229,7 +230,7 @@ export function CustomerHome() {
       {/* Delivery Location */}
       <div className="px-4 pb-2">
         <div className="flex items-center gap-1.5 text-xs">
-          <Leaf className="w-3.5 h-3.5 text-emerald-500" />
+          <Leaf className="w-3.5 h-3.5" style={{ color: brandColor }} />
           <span className="text-gray-500">Delivering to</span>
           <span className="font-semibold text-gray-800">Home - Andheri West</span>
           <ChevronRight className="w-3 h-3 text-gray-400" />
@@ -283,20 +284,21 @@ export function CustomerHome() {
       <div className="mb-4">
         <div className="flex items-center justify-between px-4 mb-2">
           <h2 className="text-sm font-bold text-gray-900">Offers & Deals</h2>
-          <button className="text-xs text-emerald-600 font-medium">View All</button>
+          <button className="text-xs font-medium" style={{ color: brandColor }}>View All</button>
         </div>
         <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
           {offers.map((offer) => (
             <div
               key={offer.id}
-              className="flex-shrink-0 w-44 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-100 rounded-xl p-3"
+              className="flex-shrink-0 w-44 rounded-xl p-3 border"
+              style={{ backgroundColor: `${brandColor}08`, borderColor: `${brandColor}20` }}
             >
               <div className="flex items-center gap-1.5 mb-1">
-                <Tag className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-xs font-bold text-emerald-700">{offer.title}</span>
+                <Tag className="w-3.5 h-3.5" style={{ color: brandColor }} />
+                <span className="text-xs font-bold" style={{ color: brandColor }}>{offer.title}</span>
               </div>
               <p className="text-[11px] text-gray-500 mb-2">{offer.description}</p>
-              <div className="bg-emerald-500 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded inline-block">
+              <div className="text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded inline-block" style={{ backgroundColor: brandColor }}>
                 {offer.code}
               </div>
             </div>
@@ -310,7 +312,7 @@ export function CustomerHome() {
           <h2 className="text-sm font-bold text-gray-900">Shop by Category</h2>
           <button
             onClick={() => setCustomerPage("products")}
-            className="text-xs text-emerald-600 font-medium"
+            className="text-xs font-medium" style={{ color: brandColor }}
           >
             See All
           </button>
@@ -349,7 +351,7 @@ export function CustomerHome() {
           </div>
           <button
             onClick={() => setCustomerPage("products")}
-            className="text-xs text-emerald-600 font-medium"
+            className="text-xs font-medium" style={{ color: brandColor }}
           >
             View All
           </button>
@@ -387,7 +389,7 @@ export function CustomerHome() {
                         </div>
                       )}
                       {savings > 0 && (
-                        <Badge className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[9px] px-1 py-0 h-4">
+                        <Badge className="absolute top-1.5 right-1.5 text-white text-[9px] px-1 py-0 h-4" style={{ backgroundColor: brandColor }}>
                           {Math.round((savings / defaultVariant.mrp) * 100)}% OFF
                         </Badge>
                       )}
@@ -406,14 +408,15 @@ export function CustomerHome() {
                       {cartQty === 0 ? (
                         <Button
                           onClick={() => handleAddToCart(product)}
-                          className="w-full h-7 text-xs font-semibold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 rounded-lg"
+                          className="w-full h-7 text-xs font-semibold border rounded-lg"
+                          style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderColor: `${brandColor}40` }}
                           variant="ghost"
                           size="sm"
                         >
                           ADD
                         </Button>
                       ) : (
-                        <div className="flex items-center justify-between bg-emerald-500 rounded-lg h-7 px-1">
+                        <div className="flex items-center justify-between rounded-lg h-7 px-1" style={{ backgroundColor: brandColor }}>
                           <button
                             onClick={() =>
                               cartQty === 1
@@ -487,14 +490,15 @@ export function CustomerHome() {
                     {cartQty === 0 ? (
                       <Button
                         onClick={() => handleAddToCart(product)}
-                        className="h-7 px-3 text-xs font-semibold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 rounded-lg"
+                        className="h-7 px-3 text-xs font-semibold border rounded-lg"
+                        style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderColor: `${brandColor}40` }}
                         variant="ghost"
                         size="sm"
                       >
                         ADD
                       </Button>
                     ) : (
-                      <div className="flex items-center gap-1 bg-emerald-500 rounded-lg h-7 px-1">
+                      <div className="flex items-center gap-1 rounded-lg h-7 px-1" style={{ backgroundColor: brandColor }}>
                         <button
                           onClick={() =>
                             cartQty === 1

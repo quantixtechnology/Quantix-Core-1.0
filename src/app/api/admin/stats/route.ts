@@ -85,7 +85,7 @@ export const GET = withMiddleware({
     let yearlyProjected = 0;
     for (const sub of subscriptionRevenueResult) {
       const price = sub.customPrice || sub.planPrice;
-      if (sub.billingCycle === 'MONTHLY' || sub.billingCycle === 'monthly') {
+      if (sub.billingCycle === 'MONTHLY') {
         monthlyMRR += price;
         yearlyProjected += price * 12;
       } else {

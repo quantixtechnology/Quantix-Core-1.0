@@ -38,12 +38,13 @@ const statusColors: Record<string, string> = {
   CONFIRMED: "bg-blue-100 text-blue-700",
   PREPARING: "bg-purple-100 text-purple-700",
   OUT_FOR_DELIVERY: "bg-orange-100 text-orange-700",
-  DELIVERED: "bg-emerald-100 text-emerald-700",
+  DELIVERED: "",
   CANCELLED: "bg-red-100 text-red-700",
 }
 
 export function CustomerOrderTracking() {
-  const { selectedOrderId, setCustomerPage } = useAdminStore()
+  const { selectedOrderId, setCustomerPage, currentBusinessPrimaryColor } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
   const [showDetails, setShowDetails] = useState(false)
 
   // Fetch order details
@@ -158,9 +159,9 @@ export function CustomerOrderTracking() {
         </div>
         {latestUpdate && (
           <div className="ml-auto">
-            <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-full">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-[10px] text-emerald-700 font-medium">Live</span>
+            <div className="flex items-center gap-1 px-2 py-1 rounded-full" style={{ backgroundColor: `${brandColor}10` }}>
+              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: brandColor }} />
+              <span className="text-[10px] font-medium" style={{ color: brandColor }}>Live</span>
             </div>
           </div>
         )}
@@ -168,17 +169,17 @@ export function CustomerOrderTracking() {
 
       {/* Map Placeholder */}
       {(currentStatus === "OUT_FOR_DELIVERY" || currentStatus === "PREPARING") && (
-        <div className="mx-4 mb-4 h-40 bg-gradient-to-br from-emerald-50 to-blue-50 rounded-xl flex items-center justify-center border border-emerald-100 relative">
+        <div className="mx-4 mb-4 h-40 rounded-xl flex items-center justify-center border relative" style={{ backgroundColor: `${brandColor}08`, borderColor: `${brandColor}20` }}>
           <div className="text-center">
-            <MapPin className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-            <p className="text-xs text-emerald-700 font-medium">Live Tracking</p>
+            <MapPin className="w-8 h-8 mx-auto mb-2" style={{ color: brandColor }} />
+            <p className="text-xs font-medium" style={{ color: brandColor }}>Live Tracking</p>
             <p className="text-[10px] text-gray-500">
               {currentStatus === "OUT_FOR_DELIVERY"
                 ? "Your order is on the way!"
                 : "Your order is being prepared"}
             </p>
             {partnerLocation && (
-              <p className="text-[10px] text-emerald-600 mt-1">
+              <p className="text-[10px] mt-1" style={{ color: brandColor }}>
                 📍 {partnerLocation.lat.toFixed(4)}, {partnerLocation.lng.toFixed(4)}
               </p>
             )}
@@ -188,7 +189,10 @@ export function CustomerOrderTracking() {
 
       {/* Status Badge */}
       <div className="px-4 mb-4">
-        <Badge className={`${statusColors[currentStatus] || "bg-gray-100 text-gray-700"} text-xs px-3 py-1 border-0`}>
+        <Badge
+          className={`${statusColors[currentStatus] || "bg-gray-100 text-gray-700"} text-xs px-3 py-1 border-0`}
+          style={currentStatus === "DELIVERED" ? { backgroundColor: `${brandColor}20`, color: brandColor } : undefined}
+        >
           {currentStatus.replace(/_/g, " ")}
         </Badge>
         {order.estimatedDelivery && currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
@@ -213,21 +217,21 @@ export function CustomerOrderTracking() {
                   <div key={step.key} className="flex gap-3">
                     <div className="flex flex-col items-center">
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        className="w-8 h-8 rounded-full flex items-center justify-center"
+                        style={
                           isCompleted
                             ? isCurrent
-                              ? "bg-emerald-500 text-white"
-                              : "bg-emerald-100 text-emerald-600"
-                            : "bg-gray-100 text-gray-300"
-                        }`}
+                              ? { backgroundColor: brandColor, color: '#fff' }
+                              : { backgroundColor: `${brandColor}25`, color: brandColor }
+                            : { backgroundColor: '#f3f4f6', color: '#d1d5db' }
+                        }
                       >
                         <Icon className="w-4 h-4" />
                       </div>
                       {idx < statusSteps.length - 1 && (
                         <div
-                          className={`w-0.5 h-8 ${
-                            idx < currentStepIndex ? "bg-emerald-300" : "bg-gray-200"
-                          }`}
+                          className="w-0.5 h-8"
+                          style={{ backgroundColor: idx < currentStepIndex ? `${brandColor}60` : '#e5e7eb' }}
                         />
                       )}
                     </div>
@@ -240,7 +244,7 @@ export function CustomerOrderTracking() {
                         {step.label}
                       </p>
                       {isCurrent && (
-                        <p className="text-[10px] text-emerald-600">In progress</p>
+                        <p className="text-[10px]" style={{ color: brandColor }}>In progress</p>
                       )}
                     </div>
                   </div>
@@ -257,8 +261,8 @@ export function CustomerOrderTracking() {
           <div className="bg-white border border-gray-100 rounded-xl p-4">
             <h3 className="text-sm font-bold text-gray-900 mb-3">Delivery Partner</h3>
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 bg-emerald-100 rounded-full flex items-center justify-center">
-                <User className="w-5 h-5 text-emerald-600" />
+              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}20` }}>
+                <User className="w-5 h-5" style={{ color: brandColor }} />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-800">
@@ -269,11 +273,11 @@ export function CustomerOrderTracking() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <button className="w-9 h-9 bg-emerald-50 rounded-full flex items-center justify-center">
-                  <Phone className="w-4 h-4 text-emerald-600" />
+                <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}10` }}>
+                  <Phone className="w-4 h-4" style={{ color: brandColor }} />
                 </button>
-                <button className="w-9 h-9 bg-emerald-50 rounded-full flex items-center justify-center">
-                  <MessageCircle className="w-4 h-4 text-emerald-600" />
+                <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}10` }}>
+                  <MessageCircle className="w-4 h-4" style={{ color: brandColor }} />
                 </button>
               </div>
             </div>
@@ -348,7 +352,8 @@ export function CustomerOrderTracking() {
         <div className="px-4">
           <Button
             variant="outline"
-            className="w-full h-10 rounded-xl text-xs border-emerald-200 text-emerald-600"
+            className="w-full h-10 rounded-xl text-xs"
+            style={{ borderColor: `${brandColor}50`, color: brandColor }}
           >
             <Download className="w-4 h-4 mr-2" />
             Download Invoice

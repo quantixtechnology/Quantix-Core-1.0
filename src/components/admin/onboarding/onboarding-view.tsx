@@ -948,16 +948,14 @@ export function OnboardingView() {
                                     <CheckCircle2 className="h-3 w-3" />
                                     Complete
                                   </Button>
-                                  {step.status !== "skipped" && (
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 text-[11px] text-muted-foreground"
-                                      onClick={() => handleSkipStep(liveSelectedRecord, step)}
-                                    >
-                                      Skip
-                                    </Button>
-                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-[11px] text-muted-foreground"
+                                    onClick={() => handleSkipStep(liveSelectedRecord, step)}
+                                  >
+                                    Skip
+                                  </Button>
                                 </div>
                               )}
                             </div>

@@ -14,6 +14,7 @@ import {
 import { db } from '@/lib/db';
 import type { NextRequest } from 'next/server';
 import type { DemoTenantStatus, BusinessType } from '@/lib/types';
+import type { Lead } from '@prisma/client';
 
 // ============================================================================
 // GET /api/core/demo-tenants/[demoTenantId] — Get demo tenant details
@@ -36,7 +37,7 @@ export async function GET(
       }
 
       // Include lead info if currently assigned
-      let currentLead = null;
+      let currentLead: Pick<Lead, 'id' | 'businessName' | 'contactName' | 'contactEmail' | 'stage'> | null = null;
       if (tenant.currentLeadId) {
         currentLead = await db.lead.findUnique({
           where: { id: tenant.currentLeadId },

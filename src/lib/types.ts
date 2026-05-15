@@ -418,6 +418,7 @@ export interface ProductFilter {
   status?: ProductStatus | ProductStatus[];
   type?: ProductType | ProductType[];
   categoryId?: string | string[];
+  storeId?: string;
   isVeg?: boolean;
   isFeatured?: boolean;
   isPopular?: boolean;
@@ -590,6 +591,7 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
+  phone?: string | null;
   avatar: string | null;
   role: Role;
   businessId?: string;

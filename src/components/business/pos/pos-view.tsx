@@ -174,7 +174,7 @@ export function POSView() {
   // Map API products data (fall back to demo data if API hasn't loaded)
   const apiProducts = useMemo(() => {
     if (!productsData?.data || !Array.isArray(productsData.data)) return demoProductsFallback
-    return productsData.data.map((p: Record<string, unknown>) => ({
+    return (productsData.data as unknown as Record<string, unknown>[]).map((p) => ({
       ...p,
       id: String(p.id || ""),
       name: String(p.name || ""),
@@ -199,7 +199,7 @@ export function POSView() {
 
   const apiCategories = useMemo(() => {
     if (!categoriesData?.data || !Array.isArray(categoriesData.data)) return demoCategoriesFallback
-    return categoriesData.data.map((c: Record<string, unknown>) => ({
+    return (categoriesData.data as unknown as Record<string, unknown>[]).map((c) => ({
       ...c,
       id: String(c.id || ""),
       name: String(c.name || ""),
@@ -350,22 +350,15 @@ export function POSView() {
       // Create order via API for POS orders
       if (cart.length > 0) {
         createOrderMutation.mutate({
-          businessId: BUSINESS_ID,
           storeId: "store_1",
           orderType: "POS",
-          orderSource: "pos",
           customerName: selectedCustomerData?.name || "Walk-in Customer",
           customerPhone: selectedCustomerData?.phone,
           paymentMethod: activePaymentMethod,
           items: cart.map((item) => ({
-            itemType: "PRODUCT",
-            itemId: item.productId,
-            itemName: item.productName,
-            variantName: item.variantName,
+            productId: item.productId,
+            variantId: item.variantId,
             quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            mrp: item.mrp,
-            isVeg: item.isVeg,
           })),
           posSessionId: `pos_session_${sessionStartTime.getTime()}`,
         })
@@ -1119,7 +1112,7 @@ export function POSView() {
 
           {/* Category Pills */}
           <div className="border-b px-3 py-2 bg-muted/30">
-            <ScrollArea className="w-full" orientation="horizontal">
+            <ScrollArea className="w-full">
               <div className="flex gap-1.5 pb-0.5">
                 <Button
                   size="sm"
@@ -1173,8 +1166,8 @@ export function POSView() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                   {filteredProducts.map((product) => {
                     const defaultVariant =
-                      product.variants.find((v) => v.isDefault) ||
-                      product.variants[0];
+                      (product.variants ?? []).find((v) => v.isDefault) ||
+                      (product.variants ?? [])[0];
                     if (!defaultVariant) return null;
                     const hasDiscount = defaultVariant.mrp > defaultVariant.price;
                     const inCart = cart.find(
@@ -1221,9 +1214,9 @@ export function POSView() {
                           {/* Variant */}
                           <p className="text-xs text-muted-foreground mb-2 pl-5">
                             {defaultVariant.name}
-                            {product.variants.length > 1 && (
+                            {(product.variants?.length ?? 0) > 1 && (
                               <span className="text-[10px] ml-1 opacity-60">
-                                (+{product.variants.length - 1} more)
+                                (+{(product.variants?.length ?? 0) - 1} more)
                               </span>
                             )}
                           </p>

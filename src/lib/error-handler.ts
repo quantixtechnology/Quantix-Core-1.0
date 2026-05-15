@@ -363,7 +363,7 @@ export function logError(error: unknown, context?: Record<string, unknown>): voi
     ...(appError.field && { field: appError.field }),
     ...(appError.retryAfter && { retryAfter: appError.retryAfter }),
     ...(context && { context }),
-    ...(appError.data && { data: appError.data }),
+    ...(appError.data !== undefined && appError.data !== null ? { data: appError.data as Record<string, unknown> } : {}),
     // Include original stack trace in development
     ...(process.env.NODE_ENV === "development" && {
       stack: error instanceof Error ? error.stack : undefined,
