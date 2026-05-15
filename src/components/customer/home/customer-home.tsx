@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Search,
-  ChevronRight,
+  ChevronDown,
   Plus,
   Minus,
   Tag,
@@ -29,9 +29,11 @@ import {
   SprayCan,
   Snowflake,
   Leaf,
+  MapPin,
 } from "lucide-react"
 
 import { getBanners, getOffers } from "@/components/customer/data"
+import { StorePickerModal } from "@/components/customer/store-picker/store-picker-modal"
 
 const categoryIcons: Record<string, React.ReactNode> = {
   Apple: <Apple className="w-6 h-6" />,
@@ -57,13 +59,14 @@ interface CategoryItem {
 }
 
 export function CustomerHome() {
-  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType, currentBusinessId, currentStoreId, currentBusinessPrimaryColor } = useAdminStore()
+  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType, currentBusinessId, currentStoreId, currentStoreName, currentBusinessPrimaryColor } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const storeId = currentStoreId || undefined
   const businessName = currentBusinessName || "My Store"
   const { addItem, items, updateQuantity, removeItem, setCartStoreId } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [currentBanner, setCurrentBanner] = useState(0)
+  const [storePickerOpen, setStorePickerOpen] = useState(false)
 
   const bizId = currentBusinessId || ""
 
@@ -227,14 +230,20 @@ export function CustomerHome() {
         </div>
       </div>
 
-      {/* Delivery Location */}
+      {/* Store Selector */}
       <div className="px-4 pb-2">
-        <div className="flex items-center gap-1.5 text-xs">
-          <Leaf className="w-3.5 h-3.5" style={{ color: brandColor }} />
-          <span className="text-gray-500">Delivering to</span>
-          <span className="font-semibold text-gray-800">Home - Andheri West</span>
-          <ChevronRight className="w-3 h-3 text-gray-400" />
-        </div>
+        <button
+          onClick={() => setStorePickerOpen(true)}
+          className="flex items-center gap-1.5 text-xs w-full text-left"
+        >
+          <MapPin className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
+          <span className="text-gray-500">Delivering from</span>
+          <span className="font-semibold text-gray-800 truncate flex-1">
+            {currentStoreName || "Select a store"}
+          </span>
+          <ChevronDown className="w-3 h-3 text-gray-400 shrink-0" />
+        </button>
+        <StorePickerModal open={storePickerOpen} onClose={() => setStorePickerOpen(false)} />
       </div>
 
       {/* Banner Carousel */}

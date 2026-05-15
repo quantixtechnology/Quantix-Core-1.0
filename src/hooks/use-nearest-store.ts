@@ -17,7 +17,7 @@ interface NearestStoreResult {
  * Silently no-ops if geolocation is unavailable or businessId is not yet set.
  */
 export function useNearestStore() {
-  const { currentBusinessId, currentStoreId, setCurrentStoreId } = useAdminStore()
+  const { currentBusinessId, currentStoreId, setCurrentStoreId, setCurrentStoreName } = useAdminStore()
   const { setCartStoreId } = useCartStore()
   const resolvedRef = useRef(false)
 
@@ -41,6 +41,7 @@ export function useNearestStore() {
             if (!json.success || !json.data?.store?.id) return
             const result = json.data as NearestStoreResult
             setCurrentStoreId(result.store.id)
+            setCurrentStoreName(result.store.name)
             setCartStoreId(result.store.id)
           })
           .catch(() => {/* non-fatal */})
