@@ -119,6 +119,13 @@ export function BusinessesView() {
   const [editSubdomain, setEditSubdomain] = useState("")
   const [editPrimaryColor, setEditPrimaryColor] = useState("")
   const [savingBranding, setSavingBranding] = useState(false)
+
+  // Pricing edit state
+  const [pricingOpen, setPricingOpen] = useState(false)
+  const [editCustomPrice, setEditCustomPrice] = useState("")
+  const [editDiscountPct, setEditDiscountPct] = useState("")
+  const [editPricingNote, setEditPricingNote] = useState("")
+  const [savingPricing, setSavingPricing] = useState(false)
   const [createdResult, setCreatedResult] = useState<{
     businessCode: string | null; businessId: string
     mainStoreCode: string | null; registrationDate: string
@@ -321,6 +328,46 @@ export function BusinessesView() {
       toast.error(err instanceof Error ? err.message : "Failed to save")
     } finally {
       setSavingBranding(false)
+    }
+  }
+
+  const openPricingEditor = (biz: BusinessApiData) => {
+    const sub = biz.subscription
+    if (!sub) return
+    const current = sub.customPrice ?? sub.planPrice
+    setEditCustomPrice(String(current))
+    setEditDiscountPct(sub.discountPercentage ? String(sub.discountPercentage) : "")
+    setEditPricingNote(sub.overrideReason ?? "")
+    setPricingOpen(true)
+  }
+
+  const handleSavePricing = async (biz: BusinessApiData) => {
+    const sub = biz.subscription
+    if (!sub) return
+    const newPrice = parseFloat(editCustomPrice)
+    if (isNaN(newPrice) || newPrice < 0) {
+      toast.error("Enter a valid amount")
+      return
+    }
+    setSavingPricing(true)
+    try {
+      const res = await fetch(`/api/core/businesses/${biz.id}/subscription`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          customPrice: newPrice,
+          overrideReason: editPricingNote || "Manual price adjustment",
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save")
+      toast.success("Subscription pricing updated")
+      setPricingOpen(false)
+      fetchBusinesses()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save pricing")
+    } finally {
+      setSavingPricing(false)
     }
   }
 
@@ -685,7 +732,7 @@ export function BusinessesView() {
       )}
 
       {/* Business Detail Sheet */}
-      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false) } }}>
+      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false) } }}>
         <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
           {selectedBusiness && (() => {
             const biz = selectedBusiness
@@ -791,15 +838,22 @@ export function BusinessesView() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <div><h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscription</h4></div>
-                        {(biz.status !== "ACTIVE" || (sub && sub.status !== "ACTIVE")) && (
-                          <Button
-                            size="sm"
-                            onClick={() => handleActivateBusiness(biz)}
-                            disabled={activatingBusiness}
-                          >
-                            {biz.status !== "ACTIVE" ? "Activate Business" : "Reactivate Subscription"}
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {!pricingOpen && canEdit && sub && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openPricingEditor(biz)}>
+                              <CreditCard className="size-3" /> Edit Pricing
+                            </Button>
+                          )}
+                          {(biz.status !== "ACTIVE" || (sub && sub.status !== "ACTIVE")) && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleActivateBusiness(biz)}
+                              disabled={activatingBusiness}
+                            >
+                              {biz.status !== "ACTIVE" ? "Activate Business" : "Reactivate Subscription"}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       {sub ? (
                         <div className="rounded-lg border p-4 space-y-3">
@@ -816,6 +870,78 @@ export function BusinessesView() {
                             <div><p className="text-[10px] text-muted-foreground">Renewal Due</p><p className="font-medium">{new Date(sub.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
                             {sub.discountPercentage && <div><p className="text-[10px] text-muted-foreground">Discount</p><p className="font-medium text-orange-600">{sub.discountPercentage}% off</p></div>}
                           </div>
+
+                          {/* Inline pricing editor */}
+                          {pricingOpen && (
+                            <div className="border-t pt-3 space-y-3">
+                              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Edit Pricing</p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                  <Label className="text-xs">Custom Amount (₹)</Label>
+                                  <Input
+                                    type="number"
+                                    placeholder={String(sub.planPrice)}
+                                    value={editCustomPrice}
+                                    onChange={(e) => {
+                                      const amt = e.target.value
+                                      setEditCustomPrice(amt)
+                                      const num = parseFloat(amt)
+                                      if (!isNaN(num) && sub.planPrice > 0) {
+                                        const pct = Math.round(((sub.planPrice - num) / sub.planPrice) * 10000) / 100
+                                        setEditDiscountPct(pct > 0 ? String(pct) : "")
+                                      } else {
+                                        setEditDiscountPct("")
+                                      }
+                                    }}
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label className="text-xs">Discount %</Label>
+                                  <Input
+                                    type="number"
+                                    placeholder="0"
+                                    min="0"
+                                    max="100"
+                                    value={editDiscountPct}
+                                    onChange={(e) => {
+                                      const pct = e.target.value
+                                      setEditDiscountPct(pct)
+                                      const num = parseFloat(pct)
+                                      if (!isNaN(num) && sub.planPrice > 0) {
+                                        const amt = Math.round(sub.planPrice * (1 - num / 100))
+                                        setEditCustomPrice(String(amt))
+                                      }
+                                    }}
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                              </div>
+                              {editCustomPrice && sub.planPrice > 0 && parseFloat(editCustomPrice) !== sub.planPrice && (
+                                <p className="text-[11px] text-muted-foreground">
+                                  Plan price: ₹{sub.planPrice.toLocaleString("en-IN")} → Custom: ₹{parseFloat(editCustomPrice).toLocaleString("en-IN")}
+                                  {editDiscountPct ? ` (${editDiscountPct}% off)` : ""}
+                                </p>
+                              )}
+                              <div className="space-y-1.5">
+                                <Label className="text-xs">Reason / Note</Label>
+                                <Input
+                                  placeholder="e.g. Negotiated rate, early adopter discount"
+                                  value={editPricingNote}
+                                  onChange={(e) => setEditPricingNote(e.target.value)}
+                                  className="h-8 text-xs"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" className="h-7 text-xs flex-1" onClick={() => handleSavePricing(biz)} disabled={savingPricing}>
+                                  {savingPricing ? "Saving…" : "Save Pricing"}
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => setPricingOpen(false)} disabled={savingPricing}>
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ) : (<div className="rounded-lg border border-dashed p-4 text-center"><p className="text-sm text-muted-foreground">No active subscription</p></div>)}
                     </div>
