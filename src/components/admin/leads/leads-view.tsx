@@ -620,7 +620,7 @@ export function LeadsView() {
                     <TableRow
                       key={lead.id}
                       className={`h-11 cursor-pointer transition-colors ${isSelected ? "bg-primary/5 hover:bg-primary/8" : "hover:bg-muted/40"}`}
-                      onClick={() => { setSelectedLead(lead); setDetailOpen(true) }}
+                      onClick={() => { setSelectedLead(lead); setEnhancedDetailOpen(true) }}
                     >
                       <TableCell className="pl-4" onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(lead.id)} />
@@ -685,7 +685,7 @@ export function LeadsView() {
                           )}
                           <button
                             className="ml-1 text-[10px] font-medium text-primary hover:underline px-1"
-                            onClick={() => { setSelectedLead(lead); setDetailOpen(true) }}
+                            onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); setEnhancedDetailOpen(true) }}
                           >
                             View
                           </button>
@@ -846,20 +846,16 @@ export function LeadsView() {
 
       {/* Enhanced Lead Detail Sheet */}
       <Sheet open={enhancedDetailOpen} onOpenChange={setEnhancedDetailOpen}>
-        <SheetContent className="w-[600px] sm:max-w-[600px]">
+        <SheetContent className="w-[760px] sm:max-w-[760px] p-0 flex flex-col">
           {selectedLead && (
-            <ScrollArea className="h-[calc(100vh-40px)]">
-              <div className="pr-4 py-4">
-                <LeadDetailEnhanced
-                  lead={selectedLead}
-                  onBack={() => { setEnhancedDetailOpen(false); setDetailOpen(true) }}
-                  onLeadUpdated={(updated) => {
-                    setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l))
-                    setSelectedLead(updated)
-                  }}
-                />
-              </div>
-            </ScrollArea>
+            <LeadDetailEnhanced
+              lead={selectedLead}
+              onBack={() => setEnhancedDetailOpen(false)}
+              onLeadUpdated={(updated) => {
+                setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l))
+                setSelectedLead(updated)
+              }}
+            />
           )}
         </SheetContent>
       </Sheet>

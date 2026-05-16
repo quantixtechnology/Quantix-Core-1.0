@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -283,28 +283,43 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
   const isOverdue = daysSince !== null && daysSince > 3
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-screen bg-background overflow-hidden">
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b px-4 py-3 space-y-2.5">
-        {/* Row 1: back + id + stage + type */}
-        <div className="flex items-start gap-2">
-          <button onClick={onBack} className="mt-0.5 p-1 rounded hover:bg-muted text-muted-foreground">
-            <ArrowLeft className="h-4 w-4" />
-          </button>
+      <div className="shrink-0 border-b px-5 py-3 space-y-2.5">
+        {/* Row 1: business name + id + stage dropdown + meta */}
+        <div className="flex items-start gap-3 min-w-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-sm font-bold truncate">{lead.businessName}</h2>
+              <h2 className="text-sm font-bold truncate max-w-[320px]">{lead.businessName}</h2>
               {lead.leadId && (
-                <span className="text-[10px] font-mono text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                <span className="text-[10px] font-mono text-muted-foreground bg-muted rounded px-1.5 py-0.5 shrink-0">
                   {lead.leadId}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${stageColor}`}>
-                {STAGE_LABELS[lead.stage] ?? lead.stage}
-              </span>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              {/* Stage dropdown — replaces the static badge */}
+              <Select value={lead.stage} onValueChange={advanceToStage} disabled={advancingStage}>
+                <SelectTrigger className={`h-6 rounded-full px-2.5 text-[10px] font-semibold border-0 shadow-none focus:ring-0 w-auto gap-1 ${stageColor}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] px-2 py-1">Pipeline</SelectLabel>
+                    {PIPELINE_STAGES.map(s => (
+                      <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s]}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] px-2 py-1">Terminal</SelectLabel>
+                    {TERMINAL_STAGES.map(s => (
+                      <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s]}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
               <span className="text-[11px] text-muted-foreground">{typeConf?.label ?? lead.businessType}</span>
               {lead.salesRep && (
                 <span className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -334,18 +349,6 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
           >
             <StickyNote className="h-3 w-3" /> Add Note
           </button>
-
-          {/* Terminal stage selector */}
-          <Select onValueChange={advanceToStage} disabled={advancingStage}>
-            <SelectTrigger className="h-7 px-3 text-xs border-dashed w-auto gap-1 min-w-[90px]">
-              <SelectValue placeholder="Mark as…" />
-            </SelectTrigger>
-            <SelectContent>
-              {TERMINAL_STAGES.map(s => (
-                <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
         {/* Overdue banner */}
@@ -357,43 +360,6 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
             </p>
           </div>
         )}
-      </div>
-
-      {/* ── Stage stepper ────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b px-4 py-2.5 overflow-x-auto">
-        <div className="flex items-center gap-0 min-w-max">
-          {PIPELINE_STAGES.map((stage, idx) => {
-            const done = pipelineIdx >= idx && !isTerminal
-            const current = lead.stage === stage
-            const future = idx > pipelineIdx || isTerminal
-            return (
-              <div key={stage} className="flex items-center">
-                <button
-                  onClick={() => advanceToStage(stage)}
-                  disabled={advancingStage}
-                  title={STAGE_LABELS[stage]}
-                  className={`flex flex-col items-center gap-1 px-2 py-1 rounded transition-all group ${
-                    current ? "opacity-100" : future ? "opacity-40 hover:opacity-70" : "opacity-80 hover:opacity-100"
-                  }`}
-                >
-                  <div className={`h-2.5 w-2.5 rounded-full border-2 transition-all ${
-                    current
-                      ? "bg-primary border-primary scale-125"
-                      : done
-                      ? "bg-primary/70 border-primary/70"
-                      : "bg-background border-muted-foreground/40 group-hover:border-primary/50"
-                  }`} />
-                  <span className={`text-[9px] whitespace-nowrap font-medium ${current ? "text-primary" : "text-muted-foreground"}`}>
-                    {STAGE_LABELS[stage]}
-                  </span>
-                </button>
-                {idx < PIPELINE_STAGES.length - 1 && (
-                  <div className={`h-px w-4 shrink-0 ${done && !current && idx < pipelineIdx ? "bg-primary/50" : "bg-border"}`} />
-                )}
-              </div>
-            )
-          })}
-        </div>
       </div>
 
       {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
@@ -418,138 +384,141 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
 
         {/* ── Overview ──────────────────────────────────────────────────────── */}
         <TabsContent value="overview" className="flex-1 overflow-y-auto mt-0">
-          <div className="grid grid-cols-2 gap-0 divide-x">
-            {/* Left: Contact */}
-            <div className="px-4 py-3 space-y-0">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Contact</p>
-              <EditableField
-                label="Prospect Name"
-                value={lead.contactName}
-                onSave={saveField("contactName")}
-                icon={<User className="h-3.5 w-3.5" />}
-              />
-              <EditableField
-                label="Phone"
-                value={lead.contactPhone}
-                type="tel"
-                onSave={saveField("contactPhone")}
-                icon={<Phone className="h-3.5 w-3.5" />}
-              />
-              <EditableField
-                label="Email"
-                value={lead.contactEmail}
-                type="email"
-                onSave={saveField("contactEmail")}
-                icon={<Mail className="h-3.5 w-3.5" />}
-              />
-              <EditableField
-                label="Business Name"
-                value={lead.businessName}
-                onSave={saveField("businessName")}
-                icon={<Building2 className="h-3.5 w-3.5" />}
-              />
-              <EditableField
-                label="City"
-                value={lead.city ?? ""}
-                onSave={saveField("city")}
-                icon={<MapPin className="h-3.5 w-3.5" />}
-                placeholder="Add city"
-              />
+          <div className="px-5 py-3">
+            {/* Two-column grid — each side has enough room now that sheet is 760px */}
+            <div className="grid grid-cols-2 gap-x-6">
+              {/* Left: Contact */}
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Contact</p>
+                <EditableField
+                  label="Prospect Name"
+                  value={lead.contactName}
+                  onSave={saveField("contactName")}
+                  icon={<User className="h-3.5 w-3.5" />}
+                />
+                <EditableField
+                  label="Phone"
+                  value={lead.contactPhone}
+                  type="tel"
+                  onSave={saveField("contactPhone")}
+                  icon={<Phone className="h-3.5 w-3.5" />}
+                />
+                <EditableField
+                  label="Email"
+                  value={lead.contactEmail}
+                  type="email"
+                  onSave={saveField("contactEmail")}
+                  icon={<Mail className="h-3.5 w-3.5" />}
+                />
+                <EditableField
+                  label="Business Name"
+                  value={lead.businessName}
+                  onSave={saveField("businessName")}
+                  icon={<Building2 className="h-3.5 w-3.5" />}
+                />
+                <EditableField
+                  label="City"
+                  value={lead.city ?? ""}
+                  onSave={saveField("city")}
+                  icon={<MapPin className="h-3.5 w-3.5" />}
+                  placeholder="Add city"
+                />
+              </div>
+
+              {/* Right: Deal */}
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Deal</p>
+                <EditableField
+                  label="Estimated Value (₹)"
+                  value={lead.estimatedValue != null ? String(lead.estimatedValue) : ""}
+                  type="number"
+                  onSave={saveField("estimatedValue")}
+                  icon={<IndianRupee className="h-3.5 w-3.5" />}
+                  placeholder="Annual contract value"
+                />
+
+                {/* Sales Rep */}
+                <div className="group flex items-start gap-2 py-2.5 border-b border-dashed border-border/50">
+                  <UserCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Sales Rep</p>
+                    <Select
+                      value={lead.salesRep?.id ?? "none"}
+                      onValueChange={async (v) => {
+                        try {
+                          await patch({ salesRepId: v === "none" ? null : v })
+                          toast.success("Rep updated")
+                        } catch { toast.error("Failed") }
+                      }}
+                    >
+                      <SelectTrigger className="h-6 text-xs border-0 p-0 shadow-none focus:ring-0 w-full text-left font-medium [&>svg]:ml-1">
+                        <SelectValue placeholder="Unassigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none" className="text-xs italic text-muted-foreground">Unassigned</SelectItem>
+                        {salesTeam.filter(r => r.isActive !== false).map(r => (
+                          <SelectItem key={r.id} value={r.id} className="text-xs">{r.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Business Type */}
+                <div className="group flex items-start gap-2 py-2.5 border-b border-dashed border-border/50">
+                  <Tag className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Business Type</p>
+                    <Select
+                      value={lead.businessType}
+                      onValueChange={async (v) => {
+                        try { await patch({ businessType: v }); toast.success("Saved") }
+                        catch { toast.error("Failed") }
+                      }}
+                    >
+                      <SelectTrigger className="h-6 text-xs border-0 p-0 shadow-none focus:ring-0 w-full font-medium [&>svg]:ml-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(businessTypeConfig).map(([key, val]) => (
+                          <SelectItem key={key} value={key} className="text-xs">{val.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <EditableField
+                  label="Follow-up Date"
+                  value={lead.followUpDate ? lead.followUpDate.split("T")[0] : ""}
+                  type="date"
+                  onSave={saveField("followUpDate")}
+                  icon={<CalendarClock className="h-3.5 w-3.5" />}
+                />
+                <EditableField
+                  label="Notes"
+                  value={lead.notes ?? ""}
+                  type="textarea"
+                  onSave={saveField("notes")}
+                  icon={<StickyNote className="h-3.5 w-3.5" />}
+                  placeholder="Add notes…"
+                />
+              </div>
             </div>
 
-            {/* Right: Deal */}
-            <div className="px-4 py-3 space-y-0">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Deal</p>
-              <EditableField
-                label="Estimated Value (₹)"
-                value={lead.estimatedValue != null ? String(lead.estimatedValue) : ""}
-                type="number"
-                onSave={saveField("estimatedValue")}
-                icon={<IndianRupee className="h-3.5 w-3.5" />}
-                placeholder="Annual contract value"
-              />
-
-              {/* Sales Rep — select inline */}
-              <div className="group flex items-start gap-2 py-2.5 border-b border-dashed border-border/50">
-                <UserCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Sales Rep</p>
-                  <Select
-                    value={lead.salesRep?.id ?? "none"}
-                    onValueChange={async (v) => {
-                      try {
-                        await patch({ salesRepId: v === "none" ? null : v })
-                        toast.success("Rep updated")
-                      } catch { toast.error("Failed") }
-                    }}
-                  >
-                    <SelectTrigger className="h-6 text-xs border-0 p-0 shadow-none focus:ring-0 w-full text-left font-medium [&>svg]:ml-1">
-                      <SelectValue placeholder="Unassigned" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none" className="text-xs italic text-muted-foreground">Unassigned</SelectItem>
-                      {salesTeam.filter(r => r.isActive !== false).map(r => (
-                        <SelectItem key={r.id} value={r.id} className="text-xs">{r.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {/* Stats strip */}
+            <div className="border-t mt-3 pt-3 grid grid-cols-3 gap-3">
+              {[
+                { label: "Created", value: new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
+                { label: "Last Updated", value: new Date(lead.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
+                { label: "Last Contact", value: lead.lastContactedAt ? new Date(lead.lastContactedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Never" },
+              ].map(s => (
+                <div key={s.label} className="rounded-lg bg-muted/40 px-3 py-2 text-center">
+                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground">{s.label}</p>
+                  <p className="text-xs font-semibold mt-0.5">{s.value}</p>
                 </div>
-              </div>
-
-              {/* Business Type — select inline */}
-              <div className="group flex items-start gap-2 py-2.5 border-b border-dashed border-border/50">
-                <Tag className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Business Type</p>
-                  <Select
-                    value={lead.businessType}
-                    onValueChange={async (v) => {
-                      try { await patch({ businessType: v }); toast.success("Saved") }
-                      catch { toast.error("Failed") }
-                    }}
-                  >
-                    <SelectTrigger className="h-6 text-xs border-0 p-0 shadow-none focus:ring-0 w-full font-medium [&>svg]:ml-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(businessTypeConfig).map(([key, val]) => (
-                        <SelectItem key={key} value={key} className="text-xs">{val.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <EditableField
-                label="Follow-up Date"
-                value={lead.followUpDate ? lead.followUpDate.split("T")[0] : ""}
-                type="date"
-                onSave={saveField("followUpDate")}
-                icon={<CalendarClock className="h-3.5 w-3.5" />}
-              />
-              <EditableField
-                label="Notes"
-                value={lead.notes ?? ""}
-                type="textarea"
-                onSave={saveField("notes")}
-                icon={<StickyNote className="h-3.5 w-3.5" />}
-                placeholder="Add notes…"
-              />
+              ))}
             </div>
-          </div>
-
-          {/* Stats strip */}
-          <div className="border-t mx-4 py-3 grid grid-cols-3 gap-3">
-            {[
-              { label: "Created", value: new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
-              { label: "Last Updated", value: new Date(lead.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
-              { label: "Last Contact", value: lead.lastContactedAt ? new Date(lead.lastContactedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Never" },
-            ].map(s => (
-              <div key={s.label} className="rounded-lg bg-muted/40 px-3 py-2 text-center">
-                <p className="text-[9px] uppercase tracking-wider text-muted-foreground">{s.label}</p>
-                <p className="text-xs font-semibold mt-0.5">{s.value}</p>
-              </div>
-            ))}
           </div>
         </TabsContent>
 
