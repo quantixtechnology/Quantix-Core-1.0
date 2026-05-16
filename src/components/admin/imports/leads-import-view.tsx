@@ -98,18 +98,18 @@ function downloadTemplate() {
 
   // ── Sheet 1: Leads data entry ──────────────────────────────────────────────
   const templateRows = [
-    // Row 1 — column headers (* = required; leadId = optional upsert key)
+    // Row 1 — column headers (exact names the system expects — do not rename)
     [
-      "leadId", "businessName *", "contactName *", "contactEmail *", "contactPhone *",
+      "leadId", "businessName", "contactName", "contactEmail", "contactPhone",
       "city", "state", "pincode", "businessType", "source", "stage",
       "estimatedValue", "notes", "followUpDate", "tags", "salesRepName",
     ],
-    // Row 2 — field description / hint
+    // Row 2 — hint row (DELETE this row before uploading)
     [
       "Leave blank for new leads; fill LED-YYYYMM-XXXX to update existing",
-      "Business name", "Contact person name", "Email address", "10-digit mobile",
-      "City", "State", "Pincode", "See Valid Values sheet", "See Valid Values sheet", "See Valid Values sheet",
-      "Yearly value (INR)", "Any notes or remarks", "YYYY-MM-DD format", "comma-separated", "Salesperson full name",
+      "REQUIRED — Business or shop name", "REQUIRED — Contact person name", "REQUIRED — Email address", "REQUIRED — 10-digit mobile",
+      "City name", "State name", "6-digit pincode", "See Valid Values sheet", "See Valid Values sheet", "See Valid Values sheet",
+      "Yearly value in INR (number only)", "Any notes or remarks", "YYYY-MM-DD format", "comma-separated keywords", "Salesperson full name (must match system)",
     ],
     // Rows 3-6 — example data (delete before uploading)
     [
@@ -197,6 +197,27 @@ function downloadTemplate() {
   XLSX.writeFile(wb, "quantix_leads_import_template.xlsx")
 }
 
+// Strip asterisks and trim whitespace from column header keys so that
+// headers like "businessName *" map correctly to the "businessName" field
+// the backend expects. Also skips the hint row (row 2 in our template).
+function normalizeRows(rows: ImportRow[]): ImportRow[] {
+  return rows
+    .map((row) => {
+      const out: ImportRow = {}
+      for (const [k, v] of Object.entries(row)) {
+        const clean = k.replace(/\*/g, "").trim()
+        if (clean) out[clean] = String(v ?? "")
+      }
+      return out
+    })
+    .filter((row) => {
+      // Drop the hint row — it starts with descriptive text in the businessName cell
+      const bn = (row.businessName ?? "").trim().toLowerCase()
+      const hintPhrases = ["business name", "leave blank", "field description", "hint"]
+      return !hintPhrases.some((p) => bn.startsWith(p))
+    })
+}
+
 function parseFile(file: File): Promise<ImportRow[]> {
   return new Promise((resolve, reject) => {
     const ext = file.name.split(".").pop()?.toLowerCase()
@@ -205,7 +226,7 @@ function parseFile(file: File): Promise<ImportRow[]> {
       Papa.parse<ImportRow>(file, {
         header: true,
         skipEmptyLines: true,
-        complete: (res) => resolve(res.data),
+        complete: (res) => resolve(normalizeRows(res.data)),
         error: (err) => reject(err),
       })
     } else if (ext === "xlsx" || ext === "xls") {
@@ -214,8 +235,8 @@ function parseFile(file: File): Promise<ImportRow[]> {
         try {
           const wb = XLSX.read(e.target?.result, { type: "array" })
           const ws = wb.Sheets[wb.SheetNames[0]]
-          const data = XLSX.utils.sheet_to_json<ImportRow>(ws, { defval: "" })
-          resolve(data)
+          const raw = XLSX.utils.sheet_to_json<ImportRow>(ws, { defval: "" })
+          resolve(normalizeRows(raw))
         } catch (err) {
           reject(err)
         }
@@ -555,28 +576,32 @@ export function LeadsImportView() {
                 </div>
               )}
 
-              {previewOpen && parsedRows.length > 0 && (
-                <ScrollArea className="h-40 rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {Object.keys(parsedRows[0]).slice(0, 6).map((h) => (
-                          <TableHead key={h} className="text-[11px] whitespace-nowrap">{h}</TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {parsedRows.slice(0, 5).map((row, i) => (
-                        <TableRow key={i}>
-                          {Object.values(row).slice(0, 6).map((v, j) => (
-                            <TableCell key={j} className="text-xs max-w-[120px] truncate">{String(v)}</TableCell>
+              {previewOpen && parsedRows.length > 0 && (() => {
+                const previewCols = ["businessName", "contactName", "contactEmail", "contactPhone", "city", "stage", "salesRepName"]
+                  .filter((col) => col in parsedRows[0])
+                return (
+                  <ScrollArea className="h-44 rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {previewCols.map((h) => (
+                            <TableHead key={h} className="text-[11px] whitespace-nowrap">{h}</TableHead>
                           ))}
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
+                      </TableHeader>
+                      <TableBody>
+                        {parsedRows.slice(0, 5).map((row, i) => (
+                          <TableRow key={i}>
+                            {previewCols.map((col) => (
+                              <TableCell key={col} className="text-xs max-w-[140px] truncate">{String(row[col] ?? "")}</TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                )
+              })()}
             </CardContent>
           </Card>
 
