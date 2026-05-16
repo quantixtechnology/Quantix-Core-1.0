@@ -90,7 +90,7 @@ function initials(name: string) {
   return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
 }
 
-// ─── Inline Editable Field ────────────────────────────────────────────────────
+// ─── Editable Field — bordered input-card style (matching reference) ──────────
 
 interface EditableFieldProps {
   label: string
@@ -100,6 +100,7 @@ interface EditableFieldProps {
   placeholder?: string
   icon?: React.ReactNode
   disabled?: boolean
+  fullWidth?: boolean
 }
 
 function EditableField({ label, value, onSave, type = "text", placeholder, icon, disabled }: EditableFieldProps) {
@@ -119,82 +120,90 @@ function EditableField({ label, value, onSave, type = "text", placeholder, icon,
   const cancel = () => { setDraft(value); setEditing(false) }
 
   return (
-    <div className="group">
-      {/* Label row */}
-      <div className="flex items-center gap-1 mb-1">
-        {icon && <span className="text-gray-400">{icon}</span>}
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</p>
-      </div>
+    <div
+      className={`group relative border rounded-xl px-4 pt-3 pb-3 transition-colors bg-white ${
+        editing
+          ? "border-blue-400 ring-2 ring-blue-400/15"
+          : "border-gray-200 hover:border-gray-300 cursor-pointer"
+      }`}
+      onClick={() => !editing && !disabled && setEditing(true)}
+    >
+      {/* Floating label inside the border */}
+      <p className="text-[11px] font-semibold text-gray-400 mb-1.5 select-none">{label}</p>
 
-      {/* Value row */}
       {editing ? (
-        <div className="flex items-start gap-1.5">
-          {type === "textarea" ? (
-            <textarea
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-              className="w-full text-[13px] font-medium text-gray-900 border border-blue-400 rounded-lg px-3 py-2 resize-none bg-white ring-2 ring-blue-400/15 outline-none leading-snug"
-              value={draft}
-              rows={3}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === "Escape") cancel() }}
-            />
-          ) : (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              type={type}
-              className="flex-1 text-[13px] font-medium text-gray-900 border border-blue-400 rounded-lg px-3 py-2 bg-white ring-2 ring-blue-400/15 outline-none"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel() }}
-            />
-          )}
-          <div className="flex flex-col gap-1 shrink-0">
+        <div className="flex items-start gap-2">
+          {icon && <span className="text-gray-400 shrink-0 mt-0.5">{icon}</span>}
+          <div className="flex-1 min-w-0">
+            {type === "textarea" ? (
+              <textarea
+                ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+                className="w-full text-[14px] font-semibold text-gray-900 bg-transparent outline-none resize-none leading-snug"
+                value={draft}
+                rows={3}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Escape") cancel() }}
+                onClick={e => e.stopPropagation()}
+              />
+            ) : (
+              <input
+                ref={inputRef as React.RefObject<HTMLInputElement>}
+                type={type}
+                className="w-full text-[14px] font-semibold text-gray-900 bg-transparent outline-none leading-snug"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel() }}
+                onClick={e => e.stopPropagation()}
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={commit}
+              onClick={e => { e.stopPropagation(); commit() }}
               disabled={saving}
-              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 border border-emerald-200 bg-white shadow-sm"
+              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 transition-colors"
             >
               <Check className="h-3.5 w-3.5" />
             </button>
             <button
-              onClick={cancel}
-              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 border border-gray-200 bg-white shadow-sm"
+              onClick={e => { e.stopPropagation(); cancel() }}
+              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
       ) : (
-        <button
-          className="flex items-center gap-1.5 text-left w-full"
-          onClick={() => !disabled && setEditing(true)}
-          disabled={disabled}
-        >
-          <span className="text-[13px] font-semibold text-gray-900 leading-snug break-words">
-            {value
-              ? value
-              : <span className="text-gray-300 font-normal italic">{placeholder || "—"}</span>
-            }
+        <div className="flex items-center gap-2">
+          {icon && <span className="text-gray-400 shrink-0">{icon}</span>}
+          <span className="text-[14px] font-semibold text-gray-900 flex-1 leading-snug">
+            {value || <span className="text-gray-300 font-normal italic">{placeholder || "—"}</span>}
           </span>
           {!disabled && (
-            <Pencil className="h-3 w-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
+            <Pencil className="h-3.5 w-3.5 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           )}
-        </button>
+        </div>
       )}
     </div>
   )
 }
 
-// ─── Inline Select Field (shared layout for Sales Rep + Business Type) ────────
+// ─── Select Field — same bordered-card style ──────────────────────────────────
 
-function SelectField({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+interface SelectFieldCardProps {
+  label: string
+  icon?: React.ReactNode
+  children: React.ReactNode
+}
+
+function SelectFieldCard({ label, icon, children }: SelectFieldCardProps) {
   return (
-    <div className="group">
-      <div className="flex items-center gap-1 mb-1">
-        {icon && <span className="text-gray-400">{icon}</span>}
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</p>
+    <div className="group relative border border-gray-200 hover:border-gray-300 rounded-xl px-4 pt-3 pb-3 transition-colors bg-white cursor-pointer">
+      <p className="text-[11px] font-semibold text-gray-400 mb-1.5 select-none">{label}</p>
+      <div className="flex items-center gap-2">
+        {icon && <span className="text-gray-400 shrink-0">{icon}</span>}
+        {children}
       </div>
-      {children}
     </div>
   )
 }
@@ -230,7 +239,6 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
     fetchComments()
   }, [lead.id])
 
-  // ── Patch helper ──────────────────────────────────────────────────────────────
   const patch = useCallback(async (fields: Record<string, unknown>) => {
     const res = await fetch(`/api/core/leads/${lead.id}`, {
       method: "PATCH",
@@ -255,7 +263,6 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
     }
   }, [patch])
 
-  // ── Stage advance ─────────────────────────────────────────────────────────────
   const advanceToStage = useCallback(async (stage: string) => {
     if (stage === lead.stage) return
     setAdvancingStage(true)
@@ -279,7 +286,6 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
     finally { setAdvancingStage(false) }
   }, [lead, patch, onLeadUpdated])
 
-  // ── Comments ──────────────────────────────────────────────────────────────────
   const postComment = async () => {
     if (!commentText.trim()) return
     setPostingComment(true)
@@ -310,96 +316,63 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
   const isOverdue = daysSince !== null && daysSince > 3
   const totalNotes = comments.length + (lead.notes ? 1 : 0)
 
-  // ── Select trigger classname (shared) ─────────────────────────────────────────
-  const inlineSelectTrigger = "h-auto p-0 border-0 shadow-none focus:ring-0 w-full justify-start gap-1.5 text-[13px] font-semibold text-gray-900 [&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:text-gray-300 [&>svg]:opacity-0 group-hover:[&>svg]:opacity-100 [&>svg]:transition-opacity"
-
   return (
-    <div className="flex flex-col h-screen bg-[#f4f5f7] overflow-hidden">
+    <div className="flex flex-col h-screen bg-white overflow-hidden">
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* ═══════════════════════════════════════════════════════════════
           HEADER
-      ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="shrink-0 bg-white border-b border-gray-200 px-6 pt-5 pb-4">
+      ═══════════════════════════════════════════════════════════════ */}
+      <div className="shrink-0 border-b border-gray-100 px-6 pt-5 pb-4">
+        {/* Breadcrumb-style lead ID */}
+        {lead.leadId && (
+          <p className="text-[11px] font-medium text-gray-400 mb-2 tracking-wide">
+            Leads &rsaquo; {lead.leadId}
+          </p>
+        )}
 
-        {/* Business name + lead ID */}
-        <div className="flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h2 className="text-[17px] font-bold text-gray-900 leading-tight truncate">
-                {lead.businessName}
-              </h2>
-              {lead.leadId && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[11px] font-mono font-medium text-gray-500 shrink-0">
-                  {lead.leadId}
-                </span>
-              )}
-            </div>
-
-            {/* Stage + meta row */}
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <Select value={lead.stage} onValueChange={advanceToStage} disabled={advancingStage}>
-                <SelectTrigger className={`h-6 rounded-full px-3 text-[11px] font-bold border-0 shadow-none focus:ring-0 w-auto gap-1.5 ${stageColor}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] font-bold px-2 py-1 text-gray-400 uppercase tracking-widest">Pipeline</SelectLabel>
-                    {PIPELINE_STAGES.map(s => (
-                      <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s]}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                  <SelectSeparator />
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] font-bold px-2 py-1 text-gray-400 uppercase tracking-widest">Terminal</SelectLabel>
-                    {TERMINAL_STAGES.map(s => (
-                      <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s]}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[11px] font-medium text-gray-600">
-                {typeConf?.label ?? lead.businessType}
-              </span>
-
-              <span className="text-[11px] text-gray-400">
-                {SOURCE_LABELS[lead.source] ?? lead.source.replace(/_/g, " ")}
-              </span>
-
-              {lead.salesRep && (
-                <div className="flex items-center gap-1.5 ml-1">
-                  <div className="h-5 w-5 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center shrink-0">
-                    <span className="text-[9px] font-bold text-indigo-700">{initials(lead.salesRep.name)}</span>
-                  </div>
-                  <span className="text-[11px] font-semibold text-gray-600">{lead.salesRep.name}</span>
-                </div>
-              )}
-            </div>
+        {/* Business name + stage */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[20px] font-bold text-gray-900 leading-tight truncate">
+              {lead.businessName}
+            </h2>
+            <p className="text-[13px] text-gray-500 mt-0.5">
+              {lead.contactName} &middot; {typeConf?.label ?? lead.businessType} &middot; {SOURCE_LABELS[lead.source] ?? lead.source.replace(/_/g, " ")}
+            </p>
           </div>
+
+          {/* Stage dropdown — styled as a pill */}
+          <Select value={lead.stage} onValueChange={advanceToStage} disabled={advancingStage}>
+            <SelectTrigger className={`h-8 rounded-full px-3.5 text-[12px] font-bold border-0 shadow-none focus:ring-0 w-auto gap-2 shrink-0 ${stageColor}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-2 py-1">Pipeline</SelectLabel>
+                {PIPELINE_STAGES.map(s => (
+                  <SelectItem key={s} value={s} className="text-[13px]">{STAGE_LABELS[s]}</SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-2 py-1">Terminal</SelectLabel>
+                {TERMINAL_STAGES.map(s => (
+                  <SelectItem key={s} value={s} className="text-[13px]">{STAGE_LABELS[s]}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 mt-4 flex-wrap">
-          <a
-            href={`tel:${lead.contactPhone}`}
-            className="inline-flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 shadow-sm transition-all"
-          >
-            <PhoneCall className="h-3.5 w-3.5 text-gray-500" /> Call
-          </a>
-          <a
-            href={`https://wa.me/${lead.contactPhone.replace(/\D/g, "")}`}
-            target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 shadow-sm transition-all"
-          >
-            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-          </a>
-          <button
-            onClick={() => setTab("notes")}
-            className="inline-flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 shadow-sm transition-all"
-          >
-            <StickyNote className="h-3.5 w-3.5 text-gray-500" /> Add Note
-          </button>
-        </div>
+        {/* Sales rep row */}
+        {lead.salesRep && (
+          <div className="flex items-center gap-2 mt-2">
+            <div className="h-5 w-5 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center shrink-0">
+              <span className="text-[9px] font-bold text-indigo-700">{initials(lead.salesRep.name)}</span>
+            </div>
+            <span className="text-[12px] font-medium text-gray-600">{lead.salesRep.name}</span>
+          </div>
+        )}
 
         {/* Overdue banner */}
         {isOverdue && (
@@ -410,96 +383,116 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
             </p>
           </div>
         )}
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 mt-4 flex-wrap">
+          <a
+            href={`tel:${lead.contactPhone}`}
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-xl text-[13px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-all"
+          >
+            <PhoneCall className="h-4 w-4 text-gray-500" /> Call
+          </a>
+          <a
+            href={`https://wa.me/${lead.contactPhone.replace(/\D/g, "")}`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-xl text-[13px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 shadow-sm transition-all"
+          >
+            <MessageCircle className="h-4 w-4" /> WhatsApp
+          </a>
+          <button
+            onClick={() => setTab("notes")}
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-xl text-[13px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-all"
+          >
+            <StickyNote className="h-4 w-4 text-gray-500" /> Add Note
+          </button>
+        </div>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════════════
-          TABS
-      ═══════════════════════════════════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════════════════════════
+          TABS — segmented control, matching reference style
+      ═══════════════════════════════════════════════════════════════ */}
       <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0">
-        <div className="shrink-0 bg-white border-b border-gray-200 px-6">
-          <TabsList className="h-11 bg-transparent p-0 gap-6">
+        <div className="shrink-0 border-b border-gray-100 px-6 py-3">
+          <TabsList className="h-9 w-full bg-gray-100 rounded-xl p-1 gap-1">
             {[
-              { value: "overview", label: "Overview",                                                          icon: LayoutDashboard },
-              { value: "notes",    label: `Notes${totalNotes > 0 ? ` (${totalNotes})` : ""}`,                 icon: MessageSquare   },
-              { value: "activity", label: "Activity",                                                          icon: Activity        },
+              { value: "overview", label: "Overview",                                              icon: LayoutDashboard },
+              { value: "notes",    label: `Notes${totalNotes > 0 ? ` (${totalNotes})` : ""}`,    icon: MessageSquare   },
+              { value: "activity", label: "Activity",                                              icon: Activity        },
             ].map(({ value, label, icon: Icon }) => (
               <TabsTrigger
                 key={value}
                 value={value}
-                className="h-11 px-0 text-[13px] font-medium text-gray-500 rounded-none border-b-2 border-transparent data-[state=active]:border-gray-900 data-[state=active]:text-gray-900 data-[state=active]:font-semibold data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors"
+                className="flex-1 h-full rounded-lg text-[12px] font-semibold text-gray-500 gap-1.5 data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm data-[state=active]:font-bold transition-all"
               >
-                <Icon className="h-3.5 w-3.5 mr-1.5" />{label}
+                <Icon className="h-3.5 w-3.5" />{label}
               </TabsTrigger>
             ))}
           </TabsList>
         </div>
 
-        {/* ══════════════════════════════════════════════════════════════════
+        {/* ════════════════════════════════════════════════════════════
             OVERVIEW TAB
-        ══════════════════════════════════════════════════════════════════ */}
+        ════════════════════════════════════════════════════════════ */}
         <TabsContent value="overview" className="flex-1 overflow-y-auto mt-0">
-          <div className="p-5 space-y-4">
+          <div className="px-6 py-5 space-y-6">
 
-            {/* ── Contact Information Card ─────────────────────────────── */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
-                <p className="text-[11px] font-bold text-gray-600 uppercase tracking-widest">Contact Information</p>
-              </div>
-              <div className="p-5 grid grid-cols-2 gap-x-8 gap-y-5">
+            {/* ── Contact Information ──────────────────────────────── */}
+            <div>
+              <h3 className="text-[15px] font-bold text-gray-900 mb-3">Contact Information</h3>
+              <div className="grid grid-cols-2 gap-3">
                 <EditableField
                   label="Prospect Name"
                   value={lead.contactName}
                   onSave={saveField("contactName")}
-                  icon={<User className="h-3 w-3" />}
+                  icon={<User className="h-4 w-4" />}
                 />
                 <EditableField
                   label="Phone"
                   value={lead.contactPhone}
                   type="tel"
                   onSave={saveField("contactPhone")}
-                  icon={<Phone className="h-3 w-3" />}
+                  icon={<Phone className="h-4 w-4" />}
                 />
                 <EditableField
                   label="Email"
                   value={lead.contactEmail}
                   type="email"
                   onSave={saveField("contactEmail")}
-                  icon={<Mail className="h-3 w-3" />}
+                  icon={<Mail className="h-4 w-4" />}
                 />
                 <EditableField
                   label="City"
                   value={lead.city ?? ""}
                   onSave={saveField("city")}
-                  icon={<MapPin className="h-3 w-3" />}
+                  icon={<MapPin className="h-4 w-4" />}
                   placeholder="Add city"
                 />
-                <div className="col-span-2 border-t border-gray-50 pt-4">
+                <div className="col-span-2">
                   <EditableField
                     label="Business Name"
                     value={lead.businessName}
                     onSave={saveField("businessName")}
-                    icon={<Building2 className="h-3 w-3" />}
+                    icon={<Building2 className="h-4 w-4" />}
                   />
                 </div>
               </div>
             </div>
 
-            {/* ── Deal Information Card ────────────────────────────────── */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
-                <p className="text-[11px] font-bold text-gray-600 uppercase tracking-widest">Deal Information</p>
-              </div>
-              <div className="p-5 grid grid-cols-2 gap-x-8 gap-y-5">
+            {/* ── Deal Information ─────────────────────────────────── */}
+            <div>
+              <h3 className="text-[15px] font-bold text-gray-900 mb-3">Deal Information</h3>
+              <div className="grid grid-cols-2 gap-3">
                 <EditableField
                   label="Estimated Value (₹)"
                   value={lead.estimatedValue != null ? String(lead.estimatedValue) : ""}
                   type="number"
                   onSave={saveField("estimatedValue")}
-                  icon={<IndianRupee className="h-3 w-3" />}
+                  icon={<IndianRupee className="h-4 w-4" />}
                   placeholder="Annual contract value"
                 />
 
-                <SelectField label="Sales Rep" icon={<UserCheck className="h-3 w-3" />}>
+                {/* Sales Rep */}
+                <SelectFieldCard label="Assigned Rep" icon={<UserCheck className="h-4 w-4" />}>
                   <Select
                     value={lead.salesRep?.id ?? "none"}
                     onValueChange={async (v) => {
@@ -509,19 +502,20 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                       } catch { toast.error("Failed") }
                     }}
                   >
-                    <SelectTrigger className={inlineSelectTrigger}>
-                      <SelectValue placeholder={<span className="text-[13px] font-normal italic text-gray-300">Unassigned</span>} />
+                    <SelectTrigger className="h-auto p-0 border-0 shadow-none focus:ring-0 flex-1 justify-start gap-2 text-[14px] font-semibold text-gray-900 [&>svg]:text-gray-400 [&>svg]:h-4 [&>svg]:w-4">
+                      <SelectValue placeholder={<span className="text-gray-300 font-normal italic">Unassigned</span>} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none" className="text-xs italic text-muted-foreground">Unassigned</SelectItem>
+                      <SelectItem value="none" className="text-sm italic text-muted-foreground">Unassigned</SelectItem>
                       {salesTeam.filter(r => r.isActive !== false).map(r => (
-                        <SelectItem key={r.id} value={r.id} className="text-xs">{r.name}</SelectItem>
+                        <SelectItem key={r.id} value={r.id} className="text-sm">{r.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </SelectField>
+                </SelectFieldCard>
 
-                <SelectField label="Business Type" icon={<Tag className="h-3 w-3" />}>
+                {/* Business Type */}
+                <SelectFieldCard label="Business Type" icon={<Tag className="h-4 w-4" />}>
                   <Select
                     value={lead.businessType}
                     onValueChange={async (v) => {
@@ -529,90 +523,95 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                       catch { toast.error("Failed") }
                     }}
                   >
-                    <SelectTrigger className={inlineSelectTrigger}>
+                    <SelectTrigger className="h-auto p-0 border-0 shadow-none focus:ring-0 flex-1 justify-start gap-2 text-[14px] font-semibold text-gray-900 [&>svg]:text-gray-400 [&>svg]:h-4 [&>svg]:w-4">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(businessTypeConfig).map(([key, val]) => (
-                        <SelectItem key={key} value={key} className="text-xs">{val.label}</SelectItem>
+                        <SelectItem key={key} value={key} className="text-sm">{val.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </SelectField>
+                </SelectFieldCard>
 
                 <EditableField
                   label="Follow-up Date"
                   value={lead.followUpDate ? lead.followUpDate.split("T")[0] : ""}
                   type="date"
                   onSave={saveField("followUpDate")}
-                  icon={<CalendarClock className="h-3 w-3" />}
+                  icon={<CalendarClock className="h-4 w-4" />}
                 />
 
                 {/* Notes shortcut */}
-                <div className="group">
-                  <div className="flex items-center gap-1 mb-1">
-                    <StickyNote className="h-3 w-3 text-gray-400" />
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Notes</p>
+                <div
+                  className="group border border-gray-200 hover:border-gray-300 rounded-xl px-4 pt-3 pb-3 transition-colors bg-white cursor-pointer"
+                  onClick={() => setTab("notes")}
+                >
+                  <p className="text-[11px] font-semibold text-gray-400 mb-1.5 select-none">Notes</p>
+                  <div className="flex items-center gap-2">
+                    <StickyNote className="h-4 w-4 text-gray-400 shrink-0" />
+                    <span className="text-[14px] font-semibold text-indigo-600 group-hover:text-indigo-700 transition-colors">
+                      {totalNotes > 0
+                        ? `${totalNotes} note${totalNotes !== 1 ? "s" : ""} — view →`
+                        : "Add a note →"}
+                    </span>
                   </div>
-                  <button
-                    onClick={() => setTab("notes")}
-                    className="text-[13px] font-semibold text-indigo-600 hover:text-indigo-700 hover:underline text-left transition-colors"
-                  >
-                    {totalNotes > 0
-                      ? `${totalNotes} note${totalNotes !== 1 ? "s" : ""} — view →`
-                      : "Add a note →"}
-                  </button>
                 </div>
               </div>
             </div>
 
-            {/* ── Metadata mini-cards ──────────────────────────────────── */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                {
-                  label: "Created",
-                  value: new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-                  icon: <Clock className="h-4 w-4 text-gray-300" />,
-                },
-                {
-                  label: "Last Updated",
-                  value: new Date(lead.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-                  icon: <CheckCircle2 className="h-4 w-4 text-gray-300" />,
-                },
-                {
-                  label: "Last Contact",
-                  value: lead.lastContactedAt
-                    ? new Date(lead.lastContactedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
-                    : "Never",
-                  icon: <Activity className="h-4 w-4 text-gray-300" />,
-                },
-              ].map(s => (
-                <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
-                  <div className="flex items-center gap-1.5 mb-1.5">{s.icon}
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{s.label}</p>
+            {/* ── Metadata strip ───────────────────────────────────── */}
+            <div>
+              <h3 className="text-[15px] font-bold text-gray-900 mb-3">Timeline</h3>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  {
+                    label: "Created",
+                    value: new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+                    icon: <Clock className="h-4 w-4 text-gray-400" />,
+                  },
+                  {
+                    label: "Last Updated",
+                    value: new Date(lead.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+                    icon: <CheckCircle2 className="h-4 w-4 text-gray-400" />,
+                  },
+                  {
+                    label: "Last Contact",
+                    value: lead.lastContactedAt
+                      ? new Date(lead.lastContactedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                      : "Never",
+                    icon: <Activity className="h-4 w-4 text-gray-400" />,
+                  },
+                ].map(s => (
+                  <div key={s.label} className="border border-gray-200 rounded-xl px-4 pt-3 pb-3 bg-white">
+                    <p className="text-[11px] font-semibold text-gray-400 mb-1.5">{s.label}</p>
+                    <div className="flex items-center gap-2">
+                      {s.icon}
+                      <span className="text-[14px] font-bold text-gray-900">{s.value}</span>
+                    </div>
                   </div>
-                  <p className="text-[13px] font-bold text-gray-900">{s.value}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
           </div>
         </TabsContent>
 
-        {/* ══════════════════════════════════════════════════════════════════
+        {/* ════════════════════════════════════════════════════════════
             NOTES TAB
-        ══════════════════════════════════════════════════════════════════ */}
+        ════════════════════════════════════════════════════════════ */}
         <TabsContent value="notes" className="flex-1 flex flex-col min-h-0 mt-0">
-
           {/* Compose area */}
-          <div className="shrink-0 bg-white border-b border-gray-200 px-5 py-4">
-            {/* Type selector pills */}
+          <div className="shrink-0 border-b border-gray-100 px-6 py-4 bg-white">
+            <h3 className="text-[14px] font-bold text-gray-900 mb-3">Add Note</h3>
+
+            {/* Type pills */}
             <div className="flex items-center gap-2 mb-3">
               {COMMENT_TYPES.map(t => (
                 <button
                   key={t.value}
                   onClick={() => setCommentType(t.value)}
-                  className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                  className={`px-3.5 py-1.5 rounded-xl text-[12px] font-semibold border transition-all ${
                     commentType === t.value
                       ? `${t.bg} ${t.color} ${t.border} shadow-sm`
                       : "border-gray-200 text-gray-500 bg-white hover:bg-gray-50"
@@ -632,7 +631,7 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
               rows={3}
               value={commentText}
               onChange={e => setCommentText(e.target.value)}
-              className="text-sm resize-none rounded-xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 transition-colors"
+              className="text-[13px] resize-none rounded-xl border-gray-200 bg-gray-50 focus:bg-white focus:border-blue-300 focus:ring-blue-300/20 transition-colors"
               onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) postComment() }}
             />
 
@@ -640,7 +639,7 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
               <span className="text-[11px] text-gray-400">Ctrl+Enter to post</span>
               <Button
                 size="sm"
-                className="h-8 px-4 text-[12px] font-semibold gap-1.5 rounded-lg shadow-sm"
+                className="h-9 px-5 text-[13px] font-semibold gap-2 rounded-xl shadow-sm"
                 disabled={!commentText.trim() || postingComment}
                 onClick={postComment}
               >
@@ -651,8 +650,8 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
           </div>
 
           {/* Notes feed */}
-          <ScrollArea className="flex-1">
-            <div className="px-5 py-4 space-y-3">
+          <ScrollArea className="flex-1 bg-gray-50/50">
+            <div className="px-6 py-5 space-y-3">
               {commentsLoading ? (
                 [1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)
               ) : sortedComments.length === 0 && !lead.notes ? (
@@ -660,30 +659,31 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                   <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
                     <MessageSquare className="h-7 w-7 text-gray-300" />
                   </div>
-                  <p className="text-sm font-semibold text-gray-600">No notes yet</p>
-                  <p className="text-xs text-gray-400 mt-1">Add the first note using the form above</p>
+                  <p className="text-[14px] font-semibold text-gray-600">No notes yet</p>
+                  <p className="text-[12px] text-gray-400 mt-1">Add the first note using the form above</p>
                 </div>
               ) : (
                 <>
-                  {/* API comments — newest first, read-only */}
                   {sortedComments.map(c => {
                     const cfg = COMMENT_TYPES.find(t => t.value === c.type) ?? COMMENT_TYPES[0]
                     return (
-                      <div key={c.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                      <div key={c.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                        {/* Note header */}
                         <div className={`px-4 py-2.5 border-b border-gray-100 flex items-center gap-2.5 flex-wrap ${cfg.bg}`}>
                           <Avatar className="h-6 w-6 shrink-0">
                             <AvatarFallback className="text-[9px] font-bold bg-gray-200 text-gray-600">
                               {initials(c.user?.name ?? "?")}
                             </AvatarFallback>
                           </Avatar>
-                          <span className="text-[12px] font-semibold text-gray-800">{c.user?.name ?? "Unknown"}</span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+                          <span className="text-[13px] font-semibold text-gray-800">{c.user?.name ?? "Unknown"}</span>
+                          <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
                             {cfg.label}
                           </span>
                           <span className="text-[11px] text-gray-400 ml-auto whitespace-nowrap font-medium">
                             {fmtDatetime(c.createdAt)}
                           </span>
                         </div>
+                        {/* Note body */}
                         <div className="px-4 py-3.5">
                           <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap">{c.content}</p>
                         </div>
@@ -691,15 +691,15 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                     )
                   })}
 
-                  {/* Legacy lead.notes — pinned at bottom with updatedAt timestamp */}
+                  {/* Legacy lead.notes */}
                   {lead.notes && (
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2.5 flex-wrap bg-gray-50/80">
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2.5 flex-wrap bg-gray-50">
                         <div className="h-6 w-6 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center shrink-0">
                           <StickyNote className="h-3 w-3 text-gray-500" />
                         </div>
-                        <span className="text-[12px] font-semibold text-gray-700">Lead Note</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                        <span className="text-[13px] font-semibold text-gray-700">Lead Note</span>
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
                           Note
                         </span>
                         <span className="text-[11px] text-gray-400 ml-auto whitespace-nowrap font-medium">
@@ -717,12 +717,13 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
           </ScrollArea>
         </TabsContent>
 
-        {/* ══════════════════════════════════════════════════════════════════
+        {/* ════════════════════════════════════════════════════════════
             ACTIVITY TAB
-        ══════════════════════════════════════════════════════════════════ */}
+        ════════════════════════════════════════════════════════════ */}
         <TabsContent value="activity" className="flex-1 overflow-y-auto mt-0">
-          <div className="p-5">
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+          <div className="px-6 py-5">
+            <h3 className="text-[15px] font-bold text-gray-900 mb-4">Activity Timeline</h3>
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
               <LeadActivityTimeline leadId={lead.id} maxHeight="100%" />
             </div>
           </div>
