@@ -33,6 +33,7 @@ import {
 import { useOrderUpdates } from "@/hooks/use-realtime"
 import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
+import { useAuthStore } from "@/stores/auth-store"
 import { showSuccess, showError, showOrderUpdate } from "@/lib/toast-utils"
 import { ConnectionStatusBadge } from "@/components/ui/connection-status"
 import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
@@ -100,7 +101,9 @@ function getWorkflowBadgeText(workflow: string) {
 
 export function BusinessDashboard() {
   const { businessId, businessName, isLoading: contextLoading } = useBusinessContext()
-  const { setBusinessPage } = useAdminStore()
+  const { setBusinessPage, currentStoreId, currentStoreName } = useAdminStore()
+  const { currentRole } = useAuthStore()
+  const isStoreManager = currentRole === "STORE_MANAGER"
   const [isRefreshing, setIsRefreshing] = useState(false)
   const queryClient = useQueryClient()
 
@@ -118,9 +121,15 @@ export function BusinessDashboard() {
     refetchInterval: 30000,
   })
 
-  // ---- Fetch orders from API ----
+  // ---- Fetch orders from API — STORE_MANAGER sees only their store ----
+  const orderFilters = (
+    isStoreManager && currentStoreId
+      ? { businessId, storeId: currentStoreId, limit: 10 }
+      : { businessId, limit: 10 }
+  ) as Record<string, unknown>
+
   const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useOrders(
-    { businessId, limit: 10 } as Record<string, unknown>,
+    orderFilters,
     {
       refetchInterval: 30000,
       enabled: !!businessId,
@@ -336,10 +345,19 @@ export function BusinessDashboard() {
       {/* Page Header */}
       <PageHeader
         title="Dashboard"
-        description={businessName}
+        description={
+          isStoreManager && currentStoreName
+            ? `${businessName} · ${currentStoreName}`
+            : businessName
+        }
         icon={LayoutDashboard}
         action={
           <div className="flex items-center gap-3">
+            {isStoreManager && (
+              <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 text-xs font-medium">
+                Store view
+              </Badge>
+            )}
             <ConnectionStatusBadge size="sm" />
             <Button
               variant="outline"
