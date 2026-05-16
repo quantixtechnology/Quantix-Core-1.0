@@ -25,12 +25,12 @@ import {
   Smartphone,
   Banknote,
   CheckCircle2,
-  Truck,
   MessageSquare,
-  Plus,
   ChevronRight,
   Package,
   Loader2,
+  AlertTriangle,
+  Store,
 } from "lucide-react"
 
 // STORE_ID resolved dynamically from admin store (set by StorefrontParamDetector or store selection)
@@ -58,7 +58,7 @@ const defaultAddresses = [
 ]
 
 export function CustomerCheckout() {
-  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentStoreId, currentBusinessPrimaryColor } = useAdminStore()
+  const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentStoreId, currentStoreName, currentBusinessPrimaryColor } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const {
     items,
@@ -84,6 +84,8 @@ export function CustomerCheckout() {
   const [orderPlaced, setOrderPlaced] = useState(false)
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null)
   const [placing, setPlacing] = useState(false)
+  const [zoneWarning, setZoneWarning] = useState<string | null>(null)
+  const [validatingZone, setValidatingZone] = useState(false)
 
   const createOrderMutation = useCreateOrder()
   const { checkout: razorpayCheckout, isProcessing: razorpayProcessing } = useRazorpayCheckout()
@@ -91,6 +93,29 @@ export function CustomerCheckout() {
   useEffect(() => {
     if (currentBusinessId) setBusinessContext(currentBusinessId)
   }, [currentBusinessId])
+
+  // Validate delivery pincode against store's delivery zones
+  useEffect(() => {
+    const addr = defaultAddresses.find((a) => a.id === selectedAddress)
+    if (!addr?.pincode || !currentBusinessId) {
+      setZoneWarning(null)
+      return
+    }
+    setValidatingZone(true)
+    fetch(
+      `/api/core/storefront/nearest-store?businessId=${encodeURIComponent(currentBusinessId)}&pincode=${encodeURIComponent(addr.pincode)}`
+    )
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json.success || !json.serviceable) {
+          setZoneWarning("Delivery may not be available to this pincode. Our team will confirm after order placement.")
+        } else {
+          setZoneWarning(null)
+        }
+      })
+      .catch(() => setZoneWarning(null))
+      .finally(() => setValidatingZone(false))
+  }, [selectedAddress, currentBusinessId])
 
   const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
@@ -138,7 +163,7 @@ export function CustomerCheckout() {
             customerName: user?.name || undefined,
             customerEmail: user?.email || undefined,
             customerPhone: undefined,
-            onSuccess: (paymentId, _orderId) => {
+            onSuccess: (_paymentId, _orderId) => {
               showSuccess("Payment successful!", "Your order has been placed and payment confirmed.")
               setOrderPlaced(true)
               setPlacing(false)
@@ -188,12 +213,20 @@ export function CustomerCheckout() {
         >
           <ArrowLeft className="w-5 h-5 text-gray-700" />
         </button>
-        <h1 className="text-lg font-bold text-gray-900">Checkout</h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold text-gray-900">Checkout</h1>
+          {currentStoreName && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <Store className="w-3 h-3 shrink-0" style={{ color: brandColor }} />
+              <span className="text-[10px] text-gray-500 truncate">Delivering from <span className="font-semibold text-gray-700">{currentStoreName}</span></span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Delivery Address */}
       <div className="px-4 mb-4">
-        <div className="bg-white border border-gray-100 rounded-xl p-4">
+        <div className="bg-white border border-gray-100 rounded-xl p-4 mb-2">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4" style={{ color: brandColor }} />
@@ -255,6 +288,20 @@ export function CustomerCheckout() {
             </div>
           )}
         </div>
+
+        {/* Zone validation feedback */}
+        {validatingZone && (
+          <div className="flex items-center gap-2 px-1">
+            <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+            <span className="text-[10px] text-gray-400">Checking delivery availability…</span>
+          </div>
+        )}
+        {!validatingZone && zoneWarning && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-700">{zoneWarning}</p>
+          </div>
+        )}
       </div>
 
       {/* Payment Method */}
