@@ -15,7 +15,7 @@ import type { BusinessType } from "@/components/dashboard/data"
 import { Button } from "@/components/ui/button"
 import { useAdminStore } from "@/stores/admin-store"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getAuthHeaders } from "@/lib/admin-fetch"
+import { authFetch } from "@/lib/admin-fetch"
 
 const BLUE   = "#2563EB"
 const CYAN   = "#22C7F0"
@@ -99,11 +99,10 @@ export function DashboardView() {
     setLoading(true)
     setError(null)
     try {
-      const authHeaders = getAuthHeaders()
       const [statsRes, bizRes, leadsRes] = await Promise.all([
-        fetch("/api/admin/stats", { headers: authHeaders }),
-        fetch("/api/admin/businesses?limit=50", { headers: authHeaders }),
-        fetch("/api/admin/leads?limit=50", { headers: authHeaders }),
+        authFetch("/api/admin/stats"),
+        authFetch("/api/admin/businesses?limit=50"),
+        authFetch("/api/admin/leads?limit=50"),
       ])
       if (!statsRes.ok || !bizRes.ok || !leadsRes.ok) throw new Error("Failed to fetch dashboard data")
       const [statsJson, bizJson, leadsJson] = await Promise.all([statsRes.json(), bizRes.json(), leadsRes.json()])

@@ -4,8 +4,43 @@
 // /api/core/... endpoints that require Bearer token auth
 // ============================================================================
 
-const AUTH_TOKEN_KEY = 'quantix_auth_token';
-const BUSINESS_ID_KEY = 'quantix_business_id';
+const AUTH_TOKEN_KEY    = 'quantix_auth_token';
+const REFRESH_TOKEN_KEY = 'quantix_auth_refresh_token';
+const BUSINESS_ID_KEY   = 'quantix_business_id';
+
+const AUTH_STORAGE_KEYS = [
+  'quantix_auth_token', 'quantix_auth_refresh_token', 'quantix_auth_user',
+  'quantix_auth_business_id', 'quantix_business_id', 'quantix_auth_role',
+  'quantix_auth_permissions', 'quantix_auth_businesses', 'quantix_auth_business_name',
+  'quantix_auth_business_type',
+];
+
+function clearAuthAndRedirect() {
+  if (typeof window === 'undefined') return;
+  AUTH_STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
+  window.location.href = '/';
+}
+
+async function attemptTokenRefresh(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch('/api/core/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data.success) return false;
+    localStorage.setItem(AUTH_TOKEN_KEY, data.data.accessToken);
+    if (data.data.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, data.data.refreshToken);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Get the current business ID from localStorage
@@ -35,6 +70,30 @@ export function getAuthHeaders(): Record<string, string> {
     }
   }
   return headers;
+}
+
+/**
+ * Authenticated fetch that auto-refreshes expired tokens and redirects to
+ * login on hard auth failure. Use instead of bare fetch() in admin views.
+ */
+export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const makeHeaders = () => ({
+    ...getAuthHeaders(),
+    ...(options.headers as Record<string, string> || {}),
+  });
+
+  let response = await fetch(url, { ...options, headers: makeHeaders() });
+
+  if (response.status === 401) {
+    const refreshed = await attemptTokenRefresh();
+    if (refreshed) {
+      response = await fetch(url, { ...options, headers: makeHeaders() });
+    } else {
+      clearAuthAndRedirect();
+    }
+  }
+
+  return response;
 }
 
 /**

@@ -35,7 +35,7 @@ import { SalesCrmReports } from "./sales-crm-reports"
 import { LeadDetailEnhanced } from "./lead-detail-enhanced"
 import { SalesRepPerformance } from "./sales-rep-performance"
 import { toast } from "sonner"
-import { getAuthHeaders } from "@/lib/admin-fetch"
+import { authFetch, getAuthHeaders } from "@/lib/admin-fetch"
 
 // ---- API data types ----
 interface LeadApiData {
@@ -138,7 +138,7 @@ export function LeadsView() {
       else if (repFilter !== "all") params.set("salesRepId", repFilter)
       if (searchQuery)            params.set("search",       searchQuery)
 
-      const res = await fetch(`/api/admin/leads?${params}`, { headers: getAuthHeaders() })
+      const res = await authFetch(`/api/admin/leads?${params}`)
       if (!res.ok) throw new Error("Failed to fetch leads")
       const json = await res.json()
       if (json.success) {
@@ -155,7 +155,7 @@ export function LeadsView() {
 
   const fetchSalesTeam = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/sales-team?active=true", { headers: getAuthHeaders() })
+      const res = await authFetch("/api/admin/sales-team?active=true")
       if (res.ok) {
         const json = await res.json()
         if (json.success) setSalesTeam(json.data)
