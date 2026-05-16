@@ -18,7 +18,7 @@ interface NearestStoreResult {
  */
 export function useNearestStore() {
   const { currentBusinessId, currentStoreId, setCurrentStoreId, setCurrentStoreName } = useAdminStore()
-  const { setCartStoreId } = useCartStore()
+  const { setCartStoreId, setStoreContext } = useCartStore()
   const resolvedRef = useRef(false)
 
   useEffect(() => {
@@ -43,6 +43,10 @@ export function useNearestStore() {
             setCurrentStoreId(result.store.id)
             setCurrentStoreName(result.store.name)
             setCartStoreId(result.store.id)
+            setStoreContext(
+              result.deliveryFee ?? result.store.deliveryFee ?? null,
+              result.minOrderAmount ?? result.store.minOrderAmount ?? null
+            )
           })
           .catch(() => {/* non-fatal */})
       },
