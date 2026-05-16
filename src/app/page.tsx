@@ -212,20 +212,21 @@ export default function Home() {
   )
 }
 
+const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF"])
+
 function AppContent() {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated } = useAuthStore()
+
+  const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
+  const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
 
   // Sync viewMode from auth session on mount / auth change
   useEffect(() => {
     if (!isAuthenticated) return
     if (currentRole === "QUANTIX_SUPER_ADMIN" || currentRole === "PLATFORM_ADMIN" || currentRole === "QUANTIX_SALES_TEAM") {
       if (viewMode !== "super_admin") setViewMode("super_admin")
-    } else if (
-      currentRole === "CLIENT_OWNER" || currentRole === "STORE_MANAGER" ||
-      currentRole === "BILLING_STAFF" || currentRole === "INVENTORY_STAFF" ||
-      currentRole === "SUPPORT_STAFF"
-    ) {
+    } else if (BUSINESS_ROLES.has(currentRole || "")) {
       if (currentBusinessId && viewMode !== "business_owner") {
         setBusinessOwnerContext(currentBusinessId, currentBusinessName || "", currentBusinessType || "")
       }
@@ -236,6 +237,14 @@ function AppContent() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, currentRole, currentBusinessId])
+
+  // Guard: if somehow in business_owner view without the right role/permission,
+  // redirect via effect (never setState during render — that triggers the error boundary loop)
+  useEffect(() => {
+    if (viewMode === "business_owner" && _isHydrated && !isBusinessRole && !canImpersonate) {
+      setViewMode("super_admin")
+    }
+  }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, setViewMode])
 
   const renderSuperAdminPage = () => {
     if (activePage !== "dashboard" && !canAccessPage(activePage, permissions as string[], currentRole || "")) {
@@ -362,10 +371,8 @@ function AppContent() {
   }
 
   if (viewMode === "business_owner") {
-    if (_isHydrated && !(permissions as string[]).includes("businesses:impersonate")) {
-      setViewMode("super_admin")
-      return null
-    }
+    // Show nothing briefly while the guard effect redirects an unauthorised user
+    if (_isHydrated && !isBusinessRole && !canImpersonate) return null
     return (
       <BusinessLayout>
         {renderBusinessPage()}
