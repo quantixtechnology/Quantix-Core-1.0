@@ -76,9 +76,9 @@ const SOURCE_LABELS: Record<string, string> = {
 }
 
 const COMMENT_TYPES = [
-  { value: "comment",      label: "Note",         color: "text-slate-600",   bg: "bg-slate-50",  border: "border-l-slate-400" },
-  { value: "call_outcome", label: "Call Outcome",  color: "text-emerald-700", bg: "bg-emerald-50", border: "border-l-emerald-400" },
-  { value: "follow_up",   label: "Follow-up",     color: "text-amber-700",   bg: "bg-amber-50",  border: "border-l-amber-400" },
+  { value: "comment",      label: "Note",        color: "text-slate-600",   bg: "bg-slate-50",   border: "border-slate-200" },
+  { value: "call_outcome", label: "Call Outcome", color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200" },
+  { value: "follow_up",   label: "Follow-up",    color: "text-amber-700",   bg: "bg-amber-50",   border: "border-amber-200" },
 ]
 
 function fmtDatetime(iso: string) {
@@ -116,57 +116,85 @@ function EditableField({ label, value, onSave, type = "text", placeholder, icon,
     setSaving(true)
     try { await onSave(draft) } finally { setSaving(false); setEditing(false) }
   }
-
   const cancel = () => { setDraft(value); setEditing(false) }
 
   return (
-    <div className="group flex items-start gap-2 py-2.5 border-b border-dashed border-border/50 last:border-0">
-      {icon && <span className="mt-0.5 shrink-0 text-muted-foreground/60">{icon}</span>}
-      <div className="flex-1 min-w-0">
-        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">{label}</p>
-        {editing ? (
-          <div className="flex items-center gap-1.5">
-            {type === "textarea" ? (
-              <textarea
-                ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-                className="w-full text-xs rounded border border-input bg-background px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
-                value={draft}
-                rows={3}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === "Escape") cancel() }}
-              />
-            ) : (
-              <input
-                ref={inputRef as React.RefObject<HTMLInputElement>}
-                type={type}
-                className="flex-1 text-xs rounded border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel() }}
-              />
-            )}
-            <button onClick={commit} disabled={saving} className="p-1 rounded text-emerald-600 hover:bg-emerald-50 disabled:opacity-40">
+    <div className="group">
+      {/* Label row */}
+      <div className="flex items-center gap-1 mb-1">
+        {icon && <span className="text-gray-400">{icon}</span>}
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</p>
+      </div>
+
+      {/* Value row */}
+      {editing ? (
+        <div className="flex items-start gap-1.5">
+          {type === "textarea" ? (
+            <textarea
+              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+              className="w-full text-[13px] font-medium text-gray-900 border border-blue-400 rounded-lg px-3 py-2 resize-none bg-white ring-2 ring-blue-400/15 outline-none leading-snug"
+              value={draft}
+              rows={3}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Escape") cancel() }}
+            />
+          ) : (
+            <input
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              type={type}
+              className="flex-1 text-[13px] font-medium text-gray-900 border border-blue-400 rounded-lg px-3 py-2 bg-white ring-2 ring-blue-400/15 outline-none"
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel() }}
+            />
+          )}
+          <div className="flex flex-col gap-1 shrink-0">
+            <button
+              onClick={commit}
+              disabled={saving}
+              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 border border-emerald-200 bg-white shadow-sm"
+            >
               <Check className="h-3.5 w-3.5" />
             </button>
-            <button onClick={cancel} className="p-1 rounded text-muted-foreground hover:bg-muted">
+            <button
+              onClick={cancel}
+              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 border border-gray-200 bg-white shadow-sm"
+            >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-        ) : (
-          <button
-            className="flex items-center gap-1.5 text-left w-full"
-            onClick={() => !disabled && setEditing(true)}
-            disabled={disabled}
-          >
-            <span className="text-xs font-medium text-foreground">
-              {value || <span className="text-muted-foreground/50 italic">{placeholder || "—"}</span>}
-            </span>
-            {!disabled && (
-              <Pencil className="h-2.5 w-2.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-            )}
-          </button>
-        )}
+        </div>
+      ) : (
+        <button
+          className="flex items-center gap-1.5 text-left w-full"
+          onClick={() => !disabled && setEditing(true)}
+          disabled={disabled}
+        >
+          <span className="text-[13px] font-semibold text-gray-900 leading-snug break-words">
+            {value
+              ? value
+              : <span className="text-gray-300 font-normal italic">{placeholder || "—"}</span>
+            }
+          </span>
+          {!disabled && (
+            <Pencil className="h-3 w-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
+          )}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Inline Select Field (shared layout for Sales Rep + Business Type) ────────
+
+function SelectField({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="group">
+      <div className="flex items-center gap-1 mb-1">
+        {icon && <span className="text-gray-400">{icon}</span>}
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</p>
       </div>
+      {children}
     </div>
   )
 }
@@ -184,7 +212,6 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
   const [advancingStage, setAdvancingStage] = useState(false)
   const [tab, setTab] = useState("overview")
 
-  // Sync if parent passes a new lead
   useEffect(() => { setLead(initialLead) }, [initialLead.id])
 
   const fetchComments = useCallback(async () => {
@@ -203,7 +230,7 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
     fetchComments()
   }, [lead.id])
 
-  // ── Patch helper ─────────────────────────────────────────────────────────────
+  // ── Patch helper ──────────────────────────────────────────────────────────────
   const patch = useCallback(async (fields: Record<string, unknown>) => {
     const res = await fetch(`/api/core/leads/${lead.id}`, {
       method: "PATCH",
@@ -252,7 +279,7 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
     finally { setAdvancingStage(false) }
   }, [lead, patch, onLeadUpdated])
 
-  // ── Comments ─────────────────────────────────────────────────────────────────
+  // ── Comments ──────────────────────────────────────────────────────────────────
   const postComment = async () => {
     if (!commentText.trim()) return
     setPostingComment(true)
@@ -281,308 +308,360 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
   const daysSince = lead.lastContactedAt
     ? Math.floor((Date.now() - new Date(lead.lastContactedAt).getTime()) / 86400000) : null
   const isOverdue = daysSince !== null && daysSince > 3
+  const totalNotes = comments.length + (lead.notes ? 1 : 0)
+
+  // ── Select trigger classname (shared) ─────────────────────────────────────────
+  const inlineSelectTrigger = "h-auto p-0 border-0 shadow-none focus:ring-0 w-full justify-start gap-1.5 text-[13px] font-semibold text-gray-900 [&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:text-gray-300 [&>svg]:opacity-0 group-hover:[&>svg]:opacity-100 [&>svg]:transition-opacity"
 
   return (
-    <div className="flex flex-col h-screen bg-background overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#f4f5f7] overflow-hidden">
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b px-5 py-3 space-y-2.5">
-        {/* Row 1: business name + id + stage dropdown + meta */}
-        <div className="flex items-start gap-3 min-w-0">
+      {/* ═══════════════════════════════════════════════════════════════════════
+          HEADER
+      ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="shrink-0 bg-white border-b border-gray-200 px-6 pt-5 pb-4">
+
+        {/* Business name + lead ID */}
+        <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-sm font-bold truncate max-w-[320px]">{lead.businessName}</h2>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-[17px] font-bold text-gray-900 leading-tight truncate">
+                {lead.businessName}
+              </h2>
               {lead.leadId && (
-                <span className="text-[10px] font-mono text-muted-foreground bg-muted rounded px-1.5 py-0.5 shrink-0">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[11px] font-mono font-medium text-gray-500 shrink-0">
                   {lead.leadId}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              {/* Stage dropdown — replaces the static badge */}
+
+            {/* Stage + meta row */}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Select value={lead.stage} onValueChange={advanceToStage} disabled={advancingStage}>
-                <SelectTrigger className={`h-6 rounded-full px-2.5 text-[10px] font-semibold border-0 shadow-none focus:ring-0 w-auto gap-1 ${stageColor}`}>
+                <SelectTrigger className={`h-6 rounded-full px-3 text-[11px] font-bold border-0 shadow-none focus:ring-0 w-auto gap-1.5 ${stageColor}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel className="text-[10px] px-2 py-1">Pipeline</SelectLabel>
+                    <SelectLabel className="text-[10px] font-bold px-2 py-1 text-gray-400 uppercase tracking-widest">Pipeline</SelectLabel>
                     {PIPELINE_STAGES.map(s => (
                       <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s]}</SelectItem>
                     ))}
                   </SelectGroup>
                   <SelectSeparator />
                   <SelectGroup>
-                    <SelectLabel className="text-[10px] px-2 py-1">Terminal</SelectLabel>
+                    <SelectLabel className="text-[10px] font-bold px-2 py-1 text-gray-400 uppercase tracking-widest">Terminal</SelectLabel>
                     {TERMINAL_STAGES.map(s => (
                       <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s]}</SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <span className="text-[11px] text-muted-foreground">{typeConf?.label ?? lead.businessType}</span>
+
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[11px] font-medium text-gray-600">
+                {typeConf?.label ?? lead.businessType}
+              </span>
+
+              <span className="text-[11px] text-gray-400">
+                {SOURCE_LABELS[lead.source] ?? lead.source.replace(/_/g, " ")}
+              </span>
+
               {lead.salesRep && (
-                <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                  <span className="inline-block w-1 h-1 rounded-full bg-muted-foreground/40" />
-                  {lead.salesRep.name}
-                </span>
+                <div className="flex items-center gap-1.5 ml-1">
+                  <div className="h-5 w-5 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center shrink-0">
+                    <span className="text-[9px] font-bold text-indigo-700">{initials(lead.salesRep.name)}</span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-gray-600">{lead.salesRep.name}</span>
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Row 2: quick actions */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <a href={`tel:${lead.contactPhone}`} className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-xs font-medium border border-input bg-background hover:bg-muted transition-colors">
-            <PhoneCall className="h-3 w-3" /> Call
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 mt-4 flex-wrap">
+          <a
+            href={`tel:${lead.contactPhone}`}
+            className="inline-flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 shadow-sm transition-all"
+          >
+            <PhoneCall className="h-3.5 w-3.5 text-gray-500" /> Call
           </a>
           <a
             href={`https://wa.me/${lead.contactPhone.replace(/\D/g, "")}`}
             target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-xs font-medium border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+            className="inline-flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 shadow-sm transition-all"
           >
-            <MessageCircle className="h-3 w-3" /> WhatsApp
+            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
           </a>
           <button
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-xs font-medium border border-input bg-background hover:bg-muted transition-colors"
             onClick={() => setTab("notes")}
+            className="inline-flex items-center gap-2 h-8 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 shadow-sm transition-all"
           >
-            <StickyNote className="h-3 w-3" /> Add Note
+            <StickyNote className="h-3.5 w-3.5 text-gray-500" /> Add Note
           </button>
         </div>
 
         {/* Overdue banner */}
         {isOverdue && (
-          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-            <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
-            <p className="text-xs text-red-700 flex-1">
-              <span className="font-semibold">Follow-up overdue</span> — last contact {daysSince}d ago
+          <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5">
+            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+            <p className="text-[12px] text-red-700">
+              <span className="font-bold">Follow-up overdue</span> — last contact was {daysSince} days ago
             </p>
           </div>
         )}
       </div>
 
-      {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════════
+          TABS
+      ═══════════════════════════════════════════════════════════════════════ */}
       <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0">
-        <div className="shrink-0 border-b px-4">
-          <TabsList className="h-9 bg-transparent p-0 gap-4">
+        <div className="shrink-0 bg-white border-b border-gray-200 px-6">
+          <TabsList className="h-11 bg-transparent p-0 gap-6">
             {[
-              { value: "overview", label: "Overview", icon: LayoutDashboard },
-              { value: "notes",    label: `Notes${comments.length > 0 ? ` (${comments.length})` : ""}`, icon: MessageSquare },
-              { value: "activity", label: "Activity", icon: Activity },
+              { value: "overview", label: "Overview",                                                          icon: LayoutDashboard },
+              { value: "notes",    label: `Notes${totalNotes > 0 ? ` (${totalNotes})` : ""}`,                 icon: MessageSquare   },
+              { value: "activity", label: "Activity",                                                          icon: Activity        },
             ].map(({ value, label, icon: Icon }) => (
               <TabsTrigger
                 key={value}
                 value={value}
-                className="h-9 px-0 text-xs rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                className="h-11 px-0 text-[13px] font-medium text-gray-500 rounded-none border-b-2 border-transparent data-[state=active]:border-gray-900 data-[state=active]:text-gray-900 data-[state=active]:font-semibold data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors"
               >
-                <Icon className="h-3 w-3 mr-1" />{label}
+                <Icon className="h-3.5 w-3.5 mr-1.5" />{label}
               </TabsTrigger>
             ))}
           </TabsList>
         </div>
 
-        {/* ── Overview ──────────────────────────────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════════════════════
+            OVERVIEW TAB
+        ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="overview" className="flex-1 overflow-y-auto mt-0">
-          <div className="px-5 py-3">
-            {/* Two-column grid — each side has enough room now that sheet is 760px */}
-            <div className="grid grid-cols-2 gap-x-6">
-              {/* Left: Contact */}
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Contact</p>
+          <div className="p-5 space-y-4">
+
+            {/* ── Contact Information Card ─────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+                <p className="text-[11px] font-bold text-gray-600 uppercase tracking-widest">Contact Information</p>
+              </div>
+              <div className="p-5 grid grid-cols-2 gap-x-8 gap-y-5">
                 <EditableField
                   label="Prospect Name"
                   value={lead.contactName}
                   onSave={saveField("contactName")}
-                  icon={<User className="h-3.5 w-3.5" />}
+                  icon={<User className="h-3 w-3" />}
                 />
                 <EditableField
                   label="Phone"
                   value={lead.contactPhone}
                   type="tel"
                   onSave={saveField("contactPhone")}
-                  icon={<Phone className="h-3.5 w-3.5" />}
+                  icon={<Phone className="h-3 w-3" />}
                 />
                 <EditableField
                   label="Email"
                   value={lead.contactEmail}
                   type="email"
                   onSave={saveField("contactEmail")}
-                  icon={<Mail className="h-3.5 w-3.5" />}
-                />
-                <EditableField
-                  label="Business Name"
-                  value={lead.businessName}
-                  onSave={saveField("businessName")}
-                  icon={<Building2 className="h-3.5 w-3.5" />}
+                  icon={<Mail className="h-3 w-3" />}
                 />
                 <EditableField
                   label="City"
                   value={lead.city ?? ""}
                   onSave={saveField("city")}
-                  icon={<MapPin className="h-3.5 w-3.5" />}
+                  icon={<MapPin className="h-3 w-3" />}
                   placeholder="Add city"
                 />
+                <div className="col-span-2 border-t border-gray-50 pt-4">
+                  <EditableField
+                    label="Business Name"
+                    value={lead.businessName}
+                    onSave={saveField("businessName")}
+                    icon={<Building2 className="h-3 w-3" />}
+                  />
+                </div>
               </div>
+            </div>
 
-              {/* Right: Deal */}
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Deal</p>
+            {/* ── Deal Information Card ────────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+                <p className="text-[11px] font-bold text-gray-600 uppercase tracking-widest">Deal Information</p>
+              </div>
+              <div className="p-5 grid grid-cols-2 gap-x-8 gap-y-5">
                 <EditableField
                   label="Estimated Value (₹)"
                   value={lead.estimatedValue != null ? String(lead.estimatedValue) : ""}
                   type="number"
                   onSave={saveField("estimatedValue")}
-                  icon={<IndianRupee className="h-3.5 w-3.5" />}
+                  icon={<IndianRupee className="h-3 w-3" />}
                   placeholder="Annual contract value"
                 />
 
-                {/* Sales Rep */}
-                <div className="group flex items-start gap-2 py-2.5 border-b border-dashed border-border/50">
-                  <UserCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Sales Rep</p>
-                    <Select
-                      value={lead.salesRep?.id ?? "none"}
-                      onValueChange={async (v) => {
-                        try {
-                          await patch({ salesRepId: v === "none" ? null : v })
-                          toast.success("Rep updated")
-                        } catch { toast.error("Failed") }
-                      }}
-                    >
-                      <SelectTrigger className="h-6 text-xs border-0 p-0 shadow-none focus:ring-0 w-full text-left font-medium [&>svg]:ml-1">
-                        <SelectValue placeholder="Unassigned" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none" className="text-xs italic text-muted-foreground">Unassigned</SelectItem>
-                        {salesTeam.filter(r => r.isActive !== false).map(r => (
-                          <SelectItem key={r.id} value={r.id} className="text-xs">{r.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                <SelectField label="Sales Rep" icon={<UserCheck className="h-3 w-3" />}>
+                  <Select
+                    value={lead.salesRep?.id ?? "none"}
+                    onValueChange={async (v) => {
+                      try {
+                        await patch({ salesRepId: v === "none" ? null : v })
+                        toast.success("Rep updated")
+                      } catch { toast.error("Failed") }
+                    }}
+                  >
+                    <SelectTrigger className={inlineSelectTrigger}>
+                      <SelectValue placeholder={<span className="text-[13px] font-normal italic text-gray-300">Unassigned</span>} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none" className="text-xs italic text-muted-foreground">Unassigned</SelectItem>
+                      {salesTeam.filter(r => r.isActive !== false).map(r => (
+                        <SelectItem key={r.id} value={r.id} className="text-xs">{r.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </SelectField>
 
-                {/* Business Type */}
-                <div className="group flex items-start gap-2 py-2.5 border-b border-dashed border-border/50">
-                  <Tag className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Business Type</p>
-                    <Select
-                      value={lead.businessType}
-                      onValueChange={async (v) => {
-                        try { await patch({ businessType: v }); toast.success("Saved") }
-                        catch { toast.error("Failed") }
-                      }}
-                    >
-                      <SelectTrigger className="h-6 text-xs border-0 p-0 shadow-none focus:ring-0 w-full font-medium [&>svg]:ml-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(businessTypeConfig).map(([key, val]) => (
-                          <SelectItem key={key} value={key} className="text-xs">{val.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                <SelectField label="Business Type" icon={<Tag className="h-3 w-3" />}>
+                  <Select
+                    value={lead.businessType}
+                    onValueChange={async (v) => {
+                      try { await patch({ businessType: v }); toast.success("Saved") }
+                      catch { toast.error("Failed") }
+                    }}
+                  >
+                    <SelectTrigger className={inlineSelectTrigger}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(businessTypeConfig).map(([key, val]) => (
+                        <SelectItem key={key} value={key} className="text-xs">{val.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </SelectField>
 
                 <EditableField
                   label="Follow-up Date"
                   value={lead.followUpDate ? lead.followUpDate.split("T")[0] : ""}
                   type="date"
                   onSave={saveField("followUpDate")}
-                  icon={<CalendarClock className="h-3.5 w-3.5" />}
+                  icon={<CalendarClock className="h-3 w-3" />}
                 />
-                {/* Notes — read-only; editing happens in the Notes tab */}
-                <div className="flex items-start gap-2 py-2.5">
-                  <StickyNote className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Notes</p>
-                    <button
-                      onClick={() => setTab("notes")}
-                      className="text-xs text-primary hover:underline text-left"
-                    >
-                      {comments.length > 0 || lead.notes
-                        ? `${comments.length + (lead.notes ? 1 : 0)} note${(comments.length + (lead.notes ? 1 : 0)) !== 1 ? "s" : ""} — view in Notes tab →`
-                        : "Add a note →"}
-                    </button>
+
+                {/* Notes shortcut */}
+                <div className="group">
+                  <div className="flex items-center gap-1 mb-1">
+                    <StickyNote className="h-3 w-3 text-gray-400" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Notes</p>
                   </div>
+                  <button
+                    onClick={() => setTab("notes")}
+                    className="text-[13px] font-semibold text-indigo-600 hover:text-indigo-700 hover:underline text-left transition-colors"
+                  >
+                    {totalNotes > 0
+                      ? `${totalNotes} note${totalNotes !== 1 ? "s" : ""} — view →`
+                      : "Add a note →"}
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Stats strip */}
-            <div className="border-t mt-3 pt-3 grid grid-cols-3 gap-3">
+            {/* ── Metadata mini-cards ──────────────────────────────────── */}
+            <div className="grid grid-cols-3 gap-3">
               {[
-                { label: "Created", value: new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
-                { label: "Last Updated", value: new Date(lead.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
-                { label: "Last Contact", value: lead.lastContactedAt ? new Date(lead.lastContactedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Never" },
+                {
+                  label: "Created",
+                  value: new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+                  icon: <Clock className="h-4 w-4 text-gray-300" />,
+                },
+                {
+                  label: "Last Updated",
+                  value: new Date(lead.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+                  icon: <CheckCircle2 className="h-4 w-4 text-gray-300" />,
+                },
+                {
+                  label: "Last Contact",
+                  value: lead.lastContactedAt
+                    ? new Date(lead.lastContactedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                    : "Never",
+                  icon: <Activity className="h-4 w-4 text-gray-300" />,
+                },
               ].map(s => (
-                <div key={s.label} className="rounded-lg bg-muted/40 px-3 py-2 text-center">
-                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground">{s.label}</p>
-                  <p className="text-xs font-semibold mt-0.5">{s.value}</p>
+                <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
+                  <div className="flex items-center gap-1.5 mb-1.5">{s.icon}
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{s.label}</p>
+                  </div>
+                  <p className="text-[13px] font-bold text-gray-900">{s.value}</p>
                 </div>
               ))}
             </div>
+
           </div>
         </TabsContent>
 
-        {/* ── Notes ─────────────────────────────────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════════════════════
+            NOTES TAB
+        ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="notes" className="flex-1 flex flex-col min-h-0 mt-0">
-          {/* Compose box */}
-          <div className="shrink-0 border-b px-4 py-3 space-y-2">
-            <div className="flex items-center gap-2">
+
+          {/* Compose area */}
+          <div className="shrink-0 bg-white border-b border-gray-200 px-5 py-4">
+            {/* Type selector pills */}
+            <div className="flex items-center gap-2 mb-3">
               {COMMENT_TYPES.map(t => (
                 <button
                   key={t.value}
                   onClick={() => setCommentType(t.value)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                  className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${
                     commentType === t.value
-                      ? `${t.bg} ${t.color} border-current`
-                      : "border-transparent text-muted-foreground hover:bg-muted"
+                      ? `${t.bg} ${t.color} ${t.border} shadow-sm`
+                      : "border-gray-200 text-gray-500 bg-white hover:bg-gray-50"
                   }`}
                 >
                   {t.label}
                 </button>
               ))}
             </div>
+
             <Textarea
               placeholder={
                 commentType === "call_outcome" ? "What was the outcome of the call? Any next steps?"
-                : commentType === "follow_up" ? "What should be followed up on and when?"
+                : commentType === "follow_up"   ? "What should be followed up on and when?"
                 : "Add a note about this lead…"
               }
               rows={3}
               value={commentText}
               onChange={e => setCommentText(e.target.value)}
-              className="text-xs resize-none"
+              className="text-sm resize-none rounded-xl bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-300 transition-colors"
               onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) postComment() }}
             />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">Ctrl+Enter to post</span>
+
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[11px] text-gray-400">Ctrl+Enter to post</span>
               <Button
                 size="sm"
-                className="h-7 text-xs gap-1.5"
+                className="h-8 px-4 text-[12px] font-semibold gap-1.5 rounded-lg shadow-sm"
                 disabled={!commentText.trim() || postingComment}
                 onClick={postComment}
               >
-                <Send className="h-3 w-3" />
+                <Send className="h-3.5 w-3.5" />
                 {postingComment ? "Posting…" : "Post Note"}
               </Button>
             </div>
           </div>
 
-          {/* Notes feed — all entries read-only */}
+          {/* Notes feed */}
           <ScrollArea className="flex-1">
-            <div className="px-4 py-3 space-y-3">
+            <div className="px-5 py-4 space-y-3">
               {commentsLoading ? (
-                [1,2,3].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)
+                [1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)
               ) : sortedComments.length === 0 && !lead.notes ? (
-                <div className="py-10 text-center">
-                  <MessageSquare className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
-                  <p className="text-xs text-muted-foreground">No notes yet — add the first one above</p>
+                <div className="py-14 text-center">
+                  <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+                    <MessageSquare className="h-7 w-7 text-gray-300" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-600">No notes yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Add the first note using the form above</p>
                 </div>
               ) : (
                 <>
@@ -590,42 +669,46 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                   {sortedComments.map(c => {
                     const cfg = COMMENT_TYPES.find(t => t.value === c.type) ?? COMMENT_TYPES[0]
                     return (
-                      <div key={c.id} className={`rounded-lg border border-l-4 ${cfg.border} ${cfg.bg} p-3`}>
-                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                          <Avatar className="h-5 w-5 shrink-0">
-                            <AvatarFallback className="text-[9px] font-bold">
+                      <div key={c.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className={`px-4 py-2.5 border-b border-gray-100 flex items-center gap-2.5 flex-wrap ${cfg.bg}`}>
+                          <Avatar className="h-6 w-6 shrink-0">
+                            <AvatarFallback className="text-[9px] font-bold bg-gray-200 text-gray-600">
                               {initials(c.user?.name ?? "?")}
                             </AvatarFallback>
                           </Avatar>
-                          <span className="text-xs font-semibold">{c.user?.name ?? "Unknown"}</span>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>
+                          <span className="text-[12px] font-semibold text-gray-800">{c.user?.name ?? "Unknown"}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
                             {cfg.label}
                           </span>
-                          <span className="text-[10px] text-muted-foreground ml-auto whitespace-nowrap">
+                          <span className="text-[11px] text-gray-400 ml-auto whitespace-nowrap font-medium">
                             {fmtDatetime(c.createdAt)}
                           </span>
                         </div>
-                        <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{c.content}</p>
+                        <div className="px-4 py-3.5">
+                          <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap">{c.content}</p>
+                        </div>
                       </div>
                     )
                   })}
 
-                  {/* Legacy lead.notes — shown at bottom with updatedAt as timestamp */}
+                  {/* Legacy lead.notes — pinned at bottom with updatedAt timestamp */}
                   {lead.notes && (
-                    <div className="rounded-lg border border-l-4 border-l-slate-300 bg-slate-50 dark:bg-slate-900/40 p-3">
-                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                        <div className="h-5 w-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0">
-                          <StickyNote className="h-2.5 w-2.5 text-slate-500" />
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2.5 flex-wrap bg-gray-50/80">
+                        <div className="h-6 w-6 rounded-full bg-gray-200 border border-gray-300 flex items-center justify-center shrink-0">
+                          <StickyNote className="h-3 w-3 text-gray-500" />
                         </div>
-                        <span className="text-xs font-semibold text-muted-foreground">Lead Note</span>
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                        <span className="text-[12px] font-semibold text-gray-700">Lead Note</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
                           Note
                         </span>
-                        <span className="text-[10px] text-muted-foreground ml-auto whitespace-nowrap">
+                        <span className="text-[11px] text-gray-400 ml-auto whitespace-nowrap font-medium">
                           {fmtDatetime(lead.updatedAt)}
                         </span>
                       </div>
-                      <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{lead.notes}</p>
+                      <div className="px-4 py-3.5">
+                        <p className="text-[13px] text-gray-800 leading-relaxed whitespace-pre-wrap">{lead.notes}</p>
+                      </div>
                     </div>
                   )}
                 </>
@@ -634,9 +717,15 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
           </ScrollArea>
         </TabsContent>
 
-        {/* ── Activity ───────────────────────────────────────────────────────── */}
-        <TabsContent value="activity" className="flex-1 overflow-y-auto mt-0 px-4 py-3">
-          <LeadActivityTimeline leadId={lead.id} maxHeight="100%" />
+        {/* ══════════════════════════════════════════════════════════════════
+            ACTIVITY TAB
+        ══════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="activity" className="flex-1 overflow-y-auto mt-0">
+          <div className="p-5">
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+              <LeadActivityTimeline leadId={lead.id} maxHeight="100%" />
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
