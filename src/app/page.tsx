@@ -10,6 +10,7 @@ import { BusinessLayout } from "@/components/business/layout/business-layout"
 import { CustomerLayout } from "@/components/customer/layout/customer-layout"
 import { DeliveryLayout } from "@/components/delivery/layout/delivery-layout"
 import { useAdminStore } from "@/stores/admin-store"
+import { useCartStore } from "@/stores/cart-store"
 
 // ── Storefront subdomain detector ────────────────────────────────────────
 // Reads ?_storefront=<slug> injected by next.config.ts rewrites when
@@ -18,7 +19,8 @@ import { useAdminStore } from "@/stores/admin-store"
 function StorefrontParamDetector() {
   const searchParams = useSearchParams()
   const slug = searchParams.get("_storefront")
-  const { setCurrentBusiness, setViewMode, setCurrentStoreId, setCurrentBusinessPrimaryColor } = useAdminStore()
+  const { setCurrentBusiness, setViewMode, setCurrentStoreId, setCurrentStoreName, setCurrentBusinessPrimaryColor } = useAdminStore()
+  const { setCartStoreId, setStoreContext } = useCartStore()
   const { isAuthenticated } = useAuthStore()
 
   useEffect(() => {
@@ -30,7 +32,13 @@ function StorefrontParamDetector() {
         const biz = json.data.business
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
         if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
-        if (json.data.store?.id) setCurrentStoreId(json.data.store.id)
+        const store = json.data.store
+        if (store?.id) {
+          setCurrentStoreId(store.id)
+          setCurrentStoreName(store.name || "")
+          setCartStoreId(store.id)
+          setStoreContext(store.deliveryFee ?? null, store.minOrderAmount ?? null)
+        }
         setViewMode("customer")
       })
       .catch(() => {/* non-fatal */})
