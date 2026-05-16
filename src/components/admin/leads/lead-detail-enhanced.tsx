@@ -495,14 +495,21 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                   onSave={saveField("followUpDate")}
                   icon={<CalendarClock className="h-3.5 w-3.5" />}
                 />
-                <EditableField
-                  label="Notes"
-                  value={lead.notes ?? ""}
-                  type="textarea"
-                  onSave={saveField("notes")}
-                  icon={<StickyNote className="h-3.5 w-3.5" />}
-                  placeholder="Add notes…"
-                />
+                {/* Notes — read-only; editing happens in the Notes tab */}
+                <div className="flex items-start gap-2 py-2.5">
+                  <StickyNote className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider mb-0.5">Notes</p>
+                    <button
+                      onClick={() => setTab("notes")}
+                      className="text-xs text-primary hover:underline text-left"
+                    >
+                      {comments.length > 0 || lead.notes
+                        ? `${comments.length + (lead.notes ? 1 : 0)} note${(comments.length + (lead.notes ? 1 : 0)) !== 1 ? "s" : ""} — view in Notes tab →`
+                        : "Add a note →"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -567,39 +574,61 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
             </div>
           </div>
 
-          {/* Comments list */}
+          {/* Notes feed — all entries read-only */}
           <ScrollArea className="flex-1">
             <div className="px-4 py-3 space-y-3">
               {commentsLoading ? (
                 [1,2,3].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)
-              ) : sortedComments.length === 0 ? (
+              ) : sortedComments.length === 0 && !lead.notes ? (
                 <div className="py-10 text-center">
                   <MessageSquare className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
                   <p className="text-xs text-muted-foreground">No notes yet — add the first one above</p>
                 </div>
               ) : (
-                sortedComments.map(c => {
-                  const cfg = COMMENT_TYPES.find(t => t.value === c.type) ?? COMMENT_TYPES[0]
-                  return (
-                    <div key={c.id} className={`rounded-lg border border-l-4 ${cfg.border} ${cfg.bg} p-3`}>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <Avatar className="h-5 w-5 shrink-0">
-                          <AvatarFallback className="text-[9px] font-bold">
-                            {initials(c.user?.name ?? "?")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-xs font-semibold">{c.user?.name ?? "Unknown"}</span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>
-                          {cfg.label}
+                <>
+                  {/* API comments — newest first, read-only */}
+                  {sortedComments.map(c => {
+                    const cfg = COMMENT_TYPES.find(t => t.value === c.type) ?? COMMENT_TYPES[0]
+                    return (
+                      <div key={c.id} className={`rounded-lg border border-l-4 ${cfg.border} ${cfg.bg} p-3`}>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          <Avatar className="h-5 w-5 shrink-0">
+                            <AvatarFallback className="text-[9px] font-bold">
+                              {initials(c.user?.name ?? "?")}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-xs font-semibold">{c.user?.name ?? "Unknown"}</span>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>
+                            {cfg.label}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground ml-auto whitespace-nowrap">
+                            {fmtDatetime(c.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{c.content}</p>
+                      </div>
+                    )
+                  })}
+
+                  {/* Legacy lead.notes — shown at bottom with updatedAt as timestamp */}
+                  {lead.notes && (
+                    <div className="rounded-lg border border-l-4 border-l-slate-300 bg-slate-50 dark:bg-slate-900/40 p-3">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <div className="h-5 w-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                          <StickyNote className="h-2.5 w-2.5 text-slate-500" />
+                        </div>
+                        <span className="text-xs font-semibold text-muted-foreground">Lead Note</span>
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                          Note
                         </span>
                         <span className="text-[10px] text-muted-foreground ml-auto whitespace-nowrap">
-                          {fmtDatetime(c.createdAt)}
+                          {fmtDatetime(lead.updatedAt)}
                         </span>
                       </div>
-                      <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{c.content}</p>
+                      <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{lead.notes}</p>
                     </div>
-                  )
-                })
+                  )}
+                </>
               )}
             </div>
           </ScrollArea>
