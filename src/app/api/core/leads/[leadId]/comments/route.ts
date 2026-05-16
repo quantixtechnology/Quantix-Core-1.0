@@ -160,7 +160,7 @@ export const POST = withMiddleware({ requireAuth: true })(
       // Create activity log entry as comment
       const comment = await db.activityLog.create({
         data: {
-          businessId: user.businessId || null,
+          businessId: null,
           userId: user.id,
           action: `lead.${type}`,
           entity: 'Lead',
