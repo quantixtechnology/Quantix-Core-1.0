@@ -22,6 +22,7 @@ export type Permission =
   | "refunds:process"
   | "import:leads"
   | "import:business"
+  | "export:leads"
 
 // All roles supported by the platform
 export type PlatformRole =
@@ -85,7 +86,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "platform:view_analytics", "platform:manage_deployments", "platform:manage_domains", "platform:audit_logs", "platform:security",
     "notifications:view", "notifications:send",
     "users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate",
-    "import:leads", "import:business",
+    "import:leads", "import:business", "export:leads",
   ],
   PLATFORM_ADMIN: [
     "leads:view", "leads:edit",
@@ -223,8 +224,8 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
     ],
   },
   {
-    label: "Data Import",
-    permissions: ["import:leads", "import:business"],
+    label: "Data Import / Export",
+    permissions: ["import:leads", "import:business", "export:leads"],
   },
 ]
 
@@ -280,6 +281,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "refunds:process":              "Process Refunds",
   "import:leads":                 "Import Leads & Sales Data",
   "import:business":              "Import Business Data",
+  "export:leads":                 "Export Lead Data (CRM)",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {

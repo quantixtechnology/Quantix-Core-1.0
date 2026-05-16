@@ -101,29 +101,33 @@ enum LeadStage {
 
 model Lead {
   id              String     @id @default(cuid())
+  leadId          String?    @unique  // Human-readable ID: LED-YYYYMM-XXXX (immutable once set)
   salesRepId      String?
+  createdById     String?    // User ID of whoever created this lead (platform user or admin)
   businessName    String
   contactName     String
   contactEmail    String
   contactPhone    String
   city            String?
+  state           String?
+  pincode         String?
   businessType    BusinessType
   source          LeadSource @default(WEBSITE_INQUIRY)
   stage           LeadStage  @default(LEAD)
   // Demo tracking
-  demoTenantId    String?    // Link to shared demo tenant when stage >= DEMO_SHARED
+  demoTenantId    String?
   demoSharedAt    DateTime?
-  demoCredentials String?    // JSON: { email, password, url }
+  demoCredentials String?
   demoFeedback    String?
   // Negotiation
-  negotiatedMonthlyPrice Float?  // Super Admin override — can differ from plan price
+  negotiatedMonthlyPrice Float?
   negotiatedYearlyPrice  Float?
   negotiationNotes String?
   // Payment
-  paymentProof     String?   // URL to uploaded payment proof
+  paymentProof     String?
   paymentVerifiedAt DateTime?
-  paymentVerifiedBy String?  // Super Admin who verified
-  selectedBillingCycle String? // "monthly" or "yearly"
+  paymentVerifiedBy String?
+  selectedBillingCycle String?
   // Conversion
   convertedBusinessId String?
   convertedAt      DateTime?
@@ -132,6 +136,7 @@ model Lead {
   // General
   notes           String?
   followUpDate    DateTime?
+  lastFollowUpAt  DateTime?  // When was the last follow-up actually done
   estimatedValue  Float?
   tags            String    @default("[]")
   lastContactedAt DateTime?
@@ -140,10 +145,48 @@ model Lead {
 
   salesRep        SalesTeamMember? @relation(fields: [salesRepId], references: [id])
 
+  @@index([leadId])
   @@index([salesRepId])
   @@index([stage])
   @@index([source])
   @@index([createdAt])
+}
+
+// Sequential counter for generating human-readable Lead IDs (LED-YYYYMM-XXXX)
+model LeadSequence {
+  monthKey  String   @id  // YYYYMM e.g. "202605"
+  nextVal   Int      @default(1)
+  updatedAt DateTime @updatedAt
+}
+
+// Audit: who imported leads, when, and summary
+model LeadImportLog {
+  id          String   @id @default(cuid())
+  importedBy  String   // user id of importer
+  importedAt  DateTime @default(now())
+  fileName    String?
+  totalRows   Int      @default(0)
+  imported    Int      @default(0)
+  duplicates  Int      @default(0)
+  errors      Int      @default(0)
+  notes       String?
+
+  @@index([importedBy])
+  @@index([importedAt])
+}
+
+// Audit: who exported leads, when, and what filters were used
+model LeadExportLog {
+  id         String   @id @default(cuid())
+  exportedBy String   // user id
+  exportedAt DateTime @default(now())
+  fromDate   DateTime?
+  toDate     DateTime?
+  filters    String?  // JSON: { stage, source, salesRepId }
+  rowCount   Int      @default(0)
+
+  @@index([exportedBy])
+  @@index([exportedAt])
 }
 
 // ============================================================================

@@ -1,31 +1,44 @@
 // ============================================================================
 // Route: POST /api/admin/import/leads
 // Bulk-import leads from CSV/Excel (parsed on frontend, sent as JSON rows).
-// Runs duplicate check per row before inserting.
+//
+// Supports:
+//   - New lead creation with auto-generated Lead ID (LED-YYYYMM-XXXX)
+//   - Upsert by leadId: if leadId column present and matches existing → update
+//   - salesRepName column: match salesperson by name, reject if not found
+//   - Duplicate detection by email + phone (skipped for upsert rows)
+//   - Audit log written to LeadImportLog
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
+import { generateLeadId } from '@/lib/lead-id';
 
 export type ImportLeadRow = {
+  leadId?: string;          // If present → upsert; if absent → new lead
   businessName: string;
   contactName: string;
   contactEmail: string;
   contactPhone: string;
   city?: string;
+  state?: string;
+  pincode?: string;
   businessType?: string;
   source?: string;
   stage?: string;
-  estimatedValue?: number;
+  estimatedValue?: number | string;
   notes?: string;
   followUpDate?: string;
   tags?: string;
+  salesRepName?: string;    // Name-based lookup — resolved to salesRepId
+  salesRepId?: string;      // Direct ID assignment (takes precedence over salesRepName)
 };
 
 export type ImportLeadResult = {
   row: number;
-  status: 'imported' | 'duplicate' | 'error';
+  status: 'imported' | 'updated' | 'duplicate' | 'error';
+  leadId?: string;
   reason?: string;
   data: ImportLeadRow;
 };
@@ -41,8 +54,11 @@ const VALID_SOURCES = new Set([
 ]);
 
 const VALID_STAGES = new Set([
-  'LEAD', 'DEMO_SHARED', 'NEGOTIATION', 'PAYMENT_PENDING',
-  'PAYMENT_RECEIVED', 'ONBOARDING', 'DEPLOYMENT', 'ACTIVE', 'LOST', 'CHURNED',
+  'LEAD', 'FOLLOW_UP', 'INTERESTED', 'HOT_LEAD',
+  'NOT_INTERESTED', 'WRONG_NUMBER', 'RNR',
+  'DEMO_PLANNED', 'DEMO_DONE',
+  'NEGOTIATION', 'PAYMENT_PENDING', 'PAYMENT_RECEIVED',
+  'CLOSED_WON', 'LOST', 'DUPLICATE',
 ]);
 
 export const POST = withMiddleware({
@@ -52,7 +68,8 @@ export const POST = withMiddleware({
   try {
     const body = await req.json();
     const rows: ImportLeadRow[] = body.rows;
-    const assignToSalesRepId: string | undefined = body.salesRepId;
+    const globalSalesRepId: string | undefined = body.salesRepId;
+    const fileName: string | undefined = body.fileName;
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({ success: false, error: 'No rows provided' }, { status: 400 });
@@ -61,27 +78,108 @@ export const POST = withMiddleware({
       return NextResponse.json({ success: false, error: 'Maximum 2000 rows per import' }, { status: 400 });
     }
 
-    // Pre-fetch all existing emails + phones for O(1) duplicate lookup
+    // Pre-fetch all existing emails + phones for O(1) duplicate lookup (for new leads)
     const existingLeads = await db.lead.findMany({
-      select: { contactEmail: true, contactPhone: true },
+      select: { id: true, leadId: true, contactEmail: true, contactPhone: true },
     });
     const existingEmails = new Set(existingLeads.map((l) => l.contactEmail.toLowerCase().trim()));
     const existingPhones = new Set(existingLeads.map((l) => l.contactPhone.trim()));
+    const existingLeadIds = new Map(
+      existingLeads.filter((l) => l.leadId).map((l) => [l.leadId!, l.id])
+    );
 
-    // Also track emails/phones already seen within THIS import batch
+    // Build salesperson name→id lookup (case-insensitive)
+    const salesTeam = await db.salesTeamMember.findMany({
+      select: { id: true, name: true },
+      where: { isActive: true },
+    });
+    const salesRepByName = new Map(
+      salesTeam.map((m) => [m.name.toLowerCase().trim(), m.id])
+    );
+
+    // Track within-batch duplicates (new leads only)
     const batchEmails = new Set<string>();
     const batchPhones = new Set<string>();
 
     const results: ImportLeadResult[] = [];
     let importedCount = 0;
+    let updatedCount = 0;
     let duplicateCount = 0;
     let errorCount = 0;
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowNum = i + 1;
+      const incomingLeadId = row.leadId?.trim();
 
-      // Required field validation
+      // ── Resolve salesRep ────────────────────────────────────────────────────
+      let resolvedSalesRepId: string | null = globalSalesRepId || row.salesRepId || null;
+
+      if (!resolvedSalesRepId && row.salesRepName?.trim()) {
+        const nameKey = row.salesRepName.toLowerCase().trim();
+        const found = salesRepByName.get(nameKey);
+        if (!found) {
+          results.push({
+            row: rowNum,
+            status: 'error',
+            reason: `Salesperson "${row.salesRepName}" not found. Check name spelling or activate the user.`,
+            data: row,
+          });
+          errorCount++;
+          continue;
+        }
+        resolvedSalesRepId = found;
+      }
+
+      // ── UPSERT PATH: leadId column present and matches existing record ──────
+      if (incomingLeadId) {
+        const existingDbId = existingLeadIds.get(incomingLeadId);
+        if (existingDbId) {
+          // Update existing lead
+          const businessType = row.businessType && VALID_BUSINESS_TYPES.has(row.businessType.toUpperCase())
+            ? row.businessType.toUpperCase()
+            : undefined;
+          const source = row.source && VALID_SOURCES.has(row.source.toUpperCase())
+            ? row.source.toUpperCase()
+            : undefined;
+          const stage = row.stage && VALID_STAGES.has(row.stage.toUpperCase())
+            ? row.stage.toUpperCase()
+            : undefined;
+
+          try {
+            await db.lead.update({
+              where: { id: existingDbId },
+              data: {
+                ...(row.businessName?.trim() && { businessName: row.businessName.trim() }),
+                ...(row.contactName?.trim() && { contactName: row.contactName.trim() }),
+                ...(row.city?.trim() && { city: row.city.trim() }),
+                ...(row.state?.trim() && { state: row.state.trim() }),
+                ...(row.pincode?.trim() && { pincode: row.pincode.trim() }),
+                ...(businessType && { businessType: businessType as any }),
+                ...(source && { source: source as any }),
+                ...(stage && { stage: stage as any }),
+                ...(row.notes?.trim() && { notes: row.notes.trim() }),
+                ...(row.followUpDate && { followUpDate: new Date(row.followUpDate) }),
+                ...(row.estimatedValue !== undefined && { estimatedValue: Number(row.estimatedValue) || null }),
+                ...(row.tags && { tags: row.tags }),
+                ...(resolvedSalesRepId && { salesRepId: resolvedSalesRepId }),
+              },
+            });
+
+            results.push({ row: rowNum, status: 'updated', leadId: incomingLeadId, data: row });
+            updatedCount++;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Update failed';
+            results.push({ row: rowNum, status: 'error', reason: msg, data: row });
+            errorCount++;
+          }
+          continue;
+        }
+        // leadId provided but not in DB → fall through to create as new lead with that ID
+        // (treat as new lead, will generate a new leadId since we can't force the format)
+      }
+
+      // ── CREATE PATH ─────────────────────────────────────────────────────────
       if (!row.businessName?.trim()) {
         results.push({ row: rowNum, status: 'error', reason: 'Missing businessName', data: row });
         errorCount++;
@@ -106,7 +204,6 @@ export const POST = withMiddleware({
       const email = row.contactEmail.toLowerCase().trim();
       const phone = row.contactPhone.trim();
 
-      // Duplicate check against DB
       if (existingEmails.has(email) || existingPhones.has(phone)) {
         const dupField = existingEmails.has(email) ? 'email' : 'phone';
         results.push({ row: rowNum, status: 'duplicate', reason: `Duplicate ${dupField} already exists in database`, data: row });
@@ -114,7 +211,6 @@ export const POST = withMiddleware({
         continue;
       }
 
-      // Duplicate check within this batch
       if (batchEmails.has(email) || batchPhones.has(phone)) {
         const dupField = batchEmails.has(email) ? 'email' : 'phone';
         results.push({ row: rowNum, status: 'duplicate', reason: `Duplicate ${dupField} within this import file`, data: row });
@@ -122,7 +218,6 @@ export const POST = withMiddleware({
         continue;
       }
 
-      // Sanitise enum fields
       const businessType = row.businessType && VALID_BUSINESS_TYPES.has(row.businessType.toUpperCase())
         ? row.businessType.toUpperCase()
         : 'ECOMMERCE';
@@ -134,21 +229,27 @@ export const POST = withMiddleware({
         : 'LEAD';
 
       try {
+        const newLeadId = await generateLeadId(db);
+
         await db.lead.create({
           data: {
+            leadId: newLeadId,
             businessName: row.businessName.trim(),
             contactName: row.contactName.trim(),
             contactEmail: email,
             contactPhone: phone,
             city: row.city?.trim() || null,
+            state: row.state?.trim() || null,
+            pincode: row.pincode?.trim() || null,
             businessType: businessType as any,
             source: source as any,
             stage: stage as any,
-            estimatedValue: row.estimatedValue ? Number(row.estimatedValue) : null,
+            estimatedValue: row.estimatedValue ? Number(row.estimatedValue) || null : null,
             notes: row.notes?.trim() || null,
             followUpDate: row.followUpDate ? new Date(row.followUpDate) : null,
             tags: row.tags || '[]',
-            salesRepId: assignToSalesRepId || null,
+            salesRepId: resolvedSalesRepId,
+            createdById: req.user?.id || null,
           },
         });
 
@@ -157,7 +258,7 @@ export const POST = withMiddleware({
         existingEmails.add(email);
         existingPhones.add(phone);
 
-        results.push({ row: rowNum, status: 'imported', data: row });
+        results.push({ row: rowNum, status: 'imported', leadId: newLeadId, data: row });
         importedCount++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Insert failed';
@@ -166,9 +267,30 @@ export const POST = withMiddleware({
       }
     }
 
+    // Write audit log
+    try {
+      await db.leadImportLog.create({
+        data: {
+          importedBy: req.user?.id || 'unknown',
+          fileName: fileName || null,
+          totalRows: rows.length,
+          imported: importedCount,
+          duplicates: duplicateCount,
+          errors: errorCount,
+          notes: `Updated: ${updatedCount}`,
+        },
+      });
+    } catch { /* Audit failure must not block the response */ }
+
     return NextResponse.json({
       success: true,
-      summary: { total: rows.length, imported: importedCount, duplicates: duplicateCount, errors: errorCount },
+      summary: {
+        total: rows.length,
+        imported: importedCount,
+        updated: updatedCount,
+        duplicates: duplicateCount,
+        errors: errorCount,
+      },
       results,
     });
   } catch (error) {

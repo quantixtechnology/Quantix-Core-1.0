@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import {
   Upload, FileText, Download, CheckCircle2, XCircle, AlertCircle,
   Plug, Plus, Trash2, Eye, EyeOff, RefreshCw, ChevronDown, ChevronRight,
-  Users, Loader2,
+  Users, Loader2, FileDown, Lock,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { useAuthStore } from "@/stores/auth-store"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,7 +28,8 @@ type ImportRow = Record<string, string>
 
 type ImportResult = {
   row: number
-  status: "imported" | "duplicate" | "error"
+  status: "imported" | "updated" | "duplicate" | "error"
+  leadId?: string
   reason?: string
   data: ImportRow
 }
@@ -35,6 +37,7 @@ type ImportResult = {
 type ImportSummary = {
   total: number
   imported: number
+  updated: number
   duplicates: number
   errors: number
 }
@@ -55,12 +58,12 @@ type CrmIntegration = {
   createdAt: string
 }
 
-// ── Template ──────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-const CSV_HEADERS = [
-  "businessName", "contactName", "contactEmail", "contactPhone",
-  "city", "businessType", "source", "stage",
-  "estimatedValue", "notes", "followUpDate", "tags",
+const IMPORT_FIELD_HEADERS = [
+  "leadId", "businessName", "contactName", "contactEmail", "contactPhone",
+  "city", "state", "pincode", "businessType", "source", "stage",
+  "estimatedValue", "notes", "followUpDate", "tags", "salesRepName",
 ]
 
 const BUSINESS_TYPE_OPTIONS = [
@@ -73,6 +76,21 @@ const SOURCE_OPTIONS = [
   "COLD_OUTREACH", "WHATSAPP_INQUIRY", "PHONE_CALL", "OTHER",
 ]
 
+const STAGE_OPTIONS = [
+  "LEAD", "FOLLOW_UP", "INTERESTED", "HOT_LEAD",
+  "DEMO_PLANNED", "DEMO_DONE", "NEGOTIATION",
+  "PAYMENT_PENDING", "PAYMENT_RECEIVED", "CLOSED_WON",
+  "NOT_INTERESTED", "WRONG_NUMBER", "RNR", "LOST", "DUPLICATE",
+]
+
+const STAGE_LABELS: Record<string, string> = {
+  LEAD: "Lead", FOLLOW_UP: "Follow Up", INTERESTED: "Interested", HOT_LEAD: "Hot Lead",
+  DEMO_PLANNED: "Demo Planned", DEMO_DONE: "Demo Done", NEGOTIATION: "Negotiation",
+  PAYMENT_PENDING: "Payment Pending", PAYMENT_RECEIVED: "Payment Received",
+  CLOSED_WON: "Closed Won", NOT_INTERESTED: "Not Interested", WRONG_NUMBER: "Wrong Number",
+  RNR: "RNR", LOST: "Lost", DUPLICATE: "Duplicate",
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function downloadTemplate() {
@@ -80,46 +98,47 @@ function downloadTemplate() {
 
   // ── Sheet 1: Leads data entry ──────────────────────────────────────────────
   const templateRows = [
-    // Row 1 — column headers (starred = required)
+    // Row 1 — column headers (* = required; leadId = optional upsert key)
     [
-      "businessName *", "contactName *", "contactEmail *", "contactPhone *",
-      "city", "businessType", "source", "stage",
-      "estimatedValue", "notes", "followUpDate", "tags",
+      "leadId", "businessName *", "contactName *", "contactEmail *", "contactPhone *",
+      "city", "state", "pincode", "businessType", "source", "stage",
+      "estimatedValue", "notes", "followUpDate", "tags", "salesRepName",
     ],
     // Row 2 — field description / hint
     [
+      "Leave blank for new leads; fill LED-YYYYMM-XXXX to update existing",
       "Business name", "Contact person name", "Email address", "10-digit mobile",
-      "City", "See Valid Values sheet", "See Valid Values sheet", "See Valid Values sheet",
-      "Yearly value (INR)", "Any notes or remarks", "YYYY-MM-DD format", "comma-separated",
+      "City", "State", "Pincode", "See Valid Values sheet", "See Valid Values sheet", "See Valid Values sheet",
+      "Yearly value (INR)", "Any notes or remarks", "YYYY-MM-DD format", "comma-separated", "Salesperson full name",
     ],
-    // Rows 3-6 — example data (delete these rows before uploading)
+    // Rows 3-6 — example data (delete before uploading)
     [
-      "FreshMart Grocery", "Rahul Sharma", "rahul@freshmart.in", "9812345678",
-      "Mumbai", "GROCERY", "WEBSITE_INQUIRY", "LEAD",
-      "59988", "Interested in Standard plan", "2026-06-01", "grocery,fresh",
-    ],
-    [
-      "TastyBites Food", "Priya Patel", "priya@tastybites.in", "9823456789",
-      "Bengaluru", "FOOD_DELIVERY", "META_ADS", "HOT_LEAD",
-      "119988", "Very interested, scheduled demo", "2026-06-10", "restaurant",
+      "", "FreshMart Grocery", "Rahul Sharma", "rahul@freshmart.in", "9812345678",
+      "Mumbai", "Maharashtra", "400001", "GROCERY", "WEBSITE_INQUIRY", "LEAD",
+      "59988", "Interested in Standard plan", "2026-06-01", "grocery,fresh", "Arun Kumar",
     ],
     [
-      "AutoGlow Car Wash", "Vikram Singh", "vikram@autoglow.in", "9834567890",
-      "Hyderabad", "CAR_WASH", "DIRECT_REFERRAL", "NEGOTIATION",
-      "59988", "Negotiating pricing", "2026-06-15", "carwash",
+      "", "TastyBites Food", "Priya Patel", "priya@tastybites.in", "9823456789",
+      "Bengaluru", "Karnataka", "560001", "FOOD_DELIVERY", "META_ADS", "HOT_LEAD",
+      "119988", "Very interested, scheduled demo", "2026-06-10", "restaurant", "Sanjay Mehta",
     ],
     [
-      "SparkleClean Laundry", "Neha Gupta", "neha@sparkleclean.in", "9845678901",
-      "Delhi", "LAUNDRY", "COLD_OUTREACH", "PAYMENT_PENDING",
-      "59988", "Payment link sent", "", "laundry",
+      "", "AutoGlow Car Wash", "Vikram Singh", "vikram@autoglow.in", "9834567890",
+      "Hyderabad", "Telangana", "500001", "CAR_WASH", "DIRECT_REFERRAL", "NEGOTIATION",
+      "59988", "Negotiating pricing", "2026-06-15", "carwash", "",
+    ],
+    [
+      "LED-202605-0012", "SparkleClean Laundry", "Neha Gupta", "neha@sparkleclean.in", "9845678901",
+      "Delhi", "Delhi", "110001", "LAUNDRY", "COLD_OUTREACH", "PAYMENT_PENDING",
+      "59988", "Payment link sent", "", "laundry", "",
     ],
   ]
 
   const ws1 = XLSX.utils.aoa_to_sheet(templateRows)
   ws1["!cols"] = [
-    { wch: 24 }, { wch: 20 }, { wch: 28 }, { wch: 16 },
-    { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 18 },
-    { wch: 16 }, { wch: 32 }, { wch: 14 }, { wch: 20 },
+    { wch: 20 }, { wch: 24 }, { wch: 20 }, { wch: 28 }, { wch: 16 },
+    { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 18 }, { wch: 22 }, { wch: 18 },
+    { wch: 16 }, { wch: 32 }, { wch: 14 }, { wch: 20 }, { wch: 22 },
   ]
   XLSX.utils.book_append_sheet(wb, ws1, "Leads")
 
@@ -163,13 +182,16 @@ function downloadTemplate() {
     ["", "LOST", "Deal lost — exit stage"],
     ["", "DUPLICATE", "Duplicate lead entry — exit stage"],
     ["", "", ""],
+    ["leadId", "LED-202605-0012", "Leave blank for new leads. Fill to update an existing lead."],
+    ["salesRepName", "Arun Kumar", "Must exactly match the salesperson's name in the system"],
     ["followUpDate", "2026-06-15", "Use YYYY-MM-DD format"],
     ["estimatedValue", "59988", "Annual contract value in INR (numbers only)"],
     ["tags", "grocery,mumbai", "Comma-separated, no spaces around commas"],
+    ["pincode", "400001", "6-digit pincode"],
   ]
 
   const ws2 = XLSX.utils.aoa_to_sheet(refRows)
-  ws2["!cols"] = [{ wch: 16 }, { wch: 22 }, { wch: 40 }]
+  ws2["!cols"] = [{ wch: 16 }, { wch: 22 }, { wch: 50 }]
   XLSX.utils.book_append_sheet(wb, ws2, "Valid Values")
 
   XLSX.writeFile(wb, "quantix_leads_import_template.xlsx")
@@ -213,6 +235,9 @@ function uid() {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function LeadsImportView() {
+  const { user } = useAuthStore()
+  const canExport = user?.permissions?.includes("export:leads") ?? false
+
   // File upload state
   const [dragging, setDragging] = useState(false)
   const [file, setFile] = useState<File | null>(null)
@@ -221,8 +246,15 @@ export function LeadsImportView() {
   const [importing, setImporting] = useState(false)
   const [results, setResults] = useState<ImportResult[] | null>(null)
   const [summary, setSummary] = useState<ImportSummary | null>(null)
-  const [filterStatus, setFilterStatus] = useState<"all" | "imported" | "duplicate" | "error">("all")
+  const [filterStatus, setFilterStatus] = useState<"all" | "imported" | "updated" | "duplicate" | "error">("all")
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Export state
+  const [exportFromDate, setExportFromDate] = useState("")
+  const [exportToDate, setExportToDate] = useState("")
+  const [exportStage, setExportStage] = useState("")
+  const [exportSource, setExportSource] = useState("")
+  const [exporting, setExporting] = useState(false)
 
   // API integration state
   const [integrations, setIntegrations] = useState<CrmIntegration[]>([])
@@ -286,6 +318,42 @@ export function LeadsImportView() {
     setSummary(null)
     setPreviewOpen(false)
     if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const params = new URLSearchParams()
+      if (exportFromDate) params.set("fromDate", exportFromDate)
+      if (exportToDate)   params.set("toDate", exportToDate)
+      if (exportStage)    params.set("stage", exportStage)
+      if (exportSource)   params.set("source", exportSource)
+
+      const res = await fetch(`/api/admin/export/leads?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      })
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || "Export failed")
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      const today = new Date().toISOString().split("T")[0]
+      a.href = url
+      a.download = `quantix_leads_export_${today}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success("Export downloaded successfully")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed")
+    } finally {
+      setExporting(false)
+    }
   }
 
   // ── Integrations ───────────────────────────────────────────────────────────
@@ -376,14 +444,23 @@ export function LeadsImportView() {
 
   const statusIcon = (s: ImportResult["status"]) => {
     if (s === "imported") return <CheckCircle2 className="size-3.5 text-green-600" />
+    if (s === "updated")  return <RefreshCw className="size-3.5 text-blue-500" />
     if (s === "duplicate") return <AlertCircle className="size-3.5 text-amber-500" />
     return <XCircle className="size-3.5 text-red-500" />
   }
 
   const statusBadge = (s: ImportResult["status"]) => {
     if (s === "imported") return <Badge className="bg-green-100 text-green-700 text-[10px] h-5">Imported</Badge>
+    if (s === "updated")  return <Badge className="bg-blue-100 text-blue-700 text-[10px] h-5">Updated</Badge>
     if (s === "duplicate") return <Badge className="bg-amber-100 text-amber-700 text-[10px] h-5">Duplicate</Badge>
     return <Badge className="bg-red-100 text-red-700 text-[10px] h-5">Error</Badge>
+  }
+
+  const rowBgClass = (s: ImportResult["status"]) => {
+    if (s === "imported")  return "bg-green-50/50"
+    if (s === "updated")   return "bg-blue-50/50"
+    if (s === "duplicate") return "bg-amber-50/50"
+    return "bg-red-50/50"
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -404,6 +481,7 @@ export function LeadsImportView() {
       <Tabs defaultValue="upload">
         <TabsList className="mb-4">
           <TabsTrigger value="upload" className="gap-1.5"><Upload className="size-3.5" /> File Upload</TabsTrigger>
+          <TabsTrigger value="export" className="gap-1.5"><FileDown className="size-3.5" /> Export</TabsTrigger>
           <TabsTrigger value="api" className="gap-1.5" onClick={() => { if (!integrationsLoaded) loadIntegrations() }}>
             <Plug className="size-3.5" /> API Integrations
           </TabsTrigger>
@@ -421,7 +499,7 @@ export function LeadsImportView() {
             </CardHeader>
             <CardContent className="flex items-center gap-3">
               <Button size="sm" variant="outline" className="gap-1.5" onClick={downloadTemplate}>
-                <Download className="size-3.5" /> Download CSV Template
+                <Download className="size-3.5" /> Download Excel Template (.xlsx)
               </Button>
               <div className="text-xs text-muted-foreground">
                 Required columns: <span className="font-mono">businessName, contactName, contactEmail, contactPhone</span>
@@ -532,10 +610,11 @@ export function LeadsImportView() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Summary cards */}
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-5 gap-3">
                   {[
                     { label: "Total", value: summary.total, color: "text-foreground" },
                     { label: "Imported", value: summary.imported, color: "text-green-600" },
+                    { label: "Updated", value: summary.updated ?? 0, color: "text-blue-600" },
                     { label: "Duplicates", value: summary.duplicates, color: "text-amber-600" },
                     { label: "Errors", value: summary.errors, color: "text-red-600" },
                   ].map((s) => (
@@ -547,8 +626,8 @@ export function LeadsImportView() {
                 </div>
 
                 {/* Filter */}
-                <div className="flex gap-2">
-                  {(["all", "imported", "duplicate", "error"] as const).map((f) => (
+                <div className="flex gap-2 flex-wrap">
+                  {(["all", "imported", "updated", "duplicate", "error"] as const).map((f) => (
                     <Button
                       key={f}
                       size="sm"
@@ -566,8 +645,9 @@ export function LeadsImportView() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="text-[11px] w-12">#</TableHead>
+                        <TableHead className="text-[11px] w-10">#</TableHead>
                         <TableHead className="text-[11px]">Status</TableHead>
+                        <TableHead className="text-[11px]">Lead ID</TableHead>
                         <TableHead className="text-[11px]">Business Name</TableHead>
                         <TableHead className="text-[11px]">Contact</TableHead>
                         <TableHead className="text-[11px]">Email / Phone</TableHead>
@@ -576,11 +656,7 @@ export function LeadsImportView() {
                     </TableHeader>
                     <TableBody>
                       {filteredResults.map((r) => (
-                        <TableRow key={r.row} className={
-                          r.status === "imported" ? "bg-green-50/50"
-                          : r.status === "duplicate" ? "bg-amber-50/50"
-                          : "bg-red-50/50"
-                        }>
+                        <TableRow key={r.row} className={rowBgClass(r.status)}>
                           <TableCell className="text-xs text-muted-foreground">{r.row}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">
@@ -588,6 +664,7 @@ export function LeadsImportView() {
                               {statusBadge(r.status)}
                             </div>
                           </TableCell>
+                          <TableCell className="text-[11px] font-mono text-muted-foreground">{r.leadId || "—"}</TableCell>
                           <TableCell className="text-xs font-medium max-w-[140px] truncate">{r.data.businessName as string}</TableCell>
                           <TableCell className="text-xs max-w-[120px] truncate">{r.data.contactName as string}</TableCell>
                           <TableCell className="text-xs max-w-[160px]">
@@ -602,6 +679,110 @@ export function LeadsImportView() {
                 </ScrollArea>
               </CardContent>
             </Card>
+          )}
+        </TabsContent>
+
+        {/* ── Export Tab ──────────────────────────────────────────────────── */}
+        <TabsContent value="export" className="space-y-5">
+          {!canExport ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-14 gap-3">
+                <Lock className="size-8 text-muted-foreground/40" />
+                <p className="text-sm font-medium text-muted-foreground">Access Restricted</p>
+                <p className="text-xs text-muted-foreground text-center max-w-xs">
+                  Exporting lead data requires the <span className="font-mono">export:leads</span> permission.
+                  Contact your Super Admin to request access.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Export Lead Data</CardTitle>
+                  <CardDescription className="text-xs">
+                    Download leads as an Excel file. Use filters to narrow the export by date range, stage, or source.
+                    Exported file includes Lead ID, salesperson name, and all lead fields.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Date range */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">From Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={exportFromDate}
+                        onChange={(e) => setExportFromDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">To Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={exportToDate}
+                        onChange={(e) => setExportToDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Stage + Source filters */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Stage (optional)</Label>
+                      <Select value={exportStage} onValueChange={setExportStage}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All stages" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All stages</SelectItem>
+                          {STAGE_OPTIONS.map((s) => (
+                            <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s] ?? s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Source (optional)</Label>
+                      <Select value={exportSource} onValueChange={setExportSource}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All sources" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All sources</SelectItem>
+                          {SOURCE_OPTIONS.map((s) => (
+                            <SelectItem key={s} value={s} className="text-xs">{s.replace(/_/g, " ")}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <Button onClick={handleExport} disabled={exporting} className="gap-2">
+                    {exporting
+                      ? <><Loader2 className="size-4 animate-spin" /> Generating…</>
+                      : <><FileDown className="size-4" /> Download Export (.xlsx)</>
+                    }
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Exported Fields</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-1">
+                    {[
+                      "Lead ID", "Business Name", "Contact Name", "Mobile", "Email",
+                      "City", "State", "Pincode", "Business Type", "Source", "Stage",
+                      "Assigned Salesperson", "Estimated Value (INR)", "Tags", "Notes",
+                      "Follow-up Date", "Last Follow-up Date", "Created Date",
+                    ].map((f) => (
+                      <code key={f} className="text-[11px] bg-muted rounded px-2 py-0.5">{f}</code>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
           )}
         </TabsContent>
 
@@ -766,7 +947,7 @@ export function LeadsImportView() {
                                 <Select value={newMapping.to} onValueChange={(v) => setNewMapping((p) => p ? { ...p, to: v } : p)}>
                                   <SelectTrigger className="col-span-2 h-7 text-xs"><SelectValue placeholder="Quantix field" /></SelectTrigger>
                                   <SelectContent>
-                                    {CSV_HEADERS.map((h) => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                                    {IMPORT_FIELD_HEADERS.map((h) => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
                                   </SelectContent>
                                 </Select>
                                 <Button size="sm" className="h-7 text-xs px-2" onClick={() => addFieldMapping(int.id)}>Add</Button>
@@ -812,7 +993,7 @@ export function LeadsImportView() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-1">
-                {CSV_HEADERS.map((h) => (
+                {IMPORT_FIELD_HEADERS.map((h) => (
                   <code key={h} className="text-[11px] bg-muted rounded px-2 py-0.5">{h}</code>
                 ))}
               </div>

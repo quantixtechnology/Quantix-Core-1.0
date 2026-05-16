@@ -12,6 +12,7 @@ import {
   getPaginationParams,
 } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { generateLeadId } from '@/lib/lead-id';
 import type { NextRequest } from 'next/server';
 import type { LeadSource, LeadStage, BusinessType } from '@/lib/types';
 
@@ -167,18 +168,25 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Generate immutable human-readable Lead ID
+      const leadId = await generateLeadId(db);
+
       // Create lead — always starts at LEAD stage
       const lead = await db.lead.create({
         data: {
+          leadId,
           businessName: body.businessName,
           contactName: body.contactName,
           contactEmail: body.contactEmail,
           contactPhone: body.contactPhone,
           city: body.city || null,
+          state: body.state || null,
+          pincode: body.pincode || null,
           businessType: body.businessType,
           source: body.source || 'WEBSITE_INQUIRY',
           stage: 'LEAD',
           salesRepId: body.salesRepId || null,
+          createdById: req.user?.id || null,
           notes: body.notes || null,
           followUpDate: body.followUpDate ? new Date(body.followUpDate) : null,
           estimatedValue: body.estimatedValue || null,
