@@ -252,8 +252,8 @@ export function LeadsImportView() {
   // Export state
   const [exportFromDate, setExportFromDate] = useState("")
   const [exportToDate, setExportToDate] = useState("")
-  const [exportStage, setExportStage] = useState("")
-  const [exportSource, setExportSource] = useState("")
+  const [exportStage, setExportStage] = useState("ALL")
+  const [exportSource, setExportSource] = useState("ALL")
   const [exporting, setExporting] = useState(false)
 
   // API integration state
@@ -328,8 +328,8 @@ export function LeadsImportView() {
       const params = new URLSearchParams()
       if (exportFromDate) params.set("fromDate", exportFromDate)
       if (exportToDate)   params.set("toDate", exportToDate)
-      if (exportStage)    params.set("stage", exportStage)
-      if (exportSource)   params.set("source", exportSource)
+      if (exportStage  && exportStage  !== "ALL") params.set("stage",  exportStage)
+      if (exportSource && exportSource !== "ALL") params.set("source", exportSource)
 
       const res = await fetch(`/api/admin/export/leads?${params.toString()}`, {
         headers: getAuthHeaders(),
@@ -735,7 +735,7 @@ export function LeadsImportView() {
                       <Select value={exportStage} onValueChange={setExportStage}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All stages" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All stages</SelectItem>
+                          <SelectItem value="ALL">All stages</SelectItem>
                           {STAGE_OPTIONS.map((s) => (
                             <SelectItem key={s} value={s} className="text-xs">{STAGE_LABELS[s] ?? s}</SelectItem>
                           ))}
@@ -747,7 +747,7 @@ export function LeadsImportView() {
                       <Select value={exportSource} onValueChange={setExportSource}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All sources" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All sources</SelectItem>
+                          <SelectItem value="ALL">All sources</SelectItem>
                           {SOURCE_OPTIONS.map((s) => (
                             <SelectItem key={s} value={s} className="text-xs">{s.replace(/_/g, " ")}</SelectItem>
                           ))}
