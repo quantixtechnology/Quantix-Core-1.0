@@ -857,7 +857,7 @@ function useProductsInfinite(businessId: string, search: string) {
 
 export function POSEnterprise() {
   const { businessId } = useBusinessContext()
-  const { currentBusinessType } = useAdminStore()
+  const { currentBusinessType, currentStoreId } = useAdminStore()
   const queryClient = useQueryClient()
 
   const businessType = currentBusinessType || "GROCERY"
@@ -979,7 +979,7 @@ export function POSEnterprise() {
     enabled: !!businessId,
     staleTime: 60_000,
   })
-  const defaultStoreId = storesData?.[0]?.id ?? ""
+  const defaultStoreId = currentStoreId || storesData?.[0]?.id ?? ""
 
   const placeOrderMutation = useMutation({
     mutationFn: async ({ method, splits: _splits, tendered: _tendered, ledgerPhone }: { method: PaymentMethod; splits: SplitEntry[]; tendered: number; ledgerPhone?: string }) => {
