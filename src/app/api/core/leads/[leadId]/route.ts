@@ -146,9 +146,11 @@ export async function PATCH(
       // Stage — use advance-stage endpoint for proper transitions
       if (body.stage !== undefined) {
         const validStages: LeadStage[] = [
-          'LEAD', 'DEMO_SHARED', 'NEGOTIATION', 'PAYMENT_PENDING',
-          'PAYMENT_RECEIVED', 'ONBOARDING', 'DEPLOYMENT', 'ACTIVE',
-          'LOST', 'CHURNED',
+          'LEAD', 'FOLLOW_UP', 'INTERESTED', 'HOT_LEAD',
+          'NOT_INTERESTED', 'WRONG_NUMBER', 'RNR',
+          'DEMO_PLANNED', 'DEMO_DONE',
+          'NEGOTIATION', 'PAYMENT_PENDING', 'PAYMENT_RECEIVED', 'CLOSED_WON',
+          'LOST', 'DUPLICATE',
         ];
         if (!validStages.includes(body.stage)) {
           return createErrorResponse('Invalid stage', 400);

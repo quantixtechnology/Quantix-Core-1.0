@@ -2,11 +2,12 @@
 // QUANTIX CORE — Advance Lead Stage API
 // POST /api/core/leads/[leadId]/advance-stage
 //
-// Validates stage transitions (can only go forward in order).
-// Special handling:
-//   - DEMO_SHARED: requires demoTenantId
-//   - PAYMENT_RECEIVED: triggers business creation readiness
-//   - ONBOARDING: creates the Business record
+// Sales pipeline state machine — no side effects, no auto business creation.
+// Business onboarding is triggered manually after CLOSED_WON.
+//
+// Pipeline: LEAD → FOLLOW_UP → INTERESTED → HOT_LEAD → DEMO_PLANNED → DEMO_DONE
+//           → NEGOTIATION → PAYMENT_PENDING → PAYMENT_RECEIVED → CLOSED_WON
+// Terminal: NOT_INTERESTED | WRONG_NUMBER | RNR | LOST | DUPLICATE
 // ============================================================================
 
 import {
@@ -16,52 +17,46 @@ import {
 } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import type { NextRequest } from 'next/server';
-import type { LeadStage, BusinessType } from '@/lib/types';
-
-// ============================================================================
-// LEAD STAGE ORDER — defines valid forward transitions
-// ============================================================================
+import type { LeadStage } from '@/lib/types';
 
 const LEAD_STAGE_ORDER: LeadStage[] = [
   'LEAD',
-  'DEMO_SHARED',
+  'FOLLOW_UP',
+  'INTERESTED',
+  'HOT_LEAD',
+  'DEMO_PLANNED',
+  'DEMO_DONE',
   'NEGOTIATION',
   'PAYMENT_PENDING',
   'PAYMENT_RECEIVED',
-  'ONBOARDING',
-  'DEPLOYMENT',
-  'ACTIVE',
+  'CLOSED_WON',
 ];
 
-// Terminal / exit stages — can be set from any stage
-const TERMINAL_STAGES: LeadStage[] = ['LOST', 'CHURNED'];
+const TERMINAL_STAGES: LeadStage[] = [
+  'NOT_INTERESTED',
+  'WRONG_NUMBER',
+  'RNR',
+  'LOST',
+  'DUPLICATE',
+];
 
-/**
- * Get the index of a stage in the ordered pipeline
- */
 function getStageIndex(stage: LeadStage): number {
-  const idx = LEAD_STAGE_ORDER.indexOf(stage);
-  return idx;
+  return LEAD_STAGE_ORDER.indexOf(stage);
 }
 
-/**
- * Validate that a stage transition is allowed.
- * Rules:
- *   1. Can always transition to LOST or CHURNED (exit stages)
- *   2. Can only advance forward in the pipeline (currentIndex < targetIndex)
- *   3. Cannot skip stages (targetIndex must be currentIndex + 1)
- *   4. Cannot go backwards
- */
-function validateTransition(currentStage: LeadStage, targetStage: LeadStage): { valid: boolean; error?: string } {
-  // Allow transition to terminal stages from any non-terminal stage
+function validateTransition(
+  currentStage: LeadStage,
+  targetStage: LeadStage
+): { valid: boolean; error?: string } {
+  // Allow transition to any terminal stage from any non-terminal stage
   if (TERMINAL_STAGES.includes(targetStage)) {
     if (TERMINAL_STAGES.includes(currentStage)) {
-      return { valid: false, error: `Lead is already in terminal stage: ${currentStage}` };
+      return { valid: false, error: `Lead is already in a terminal stage: ${currentStage}` };
     }
     return { valid: true };
   }
 
-  // Cannot transition from terminal stages
+  // Cannot transition out of terminal stages
   if (TERMINAL_STAGES.includes(currentStage)) {
     return { valid: false, error: `Cannot advance from terminal stage: ${currentStage}` };
   }
@@ -72,16 +67,13 @@ function validateTransition(currentStage: LeadStage, targetStage: LeadStage): { 
   if (currentIndex === -1) {
     return { valid: false, error: `Invalid current stage: ${currentStage}` };
   }
-
   if (targetIndex === -1) {
     return { valid: false, error: `Invalid target stage: ${targetStage}` };
   }
-
-  // Can only advance to the next stage (one step at a time)
+  if (targetIndex <= currentIndex) {
+    return { valid: false, error: `Cannot go backwards from ${currentStage} to ${targetStage}` };
+  }
   if (targetIndex !== currentIndex + 1) {
-    if (targetIndex <= currentIndex) {
-      return { valid: false, error: `Cannot go backwards from ${currentStage} to ${targetStage}` };
-    }
     return {
       valid: false,
       error: `Cannot skip stages. Next valid stage after ${currentStage} is ${LEAD_STAGE_ORDER[currentIndex + 1]}`,
@@ -104,7 +96,6 @@ export async function POST(
       const { leadId } = await params;
       const body = await req.json();
 
-      // Validate target stage
       if (!body.stage) {
         return createErrorResponse('Missing required field: stage', 400);
       }
@@ -118,7 +109,6 @@ export async function POST(
         );
       }
 
-      // Fetch lead
       const lead = await db.lead.findUnique({ where: { id: leadId } });
       if (!lead) {
         return createErrorResponse('Lead not found', 404);
@@ -126,68 +116,22 @@ export async function POST(
 
       const currentStage = lead.stage as LeadStage;
 
-      // Already at target
       if (currentStage === targetStage) {
         return createErrorResponse(`Lead is already at stage: ${targetStage}`, 400);
       }
 
-      // Validate transition
       const transition = validateTransition(currentStage, targetStage);
       if (!transition.valid) {
         return createErrorResponse(transition.error!, 400);
       }
 
-      // ====================================================================
-      // Stage-specific validation and side effects
-      // ====================================================================
+      // ======================================================================
+      // Stage-specific data — no side effects, pure state updates
+      // ======================================================================
 
-      const updateData: Record<string, unknown> = {
-        stage: targetStage,
-      };
+      const updateData: Record<string, unknown> = { stage: targetStage };
 
-      // When advancing to DEMO_SHARED: requires demoTenantId
-      if (targetStage === 'DEMO_SHARED') {
-        if (!body.demoTenantId) {
-          return createErrorResponse(
-            'demoTenantId is required when advancing to DEMO_SHARED stage',
-            400
-          );
-        }
-
-        // Verify demo tenant exists and is available/in use
-        const demoTenant = await db.demoTenant.findUnique({
-          where: { id: body.demoTenantId },
-        });
-
-        if (!demoTenant) {
-          return createErrorResponse('Demo tenant not found', 404);
-        }
-
-        if (demoTenant.status === 'DISABLED' || demoTenant.status === 'MAINTENANCE') {
-          return createErrorResponse(
-            `Demo tenant is not available (status: ${demoTenant.status})`,
-            400
-          );
-        }
-
-        // Assign demo tenant to this lead
-        updateData.demoTenantId = body.demoTenantId;
-        updateData.demoSharedAt = new Date();
-
-        // Update demo tenant status
-        await db.demoTenant.update({
-          where: { id: body.demoTenantId },
-          data: {
-            status: 'IN_USE',
-            currentLeadId: leadId,
-            currentLeadName: lead.businessName,
-            sessionStartedAt: new Date(),
-            sessionExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-          },
-        });
-      }
-
-      // When advancing to NEGOTIATION: capture negotiated prices if provided
+      // Capture negotiation notes / prices when entering NEGOTIATION
       if (targetStage === 'NEGOTIATION') {
         if (body.negotiatedMonthlyPrice !== undefined) {
           updateData.negotiatedMonthlyPrice = body.negotiatedMonthlyPrice;
@@ -200,147 +144,38 @@ export async function POST(
         }
       }
 
-      // When advancing to PAYMENT_PENDING: record billing cycle selection
+      // Record billing cycle when entering PAYMENT_PENDING
       if (targetStage === 'PAYMENT_PENDING') {
         if (body.selectedBillingCycle) {
-          if (!['monthly', 'yearly'].includes(body.selectedBillingCycle)) {
-            return createErrorResponse('selectedBillingCycle must be "monthly" or "yearly"', 400);
+          if (!['monthly', 'yearly', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(body.selectedBillingCycle)) {
+            return createErrorResponse('Invalid selectedBillingCycle', 400);
           }
           updateData.selectedBillingCycle = body.selectedBillingCycle;
         }
       }
 
-      // When advancing to PAYMENT_RECEIVED: mark payment as verified
+      // Mark payment verified when entering PAYMENT_RECEIVED
       if (targetStage === 'PAYMENT_RECEIVED') {
         updateData.paymentVerifiedAt = new Date();
         updateData.paymentVerifiedBy = req.user?.id || null;
-
         if (body.paymentProof) {
           updateData.paymentProof = body.paymentProof;
-        }
-        // Ensure billing cycle is set
-        if (!lead.selectedBillingCycle && !body.selectedBillingCycle) {
-          return createErrorResponse(
-            'selectedBillingCycle is required when advancing to PAYMENT_RECEIVED. Set it at PAYMENT_PENDING or provide it now.',
-            400
-          );
         }
         if (body.selectedBillingCycle) {
           updateData.selectedBillingCycle = body.selectedBillingCycle;
         }
       }
 
-      // When advancing to ONBOARDING: create the Business record
-      if (targetStage === 'ONBOARDING') {
-        // The lead must have payment verified
-        if (!lead.paymentVerifiedAt) {
-          return createErrorResponse(
-            'Payment must be verified before onboarding. Advance to PAYMENT_RECEIVED first.',
-            400
-          );
-        }
-
-        // Check if business already created for this lead
-        if (lead.convertedBusinessId) {
-          // Business already exists, just advance the stage
-        } else {
-          // Create the business from the lead
-          const billingCycle = (lead.selectedBillingCycle || 'monthly') as 'monthly' | 'yearly';
-          const planBillingCycle = billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
-
-          // Find the appropriate platform plan
-          const plan = await db.platformPlan.findFirst({
-            where: { billingCycle: planBillingCycle },
-          });
-
-          if (!plan) {
-            return createErrorResponse(
-              `Platform plan for ${planBillingCycle} billing not found. Please seed plans first.`,
-              500
-            );
-          }
-
-          // Generate slug from business name
-          const slug = lead.businessName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '');
-
-          // Check slug uniqueness
-          const existingBusiness = await db.business.findUnique({ where: { slug } });
-          if (existingBusiness) {
-            return createErrorResponse(
-              `Business with slug "${slug}" already exists. Cannot auto-create business.`,
-              409
-            );
-          }
-
-          // Determine pricing — use negotiated prices if available
-          const customPrice = billingCycle === 'yearly'
-            ? lead.negotiatedYearlyPrice
-            : lead.negotiatedMonthlyPrice;
-
-          // Create business using the core library
-          const { createBusiness } = await import('@/lib/core/business');
-          const business = await createBusiness({
-            name: lead.businessName,
-            slug,
-            businessType: lead.businessType as BusinessType,
-            contactEmail: lead.contactEmail,
-            contactPhone: lead.contactPhone,
-            planId: plan.id,
-            billingCycle: planBillingCycle,
-            customPrice: customPrice || undefined,
-            overrideReason: customPrice ? 'Negotiated pricing from lead' : undefined,
-            leadId: leadId,
-            salesRepId: lead.salesRepId || undefined,
-          });
-
-          updateData.convertedBusinessId = business.id;
-          updateData.convertedAt = new Date();
-        }
+      // Mark conversion timestamp when entering CLOSED_WON
+      if (targetStage === 'CLOSED_WON') {
+        updateData.convertedAt = new Date();
       }
 
-      // When advancing to DEPLOYMENT: no extra validation needed
-      if (targetStage === 'DEPLOYMENT') {
-        if (!lead.convertedBusinessId) {
-          return createErrorResponse(
-            'Lead must have a converted business before deployment. Advance to ONBOARDING first.',
-            400
-          );
-        }
-      }
-
-      // When advancing to ACTIVE: mark conversion complete
-      if (targetStage === 'ACTIVE') {
-        updateData.convertedAt = updateData.convertedAt || lead.convertedAt || new Date();
-      }
-
-      // When marking as LOST: capture reason
-      if (targetStage === 'LOST') {
-        if (!body.lostReason) {
-          return createErrorResponse('lostReason is required when marking a lead as LOST', 400);
-        }
+      // Capture reason for terminal stages
+      if (TERMINAL_STAGES.includes(targetStage) && body.lostReason) {
         updateData.lostReason = body.lostReason;
       }
 
-      // When marking as CHURNED: capture reason
-      if (targetStage === 'CHURNED') {
-        if (!body.lostReason) {
-          return createErrorResponse('lostReason is required when marking a lead as CHURNED', 400);
-        }
-        updateData.lostReason = body.lostReason;
-
-        // If business exists, update its status
-        if (lead.convertedBusinessId) {
-          await db.business.update({
-            where: { id: lead.convertedBusinessId },
-            data: { status: 'CHURNED', isOnline: false },
-          });
-        }
-      }
-
-      // Update the lead
       const updated = await db.lead.update({
         where: { id: leadId },
         data: updateData,

@@ -56,16 +56,22 @@ interface SalesTeamMember {
   isActive?: boolean
 }
 
-const allStages: LeadStage[] = ["LEAD", "DEMO_SHARED", "NEGOTIATION", "PAYMENT_PENDING", "PAYMENT_RECEIVED", "ONBOARDING", "DEPLOYMENT", "ACTIVE"]
+const allStages: LeadStage[] = ["LEAD", "FOLLOW_UP", "INTERESTED", "HOT_LEAD", "DEMO_PLANNED", "DEMO_DONE", "NEGOTIATION", "PAYMENT_PENDING", "PAYMENT_RECEIVED", "CLOSED_WON"]
+const terminalStages: LeadStage[] = ["NOT_INTERESTED", "WRONG_NUMBER", "RNR", "LOST", "DUPLICATE"]
+
 const stageProgressMap: Record<LeadStage, number> = {
-  LEAD: 0, DEMO_SHARED: 1, NEGOTIATION: 2, PAYMENT_PENDING: 3, PAYMENT_RECEIVED: 4, ONBOARDING: 5, DEPLOYMENT: 6, ACTIVE: 7, LOST: -1, CHURNED: -1
+  LEAD: 0, FOLLOW_UP: 1, INTERESTED: 2, HOT_LEAD: 3, DEMO_PLANNED: 4, DEMO_DONE: 5,
+  NEGOTIATION: 6, PAYMENT_PENDING: 7, PAYMENT_RECEIVED: 8, CLOSED_WON: 9,
+  NOT_INTERESTED: -1, WRONG_NUMBER: -1, RNR: -1, LOST: -1, DUPLICATE: -1,
 }
 
 const stageLabels: Record<string, string> = {
-  LEAD: "Lead", DEMO_SHARED: "Demo Shared", NEGOTIATION: "Negotiation",
-  PAYMENT_PENDING: "Payment Pending", PAYMENT_RECEIVED: "Payment Received",
-  ONBOARDING: "Onboarding", DEPLOYMENT: "Deployment", ACTIVE: "Active",
-  LOST: "Lost", CHURNED: "Churned",
+  LEAD: "Lead", FOLLOW_UP: "Follow Up", INTERESTED: "Interested", HOT_LEAD: "Hot Lead",
+  NOT_INTERESTED: "Not Interested", WRONG_NUMBER: "Wrong Number", RNR: "RNR",
+  DEMO_PLANNED: "Demo Planned", DEMO_DONE: "Demo Done",
+  NEGOTIATION: "Negotiation", PAYMENT_PENDING: "Payment Pending",
+  PAYMENT_RECEIVED: "Payment Received", CLOSED_WON: "Closed Won",
+  LOST: "Lost", DUPLICATE: "Duplicate",
 }
 
 const sourceLabels: Record<string, string> = {
@@ -159,9 +165,9 @@ export function LeadsView() {
   const pipelineReport = useMemo(() => {
     const totalLeads = leads.length
     const totalValue = leads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0)
-    const activeLeads = leads.filter(l => l.stage !== "LOST" && l.stage !== "CHURNED")
+    const activeLeads = leads.filter(l => !terminalStages.includes(l.stage as LeadStage))
     const activeValue = activeLeads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0)
-    const convertedLeads = leads.filter(l => l.stage === "ACTIVE").length
+    const convertedLeads = leads.filter(l => l.stage === "CLOSED_WON").length
     const conversionRate = totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(1) : "0"
 
     const stageBreakdown = allStages.map(stage => {
@@ -171,7 +177,7 @@ export function LeadsView() {
       return { stage, count: stageLeads.length, value: stageValue, pct }
     })
 
-    const lostLeads = leads.filter(l => l.stage === "LOST")
+    const lostLeads = leads.filter(l => terminalStages.includes(l.stage as LeadStage))
     const lostValue = lostLeads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0)
     const lostPct = totalLeads > 0 ? ((lostLeads.length / totalLeads) * 100).toFixed(0) : "0"
     const avgDealValue = activeLeads.length > 0 ? Math.round(activeValue / activeLeads.length) : 0
@@ -222,25 +228,22 @@ export function LeadsView() {
       const nextStage = getNextStage(selectedLead.stage as LeadStage)
       let res: Response
 
-      if (nextStage === newStage) {
-        // Forward one step — use advance-stage
+      const isTerminal = terminalStages.includes(newStage as LeadStage)
+      const lostReason = stageEditReason || undefined
+
+      if (nextStage === newStage || isTerminal) {
+        // Forward one step or terminal — use advance-stage
         res = await fetch(`/api/core/leads/${selectedLead.id}/advance-stage`, {
           method: "POST",
           headers: getAuthHeaders(),
-          body: JSON.stringify({
-            stage: newStage,
-            lostReason: newStage === "LOST" ? stageEditReason : undefined,
-          }),
+          body: JSON.stringify({ stage: newStage, lostReason }),
         })
       } else {
         // Direct stage change — use PATCH
         res = await fetch(`/api/core/leads/${selectedLead.id}`, {
           method: "PATCH",
           headers: getAuthHeaders(),
-          body: JSON.stringify({
-            stage: newStage,
-            lostReason: newStage === "LOST" ? stageEditReason : undefined,
-          }),
+          body: JSON.stringify({ stage: newStage, lostReason }),
         })
       }
 
@@ -491,7 +494,7 @@ export function LeadsView() {
           <SelectContent>
             <SelectItem value="all">All Stages</SelectItem>
             {allStages.map(s => <SelectItem key={s} value={s}>{stageLabels[s]}</SelectItem>)}
-            <SelectItem value="LOST">Lost</SelectItem>
+            {terminalStages.map(s => <SelectItem key={s} value={s}>{stageLabels[s]}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={sourceFilter} onValueChange={setSourceFilter}>
@@ -815,7 +818,10 @@ export function LeadsView() {
               </div>
               <div className="space-y-2"><Label>Select New Stage</Label>
                 <Select value={newStage} onValueChange={setNewStage}><SelectTrigger><SelectValue placeholder="Select stage" /></SelectTrigger>
-                  <SelectContent>{allStages.map(s => (<SelectItem key={s} value={s}>{stageLabels[s]}</SelectItem>))}<SelectItem value="LOST">Lost</SelectItem></SelectContent>
+                  <SelectContent>
+                    {allStages.map(s => (<SelectItem key={s} value={s}>{stageLabels[s]}</SelectItem>))}
+                    {terminalStages.map(s => (<SelectItem key={s} value={s}>{stageLabels[s]}</SelectItem>))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2"><Label>Reason (optional)</Label><Textarea placeholder="Reason for stage change..." rows={2} value={stageEditReason} onChange={(e) => setStageEditReason(e.target.value)} /></div>
@@ -837,7 +843,7 @@ export function LeadsView() {
               <div className="flex items-center gap-3">
                 <StatusBadge status={selectedLead.stage} />
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                <StatusBadge status={getNextStage(selectedLead.stage as LeadStage) || "ACTIVE"} />
+                <StatusBadge status={getNextStage(selectedLead.stage as LeadStage) || "CLOSED_WON"} />
               </div>
               <div className="space-y-2"><Label>Notes (optional)</Label><Textarea placeholder="Add notes about this stage transition..." rows={2} /></div>
             </div>

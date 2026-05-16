@@ -7,7 +7,7 @@ export type BusinessType = 'GROCERY' | 'FOOD_DELIVERY' | 'LAUNDRY' | 'CAR_WASH' 
 export type BusinessStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
 export type Role = 'QUANTIX_SUPER_ADMIN' | 'QUANTIX_SALES_TEAM' | 'CLIENT_OWNER' | 'STORE_MANAGER' | 'DELIVERY_STAFF' | 'CUSTOMER';
 export type LeadSource = 'META_ADS' | 'GOOGLE_ADS' | 'DIRECT_REFERRAL' | 'WEBSITE_INQUIRY' | 'COLD_OUTREACH' | 'WHATSAPP_INQUIRY' | 'PHONE_CALL' | 'OTHER';
-export type LeadStage = 'LEAD' | 'DEMO_SHARED' | 'NEGOTIATION' | 'PAYMENT_PENDING' | 'PAYMENT_RECEIVED' | 'ONBOARDING' | 'DEPLOYMENT' | 'ACTIVE' | 'LOST' | 'CHURNED';
+export type LeadStage = 'LEAD' | 'FOLLOW_UP' | 'INTERESTED' | 'HOT_LEAD' | 'NOT_INTERESTED' | 'WRONG_NUMBER' | 'RNR' | 'DEMO_PLANNED' | 'DEMO_DONE' | 'NEGOTIATION' | 'PAYMENT_PENDING' | 'PAYMENT_RECEIVED' | 'CLOSED_WON' | 'LOST' | 'DUPLICATE';
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY_FOR_PICKUP' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED' | 'PICKUP_ASSIGNED' | 'PICKED_UP' | 'PROCESSING' | 'READY_FOR_DELIVERY';
 export type OrderType = 'DELIVERY' | 'PICKUP' | 'DINE_IN' | 'POS' | 'SUBSCRIPTION' | 'PICKUP_AND_DELIVERY';
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
@@ -69,16 +69,21 @@ export const domainStatusColors: Record<DomainStatus, string> = {
 };
 
 export const leadStageColors: Record<LeadStage, string> = {
-  LEAD: 'bg-slate-100 text-slate-700',
-  DEMO_SHARED: 'bg-blue-100 text-blue-700',
-  NEGOTIATION: 'bg-orange-100 text-orange-700',
-  PAYMENT_PENDING: 'bg-yellow-100 text-yellow-700',
-  PAYMENT_RECEIVED: 'bg-cyan-100 text-cyan-700',
-  ONBOARDING: 'bg-purple-100 text-purple-700',
-  DEPLOYMENT: 'bg-indigo-100 text-indigo-700',
-  ACTIVE: 'bg-emerald-100 text-emerald-700',
-  LOST: 'bg-red-100 text-red-700',
-  CHURNED: 'bg-slate-100 text-slate-600',
+  LEAD:             'bg-slate-100 text-slate-700',
+  FOLLOW_UP:        'bg-blue-100 text-blue-700',
+  INTERESTED:       'bg-cyan-100 text-cyan-700',
+  HOT_LEAD:         'bg-orange-100 text-orange-700',
+  NOT_INTERESTED:   'bg-red-100 text-red-700',
+  WRONG_NUMBER:     'bg-rose-100 text-rose-700',
+  RNR:              'bg-amber-100 text-amber-700',
+  DEMO_PLANNED:     'bg-violet-100 text-violet-700',
+  DEMO_DONE:        'bg-purple-100 text-purple-700',
+  NEGOTIATION:      'bg-orange-100 text-orange-800',
+  PAYMENT_PENDING:  'bg-yellow-100 text-yellow-700',
+  PAYMENT_RECEIVED: 'bg-teal-100 text-teal-700',
+  CLOSED_WON:       'bg-emerald-100 text-emerald-700',
+  LOST:             'bg-red-100 text-red-600',
+  DUPLICATE:        'bg-slate-100 text-slate-500',
 };
 
 // Platform Plans — Only 2 fixed plans
@@ -111,13 +116,13 @@ export const salesTeam = [
 // Leads
 export const leads = [
   { id: 'lead_1', businessName: 'TasteBud Restaurant', contactName: 'Amit Patel', contactEmail: 'amit@tastebud.in', contactPhone: '+91 99887 76543', source: 'META_ADS' as LeadSource, stage: 'LEAD' as LeadStage, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-20', type: 'FOOD_DELIVERY' as BusinessType },
-  { id: 'lead_2', businessName: 'WashMaster Pro', contactName: 'Suresh Kumar', contactEmail: 'suresh@washmaster.in', contactPhone: '+91 88776 65432', source: 'WHATSAPP_INQUIRY' as LeadSource, stage: 'DEMO_SHARED' as LeadStage, estimatedValue: 119988, salesRep: 'Rahul Verma', followUpDate: '2025-01-18', type: 'CAR_WASH' as BusinessType },
+  { id: 'lead_2', businessName: 'WashMaster Pro', contactName: 'Suresh Kumar', contactEmail: 'suresh@washmaster.in', contactPhone: '+91 88776 65432', source: 'WHATSAPP_INQUIRY' as LeadSource, stage: 'DEMO_DONE' as LeadStage, estimatedValue: 119988, salesRep: 'Rahul Verma', followUpDate: '2025-01-18', type: 'CAR_WASH' as BusinessType },
   { id: 'lead_3', businessName: 'GreenLeaf Organic', contactName: 'Meera Nair', contactEmail: 'meera@greenleaf.in', contactPhone: '+91 77665 54321', source: 'DIRECT_REFERRAL' as LeadSource, stage: 'NEGOTIATION' as LeadStage, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-22', type: 'GROCERY' as BusinessType },
   { id: 'lead_4', businessName: 'MedPlus Health', contactName: 'Dr. Rajesh', contactEmail: 'rajesh@medplus.in', contactPhone: '+91 66554 43210', source: 'GOOGLE_ADS' as LeadSource, stage: 'PAYMENT_PENDING' as LeadStage, estimatedValue: 119988, salesRep: 'Rahul Verma', followUpDate: '2025-01-19', type: 'PHARMACY' as BusinessType },
   { id: 'lead_5', businessName: 'StyleHut Fashion', contactName: 'Neha Gupta', contactEmail: 'neha@stylehut.in', contactPhone: '+91 55443 32109', source: 'PHONE_CALL' as LeadSource, stage: 'PAYMENT_RECEIVED' as LeadStage, estimatedValue: 59988, salesRep: 'Priya Sharma', followUpDate: '2025-01-21', type: 'ECOMMERCE' as BusinessType },
-  { id: 'lead_6', businessName: 'CleanPro Services', contactName: 'Vikram Singh', contactEmail: 'vikram@cleanpro.in', contactPhone: '+91 44332 21098', source: 'COLD_OUTREACH' as LeadSource, stage: 'ACTIVE' as LeadStage, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '', type: 'LAUNDRY' as BusinessType },
+  { id: 'lead_6', businessName: 'CleanPro Services', contactName: 'Vikram Singh', contactEmail: 'vikram@cleanpro.in', contactPhone: '+91 44332 21098', source: 'COLD_OUTREACH' as LeadSource, stage: 'CLOSED_WON' as LeadStage, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '', type: 'LAUNDRY' as BusinessType },
   { id: 'lead_7', businessName: 'HomeCare Plus', contactName: 'Anita Desai', contactEmail: 'anita@homecare.in', contactPhone: '+91 33221 10987', source: 'WEBSITE_INQUIRY' as LeadSource, stage: 'LOST' as LeadStage, estimatedValue: 249988, salesRep: 'Priya Sharma', followUpDate: '', type: 'HOME_SERVICES' as BusinessType },
-  { id: 'lead_8', businessName: 'BeautyBox Store', contactName: 'Kavita Reddy', contactEmail: 'kavita@beautybox.in', contactPhone: '+91 22110 09876', source: 'META_ADS' as LeadSource, stage: 'DEMO_SHARED' as LeadStage, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '2025-01-25', type: 'COSMETICS' as BusinessType },
+  { id: 'lead_8', businessName: 'BeautyBox Store', contactName: 'Kavita Reddy', contactEmail: 'kavita@beautybox.in', contactPhone: '+91 22110 09876', source: 'META_ADS' as LeadSource, stage: 'HOT_LEAD' as LeadStage, estimatedValue: 59988, salesRep: 'Rahul Verma', followUpDate: '2025-01-25', type: 'COSMETICS' as BusinessType },
 ];
 
 // Client Subscriptions

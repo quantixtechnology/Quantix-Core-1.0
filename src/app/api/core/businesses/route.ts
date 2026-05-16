@@ -4,8 +4,7 @@
 // POST /api/core/businesses          — Create business (Quantix Super Admin only)
 //
 // BUSINESS MODEL:
-//   NO public business creation. Only Quantix team creates businesses.
-//   Business can only be created from a lead that has reached PAYMENT_RECEIVED stage.
+//   NO public business creation. Only Quantix team creates businesses manually.
 // ============================================================================
 
 import {
@@ -103,19 +102,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // If leadId is provided, validate it's at the correct stage
+      // If leadId is provided, verify the lead exists (no stage gate — creation is manual)
       if (body.leadId) {
         const { db } = await import('@/lib/db');
         const lead = await db.lead.findUnique({ where: { id: body.leadId } });
         if (!lead) {
           return createErrorResponse('Lead not found', 404);
-        }
-        const validStages = ['PAYMENT_RECEIVED', 'ONBOARDING', 'DEPLOYMENT'];
-        if (!validStages.includes(lead.stage)) {
-          return createErrorResponse(
-            `Lead must be at PAYMENT_RECEIVED stage or later to create a business. Current stage: ${lead.stage}`,
-            400
-          );
         }
       }
 

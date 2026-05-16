@@ -131,18 +131,23 @@ export type LeadSource =
   | 'PHONE_CALL'
   | 'OTHER';
 
-/** Lead lifecycle stages — new managed sales pipeline */
+/** Lead lifecycle stages — sales pipeline only */
 export type LeadStage =
   | 'LEAD'
-  | 'DEMO_SHARED'
+  | 'FOLLOW_UP'
+  | 'INTERESTED'
+  | 'HOT_LEAD'
+  | 'NOT_INTERESTED'
+  | 'WRONG_NUMBER'
+  | 'RNR'
+  | 'DEMO_PLANNED'
+  | 'DEMO_DONE'
   | 'NEGOTIATION'
   | 'PAYMENT_PENDING'
   | 'PAYMENT_RECEIVED'
-  | 'ONBOARDING'
-  | 'DEPLOYMENT'
-  | 'ACTIVE'
+  | 'CLOSED_WON'
   | 'LOST'
-  | 'CHURNED';
+  | 'DUPLICATE';
 
 /** Demo tenant status for prospect demos */
 export type DemoTenantStatus = 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE' | 'DISABLED';

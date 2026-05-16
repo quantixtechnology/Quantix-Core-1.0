@@ -11,8 +11,8 @@
 // - ONLY 2 plans: ₹4,999/mo (MONTHLY) and ₹49,999/yr (YEARLY)
 // - Super Admin can override pricing per customer
 // - Demo credentials given first; tenant created ONLY after payment verified
-// - New Lead lifecycle: LEAD → DEMO_SHARED → NEGOTIATION → PAYMENT_PENDING
-//   → PAYMENT_RECEIVED → ONBOARDING → DEPLOYMENT → ACTIVE
+// - Lead sales pipeline: LEAD → FOLLOW_UP → INTERESTED → HOT_LEAD → DEMO_PLANNED
+//   → DEMO_DONE → NEGOTIATION → PAYMENT_PENDING → PAYMENT_RECEIVED → CLOSED_WON
 // ============================================================================
 
 // ============================================================================
@@ -203,18 +203,23 @@ export type LeadSource =
   | 'PHONE_CALL'
   | 'OTHER';
 
-/** Lead lifecycle stages — new managed sales pipeline */
+/** Lead lifecycle stages — sales pipeline only */
 export type LeadStage =
   | 'LEAD'
-  | 'DEMO_SHARED'
+  | 'FOLLOW_UP'
+  | 'INTERESTED'
+  | 'HOT_LEAD'
+  | 'NOT_INTERESTED'
+  | 'WRONG_NUMBER'
+  | 'RNR'
+  | 'DEMO_PLANNED'
+  | 'DEMO_DONE'
   | 'NEGOTIATION'
   | 'PAYMENT_PENDING'
   | 'PAYMENT_RECEIVED'
-  | 'ONBOARDING'
-  | 'DEPLOYMENT'
-  | 'ACTIVE'
+  | 'CLOSED_WON'
   | 'LOST'
-  | 'CHURNED';
+  | 'DUPLICATE';
 
 /** Demo tenant status for prospect demos */
 export type DemoTenantStatus = 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE' | 'DISABLED';

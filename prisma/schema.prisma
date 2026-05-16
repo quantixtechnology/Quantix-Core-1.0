@@ -65,8 +65,9 @@ model PlatformConfig {
 // SECTION 2: LEAD LIFECYCLE — The ONLY way businesses enter the platform
 // No self-signup. Every business starts as a Lead managed by Quantix Sales.
 //
-// FLOW: LEAD → DEMO_SHARED → NEGOTIATION → PAYMENT_PENDING → PAYMENT_RECEIVED
-//       → ONBOARDING → DEPLOYMENT → ACTIVE
+// FLOW: LEAD → FOLLOW_UP → INTERESTED → HOT_LEAD → DEMO_PLANNED → DEMO_DONE
+//       → NEGOTIATION → PAYMENT_PENDING → PAYMENT_RECEIVED → CLOSED_WON
+// Terminal: NOT_INTERESTED | WRONG_NUMBER | RNR | LOST | DUPLICATE
 // ============================================================================
 
 enum LeadSource {
@@ -82,15 +83,20 @@ enum LeadSource {
 
 enum LeadStage {
   LEAD
-  DEMO_SHARED
+  FOLLOW_UP
+  INTERESTED
+  HOT_LEAD
+  NOT_INTERESTED
+  WRONG_NUMBER
+  RNR
+  DEMO_PLANNED
+  DEMO_DONE
   NEGOTIATION
   PAYMENT_PENDING
   PAYMENT_RECEIVED
-  ONBOARDING
-  DEPLOYMENT
-  ACTIVE
+  CLOSED_WON
   LOST
-  CHURNED
+  DUPLICATE
 }
 
 model Lead {

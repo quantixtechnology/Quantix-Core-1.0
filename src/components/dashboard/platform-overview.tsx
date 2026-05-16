@@ -16,7 +16,7 @@ export function PlatformOverview() {
   const totalMRR = clientSubscriptions.filter(s => s.status === 'ACTIVE').reduce((sum, s) => sum + (s.customPrice || s.planPrice), 0);
   const activeBusinesses = businesses.filter(b => b.status === 'ACTIVE').length;
   const totalRevenue = businesses.reduce((sum, b) => sum + b.monthlyRevenue, 0);
-  const activeLeads = leads.filter(l => !['LOST', 'CHURNED', 'ACTIVE'].includes(l.stage)).length;
+  const activeLeads = leads.filter(l => !['NOT_INTERESTED', 'WRONG_NUMBER', 'RNR', 'LOST', 'DUPLICATE', 'CLOSED_WON'].includes(l.stage)).length;
 
   const kpis = [
     { title: 'Active Businesses', value: `${activeBusinesses}/11`, change: '+2', icon: Building2, color: 'bg-emerald-50 text-emerald-600' },
@@ -156,7 +156,7 @@ export function PlatformOverview() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-2">
-              {leads.filter(l => !['LOST', 'CHURNED', 'ACTIVE'].includes(l.stage)).slice(0, 5).map(lead => (
+              {leads.filter(l => !['NOT_INTERESTED', 'WRONG_NUMBER', 'RNR', 'LOST', 'DUPLICATE', 'CLOSED_WON'].includes(l.stage)).slice(0, 5).map(lead => (
                 <div key={lead.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors duration-150">
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-slate-900 truncate">{lead.businessName}</p>
@@ -164,11 +164,12 @@ export function PlatformOverview() {
                   </div>
                   <Badge className={`text-[9px] h-5 ${
                     lead.stage === 'LEAD' ? 'bg-slate-100 text-slate-700' :
-                    lead.stage === 'DEMO_SHARED' ? 'bg-blue-100 text-blue-700' :
-                    lead.stage === 'NEGOTIATION' ? 'bg-orange-100 text-orange-700' :
+                    lead.stage === 'FOLLOW_UP' ? 'bg-blue-100 text-blue-700' :
+                    lead.stage === 'HOT_LEAD' ? 'bg-orange-100 text-orange-700' :
+                    lead.stage === 'NEGOTIATION' ? 'bg-orange-100 text-orange-800' :
                     lead.stage === 'PAYMENT_PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                    lead.stage === 'PAYMENT_RECEIVED' ? 'bg-cyan-100 text-cyan-700' :
-                    'bg-purple-100 text-purple-700'
+                    lead.stage === 'PAYMENT_RECEIVED' ? 'bg-teal-100 text-teal-700' :
+                    'bg-violet-100 text-violet-700'
                   }`} variant="secondary">{lead.stage.replace(/_/g, ' ')}</Badge>
                   <span className="text-xs font-medium text-slate-700">₹{(lead.estimatedValue / 12).toLocaleString()}/mo</span>
                 </div>

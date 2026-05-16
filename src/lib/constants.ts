@@ -246,16 +246,21 @@ export const LEAD_SOURCES: Record<LeadSource, { label: string; icon: string; des
 // ============================================================================
 
 export const LEAD_STAGES: Record<LeadStage, { label: string; color: string; bgColor: string; description: string }> = {
-  LEAD: { label: 'Lead', color: '#3B82F6', bgColor: '#DBEAFE', description: 'New lead received' },
-  DEMO_SHARED: { label: 'Demo Shared', color: '#8B5CF6', bgColor: '#EDE9FE', description: 'Demo credentials shared with prospect' },
-  NEGOTIATION: { label: 'Negotiation', color: '#F97316', bgColor: '#FFEDD5', description: 'Actively negotiating terms' },
-  PAYMENT_PENDING: { label: 'Payment Pending', color: '#F59E0B', bgColor: '#FEF3C7', description: 'Awaiting payment from prospect' },
-  PAYMENT_RECEIVED: { label: 'Payment Received', color: '#06B6D4', bgColor: '#CFFAFE', description: 'Payment verified — ready to onboard' },
-  ONBOARDING: { label: 'Onboarding', color: '#6366F1', bgColor: '#E0E7FF', description: 'Business being set up by Quantix' },
-  DEPLOYMENT: { label: 'Deployment', color: '#3B82F6', bgColor: '#DBEAFE', description: 'App being deployed and configured' },
-  ACTIVE: { label: 'Active', color: '#10B981', bgColor: '#D1FAE5', description: 'Client live and operational' },
-  LOST: { label: 'Lost', color: '#EF4444', bgColor: '#FEE2E2', description: 'Deal lost' },
-  CHURNED: { label: 'Churned', color: '#6B7280', bgColor: '#F3F4F6', description: 'Client left the platform' },
+  LEAD:             { label: 'Lead',             color: '#64748B', bgColor: '#F1F5F9', description: 'New lead received' },
+  FOLLOW_UP:        { label: 'Follow Up',        color: '#3B82F6', bgColor: '#DBEAFE', description: 'Scheduled for follow-up call' },
+  INTERESTED:       { label: 'Interested',       color: '#06B6D4', bgColor: '#CFFAFE', description: 'Lead has shown interest' },
+  HOT_LEAD:         { label: 'Hot Lead',         color: '#F97316', bgColor: '#FFEDD5', description: 'High intent — close to converting' },
+  NOT_INTERESTED:   { label: 'Not Interested',   color: '#EF4444', bgColor: '#FEE2E2', description: 'Lead not interested — closed' },
+  WRONG_NUMBER:     { label: 'Wrong Number',     color: '#F43F5E', bgColor: '#FFE4E6', description: 'Contact number is incorrect' },
+  RNR:              { label: 'RNR',              color: '#F59E0B', bgColor: '#FEF3C7', description: 'Ringing, no response' },
+  DEMO_PLANNED:     { label: 'Demo Planned',     color: '#8B5CF6', bgColor: '#EDE9FE', description: 'Demo session scheduled' },
+  DEMO_DONE:        { label: 'Demo Done',        color: '#6366F1', bgColor: '#E0E7FF', description: 'Demo completed with prospect' },
+  NEGOTIATION:      { label: 'Negotiation',      color: '#EA580C', bgColor: '#FFF7ED', description: 'Actively negotiating terms' },
+  PAYMENT_PENDING:  { label: 'Payment Pending',  color: '#D97706', bgColor: '#FEF3C7', description: 'Awaiting payment from prospect' },
+  PAYMENT_RECEIVED: { label: 'Payment Received', color: '#0891B2', bgColor: '#CFFAFE', description: 'Payment received and verified' },
+  CLOSED_WON:       { label: 'Closed Won',       color: '#10B981', bgColor: '#D1FAE5', description: 'Deal closed — business onboarding manually' },
+  LOST:             { label: 'Lost',             color: '#DC2626', bgColor: '#FEE2E2', description: 'Deal lost' },
+  DUPLICATE:        { label: 'Duplicate',        color: '#6B7280', bgColor: '#F3F4F6', description: 'Duplicate lead entry' },
 };
 
 // ============================================================================

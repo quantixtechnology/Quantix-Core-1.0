@@ -118,17 +118,11 @@ export async function createBusiness(data: CreateBusinessRequest) {
     throw new Error(`Business with slug "${data.slug}" already exists`);
   }
 
-  // 2. Validate lead if provided — lead must be at PAYMENT_RECEIVED or later
+  // 2. Validate lead if provided — business creation is fully manual, no stage gate
   if (data.leadId) {
     const lead = await db.lead.findUnique({ where: { id: data.leadId } });
     if (!lead) {
       throw new Error(`Lead "${data.leadId}" not found`);
-    }
-    const validStages: LeadStage[] = ['PAYMENT_RECEIVED', 'ONBOARDING', 'DEPLOYMENT'];
-    if (!validStages.includes(lead.stage as LeadStage)) {
-      throw new Error(
-        `Lead must be at PAYMENT_RECEIVED stage or later to create a business. Current stage: ${lead.stage}`
-      );
     }
   }
 
@@ -316,13 +310,14 @@ export async function createBusiness(data: CreateBusinessRequest) {
       },
     });
 
-    // Update lead if provided
+    // Update lead if provided — mark as CLOSED_WON and link the business
     if (data.leadId) {
       await tx.lead.update({
         where: { id: data.leadId },
         data: {
-          stage: 'ONBOARDING',
+          stage: 'CLOSED_WON',
           convertedBusinessId: business.id,
+          convertedAt: new Date(),
         },
       });
     }
@@ -842,16 +837,7 @@ export async function completeOnboarding(businessId: string): Promise<void> {
   // Update business status to ACTIVE
   await updateBusinessStatus(businessId, 'ACTIVE', 'Onboarding completed successfully');
 
-  // Update lead stage if linked
-  const lead = await db.lead.findFirst({
-    where: { convertedBusinessId: businessId },
-  });
-  if (lead) {
-    await db.lead.update({
-      where: { id: lead.id },
-      data: { stage: 'ACTIVE' },
-    });
-  }
+  // Lead was already marked CLOSED_WON when the business was created — no further update needed
 }
 
 // ============================================================================
@@ -879,12 +865,7 @@ export async function convertLeadToBusiness(params: {
     throw new Error(`Lead "${params.leadId}" not found`);
   }
 
-  const validStages: LeadStage[] = ['PAYMENT_RECEIVED', 'ONBOARDING'];
-  if (!validStages.includes(lead.stage as LeadStage)) {
-    throw new Error(
-      `Lead must be at PAYMENT_RECEIVED stage to convert. Current stage: ${lead.stage}`
-    );
-  }
+  // No stage gate — business creation is manual after CLOSED_WON
 
   // Generate slug from business name
   const slug = lead.businessName

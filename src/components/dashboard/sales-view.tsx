@@ -8,11 +8,11 @@ import type { LeadStage } from './data';
 
 const pipelineColumns: { stage: LeadStage; label: string }[] = [
   { stage: 'LEAD', label: 'Lead' },
-  { stage: 'DEMO_SHARED', label: 'Demo' },
+  { stage: 'FOLLOW_UP', label: 'Follow Up' },
+  { stage: 'HOT_LEAD', label: 'Hot Lead' },
+  { stage: 'DEMO_DONE', label: 'Demo Done' },
   { stage: 'NEGOTIATION', label: 'Negotiation' },
-  { stage: 'PAYMENT_PENDING', label: 'Payment' },
   { stage: 'PAYMENT_RECEIVED', label: 'Paid' },
-  { stage: 'ONBOARDING', label: 'Onboarding' },
 ];
 
 export function SalesView() {

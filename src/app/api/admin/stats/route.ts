@@ -49,7 +49,7 @@ export const GET = withMiddleware({
         where: { paymentStatus: 'COMPLETED' },
       }),
       db.lead.count(),
-      db.lead.count({ where: { stage: { notIn: ['LOST', 'CHURNED'] } } }),
+      db.lead.count({ where: { stage: { notIn: ['NOT_INTERESTED', 'WRONG_NUMBER', 'RNR', 'LOST', 'DUPLICATE'] } } }),
       db.lead.groupBy({ by: ['stage'], _count: { stage: true } }),
       db.order.count({
         where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },

@@ -35,9 +35,11 @@ import { LeadActivityTimeline } from "./lead-activity-timeline"
 import { LeadCommentsFeed } from "./lead-comments-feed"
 import { LeadContactCounters } from "./lead-contact-counters"
 
-const allStages: LeadStage[] = ["LEAD", "DEMO_SHARED", "NEGOTIATION", "PAYMENT_PENDING", "PAYMENT_RECEIVED", "ONBOARDING", "DEPLOYMENT", "ACTIVE"]
+const allStages: LeadStage[] = ["LEAD", "FOLLOW_UP", "INTERESTED", "HOT_LEAD", "DEMO_PLANNED", "DEMO_DONE", "NEGOTIATION", "PAYMENT_PENDING", "PAYMENT_RECEIVED", "CLOSED_WON"]
 const stageProgressMap: Record<LeadStage, number> = {
-  LEAD: 0, DEMO_SHARED: 1, NEGOTIATION: 2, PAYMENT_PENDING: 3, PAYMENT_RECEIVED: 4, ONBOARDING: 5, DEPLOYMENT: 6, ACTIVE: 7, LOST: -1, CHURNED: -1
+  LEAD: 0, FOLLOW_UP: 1, INTERESTED: 2, HOT_LEAD: 3, DEMO_PLANNED: 4, DEMO_DONE: 5,
+  NEGOTIATION: 6, PAYMENT_PENDING: 7, PAYMENT_RECEIVED: 8, CLOSED_WON: 9,
+  NOT_INTERESTED: -1, WRONG_NUMBER: -1, RNR: -1, LOST: -1, DUPLICATE: -1,
 }
 
 // Real API lead data type

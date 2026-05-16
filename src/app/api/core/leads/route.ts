@@ -21,13 +21,15 @@ import type { LeadSource, LeadStage, BusinessType } from '@/lib/types';
 
 const LEAD_STAGE_ORDER: LeadStage[] = [
   'LEAD',
-  'DEMO_SHARED',
+  'FOLLOW_UP',
+  'INTERESTED',
+  'HOT_LEAD',
+  'DEMO_PLANNED',
+  'DEMO_DONE',
   'NEGOTIATION',
   'PAYMENT_PENDING',
   'PAYMENT_RECEIVED',
-  'ONBOARDING',
-  'DEPLOYMENT',
-  'ACTIVE',
+  'CLOSED_WON',
 ];
 
 // ============================================================================
