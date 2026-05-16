@@ -198,10 +198,18 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
           style={{ ...sidebarVars, background: NAVY, borderColor: "rgba(255,255,255,0.08)" }}
         >
           {/* Brand header */}
-          <SheetHeader className="px-4 py-3 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <SheetHeader className="px-4 py-4 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
             <SheetTitle className="sr-only">Quantix Technology</SheetTitle>
             <SheetDescription className="sr-only">Navigation menu</SheetDescription>
-            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "70px" }} className="object-contain object-left" />
+            <div
+              className="rounded-xl px-4 py-2.5"
+              style={{
+                background: "rgba(255,255,255,0.97)",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
+              }}
+            >
+              <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "48px", display: "block" }} className="object-contain w-full" />
+            </div>
           </SheetHeader>
 
           <ScrollArea className="flex-1 px-1 py-3">
@@ -239,19 +247,16 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   return (
     <Sidebar collapsible="icon" className="border-r-0" style={sidebarVars}>
       {/* Brand header */}
-      <SidebarHeader className="p-3 pb-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              className="hover:bg-white/8 gap-3 h-auto py-2"
-              tooltip="Quantix Core Platform"
-            >
-              <img src="/logo.svg" alt="Q" className="size-9 rounded-xl shrink-0" />
-              <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "70px" }} className="object-contain object-left flex-1" />
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarHeader className="px-3 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div
+          className="rounded-xl px-4 py-2.5 transition-shadow hover:shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+          style={{
+            background: "rgba(255,255,255,0.97)",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
+          }}
+        >
+          <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "48px", display: "block" }} className="object-contain w-full" />
+        </div>
       </SidebarHeader>
 
       <SidebarContent className="py-3 gap-0">
