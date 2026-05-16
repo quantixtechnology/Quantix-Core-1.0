@@ -202,9 +202,15 @@ export function OrdersView() {
     }
   }, [businessId])
 
-  // ---- API hooks ----
+  // ---- API hooks — STORE_MANAGER sees only their store's orders ----
+  const orderFilter = (
+    userStoreId
+      ? { businessId, storeId: userStoreId, limit: 100 }
+      : { businessId, limit: 100 }
+  ) as Record<string, unknown>
+
   const { data: ordersData, isLoading: ordersLoading, error: ordersError, refetch: refetchOrders } = useOrders(
-    { businessId, limit: 100 } as Record<string, unknown>,
+    orderFilter,
     {
       refetchInterval: 30000,
       enabled: !!businessId,
