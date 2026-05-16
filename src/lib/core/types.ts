@@ -33,8 +33,8 @@ export type BusinessType =
   | 'FURNITURE'
   | 'DIRECTORY';
 
-/** Business lifecycle status — NO TRIAL, managed by Quantix */
-export type BusinessStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
+/** Business lifecycle status — managed by Quantix */
+export type BusinessStatus = 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CHURNED';
 
 /** Platform roles for the MANAGED model */
 export type Role =
@@ -291,6 +291,8 @@ export interface CreateBusinessRequest {
   ownerEmail?: string;
   ownerPassword?: string;
   ownerName?: string;
+  renewalDate?: string;     // ISO date string; extracted to billingCycleDay + nextBillingDate
+  subscriptionNotes?: string;
 }
 
 export interface UpdateBusinessRequest extends Partial<CreateBusinessRequest> {

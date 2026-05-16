@@ -159,11 +159,26 @@ export async function createBusiness(data: CreateBusinessRequest) {
   const periodStart = now;
   const periodEnd = new Date(now.getTime() + (billingCycle === 'YEARLY' ? 365 : 30) * 24 * 60 * 60 * 1000);
 
+  // 4a. Parse renewal date if provided — determines billingCycleDay and overrides nextBillingDate
+  const renewalDateObj = data.renewalDate ? new Date(data.renewalDate) : null;
+  const billingCycleDay = renewalDateObj ? renewalDateObj.getDate() : null;
+  const nextBillingDate = renewalDateObj || periodEnd;
+
   // 5. Create business + subscription + modules + onboarding steps + main store in a transaction
   const result = await db.$transaction(async (tx) => {
+    // Generate human-readable IDs inside the transaction for sequential assignment
+    const [bizCount, storeCount] = await Promise.all([
+      tx.business.count(),
+      tx.store.count(),
+    ]);
+    const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const businessCode = `BUS-${yyyymm}-${String(bizCount + 1).padStart(4, '0')}`;
+    const storeCodeVal = `STR-${String(storeCount + 1).padStart(4, '0')}`;
+
     // Create business — status is ONBOARDING (will be set to ACTIVE after deployment)
     const business = await tx.business.create({
       data: {
+        businessCode,
         name: data.name,
         slug: data.slug,
         businessType: data.businessType as BusinessType,
@@ -211,11 +226,12 @@ export async function createBusiness(data: CreateBusinessRequest) {
           ? Math.round(((planPrice - (data.customPrice || 0)) / planPrice) * 100 * 100) / 100
           : null,
         manualPriceOverride: hasOverride,
-        overrideReason: data.overrideReason,
+        overrideReason: data.overrideReason || data.subscriptionNotes || null,
         billingCycle: billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
+        billingCycleDay: billingCycleDay,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
-        nextBillingDate: periodEnd,
+        nextBillingDate: nextBillingDate,
         nextPaymentAmount: effectivePrice,
         autoRenew: true,
         lastPaymentDate: now,
@@ -255,6 +271,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
         businessId: business.id,
         name: `${data.name} - Main Store`,
         slug: storeSlug,
+        storeCode: storeCodeVal,
         isMainStore: true,
         address: data.address,
         city: data.city,
@@ -357,7 +374,14 @@ export async function createBusiness(data: CreateBusinessRequest) {
       },
     });
 
-    return { business, ownerEmail, ownerPassword: rawPassword, ownerUserId: ownerUser.id };
+    return {
+      business,
+      mainStoreCode: mainStore.storeCode,
+      mainStoreId: mainStore.id,
+      ownerEmail,
+      ownerPassword: rawPassword,
+      ownerUserId: ownerUser.id,
+    };
   });
 
   // Return the created business with relations plus owner credentials
@@ -369,6 +393,8 @@ export async function createBusiness(data: CreateBusinessRequest) {
       password: result.ownerPassword,
       userId: result.ownerUserId,
     },
+    mainStoreCode: result.mainStoreCode,
+    mainStoreId: result.mainStoreId,
   };
 }
 
@@ -593,9 +619,11 @@ export async function listBusinesses(filters?: BusinessListFilters) {
  *   ONBOARDING → SUSPENDED (if payment issue during onboarding)
  */
 const VALID_STATUS_TRANSITIONS: Record<string, BusinessStatus[]> = {
-  ONBOARDING: ['ACTIVE', 'SUSPENDED', 'CHURNED'],
+  ONBOARDING: ['ACTIVE', 'TRIAL', 'SUSPENDED', 'CHURNED'],
+  TRIAL: ['ACTIVE', 'SUSPENDED', 'EXPIRED'],
   ACTIVE: ['SUSPENDED', 'CHURNED'],
   SUSPENDED: ['ACTIVE', 'CHURNED'],
+  EXPIRED: ['ACTIVE', 'CHURNED'],
   CHURNED: [], // Terminal state
 };
 

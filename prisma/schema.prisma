@@ -214,14 +214,17 @@ enum WorkflowType {
 }
 
 enum BusinessStatus {
-  ONBOARDING    // Being set up by Quantix team after payment
-  ACTIVE        // Fully operational
-  SUSPENDED     // Payment issue or policy violation
-  CHURNED       // Left the platform
+  ONBOARDING          // Being set up by Quantix team after payment
+  TRIAL               // On a trial period (future use)
+  ACTIVE              // Fully operational
+  SUSPENDED           // Payment issue or policy violation
+  EXPIRED             // Subscription expired (future automation)
+  CHURNED             // Left the platform
 }
 
 model Business {
   id                String         @id @default(cuid())
+  businessCode      String?        @unique  // BUS-YYYYMM-XXXX — human-readable audit ID
   name              String
   slug              String         @unique
   businessType      BusinessType
@@ -380,6 +383,7 @@ model Store {
   name            String
   slug            String
   code            String?      // Short code for POS
+  storeCode       String?      @unique  // STR-XXXX — human-readable store ID
   // Address
   address         String?
   city            String?
@@ -1080,6 +1084,7 @@ model BusinessSubscription {
   overrideApprovedBy  String?            // Super Admin who approved the override
   // Billing
   billingCycle        PlanBillingCycle
+  billingCycleDay     Int?               // Day of month for recurring renewal (1–31)
   currentPeriodStart  DateTime
   currentPeriodEnd    DateTime
   nextBillingDate     DateTime

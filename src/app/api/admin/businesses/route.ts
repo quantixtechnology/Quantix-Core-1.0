@@ -65,6 +65,11 @@ export const GET = withMiddleware({
             select: { moduleKey: true, moduleName: true, status: true },
           },
           salesRep: { select: { name: true } },
+          stores: {
+            where: { isMainStore: true },
+            select: { id: true, storeCode: true },
+            take: 1,
+          },
           _count: {
             select: { stores: true, orders: true, customers: true },
           },
@@ -90,16 +95,19 @@ export const GET = withMiddleware({
     // Serialize for the frontend
     const data = businesses.map((b) => ({
       id: b.id,
+      businessCode: b.businessCode,
       name: b.name,
       slug: b.slug,
       businessType: b.businessType,
       status: b.status,
       city: b.city,
       state: b.state,
+      pincode: b.pincode,
       address: b.address,
       contactEmail: b.contactEmail,
       contactPhone: b.contactPhone,
       gstNumber: b.gstNumber,
+      logo: b.logo,
       isOnline: b.isOnline,
       primaryColor: b.primaryColor,
       createdAt: b.createdAt,
@@ -116,6 +124,8 @@ export const GET = withMiddleware({
             manualPriceOverride: b.businessSubscription.manualPriceOverride,
             overrideReason: b.businessSubscription.overrideReason,
             billingCycle: b.businessSubscription.billingCycle,
+            billingCycleDay: b.businessSubscription.billingCycleDay,
+            currentPeriodStart: b.businessSubscription.currentPeriodStart,
             nextBillingDate: b.businessSubscription.nextBillingDate,
             plan: b.businessSubscription.plan
               ? {
@@ -137,6 +147,10 @@ export const GET = withMiddleware({
       modules: b.modules,
       // Sales rep
       salesRep: b.salesRep?.name || null,
+      // Main store
+      mainStore: b.stores[0]
+        ? { id: b.stores[0].id, storeCode: b.stores[0].storeCode }
+        : null,
       // Counts
       storeCount: b._count.stores,
       orderCount: b._count.orders,

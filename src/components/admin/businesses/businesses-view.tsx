@@ -45,20 +45,21 @@ interface PlanApiData {
 
 // ---- API data types ----
 interface BusinessApiData {
-  id: string; name: string; slug: string; businessType: string; status: string
-  city: string | null; state: string | null; address: string | null
+  id: string; businessCode: string | null; name: string; slug: string; businessType: string; status: string
+  city: string | null; state: string | null; pincode: string | null; address: string | null
   contactEmail: string | null; contactPhone: string | null; gstNumber: string | null
   isOnline: boolean; primaryColor: string; logo: string | null; createdAt: string; onboardedAt: string | null; activatedAt: string | null
   subscription: {
     id: string; status: string; planPrice: number; customPrice: number | null
     discountPercentage: number | null; manualPriceOverride: boolean; overrideReason: string | null
-    billingCycle: string; nextBillingDate: string
+    billingCycle: string; billingCycleDay: number | null; currentPeriodStart: string; nextBillingDate: string
     plan: { name: string; tier: string; billingCycle: string; price: number } | null
   } | null
   domain: { domain: string; status: string } | null
   deployments: Array<{ id: string; type: string; status: string; version: string | null; healthStatus: string }>
   modules: Array<{ moduleKey: string; moduleName: string; status: string }>
   salesRep: string | null
+  mainStore: { id: string; storeCode: string | null } | null
   storeCount: number; orderCount: number; customerCount: number; totalRevenue: number
 }
 
@@ -66,8 +67,10 @@ interface BusinessApiData {
 const allStatuses = [
   { value: "ALL", label: "All Statuses" },
   { value: "ONBOARDING", label: "Onboarding" },
+  { value: "TRIAL", label: "Trial" },
   { value: "ACTIVE", label: "Active" },
   { value: "SUSPENDED", label: "Suspended" },
+  { value: "EXPIRED", label: "Expired" },
   { value: "CHURNED", label: "Churned" },
 ]
 
@@ -104,7 +107,6 @@ export function BusinessesView() {
   const [selectedBusiness, setSelectedBusiness] = useState<BusinessApiData | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const [customPricing, setCustomPricing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [plans, setPlans] = useState<PlanApiData[]>([])
   const [activatingBusiness, setActivatingBusiness] = useState(false)
@@ -118,7 +120,10 @@ export function BusinessesView() {
   const [editPrimaryColor, setEditPrimaryColor] = useState("")
   const [savingBranding, setSavingBranding] = useState(false)
   const [createdResult, setCreatedResult] = useState<{
-    businessId: string; ownerEmail: string; ownerPassword: string
+    businessCode: string | null; businessId: string
+    mainStoreCode: string | null; registrationDate: string
+    subscriptionStart: string; renewalDate: string
+    ownerEmail: string; ownerPassword: string
   } | null>(null)
 
   const copyBusinessId = (slug: string, e: React.MouseEvent) => {
@@ -134,12 +139,15 @@ export function BusinessesView() {
   const [formType, setFormType] = useState<string>("")
   const [formPlan, setFormPlan] = useState<string>("")
   const [formCity, setFormCity] = useState("")
+  const [formState, setFormState] = useState("")
+  const [formPincode, setFormPincode] = useState("")
   const [formPhone, setFormPhone] = useState("")
   const [formEmail, setFormEmail] = useState("")
   const [formAddress, setFormAddress] = useState("")
   const [formGST, setFormGST] = useState("")
-  const [formCustomAmount, setFormCustomAmount] = useState("")
-  const [formCustomReason, setFormCustomReason] = useState("")
+  const [formSubscriptionAmount, setFormSubscriptionAmount] = useState("")
+  const [formRenewalDate, setFormRenewalDate] = useState("")
+  const [formSubscriptionNotes, setFormSubscriptionNotes] = useState("")
   const [formOwnerName, setFormOwnerName] = useState("")
   const [formOwnerEmail, setFormOwnerEmail] = useState("")
   const [formOwnerPassword, setFormOwnerPassword] = useState("")
@@ -198,8 +206,9 @@ export function BusinessesView() {
 
   const resetForm = () => {
     setFormName(""); setFormSlug(""); setFormType(""); setFormPlan("")
-    setFormCity(""); setFormPhone(""); setFormEmail(""); setFormAddress("")
-    setFormGST(""); setCustomPricing(false); setFormCustomAmount(""); setFormCustomReason("")
+    setFormCity(""); setFormState(""); setFormPincode("")
+    setFormPhone(""); setFormEmail(""); setFormAddress("")
+    setFormGST(""); setFormSubscriptionAmount(""); setFormRenewalDate(""); setFormSubscriptionNotes("")
     setFormOwnerName(""); setFormOwnerEmail(""); setFormOwnerPassword("")
     setCreatedResult(null)
   }
@@ -241,10 +250,12 @@ export function BusinessesView() {
           name: formName, slug: formSlug, businessType: formType,
           planId: matchingPlan.id,
           billingCycle,
-          city: formCity, contactPhone: formPhone, contactEmail: formEmail,
+          city: formCity, state: formState, pincode: formPincode,
+          contactPhone: formPhone, contactEmail: formEmail,
           address: formAddress, gstNumber: formGST,
-          customPrice: customPricing && formCustomAmount ? Number(formCustomAmount) : undefined,
-          overrideReason: customPricing ? formCustomReason : undefined,
+          customPrice: formSubscriptionAmount ? Number(formSubscriptionAmount) : undefined,
+          renewalDate: formRenewalDate || undefined,
+          subscriptionNotes: formSubscriptionNotes || undefined,
           ownerName: formOwnerName || undefined,
           ownerEmail: formOwnerEmail || undefined,
           ownerPassword: formOwnerPassword || undefined,
@@ -253,10 +264,16 @@ export function BusinessesView() {
       const json = await res.json()
       if (json.success) {
         toast.success("Business created successfully")
+        const d = json.data
         setCreatedResult({
-          businessId: formSlug,
-          ownerEmail: json.data?.ownerCredentials?.email ?? formOwnerEmail,
-          ownerPassword: json.data?.ownerCredentials?.password ?? "—",
+          businessCode: d?.businessCode ?? null,
+          businessId: d?.slug ?? formSlug,
+          mainStoreCode: d?.mainStoreCode ?? null,
+          registrationDate: d?.createdAt ? new Date(d.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+          subscriptionStart: d?.businessSubscription?.currentPeriodStart ? new Date(d.businessSubscription.currentPeriodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+          renewalDate: d?.businessSubscription?.nextBillingDate ? new Date(d.businessSubscription.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—",
+          ownerEmail: d?.ownerCredentials?.email ?? formOwnerEmail,
+          ownerPassword: d?.ownerCredentials?.password ?? "—",
         })
         fetchBusinesses()
       } else {
@@ -407,9 +424,32 @@ export function BusinessesView() {
                 <div className="space-y-4 py-2">
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
                     <p className="text-sm font-semibold text-emerald-800">Business created successfully</p>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business ID</p>
-                      <p className="font-mono text-sm font-bold text-emerald-900">{createdResult.businessId}</p>
+                    {/* Business identifiers */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business Code</p>
+                        <p className="font-mono text-sm font-bold text-emerald-900">{createdResult.businessCode ?? createdResult.businessId}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Store Code</p>
+                        <p className="font-mono text-sm font-bold text-emerald-900">{createdResult.mainStoreCode ?? "—"}</p>
+                      </div>
+                    </div>
+                    <Separator className="border-emerald-200" />
+                    {/* Subscription dates */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Registered</p>
+                        <p className="text-xs font-medium text-emerald-900">{createdResult.registrationDate}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Sub. Start</p>
+                        <p className="text-xs font-medium text-emerald-900">{createdResult.subscriptionStart}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Renewal</p>
+                        <p className="text-xs font-medium text-emerald-900">{createdResult.renewalDate}</p>
+                      </div>
                     </div>
                     <Separator className="border-emerald-200" />
                     <div className="space-y-1">
@@ -463,6 +503,10 @@ export function BusinessesView() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2"><Label>City</Label><Input placeholder="e.g. Mumbai" value={formCity} onChange={(e) => setFormCity(e.target.value)} /></div>
+                      <div className="space-y-2"><Label>State</Label><Input placeholder="e.g. Maharashtra" value={formState} onChange={(e) => setFormState(e.target.value)} /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Pincode</Label><Input placeholder="e.g. 400001" value={formPincode} onChange={(e) => setFormPincode(e.target.value)} /></div>
                       <div className="space-y-2"><Label>Phone</Label><Input placeholder="+91 98765 43210" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} /></div>
                     </div>
                     <div className="space-y-2"><Label>Business Email</Label><Input placeholder="contact@business.in" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} /></div>
@@ -487,17 +531,20 @@ export function BusinessesView() {
 
                     <Separator />
 
-                    {/* Custom Pricing */}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5"><Label className="text-sm font-medium">Custom Pricing</Label><p className="text-xs text-muted-foreground">Override default plan pricing</p></div>
-                      <Switch checked={customPricing} onCheckedChange={setCustomPricing} />
+                    {/* Subscription & Renewal */}
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold">Subscription & Renewal</p>
+                      <p className="text-[11px] text-muted-foreground">Set agreed amount and renewal cycle. Amount overrides the plan price.</p>
                     </div>
-                    {customPricing && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2"><Label>Custom Amount (₹)</Label><Input placeholder="e.g. 3999" type="number" value={formCustomAmount} onChange={(e) => setFormCustomAmount(e.target.value)} /></div>
-                        <div className="space-y-2"><Label>Reason</Label><Input placeholder="e.g. Promotional discount" value={formCustomReason} onChange={(e) => setFormCustomReason(e.target.value)} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Subscription Amount (₹)</Label><Input placeholder="e.g. 3999" type="number" value={formSubscriptionAmount} onChange={(e) => setFormSubscriptionAmount(e.target.value)} /></div>
+                      <div className="space-y-2">
+                        <Label>Renewal Date</Label>
+                        <Input type="date" value={formRenewalDate} onChange={(e) => setFormRenewalDate(e.target.value)} />
+                        {formRenewalDate && <p className="text-[10px] text-muted-foreground">Billing day: {new Date(formRenewalDate).getDate()} of each month</p>}
                       </div>
-                    )}
+                    </div>
+                    <div className="space-y-2"><Label>Subscription Notes <span className="text-muted-foreground font-normal">(optional)</span></Label><Input placeholder="e.g. Negotiated rate, promotional offer" value={formSubscriptionNotes} onChange={(e) => setFormSubscriptionNotes(e.target.value)} /></div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm() }}>Cancel</Button>
@@ -691,7 +738,7 @@ export function BusinessesView() {
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Overview</h4>
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-lg border p-3 flex items-start gap-2"><MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" /><div><p className="text-[10px] text-muted-foreground">City</p><p className="text-sm font-medium">{biz.city || "—"}</p></div></div>
+                        <div className="rounded-lg border p-3 flex items-start gap-2"><MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" /><div><p className="text-[10px] text-muted-foreground">City</p><p className="text-sm font-medium">{biz.city || "—"}{biz.state ? `, ${biz.state}` : ""}</p>{biz.pincode && <p className="text-[10px] text-muted-foreground">PIN {biz.pincode}</p>}</div></div>
                         <div className="rounded-lg border p-3 flex items-start gap-2"><Phone className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" /><div><p className="text-[10px] text-muted-foreground">Phone</p><p className="text-sm font-medium">{biz.contactPhone || "—"}</p></div></div>
                         <div className="rounded-lg border p-3 flex items-start gap-2 col-span-2"><Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" /><div><p className="text-[10px] text-muted-foreground">Email</p><p className="text-sm font-medium">{biz.contactEmail || "—"}</p></div></div>
                       </div>
@@ -717,15 +764,21 @@ export function BusinessesView() {
                       ) : (<p className="text-sm text-muted-foreground">No modules enabled</p>)}
                     </div>
                     <Separator />
-                    {/* Store Count */}
+                    {/* Store Configuration */}
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Store Configuration</h4>
                       <div className="flex items-center gap-3 rounded-lg border p-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50"><Store className="h-4.5 w-4.5 text-amber-600" /></div>
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium">{biz.storeCount} {biz.storeCount === 1 ? "Store" : "Stores"}</p>
                           <p className="text-[10px] text-muted-foreground">{biz.city ? `Across ${biz.city}` : "Main store"}</p>
                         </div>
+                        {biz.mainStore?.storeCode && (
+                          <div className="text-right">
+                            <p className="text-[10px] text-muted-foreground">Primary Store</p>
+                            <p className="font-mono text-xs font-semibold">{biz.mainStore.storeCode}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <Separator />
@@ -750,11 +803,12 @@ export function BusinessesView() {
                             <StatusBadge status={sub.status} />
                           </div>
                           <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div><p className="text-[10px] text-muted-foreground">Billing</p><p className="font-medium">{sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly" ? "Monthly" : "Yearly"}</p></div>
+                            <div><p className="text-[10px] text-muted-foreground">Billing</p><p className="font-medium">{sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly" ? "Monthly" : "Yearly"}{sub.billingCycleDay ? ` · day ${sub.billingCycleDay}` : ""}</p></div>
                             <div><p className="text-[10px] text-muted-foreground">Price</p>
                               {sub.customPrice ? <CurrencyBadge amount={sub.customPrice} override original={sub.planPrice} /> : <p className="font-medium">₹{sub.planPrice.toLocaleString("en-IN")}</p>}
                             </div>
-                            <div><p className="text-[10px] text-muted-foreground">Next Billing</p><p className="font-medium">{new Date(sub.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+                            <div><p className="text-[10px] text-muted-foreground">Sub. Started</p><p className="font-medium">{new Date(sub.currentPeriodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+                            <div><p className="text-[10px] text-muted-foreground">Renewal Due</p><p className="font-medium">{new Date(sub.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
                             {sub.discountPercentage && <div><p className="text-[10px] text-muted-foreground">Discount</p><p className="font-medium text-orange-600">{sub.discountPercentage}% off</p></div>}
                           </div>
                         </div>
@@ -894,23 +948,32 @@ export function BusinessesView() {
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Details</h4>
                       <div className="space-y-2">
+                        {/* Human-readable ID */}
+                        {biz.businessCode && (
+                          <div className="rounded-lg border p-3 bg-muted/30">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Business Code</p>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-mono font-bold text-foreground">{biz.businessCode}</p>
+                              <button type="button" onClick={(e) => copyBusinessId(biz.businessCode!, e)} className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                                {copiedId === biz.businessCode ? <><Check className="h-3 w-3 text-emerald-600" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {/* Slug / tenant ID */}
                         <div className="rounded-lg border p-3 bg-muted/30">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Business ID (Tenant Identifier)</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Tenant Slug (API / URL)</p>
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm font-mono font-semibold text-foreground">{biz.slug}</p>
-                            <button
-                              type="button"
-                              onClick={(e) => copyBusinessId(biz.slug, e)}
-                              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                            >
+                            <button type="button" onClick={(e) => copyBusinessId(biz.slug, e)} className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
                               {copiedId === biz.slug ? <><Check className="h-3 w-3 text-emerald-600" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
                             </button>
                           </div>
                         </div>
-                        <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Address</p><p className="text-sm">{biz.address || `${biz.city || ""}, ${biz.state || ""} India`}</p></div>
+                        <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Address</p><p className="text-sm">{biz.address || [biz.city, biz.state, biz.pincode, "India"].filter(Boolean).join(", ")}</p></div>
                         <div className="grid grid-cols-2 gap-2">
                           <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">GST</p><p className="text-sm font-mono">{biz.gstNumber || "—"}</p></div>
-                          <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Created</p><p className="text-sm">{new Date(biz.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+                          <div className="rounded-lg border p-3"><p className="text-[10px] text-muted-foreground">Registration Date</p><p className="text-sm font-medium">{new Date(biz.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
                         </div>
                       </div>
                     </div>
