@@ -58,13 +58,12 @@ import { setBusinessContext } from "@/lib/api-client";
 import { showSuccess, showError } from "@/lib/toast-utils";
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { useAdminStore } from "@/stores/admin-store";
+import { useBusinessContext } from "@/hooks/use-business-context";
 import { getDemoProducts, getDemoCategories, getDemoCustomers, getDemoOrderPrefix, getDemoStoreInfo } from "@/lib/demo-data";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-const BUSINESS_ID = "biz_1"
 
 interface CartItem {
   productId: string;
@@ -108,6 +107,7 @@ function generateBillNumber(prefix: string): string {
 export function POSView() {
   // Get demo business context
   const { currentBusinessType, currentStoreId } = useAdminStore()
+  const { businessId } = useBusinessContext()
 
   // Demo data — context-aware fallbacks
   const demoProductsFallback = useMemo(() => {
@@ -163,12 +163,12 @@ export function POSView() {
 
   // Set business context on mount
   useEffect(() => {
-    setBusinessContext(BUSINESS_ID)
-  }, [])
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
 
   // ---- API hooks ----
-  const { data: productsData } = useProducts(BUSINESS_ID)
-  const { data: categoriesData } = useCategories(BUSINESS_ID)
+  const { data: productsData } = useProducts(businessId || "")
+  const { data: categoriesData } = useCategories(businessId || "")
   const createOrderMutation = useCreateOrder()
 
   // Map API products data (fall back to demo data if API hasn't loaded)

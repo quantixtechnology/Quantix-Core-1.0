@@ -29,6 +29,8 @@ import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatCard } from "@/components/admin/shared/stat-card"
 import { useAdminStore } from "@/stores/admin-store"
+import { useBusinessContext } from "@/hooks/use-business-context"
+import { useAuthStore } from "@/stores/auth-store"
 import {
   getDemoDailySales,
   getDemoHourlySales,
@@ -38,8 +40,6 @@ import {
   getDemoOrderTypeData,
   getDemoOrderStatusData,
 } from "@/lib/demo-data"
-
-const BUSINESS_ID = "biz_1"
 
 const PAYMENT_COLORS = ["#10B981", "#F59E0B", "#6366F1", "#EF4444", "#8B5CF6"]
 
@@ -77,16 +77,23 @@ function buildPaymentChartConfig(payments: { method: string }[]): ChartConfig {
 export function ReportsView() {
   const [dateRange, setDateRange] = useState("7d")
   const { currentBusinessType } = useAdminStore()
+  const { businessId } = useBusinessContext()
+  const { user } = useAuthStore()
+  const userStoreId = user?.storeId || undefined
 
   // Set business context on mount
   useEffect(() => {
-    setBusinessContext(BUSINESS_ID)
-  }, [])
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
 
   // ---- API hooks ----
-  const { data: statsData, isLoading: statsLoading } = useBusinessStats(BUSINESS_ID)
+  const { data: statsData, isLoading: statsLoading } = useBusinessStats(businessId || "")
   const { data: ordersData, isLoading: ordersLoading } = useOrders(
-    { businessId: BUSINESS_ID, limit: 100 } as Record<string, unknown>
+    (userStoreId
+      ? { businessId: businessId || "", storeId: userStoreId, limit: 100 }
+      : { businessId: businessId || "", limit: 100 }
+    ) as Record<string, unknown>,
+    { enabled: !!businessId }
   )
 
   // Extract stats

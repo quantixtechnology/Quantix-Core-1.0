@@ -25,8 +25,7 @@ import { setBusinessContext } from "@/lib/api-client"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { useAdminStore } from "@/stores/admin-store"
-
-const BUSINESS_ID = "biz_1"
+import { useBusinessContext } from "@/hooks/use-business-context"
 
 // ─── Fallback Store Timing ────────────────────────────────────────────────
 
@@ -59,13 +58,15 @@ const stateGstins = [
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function StoreSettingsView() {
+  const { businessId } = useBusinessContext()
+
   // Set business context on mount
   useEffect(() => {
-    setBusinessContext(BUSINESS_ID)
-  }, [])
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
 
   // ---- API hooks ----
-  const { data: storesData } = useStores(BUSINESS_ID)
+  const { data: storesData } = useStores(businessId || "")
 
   // Extract store data
   const storeData = useMemo(() => {
