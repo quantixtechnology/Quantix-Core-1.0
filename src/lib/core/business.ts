@@ -157,7 +157,8 @@ export async function createBusiness(data: CreateBusinessRequest) {
   const hasOverride = data.customPrice !== undefined && data.customPrice !== planPrice;
   const now = new Date();
   const periodStart = now;
-  const periodEnd = new Date(now.getTime() + (billingCycle === 'YEARLY' ? 365 : 30) * 24 * 60 * 60 * 1000);
+  const cycleDays = billingCycle === 'YEARLY' ? 365 : billingCycle === 'HALF_YEARLY' ? 182 : billingCycle === 'QUARTERLY' ? 90 : 30;
+  const periodEnd = new Date(now.getTime() + cycleDays * 24 * 60 * 60 * 1000);
 
   // 4a. Parse renewal date if provided — determines billingCycleDay and overrides nextBillingDate
   const renewalDateObj = data.renewalDate ? new Date(data.renewalDate) : null;
@@ -227,7 +228,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
           : null,
         manualPriceOverride: hasOverride,
         overrideReason: data.overrideReason || data.subscriptionNotes || null,
-        billingCycle: billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
+        billingCycle: billingCycle as 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY',
         billingCycleDay: billingCycleDay,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
@@ -865,7 +866,7 @@ export async function completeOnboarding(businessId: string): Promise<void> {
 export async function convertLeadToBusiness(params: {
   leadId: string;
   planId?: string;
-  billingCycle?: 'MONTHLY' | 'YEARLY';
+  billingCycle?: 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
   customPrice?: number;
   overrideReason?: string;
   domain?: string;

@@ -116,8 +116,8 @@ export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
 /** POS session status */
 export type POSSessionStatus = 'OPEN' | 'CLOSED' | 'SUSPENDED';
 
-/** Platform plan billing cycle — ONLY MONTHLY and YEARLY */
-export type PlanBillingCycle = 'MONTHLY' | 'YEARLY';
+/** Platform plan billing cycle */
+export type PlanBillingCycle = 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
 
 /** Business (platform) subscription status — NO TRIAL, managed by Quantix */
 export type SubscriptionStatus =

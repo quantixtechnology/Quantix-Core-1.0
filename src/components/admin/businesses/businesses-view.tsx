@@ -228,13 +228,14 @@ export function BusinessesView() {
       return
     }
 
-    // Parse formPlan (e.g. "STANDARD_MONTHLY") into tier + billingCycle
-    const [tierPart, cyclePart] = formPlan.split("_") as [string, string]
-    const billingCycle = cyclePart === "YEARLY" ? "YEARLY" as const : "MONTHLY" as const
+    // Parse formPlan (e.g. "STANDARD_HALF_YEARLY") into tier + billingCycle at first underscore
+    const firstUnderscore = formPlan.indexOf("_")
+    const tierPart = formPlan.slice(0, firstUnderscore)
+    const cyclePart = formPlan.slice(firstUnderscore + 1) as 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY'
 
     // Look up planId from fetched plans
     const matchingPlan = plans.find(
-      (p) => p.tier === tierPart && p.billingCycle === billingCycle
+      (p) => p.tier === tierPart && p.billingCycle === cyclePart
     )
     if (!matchingPlan) {
       toast.error("Selected plan not found. Please refresh and try again.")
@@ -249,7 +250,7 @@ export function BusinessesView() {
         body: JSON.stringify({
           name: formName, slug: formSlug, businessType: formType,
           planId: matchingPlan.id,
-          billingCycle,
+          billingCycle: cyclePart,
           city: formCity, state: formState, pincode: formPincode,
           contactPhone: formPhone, contactEmail: formEmail,
           address: formAddress, gstNumber: formGST,
@@ -487,13 +488,17 @@ export function BusinessesView() {
                           <SelectContent>
                             {plans.length > 0 ? plans.map((plan) => (
                               <SelectItem key={plan.id} value={`${plan.tier}_${plan.billingCycle}`}>
-                                {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}
+                                {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : plan.billingCycle === "QUARTERLY" ? "qtr" : plan.billingCycle === "HALF_YEARLY" ? "6mo" : "yr"}
                               </SelectItem>
                             )) : (
                               <>
                                 <SelectItem value="STANDARD_MONTHLY">Standard Monthly</SelectItem>
-                                <SelectItem value="PRO_MONTHLY">Pro Monthly</SelectItem>
+                                <SelectItem value="STANDARD_QUARTERLY">Standard Quarterly</SelectItem>
+                                <SelectItem value="STANDARD_HALF_YEARLY">Standard Half-Yearly</SelectItem>
                                 <SelectItem value="STANDARD_YEARLY">Standard Yearly</SelectItem>
+                                <SelectItem value="PRO_MONTHLY">Pro Monthly</SelectItem>
+                                <SelectItem value="PRO_QUARTERLY">Pro Quarterly</SelectItem>
+                                <SelectItem value="PRO_HALF_YEARLY">Pro Half-Yearly</SelectItem>
                                 <SelectItem value="PRO_YEARLY">Pro Yearly</SelectItem>
                               </>
                             )}
@@ -803,7 +808,7 @@ export function BusinessesView() {
                             <StatusBadge status={sub.status} />
                           </div>
                           <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div><p className="text-[10px] text-muted-foreground">Billing</p><p className="font-medium">{sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly" ? "Monthly" : "Yearly"}{sub.billingCycleDay ? ` · day ${sub.billingCycleDay}` : ""}</p></div>
+                            <div><p className="text-[10px] text-muted-foreground">Billing</p><p className="font-medium">{sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly" ? "Monthly" : sub.billingCycle === "QUARTERLY" ? "Quarterly" : sub.billingCycle === "HALF_YEARLY" ? "Half-Yearly" : "Yearly"}{sub.billingCycleDay ? ` · day ${sub.billingCycleDay}` : ""}</p></div>
                             <div><p className="text-[10px] text-muted-foreground">Price</p>
                               {sub.customPrice ? <CurrencyBadge amount={sub.customPrice} override original={sub.planPrice} /> : <p className="font-medium">₹{sub.planPrice.toLocaleString("en-IN")}</p>}
                             </div>
