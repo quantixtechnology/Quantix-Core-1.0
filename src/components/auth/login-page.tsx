@@ -80,12 +80,9 @@ export function LoginPage() {
       <div className="relative z-10 w-full max-w-[420px]">
         {/* Logo & Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-[72px] h-[72px] rounded-2xl overflow-hidden shadow-2xl shadow-[#155BDB]/30 mb-5 ring-1 ring-white/10">
-            <img src="/logo.svg" alt="Quantix" className="w-full h-full" />
+          <div className="flex justify-center mb-5">
+            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "70px" }} className="object-contain drop-shadow-2xl" />
           </div>
-          <h1 className="text-xl font-bold text-white tracking-tight">
-            QUANTIX CORE PLATFORM
-          </h1>
           <p className="text-xs text-[#25B8F5]/70 mt-1 font-medium tracking-widest uppercase">
             Enterprise Business Management
           </p>

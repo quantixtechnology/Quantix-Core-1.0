@@ -198,21 +198,10 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
           style={{ ...sidebarVars, background: NAVY, borderColor: "rgba(255,255,255,0.08)" }}
         >
           {/* Brand header */}
-          <SheetHeader className="p-4 pb-3 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-            <div className="flex items-center gap-3">
-              <img src="/logo.svg" alt="Quantix" className="size-10 rounded-xl shrink-0" />
-              <div className="flex flex-col">
-                <SheetTitle className="text-left text-sm font-extrabold tracking-widest text-white uppercase leading-none">
-                  QUANTIX
-                </SheetTitle>
-                <span className="text-[10px] font-bold tracking-widest uppercase leading-none mt-0.5" style={{ color: "#22C7F0" }}>
-                  TECHNOLOGY
-                </span>
-                <SheetDescription className="text-left text-[8px] tracking-widest uppercase mt-1 leading-none" style={{ color: "rgba(255,255,255,0.28)" }}>
-                  RUN YOUR BUSINESS SMARTER
-                </SheetDescription>
-              </div>
-            </div>
+          <SheetHeader className="px-4 py-3 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <SheetTitle className="sr-only">Quantix Technology</SheetTitle>
+            <SheetDescription className="sr-only">Navigation menu</SheetDescription>
+            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "70px" }} className="object-contain object-left" />
           </SheetHeader>
 
           <ScrollArea className="flex-1 px-1 py-3">
@@ -259,17 +248,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
               tooltip="Quantix Core Platform"
             >
               <img src="/logo.svg" alt="Q" className="size-9 rounded-xl shrink-0" />
-              <div className="grid flex-1 text-left">
-                <span className="text-sm font-extrabold tracking-widest text-white uppercase leading-none">
-                  QUANTIX
-                </span>
-                <span className="text-[10px] font-bold tracking-widest uppercase leading-none mt-1" style={{ color: "#22C7F0" }}>
-                  TECHNOLOGY
-                </span>
-                <span className="text-[8px] tracking-widest uppercase leading-none mt-1" style={{ color: "rgba(255,255,255,0.28)" }}>
-                  RUN YOUR BUSINESS SMARTER
-                </span>
-              </div>
+              <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "70px" }} className="object-contain object-left flex-1" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
