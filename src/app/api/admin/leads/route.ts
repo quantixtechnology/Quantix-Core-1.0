@@ -38,7 +38,9 @@ export const GET = withMiddleware({
       where.businessType = { in: businessTypeParam.split(',') };
     }
 
-    if (salesRepId) {
+    if (salesRepId === 'null') {
+      where.salesRepId = null;   // unassigned leads only
+    } else if (salesRepId) {
       where.salesRepId = salesRepId;
     }
 

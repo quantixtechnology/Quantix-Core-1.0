@@ -99,6 +99,7 @@ export function LeadsView() {
   const [stageFilter, setStageFilter] = useState<string>("all")
   const [sourceFilter, setSourceFilter] = useState<string>("all")
   const [typeFilter, setTypeFilter] = useState<string>("all")
+  const [repFilter, setRepFilter] = useState<string>("all")
   const [selectedLead, setSelectedLead] = useState<LeadApiData | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -133,6 +134,8 @@ export function LeadsView() {
       if (stageFilter  !== "all") params.set("stage",        stageFilter)
       if (sourceFilter !== "all") params.set("source",       sourceFilter)
       if (typeFilter   !== "all") params.set("businessType", typeFilter)
+      if (repFilter === "unassigned") params.set("salesRepId", "null")
+      else if (repFilter !== "all") params.set("salesRepId", repFilter)
       if (searchQuery)            params.set("search",       searchQuery)
 
       const res = await fetch(`/api/admin/leads?${params}`, { headers: getAuthHeaders() })
@@ -148,7 +151,7 @@ export function LeadsView() {
     } finally {
       setLoading(false)
     }
-  }, [stageFilter, sourceFilter, typeFilter, searchQuery])
+  }, [stageFilter, sourceFilter, typeFilter, repFilter, searchQuery])
 
   const fetchSalesTeam = useCallback(async () => {
     try {
@@ -167,7 +170,7 @@ export function LeadsView() {
     setPage(1)
     fetchLeads(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageFilter, sourceFilter, typeFilter, searchQuery])
+  }, [stageFilter, sourceFilter, typeFilter, repFilter, searchQuery])
 
   // Re-fetch when page changes
   useEffect(() => {
@@ -506,13 +509,13 @@ export function LeadsView() {
       </Card>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search leads..." className="pl-8 h-9" value={searchQuery} readOnly />
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Input placeholder="Search leads..." className="pl-8 h-8 text-xs" value={searchQuery} readOnly />
         </div>
         <Select value={stageFilter} onValueChange={setStageFilter}>
-          <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="Stage" /></SelectTrigger>
+          <SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue placeholder="All Stages" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Stages</SelectItem>
             {allStages.map(s => <SelectItem key={s} value={s}>{stageLabels[s]}</SelectItem>)}
@@ -520,7 +523,7 @@ export function LeadsView() {
           </SelectContent>
         </Select>
         <Select value={sourceFilter} onValueChange={setSourceFilter}>
-          <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="Source" /></SelectTrigger>
+          <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="All Sources" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Sources</SelectItem>
             {Object.entries(sourceLabels).map(([key, label]) => (
@@ -529,14 +532,26 @@ export function LeadsView() {
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="Business Type" /></SelectTrigger>
+          <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="All Types" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             {Object.entries(businessTypeConfig).map(([key, val]) => (<SelectItem key={key} value={key}>{val.label}</SelectItem>))}
           </SelectContent>
         </Select>
-        {(stageFilter !== "all" || sourceFilter !== "all" || typeFilter !== "all") && (
-          <Button variant="ghost" size="sm" onClick={() => { setStageFilter("all"); setSourceFilter("all"); setTypeFilter("all") }}><X className="h-3 w-3 mr-1" /> Clear</Button>
+        <Select value={repFilter} onValueChange={setRepFilter}>
+          <SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue placeholder="All Reps" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sales Reps</SelectItem>
+            <SelectItem value="unassigned">Unassigned</SelectItem>
+            {salesTeam.filter(r => r.isActive !== false).map(r => (
+              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {(stageFilter !== "all" || sourceFilter !== "all" || typeFilter !== "all" || repFilter !== "all") && (
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setStageFilter("all"); setSourceFilter("all"); setTypeFilter("all"); setRepFilter("all") }}>
+            <X className="h-3 w-3 mr-1" /> Clear
+          </Button>
         )}
       </div>
 
@@ -556,8 +571,26 @@ export function LeadsView() {
       {/* Leads Table */}
       {leads.length === 0 && !loading ? (
         <EmptyState icon={Users} title="No leads found" description="Try adjusting your filters or add a new lead" />
-      ) : (
+      ) : (() => {
+        const paginationBar = (
+          <div className="flex items-center justify-between gap-4 px-4 py-2 bg-muted/20 border-b last:border-b-0 last:border-t">
+            <p className="text-[11px] text-muted-foreground">
+              {totalCount > 0
+                ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} leads`
+                : "No leads"}
+            </p>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled={page <= 1 || loading} onClick={() => setPage(1)}>«</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs px-2.5" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>‹ Prev</Button>
+              <span className="text-[11px] text-muted-foreground px-2 whitespace-nowrap">Page {page} of {totalPages}</span>
+              <Button variant="outline" size="sm" className="h-7 text-xs px-2.5" disabled={page >= totalPages || loading} onClick={() => setPage(p => p + 1)}>Next ›</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs px-2" disabled={page >= totalPages || loading} onClick={() => setPage(totalPages)}>»</Button>
+            </div>
+          </div>
+        )
+        return (
         <Card className="overflow-hidden">
+          {paginationBar}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -665,57 +698,10 @@ export function LeadsView() {
             </Table>
           </div>
 
-          {/* Pagination footer */}
-          <div className="flex items-center justify-between gap-4 border-t px-4 py-2.5 bg-muted/20">
-            <p className="text-[11px] text-muted-foreground">
-              {totalCount > 0
-                ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} leads`
-                : "No leads"}
-            </p>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-2.5"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage(1)}
-              >
-                «
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-3"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage(p => p - 1)}
-              >
-                ‹ Prev
-              </Button>
-              <span className="text-[11px] text-muted-foreground px-2">
-                Page {page} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-3"
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage(p => p + 1)}
-              >
-                Next ›
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-2.5"
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage(totalPages)}
-              >
-                »
-              </Button>
-            </div>
-          </div>
+          {paginationBar}
         </Card>
-      )}
+        )
+      })()}
 
       {/* Lead Detail Sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
