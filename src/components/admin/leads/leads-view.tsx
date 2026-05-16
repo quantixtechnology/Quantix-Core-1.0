@@ -850,7 +850,14 @@ export function LeadsView() {
           {selectedLead && (
             <ScrollArea className="h-[calc(100vh-40px)]">
               <div className="pr-4 py-4">
-                <LeadDetailEnhanced lead={selectedLead} onBack={() => { setEnhancedDetailOpen(false); setDetailOpen(true) }} />
+                <LeadDetailEnhanced
+                  lead={selectedLead}
+                  onBack={() => { setEnhancedDetailOpen(false); setDetailOpen(true) }}
+                  onLeadUpdated={(updated) => {
+                    setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l))
+                    setSelectedLead(updated)
+                  }}
+                />
               </div>
             </ScrollArea>
           )}
