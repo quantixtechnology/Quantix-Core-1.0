@@ -80,6 +80,8 @@ const sourceLabels: Record<string, string> = {
   WEBSITE_INQUIRY: "Website", PHONE_CALL: "Phone Call", OTHER: "Other",
 }
 
+const PAGE_SIZE = 50
+
 export function LeadsView() {
   const { searchQuery, setCrmLeadTab } = useAdminStore()
   const { permissions } = useAuthStore()
@@ -88,6 +90,11 @@ export function LeadsView() {
   const [salesTeam, setSalesTeam] = useState<SalesTeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Server-side pagination
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
 
   const [stageFilter, setStageFilter] = useState<string>("all")
   const [sourceFilter, setSourceFilter] = useState<string>("all")
@@ -118,20 +125,30 @@ export function LeadsView() {
   })
   const [creating, setCreating] = useState(false)
 
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (pageNum = 1) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/admin/leads?limit=100", { headers: getAuthHeaders() })
+      const params = new URLSearchParams({ page: String(pageNum), limit: String(PAGE_SIZE) })
+      if (stageFilter  !== "all") params.set("stage",        stageFilter)
+      if (sourceFilter !== "all") params.set("source",       sourceFilter)
+      if (typeFilter   !== "all") params.set("businessType", typeFilter)
+      if (searchQuery)            params.set("search",       searchQuery)
+
+      const res = await fetch(`/api/admin/leads?${params}`, { headers: getAuthHeaders() })
       if (!res.ok) throw new Error("Failed to fetch leads")
       const json = await res.json()
-      if (json.success) setLeads(json.data)
+      if (json.success) {
+        setLeads(json.data)
+        setTotalPages(json.pagination?.totalPages ?? 1)
+        setTotalCount(json.pagination?.total ?? json.data.length)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load leads")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [stageFilter, sourceFilter, typeFilter, searchQuery])
 
   const fetchSalesTeam = useCallback(async () => {
     try {
@@ -145,21 +162,26 @@ export function LeadsView() {
     }
   }, [])
 
+  // Re-fetch when filters change (reset to page 1)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchLeads(); fetchSalesTeam()
+    setPage(1)
+    fetchLeads(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageFilter, sourceFilter, typeFilter, searchQuery])
+
+  // Re-fetch when page changes
+  useEffect(() => {
+    fetchLeads(page)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page])
+
+  useEffect(() => {
+    fetchSalesTeam()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const filteredLeads = leads.filter((lead) => {
-    const matchSearch = !searchQuery ||
-      lead.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lead.contactName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lead.contactEmail.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchStage = stageFilter === "all" || lead.stage === stageFilter
-    const matchSource = sourceFilter === "all" || lead.source === sourceFilter
-    const matchType = typeFilter === "all" || lead.businessType === typeFilter
-    return matchSearch && matchStage && matchSource && matchType
-  })
+  // Leads are already filtered server-side; use `leads` directly for the current page
+  const filteredLeads = leads
 
   // Pipeline report data from real leads
   const pipelineReport = useMemo(() => {
@@ -206,7 +228,7 @@ export function LeadsView() {
       if (json.success) {
         toast.success(`Lead advanced from ${selectedLead.stage} to ${nextStage}`)
         setAdvanceOpen(false)
-        fetchLeads()
+        fetchLeads(page)
       } else {
         toast.error(json.error || "Failed to advance lead")
       }
@@ -252,7 +274,7 @@ export function LeadsView() {
         toast.success(`Stage updated to ${stageLabels[newStage] || newStage}`)
         setStageEditOpen(false)
         setStageEditReason("")
-        fetchLeads()
+        fetchLeads(page)
       } else {
         toast.error(json.error || "Failed to update stage")
       }
@@ -277,7 +299,7 @@ export function LeadsView() {
         toast.success("Sales rep reassigned")
         setReassignOpen(false)
         setReassignRep("")
-        fetchLeads()
+        fetchLeads(page)
       } else {
         toast.error(json.error || "Failed to reassign sales rep")
       }
@@ -307,7 +329,7 @@ export function LeadsView() {
       setBulkAssignOpen(false)
       setBulkAssignRep("")
       setSelectedIds(new Set())
-      fetchLeads()
+      fetchLeads(page)
     } catch {
       toast.error("Failed to bulk assign leads")
     } finally {
@@ -348,7 +370,7 @@ export function LeadsView() {
           city: "", businessType: "", source: "WEBSITE_INQUIRY", estimatedValue: "",
           salesRepId: "", notes: "", followUpDate: "",
         })
-        fetchLeads()
+        fetchLeads(page)
       } else {
         toast.error(json.error || "Failed to create lead")
       }
@@ -384,8 +406,8 @@ export function LeadsView() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === filteredLeads.length) { setSelectedIds(new Set()) }
-    else { setSelectedIds(new Set(filteredLeads.map(l => l.id))) }
+    if (selectedIds.size === leads.length) { setSelectedIds(new Set()) }
+    else { setSelectedIds(new Set(leads.map(l => l.id))) }
   }
 
   // Loading state
@@ -405,7 +427,7 @@ export function LeadsView() {
         <Card><CardContent className="p-6 text-center">
           <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
           <p className="text-sm text-muted-foreground mb-3">{error}</p>
-          <Button variant="outline" size="sm" onClick={fetchLeads} className="gap-2"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
+          <Button variant="outline" size="sm" onClick={() => fetchLeads(page)} className="gap-2"><RefreshCw className="h-3.5 w-3.5" /> Retry</Button>
         </CardContent></Card>
       </div>
     )
@@ -532,70 +554,166 @@ export function LeadsView() {
       )}
 
       {/* Leads Table */}
-      {filteredLeads.length === 0 ? (
+      {leads.length === 0 && !loading ? (
         <EmptyState icon={Users} title="No leads found" description="Try adjusting your filters or add a new lead" />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"><Checkbox checked={selectedIds.size === filteredLeads.length && filteredLeads.length > 0} onCheckedChange={toggleSelectAll} /></TableHead>
-                    <TableHead>Business</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>City</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Stage</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead>Sales Rep</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLeads.map((lead) => {
-                    const nextStage = getNextStage(lead.stage as LeadStage)
-                    const typeConf = businessTypeConfig[lead.businessType as BusinessType]
-                    const isSelected = selectedIds.has(lead.id)
-                    return (
-                      <TableRow key={lead.id} className={`cursor-pointer hover:bg-muted/50 ${isSelected ? "bg-emerald-50/50" : ""}`} onClick={() => { setSelectedLead(lead); setDetailOpen(true) }}>
-                        <TableCell onClick={(e) => e.stopPropagation()}><Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(lead.id)} /></TableCell>
-                        <TableCell><div className="font-medium text-xs">{lead.businessName}</div></TableCell>
-                        <TableCell>
-                          <div className="text-xs">{lead.contactName}</div>
-                          <div className="text-[10px] text-muted-foreground">{lead.contactPhone}</div>
-                        </TableCell>
-                        <TableCell className="text-xs">{lead.city || "—"}</TableCell>
-                        <TableCell><Badge variant="outline" className="text-[10px] h-5">{typeConf?.label || lead.businessType}</Badge></TableCell>
-                        <TableCell><StatusBadge status={lead.stage} /></TableCell>
-                        <TableCell className="text-[10px]">{sourceLabels[lead.source] || lead.source.replace(/_/g, " ")}</TableCell>
-                        <TableCell className="text-xs font-medium">{lead.estimatedValue ? `₹${lead.estimatedValue.toLocaleString("en-IN")}` : "—"}</TableCell>
-                        <TableCell className="text-xs">{lead.salesRep?.name || "Unassigned"}</TableCell>
-                        <TableCell className="text-[10px] text-muted-foreground whitespace-nowrap">
-                          <div>{new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
-                          <div>{new Date(lead.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</div>
-                        </TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-0.5">
-                            {canEdit && <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => handleOpenStageEdit(lead)} title="Change Stage"><Pencil className="h-3 w-3" /></Button>}
-                            {canEdit && <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => handleOpenReassign(lead)} title="Reassign Rep"><UserCheck className="h-3 w-3" /></Button>}
-                            {canEdit && nextStage && (
-                              <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => { setSelectedLead(lead); setAdvanceOpen(true) }}>
-                                <ArrowRight className="h-3 w-3" />
-                              </Button>
-                            )}
-                            <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => { setSelectedLead(lead); setDetailOpen(true) }}>View</Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="h-9 bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-9 pl-4">
+                    <Checkbox checked={selectedIds.size === leads.length && leads.length > 0} onCheckedChange={toggleSelectAll} />
+                  </TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide min-w-[180px]">Business</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide min-w-[150px]">Contact</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">City</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Type</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Stage</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Source</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Value</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Sales Rep</TableHead>
+                  <TableHead className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Added</TableHead>
+                  <TableHead className="w-28" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leads.map((lead) => {
+                  const nextStage = getNextStage(lead.stage as LeadStage)
+                  const typeConf = businessTypeConfig[lead.businessType as BusinessType]
+                  const isSelected = selectedIds.has(lead.id)
+                  const createdDate = new Date(lead.createdAt)
+                  return (
+                    <TableRow
+                      key={lead.id}
+                      className={`h-11 cursor-pointer transition-colors ${isSelected ? "bg-primary/5 hover:bg-primary/8" : "hover:bg-muted/40"}`}
+                      onClick={() => { setSelectedLead(lead); setDetailOpen(true) }}
+                    >
+                      <TableCell className="pl-4" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(lead.id)} />
+                      </TableCell>
+                      <TableCell className="max-w-[200px]">
+                        <p className="text-xs font-medium truncate">{lead.businessName}</p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-xs font-medium leading-tight">{lead.contactName}</p>
+                        <p className="text-[10px] text-muted-foreground leading-tight">{lead.contactPhone}</p>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{lead.city || "—"}</TableCell>
+                      <TableCell>
+                        <span className="text-[10px] font-medium text-muted-foreground bg-muted rounded px-1.5 py-0.5 whitespace-nowrap">
+                          {typeConf?.label || lead.businessType.replace(/_/g, " ")}
+                        </span>
+                      </TableCell>
+                      <TableCell><StatusBadge status={lead.stage} /></TableCell>
+                      <TableCell className="text-[11px] text-muted-foreground whitespace-nowrap">
+                        {sourceLabels[lead.source] || lead.source.replace(/_/g, " ")}
+                      </TableCell>
+                      <TableCell className="text-xs font-medium tabular-nums">
+                        {lead.estimatedValue ? `₹${lead.estimatedValue.toLocaleString("en-IN")}` : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {lead.salesRep?.name
+                          ? <span className="font-medium">{lead.salesRep.name}</span>
+                          : <span className="text-muted-foreground/60 italic text-[10px]">Unassigned</span>}
+                      </TableCell>
+                      <TableCell className="text-[10px] text-muted-foreground whitespace-nowrap">
+                        {createdDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                        <span className="block text-[9px] opacity-60">{createdDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5 pr-2">
+                          {canEdit && (
+                            <button
+                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title="Change Stage"
+                              onClick={() => handleOpenStageEdit(lead)}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button
+                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title="Reassign Rep"
+                              onClick={() => handleOpenReassign(lead)}
+                            >
+                              <UserCheck className="h-3 w-3" />
+                            </button>
+                          )}
+                          {canEdit && nextStage && (
+                            <button
+                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                              title={`Advance to ${stageLabels[nextStage]}`}
+                              onClick={() => { setSelectedLead(lead); setAdvanceOpen(true) }}
+                            >
+                              <ArrowRight className="h-3 w-3" />
+                            </button>
+                          )}
+                          <button
+                            className="ml-1 text-[10px] font-medium text-primary hover:underline px-1"
+                            onClick={() => { setSelectedLead(lead); setDetailOpen(true) }}
+                          >
+                            View
+                          </button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination footer */}
+          <div className="flex items-center justify-between gap-4 border-t px-4 py-2.5 bg-muted/20">
+            <p className="text-[11px] text-muted-foreground">
+              {totalCount > 0
+                ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} leads`
+                : "No leads"}
+            </p>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2.5"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage(1)}
+              >
+                «
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-3"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage(p => p - 1)}
+              >
+                ‹ Prev
+              </Button>
+              <span className="text-[11px] text-muted-foreground px-2">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-3"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage(p => p + 1)}
+              >
+                Next ›
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2.5"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage(totalPages)}
+              >
+                »
+              </Button>
             </div>
-          </CardContent>
+          </div>
         </Card>
       )}
 
