@@ -55,18 +55,12 @@ type CrmIntegration = {
   createdAt: string
 }
 
-// ── CSV template ──────────────────────────────────────────────────────────────
+// ── Template ──────────────────────────────────────────────────────────────────
 
 const CSV_HEADERS = [
   "businessName", "contactName", "contactEmail", "contactPhone",
   "city", "businessType", "source", "stage",
   "estimatedValue", "notes", "followUpDate", "tags",
-]
-
-const CSV_EXAMPLE = [
-  "Rahul's Grocery", "Rahul Sharma", "rahul@example.com", "9812345678",
-  "Mumbai", "GROCERY", "WEBSITE_INQUIRY", "LEAD",
-  "59988", "Interested in standard plan", "", "",
 ]
 
 const BUSINESS_TYPE_OPTIONS = [
@@ -82,14 +76,95 @@ const SOURCE_OPTIONS = [
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function downloadTemplate() {
-  const csv = [CSV_HEADERS.join(","), CSV_EXAMPLE.join(",")].join("\n")
-  const blob = new Blob([csv], { type: "text/csv" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = "leads_import_template.csv"
-  a.click()
-  URL.revokeObjectURL(url)
+  const wb = XLSX.utils.book_new()
+
+  // ── Sheet 1: Leads data entry ──────────────────────────────────────────────
+  const templateRows = [
+    // Row 1 — column headers (starred = required)
+    [
+      "businessName *", "contactName *", "contactEmail *", "contactPhone *",
+      "city", "businessType", "source", "stage",
+      "estimatedValue", "notes", "followUpDate", "tags",
+    ],
+    // Row 2 — field description / hint
+    [
+      "Business name", "Contact person name", "Email address", "10-digit mobile",
+      "City", "See Valid Values sheet", "See Valid Values sheet", "See Valid Values sheet",
+      "Yearly value (INR)", "Any notes or remarks", "YYYY-MM-DD format", "comma-separated",
+    ],
+    // Rows 3-6 — example data (delete these rows before uploading)
+    [
+      "FreshMart Grocery", "Rahul Sharma", "rahul@freshmart.in", "9812345678",
+      "Mumbai", "GROCERY", "WEBSITE_INQUIRY", "LEAD",
+      "59988", "Interested in Standard plan", "2026-06-01", "grocery,fresh",
+    ],
+    [
+      "TastyBites Food", "Priya Patel", "priya@tastybites.in", "9823456789",
+      "Bengaluru", "FOOD_DELIVERY", "META_ADS", "DEMO_SHARED",
+      "119988", "Demo done, waiting for decision", "", "restaurant",
+    ],
+    [
+      "AutoGlow Car Wash", "Vikram Singh", "vikram@autoglow.in", "9834567890",
+      "Hyderabad", "CAR_WASH", "DIRECT_REFERRAL", "NEGOTIATION",
+      "59988", "Negotiating pricing", "2026-06-15", "carwash",
+    ],
+    [
+      "SparkleClean Laundry", "Neha Gupta", "neha@sparkleclean.in", "9845678901",
+      "Delhi", "LAUNDRY", "COLD_OUTREACH", "PAYMENT_PENDING",
+      "59988", "Payment link sent", "", "laundry",
+    ],
+  ]
+
+  const ws1 = XLSX.utils.aoa_to_sheet(templateRows)
+  ws1["!cols"] = [
+    { wch: 24 }, { wch: 20 }, { wch: 28 }, { wch: 16 },
+    { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 18 },
+    { wch: 16 }, { wch: 32 }, { wch: 14 }, { wch: 20 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws1, "Leads")
+
+  // ── Sheet 2: Valid Values reference ────────────────────────────────────────
+  const refRows = [
+    ["FIELD", "VALID VALUES", "DESCRIPTION"],
+    ["businessType", "GROCERY", "Fresh grocery & daily essentials"],
+    ["", "FOOD_DELIVERY", "Restaurant & cloud kitchen"],
+    ["", "LAUNDRY", "Laundry & dry cleaning"],
+    ["", "CAR_WASH", "Car & bike wash services"],
+    ["", "PHARMACY", "Medical & pharmacy"],
+    ["", "HOME_SERVICES", "Repair & maintenance"],
+    ["", "ECOMMERCE", "Online retail store"],
+    ["", "COSMETICS", "Beauty & personal care"],
+    ["", "MEAT_DELIVERY", "Fresh meat & seafood delivery"],
+    ["", "FURNITURE", "Furniture & home decor"],
+    ["", "DIRECTORY", "Local business directory"],
+    ["", "", ""],
+    ["source", "META_ADS", "Facebook / Instagram ads"],
+    ["", "GOOGLE_ADS", "Google ads"],
+    ["", "DIRECT_REFERRAL", "Referral from existing client"],
+    ["", "WEBSITE_INQUIRY", "Inquiry from website form"],
+    ["", "COLD_OUTREACH", "Sales team outreach"],
+    ["", "WHATSAPP_INQUIRY", "WhatsApp inquiry"],
+    ["", "PHONE_CALL", "Direct phone call"],
+    ["", "OTHER", "Any other source"],
+    ["", "", ""],
+    ["stage", "LEAD", "Initial lead (default)"],
+    ["", "DEMO_SHARED", "Demo credentials shared"],
+    ["", "NEGOTIATION", "Price negotiation ongoing"],
+    ["", "PAYMENT_PENDING", "Awaiting payment"],
+    ["", "PAYMENT_RECEIVED", "Payment received"],
+    ["", "ONBOARDING", "Business being onboarded"],
+    ["", "LOST", "Lost — not converted"],
+    ["", "", ""],
+    ["followUpDate", "2026-06-15", "Use YYYY-MM-DD format"],
+    ["estimatedValue", "59988", "Annual contract value in INR (numbers only)"],
+    ["tags", "grocery,mumbai", "Comma-separated, no spaces around commas"],
+  ]
+
+  const ws2 = XLSX.utils.aoa_to_sheet(refRows)
+  ws2["!cols"] = [{ wch: 16 }, { wch: 22 }, { wch: 40 }]
+  XLSX.utils.book_append_sheet(wb, ws2, "Valid Values")
+
+  XLSX.writeFile(wb, "quantix_leads_import_template.xlsx")
 }
 
 function parseFile(file: File): Promise<ImportRow[]> {

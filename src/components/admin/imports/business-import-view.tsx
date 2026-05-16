@@ -35,33 +35,70 @@ type ImportSummary = {
 
 // ── Template ──────────────────────────────────────────────────────────────────
 
-const CSV_HEADERS = [
-  "name", "slug", "businessType", "contactEmail", "contactPhone",
-  "city", "state", "pincode", "address", "gstNumber", "description",
-]
-
-const CSV_EXAMPLE = [
-  "FreshMart Grocery", "freshmart-grocery", "GROCERY",
-  "owner@freshmart.in", "9876543210",
-  "Mumbai", "Maharashtra", "400001",
-  "123 Market Street, Fort", "27AADCF1234A1Z5",
-  "Fresh grocery and daily essentials",
-]
-
-const BUSINESS_TYPE_OPTIONS = [
-  "GROCERY", "FOOD_DELIVERY", "LAUNDRY", "CAR_WASH", "PHARMACY",
-  "HOME_SERVICES", "ECOMMERCE", "COSMETICS", "MEAT_DELIVERY", "FURNITURE", "DIRECTORY",
-]
-
 function downloadTemplate() {
-  const csv = [CSV_HEADERS.join(","), CSV_EXAMPLE.join(",")].join("\n")
-  const blob = new Blob([csv], { type: "text/csv" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = "business_import_template.csv"
-  a.click()
-  URL.revokeObjectURL(url)
+  const wb = XLSX.utils.book_new()
+
+  const templateRows = [
+    ["name *", "slug", "businessType", "contactEmail", "contactPhone",
+     "city", "state", "pincode", "address", "gstNumber", "description"],
+    ["Business display name", "URL-safe slug (auto-generated if blank)", "See Valid Values sheet",
+     "Owner email address", "10-digit mobile number",
+     "City name", "State name", "6-digit pincode",
+     "Full street address", "GST number (15 chars)", "Short business description"],
+    ["FreshMart Grocery", "freshmart-grocery", "GROCERY",
+     "owner@freshmart.in", "9876543210",
+     "Mumbai", "Maharashtra", "400001",
+     "123 Market Street, Fort", "27AADCF1234A1Z5",
+     "Fresh grocery and daily essentials"],
+    ["TastyBites Food", "tastybites-food", "FOOD_DELIVERY",
+     "priya@tastybites.in", "9823456789",
+     "Bengaluru", "Karnataka", "560001",
+     "45 MG Road, Brigade", "29AABCT1234B1Z3",
+     "Cloud kitchen delivering fresh meals"],
+    ["AutoGlow Car Wash", "autoglow-carwash", "CAR_WASH",
+     "vikram@autoglow.in", "9834567890",
+     "Hyderabad", "Telangana", "500001",
+     "12 Jubilee Hills Road", "",
+     "Premium car & bike wash services"],
+    ["SparkleClean Laundry", "sparkleclean-laundry", "LAUNDRY",
+     "neha@sparkleclean.in", "9845678901",
+     "Delhi", "Delhi", "110001",
+     "78 Connaught Place", "",
+     "Express laundry & dry cleaning"],
+  ]
+
+  const ws1 = XLSX.utils.aoa_to_sheet(templateRows)
+  ws1["!cols"] = [
+    { wch: 24 }, { wch: 22 }, { wch: 18 }, { wch: 28 }, { wch: 16 },
+    { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 28 }, { wch: 18 }, { wch: 36 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws1, "Businesses")
+
+  const refRows = [
+    ["FIELD", "VALID VALUES", "DESCRIPTION"],
+    ["businessType", "GROCERY", "Fresh grocery & daily essentials"],
+    ["", "FOOD_DELIVERY", "Restaurant & cloud kitchen"],
+    ["", "LAUNDRY", "Laundry & dry cleaning"],
+    ["", "CAR_WASH", "Car & bike wash services"],
+    ["", "PHARMACY", "Medical & pharmacy"],
+    ["", "HOME_SERVICES", "Repair & maintenance"],
+    ["", "ECOMMERCE", "Online retail store"],
+    ["", "COSMETICS", "Beauty & personal care"],
+    ["", "MEAT_DELIVERY", "Fresh meat & seafood delivery"],
+    ["", "FURNITURE", "Furniture & home decor"],
+    ["", "DIRECTORY", "Local business directory"],
+    ["", "", ""],
+    ["slug", "(auto-generated)", "Leave blank to auto-generate from name. Example: 'Fresh Mart' → 'fresh-mart'"],
+    ["gstNumber", "27AADCF1234A1Z5", "15-character GST number (optional)"],
+    ["pincode", "400001", "6-digit Indian pincode (optional)"],
+    ["contactPhone", "9876543210", "10-digit mobile number without country code (optional)"],
+  ]
+
+  const ws2 = XLSX.utils.aoa_to_sheet(refRows)
+  ws2["!cols"] = [{ wch: 16 }, { wch: 22 }, { wch: 52 }]
+  XLSX.utils.book_append_sheet(wb, ws2, "Valid Values")
+
+  XLSX.writeFile(wb, "quantix_business_import_template.xlsx")
 }
 
 function parseFile(file: File): Promise<ImportRow[]> {
@@ -191,22 +228,24 @@ export function BusinessImportView() {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">Step 1 — Download Template</CardTitle>
           <CardDescription className="text-xs">
-            Download the CSV template with all supported columns. Supported formats: .csv, .xlsx, .xls
+            Download the Excel template — it includes a header row, field hints, example rows, and a Valid Values reference sheet. Supported upload formats: .csv, .xlsx, .xls
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button size="sm" variant="outline" className="gap-1.5" onClick={downloadTemplate}>
-            <Download className="size-3.5" /> Download CSV Template
+            <Download className="size-3.5" /> Download Excel Template (.xlsx)
           </Button>
           <div className="rounded-lg bg-muted/50 p-3 space-y-1">
             <p className="text-xs font-medium">Required columns</p>
             <p className="text-[11px] text-muted-foreground font-mono">name</p>
             <p className="text-xs font-medium mt-2">Optional columns</p>
             <p className="text-[11px] text-muted-foreground font-mono">
-              {CSV_HEADERS.filter((h) => h !== "name").join(", ")}
+              slug, businessType, contactEmail, contactPhone, city, state, pincode, address, gstNumber, description
             </p>
             <p className="text-xs font-medium mt-2">businessType values</p>
-            <p className="text-[11px] text-muted-foreground">{BUSINESS_TYPE_OPTIONS.join(", ")}</p>
+            <p className="text-[11px] text-muted-foreground">
+              GROCERY, FOOD_DELIVERY, LAUNDRY, CAR_WASH, PHARMACY, HOME_SERVICES, ECOMMERCE, COSMETICS, MEAT_DELIVERY, FURNITURE, DIRECTORY
+            </p>
           </div>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p className="text-[11px] text-amber-800 font-medium">Duplicate detection</p>
