@@ -107,7 +107,7 @@ export async function PATCH(
 
       // Basic fields
       const allowedFields = [
-        'businessName', 'contactName', 'contactEmail', 'contactPhone',
+        'businessName', 'contactName', 'contactEmail', 'contactPhone', 'city',
         'notes', 'lostReason', 'demoFeedback', 'negotiationNotes',
         'paymentProof', 'selectedBillingCycle',
       ] as const;
@@ -279,6 +279,7 @@ export async function PUT(
           contactName: body.contactName,
           contactEmail: body.contactEmail,
           contactPhone: body.contactPhone,
+          city: body.city !== undefined ? body.city : lead.city,
           businessType: body.businessType,
           source: body.source || lead.source,
           stage: body.stage || lead.stage,

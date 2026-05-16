@@ -40,7 +40,7 @@ import { getAuthHeaders } from "@/lib/admin-fetch"
 // ---- API data types ----
 interface LeadApiData {
   id: string; businessName: string; contactName: string; contactEmail: string
-  contactPhone: string; businessType: string; source: string; stage: string
+  contactPhone: string; city: string | null; businessType: string; source: string; stage: string
   estimatedValue: number | null; notes: string | null; followUpDate: string | null
   lastContactedAt: string | null; tags: string; createdAt: string; updatedAt: string
   salesRep: { id: string; name: string; email: string } | null
@@ -107,7 +107,7 @@ export function LeadsView() {
   // Create lead form state
   const [createForm, setCreateForm] = useState({
     businessName: "", contactName: "", contactEmail: "", contactPhone: "",
-    businessType: "", source: "WEBSITE_INQUIRY", estimatedValue: "",
+    city: "", businessType: "", source: "WEBSITE_INQUIRY", estimatedValue: "",
     salesRepId: "", notes: "", followUpDate: "",
   })
   const [creating, setCreating] = useState(false)
@@ -327,6 +327,7 @@ export function LeadsView() {
           contactName: createForm.contactName,
           contactEmail: createForm.contactEmail,
           contactPhone: createForm.contactPhone,
+          city: createForm.city || undefined,
           businessType: createForm.businessType,
           source: createForm.source || "WEBSITE_INQUIRY",
           salesRepId: createForm.salesRepId || undefined,
@@ -341,7 +342,7 @@ export function LeadsView() {
         setCreateOpen(false)
         setCreateForm({
           businessName: "", contactName: "", contactEmail: "", contactPhone: "",
-          businessType: "", source: "WEBSITE_INQUIRY", estimatedValue: "",
+          city: "", businessType: "", source: "WEBSITE_INQUIRY", estimatedValue: "",
           salesRepId: "", notes: "", followUpDate: "",
         })
         fetchLeads()
@@ -540,11 +541,13 @@ export function LeadsView() {
                     <TableHead className="w-10"><Checkbox checked={selectedIds.size === filteredLeads.length && filteredLeads.length > 0} onCheckedChange={toggleSelectAll} /></TableHead>
                     <TableHead>Business</TableHead>
                     <TableHead>Contact</TableHead>
+                    <TableHead>City</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Stage</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>Value</TableHead>
                     <TableHead>Sales Rep</TableHead>
+                    <TableHead>Created</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -561,11 +564,16 @@ export function LeadsView() {
                           <div className="text-xs">{lead.contactName}</div>
                           <div className="text-[10px] text-muted-foreground">{lead.contactPhone}</div>
                         </TableCell>
+                        <TableCell className="text-xs">{lead.city || "—"}</TableCell>
                         <TableCell><Badge variant="outline" className="text-[10px] h-5">{typeConf?.label || lead.businessType}</Badge></TableCell>
                         <TableCell><StatusBadge status={lead.stage} /></TableCell>
                         <TableCell className="text-[10px]">{sourceLabels[lead.source] || lead.source.replace(/_/g, " ")}</TableCell>
                         <TableCell className="text-xs font-medium">{lead.estimatedValue ? `₹${lead.estimatedValue.toLocaleString("en-IN")}` : "—"}</TableCell>
                         <TableCell className="text-xs">{lead.salesRep?.name || "Unassigned"}</TableCell>
+                        <TableCell className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          <div>{new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+                          <div>{new Date(lead.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</div>
+                        </TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-0.5">
                             {canEdit && <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-1.5" onClick={() => handleOpenStageEdit(lead)} title="Change Stage"><Pencil className="h-3 w-3" /></Button>}
@@ -654,8 +662,10 @@ export function LeadsView() {
                       {[
                         { label: "Type", value: businessTypeConfig[selectedLead.businessType as BusinessType]?.label || selectedLead.businessType },
                         { label: "Source", value: sourceLabels[selectedLead.source] || selectedLead.source.replace(/_/g, " ") },
+                        { label: "City", value: selectedLead.city || "—" },
                         { label: "Sales Rep", value: selectedLead.salesRep?.name || "Unassigned" },
                         { label: "Follow-up", value: selectedLead.followUpDate ? new Date(selectedLead.followUpDate).toLocaleDateString("en-IN") : "None" },
+                        { label: "Created", value: `${new Date(selectedLead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} ${new Date(selectedLead.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` },
                       ].map((item) => (
                         <div key={item.label} className="rounded-md border bg-muted/5 px-3 py-2">
                           <p className="text-[9px] text-muted-foreground">{item.label}</p>
@@ -755,21 +765,22 @@ export function LeadsView() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Email *</Label><Input placeholder="amit@business.in" type="email" value={createForm.contactEmail} onChange={(e) => setCreateForm(p => ({ ...p, contactEmail: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>City</Label><Input placeholder="e.g. Bangalore" value={createForm.city} onChange={(e) => setCreateForm(p => ({ ...p, city: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Business Type *</Label>
                 <Select value={createForm.businessType} onValueChange={(v) => setCreateForm(p => ({ ...p, businessType: v }))}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>{Object.entries(businessTypeConfig).map(([key, val]) => (<SelectItem key={key} value={key}>{val.label}</SelectItem>))}</SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Source</Label>
                 <Select value={createForm.source} onValueChange={(v) => setCreateForm(p => ({ ...p, source: v }))}><SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
                   <SelectContent>{Object.entries(sourceLabels).map(([key, label]) => (<SelectItem key={key} value={key}>{label}</SelectItem>))}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label>Est. Value (₹)</Label><Input placeholder="e.g. 59988" type="number" value={createForm.estimatedValue} onChange={(e) => setCreateForm(p => ({ ...p, estimatedValue: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Est. Value (₹)</Label><Input placeholder="e.g. 59988" type="number" value={createForm.estimatedValue} onChange={(e) => setCreateForm(p => ({ ...p, estimatedValue: e.target.value }))} /></div>
               <div className="space-y-2"><Label>Sales Rep</Label>
                 <Select value={createForm.salesRepId} onValueChange={(v) => setCreateForm(p => ({ ...p, salesRepId: v }))}><SelectTrigger><SelectValue placeholder="Assign rep" /></SelectTrigger>
                   <SelectContent>
@@ -778,6 +789,8 @@ export function LeadsView() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Follow-up Date</Label><Input type="date" value={createForm.followUpDate} onChange={(e) => setCreateForm(p => ({ ...p, followUpDate: e.target.value }))} /></div>
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Initial notes about this lead..." rows={2} value={createForm.notes} onChange={(e) => setCreateForm(p => ({ ...p, notes: e.target.value }))} /></div>

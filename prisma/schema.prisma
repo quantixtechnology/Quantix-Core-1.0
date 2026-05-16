@@ -100,6 +100,7 @@ model Lead {
   contactName     String
   contactEmail    String
   contactPhone    String
+  city            String?
   businessType    BusinessType
   source          LeadSource @default(WEBSITE_INQUIRY)
   stage           LeadStage  @default(LEAD)

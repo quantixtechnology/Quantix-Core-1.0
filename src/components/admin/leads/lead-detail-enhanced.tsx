@@ -43,7 +43,7 @@ const stageProgressMap: Record<LeadStage, number> = {
 // Real API lead data type
 interface LeadApiData {
   id: string; businessName: string; contactName: string; contactEmail: string
-  contactPhone: string; businessType: string; source: string; stage: string
+  contactPhone: string; city: string | null; businessType: string; source: string; stage: string
   estimatedValue: number | null; notes: string | null; followUpDate: string | null
   lastContactedAt: string | null; tags: string; createdAt: string; updatedAt: string
   salesRep: { id: string; name: string; email: string } | null
@@ -282,12 +282,21 @@ export function LeadDetailEnhanced({ lead, onBack }: LeadDetailEnhancedProps) {
                   <p className="text-xs font-medium">{lead.source.replace(/_/g, " ")}</p>
                 </div>
                 <div className="rounded-lg border p-2.5">
+                  <p className="text-[10px] text-muted-foreground">City</p>
+                  <p className="text-xs font-medium">{lead.city || "—"}</p>
+                </div>
+                <div className="rounded-lg border p-2.5">
                   <p className="text-[10px] text-muted-foreground">Est. Value</p>
                   <p className="text-xs font-medium">{lead.estimatedValue ? `₹${lead.estimatedValue.toLocaleString("en-IN")}` : "—"}</p>
                 </div>
                 <div className="rounded-lg border p-2.5">
                   <p className="text-[10px] text-muted-foreground">Sales Rep</p>
                   <p className="text-xs font-medium">{lead.salesRep?.name || "Unassigned"}</p>
+                </div>
+                <div className="rounded-lg border p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Lead Created</p>
+                  <p className="text-xs font-medium">{new Date(lead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+                  <p className="text-[10px] text-muted-foreground">{new Date(lead.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</p>
                 </div>
               </div>
               {/* Additional real data fields */}

@@ -172,6 +172,7 @@ export async function POST(request: NextRequest) {
           contactName: body.contactName,
           contactEmail: body.contactEmail,
           contactPhone: body.contactPhone,
+          city: body.city || null,
           businessType: body.businessType,
           source: body.source || 'WEBSITE_INQUIRY',
           stage: 'LEAD',
