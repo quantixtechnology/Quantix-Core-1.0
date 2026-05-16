@@ -113,9 +113,19 @@ export const POST = withMiddleware({ requireAuth: true })(
         );
       }
 
-      const body = await req.json();
+      // req.text() + JSON.parse is more reliable than req.json() in Next.js 15 App Router
+      let body: { type?: string; content?: string }
+      try {
+        const raw = await req.text()
+        body = raw ? JSON.parse(raw) : {}
+      } catch {
+        return NextResponse.json(
+          { success: false, error: 'Invalid request body — expected JSON' },
+          { status: 400 }
+        )
+      }
 
-      if (!body.content) {
+      if (!body.content?.trim()) {
         return NextResponse.json(
           { success: false, error: 'content is required' },
           { status: 400 }
@@ -206,6 +216,7 @@ export const POST = withMiddleware({ requireAuth: true })(
         { status: 201 }
       );
     } catch (error) {
+      console.error('[comments POST] Error:', error)
       const message = error instanceof Error ? error.message : 'Failed to add comment';
       return NextResponse.json(
         { success: false, error: message },

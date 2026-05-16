@@ -298,11 +298,17 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
       const json = await res.json()
       if (json.success) {
         setCommentText("")
-        fetchComments()
+        await fetchComments()
         toast.success("Note added")
-      } else toast.error(json.error || "Failed")
-    } catch { toast.error("Failed to add note") }
-    finally { setPostingComment(false) }
+      } else {
+        toast.error(json.error || "Failed to save note")
+      }
+    } catch (e) {
+      console.error("[postComment]", e)
+      toast.error("Network error — note not saved")
+    } finally {
+      setPostingComment(false)
+    }
   }
 
   // ── Computed ──────────────────────────────────────────────────────────────────
