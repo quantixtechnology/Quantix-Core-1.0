@@ -37,6 +37,12 @@ yarn-error.log*
 .vercel
 
 
+# SQLite database — never commit the live DB; VPS keeps its own copy
+prisma/db/*.db
+prisma/db/*.db-journal
+prisma/db/*.db-shm
+prisma/db/*.db-wal
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
