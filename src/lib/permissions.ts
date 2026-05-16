@@ -20,6 +20,8 @@ export type Permission =
   | "inventory:view" | "inventory:edit"
   | "billing:view" | "billing:edit"
   | "refunds:process"
+  | "import:leads"
+  | "import:business"
 
 // All roles supported by the platform
 export type PlatformRole =
@@ -83,6 +85,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "platform:view_analytics", "platform:manage_deployments", "platform:manage_domains", "platform:audit_logs", "platform:security",
     "notifications:view", "notifications:send",
     "users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate",
+    "import:leads", "import:business",
   ],
   PLATFORM_ADMIN: [
     "leads:view", "leads:edit",
@@ -97,6 +100,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "businesses:view",
     "sales:view", "sales:edit",
     "notifications:view",
+    "import:leads",
   ],
   SUPPORT_TEAM: [
     "leads:view",
@@ -131,6 +135,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "inventory:view", "inventory:edit",
     "billing:view",
     "users:view", "users:create", "users:edit", "users:reset_password", "users:suspend",
+    "import:business",
   ],
   STORE_MANAGER: [
     "orders:view", "orders:edit",
@@ -217,6 +222,10 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
       "platform:manage_domains", "platform:audit_logs", "platform:security",
     ],
   },
+  {
+    label: "Data Import",
+    permissions: ["import:leads", "import:business"],
+  },
 ]
 
 // Human-readable labels for individual permissions
@@ -269,6 +278,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "billing:view":                 "View Billing",
   "billing:edit":                 "Edit Billing",
   "refunds:process":              "Process Refunds",
+  "import:leads":                 "Import Leads & Sales Data",
+  "import:business":              "Import Business Data",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {
@@ -325,4 +336,6 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "release-management": "platform:manage_deployments",
   domains:              "platform:manage_domains",
   notifications:        "notifications:view",
+  "leads-import":       "import:leads",
+  "business-data-import": "import:business",
 }

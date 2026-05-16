@@ -6,6 +6,7 @@ import {
   Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
+  DatabaseZap,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -82,6 +83,11 @@ const opsNavItems: NavItem[] = [
   { key: "revenue",            label: "Revenue & Payouts",    icon: Wallet,         permission: "subscriptions:view" },
   { key: "support",            label: "Support & Tickets",    icon: HeadphonesIcon, permission: "leads:view" },
   { key: "notifications",      label: "Notifications",        icon: Bell,           permission: "notifications:view" },
+]
+
+const importNavItems: NavItem[] = [
+  { key: "leads-import",         label: "Lead Import",         icon: Upload,       permission: "import:leads" },
+  { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap, permission: "import:business" },
 ]
 
 const systemNavItems: NavItem[] = [
@@ -178,6 +184,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
     { title: "Mobile & Apps",     items: filterItems(mobileNavItems),   open: true },
     { title: "Deployment & Ops",  items: filterItems(deployNavItems),   open: false },
     { title: "Client Operations", items: filterItems(clientNavItems),   open: false },
+    { title: "Data Imports",      items: filterItems(importNavItems),   open: false },
     { title: "Platform Ops",      items: filterItems(opsNavItems),      open: false },
     { title: "System",            items: filterItems(systemNavItems),   open: false },
   ]

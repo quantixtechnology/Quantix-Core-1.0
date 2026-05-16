@@ -1,0 +1,748 @@
+"use client"
+
+import { useState, useRef, useCallback } from "react"
+import Papa from "papaparse"
+import * as XLSX from "xlsx"
+import { toast } from "sonner"
+import {
+  Upload, FileText, Download, CheckCircle2, XCircle, AlertCircle,
+  Plug, Plus, Trash2, Eye, EyeOff, RefreshCw, ChevronDown, ChevronRight,
+  Users, Loader2,
+} from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type ImportRow = Record<string, string>
+
+type ImportResult = {
+  row: number
+  status: "imported" | "duplicate" | "error"
+  reason?: string
+  data: ImportRow
+}
+
+type ImportSummary = {
+  total: number
+  imported: number
+  duplicates: number
+  errors: number
+}
+
+type CrmIntegration = {
+  id: string
+  name: string
+  description?: string
+  apiUrl: string
+  authType: "api_key" | "bearer_token" | "basic_auth" | "oauth2"
+  authValue: string
+  authSecret?: string
+  fieldMapping: Record<string, string>
+  syncDirection: "inbound" | "outbound" | "both"
+  isActive: boolean
+  lastSyncAt?: string
+  lastSyncStatus?: "success" | "error" | "never"
+  createdAt: string
+}
+
+// ── CSV template ──────────────────────────────────────────────────────────────
+
+const CSV_HEADERS = [
+  "businessName", "contactName", "contactEmail", "contactPhone",
+  "city", "businessType", "source", "stage",
+  "estimatedValue", "notes", "followUpDate", "tags",
+]
+
+const CSV_EXAMPLE = [
+  "Rahul's Grocery", "Rahul Sharma", "rahul@example.com", "9812345678",
+  "Mumbai", "GROCERY", "WEBSITE_INQUIRY", "LEAD",
+  "59988", "Interested in standard plan", "", "",
+]
+
+const BUSINESS_TYPE_OPTIONS = [
+  "GROCERY", "FOOD_DELIVERY", "LAUNDRY", "CAR_WASH", "PHARMACY",
+  "HOME_SERVICES", "ECOMMERCE", "COSMETICS", "MEAT_DELIVERY", "FURNITURE", "DIRECTORY",
+]
+
+const SOURCE_OPTIONS = [
+  "META_ADS", "GOOGLE_ADS", "DIRECT_REFERRAL", "WEBSITE_INQUIRY",
+  "COLD_OUTREACH", "WHATSAPP_INQUIRY", "PHONE_CALL", "OTHER",
+]
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function downloadTemplate() {
+  const csv = [CSV_HEADERS.join(","), CSV_EXAMPLE.join(",")].join("\n")
+  const blob = new Blob([csv], { type: "text/csv" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = "leads_import_template.csv"
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function parseFile(file: File): Promise<ImportRow[]> {
+  return new Promise((resolve, reject) => {
+    const ext = file.name.split(".").pop()?.toLowerCase()
+
+    if (ext === "csv") {
+      Papa.parse<ImportRow>(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (res) => resolve(res.data),
+        error: (err) => reject(err),
+      })
+    } else if (ext === "xlsx" || ext === "xls") {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const wb = XLSX.read(e.target?.result, { type: "array" })
+          const ws = wb.Sheets[wb.SheetNames[0]]
+          const data = XLSX.utils.sheet_to_json<ImportRow>(ws, { defval: "" })
+          resolve(data)
+        } catch (err) {
+          reject(err)
+        }
+      }
+      reader.onerror = () => reject(new Error("Failed to read file"))
+      reader.readAsArrayBuffer(file)
+    } else {
+      reject(new Error("Unsupported file format. Use .csv, .xlsx, or .xls"))
+    }
+  })
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+export function LeadsImportView() {
+  // File upload state
+  const [dragging, setDragging] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
+  const [parsedRows, setParsedRows] = useState<ImportRow[]>([])
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [results, setResults] = useState<ImportResult[] | null>(null)
+  const [summary, setSummary] = useState<ImportSummary | null>(null)
+  const [filterStatus, setFilterStatus] = useState<"all" | "imported" | "duplicate" | "error">("all")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // API integration state
+  const [integrations, setIntegrations] = useState<CrmIntegration[]>([])
+  const [integrationsLoaded, setIntegrationsLoaded] = useState(false)
+  const [savingIntegrations, setSavingIntegrations] = useState(false)
+  const [showSecret, setShowSecret] = useState<Record<string, boolean>>({})
+  const [expandedIntegration, setExpandedIntegration] = useState<string | null>(null)
+  const [newMapping, setNewMapping] = useState<{ integrationId: string; from: string; to: string } | null>(null)
+
+  // ── File handling ──────────────────────────────────────────────────────────
+
+  const handleFile = useCallback(async (f: File) => {
+    setFile(f)
+    setResults(null)
+    setSummary(null)
+    try {
+      const rows = await parseFile(f)
+      setParsedRows(rows)
+      toast.success(`Parsed ${rows.length} rows from ${f.name}`)
+      setPreviewOpen(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to parse file")
+      setParsedRows([])
+    }
+  }, [])
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    const f = e.dataTransfer.files[0]
+    if (f) handleFile(f)
+  }, [handleFile])
+
+  // ── Import ─────────────────────────────────────────────────────────────────
+
+  const handleImport = async () => {
+    if (parsedRows.length === 0) return
+    setImporting(true)
+    try {
+      const res = await fetch("/api/admin/import/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ rows: parsedRows }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Import failed")
+      setSummary(json.summary)
+      setResults(json.results)
+      toast.success(`Import complete: ${json.summary.imported} imported, ${json.summary.duplicates} duplicates, ${json.summary.errors} errors`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed")
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const resetUpload = () => {
+    setFile(null)
+    setParsedRows([])
+    setResults(null)
+    setSummary(null)
+    setPreviewOpen(false)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  // ── Integrations ───────────────────────────────────────────────────────────
+
+  const loadIntegrations = async () => {
+    try {
+      const res = await fetch("/api/admin/import/api-integrations", { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) { setIntegrations(json.data); setIntegrationsLoaded(true) }
+    } catch { toast.error("Failed to load integrations") }
+  }
+
+  const saveIntegrations = async (updated: CrmIntegration[]) => {
+    setSavingIntegrations(true)
+    try {
+      const res = await fetch("/api/admin/import/api-integrations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ integrations: updated }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      setIntegrations(updated)
+      toast.success("Integrations saved")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save")
+    } finally {
+      setSavingIntegrations(false)
+    }
+  }
+
+  const addIntegration = () => {
+    const newInt: CrmIntegration = {
+      id: uid(),
+      name: "New Integration",
+      apiUrl: "",
+      authType: "api_key",
+      authValue: "",
+      fieldMapping: {},
+      syncDirection: "inbound",
+      isActive: false,
+      lastSyncStatus: "never",
+      createdAt: new Date().toISOString(),
+    }
+    const updated = [...integrations, newInt]
+    setIntegrations(updated)
+    setExpandedIntegration(newInt.id)
+  }
+
+  const updateIntegration = (id: string, patch: Partial<CrmIntegration>) => {
+    setIntegrations((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)))
+  }
+
+  const removeIntegration = (id: string) => {
+    const updated = integrations.filter((i) => i.id !== id)
+    saveIntegrations(updated)
+  }
+
+  const addFieldMapping = (integrationId: string) => {
+    if (!newMapping || !newMapping.from || !newMapping.to) return
+    const int = integrations.find((i) => i.id === integrationId)
+    if (!int) return
+    const updated = integrations.map((i) =>
+      i.id === integrationId
+        ? { ...i, fieldMapping: { ...i.fieldMapping, [newMapping.from]: newMapping.to } }
+        : i
+    )
+    setIntegrations(updated)
+    setNewMapping(null)
+  }
+
+  const removeFieldMapping = (integrationId: string, fromKey: string) => {
+    setIntegrations((prev) =>
+      prev.map((i) => {
+        if (i.id !== integrationId) return i
+        const fm = { ...i.fieldMapping }
+        delete fm[fromKey]
+        return { ...i, fieldMapping: fm }
+      })
+    )
+  }
+
+  // ── Filtered results ────────────────────────────────────────────────────────
+
+  const filteredResults = results
+    ? filterStatus === "all" ? results : results.filter((r) => r.status === filterStatus)
+    : []
+
+  const statusIcon = (s: ImportResult["status"]) => {
+    if (s === "imported") return <CheckCircle2 className="size-3.5 text-green-600" />
+    if (s === "duplicate") return <AlertCircle className="size-3.5 text-amber-500" />
+    return <XCircle className="size-3.5 text-red-500" />
+  }
+
+  const statusBadge = (s: ImportResult["status"]) => {
+    if (s === "imported") return <Badge className="bg-green-100 text-green-700 text-[10px] h-5">Imported</Badge>
+    if (s === "duplicate") return <Badge className="bg-amber-100 text-amber-700 text-[10px] h-5">Duplicate</Badge>
+    return <Badge className="bg-red-100 text-red-700 text-[10px] h-5">Error</Badge>
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+      {/* Header */}
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <Users className="size-5 text-primary" />
+          <h1 className="text-xl font-bold">Lead & Sales Import</h1>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Bulk-import leads from CSV or Excel files, or connect an external CRM via API.
+        </p>
+      </div>
+
+      <Tabs defaultValue="upload">
+        <TabsList className="mb-4">
+          <TabsTrigger value="upload" className="gap-1.5"><Upload className="size-3.5" /> File Upload</TabsTrigger>
+          <TabsTrigger value="api" className="gap-1.5" onClick={() => { if (!integrationsLoaded) loadIntegrations() }}>
+            <Plug className="size-3.5" /> API Integrations
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ── File Upload Tab ─────────────────────────────────────────────── */}
+        <TabsContent value="upload" className="space-y-5">
+          {/* Template download */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Step 1 — Download Template</CardTitle>
+              <CardDescription className="text-xs">
+                Use our CSV template for correct column names. Supported: .csv, .xlsx, .xls
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center gap-3">
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={downloadTemplate}>
+                <Download className="size-3.5" /> Download CSV Template
+              </Button>
+              <div className="text-xs text-muted-foreground">
+                Required columns: <span className="font-mono">businessName, contactName, contactEmail, contactPhone</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Drop zone */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Step 2 — Upload File</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                  dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"
+                }`}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+                />
+                <FileText className="size-8 mx-auto mb-2 text-muted-foreground" />
+                {file ? (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">{file.name}</p>
+                    <p className="text-xs text-muted-foreground">{parsedRows.length} rows parsed</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Drop your file here or click to browse</p>
+                    <p className="text-xs text-muted-foreground">CSV, XLSX, or XLS — up to 2,000 rows</p>
+                  </div>
+                )}
+              </div>
+
+              {file && parsedRows.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setPreviewOpen(!previewOpen)}>
+                    {previewOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                    Preview ({Math.min(5, parsedRows.length)} of {parsedRows.length} rows)
+                  </Button>
+                  <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={resetUpload}>
+                    Clear
+                  </Button>
+                </div>
+              )}
+
+              {previewOpen && parsedRows.length > 0 && (
+                <ScrollArea className="h-40 rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {Object.keys(parsedRows[0]).slice(0, 6).map((h) => (
+                          <TableHead key={h} className="text-[11px] whitespace-nowrap">{h}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {parsedRows.slice(0, 5).map((row, i) => (
+                        <TableRow key={i}>
+                          {Object.values(row).slice(0, 6).map((v, j) => (
+                            <TableCell key={j} className="text-xs max-w-[120px] truncate">{String(v)}</TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Import button */}
+          {parsedRows.length > 0 && !results && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Step 3 — Run Import</CardTitle>
+                <CardDescription className="text-xs">
+                  Duplicate check runs on email and phone. Existing records won&apos;t be overwritten.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={handleImport} disabled={importing} className="gap-2">
+                  {importing ? <><Loader2 className="size-4 animate-spin" /> Importing…</> : <><Upload className="size-4" /> Import {parsedRows.length} Leads</>}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Results */}
+          {summary && results && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Import Results</CardTitle>
+                  <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={resetUpload}>
+                    <RefreshCw className="size-3" /> New Import
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Summary cards */}
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: "Total", value: summary.total, color: "text-foreground" },
+                    { label: "Imported", value: summary.imported, color: "text-green-600" },
+                    { label: "Duplicates", value: summary.duplicates, color: "text-amber-600" },
+                    { label: "Errors", value: summary.errors, color: "text-red-600" },
+                  ].map((s) => (
+                    <div key={s.label} className="rounded-lg border p-3 text-center">
+                      <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                      <p className="text-[11px] text-muted-foreground">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Filter */}
+                <div className="flex gap-2">
+                  {(["all", "imported", "duplicate", "error"] as const).map((f) => (
+                    <Button
+                      key={f}
+                      size="sm"
+                      variant={filterStatus === f ? "default" : "outline"}
+                      className="h-7 text-xs capitalize"
+                      onClick={() => setFilterStatus(f)}
+                    >
+                      {f === "all" ? `All (${results.length})` : `${f} (${results.filter((r) => r.status === f).length})`}
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Results table */}
+                <ScrollArea className="h-72 rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-[11px] w-12">#</TableHead>
+                        <TableHead className="text-[11px]">Status</TableHead>
+                        <TableHead className="text-[11px]">Business Name</TableHead>
+                        <TableHead className="text-[11px]">Contact</TableHead>
+                        <TableHead className="text-[11px]">Email / Phone</TableHead>
+                        <TableHead className="text-[11px]">Reason</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredResults.map((r) => (
+                        <TableRow key={r.row} className={
+                          r.status === "imported" ? "bg-green-50/50"
+                          : r.status === "duplicate" ? "bg-amber-50/50"
+                          : "bg-red-50/50"
+                        }>
+                          <TableCell className="text-xs text-muted-foreground">{r.row}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              {statusIcon(r.status)}
+                              {statusBadge(r.status)}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs font-medium max-w-[140px] truncate">{r.data.businessName as string}</TableCell>
+                          <TableCell className="text-xs max-w-[120px] truncate">{r.data.contactName as string}</TableCell>
+                          <TableCell className="text-xs max-w-[160px]">
+                            <div className="truncate">{r.data.contactEmail as string}</div>
+                            <div className="text-muted-foreground">{r.data.contactPhone as string}</div>
+                          </TableCell>
+                          <TableCell className="text-[11px] text-muted-foreground max-w-[180px] truncate">{r.reason || "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ── API Integrations Tab ────────────────────────────────────────── */}
+        <TabsContent value="api" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">CRM API Connectors</CardTitle>
+                  <CardDescription className="text-xs mt-0.5">
+                    Connect external CRMs to automatically sync lead data. Outbound push and inbound pull supported.
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addIntegration}>
+                    <Plus className="size-3" /> Add Connector
+                  </Button>
+                  {integrations.length > 0 && (
+                    <Button size="sm" className="h-7 text-xs" onClick={() => saveIntegrations(integrations)} disabled={savingIntegrations}>
+                      {savingIntegrations ? <Loader2 className="size-3 animate-spin mr-1" /> : null}
+                      Save All
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {integrations.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-8 text-center">
+                  <Plug className="size-8 mx-auto mb-2 text-muted-foreground/50" />
+                  <p className="text-sm font-medium">No connectors configured</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Add a CRM connector to sync leads automatically via API.
+                  </p>
+                  <Button size="sm" className="mt-3 gap-1.5" onClick={addIntegration}>
+                    <Plus className="size-3.5" /> Add First Connector
+                  </Button>
+                </div>
+              ) : (
+                integrations.map((int) => (
+                  <div key={int.id} className="rounded-lg border">
+                    {/* Header row */}
+                    <div
+                      className="flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/30 rounded-lg"
+                      onClick={() => setExpandedIntegration(expandedIntegration === int.id ? null : int.id)}
+                    >
+                      <div className={`size-2 rounded-full ${int.isActive ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{int.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{int.apiUrl || "No URL configured"}</p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px]">{int.syncDirection}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{int.authType.replace("_", " ")}</Badge>
+                      {int.lastSyncStatus && int.lastSyncStatus !== "never" && (
+                        <Badge className={`text-[10px] ${int.lastSyncStatus === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                          {int.lastSyncStatus}
+                        </Badge>
+                      )}
+                      <button
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={(e) => { e.stopPropagation(); removeIntegration(int.id) }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                      <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedIntegration === int.id ? "rotate-180" : ""}`} />
+                    </div>
+
+                    {expandedIntegration === int.id && (
+                      <div className="px-4 pb-4 space-y-4 border-t pt-4">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Connector Name</Label>
+                            <Input className="h-8 text-xs" value={int.name} onChange={(e) => updateIntegration(int.id, { name: e.target.value })} />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Sync Direction</Label>
+                            <Select value={int.syncDirection} onValueChange={(v) => updateIntegration(int.id, { syncDirection: v as CrmIntegration["syncDirection"] })}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="inbound">Inbound (pull from CRM)</SelectItem>
+                                <SelectItem value="outbound">Outbound (push to CRM)</SelectItem>
+                                <SelectItem value="both">Both ways</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="col-span-2 space-y-1.5">
+                            <Label className="text-xs">API Endpoint URL</Label>
+                            <Input className="h-8 text-xs font-mono" placeholder="https://api.yourcrm.com/v1/leads" value={int.apiUrl} onChange={(e) => updateIntegration(int.id, { apiUrl: e.target.value })} />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Auth Type</Label>
+                            <Select value={int.authType} onValueChange={(v) => updateIntegration(int.id, { authType: v as CrmIntegration["authType"] })}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="api_key">API Key</SelectItem>
+                                <SelectItem value="bearer_token">Bearer Token</SelectItem>
+                                <SelectItem value="basic_auth">Basic Auth (user:pass)</SelectItem>
+                                <SelectItem value="oauth2">OAuth 2.0</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">
+                              {int.authType === "oauth2" ? "Client ID" : int.authType === "api_key" ? "API Key" : int.authType === "basic_auth" ? "user:password" : "Token"}
+                            </Label>
+                            <div className="relative">
+                              <Input
+                                className="h-8 text-xs font-mono pr-8"
+                                type={showSecret[int.id] ? "text" : "password"}
+                                value={int.authValue}
+                                onChange={(e) => updateIntegration(int.id, { authValue: e.target.value })}
+                              />
+                              <button
+                                className="absolute right-2 top-1.5 text-muted-foreground"
+                                onClick={() => setShowSecret((p) => ({ ...p, [int.id]: !p[int.id] }))}
+                              >
+                                {showSecret[int.id] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+                          {int.authType === "oauth2" && (
+                            <div className="col-span-2 space-y-1.5">
+                              <Label className="text-xs">Client Secret</Label>
+                              <Input className="h-8 text-xs font-mono" type="password" value={int.authSecret || ""} onChange={(e) => updateIntegration(int.id, { authSecret: e.target.value })} />
+                            </div>
+                          )}
+                          <div className="col-span-2 space-y-1.5">
+                            <Label className="text-xs">Description (optional)</Label>
+                            <Input className="h-8 text-xs" value={int.description || ""} onChange={(e) => updateIntegration(int.id, { description: e.target.value })} />
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        {/* Field mapping */}
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <Label className="text-xs font-semibold">Field Mapping</Label>
+                            <Button size="sm" variant="outline" className="h-6 text-[11px] gap-1" onClick={() => setNewMapping({ integrationId: int.id, from: "", to: "" })}>
+                              <Plus className="size-3" /> Add Mapping
+                            </Button>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="grid grid-cols-5 gap-2 text-[10px] text-muted-foreground font-medium px-1">
+                              <span className="col-span-2">CRM field</span>
+                              <span className="col-span-2">Quantix field</span>
+                              <span />
+                            </div>
+                            {Object.entries(int.fieldMapping).map(([from, to]) => (
+                              <div key={from} className="grid grid-cols-5 gap-2 items-center">
+                                <span className="col-span-2 font-mono text-xs bg-muted rounded px-2 py-1 truncate">{from}</span>
+                                <span className="col-span-2 font-mono text-xs bg-muted rounded px-2 py-1 truncate">{to}</span>
+                                <button className="text-muted-foreground hover:text-destructive justify-self-center" onClick={() => removeFieldMapping(int.id, from)}>
+                                  <Trash2 className="size-3" />
+                                </button>
+                              </div>
+                            ))}
+                            {newMapping?.integrationId === int.id && (
+                              <div className="grid grid-cols-5 gap-2 items-center">
+                                <Input className="col-span-2 h-7 text-xs font-mono" placeholder="crm_field" value={newMapping.from} onChange={(e) => setNewMapping((p) => p ? { ...p, from: e.target.value } : p)} />
+                                <Select value={newMapping.to} onValueChange={(v) => setNewMapping((p) => p ? { ...p, to: v } : p)}>
+                                  <SelectTrigger className="col-span-2 h-7 text-xs"><SelectValue placeholder="Quantix field" /></SelectTrigger>
+                                  <SelectContent>
+                                    {CSV_HEADERS.map((h) => <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                                <Button size="sm" className="h-7 text-xs px-2" onClick={() => addFieldMapping(int.id)}>Add</Button>
+                              </div>
+                            )}
+                            {Object.keys(int.fieldMapping).length === 0 && !newMapping && (
+                              <p className="text-[11px] text-muted-foreground px-1">No field mappings yet. Add one to map CRM fields to Quantix lead fields.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={int.isActive}
+                                onChange={(e) => updateIntegration(int.id, { isActive: e.target.checked })}
+                              />
+                              <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
+                            </label>
+                            <span className="text-xs text-muted-foreground">{int.isActive ? "Active" : "Inactive"}</span>
+                          </div>
+                          {int.lastSyncAt && (
+                            <p className="text-[11px] text-muted-foreground">Last sync: {new Date(int.lastSyncAt).toLocaleString("en-IN")}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Field reference */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Supported Quantix Lead Fields</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-1">
+                {CSV_HEADERS.map((h) => (
+                  <code key={h} className="text-[11px] bg-muted rounded px-2 py-0.5">{h}</code>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-3">
+                <strong>businessType</strong> values: {BUSINESS_TYPE_OPTIONS.join(", ")}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                <strong>source</strong> values: {SOURCE_OPTIONS.join(", ")}
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

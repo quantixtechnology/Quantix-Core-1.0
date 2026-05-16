@@ -97,8 +97,10 @@ const PAGE_PERMISSIONS: Record<string, { permission?: string; superAdminOnly?: b
   "mobile-versions":      { permission: "platform:manage_deployments" },
   "client-assets":        { permission: "businesses:edit" },
   "tenant-provisioning":  { permission: "businesses:create" },
-  "product-import":       { permission: "businesses:edit" },
-  "onboarding-checklist": { permission: "businesses:edit" },
+  "product-import":         { permission: "businesses:edit" },
+  "onboarding-checklist":   { permission: "businesses:edit" },
+  "leads-import":           { permission: "import:leads" },
+  "business-data-import":   { permission: "import:business" },
   "platform-analytics":   { permission: "platform:view_analytics" },
   "revenue":              { permission: "subscriptions:view" },
   "support":              { permission: "leads:view" },
@@ -136,6 +138,10 @@ const ReleaseManagementView = dynamic(() => import("@/components/dashboard/relea
 const PlayStoreView = dynamic(() => import("@/components/dashboard/play-store-view").then(m => ({ default: m.PlayStoreView })), { loading: () => <PageLoader /> })
 const MobileVersionsView = dynamic(() => import("@/components/dashboard/mobile-versions-view").then(m => ({ default: m.MobileVersionsView })), { loading: () => <PageLoader /> })
 const MobileAppsView = dynamic(() => import("@/components/dashboard/mobile-apps-view").then(m => ({ default: m.MobileAppsView })), { loading: () => <PageLoader /> })
+
+// ── Data Imports (lazy) ───────────────────────────────────────────────────
+const LeadsImportView = dynamic(() => import("@/components/admin/imports/leads-import-view").then(m => ({ default: m.LeadsImportView })), { loading: () => <PageLoader /> })
+const BusinessImportView = dynamic(() => import("@/components/admin/imports/business-import-view").then(m => ({ default: m.BusinessImportView })), { loading: () => <PageLoader /> })
 
 // ── Client Operations (lazy) ──────────────────────────────────────────────
 const ClientAssetsView = dynamic(() => import("@/components/dashboard/client-assets-view").then(m => ({ default: m.ClientAssetsView })), { loading: () => <PageLoader /> })
@@ -282,6 +288,9 @@ function AppContent() {
       case "tenant-provisioning": return <TenantProvisioningView />
       case "product-import": return <ProductImportView />
       case "onboarding-checklist": return <OnboardingChecklistView />
+      // Data Imports
+      case "leads-import": return <LeadsImportView />
+      case "business-data-import": return <BusinessImportView />
       // Platform Operations
       case "platform-analytics": return <PlatformAnalyticsView />
       case "revenue": return <RevenueView />
@@ -311,6 +320,7 @@ function AppContent() {
       case "tax": return <TaxView />
       case "loyalty": return <LoyaltyView />
       case "product-import": return <ProductImportView />
+      case "business-data-import": return <BusinessImportView />
       case "delivery-zones": return <DeliveryZonesView />
       case "stores": return <StoresView />
       case "storefront": return <StorefrontShell />

@@ -40,6 +40,8 @@ export type AdminPage =
   | "payment-plugins"
   | "platform-users"
   | "roles-permissions"
+  | "leads-import"
+  | "business-data-import"
 
 export type BusinessPage =
   | "dashboard"
@@ -63,6 +65,7 @@ export type BusinessPage =
   | "workflow-config"
   | "workflows"
   | "gateway-config"
+  | "business-data-import"
 
 export type CustomerPage =
   | "auth"

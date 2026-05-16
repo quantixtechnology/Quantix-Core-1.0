@@ -5,6 +5,7 @@ import {
   Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
   Workflow, Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
+  DatabaseZap,
 } from "lucide-react"
 import {
   Sidebar,
@@ -66,7 +67,8 @@ const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; i
 const managementNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "stores", label: "Stores", icon: Store },
   { key: "customers", label: "Customers", icon: Users },
-  { key: "product-import", label: "Product Import", icon: Upload },
+  { key: "product-import",      label: "Product Import",       icon: Upload },
+  { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap },
   { key: "pos", label: "POS Billing", icon: Monitor },
   { key: "gateway-config", label: "Payment Gateways", icon: CreditCard },
   { key: "marketing", label: "Marketing", icon: Megaphone },
