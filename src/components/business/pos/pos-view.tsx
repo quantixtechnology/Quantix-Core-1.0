@@ -350,7 +350,7 @@ export function POSView() {
       // Create order via API for POS orders
       if (cart.length > 0) {
         createOrderMutation.mutate({
-          storeId: currentStoreId || undefined,
+          storeId: currentStoreId || "",
           orderType: "POS",
           customerName: selectedCustomerData?.name || "Walk-in Customer",
           customerPhone: selectedCustomerData?.phone,
