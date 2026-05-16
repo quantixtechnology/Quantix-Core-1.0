@@ -31,7 +31,7 @@ export function StorePickerModal({ open, onClose }: StorePickerModalProps) {
     setCurrentStoreName,
     currentBusinessPrimaryColor,
   } = useAdminStore()
-  const { setCartStoreId } = useCartStore()
+  const { setCartStoreId, setStoreContext } = useCartStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
 
   const [stores, setStores] = useState<StoreOption[]>([])
@@ -73,6 +73,7 @@ export function StorePickerModal({ open, onClose }: StorePickerModalProps) {
     setCurrentStoreId(store.id)
     setCurrentStoreName(store.name)
     setCartStoreId(store.id)
+    setStoreContext(store.deliveryFee ?? null, store.minOrderAmount ?? null)
     onClose()
   }
 

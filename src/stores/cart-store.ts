@@ -17,9 +17,11 @@ export interface CartItem {
 interface CartState {
   items: CartItem[]
   storeId: string | null
+  storeDeliveryFee: number | null
   couponCode: string | null
   couponDiscount: number
   setCartStoreId: (id: string) => void
+  setStoreContext: (deliveryFee: number | null, minOrderAmount: number | null) => void
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void
   removeItem: (productId: string, variantId: string) => void
   updateQuantity: (productId: string, variantId: string, quantity: number) => void
@@ -36,10 +38,12 @@ interface CartState {
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   storeId: null,
+  storeDeliveryFee: null,
   couponCode: null,
   couponDiscount: 0,
 
   setCartStoreId: (id) => set({ storeId: id }),
+  setStoreContext: (deliveryFee) => set({ storeDeliveryFee: deliveryFee }),
 
   addItem: (item) => {
     set((state) => {
@@ -83,7 +87,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     }))
   },
 
-  clearCart: () => set({ items: [], storeId: null, couponCode: null, couponDiscount: 0 }),
+  clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, couponCode: null, couponDiscount: 0 }),
 
   applyCoupon: (code, discount) => set({ couponCode: code, couponDiscount: discount }),
   removeCoupon: () => set({ couponCode: null, couponDiscount: 0 }),
@@ -105,7 +109,10 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   deliveryFee: () => {
     const subtotal = get().subtotal()
-    return subtotal > 0 && subtotal < 500 ? 30 : 0
+    if (subtotal === 0) return 0
+    const storeFee = get().storeDeliveryFee
+    if (storeFee !== null) return storeFee
+    return subtotal < 500 ? 30 : 0
   },
 
   total: () => {

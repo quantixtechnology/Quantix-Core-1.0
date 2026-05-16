@@ -17,12 +17,12 @@ import {
   ArrowRight,
   Leaf,
   Truck,
-  ChevronRight,
+  MapPin,
   X,
 } from "lucide-react"
 
 export function CustomerCart() {
-  const { setCustomerPage, currentBusinessType, currentBusinessPrimaryColor } = useAdminStore()
+  const { setCustomerPage, currentBusinessType, currentBusinessPrimaryColor, currentStoreName } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
 
   // Dynamic coupons from business context
@@ -36,6 +36,7 @@ export function CustomerCart() {
     removeCoupon,
     couponCode,
     couponDiscount,
+    storeDeliveryFee,
   } = useCartStore()
   const subtotal = useCartStore((s) => s.subtotal())
   const totalSavings = useCartStore((s) => s.totalSavings())
@@ -112,8 +113,17 @@ export function CustomerCart() {
         </button>
       </div>
 
+      {/* Selected Store */}
+      {currentStoreName && (
+        <div className="mx-4 mb-3 flex items-center gap-1.5">
+          <MapPin className="w-3 h-3 shrink-0" style={{ color: brandColor }} />
+          <span className="text-[11px] text-gray-500">Delivering from</span>
+          <span className="text-[11px] font-semibold text-gray-700">{currentStoreName}</span>
+        </div>
+      )}
+
       {/* Free Delivery Banner */}
-      {subtotal < 500 && (
+      {storeDeliveryFee === null && subtotal < 500 && (
         <div className="mx-4 mb-3 bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-2">
           <Truck className="w-4 h-4 text-amber-600 flex-shrink-0" />
           <p className="text-[11px] text-amber-700">
@@ -121,7 +131,7 @@ export function CustomerCart() {
           </p>
         </div>
       )}
-      {subtotal >= 500 && deliveryFee === 0 && (
+      {(storeDeliveryFee === 0 || (storeDeliveryFee === null && subtotal >= 500)) && deliveryFee === 0 && (
         <div className="mx-4 mb-3 rounded-xl p-3 flex items-center gap-2 border" style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}25` }}>
           <Truck className="w-4 h-4 flex-shrink-0" style={{ color: brandColor }} />
           <p className="text-[11px] font-medium" style={{ color: brandColor }}>You get FREE delivery on this order!</p>
