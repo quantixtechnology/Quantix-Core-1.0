@@ -107,7 +107,7 @@ function generateBillNumber(prefix: string): string {
 
 export function POSView() {
   // Get demo business context
-  const { currentBusinessType } = useAdminStore()
+  const { currentBusinessType, currentStoreId } = useAdminStore()
 
   // Demo data — context-aware fallbacks
   const demoProductsFallback = useMemo(() => {
@@ -350,7 +350,7 @@ export function POSView() {
       // Create order via API for POS orders
       if (cart.length > 0) {
         createOrderMutation.mutate({
-          storeId: "store_1",
+          storeId: currentStoreId || undefined,
           orderType: "POS",
           customerName: selectedCustomerData?.name || "Walk-in Customer",
           customerPhone: selectedCustomerData?.phone,
