@@ -237,94 +237,52 @@ export async function seed() {
   }
   console.log('');
 
-  // 4. Create Platform Plans (4 plans: STANDARD_MONTHLY, STANDARD_YEARLY, PRO_MONTHLY, PRO_YEARLY)
+  // 4. Create Platform Plans — 2 plans only (STANDARD and PRO), feature access only, NO pricing
   console.log('📋 Creating platform plans...');
   const planConfigs = [
     {
-      tier: 'STANDARD' as const, billingCycle: 'MONTHLY' as const,
-      name: 'Quantix Standard Monthly', price: 2999,
-      description: 'Standard plan — Ecommerce workflow, POS, Delivery',
+      tier: 'STANDARD' as const,
+      name: 'Quantix Standard',
+      description: 'Core workflows: Ecommerce, POS, Delivery. Standard badge.',
       maxStores: 2, maxProducts: 1000, maxOrders: 2000, maxDeliveryPartners: 10, maxStaff: 15,
-      features: ['2 Stores', '1000 Products', '2000 Orders/mo', 'Basic POS', 'Delivery', 'Ecommerce Workflow'],
+      features: ['2 Stores', '1000 Products', '2000 Orders/mo', 'POS', 'Delivery', 'Ecommerce Workflow'],
       hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
       hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
     },
     {
-      tier: 'STANDARD' as const, billingCycle: 'YEARLY' as const,
-      name: 'Quantix Standard Yearly', price: 30000,
-      description: 'Standard plan yearly — Save ₹5,988',
-      maxStores: 2, maxProducts: 1000, maxOrders: 2000, maxDeliveryPartners: 10, maxStaff: 15,
-      features: ['2 Stores', '1000 Products', '2000 Orders/mo', 'Basic POS', 'Delivery', 'Ecommerce Workflow', 'Save ₹5,988/yr'],
-      hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
-      hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
-    },
-    {
-      tier: 'PRO' as const, billingCycle: 'MONTHLY' as const,
-      name: 'Quantix Pro Monthly', price: 4999,
-      description: 'Pro plan — All workflows, Subscriptions, Pickup, Appointment, Post-Service',
+      tier: 'PRO' as const,
+      name: 'Quantix Pro',
+      description: 'All workflows unlocked: Pickup, Appointment, Subscription, Post-Service. Premium badge.',
       maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
       features: ['5 Stores', '5000 Products', '10000 Orders/mo', 'Advanced POS', 'All Workflows', 'Custom Domain', 'Reports', 'API Access'],
       hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
       hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
     },
-    {
-      tier: 'STANDARD' as const, billingCycle: 'QUARTERLY' as const,
-      name: 'Quantix Standard Quarterly', price: 8499,
-      description: 'Standard plan quarterly — Save ₹498',
-      maxStores: 2, maxProducts: 1000, maxOrders: 2000, maxDeliveryPartners: 10, maxStaff: 15,
-      features: ['2 Stores', '1000 Products', '2000 Orders/mo', 'Basic POS', 'Delivery', 'Ecommerce Workflow', 'Save ₹498/qtr'],
-      hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
-      hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
-    },
-    {
-      tier: 'STANDARD' as const, billingCycle: 'HALF_YEARLY' as const,
-      name: 'Quantix Standard Half-Yearly', price: 16499,
-      description: 'Standard plan half-yearly — Save ₹1,495',
-      maxStores: 2, maxProducts: 1000, maxOrders: 2000, maxDeliveryPartners: 10, maxStaff: 15,
-      features: ['2 Stores', '1000 Products', '2000 Orders/mo', 'Basic POS', 'Delivery', 'Ecommerce Workflow', 'Save ₹1,495/6mo'],
-      hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
-      hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
-    },
-    {
-      tier: 'PRO' as const, billingCycle: 'QUARTERLY' as const,
-      name: 'Quantix Pro Quarterly', price: 13999,
-      description: 'Pro plan quarterly — Save ₹998',
-      maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
-      features: ['5 Stores', '5000 Products', '10000 Orders/mo', 'Advanced POS', 'All Workflows', 'Custom Domain', 'Reports', 'API Access', 'Save ₹998/qtr'],
-      hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
-      hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
-    },
-    {
-      tier: 'PRO' as const, billingCycle: 'HALF_YEARLY' as const,
-      name: 'Quantix Pro Half-Yearly', price: 27499,
-      description: 'Pro plan half-yearly — Save ₹2,495',
-      maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
-      features: ['5 Stores', '5000 Products', '10000 Orders/mo', 'Advanced POS', 'All Workflows', 'Custom Domain', 'Reports', 'API Access', 'Save ₹2,495/6mo'],
-      hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
-      hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
-    },
-    {
-      tier: 'PRO' as const, billingCycle: 'YEARLY' as const,
-      name: 'Quantix Pro Yearly', price: 49999,
-      description: 'Pro plan yearly — Save ₹9,989',
-      maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
-      features: ['5 Stores', '5000 Products', '10000 Orders/mo', 'Advanced POS', 'All Workflows', 'Custom Domain', 'Reports', 'API Access', 'Save ₹9,989/yr'],
-      hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
-      hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
-    },
   ];
 
-  // Use @@unique([tier, billingCycle]) for upsert
-  const planRecords: Array<{ id: string; tier: string; billingCycle: string; price: number }> = [];
+  const planRecords: Array<{ id: string; tier: string }> = [];
   for (const planData of planConfigs) {
     const plan = await db.platformPlan.upsert({
-      where: { tier_billingCycle: { tier: planData.tier, billingCycle: planData.billingCycle } },
-      update: {},
+      where: { tier: planData.tier },
+      update: {
+        name: planData.name,
+        description: planData.description,
+        features: JSON.stringify(planData.features),
+        maxStores: planData.maxStores,
+        maxProducts: planData.maxProducts,
+        maxOrders: planData.maxOrders,
+        maxDeliveryPartners: planData.maxDeliveryPartners,
+        maxStaff: planData.maxStaff,
+        hasEcommerceWorkflow: planData.hasEcommerceWorkflow,
+        hasPickupWorkflow: planData.hasPickupWorkflow,
+        hasAppointmentWorkflow: planData.hasAppointmentWorkflow,
+        hasSubscriptionWorkflow: planData.hasSubscriptionWorkflow,
+        hasPostServiceWorkflow: planData.hasPostServiceWorkflow,
+        hasAdvancedWorkflowEngine: planData.hasAdvancedWorkflowEngine,
+      },
       create: {
         tier: planData.tier,
-        billingCycle: planData.billingCycle,
         name: planData.name,
-        price: planData.price,
         description: planData.description,
         features: JSON.stringify(planData.features),
         maxStores: planData.maxStores,
@@ -342,14 +300,14 @@ export async function seed() {
         hasDelivery: true,
         hasSubscription: planData.tier === 'PRO',
         hasCustomDomain: planData.tier === 'PRO',
-        hasWhiteLabel: false,
+        hasWhiteLabel: planData.tier === 'PRO',
         hasAdvancedReports: planData.tier === 'PRO',
         hasAPIAccess: planData.tier === 'PRO',
         isActive: true,
       },
     });
-    planRecords.push({ id: plan.id, tier: planData.tier, billingCycle: planData.billingCycle, price: planData.price });
-    console.log(`  ✅ ${planData.name} (₹${planData.price})`);
+    planRecords.push({ id: plan.id, tier: planData.tier });
+    console.log(`  ✅ ${planData.name} (feature-access plan, no fixed pricing)`);
   }
   console.log('');
 
@@ -406,25 +364,27 @@ export async function seed() {
   }
   console.log('');
 
-  // 6. Create Business Subscriptions — billingCycle is PlanBillingCycle enum, no trial fields
+  // 6. Create Business Subscriptions — no fixed pricing, use demo amounts
   console.log('💳 Creating business subscriptions...');
   const now = new Date();
-  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-  const oneYear = 365 * 24 * 60 * 60 * 1000;
+  const cycles: Array<'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY'> = ['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY'];
 
   for (let i = 0; i < businessRecords.length; i++) {
     const biz = businessRecords[i];
     const bizStatus = statuses[i] || 'ACTIVE';
     if (bizStatus === 'ONBOARDING' || bizStatus === 'CHURNED') continue;
 
-    // Assign plans: first 5 get STANDARD, rest get PRO; alternate monthly/yearly
     const planTier = i < 5 ? 'STANDARD' : 'PRO';
-    const billingCycle: 'MONTHLY' | 'YEARLY' = i % 2 === 0 ? 'MONTHLY' : 'YEARLY';
-    const plan = planRecords.find(p => p.tier === planTier && p.billingCycle === billingCycle);
+    const billingCycle = cycles[i % 4];
+    const plan = planRecords.find(p => p.tier === planTier);
     if (!plan) continue;
 
-    const periodEnd = billingCycle === 'MONTHLY' ? new Date(now.getTime() + thirtyDays) : new Date(now.getTime() + oneYear);
+    const cycleDays = billingCycle === 'YEARLY' ? 365 : billingCycle === 'HALF_YEARLY' ? 182 : billingCycle === 'QUARTERLY' ? 90 : 30;
+    const periodEnd = new Date(now.getTime() + cycleDays * 24 * 60 * 60 * 1000);
     const subStatus: 'ACTIVE' | 'SUSPENDED' | 'PAST_DUE' = bizStatus === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+    // Demo amounts — these are just placeholders, not real pricing
+    const subscriptionAmount = planTier === 'PRO' ? 4999 : 2999;
+    const finalAmount = subscriptionAmount;
 
     await db.businessSubscription.upsert({
       where: { businessId: biz.id },
@@ -433,19 +393,19 @@ export async function seed() {
         businessId: biz.id,
         planId: plan.id,
         status: subStatus as any,
-        planPrice: plan.price,
-        billingCycle: billingCycle as any, // PlanBillingCycle enum
+        subscriptionAmount,
+        finalAmount,
+        billingCycle: billingCycle as any,
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
         nextBillingDate: periodEnd,
-        nextPaymentAmount: plan.price,
+        nextPaymentAmount: finalAmount,
         lastPaymentDate: now,
-        lastPaymentAmount: plan.price,
+        lastPaymentAmount: finalAmount,
         paymentVerified: true,
         paymentVerifiedAt: now,
         paymentVerifiedBy: superAdmin.id,
         autoRenew: true,
-        // NO trialStart/trialEnd — those fields don't exist
       },
     });
   }

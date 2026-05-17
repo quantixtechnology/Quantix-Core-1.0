@@ -60,7 +60,7 @@ export const GET = withMiddleware({
       db.businessSubscription.count({ where: { status: 'SUSPENDED' } }),
       db.businessSubscription.findMany({
         where: { status: { in: ['ACTIVE', 'PAST_DUE'] } },
-        select: { planPrice: true, customPrice: true, billingCycle: true },
+        select: { planPrice: true, customPrice: true, billingCycle: true, subscriptionAmount: true, finalAmount: true },
       }),
       db.domainMapping.count(),
       db.domainMapping.count({ where: { status: 'ACTIVE' } }),
@@ -84,7 +84,7 @@ export const GET = withMiddleware({
     let monthlyMRR = 0;
     let yearlyProjected = 0;
     for (const sub of subscriptionRevenueResult) {
-      const price = sub.customPrice || sub.planPrice;
+      const price = sub.finalAmount ?? sub.subscriptionAmount ?? sub.customPrice ?? sub.planPrice ?? 0;
       if (sub.billingCycle === 'MONTHLY') {
         monthlyMRR += price;
         yearlyProjected += price * 12;

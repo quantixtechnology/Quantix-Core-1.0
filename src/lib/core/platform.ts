@@ -336,38 +336,34 @@ export const PLATFORM_PLANS = {
  * Safe to call multiple times — uses upsert.
  */
 export async function seedPlatformPlans(_platformId?: string): Promise<void> {
-  for (const [key, plan] of Object.entries(PLATFORM_PLANS)) {
-    await db.platformPlan.upsert({
-      where: { tier_billingCycle: { tier: 'STANDARD', billingCycle: plan.billingCycle } },
-      update: {
-        price: plan.price,
-        name: plan.name,
-        description: plan.description,
-        features: JSON.stringify(plan.features),
-      },
-      create: {
-        tier: 'STANDARD',
-        billingCycle: plan.billingCycle,
-        price: plan.price,
-        name: plan.name,
-        description: plan.description,
-        features: JSON.stringify(plan.features),
-        // Default limits — same for both plans
-        maxStores: 5,
-        maxProducts: 5000,
-        maxOrders: 10000,
-        maxDeliveryPartners: 50,
-        maxStaff: 50,
-        hasPOS: true,
-        hasDelivery: true,
-        hasSubscription: true,
-        hasCustomDomain: true,
-        hasWhiteLabel: true,
-        hasAdvancedReports: true,
-        hasAPIAccess: true,
-        isActive: true,
-      },
-    });
+  const plans = [
+    {
+      tier: 'STANDARD' as const,
+      name: 'Quantix Standard',
+      description: 'Core features for growing businesses',
+      features: JSON.stringify(['Ecommerce Workflow', 'POS', 'Delivery', 'Custom Domain', 'White Label', 'Reports', 'API Access']),
+      maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
+      hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true,
+      hasWhiteLabel: true, hasAdvancedReports: true, hasAPIAccess: true,
+      hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
+      hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
+      isActive: true,
+    },
+    {
+      tier: 'PRO' as const,
+      name: 'Quantix Pro',
+      description: 'All workflows for enterprise businesses',
+      features: JSON.stringify(['All Standard Features', 'Pickup', 'Appointment', 'Subscription', 'Post-Service', 'Advanced Workflow Engine']),
+      maxStores: 50, maxProducts: 50000, maxOrders: 100000, maxDeliveryPartners: 500, maxStaff: 500,
+      hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true,
+      hasWhiteLabel: true, hasAdvancedReports: true, hasAPIAccess: true,
+      hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
+      hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
+      isActive: true,
+    },
+  ];
+  for (const p of plans) {
+    await db.platformPlan.upsert({ where: { tier: p.tier }, update: p, create: p });
   }
 }
 
@@ -534,9 +530,9 @@ export async function enableDefaultModules(businessId: string, businessType: Bus
  * Get a platform plan by billing cycle.
  * Returns the plan record from the database.
  */
-export async function getPlatformPlan(billingCycle: PlanBillingCycle) {
+export async function getPlatformPlan(tier?: string) {
   return db.platformPlan.findFirst({
-    where: { billingCycle },
+    where: tier ? { tier: tier as never } : { isActive: true },
   });
 }
 

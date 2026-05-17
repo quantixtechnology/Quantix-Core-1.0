@@ -171,7 +171,7 @@ export async function DELETE(
 
       return createSuccessResponse({
         subscription: updated,
-        message: `Pricing override removed. Subscription reverted to standard plan price: ₹${subscription.planPrice.toLocaleString('en-IN')} ${subscription.billingCycle === 'YEARLY' ? '/year' : '/month'}`,
+        message: `Pricing override removed. Subscription reverted to base price: ₹${(subscription.subscriptionAmount ?? subscription.planPrice ?? 0).toLocaleString('en-IN')} ${subscription.billingCycle === 'YEARLY' ? '/year' : '/month'}`,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to remove pricing override';

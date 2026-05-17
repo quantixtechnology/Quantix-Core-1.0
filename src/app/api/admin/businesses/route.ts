@@ -54,7 +54,7 @@ export const GET = withMiddleware({
         include: {
           businessSubscription: {
             include: {
-              plan: { select: { name: true, tier: true, billingCycle: true, price: true } },
+              plan: { select: { name: true, tier: true } },
             },
           },
           domain: { select: { domain: true, status: true } },
@@ -118,6 +118,17 @@ export const GET = withMiddleware({
         ? {
             id: b.businessSubscription.id,
             status: b.businessSubscription.status,
+            // New billing fields
+            subscriptionAmount: b.businessSubscription.subscriptionAmount,
+            discountAmount: b.businessSubscription.discountAmount,
+            finalAmount: b.businessSubscription.finalAmount,
+            implementationAmount: b.businessSubscription.implementationAmount,
+            iosAppAmount: b.businessSubscription.iosAppAmount,
+            iosDiscountAmount: b.businessSubscription.iosDiscountAmount,
+            iosFinalAmount: b.businessSubscription.iosFinalAmount,
+            iosSubscriptionCycle: b.businessSubscription.iosSubscriptionCycle,
+            addOns: b.businessSubscription.addOns,
+            // Legacy
             planPrice: b.businessSubscription.planPrice,
             customPrice: b.businessSubscription.customPrice,
             discountPercentage: b.businessSubscription.discountPercentage,
@@ -127,12 +138,11 @@ export const GET = withMiddleware({
             billingCycleDay: b.businessSubscription.billingCycleDay,
             currentPeriodStart: b.businessSubscription.currentPeriodStart,
             nextBillingDate: b.businessSubscription.nextBillingDate,
+            notes: b.businessSubscription.notes,
             plan: b.businessSubscription.plan
               ? {
                   name: b.businessSubscription.plan.name,
                   tier: b.businessSubscription.plan.tier,
-                  billingCycle: b.businessSubscription.plan.billingCycle,
-                  price: b.businessSubscription.plan.price,
                 }
               : null,
           }

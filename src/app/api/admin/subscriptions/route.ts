@@ -44,8 +44,6 @@ export const GET = withMiddleware({
             id: true,
             name: true,
             tier: true,
-            billingCycle: true,
-            price: true,
             maxStores: true,
             maxProducts: true,
             maxOrders: true,
@@ -58,7 +56,7 @@ export const GET = withMiddleware({
     // Also get platform plans for the manage plans dialog
     const platformPlans = await db.platformPlan.findMany({
       where: { isActive: true },
-      orderBy: { price: 'asc' },
+      orderBy: { tier: 'asc' },
     });
 
     // Compute stats
@@ -69,7 +67,7 @@ export const GET = withMiddleware({
     let monthlyMRR = 0;
     let yearlyProjected = 0;
     for (const sub of subscriptions.filter((s) => s.status === 'ACTIVE' || s.status === 'PAST_DUE')) {
-      const price = sub.customPrice || sub.planPrice;
+      const price = sub.finalAmount ?? sub.subscriptionAmount ?? sub.customPrice ?? sub.planPrice ?? 0;
       const isMonthly = sub.billingCycle === 'MONTHLY';
       if (isMonthly) {
         monthlyMRR += price;

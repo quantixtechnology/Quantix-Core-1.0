@@ -27,7 +27,7 @@ import type { PlanBillingCycle } from './types';
 
 export type SubscriptionBillingCycle = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
 
-export type PlatformBillingCycle = PlanBillingCycle; // 'MONTHLY' | 'YEARLY'
+export type PlatformBillingCycle = PlanBillingCycle;
 
 export interface PlatformSubscriptionResult {
   success: boolean;
@@ -40,7 +40,9 @@ export interface PlatformSubscriptionResult {
     currentPeriodStart: Date;
     currentPeriodEnd: Date;
     nextBillingDate: Date;
-    planPrice: number;
+    subscriptionAmount: number | null;
+    finalAmount: number | null;
+    planPrice: number | null;
     customPrice: number | null;
   };
   error?: string;
@@ -103,61 +105,47 @@ export async function createPlatformSubscription(params: {
   businessId: string;
   planId: string;
   billingCycle: PlatformBillingCycle;
+  subscriptionAmount?: number;
+  discountAmount?: number;
   customPrice?: number;
   overrideReason?: string;
 }): Promise<PlatformSubscriptionResult> {
-  // Check if business already has a subscription
   const existing = await db.businessSubscription.findUnique({
     where: { businessId: params.businessId },
   });
-
   if (existing) {
     return { success: false, error: 'Business already has a platform subscription' };
   }
 
-  // Validate plan exists and is active
-  const plan = await db.platformPlan.findUnique({
-    where: { id: params.planId },
-  });
-
+  const plan = await db.platformPlan.findUnique({ where: { id: params.planId } });
   if (!plan) {
     return { success: false, error: 'Platform plan not found' };
   }
 
   const now = new Date();
-
-  // Get plan price from the plan record (price is per billing cycle now)
-  const planPrice = plan.price;
-
-  // Calculate period dates based on billing cycle
   const periodEnd = calculatePeriodEnd(now, params.billingCycle);
 
-  // Determine effective price — custom price overrides plan price (Super Admin override)
-  const effectivePrice = params.customPrice ?? planPrice;
-  const hasOverride = params.customPrice !== undefined && params.customPrice !== planPrice;
-  const discountPercentage = hasOverride && planPrice > 0
-    ? Math.round(((planPrice - (params.customPrice || 0)) / planPrice) * 100 * 100) / 100
-    : null;
+  const subscriptionAmount = params.subscriptionAmount ?? params.customPrice ?? 0;
+  const discountAmount = params.discountAmount ?? 0;
+  const finalAmount = subscriptionAmount - discountAmount;
 
-  // Create subscription — starts as ACTIVE, NO TRIAL
   const subscription = await db.businessSubscription.create({
     data: {
       businessId: params.businessId,
       planId: params.planId,
       status: 'ACTIVE',
-      planPrice,
-      customPrice: params.customPrice,
-      discountPercentage,
-      manualPriceOverride: hasOverride,
-      overrideReason: params.overrideReason,
+      subscriptionAmount,
+      discountAmount: discountAmount || null,
+      finalAmount,
       billingCycle: params.billingCycle,
       currentPeriodStart: now,
       currentPeriodEnd: periodEnd,
       nextBillingDate: periodEnd,
-      nextPaymentAmount: effectivePrice,
+      nextPaymentAmount: finalAmount,
       autoRenew: true,
       lastPaymentDate: now,
-      lastPaymentAmount: effectivePrice,
+      lastPaymentAmount: finalAmount,
+      notes: params.overrideReason || null,
     },
   });
 
@@ -172,6 +160,8 @@ export async function createPlatformSubscription(params: {
       currentPeriodStart: subscription.currentPeriodStart,
       currentPeriodEnd: subscription.currentPeriodEnd,
       nextBillingDate: subscription.nextBillingDate,
+      subscriptionAmount: subscription.subscriptionAmount,
+      finalAmount: subscription.finalAmount,
       planPrice: subscription.planPrice,
       customPrice: subscription.customPrice,
     },
@@ -193,9 +183,8 @@ export async function processBillingCycle(subscriptionId: string): Promise<Billi
   }
 
   const now = new Date();
-  const effectivePrice = subscription.customPrice ?? subscription.planPrice;
+  const effectivePrice = subscription.finalAmount ?? subscription.customPrice ?? subscription.planPrice ?? 0;
 
-  // Create billing record
   const invoiceNumber = `INV-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${String(Date.now()).slice(-6)}`;
   const billingRecord = await db.billingRecord.create({
     data: {
@@ -205,12 +194,11 @@ export async function processBillingCycle(subscriptionId: string): Promise<Billi
       status: 'pending',
       invoiceNumber,
       dueDate: subscription.nextBillingDate,
-      description: `${subscription.billingCycle === 'YEARLY' ? 'Annual' : 'Monthly'} subscription - ${subscription.plan.name}`,
+      description: `${subscription.billingCycle === 'YEARLY' ? 'Annual' : subscription.billingCycle === 'QUARTERLY' ? 'Quarterly' : subscription.billingCycle === 'HALF_YEARLY' ? 'Half-yearly' : 'Monthly'} subscription - ${subscription.plan.name}`,
     },
   });
 
-  // Calculate new period
-  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY';
+  const billingCycle: PlatformBillingCycle = subscription.billingCycle as PlatformBillingCycle;
   const newPeriodEnd = calculatePeriodEnd(now, billingCycle);
 
   // Update subscription for next billing cycle
@@ -258,13 +246,16 @@ export async function overrideSubscriptionPricing(params: {
     return { success: false, error: 'Custom price cannot be negative' };
   }
 
-  const discountPercentage = subscription.planPrice > 0
-    ? Math.round(((subscription.planPrice - params.customPrice) / subscription.planPrice) * 100 * 100) / 100
+  const basePrice = subscription.subscriptionAmount ?? subscription.planPrice ?? 0;
+  const discountPercentage = basePrice > 0
+    ? Math.round(((basePrice - params.customPrice) / basePrice) * 100 * 100) / 100
     : 0;
 
   await db.businessSubscription.update({
     where: { id: params.subscriptionId },
     data: {
+      subscriptionAmount: params.customPrice,
+      finalAmount: params.customPrice,
       customPrice: params.customPrice,
       manualPriceOverride: true,
       overrideReason: params.reason,
@@ -288,6 +279,8 @@ export async function overrideSubscriptionPricing(params: {
       currentPeriodStart: updated.currentPeriodStart,
       currentPeriodEnd: updated.currentPeriodEnd,
       nextBillingDate: updated.nextBillingDate,
+      subscriptionAmount: updated.subscriptionAmount,
+      finalAmount: updated.finalAmount,
       planPrice: updated.planPrice,
       customPrice: updated.customPrice,
     } : undefined,
@@ -307,6 +300,7 @@ export async function removePricingOverride(subscriptionId: string): Promise<Pla
     return { success: false, error: 'Subscription not found' };
   }
 
+  const baseAmount = subscription.subscriptionAmount ?? subscription.planPrice ?? 0;
   await db.businessSubscription.update({
     where: { id: subscriptionId },
     data: {
@@ -314,7 +308,7 @@ export async function removePricingOverride(subscriptionId: string): Promise<Pla
       manualPriceOverride: false,
       overrideReason: null,
       discountPercentage: null,
-      nextPaymentAmount: subscription.planPrice,
+      nextPaymentAmount: baseAmount,
     },
   });
 
@@ -333,6 +327,8 @@ export async function removePricingOverride(subscriptionId: string): Promise<Pla
       currentPeriodStart: updated.currentPeriodStart,
       currentPeriodEnd: updated.currentPeriodEnd,
       nextBillingDate: updated.nextBillingDate,
+      subscriptionAmount: updated.subscriptionAmount,
+      finalAmount: updated.finalAmount,
       planPrice: updated.planPrice,
       customPrice: updated.customPrice,
     } : undefined,
@@ -392,6 +388,8 @@ export async function suspendPlatformSubscription(
       currentPeriodStart: updated.currentPeriodStart,
       currentPeriodEnd: updated.currentPeriodEnd,
       nextBillingDate: updated.nextBillingDate,
+      subscriptionAmount: updated.subscriptionAmount,
+      finalAmount: updated.finalAmount,
       planPrice: updated.planPrice,
       customPrice: updated.customPrice,
     } : undefined,
@@ -417,9 +415,9 @@ export async function reactivatePlatformSubscription(
   }
 
   const now = new Date();
-  const billingCycle: PlatformBillingCycle = subscription.billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY';
+  const billingCycle: PlatformBillingCycle = subscription.billingCycle as PlatformBillingCycle;
   const newPeriodEnd = calculatePeriodEnd(now, billingCycle);
-  const effectivePrice = subscription.customPrice ?? subscription.planPrice;
+  const effectivePrice = subscription.finalAmount ?? subscription.customPrice ?? subscription.planPrice ?? 0;
 
   await db.businessSubscription.update({
     where: { id: subscriptionId },
@@ -457,6 +455,8 @@ export async function reactivatePlatformSubscription(
       currentPeriodStart: updated.currentPeriodStart,
       currentPeriodEnd: updated.currentPeriodEnd,
       nextBillingDate: updated.nextBillingDate,
+      subscriptionAmount: updated.subscriptionAmount,
+      finalAmount: updated.finalAmount,
       planPrice: updated.planPrice,
       customPrice: updated.customPrice,
     } : undefined,
@@ -513,6 +513,8 @@ export async function cancelPlatformSubscription(
       currentPeriodStart: updated.currentPeriodStart,
       currentPeriodEnd: updated.currentPeriodEnd,
       nextBillingDate: updated.nextBillingDate,
+      subscriptionAmount: updated.subscriptionAmount,
+      finalAmount: updated.finalAmount,
       planPrice: updated.planPrice,
       customPrice: updated.customPrice,
     } : undefined,
@@ -686,7 +688,6 @@ export async function processRenewal(subscriptionId: string): Promise<CustomerSu
 
   const now = new Date();
 
-  // If auto-renew is on, renew with credit rollover
   if (subscription.autoRenew) {
     const newPeriodEnd = calculatePeriodEnd(now, subscription.plan.billingCycle as SubscriptionBillingCycle);
 

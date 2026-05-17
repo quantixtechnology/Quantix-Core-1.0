@@ -45,11 +45,13 @@ export async function PUT(
 
       const updateData: Record<string, unknown> = {};
       const allowedFields = [
-        'name', 'price', 'description',
+        'name', 'description',
         'maxStores', 'maxProducts', 'maxOrders', 'maxDeliveryPartners', 'maxStaff',
         'hasPOS', 'hasDelivery', 'hasSubscription', 'hasCustomDomain',
         'hasWhiteLabel', 'hasAdvancedReports', 'hasAPIAccess',
-        'isActive', 'sortOrder',
+        'hasEcommerceWorkflow', 'hasPickupWorkflow', 'hasAppointmentWorkflow',
+        'hasSubscriptionWorkflow', 'hasPostServiceWorkflow', 'hasAdvancedWorkflowEngine',
+        'isActive',
       ];
 
       for (const field of allowedFields) {

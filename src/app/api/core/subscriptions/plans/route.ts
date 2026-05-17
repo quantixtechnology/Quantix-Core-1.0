@@ -14,35 +14,43 @@
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
-import { PRICING_PLANS } from '@/lib/constants';
 
 async function ensurePlansSeeded() {
   const existingCount = await db.platformPlan.count();
   if (existingCount >= 2) return;
 
-  for (const plan of PRICING_PLANS) {
+  const defaultPlans = [
+    {
+      tier: 'STANDARD' as const,
+      name: 'Quantix Standard',
+      description: 'Core features for growing businesses',
+      features: JSON.stringify(['Ecommerce Workflow', 'POS', 'Delivery', 'Custom Domain', 'White Label', 'Reports', 'API Access']),
+      maxStores: 5, maxProducts: 5000, maxOrders: 10000, maxDeliveryPartners: 50, maxStaff: 50,
+      hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true,
+      hasWhiteLabel: true, hasAdvancedReports: true, hasAPIAccess: true,
+      hasEcommerceWorkflow: true, hasPickupWorkflow: false, hasAppointmentWorkflow: false,
+      hasSubscriptionWorkflow: false, hasPostServiceWorkflow: false, hasAdvancedWorkflowEngine: false,
+      isActive: true,
+    },
+    {
+      tier: 'PRO' as const,
+      name: 'Quantix Pro',
+      description: 'All workflows for enterprise businesses',
+      features: JSON.stringify(['All Standard Features', 'Pickup', 'Appointment', 'Subscription', 'Post-Service', 'Advanced Workflow Engine']),
+      maxStores: 50, maxProducts: 50000, maxOrders: 100000, maxDeliveryPartners: 500, maxStaff: 500,
+      hasPOS: true, hasDelivery: true, hasSubscription: true, hasCustomDomain: true,
+      hasWhiteLabel: true, hasAdvancedReports: true, hasAPIAccess: true,
+      hasEcommerceWorkflow: true, hasPickupWorkflow: true, hasAppointmentWorkflow: true,
+      hasSubscriptionWorkflow: true, hasPostServiceWorkflow: true, hasAdvancedWorkflowEngine: true,
+      isActive: true,
+    },
+  ];
+
+  for (const p of defaultPlans) {
     await db.platformPlan.upsert({
-      where: { tier_billingCycle: { tier: 'STANDARD', billingCycle: plan.billingCycle } },
-      update: {
-        name: plan.name, price: plan.price, description: plan.description,
-        features: JSON.stringify(plan.features), maxStores: plan.maxStores,
-        maxProducts: plan.maxProducts, maxOrders: plan.maxOrders,
-        maxDeliveryPartners: plan.maxDeliveryPartners, maxStaff: plan.maxStaff,
-        hasPOS: plan.hasPOS, hasDelivery: plan.hasDelivery,
-        hasSubscription: plan.hasSubscription, hasCustomDomain: plan.hasCustomDomain,
-        hasWhiteLabel: plan.hasWhiteLabel, hasAdvancedReports: plan.hasAdvancedReports,
-        hasAPIAccess: plan.hasAPIAccess, isActive: true,
-      },
-      create: {
-        tier: 'STANDARD', billingCycle: plan.billingCycle, name: plan.name, price: plan.price,
-        description: plan.description, features: JSON.stringify(plan.features),
-        maxStores: plan.maxStores, maxProducts: plan.maxProducts, maxOrders: plan.maxOrders,
-        maxDeliveryPartners: plan.maxDeliveryPartners, maxStaff: plan.maxStaff,
-        hasPOS: plan.hasPOS, hasDelivery: plan.hasDelivery,
-        hasSubscription: plan.hasSubscription, hasCustomDomain: plan.hasCustomDomain,
-        hasWhiteLabel: plan.hasWhiteLabel, hasAdvancedReports: plan.hasAdvancedReports,
-        hasAPIAccess: plan.hasAPIAccess, isActive: true,
-      },
+      where: { tier: p.tier },
+      update: p,
+      create: p,
     });
   }
 }
@@ -80,7 +88,7 @@ export const GET = withMiddleware({ requireAuth: true })(async (req) => {
 
     const platformPlans = await db.platformPlan.findMany({
       where: { isActive: true },
-      orderBy: { price: 'asc' },
+      orderBy: { tier: 'asc' },
     });
 
     const formattedPlans = platformPlans.map((plan) => ({
@@ -97,8 +105,7 @@ export const GET = withMiddleware({ requireAuth: true })(async (req) => {
         noTrial: true,
         superAdminCanOverridePricing: true,
         plans: formattedPlans.map((p) => ({
-          id: p.id, billingCycle: p.billingCycle, name: p.name, price: p.price,
-          priceDisplay: p.billingCycle === 'MONTHLY' ? '₹4,999/month' : '₹49,999/year',
+          id: p.id, tier: p.tier, name: p.name,
         })),
       },
     });

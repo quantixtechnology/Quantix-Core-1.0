@@ -119,6 +119,17 @@ export type POSSessionStatus = 'OPEN' | 'CLOSED' | 'SUSPENDED';
 /** Platform plan billing cycle */
 export type PlanBillingCycle = 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
 
+/** Add-on billing cycle — includes ONE_TIME for implementation-style charges */
+export type AddOnCycle = 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY' | 'ONE_TIME';
+
+/** Dynamic add-on attached to a business subscription */
+export interface AddOnItem {
+  name: string;
+  amount: number;
+  cycle: AddOnCycle;
+  description?: string;
+}
+
 /** Business (platform) subscription status — NO TRIAL, managed by Quantix */
 export type SubscriptionStatus =
   | 'ACTIVE'
@@ -263,6 +274,7 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 // ============================================================================
 
 export interface CreateBusinessRequest {
+  // ── Business identity ───────────────────────────────────────────────────
   name: string;
   slug: string;
   businessType: BusinessType;
@@ -286,18 +298,40 @@ export interface CreateBusinessRequest {
   supportEmail?: string;
   supportPhone?: string;
   salesRepId?: string;
-  planId?: string;
-  billingCycle?: PlanBillingCycle;
-  customPrice?: number;
-  discountPercentage?: number;
-  manualPriceOverride?: boolean;
-  overrideReason?: string;
-  leadId?: string;
+
+  // ── Owner account ──────────────────────────────────────────────────────
   ownerEmail?: string;
   ownerPassword?: string;
   ownerName?: string;
-  renewalDate?: string;     // ISO date string; extracted to billingCycleDay + nextBillingDate
+
+  // ── Plan assignment (feature access only — no pricing in plan) ─────────
+  planId?: string;           // Direct plan ID lookup
+  planTier?: 'STANDARD' | 'PRO'; // Alternative: look up by tier
+
+  // ── Subscription billing (flexible, admin-entered) ─────────────────────
+  billingCycle?: PlanBillingCycle;
+  subscriptionAmount?: number;     // Base subscription amount
+  discountAmount?: number;         // Discount amount (absolute)
+  // finalAmount is auto-calculated: subscriptionAmount - discountAmount
+  renewalDate?: string;            // ISO date string → billingCycleDay + nextBillingDate
+
+  // ── Implementation charge (one-time) ───────────────────────────────────
+  implementationAmount?: number;
+
+  // ── iOS app billing (optional) ─────────────────────────────────────────
+  iosAppAmount?: number;
+  iosDiscountAmount?: number;
+  // iosFinalAmount is auto-calculated: iosAppAmount - iosDiscountAmount
+  iosSubscriptionCycle?: PlanBillingCycle;
+
+  // ── Add-ons (dynamic, unlimited) ───────────────────────────────────────
+  addOns?: AddOnItem[];
+
+  // ── Legacy / notes ─────────────────────────────────────────────────────
+  customPrice?: number;          // Legacy override — prefer subscriptionAmount
+  overrideReason?: string;
   subscriptionNotes?: string;
+  leadId?: string;
 }
 
 export interface UpdateBusinessRequest extends Partial<CreateBusinessRequest> {

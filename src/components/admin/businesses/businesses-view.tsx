@@ -26,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
-  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette,
+  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2,
 } from "lucide-react"
 import { AvatarImage } from "@/components/ui/avatar"
 import { useAdminStore } from "@/stores/admin-store"
@@ -34,13 +34,18 @@ import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 
-// ---- Plan data type ----
+// ---- Plan data type — feature access only, no pricing ----
 interface PlanApiData {
   id: string;
   tier: string;
-  billingCycle: string;
-  price: number;
   name: string;
+}
+
+interface AddOnFormItem {
+  name: string;
+  amount: string;
+  cycle: string;
+  description: string;
 }
 
 // ---- API data types ----
@@ -50,10 +55,17 @@ interface BusinessApiData {
   contactEmail: string | null; contactPhone: string | null; gstNumber: string | null
   isOnline: boolean; primaryColor: string; logo: string | null; createdAt: string; onboardedAt: string | null; activatedAt: string | null
   subscription: {
-    id: string; status: string; planPrice: number; customPrice: number | null
-    discountPercentage: number | null; manualPriceOverride: boolean; overrideReason: string | null
+    id: string; status: string
+    // New billing fields
+    subscriptionAmount: number | null; discountAmount: number | null; finalAmount: number | null
+    implementationAmount: number | null
+    iosAppAmount: number | null; iosDiscountAmount: number | null; iosFinalAmount: number | null; iosSubscriptionCycle: string | null
+    addOns: string
+    // Legacy
+    planPrice: number | null; customPrice: number | null; discountPercentage: number | null
+    manualPriceOverride: boolean; overrideReason: string | null; notes: string | null
     billingCycle: string; billingCycleDay: number | null; currentPeriodStart: string; nextBillingDate: string
-    plan: { name: string; tier: string; billingCycle: string; price: number } | null
+    plan: { name: string; tier: string } | null
   } | null
   domain: { domain: string; status: string } | null
   deployments: Array<{ id: string; type: string; status: string; version: string | null; healthStatus: string }>
@@ -140,11 +152,10 @@ export function BusinessesView() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  // Form state
+  // Form state — business identity
   const [formName, setFormName] = useState("")
   const [formSlug, setFormSlug] = useState("")
   const [formType, setFormType] = useState<string>("")
-  const [formPlan, setFormPlan] = useState<string>("")
   const [formCity, setFormCity] = useState("")
   const [formState, setFormState] = useState("")
   const [formPincode, setFormPincode] = useState("")
@@ -152,12 +163,41 @@ export function BusinessesView() {
   const [formEmail, setFormEmail] = useState("")
   const [formAddress, setFormAddress] = useState("")
   const [formGST, setFormGST] = useState("")
+  // Form state — plan (feature access)
+  const [formPlan, setFormPlan] = useState<string>("")
+  // Form state — subscription billing
+  const [formBillingCycle, setFormBillingCycle] = useState<string>("MONTHLY")
   const [formSubscriptionAmount, setFormSubscriptionAmount] = useState("")
+  const [formDiscountAmount, setFormDiscountAmount] = useState("")
   const [formRenewalDate, setFormRenewalDate] = useState("")
+  const [formImplementationAmount, setFormImplementationAmount] = useState("")
+  // Form state — iOS billing (optional)
+  const [formIncludeIOS, setFormIncludeIOS] = useState(false)
+  const [formIOSAmount, setFormIOSAmount] = useState("")
+  const [formIOSDiscount, setFormIOSDiscount] = useState("")
+  const [formIOSCycle, setFormIOSCycle] = useState<string>("MONTHLY")
+  // Form state — add-ons (dynamic)
+  const [formAddOns, setFormAddOns] = useState<AddOnFormItem[]>([])
+  // Form state — notes + owner
   const [formSubscriptionNotes, setFormSubscriptionNotes] = useState("")
   const [formOwnerName, setFormOwnerName] = useState("")
   const [formOwnerEmail, setFormOwnerEmail] = useState("")
   const [formOwnerPassword, setFormOwnerPassword] = useState("")
+
+  // Derived: final subscription amount
+  const formFinalAmount = (() => {
+    const sub = parseFloat(formSubscriptionAmount)
+    const disc = parseFloat(formDiscountAmount)
+    if (isNaN(sub)) return null
+    return sub - (isNaN(disc) ? 0 : disc)
+  })()
+  // Derived: iOS final amount
+  const formIOSFinal = (() => {
+    const ios = parseFloat(formIOSAmount)
+    const disc = parseFloat(formIOSDiscount)
+    if (isNaN(ios)) return null
+    return ios - (isNaN(disc) ? 0 : disc)
+  })()
 
   const fetchBusinesses = useCallback(async () => {
     setLoading(true)
@@ -214,8 +254,11 @@ export function BusinessesView() {
   const resetForm = () => {
     setFormName(""); setFormSlug(""); setFormType(""); setFormPlan("")
     setFormCity(""); setFormState(""); setFormPincode("")
-    setFormPhone(""); setFormEmail(""); setFormAddress("")
-    setFormGST(""); setFormSubscriptionAmount(""); setFormRenewalDate(""); setFormSubscriptionNotes("")
+    setFormPhone(""); setFormEmail(""); setFormAddress(""); setFormGST("")
+    setFormBillingCycle("MONTHLY"); setFormSubscriptionAmount(""); setFormDiscountAmount("")
+    setFormRenewalDate(""); setFormImplementationAmount("")
+    setFormIncludeIOS(false); setFormIOSAmount(""); setFormIOSDiscount(""); setFormIOSCycle("MONTHLY")
+    setFormAddOns([]); setFormSubscriptionNotes("")
     setFormOwnerName(""); setFormOwnerEmail(""); setFormOwnerPassword("")
     setCreatedResult(null)
   }
@@ -223,6 +266,16 @@ export function BusinessesView() {
   const handleNameChange = (value: string) => {
     setFormName(value)
     setFormSlug(value.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "").replace(/-+/g, "").slice(0, 20))
+  }
+
+  const addAddOn = () => {
+    setFormAddOns(prev => [...prev, { name: "", amount: "", cycle: "MONTHLY", description: "" }])
+  }
+  const removeAddOn = (index: number) => {
+    setFormAddOns(prev => prev.filter((_, i) => i !== index))
+  }
+  const updateAddOn = (index: number, field: keyof AddOnFormItem, value: string) => {
+    setFormAddOns(prev => prev.map((a, i) => i === index ? { ...a, [field]: value } : a))
   }
 
   const handleCreateBusiness = async () => {
@@ -235,19 +288,26 @@ export function BusinessesView() {
       return
     }
 
-    // Parse formPlan (e.g. "STANDARD_HALF_YEARLY") into tier + billingCycle at first underscore
-    const firstUnderscore = formPlan.indexOf("_")
-    const tierPart = formPlan.slice(0, firstUnderscore)
-    const cyclePart = formPlan.slice(firstUnderscore + 1) as 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY'
-
-    // Look up planId from fetched plans
-    const matchingPlan = plans.find(
-      (p) => p.tier === tierPart && p.billingCycle === cyclePart
-    )
+    // Look up plan by tier — plans are feature-access-only, no pricing
+    const matchingPlan = plans.find(p => p.tier === formPlan)
     if (!matchingPlan) {
       toast.error("Selected plan not found. Please refresh and try again.")
       return
     }
+
+    const subscriptionAmount = formSubscriptionAmount ? Number(formSubscriptionAmount) : undefined
+    const discountAmount = formDiscountAmount ? Number(formDiscountAmount) : undefined
+    const implementationAmount = formImplementationAmount ? Number(formImplementationAmount) : undefined
+
+    const addOnsPayload = formAddOns
+      .filter(a => a.name.trim() && a.amount)
+      .map(a => ({ name: a.name.trim(), amount: Number(a.amount), cycle: a.cycle, description: a.description || undefined }))
+
+    const iosPayload = formIncludeIOS && formIOSAmount ? {
+      iosAppAmount: Number(formIOSAmount),
+      iosDiscountAmount: formIOSDiscount ? Number(formIOSDiscount) : undefined,
+      iosSubscriptionCycle: formIOSCycle,
+    } : {}
 
     setCreating(true)
     try {
@@ -257,11 +317,16 @@ export function BusinessesView() {
         body: JSON.stringify({
           name: formName, slug: formSlug, businessType: formType,
           planId: matchingPlan.id,
-          billingCycle: cyclePart,
+          planTier: formPlan,
+          billingCycle: formBillingCycle,
+          subscriptionAmount,
+          discountAmount,
+          implementationAmount,
+          ...iosPayload,
+          addOns: addOnsPayload.length > 0 ? addOnsPayload : undefined,
           city: formCity, state: formState, pincode: formPincode,
           contactPhone: formPhone, contactEmail: formEmail,
           address: formAddress, gstNumber: formGST,
-          customPrice: formSubscriptionAmount ? Number(formSubscriptionAmount) : undefined,
           renewalDate: formRenewalDate || undefined,
           subscriptionNotes: formSubscriptionNotes || undefined,
           ownerName: formOwnerName || undefined,
@@ -334,8 +399,8 @@ export function BusinessesView() {
   const openPricingEditor = (biz: BusinessApiData) => {
     const sub = biz.subscription
     if (!sub) return
-    const current = sub.customPrice ?? sub.planPrice
-    setEditCustomPrice(String(current))
+    const current = sub.subscriptionAmount ?? sub.customPrice ?? sub.planPrice
+    setEditCustomPrice(current !== null ? String(current) : "")
     setEditDiscountPct(sub.discountPercentage ? String(sub.discountPercentage) : "")
     setEditPricingNote(sub.overrideReason ?? "")
     setPricingOpen(true)
@@ -534,19 +599,13 @@ export function BusinessesView() {
                         <Select value={formPlan} onValueChange={setFormPlan}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
                           <SelectContent>
                             {plans.length > 0 ? plans.map((plan) => (
-                              <SelectItem key={plan.id} value={`${plan.tier}_${plan.billingCycle}`}>
-                                {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : plan.billingCycle === "QUARTERLY" ? "qtr" : plan.billingCycle === "HALF_YEARLY" ? "6mo" : "yr"}
+                              <SelectItem key={plan.id} value={plan.tier}>
+                                {plan.name}
                               </SelectItem>
                             )) : (
                               <>
-                                <SelectItem value="STANDARD_MONTHLY">Standard Monthly</SelectItem>
-                                <SelectItem value="STANDARD_QUARTERLY">Standard Quarterly</SelectItem>
-                                <SelectItem value="STANDARD_HALF_YEARLY">Standard Half-Yearly</SelectItem>
-                                <SelectItem value="STANDARD_YEARLY">Standard Yearly</SelectItem>
-                                <SelectItem value="PRO_MONTHLY">Pro Monthly</SelectItem>
-                                <SelectItem value="PRO_QUARTERLY">Pro Quarterly</SelectItem>
-                                <SelectItem value="PRO_HALF_YEARLY">Pro Half-Yearly</SelectItem>
-                                <SelectItem value="PRO_YEARLY">Pro Yearly</SelectItem>
+                                <SelectItem value="STANDARD">Standard</SelectItem>
+                                <SelectItem value="PRO">Pro</SelectItem>
                               </>
                             )}
                           </SelectContent>
@@ -583,20 +642,116 @@ export function BusinessesView() {
 
                     <Separator />
 
-                    {/* Subscription & Renewal */}
+                    {/* Billing */}
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold">Subscription & Renewal</p>
-                      <p className="text-[11px] text-muted-foreground">Set agreed amount and renewal cycle. Amount overrides the plan price.</p>
+                      <p className="text-xs font-semibold">Billing</p>
+                      <p className="text-[11px] text-muted-foreground">Set negotiated pricing and billing cycle. All amounts are flexible.</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>Subscription Amount (₹)</Label><Input placeholder="e.g. 3999" type="number" value={formSubscriptionAmount} onChange={(e) => setFormSubscriptionAmount(e.target.value)} /></div>
+                      <div className="space-y-2">
+                        <Label>Billing Cycle</Label>
+                        <Select value={formBillingCycle} onValueChange={setFormBillingCycle}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MONTHLY">Monthly</SelectItem>
+                            <SelectItem value="QUARTERLY">Quarterly</SelectItem>
+                            <SelectItem value="HALF_YEARLY">Half Yearly</SelectItem>
+                            <SelectItem value="YEARLY">Yearly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="space-y-2">
                         <Label>Renewal Date</Label>
                         <Input type="date" value={formRenewalDate} onChange={(e) => setFormRenewalDate(e.target.value)} />
-                        {formRenewalDate && <p className="text-[10px] text-muted-foreground">Billing day: {new Date(formRenewalDate).getDate()} of each month</p>}
                       </div>
                     </div>
-                    <div className="space-y-2"><Label>Subscription Notes <span className="text-muted-foreground font-normal">(optional)</span></Label><Input placeholder="e.g. Negotiated rate, promotional offer" value={formSubscriptionNotes} onChange={(e) => setFormSubscriptionNotes(e.target.value)} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Subscription Amount (₹)</Label><Input placeholder="e.g. 3999" type="number" value={formSubscriptionAmount} onChange={(e) => setFormSubscriptionAmount(e.target.value)} /></div>
+                      <div className="space-y-2"><Label>Discount (₹)</Label><Input placeholder="e.g. 500" type="number" value={formDiscountAmount} onChange={(e) => setFormDiscountAmount(e.target.value)} /></div>
+                    </div>
+                    {formFinalAmount !== null && (
+                      <div className="rounded-md bg-muted/50 border px-3 py-2 flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">Final Amount</p>
+                        <p className="text-sm font-semibold">₹{formFinalAmount.toLocaleString("en-IN")}</p>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label>Implementation Charge (₹) <span className="text-muted-foreground font-normal">(one-time)</span></Label>
+                      <Input placeholder="e.g. 15000" type="number" value={formImplementationAmount} onChange={(e) => setFormImplementationAmount(e.target.value)} />
+                    </div>
+
+                    {/* iOS Billing */}
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="text-xs font-medium">iOS App Billing</p>
+                        <p className="text-[11px] text-muted-foreground">Separate iOS app subscription</p>
+                      </div>
+                      <Switch checked={formIncludeIOS} onCheckedChange={setFormIncludeIOS} />
+                    </div>
+                    {formIncludeIOS && (
+                      <div className="rounded-lg border p-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5"><Label className="text-xs">iOS Amount (₹)</Label><Input placeholder="e.g. 999" type="number" value={formIOSAmount} onChange={(e) => setFormIOSAmount(e.target.value)} className="h-8 text-xs" /></div>
+                          <div className="space-y-1.5"><Label className="text-xs">iOS Discount (₹)</Label><Input placeholder="e.g. 100" type="number" value={formIOSDiscount} onChange={(e) => setFormIOSDiscount(e.target.value)} className="h-8 text-xs" /></div>
+                        </div>
+                        {formIOSFinal !== null && (
+                          <div className="rounded-md bg-muted/50 border px-2.5 py-1.5 flex items-center justify-between">
+                            <p className="text-[11px] text-muted-foreground">iOS Final</p>
+                            <p className="text-xs font-semibold">₹{formIOSFinal.toLocaleString("en-IN")}</p>
+                          </div>
+                        )}
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">iOS Billing Cycle</Label>
+                          <Select value={formIOSCycle} onValueChange={setFormIOSCycle}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="MONTHLY">Monthly</SelectItem>
+                              <SelectItem value="QUARTERLY">Quarterly</SelectItem>
+                              <SelectItem value="HALF_YEARLY">Half Yearly</SelectItem>
+                              <SelectItem value="YEARLY">Yearly</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Add-ons */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium">Add-ons <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] gap-1 px-2" onClick={addAddOn}>
+                          <Plus className="h-3 w-3" /> Add
+                        </Button>
+                      </div>
+                      {formAddOns.map((addon, index) => (
+                        <div key={index} className="rounded-lg border p-3 space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1"><Label className="text-[11px]">Name</Label><Input placeholder="e.g. SMS Credits" value={addon.name} onChange={(e) => updateAddOn(index, "name", e.target.value)} className="h-7 text-xs" /></div>
+                            <div className="space-y-1"><Label className="text-[11px]">Amount (₹)</Label><Input placeholder="e.g. 299" type="number" value={addon.amount} onChange={(e) => updateAddOn(index, "amount", e.target.value)} className="h-7 text-xs" /></div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-[11px]">Cycle</Label>
+                              <Select value={addon.cycle} onValueChange={(v) => updateAddOn(index, "cycle", v)}>
+                                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="MONTHLY">Monthly</SelectItem>
+                                  <SelectItem value="QUARTERLY">Quarterly</SelectItem>
+                                  <SelectItem value="HALF_YEARLY">Half Yearly</SelectItem>
+                                  <SelectItem value="YEARLY">Yearly</SelectItem>
+                                  <SelectItem value="ONE_TIME">One-time</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1"><Label className="text-[11px]">Description</Label><Input placeholder="Optional note" value={addon.description} onChange={(e) => updateAddOn(index, "description", e.target.value)} className="h-7 text-xs" /></div>
+                          </div>
+                          <Button type="button" variant="ghost" size="sm" className="h-6 text-[11px] text-destructive hover:text-destructive gap-1 px-2 w-full" onClick={() => removeAddOn(index)}>
+                            <Trash2 className="h-3 w-3" /> Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-2"><Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label><Input placeholder="e.g. Negotiated rate, promotional offer" value={formSubscriptionNotes} onChange={(e) => setFormSubscriptionNotes(e.target.value)} /></div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm() }}>Cancel</Button>
@@ -863,31 +1018,44 @@ export function BusinessesView() {
                           </div>
                           <div className="grid grid-cols-2 gap-3 text-sm">
                             <div><p className="text-[10px] text-muted-foreground">Billing</p><p className="font-medium">{sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly" ? "Monthly" : sub.billingCycle === "QUARTERLY" ? "Quarterly" : sub.billingCycle === "HALF_YEARLY" ? "Half-Yearly" : "Yearly"}{sub.billingCycleDay ? ` · day ${sub.billingCycleDay}` : ""}</p></div>
-                            <div><p className="text-[10px] text-muted-foreground">Price</p>
-                              {sub.customPrice ? <CurrencyBadge amount={sub.customPrice} override original={sub.planPrice} /> : <p className="font-medium">₹{sub.planPrice.toLocaleString("en-IN")}</p>}
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Subscription</p>
+                              {sub.finalAmount !== null ? (
+                                <div>
+                                  <p className="font-medium">₹{(sub.finalAmount ?? 0).toLocaleString("en-IN")}</p>
+                                  {sub.discountAmount ? <p className="text-[10px] text-orange-600">-₹{sub.discountAmount.toLocaleString("en-IN")} disc.</p> : null}
+                                </div>
+                              ) : sub.customPrice ? (
+                                <CurrencyBadge amount={sub.customPrice} override original={sub.planPrice ?? 0} />
+                              ) : sub.planPrice !== null ? (
+                                <p className="font-medium">₹{(sub.planPrice ?? 0).toLocaleString("en-IN")}</p>
+                              ) : <p className="text-xs text-muted-foreground">Not set</p>}
                             </div>
                             <div><p className="text-[10px] text-muted-foreground">Sub. Started</p><p className="font-medium">{new Date(sub.currentPeriodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
                             <div><p className="text-[10px] text-muted-foreground">Renewal Due</p><p className="font-medium">{new Date(sub.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+                            {sub.implementationAmount ? <div><p className="text-[10px] text-muted-foreground">Implementation</p><p className="font-medium">₹{sub.implementationAmount.toLocaleString("en-IN")}</p></div> : null}
                             {sub.discountPercentage && <div><p className="text-[10px] text-muted-foreground">Discount</p><p className="font-medium text-orange-600">{sub.discountPercentage}% off</p></div>}
                           </div>
 
                           {/* Inline pricing editor */}
-                          {pricingOpen && (
+                          {pricingOpen && (() => {
+                            const baseAmount = sub.subscriptionAmount ?? sub.planPrice ?? 0
+                            return (
                             <div className="border-t pt-3 space-y-3">
                               <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Edit Pricing</p>
                               <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
-                                  <Label className="text-xs">Custom Amount (₹)</Label>
+                                  <Label className="text-xs">Subscription Amount (₹)</Label>
                                   <Input
                                     type="number"
-                                    placeholder={String(sub.planPrice)}
+                                    placeholder={baseAmount > 0 ? String(baseAmount) : "Enter amount"}
                                     value={editCustomPrice}
                                     onChange={(e) => {
                                       const amt = e.target.value
                                       setEditCustomPrice(amt)
                                       const num = parseFloat(amt)
-                                      if (!isNaN(num) && sub.planPrice > 0) {
-                                        const pct = Math.round(((sub.planPrice - num) / sub.planPrice) * 10000) / 100
+                                      if (!isNaN(num) && baseAmount > 0) {
+                                        const pct = Math.round(((baseAmount - num) / baseAmount) * 10000) / 100
                                         setEditDiscountPct(pct > 0 ? String(pct) : "")
                                       } else {
                                         setEditDiscountPct("")
@@ -908,8 +1076,8 @@ export function BusinessesView() {
                                       const pct = e.target.value
                                       setEditDiscountPct(pct)
                                       const num = parseFloat(pct)
-                                      if (!isNaN(num) && sub.planPrice > 0) {
-                                        const amt = Math.round(sub.planPrice * (1 - num / 100))
+                                      if (!isNaN(num) && baseAmount > 0) {
+                                        const amt = Math.round(baseAmount * (1 - num / 100))
                                         setEditCustomPrice(String(amt))
                                       }
                                     }}
@@ -917,9 +1085,9 @@ export function BusinessesView() {
                                   />
                                 </div>
                               </div>
-                              {editCustomPrice && sub.planPrice > 0 && parseFloat(editCustomPrice) !== sub.planPrice && (
+                              {editCustomPrice && baseAmount > 0 && parseFloat(editCustomPrice) !== baseAmount && (
                                 <p className="text-[11px] text-muted-foreground">
-                                  Plan price: ₹{sub.planPrice.toLocaleString("en-IN")} → Custom: ₹{parseFloat(editCustomPrice).toLocaleString("en-IN")}
+                                  Base: ₹{baseAmount.toLocaleString("en-IN")} → New: ₹{parseFloat(editCustomPrice).toLocaleString("en-IN")}
                                   {editDiscountPct ? ` (${editDiscountPct}% off)` : ""}
                                 </p>
                               )}
@@ -941,7 +1109,8 @@ export function BusinessesView() {
                                 </Button>
                               </div>
                             </div>
-                          )}
+                          )
+                          })()}
                         </div>
                       ) : (<div className="rounded-lg border border-dashed p-4 text-center"><p className="text-sm text-muted-foreground">No active subscription</p></div>)}
                     </div>

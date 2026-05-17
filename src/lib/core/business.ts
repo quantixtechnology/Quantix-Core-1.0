@@ -17,7 +17,7 @@ import type {
   OnboardingStepStatus,
   OnboardingStepInfo,
   OnboardingProgress,
-  LeadStage,
+  AddOnItem,
 } from '@/lib/core/types';
 
 // ============================================================================
@@ -126,15 +126,13 @@ export async function createBusiness(data: CreateBusinessRequest) {
     }
   }
 
-  // 3. Find or use provided plan
+  // 3. Find or use provided plan — plan is feature access only, no pricing
   let planId = data.planId;
   if (!planId) {
-    // Default to STANDARD MONTHLY plan using compound unique key
-    const defaultPlan = await db.platformPlan.findUnique({
-      where: { tier_billingCycle: { tier: 'STANDARD', billingCycle: 'MONTHLY' } },
-    });
+    const tier = data.planTier || 'STANDARD';
+    const defaultPlan = await db.platformPlan.findUnique({ where: { tier } });
     if (!defaultPlan) {
-      throw new Error('No STANDARD MONTHLY plan found. Please seed platform plans first.');
+      throw new Error(`No ${tier} plan found. Please seed platform plans first.`);
     }
     planId = defaultPlan.id;
   }
@@ -144,11 +142,24 @@ export async function createBusiness(data: CreateBusinessRequest) {
     throw new Error(`Platform plan "${planId}" not found`);
   }
 
-  // 4. Determine pricing — plan price is the base, custom price overrides (Super Admin)
+  // 4. Build billing structure — all amounts are admin-entered, none come from the plan
   const billingCycle = data.billingCycle || 'MONTHLY';
-  const planPrice = plan.price;
-  const effectivePrice = data.customPrice ?? planPrice;
-  const hasOverride = data.customPrice !== undefined && data.customPrice !== planPrice;
+  const subscriptionAmount = data.subscriptionAmount ?? data.customPrice ?? 0;
+  const discountAmount = data.discountAmount ?? 0;
+  const finalAmount = subscriptionAmount - discountAmount;
+  const implementationAmount = data.implementationAmount ?? null;
+
+  // iOS billing
+  const iosAppAmount = data.iosAppAmount ?? null;
+  const iosDiscountAmount = data.iosDiscountAmount ?? null;
+  const iosFinalAmount = iosAppAmount !== null ? iosAppAmount - (iosDiscountAmount ?? 0) : null;
+  const iosSubscriptionCycle = data.iosSubscriptionCycle ?? null;
+
+  // Add-ons serialized as JSON
+  const addOnsJson = JSON.stringify(
+    Array.isArray(data.addOns) ? data.addOns : []
+  );
+
   const now = new Date();
   const periodStart = now;
   const cycleDays = billingCycle === 'YEARLY' ? 365 : billingCycle === 'HALF_YEARLY' ? 182 : billingCycle === 'QUARTERLY' ? 90 : 30;
@@ -215,22 +226,26 @@ export async function createBusiness(data: CreateBusinessRequest) {
         businessId: business.id,
         planId: planId,
         status: 'ACTIVE',
-        planPrice: planPrice,
-        customPrice: data.customPrice,
-        discountPercentage: hasOverride && planPrice > 0
-          ? Math.round(((planPrice - (data.customPrice || 0)) / planPrice) * 100 * 100) / 100
-          : null,
-        manualPriceOverride: hasOverride,
-        overrideReason: data.overrideReason || data.subscriptionNotes || null,
+        // New billing structure
+        subscriptionAmount,
+        discountAmount: discountAmount || null,
+        finalAmount,
+        implementationAmount,
+        iosAppAmount,
+        iosDiscountAmount,
+        iosFinalAmount,
+        iosSubscriptionCycle,
+        addOns: addOnsJson,
         billingCycle: billingCycle as 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY',
         billingCycleDay: billingCycleDay,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
         nextBillingDate: nextBillingDate,
-        nextPaymentAmount: effectivePrice,
+        nextPaymentAmount: finalAmount,
         autoRenew: true,
         lastPaymentDate: now,
-        lastPaymentAmount: effectivePrice,
+        lastPaymentAmount: finalAmount,
+        notes: data.subscriptionNotes || data.overrideReason || null,
       },
     });
 
@@ -362,8 +377,8 @@ export async function createBusiness(data: CreateBusinessRequest) {
           name: data.name,
           businessType: data.businessType,
           billingCycle,
-          planPrice,
-          customPrice: data.customPrice,
+          subscriptionAmount,
+          finalAmount,
           leadId: data.leadId,
           ownerEmail,
         }),
@@ -852,9 +867,11 @@ export async function completeOnboarding(businessId: string): Promise<void> {
 export async function convertLeadToBusiness(params: {
   leadId: string;
   planId?: string;
+  planTier?: 'STANDARD' | 'PRO';
   billingCycle?: 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';
-  customPrice?: number;
-  overrideReason?: string;
+  subscriptionAmount?: number;
+  discountAmount?: number;
+  implementationAmount?: number;
   domain?: string;
   subdomain?: string;
   primaryColor?: string;
@@ -865,9 +882,6 @@ export async function convertLeadToBusiness(params: {
     throw new Error(`Lead "${params.leadId}" not found`);
   }
 
-  // No stage gate — business creation is manual after CLOSED_WON
-
-  // Generate slug from business name
   const slug = lead.businessName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -880,9 +894,11 @@ export async function convertLeadToBusiness(params: {
     contactEmail: lead.contactEmail,
     contactPhone: lead.contactPhone,
     planId: params.planId,
+    planTier: params.planTier,
     billingCycle: params.billingCycle || 'MONTHLY',
-    customPrice: params.customPrice,
-    overrideReason: params.overrideReason,
+    subscriptionAmount: params.subscriptionAmount,
+    discountAmount: params.discountAmount,
+    implementationAmount: params.implementationAmount,
     domain: params.domain,
     subdomain: params.subdomain,
     primaryColor: params.primaryColor,

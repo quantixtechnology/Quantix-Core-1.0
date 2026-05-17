@@ -45,12 +45,20 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX_
     const body = (await req.json()) as {
       planId?: string;
       billingCycle?: PlatformBillingCycle;
+      subscriptionAmount?: number;
+      discountAmount?: number;
+      implementationAmount?: number;
+      iosAppAmount?: number;
+      iosDiscountAmount?: number;
+      iosSubscriptionCycle?: PlatformBillingCycle;
+      addOns?: unknown[];
       customPrice?: number;
       overrideReason?: string;
       autoRenew?: boolean;
       currentPeriodStart?: string;
       currentPeriodEnd?: string;
       nextBillingDate?: string;
+      notes?: string;
     };
 
     const existing = await db.businessSubscription.findUnique({ where: { businessId } });
@@ -62,34 +70,47 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX_
       const plan = await db.platformPlan.findUnique({ where: { id: body.planId } });
       if (!plan) return NextResponse.json({ success: false, error: 'Platform plan not found' }, { status: 404 });
       updateData.planId = body.planId;
-      updateData.planPrice = plan.price;
     }
 
     if (body.billingCycle && body.billingCycle !== existing.billingCycle) {
       updateData.billingCycle = body.billingCycle;
-
-      if (!body.planId) {
-        // Swap to the plan with the matching billing cycle
-        const targetPlan = await db.platformPlan.findFirst({ where: { billingCycle: body.billingCycle, isActive: true } });
-        if (targetPlan) {
-          updateData.planId = targetPlan.id;
-          updateData.planPrice = targetPlan.price;
-        }
-      }
-
+      const { calculatePeriodEnd } = await import('@/lib/core/subscription');
       const now = new Date();
-      const periodEnd = new Date(now);
-      if (body.billingCycle === 'YEARLY') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-      else periodEnd.setMonth(periodEnd.getMonth() + 1);
+      const periodEnd = calculatePeriodEnd(now, body.billingCycle);
       updateData.currentPeriodStart = now;
       updateData.currentPeriodEnd = periodEnd;
       updateData.nextBillingDate = periodEnd;
     }
 
+    // New billing fields
+    if (body.subscriptionAmount !== undefined) {
+      const sub = body.subscriptionAmount;
+      const disc = body.discountAmount !== undefined ? body.discountAmount : (existing.discountAmount ?? 0);
+      updateData.subscriptionAmount = sub;
+      updateData.discountAmount = disc || null;
+      updateData.finalAmount = sub - disc;
+      updateData.nextPaymentAmount = sub - disc;
+    } else if (body.discountAmount !== undefined) {
+      const sub = existing.subscriptionAmount ?? 0;
+      updateData.discountAmount = body.discountAmount || null;
+      updateData.finalAmount = sub - body.discountAmount;
+      updateData.nextPaymentAmount = sub - body.discountAmount;
+    }
+    if (body.implementationAmount !== undefined) updateData.implementationAmount = body.implementationAmount;
+    if (body.iosAppAmount !== undefined) {
+      updateData.iosAppAmount = body.iosAppAmount;
+      const disc = body.iosDiscountAmount !== undefined ? body.iosDiscountAmount : (existing.iosDiscountAmount ?? 0);
+      updateData.iosFinalAmount = body.iosAppAmount - disc;
+    }
+    if (body.iosDiscountAmount !== undefined) updateData.iosDiscountAmount = body.iosDiscountAmount;
+    if (body.iosSubscriptionCycle !== undefined) updateData.iosSubscriptionCycle = body.iosSubscriptionCycle;
+    if (body.addOns !== undefined) updateData.addOns = JSON.stringify(body.addOns);
     if (body.autoRenew !== undefined) updateData.autoRenew = body.autoRenew;
     if (body.currentPeriodStart) updateData.currentPeriodStart = new Date(body.currentPeriodStart);
     if (body.currentPeriodEnd) updateData.currentPeriodEnd = new Date(body.currentPeriodEnd);
     if (body.nextBillingDate) updateData.nextBillingDate = new Date(body.nextBillingDate);
+    if (body.notes !== undefined) updateData.notes = body.notes;
+    if (body.overrideReason !== undefined) updateData.overrideReason = body.overrideReason;
 
     if (body.customPrice !== undefined) {
       const result = await overrideSubscriptionPricing({

@@ -347,8 +347,8 @@ export function SubscriptionsView() {
                   <Card key={plan.id} className="border-2">
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <div><h4 className="font-semibold">{plan.name}</h4><p className="text-xs text-muted-foreground">{plan.billingCycle} billing · {plan.tier} tier</p></div>
-                        <div className="text-right"><p className="text-xl font-bold">{formatCurrency(plan.price)}</p><p className="text-xs text-muted-foreground">{plan.billingCycle === "MONTHLY" ? "/month" : "/year"}</p></div>
+                        <div><h4 className="font-semibold">{plan.name}</h4><p className="text-xs text-muted-foreground">{plan.tier} tier</p></div>
+                        <div className="text-right"><p className="text-xs text-muted-foreground">Pricing set per business</p></div>
                       </div>
                       <Separator />
                       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -546,7 +546,7 @@ export function SubscriptionsView() {
                           <SelectContent>
                             {platformPlans.map((plan) => (
                               <SelectItem key={plan.id} value={plan.id}>
-                                {plan.name} — ₹{plan.price.toLocaleString("en-IN")}/{plan.billingCycle === "MONTHLY" ? "mo" : "yr"}
+                                {plan.name} ({plan.tier})
                               </SelectItem>
                             ))}
                           </SelectContent>

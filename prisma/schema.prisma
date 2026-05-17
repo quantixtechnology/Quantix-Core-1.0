@@ -1055,14 +1055,15 @@ model BusinessGatewayAccess {
 
 // ============================================================================
 // SECTION 14: SUBSCRIPTION ENGINE (Platform → Business)
-// ONLY 2 fixed plans: ₹4,999/mo and ₹49,999/yr
-// Super Admin can override pricing per customer.
-// NO trial. Business is created ONLY after payment is verified.
+//
+// PLANS = feature access only (Standard vs Pro). NO pricing in plan definitions.
+// Pricing is always dynamic and negotiated — captured on BusinessSubscription.
+// Super Admin controls all billing. NO trial. Business created after payment.
 // ============================================================================
 
 enum PlanTier {
-  STANDARD    // ₹2,999/mo, ₹30,000/yr — Ecommerce workflow, Standard POS, Delivery
-  PRO         // ₹4,999/mo, ₹49,999/yr — Multiple workflows, Subscription, Pickup, Appointment, Post-Service
+  STANDARD    // Basic workflow access, standard badge, core features
+  PRO         // Advanced workflows, premium badge, multi-workflow support
 }
 
 enum PlanBillingCycle {
@@ -1080,21 +1081,20 @@ enum SubscriptionStatus {
   EXPIRED      // Subscription ended
 }
 
+// Plan = feature access group ONLY. No pricing. No billing cycle.
+// Pricing is captured on BusinessSubscription, not here.
 model PlatformPlan {
-  id              String           @id @default(cuid())
-  tier            PlanTier         @default(STANDARD)
-  billingCycle    PlanBillingCycle
-  price           Float            // 2999/4999 monthly, 30000/49999 yearly
-  implementationCharge Float       @default(1999) // ₹1,999 one-time
-  name            String           // "Quantix Standard Monthly", "Quantix Pro Yearly", etc.
+  id              String    @id @default(cuid())
+  tier            PlanTier  @unique @default(STANDARD)
+  name            String    // "Quantix Standard", "Quantix Pro"
   description     String?
-  features        String           @default("[]")
+  features        String    @default("[]")
   // Limits
-  maxStores       Int              @default(5)
-  maxProducts     Int              @default(5000)
-  maxOrders       Int              @default(10000)
-  maxDeliveryPartners Int          @default(50)
-  maxStaff        Int              @default(50)
+  maxStores       Int       @default(5)
+  maxProducts     Int       @default(5000)
+  maxOrders       Int       @default(10000)
+  maxDeliveryPartners Int   @default(50)
+  maxStaff        Int       @default(50)
   // Feature flags
   hasPOS                  Boolean  @default(true)
   hasDelivery             Boolean  @default(true)
@@ -1103,60 +1103,82 @@ model PlatformPlan {
   hasWhiteLabel           Boolean  @default(true)
   hasAdvancedReports      Boolean  @default(true)
   hasAPIAccess            Boolean  @default(true)
-  // Workflow access (STANDARD gets Ecommerce only; PRO gets all)
+  // Workflow access — STANDARD: Ecommerce only; PRO: all workflows
   hasEcommerceWorkflow    Boolean  @default(true)
   hasPickupWorkflow       Boolean  @default(false)
   hasAppointmentWorkflow  Boolean  @default(false)
   hasSubscriptionWorkflow Boolean  @default(false)
   hasPostServiceWorkflow  Boolean  @default(false)
   hasAdvancedWorkflowEngine Boolean @default(false)
-  isActive        Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   subscriptions   BusinessSubscription[]
 
-  @@unique([tier, billingCycle])
   @@index([isActive])
-  @@index([tier])
 }
 
 model BusinessSubscription {
   id                  String             @id @default(cuid())
   businessId          String             @unique
   planId              String
-  status              SubscriptionStatus @default(ACTIVE) // Starts ACTIVE — no trial
-  // Pricing — Super Admin can override
-  planPrice           Float              // Standard plan price
-  customPrice         Float?             // Override price set by Super Admin
-  discountPercentage  Float?             // Discount percentage
-  manualPriceOverride Boolean            @default(false)
-  overrideReason      String?            // Why the override was applied
-  overrideApprovedBy  String?            // Super Admin who approved the override
-  // Billing
-  billingCycle        PlanBillingCycle
-  billingCycleDay     Int?               // Day of month for recurring renewal (1–31)
+  status              SubscriptionStatus @default(ACTIVE)
+
+  // ── Core Subscription Billing (admin-entered, fully flexible) ─────────────
+  subscriptionAmount      Float?             // Base subscription amount
+  discountAmount          Float?             // Discount amount (absolute)
+  finalAmount             Float?             // Auto-calculated: subscriptionAmount - discountAmount
+  billingCycle            PlanBillingCycle   // Subscription renewal cycle
+  billingCycleDay         Int?               // Day of month for recurring renewal (1–31)
+
+  // ── Implementation Charge (one-time) ──────────────────────────────────────
+  implementationAmount    Float?             // One-time implementation / setup fee
+
+  // ── iOS App Billing (optional) ────────────────────────────────────────────
+  iosAppAmount            Float?             // iOS subscription amount
+  iosDiscountAmount       Float?             // iOS discount amount
+  iosFinalAmount          Float?             // Auto-calculated: iosAppAmount - iosDiscountAmount
+  iosSubscriptionCycle    PlanBillingCycle?  // iOS billing cycle
+
+  // ── Add-Ons (dynamic, JSON array) ─────────────────────────────────────────
+  addOns                  String             @default("[]") // [{name,amount,cycle,description}]
+
+  // ── Legacy pricing fields (kept for existing records / backward compat) ───
+  planPrice               Float?             // Legacy: was plan's base price (use subscriptionAmount instead)
+  customPrice             Float?             // Legacy: was custom override price
+  discountPercentage      Float?             // Legacy: was discount percentage
+  manualPriceOverride     Boolean            @default(false)
+  overrideReason          String?
+  overrideApprovedBy      String?
+
+  // ── Period Tracking ───────────────────────────────────────────────────────
   currentPeriodStart  DateTime
   currentPeriodEnd    DateTime
   nextBillingDate     DateTime
-  // Payment verification — business creation requires this
+
+  // ── Payment Verification ──────────────────────────────────────────────────
   paymentVerified     Boolean            @default(false)
   paymentVerifiedAt   DateTime?
   paymentVerifiedBy   String?
-  // Pause
+
+  // ── Pause ─────────────────────────────────────────────────────────────────
   pausedAt            DateTime?
   pauseReason         String?
   resumeAt            DateTime?
-  // Payment history
+
+  // ── Payment History ───────────────────────────────────────────────────────
   lastPaymentDate     DateTime?
   lastPaymentAmount   Float?
   nextPaymentAmount   Float?
   paymentMethod       String?
-  // Auto renewal
+
+  // ── Auto Renewal ──────────────────────────────────────────────────────────
   autoRenew           Boolean            @default(true)
   cancelledAt         DateTime?
   cancelReason        String?
-  // Notes
+
+  // ── Notes ─────────────────────────────────────────────────────────────────
   notes               String?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt

@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     try {
       const plans = await db.platformPlan.findMany({
         where: { isActive: true },
-        orderBy: { price: 'asc' },
+        orderBy: { tier: 'asc' },
       });
 
       const parsedPlans = plans.map((plan) => ({
