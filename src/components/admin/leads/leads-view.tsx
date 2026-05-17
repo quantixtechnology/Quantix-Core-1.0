@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { PageHeader } from "../shared/page-header"
 import { StatusBadge } from "../shared/status-badge"
 import { EmptyState } from "../shared/empty-state"
@@ -19,13 +19,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Users, Plus, Search, ArrowRight, Phone, Mail, Calendar, UserCircle,
-  StickyNote, Share2, CheckCircle2, X, BarChart3, Maximize2, Trophy,
-  Pencil, UserCheck, CheckSquare, UserPlus, TrendingUp, DollarSign,
-  Clock, Target, RefreshCw, AlertTriangle, MessageCircle,
+  Users, Plus, Search, ArrowRight, Phone, Calendar,
+  StickyNote, X, BarChart3, Maximize2, Trophy,
+  Pencil, UserCheck, CheckSquare, UserPlus,
+  RefreshCw, AlertTriangle, MessageCircle,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -55,6 +54,15 @@ interface SalesTeamMember {
   id: string; name: string; email: string; phone: string; region: string | null
   isActive?: boolean
 }
+
+interface MtdRepRow {
+  repId: string; repName: string;
+  totalLeads: number; notCalled: number; closed: number; followUp: number;
+  interested: number; notInterested: number; wrongNumber: number; rnr: number;
+  webCallPlanned: number; webCallDone: number; hotLead: number; totalAttempted: number;
+}
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
 const allStages: LeadStage[] = ["LEAD", "FOLLOW_UP", "INTERESTED", "HOT_LEAD", "DEMO_PLANNED", "DEMO_DONE", "NEGOTIATION", "PAYMENT_PENDING", "PAYMENT_RECEIVED", "CLOSED_WON"]
 const terminalStages: LeadStage[] = ["NOT_INTERESTED", "WRONG_NUMBER", "RNR", "LOST", "DUPLICATE"]
@@ -117,6 +125,13 @@ export function LeadsView() {
   const [reassignRep, setReassignRep] = useState<string>("")
   const [advancing, setAdvancing] = useState(false)
   const [updating, setUpdating] = useState(false)
+
+  // MTD report state
+  const _now = new Date()
+  const [mtdMonth, setMtdMonth] = useState(_now.getMonth() + 1)
+  const [mtdYear, setMtdYear] = useState(_now.getFullYear())
+  const [mtdData, setMtdData] = useState<{ reps: MtdRepRow[]; totals: Omit<MtdRepRow, 'repId' | 'repName'> } | null>(null)
+  const [mtdLoading, setMtdLoading] = useState(false)
 
   // Create lead form state
   const [createForm, setCreateForm] = useState({
@@ -183,32 +198,25 @@ export function LeadsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Leads are already filtered server-side; use `leads` directly for the current page
-  const filteredLeads = leads
+  const fetchMtdReport = useCallback(async (month: number, year: number) => {
+    setMtdLoading(true)
+    try {
+      const res = await authFetch(`/api/admin/leads/mtd-report?month=${month}&year=${year}`)
+      if (res.ok) {
+        const json = await res.json()
+        if (json.success) setMtdData(json.data)
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setMtdLoading(false)
+    }
+  }, [])
 
-  // Pipeline report data from real leads
-  const pipelineReport = useMemo(() => {
-    const totalLeads = leads.length
-    const totalValue = leads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0)
-    const activeLeads = leads.filter(l => !terminalStages.includes(l.stage as LeadStage))
-    const activeValue = activeLeads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0)
-    const convertedLeads = leads.filter(l => l.stage === "CLOSED_WON").length
-    const conversionRate = totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(1) : "0"
-
-    const stageBreakdown = allStages.map(stage => {
-      const stageLeads = leads.filter(l => l.stage === stage)
-      const stageValue = stageLeads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0)
-      const pct = totalLeads > 0 ? ((stageLeads.length / totalLeads) * 100).toFixed(0) : "0"
-      return { stage, count: stageLeads.length, value: stageValue, pct }
-    })
-
-    const lostLeads = leads.filter(l => terminalStages.includes(l.stage as LeadStage))
-    const lostValue = lostLeads.reduce((sum, l) => sum + (l.estimatedValue || 0), 0)
-    const lostPct = totalLeads > 0 ? ((lostLeads.length / totalLeads) * 100).toFixed(0) : "0"
-    const avgDealValue = activeLeads.length > 0 ? Math.round(activeValue / activeLeads.length) : 0
-
-    return { totalLeads, totalValue, activeLeads: activeLeads.length, activeValue, convertedLeads, conversionRate, stageBreakdown, lostLeads: lostLeads.length, lostValue, lostPct, avgDealTime: "8.5", avgDealValue }
-  }, [leads])
+  useEffect(() => {
+    fetchMtdReport(mtdMonth, mtdYear)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mtdMonth, mtdYear])
 
   const getNextStage = (currentStage: LeadStage): LeadStage | null => {
     const idx = allStages.indexOf(currentStage)
@@ -451,60 +459,93 @@ export function LeadsView() {
         }
       />
 
-      {/* Pipeline Report */}
+      {/* MTD Report */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium">Pipeline Report</CardTitle>
-            <Badge variant="outline" className="text-[10px] h-5 font-medium">{pipelineReport.activeLeads} active leads</Badge>
+            <CardTitle className="text-sm font-medium">MTD Report</CardTitle>
+            <div className="flex items-center gap-2">
+              <Select value={String(mtdMonth)} onValueChange={(v) => setMtdMonth(Number(v))}>
+                <SelectTrigger className="w-[80px] h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {MONTHS.map((m, i) => (
+                    <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={String(mtdYear)} onValueChange={(v) => setMtdYear(Number(v))}>
+                <SelectTrigger className="w-[76px] h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[2024, 2025, 2026].map(y => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-lg border p-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Target className="h-3 w-3" /> Total Leads</div>
-              <p className="text-lg font-bold">{pipelineReport.totalLeads}</p>
-              <p className="text-[10px] text-muted-foreground">₹{pipelineReport.totalValue.toLocaleString("en-IN")}</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><TrendingUp className="h-3 w-3" /> Conversion Rate</div>
-              <p className="text-lg font-bold">{pipelineReport.conversionRate}%</p>
-              <p className="text-[10px] text-muted-foreground">{pipelineReport.convertedLeads} converted</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><DollarSign className="h-3 w-3" /> Avg Deal Value</div>
-              <p className="text-lg font-bold">₹{pipelineReport.avgDealValue.toLocaleString("en-IN")}</p>
-              <p className="text-[10px] text-muted-foreground">₹{pipelineReport.activeValue.toLocaleString("en-IN")} pipeline</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Clock className="h-3 w-3" /> Avg Deal Time</div>
-              <p className="text-lg font-bold">{pipelineReport.avgDealTime} days</p>
-              <p className="text-[10px] text-red-500">{pipelineReport.lostLeads} lost (₹{pipelineReport.lostValue.toLocaleString("en-IN")})</p>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {pipelineReport.stageBreakdown.map((item) => {
-              const colorClass = leadStageColors[item.stage as LeadStage] || "bg-slate-100 text-slate-700"
-              return (
-                <div key={item.stage} className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${colorClass.split(" ")[0]}`} />
-                  <span className="text-xs text-muted-foreground w-32 truncate">{stageLabels[item.stage]}</span>
-                  <div className="flex-1"><Progress value={Number(item.pct)} className="h-2" /></div>
-                  <span className="text-xs font-medium w-8 text-right">{item.count}</span>
-                  <span className="text-[10px] text-muted-foreground w-24 text-right">₹{item.value.toLocaleString("en-IN")}</span>
-                </div>
-              )
-            })}
-            {pipelineReport.lostLeads > 0 && (
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full shrink-0 bg-red-200" />
-                <span className="text-xs text-red-500 w-32">Lost</span>
-                <div className="flex-1"><Progress value={Number(pipelineReport.lostPct)} className="h-2" /></div>
-                <span className="text-xs font-medium w-8 text-right text-red-500">{pipelineReport.lostLeads}</span>
-                <span className="text-[10px] text-red-400 w-24 text-right">₹{pipelineReport.lostValue.toLocaleString("en-IN")}</span>
-              </div>
-            )}
-          </div>
+        <CardContent className="p-0 overflow-x-auto">
+          {mtdLoading ? (
+            <div className="p-6"><Skeleton className="h-[160px] w-full" /></div>
+          ) : !mtdData || mtdData.reps.length === 0 ? (
+            <div className="p-6 text-center text-sm text-muted-foreground">No data for this period</div>
+          ) : (
+            <table className="w-full text-xs border-collapse min-w-[960px]">
+              <thead>
+                <tr style={{ background: "#0f1729" }}>
+                  <th className="px-3 py-2.5 text-left text-white font-semibold border-r border-white/10 min-w-[130px]">MTD</th>
+                  <th className="px-3 py-2.5 text-center text-white font-semibold border-r border-white/10 whitespace-nowrap">Total Leads</th>
+                  <th className="px-3 py-2.5 text-center text-slate-300 font-semibold border-r border-white/10 whitespace-nowrap">Not Called</th>
+                  <th className="px-3 py-2.5 text-center font-semibold border-r border-white/10 whitespace-nowrap" style={{ color: "#4ade80" }}>Closed</th>
+                  <th className="px-3 py-2.5 text-center text-blue-300 font-semibold border-r border-white/10 whitespace-nowrap">Follow Up</th>
+                  <th className="px-3 py-2.5 text-center text-cyan-300 font-semibold border-r border-white/10 whitespace-nowrap">Interested</th>
+                  <th className="px-3 py-2.5 text-center text-red-300 font-semibold border-r border-white/10 whitespace-nowrap">Not Interested</th>
+                  <th className="px-3 py-2.5 text-center text-yellow-300 font-semibold border-r border-white/10 whitespace-nowrap">Wrong Number</th>
+                  <th className="px-3 py-2.5 text-center text-purple-300 font-semibold border-r border-white/10">RNR</th>
+                  <th className="px-3 py-2.5 text-center text-indigo-300 font-semibold border-r border-white/10 whitespace-nowrap">Web Call Planned</th>
+                  <th className="px-3 py-2.5 text-center text-violet-300 font-semibold border-r border-white/10 whitespace-nowrap">Web Call Done</th>
+                  <th className="px-3 py-2.5 text-center font-semibold border-r border-white/10 whitespace-nowrap" style={{ color: "#fb923c" }}>HOT LEAD</th>
+                  <th className="px-3 py-2.5 text-center text-white font-semibold whitespace-nowrap">Total Attempted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mtdData.reps.map((rep, idx) => (
+                  <tr key={rep.repId} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                    <td className="px-3 py-2 font-medium text-slate-800 border-r border-slate-100">{rep.repName}</td>
+                    <td className="px-3 py-2 text-center font-semibold text-slate-900 border-r border-slate-100">{rep.totalLeads}</td>
+                    <td className="px-3 py-2 text-center text-slate-500 border-r border-slate-100">{rep.notCalled}</td>
+                    <td className="px-3 py-2 text-center font-semibold border-r border-slate-100" style={{ color: "#16a34a" }}>{rep.closed}</td>
+                    <td className="px-3 py-2 text-center text-blue-600 border-r border-slate-100">{rep.followUp}</td>
+                    <td className="px-3 py-2 text-center text-cyan-600 border-r border-slate-100">{rep.interested}</td>
+                    <td className="px-3 py-2 text-center text-red-500 border-r border-slate-100">{rep.notInterested}</td>
+                    <td className="px-3 py-2 text-center text-yellow-600 border-r border-slate-100">{rep.wrongNumber}</td>
+                    <td className="px-3 py-2 text-center text-purple-600 border-r border-slate-100">{rep.rnr}</td>
+                    <td className="px-3 py-2 text-center text-indigo-600 border-r border-slate-100">{rep.webCallPlanned}</td>
+                    <td className="px-3 py-2 text-center text-violet-600 border-r border-slate-100">{rep.webCallDone}</td>
+                    <td className="px-3 py-2 text-center font-semibold border-r border-slate-100" style={{ color: "#ea580c" }}>{rep.hotLead}</td>
+                    <td className="px-3 py-2 text-center font-semibold text-slate-900">{rep.totalAttempted}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: "#0f1729" }}>
+                  <td className="px-3 py-2.5 font-bold text-white border-r border-white/10">Total</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-white border-r border-white/10">{mtdData.totals.totalLeads}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-slate-300 border-r border-white/10">{mtdData.totals.notCalled}</td>
+                  <td className="px-3 py-2.5 text-center font-bold border-r border-white/10" style={{ color: "#4ade80" }}>{mtdData.totals.closed}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-blue-300 border-r border-white/10">{mtdData.totals.followUp}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-cyan-300 border-r border-white/10">{mtdData.totals.interested}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-red-300 border-r border-white/10">{mtdData.totals.notInterested}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-yellow-300 border-r border-white/10">{mtdData.totals.wrongNumber}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-purple-300 border-r border-white/10">{mtdData.totals.rnr}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-indigo-300 border-r border-white/10">{mtdData.totals.webCallPlanned}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-violet-300 border-r border-white/10">{mtdData.totals.webCallDone}</td>
+                  <td className="px-3 py-2.5 text-center font-bold border-r border-white/10" style={{ color: "#fb923c" }}>{mtdData.totals.hotLead}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-white">{mtdData.totals.totalAttempted}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
         </CardContent>
       </Card>
 
