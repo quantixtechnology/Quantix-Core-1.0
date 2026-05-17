@@ -224,38 +224,29 @@ export const WORKFLOW_CONFIGS: WorkflowConfig[] = [
 ]
 
 // ============================================================================
-// PLAN CONFIG (unchanged)
+// PLAN CONFIG — Feature access only. No pricing. Billing is dynamic per business.
 // ============================================================================
 
 export interface PlanConfig {
   tier: PlanTier
   name: string
-  monthlyPrice: number
-  yearlyPrice: number
-  implementationCharge: number
   description: string
   features: string[]
   allowedWorkflows: WorkflowType[]
   limits: { stores: number; products: number; orders: number; partners: number; staff: number }
-  popular?: boolean
 }
 
 export const PLAN_CONFIGS: PlanConfig[] = [
   {
     tier: "STANDARD",
     name: "Standard",
-    monthlyPrice: 2999,
-    yearlyPrice: 30000,
-    implementationCharge: 1999,
-    description: "Essential tools for single-workflow businesses",
+    description: "Core ecommerce + basic operations",
     features: [
       "Ecommerce workflow",
       "Standard POS",
-      "Delivery workflow",
       "Basic inventory management",
       "Customer management",
       "Order management",
-      "Single store support",
       "Basic reports",
       "WhatsApp notifications",
     ],
@@ -265,12 +256,10 @@ export const PLAN_CONFIGS: PlanConfig[] = [
   {
     tier: "PRO",
     name: "Pro",
-    monthlyPrice: 4999,
-    yearlyPrice: 49999,
-    implementationCharge: 1999,
     description: "Full workflow engine for multi-service businesses",
     features: [
-      "Multiple workflows",
+      "All Standard features",
+      "Multi-workflow access",
       "Subscription engine",
       "Pickup & delivery workflow",
       "Appointment workflow",
@@ -279,13 +268,11 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       "Advanced POS",
       "Multi-store support",
       "Advanced reports & analytics",
-      "Priority support",
       "Custom domain",
       "White-label branding",
     ],
     allowedWorkflows: ["ECOMMERCE", "PICKUP_DELIVERY", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
     limits: { stores: 5, products: 10000, orders: 25000, partners: 50, staff: 50 },
-    popular: true,
   },
 ]
 
