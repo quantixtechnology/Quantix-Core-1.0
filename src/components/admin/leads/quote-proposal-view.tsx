@@ -329,65 +329,88 @@ function ProposalDocument({
         </div>
       </div>
 
-      {/* ── PLAN & FEATURES ─────────────────────────────────────────────── */}
+      {/* ── PLAN OVERVIEW ───────────────────────────────────────────────── */}
       <div style={{ marginBottom: "28px" }}>
         <div style={{
           fontSize: "10px", fontWeight: 700, letterSpacing: "0.16em",
           textTransform: "uppercase", color: accentBlue, marginBottom: "10px",
-        }}>PLAN & FEATURES</div>
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: "10px", padding: "16px 20px", background: "#f9fafb" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: "20px" }}>
-            {/* Plan badge */}
-            <div style={{
-              padding: "8px 18px", borderRadius: "8px", fontWeight: 800, fontSize: "15px",
-              background: form.planTier === "PRO" ? accentBlue : "#6b7280",
-              color: "#fff", whiteSpace: "nowrap", letterSpacing: "0.06em", flexShrink: 0,
-            }}>
-              {form.planTier}
+        }}>PLAN OVERVIEW</div>
+        <div style={{
+          border: "1px solid #e5e7eb", borderRadius: "10px", padding: "14px 20px",
+          background: "#f9fafb", display: "flex", alignItems: "center", gap: "20px",
+        }}>
+          <div style={{
+            padding: "6px 18px", borderRadius: "8px", fontWeight: 800, fontSize: "14px",
+            background: form.planTier === "PRO" ? accentBlue : "#6b7280",
+            color: "#fff", whiteSpace: "nowrap", letterSpacing: "0.06em", flexShrink: 0,
+          }}>
+            {form.planTier}
+          </div>
+          <div style={{ display: "flex", gap: "28px" }}>
+            <div>
+              <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>Stores</div>
+              <div style={{ fontWeight: 700, color: "#111827", marginTop: "2px" }}>{form.storeCount || "1"}</div>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ marginBottom: "10px" }}>
-                <span style={{ fontSize: "11px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  Stores:&nbsp;
-                </span>
-                <span style={{ fontWeight: 600 }}>{form.storeCount || "1"}</span>
+            {form.enabledWorkflows.length > 0 && (
+              <div>
+                <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "4px" }}>Workflows</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                  {form.enabledWorkflows.map(wf => {
+                    const opt = WORKFLOW_OPTIONS.find(w => w.id === wf)
+                    return (
+                      <span key={wf} style={{
+                        padding: "2px 8px", borderRadius: "20px", fontSize: "10px", fontWeight: 600,
+                        background: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe",
+                      }}>{opt?.label ?? wf}</span>
+                    )
+                  })}
+                </div>
               </div>
-              {form.enabledWorkflows.length > 0 && (
-                <div style={{ marginBottom: "10px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "6px" }}>
-                    Workflows
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {form.enabledWorkflows.map(wf => {
-                      const opt = WORKFLOW_OPTIONS.find(w => w.id === wf)
-                      return (
-                        <span key={wf} style={{
-                          padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600,
-                          background: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe",
-                        }}>{opt?.label ?? wf}</span>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              {form.includedModules.length > 0 && (
-                <div>
-                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "6px" }}>
-                    Included Modules
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {form.includedModules.map(mod => (
-                      <span key={mod} style={{
-                        padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 600,
-                        background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0",
-                      }}>{mod}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
+      </div>
+
+      {/* ── APPLICATIONS ────────────────────────────────────────────────── */}
+      <div style={{ marginBottom: "28px" }}>
+        <div style={{
+          fontSize: "10px", fontWeight: 700, letterSpacing: "0.16em",
+          textTransform: "uppercase", color: accentBlue, marginBottom: "10px",
+        }}>APPLICATIONS</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
+          <thead>
+            <tr style={{ background: headerBg }}>
+              {["APPLICATION", "STATUS"].map((h, i) => (
+                <th key={h} style={{
+                  padding: "10px 14px", color: "#fff", fontWeight: 700,
+                  fontSize: "10.5px", letterSpacing: "0.1em", textTransform: "uppercase",
+                  textAlign: i === 0 ? "left" : "center",
+                  borderRight: i === 0 ? "1px solid rgba(255,255,255,0.08)" : undefined,
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {MODULE_OPTIONS.map((mod, idx) => {
+              const included = form.includedModules.includes(mod)
+              return (
+                <tr key={mod} style={{ background: idx % 2 === 0 ? "#ffffff" : "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                  <td style={{ padding: "10px 14px", fontWeight: 600, color: "#111827" }}>{mod}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                    {included ? (
+                      <span style={{
+                        padding: "3px 12px", borderRadius: "20px", fontSize: "11px", fontWeight: 700,
+                        background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0",
+                      }}>Included</span>
+                    ) : (
+                      <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* ── NOTES ───────────────────────────────────────────────────────── */}
@@ -689,43 +712,6 @@ export function QuoteProposalView() {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Enabled Workflows</Label>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {WORKFLOW_OPTIONS.map(wf => (
-                        <button
-                          key={wf.id}
-                          onClick={() => toggleWorkflow(wf.id)}
-                          className={`text-[10px] px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                            form.enabledWorkflows.includes(wf.id)
-                              ? "bg-blue-600 text-white border-blue-600"
-                              : "bg-white text-muted-foreground border-border hover:bg-muted"
-                          }`}
-                        >
-                          {wf.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Included Modules</Label>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {MODULE_OPTIONS.map(mod => (
-                        <button
-                          key={mod}
-                          onClick={() => toggleModule(mod)}
-                          className={`text-[10px] px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                            form.includedModules.includes(mod)
-                              ? "bg-emerald-600 text-white border-emerald-600"
-                              : "bg-white text-muted-foreground border-border hover:bg-muted"
-                          }`}
-                        >
-                          {mod}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               </section>
 
