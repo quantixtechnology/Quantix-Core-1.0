@@ -1,33 +1,10 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
-import { PageHeader } from "../shared/page-header"
-import { StatCard } from "../shared/stat-card"
-import { StatusBadge } from "../shared/status-badge"
-import { domains, deployments, businesses } from "@/components/dashboard/data"
-import type { DomainStatus, DeploymentStatus } from "@/components/dashboard/data"
-import { useAdminStore } from "@/stores/admin-store"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { useState, useEffect, useMemo } from "react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -35,1493 +12,631 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet"
 import { Separator } from "@/components/ui/separator"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Globe,
-  Plus,
   Search,
-  X,
-  Shield,
   ExternalLink,
-  Server,
+  Settings2,
+  ShieldCheck,
+  Shield,
   AlertTriangle,
-  CheckCircle2,
   RefreshCw,
-  Copy,
-  ArrowUpRight,
-  Activity,
+  Loader2,
+  Info,
 } from "lucide-react"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { toast } from "sonner"
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ── Types ─────────────────────────────────────────────────────────────────
 
-interface DomainRecord {
+type WebsiteStatus = "active" | "draft" | "maintenance" | "suspended"
+
+interface WebsiteRecord {
   id: string
-  businessId: string
-  businessName: string
-  domain: string
-  isPrimary: boolean
+  name: string
+  slug: string
+  businessType: string
+  businessStatus: string
+  isOnline: boolean
+  logo: string | null
+  primaryColor: string
+  secondaryColor: string | null
+  accentColor: string | null
+  tagline: string | null
+  contactPhone: string | null
+  contactEmail: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  pincode: string | null
+  websiteStatus: WebsiteStatus
+  websiteUrl: string | null
+  subdomain: string | null
   sslStatus: string
-  status: DomainStatus
-  dnsProvider: string
+  sslExpiryDate: string | null
+  domainStatus: string | null
+  domainConfiguredAt: string | null
+  updatedAt: string
 }
 
-interface DeploymentRecord {
-  id: string
-  businessId: string
-  businessName: string
-  type: string
-  status: DeploymentStatus
-  hostingProvider: string
-  version: string
-  healthStatus: string
+// ── Status config ─────────────────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<WebsiteStatus, { label: string; cls: string }> = {
+  active:      { label: "Active",      cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  draft:       { label: "Draft",       cls: "bg-gray-100   text-gray-600   border-gray-200"    },
+  maintenance: { label: "Maintenance", cls: "bg-amber-50   text-amber-700  border-amber-200"   },
+  suspended:   { label: "Suspended",   cls: "bg-red-50     text-red-700    border-red-200"      },
 }
 
-// ---------------------------------------------------------------------------
-// Mock data generators
-// ---------------------------------------------------------------------------
-
-const mockDomainTimelines: Record<string, { step: string; status: string; timestamp: string }[]> = {
-  dom_1: [
-    { step: "DNS Configured", status: "completed", timestamp: "2025-01-02 10:30" },
-    { step: "DNS Propagation Complete", status: "completed", timestamp: "2025-01-02 14:15" },
-    { step: "SSL Certificate Issued", status: "completed", timestamp: "2025-01-02 15:00" },
-    { step: "Domain Active", status: "completed", timestamp: "2025-01-02 15:05" },
-  ],
-  dom_5: [
-    { step: "DNS Configured", status: "completed", timestamp: "2025-01-14 09:00" },
-    { step: "DNS Propagation Complete", status: "completed", timestamp: "2025-01-14 13:30" },
-    { step: "SSL Certificate Pending", status: "current", timestamp: "2025-01-14 14:00" },
-    { step: "Domain Active", status: "pending", timestamp: "" },
-  ],
-  dom_7: [
-    { step: "DNS Configuration Pending", status: "current", timestamp: "2025-01-15 08:00" },
-    { step: "DNS Propagation", status: "pending", timestamp: "" },
-    { step: "SSL Certificate", status: "pending", timestamp: "" },
-    { step: "Domain Active", status: "pending", timestamp: "" },
-  ],
+type SslConfig = { label: string; cls: string; Icon: React.ComponentType<{ className?: string }> }
+const SSL_CONFIG: Record<string, SslConfig> = {
+  active:  { label: "SSL Active",  cls: "text-emerald-600", Icon: ShieldCheck    },
+  pending: { label: "SSL Pending", cls: "text-amber-500",   Icon: Shield         },
+  expired: { label: "SSL Expired", cls: "text-red-500",     Icon: AlertTriangle  },
 }
 
-const defaultTimeline: { step: string; status: string; timestamp: string }[] = [
-  { step: "DNS Configured", status: "completed", timestamp: "2025-01-05 10:00" },
-  { step: "DNS Propagation Complete", status: "completed", timestamp: "2025-01-05 14:00" },
-  { step: "SSL Certificate Issued", status: "completed", timestamp: "2025-01-05 15:00" },
-  { step: "Domain Active", status: "completed", timestamp: "2025-01-05 15:05" },
-]
+const STOREFRONT_BASE = "quantixshop.in"
 
-const mockDeploymentLogs: Record<string, { timestamp: string; level: string; message: string }[]> = {
-  dep_5: [
-    { timestamp: "2025-01-15 10:00:12", level: "info", message: "Build triggered for MedQuick Pharmacy" },
-    { timestamp: "2025-01-15 10:00:15", level: "info", message: "Installing dependencies..." },
-    { timestamp: "2025-01-15 10:01:30", level: "info", message: "Dependencies installed successfully" },
-    { timestamp: "2025-01-15 10:01:35", level: "info", message: "Running build script..." },
-    { timestamp: "2025-01-15 10:03:20", level: "warn", message: "Build optimization: large bundle detected (>2MB)" },
-    { timestamp: "2025-01-15 10:03:45", level: "info", message: "Build completed successfully" },
-  ],
-  dep_8: [
-    { timestamp: "2025-01-14 22:00:05", level: "info", message: "Health check: degraded performance detected" },
-    { timestamp: "2025-01-14 22:00:10", level: "warn", message: "Response time: 2800ms (threshold: 1000ms)" },
-    { timestamp: "2025-01-14 22:05:00", level: "info", message: "Auto-scaling triggered: adding 1 instance" },
-    { timestamp: "2025-01-14 22:10:30", level: "info", message: "Health check: still degraded" },
-    { timestamp: "2025-01-14 22:15:00", level: "warn", message: "Memory usage: 89% on primary instance" },
-  ],
-}
-
-const defaultDeploymentLogs: { timestamp: string; level: string; message: string }[] = [
-  { timestamp: "2025-01-10 09:00:00", level: "info", message: "Deployment initiated" },
-  { timestamp: "2025-01-10 09:01:00", level: "info", message: "Build completed successfully" },
-  { timestamp: "2025-01-10 09:02:00", level: "info", message: "Deployment live on production" },
-  { timestamp: "2025-01-10 09:02:05", level: "info", message: "Health check passed" },
-]
-
-const mockVersionHistory: Record<string, { version: string; deployedAt: string; status: string }[]> = {
-  dep_1: [
-    { version: "2.1.3", deployedAt: "2025-01-10", status: "current" },
-    { version: "2.1.2", deployedAt: "2024-12-28", status: "previous" },
-    { version: "2.1.1", deployedAt: "2024-12-15", status: "older" },
-  ],
-  dep_3: [
-    { version: "2.1.3", deployedAt: "2025-01-12", status: "current" },
-    { version: "2.1.2", deployedAt: "2024-12-20", status: "previous" },
-  ],
-}
-
-// ---------------------------------------------------------------------------
-// DNS Instructions data
-// ---------------------------------------------------------------------------
-
-interface DNSInstruction {
-  provider: string
-  icon: string
-  steps: string[]
-  records: { type: string; name: string; value: string }[]
-}
-
-const dnsInstructions: DNSInstruction[] = [
-  {
-    provider: "Cloudflare",
-    icon: "☁️",
-    steps: [
-      "Log in to your Cloudflare dashboard",
-      "Select the domain you want to configure",
-      "Go to DNS > Records",
-      "Click 'Add Record' and add the CNAME/A records below",
-      "Ensure the Proxy status is set to 'Proxied' (orange cloud) for SSL support",
-      "Wait for DNS propagation (usually 1-5 minutes with Cloudflare)",
-    ],
-    records: [
-      { type: "CNAME", name: "www", value: "cname.quantixplatform.in" },
-      { type: "CNAME", name: "@", value: "cname.quantixplatform.in" },
-      { type: "A", name: "@", value: "34.131.45.67" },
-    ],
-  },
-  {
-    provider: "GoDaddy",
-    icon: "🌐",
-    steps: [
-      "Log in to your GoDaddy account",
-      "Go to My Products > DNS > Manage Zones",
-      "Select your domain",
-      "Add the CNAME and A records below",
-      "Set TTL to 'Custom' and 600 seconds for faster propagation",
-      "DNS propagation may take 15-30 minutes",
-    ],
-    records: [
-      { type: "CNAME", name: "www", value: "cname.quantixplatform.in" },
-      { type: "A", name: "@", value: "34.131.45.67" },
-    ],
-  },
-  {
-    provider: "Route53 (AWS)",
-    icon: "🔶",
-    steps: [
-      "Log in to the AWS Management Console",
-      "Navigate to Route 53 > Hosted zones",
-      "Select your domain's hosted zone",
-      "Click 'Create Record' and add the records below",
-      "For CNAME records, set TTL to 300 seconds",
-      "For A records, set Alias to 'No' and enter the IP address",
-      "Propagation typically takes 1-2 minutes",
-    ],
-    records: [
-      { type: "CNAME", name: "www.yourdomain.in", value: "cname.quantixplatform.in" },
-      { type: "A", name: "yourdomain.in", value: "34.131.45.67" },
-    ],
-  },
-]
-
-const sslInstructions = [
-  "SSL certificates are automatically provisioned via Let's Encrypt once DNS is properly configured",
-  "Ensure your domain resolves to our server before SSL issuance",
-  "SSL certificates are auto-renewed 30 days before expiry",
-  "If SSL issuance fails, verify DNS records point correctly and try the 'Retry SSL' action",
-  "Wildcard certificates cover all subdomains (*.yourdomain.in)",
-  "Force HTTPS redirect is enabled by default for all active domains",
-]
-
-// ---------------------------------------------------------------------------
-// Helper functions
-// ---------------------------------------------------------------------------
-
-function getHealthDotColor(health: string): string {
-  switch (health) {
-    case "healthy":
-      return "bg-emerald-500"
-    case "degraded":
-      return "bg-amber-500"
-    case "unknown":
-      return "bg-slate-300"
-    default:
-      return "bg-slate-300"
-  }
-}
-
-function getHealthLabel(health: string): string {
-  switch (health) {
-    case "healthy":
-      return "Healthy"
-    case "degraded":
-      return "Degraded"
-    case "unknown":
-      return "Unknown"
-    default:
-      return health
-  }
-}
-
-function getDeploymentTypeLabel(type: string): string {
-  const map: Record<string, string> = {
-    WEBSITE: "Website",
-    ADMIN_DASHBOARD: "Admin Dashboard",
-    CUSTOMER_APP: "Customer App",
-    DELIVERY_APP: "Delivery App",
-    ADMIN_APP: "Admin App",
-  }
-  return map[type] || type
-}
-
-function getHostingProviderLabel(provider: string): string {
-  const map: Record<string, string> = {
-    replit: "Replit",
-    vercel: "Vercel",
-    aws: "AWS",
-    digitalocean: "DigitalOcean",
-  }
-  return map[provider] || provider
-}
-
-function getDomainTimeline(domainId: string) {
-  return mockDomainTimelines[domainId] || defaultTimeline
-}
-
-function getDeploymentLogs(deploymentId: string) {
-  return mockDeploymentLogs[deploymentId] || defaultDeploymentLogs
-}
-
-function getVersionHistory(deploymentId: string) {
-  return mockVersionHistory[deploymentId] || [
-    { version: "2.1.3", deployedAt: "2025-01-10", status: "current" },
-  ]
-}
-
-function getLogLevelColor(level: string): string {
-  switch (level) {
-    case "info":
-      return "text-sky-600"
-    case "warn":
-      return "text-amber-600"
-    case "error":
-      return "text-red-600"
-    default:
-      return "text-muted-foreground"
-  }
-}
-
-// ---------------------------------------------------------------------------
-// DNS Provider filter options
-// ---------------------------------------------------------------------------
-
-const domainStatusOptions: { value: string; label: string }[] = [
-  { value: "ALL", label: "All Statuses" },
-  { value: "PENDING_DNS", label: "Pending DNS" },
-  { value: "DNS_PROPAGATING", label: "DNS Propagating" },
-  { value: "SSL_PENDING", label: "SSL Pending" },
-  { value: "ACTIVE", label: "Active" },
-  { value: "ERROR", label: "Error" },
-]
-
-const dnsProviderOptions: { value: string; label: string }[] = [
-  { value: "ALL", label: "All Providers" },
-  { value: "Cloudflare", label: "Cloudflare" },
-  { value: "GoDaddy", label: "GoDaddy" },
-  { value: "Route53", label: "Route53" },
-]
-
-const deploymentStatusOptions: { value: string; label: string }[] = [
-  { value: "ALL", label: "All Statuses" },
-  { value: "PENDING", label: "Pending" },
-  { value: "BUILDING", label: "Building" },
-  { value: "DEPLOYING", label: "Deploying" },
-  { value: "LIVE", label: "Live" },
-  { value: "FAILED", label: "Failed" },
-  { value: "MAINTENANCE", label: "Maintenance" },
-]
-
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
+// ── Main component ────────────────────────────────────────────────────────
 
 export function DomainsView() {
-  const { searchQuery } = useAdminStore()
+  const [sites, setSites] = useState<WebsiteRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
 
-  // ---- Tab state ----
-  const [activeTab, setActiveTab] = useState("domains")
+  // Sheet state
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [selected, setSelected] = useState<WebsiteRecord | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  // ---- Domain filter state ----
-  const [domainStatusFilter, setDomainStatusFilter] = useState("ALL")
-  const [dnsProviderFilter, setDnsProviderFilter] = useState("ALL")
-  const [domainSearch, setDomainSearch] = useState("")
+  // Edit form
+  const [editLogo, setEditLogo] = useState("")
+  const [editPrimary, setEditPrimary] = useState("")
+  const [editSecondary, setEditSecondary] = useState("")
+  const [editAccent, setEditAccent] = useState("")
+  const [editPhone, setEditPhone] = useState("")
+  const [editEmail, setEditEmail] = useState("")
+  const [editAddress, setEditAddress] = useState("")
+  const [editCity, setEditCity] = useState("")
+  const [editState, setEditState] = useState("")
+  const [editPincode, setEditPincode] = useState("")
+  const [editStatus, setEditStatus] = useState<string>("draft")
+  const [editCustomDomain, setEditCustomDomain] = useState("")
 
-  // ---- Deployment filter state ----
-  const [deployStatusFilter, setDeployStatusFilter] = useState("ALL")
-  const [deploySearch, setDeploySearch] = useState("")
+  // ── Data fetching ────────────────────────────────────────────────────
 
-  // ---- Domain detail sheet ----
-  const [selectedDomain, setSelectedDomain] = useState<DomainRecord | null>(null)
-  const [domainDetailOpen, setDomainDetailOpen] = useState(false)
-
-  // ---- Deployment detail sheet ----
-  const [selectedDeployment, setSelectedDeployment] = useState<DeploymentRecord | null>(null)
-  const [deploymentDetailOpen, setDeploymentDetailOpen] = useState(false)
-
-  // ---- Add domain dialog ----
-  const [addDomainOpen, setAddDomainOpen] = useState(false)
-  const [formBusiness, setFormBusiness] = useState("")
-  const [formDomain, setFormDomain] = useState("")
-  const [formSubdomain, setFormSubdomain] = useState("")
-  const [formDnsProvider, setFormDnsProvider] = useState("")
-  const [formIsPrimary, setFormIsPrimary] = useState(false)
-
-  // ---- Copy feedback ----
-  const [copiedRecord, setCopiedRecord] = useState<string | null>(null)
-
-  // ---------------------------------------------------------------------------
-  // Computed stats
-  // ---------------------------------------------------------------------------
-
-  const stats = useMemo(() => {
-    const totalDomains = domains.length
-    const activeWithSSL = domains.filter((d) => d.status === "ACTIVE" && d.sslStatus === "active").length
-    const pendingDNS = domains.filter((d) => d.status === "PENDING_DNS" || d.status === "DNS_PROPAGATING").length
-    const liveDeployments = deployments.filter((d) => d.status === "LIVE").length
-    const failedDeployments = deployments.filter((d) => d.status === "FAILED").length
-    return { totalDomains, activeWithSSL, pendingDNS, liveDeployments, failedDeployments }
-  }, [])
-
-  // ---------------------------------------------------------------------------
-  // Filtered domains
-  // ---------------------------------------------------------------------------
-
-  const effectiveDomainSearch = searchQuery || domainSearch
-
-  const filteredDomains = useMemo(() => {
-    return domains.filter((d) => {
-      const matchSearch =
-        !effectiveDomainSearch ||
-        d.businessName.toLowerCase().includes(effectiveDomainSearch.toLowerCase()) ||
-        d.domain.toLowerCase().includes(effectiveDomainSearch.toLowerCase()) ||
-        d.dnsProvider.toLowerCase().includes(effectiveDomainSearch.toLowerCase())
-
-      const matchStatus = domainStatusFilter === "ALL" || d.status === domainStatusFilter
-      const matchProvider = dnsProviderFilter === "ALL" || d.dnsProvider === dnsProviderFilter
-
-      return matchSearch && matchStatus && matchProvider
-    })
-  }, [effectiveDomainSearch, domainStatusFilter, dnsProviderFilter])
-
-  // ---------------------------------------------------------------------------
-  // Filtered deployments
-  // ---------------------------------------------------------------------------
-
-  const effectiveDeploySearch = searchQuery || deploySearch
-
-  const filteredDeployments = useMemo(() => {
-    return deployments.filter((d) => {
-      const matchSearch =
-        !effectiveDeploySearch ||
-        d.businessName.toLowerCase().includes(effectiveDeploySearch.toLowerCase()) ||
-        d.type.toLowerCase().includes(effectiveDeploySearch.toLowerCase()) ||
-        d.hostingProvider.toLowerCase().includes(effectiveDeploySearch.toLowerCase())
-
-      const matchStatus = deployStatusFilter === "ALL" || d.status === deployStatusFilter
-
-      return matchSearch && matchStatus
-    })
-  }, [effectiveDeploySearch, deployStatusFilter])
-
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
-
-  const resetAddDomainForm = useCallback(() => {
-    setFormBusiness("")
-    setFormDomain("")
-    setFormSubdomain("")
-    setFormDnsProvider("")
-    setFormIsPrimary(false)
-  }, [])
-
-  const handleDomainRowClick = useCallback((domain: DomainRecord) => {
-    setSelectedDomain(domain)
-    setDomainDetailOpen(true)
-  }, [])
-
-  const handleDeploymentRowClick = useCallback((deployment: DeploymentRecord) => {
-    setSelectedDeployment(deployment)
-    setDeploymentDetailOpen(true)
-  }, [])
-
-  const handleCopyToClipboard = useCallback(async (text: string, recordKey: string) => {
+  const fetchSites = async () => {
+    setLoading(true)
     try {
-      await navigator.clipboard.writeText(text)
-      setCopiedRecord(recordKey)
-      setTimeout(() => setCopiedRecord(null), 2000)
+      const res = await fetch("/api/admin/websites", { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) setSites(json.data)
+      else toast.error(json.error || "Failed to load websites")
     } catch {
-      // fallback: do nothing
+      toast.error("Failed to load websites")
+    } finally {
+      setLoading(false)
     }
-  }, [])
+  }
 
-  // ---------------------------------------------------------------------------
-  // Render: SSL Status Icon
-  // ---------------------------------------------------------------------------
+  useEffect(() => { fetchSites() }, [])
 
-  function renderSSLStatus(sslStatus: string) {
-    if (sslStatus === "active") {
-      return (
-        <div className="flex items-center gap-1.5">
-          <Shield className="h-3.5 w-3.5 text-emerald-600" />
-          <span className="text-xs font-medium text-emerald-700">Active</span>
+  // ── Derived data ─────────────────────────────────────────────────────
+
+  const filtered = useMemo(() => {
+    return sites.filter((s) => {
+      if (statusFilter !== "all" && s.websiteStatus !== statusFilter) return false
+      if (search) {
+        const q = search.toLowerCase()
+        return (
+          s.name.toLowerCase().includes(q) ||
+          (s.websiteUrl ?? "").toLowerCase().includes(q) ||
+          s.slug.toLowerCase().includes(q)
+        )
+      }
+      return true
+    })
+  }, [sites, search, statusFilter])
+
+  const stats = useMemo(() => ({
+    total:       sites.length,
+    active:      sites.filter((s) => s.websiteStatus === "active").length,
+    draft:       sites.filter((s) => s.websiteStatus === "draft").length,
+    maintenance: sites.filter((s) => s.websiteStatus === "maintenance").length,
+  }), [sites])
+
+  // ── Sheet helpers ─────────────────────────────────────────────────────
+
+  const openSheet = (site: WebsiteRecord) => {
+    setSelected(site)
+    setEditLogo(site.logo ?? "")
+    setEditPrimary(site.primaryColor)
+    setEditSecondary(site.secondaryColor ?? "")
+    setEditAccent(site.accentColor ?? "")
+    setEditPhone(site.contactPhone ?? "")
+    setEditEmail(site.contactEmail ?? "")
+    setEditAddress(site.address ?? "")
+    setEditCity(site.city ?? "")
+    setEditState(site.state ?? "")
+    setEditPincode(site.pincode ?? "")
+    setEditStatus(site.websiteStatus)
+    // Custom domain: anything that isn't the auto-generated subdomain
+    const autoUrl = `${site.slug}.${STOREFRONT_BASE}`
+    setEditCustomDomain(site.websiteUrl && site.websiteUrl !== autoUrl ? site.websiteUrl : "")
+    setSheetOpen(true)
+  }
+
+  const handleSave = async () => {
+    if (!selected) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/admin/websites/${selected.id}`, {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logo:          editLogo    || null,
+          primaryColor:  editPrimary || undefined,
+          secondaryColor: editSecondary || null,
+          accentColor:   editAccent  || null,
+          contactPhone:  editPhone   || null,
+          contactEmail:  editEmail   || null,
+          address:       editAddress || null,
+          city:          editCity    || null,
+          state:         editState   || null,
+          pincode:       editPincode || null,
+          websiteStatus: editStatus,
+          customDomain:  editCustomDomain || null,
+        }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success("Website settings saved")
+        setSheetOpen(false)
+        fetchSites()
+      } else {
+        toast.error(json.error || "Failed to save")
+      }
+    } catch {
+      toast.error("Failed to save website settings")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────
+
+  return (
+    <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
+
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Website Management</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Manage storefront branding, URLs, and website status — one website per business
+          </p>
         </div>
-      )
-    }
-    return (
-      <div className="flex items-center gap-1.5">
-        <Shield className="h-3.5 w-3.5 text-amber-500" />
-        <span className="text-xs font-medium text-amber-700">Pending</span>
+        <Button variant="outline" size="sm" onClick={fetchSites} disabled={loading}>
+          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </div>
-    )
-  }
 
-  // ---------------------------------------------------------------------------
-  // Render: Health Status Dot
-  // ---------------------------------------------------------------------------
-
-  function renderHealthStatus(health: string) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <span className={`inline-block h-2 w-2 rounded-full ${getHealthDotColor(health)}`} />
-        <span className="text-xs font-medium">{getHealthLabel(health)}</span>
-      </div>
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: Domain Detail Sheet
-  // ---------------------------------------------------------------------------
-
-  function renderDomainSheet() {
-    if (!selectedDomain) return null
-
-    const timeline = getDomainTimeline(selectedDomain.id)
-
-    return (
-      <Sheet
-        open={domainDetailOpen}
-        onOpenChange={(open) => {
-          setDomainDetailOpen(open)
-          if (!open) setSelectedDomain(null)
-        }}
-      >
-        <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10">
-                <Globe className="h-5 w-5 text-primary" />
-              </div>
-              <div className="space-y-1">
-                <SheetTitle className="text-lg">{selectedDomain.domain}</SheetTitle>
-                <SheetDescription className="flex items-center gap-2">
-                  {selectedDomain.businessName}
-                  {selectedDomain.isPrimary && (
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary/10 text-primary border-0">
-                      PRIMARY
-                    </Badge>
-                  )}
-                  <StatusBadge status={selectedDomain.status} />
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
-
-          <ScrollArea className="h-[calc(100vh-120px)]">
-            <div className="space-y-6 p-6">
-              {/* Domain Info */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Domain Information
-                </h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">Domain</p>
-                    <p className="text-sm font-medium flex items-center gap-1.5">
-                      {selectedDomain.domain}
-                      <a
-                        href={`https://${selectedDomain.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">DNS Provider</p>
-                    <p className="text-sm font-medium">{selectedDomain.dnsProvider}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">Primary</p>
-                    <p className="text-sm font-medium">{selectedDomain.isPrimary ? "Yes" : "No"}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">Business</p>
-                    <p className="text-sm font-medium">{selectedDomain.businessName}</p>
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* SSL Details */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  SSL Details
-                </h4>
-                <div className="rounded-lg border p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">SSL Status</span>
-                    {renderSSLStatus(selectedDomain.sslStatus)}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Certificate Type</span>
-                    <span className="text-sm font-medium">Let&apos;s Encrypt</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Auto-Renewal</span>
-                    <Badge variant="secondary" className="text-[10px] border-0 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                      ENABLED
-                    </Badge>
-                  </div>
-                  {selectedDomain.sslStatus !== "active" && (
-                    <Button variant="outline" size="sm" className="w-full gap-2 mt-2">
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Retry SSL Issuance
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* DNS Configuration Instructions */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  DNS Configuration
-                </h4>
-                <div className="rounded-lg border p-4 space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    Add the following DNS records at your provider ({selectedDomain.dnsProvider}):
-                  </p>
-                  <div className="space-y-2">
-                    {/* CNAME Record */}
-                    <div className="flex items-center justify-between rounded-md bg-muted/50 p-2.5">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="outline" className="text-[10px] h-5 w-12 justify-center font-mono">
-                          CNAME
-                        </Badge>
-                        <div>
-                          <p className="text-xs font-medium">www &rarr; cname.quantixplatform.in</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() =>
-                          handleCopyToClipboard("cname.quantixplatform.in", `cname-${selectedDomain.id}`)
-                        }
-                      >
-                        {copiedRecord === `cname-${selectedDomain.id}` ? (
-                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </div>
-                    {/* A Record */}
-                    <div className="flex items-center justify-between rounded-md bg-muted/50 p-2.5">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="outline" className="text-[10px] h-5 w-12 justify-center font-mono">
-                          A
-                        </Badge>
-                        <div>
-                          <p className="text-xs font-medium">@ &rarr; 34.131.45.67</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() =>
-                          handleCopyToClipboard("34.131.45.67", `a-${selectedDomain.id}`)
-                        }
-                      >
-                        {copiedRecord === `a-${selectedDomain.id}` ? (
-                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Status Timeline */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Status Timeline
-                </h4>
-                <div className="space-y-0">
-                  {timeline.map((entry, i) => (
-                    <div key={i} className="flex gap-3 pb-4 last:pb-0">
-                      <div className="flex flex-col items-center">
-                        <div
-                          className={`h-3 w-3 rounded-full shrink-0 ${
-                            entry.status === "completed"
-                              ? "bg-emerald-500"
-                              : entry.status === "current"
-                              ? "bg-amber-500 ring-4 ring-amber-100"
-                              : "bg-slate-200"
-                          }`}
-                        />
-                        {i < timeline.length - 1 && (
-                          <div
-                            className={`w-0.5 flex-1 mt-1 ${
-                              entry.status === "completed" ? "bg-emerald-200" : "bg-slate-100"
-                            }`}
-                          />
-                        )}
-                      </div>
-                      <div className="pb-1">
-                        <p
-                          className={`text-sm font-medium ${
-                            entry.status === "pending"
-                              ? "text-muted-foreground"
-                              : entry.status === "current"
-                              ? "text-amber-700"
-                              : "text-foreground"
-                          }`}
-                        >
-                          {entry.step}
-                        </p>
-                        {entry.timestamp && (
-                          <p className="text-[10px] text-muted-foreground">{entry.timestamp}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Actions */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Actions
-                </h4>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Refresh DNS
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <Shield className="h-3.5 w-3.5" />
-                    Renew SSL
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 text-amber-700 hover:text-amber-800 hover:bg-amber-50"
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Verify DNS
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 text-red-700 hover:text-red-800 hover:bg-red-50"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    Remove Domain
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </ScrollArea>
-        </SheetContent>
-      </Sheet>
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: Deployment Detail Sheet
-  // ---------------------------------------------------------------------------
-
-  function renderDeploymentSheet() {
-    if (!selectedDeployment) return null
-
-    const logs = getDeploymentLogs(selectedDeployment.id)
-    const versions = getVersionHistory(selectedDeployment.id)
-
-    return (
-      <Sheet
-        open={deploymentDetailOpen}
-        onOpenChange={(open) => {
-          setDeploymentDetailOpen(open)
-          if (!open) setSelectedDeployment(null)
-        }}
-      >
-        <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10">
-                <Server className="h-5 w-5 text-primary" />
-              </div>
-              <div className="space-y-1">
-                <SheetTitle className="text-lg">
-                  {getDeploymentTypeLabel(selectedDeployment.type)}
-                </SheetTitle>
-                <SheetDescription className="flex items-center gap-2">
-                  {selectedDeployment.businessName}
-                  <StatusBadge status={selectedDeployment.status} />
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
-
-          <ScrollArea className="h-[calc(100vh-120px)]">
-            <div className="space-y-6 p-6">
-              {/* Deployment Info */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Deployment Information
-                </h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">Type</p>
-                    <p className="text-sm font-medium">{getDeploymentTypeLabel(selectedDeployment.type)}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">Hosting</p>
-                    <p className="text-sm font-medium">{getHostingProviderLabel(selectedDeployment.hostingProvider)}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">Version</p>
-                    <p className="text-sm font-medium">{selectedDeployment.version}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-[10px] text-muted-foreground">Health</p>
-                    {renderHealthStatus(selectedDeployment.healthStatus)}
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Version History */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Version History
-                </h4>
-                <div className="space-y-2">
-                  {versions.map((v) => (
-                    <div
-                      key={v.version}
-                      className="flex items-center justify-between rounded-lg border p-3"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium font-mono">v{v.version}</span>
-                        {v.status === "current" && (
-                          <Badge variant="secondary" className="text-[10px] border-0 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                            CURRENT
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground">{v.deployedAt}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Health Metrics */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Health Metrics
-                </h4>
-                <div className="grid grid-cols-3 gap-3">
-                  <Card className="shadow-none">
-                    <CardContent className="p-3 text-center">
-                      <Activity className="h-4 w-4 text-emerald-600 mx-auto mb-1" />
-                      <p className="text-lg font-bold">
-                        {selectedDeployment.healthStatus === "healthy"
-                          ? "99.9%"
-                          : selectedDeployment.healthStatus === "degraded"
-                          ? "94.2%"
-                          : "—"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">Uptime</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="shadow-none">
-                    <CardContent className="p-3 text-center">
-                      <RefreshCw className="h-4 w-4 text-sky-600 mx-auto mb-1" />
-                      <p className="text-lg font-bold">
-                        {selectedDeployment.healthStatus === "healthy"
-                          ? "120ms"
-                          : selectedDeployment.healthStatus === "degraded"
-                          ? "2800ms"
-                          : "—"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">Response</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="shadow-none">
-                    <CardContent className="p-3 text-center">
-                      <Server className="h-4 w-4 text-violet-600 mx-auto mb-1" />
-                      <p className="text-lg font-bold">
-                        {selectedDeployment.healthStatus === "unknown" ? "—" : "2/2"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">Instances</p>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Deployment Logs */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Recent Logs
-                </h4>
-                <div className="rounded-lg border bg-slate-950 p-3 font-mono text-xs space-y-1.5 max-h-48 overflow-y-auto">
-                  {logs.map((log, i) => (
-                    <div key={i} className="flex gap-2">
-                      <span className="text-slate-500 shrink-0">{log.timestamp}</span>
-                      <span className={`shrink-0 uppercase w-12 ${getLogLevelColor(log.level)}`}>
-                        [{log.level}]
-                      </span>
-                      <span className="text-slate-300">{log.message}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Actions */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Actions
-                </h4>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Redeploy
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                    Rollback
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <Activity className="h-3.5 w-3.5" />
-                    Health Check
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    View Live
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </ScrollArea>
-        </SheetContent>
-      </Sheet>
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: Domains Tab
-  // ---------------------------------------------------------------------------
-
-  function renderDomainsTab() {
-    return (
-      <div className="space-y-4">
-        {/* Filter bar */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search domains..."
-              className="pl-8 h-9"
-              value={domainSearch}
-              onChange={(e) => setDomainSearch(e.target.value)}
-            />
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: "Total Sites",  value: stats.total,       color: "text-gray-800"   },
+          { label: "Active",       value: stats.active,      color: "text-emerald-600" },
+          { label: "Draft",        value: stats.draft,       color: "text-gray-500"   },
+          { label: "Maintenance",  value: stats.maintenance, color: "text-amber-600"  },
+        ].map((s) => (
+          <div key={s.label} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">{s.label}</p>
+            <p className={`text-2xl font-bold mt-0.5 ${s.color}`}>{s.value}</p>
           </div>
+        ))}
+      </div>
 
-          <Select value={domainStatusFilter} onValueChange={setDomainStatusFilter}>
-            <SelectTrigger className="w-[160px] h-9">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              {domainStatusOptions.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={dnsProviderFilter} onValueChange={setDnsProviderFilter}>
-            <SelectTrigger className="w-[160px] h-9">
-              <SelectValue placeholder="DNS Provider" />
-            </SelectTrigger>
-            <SelectContent>
-              {dnsProviderOptions.map((p) => (
-                <SelectItem key={p.value} value={p.value}>
-                  {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {(domainStatusFilter !== "ALL" || dnsProviderFilter !== "ALL" || domainSearch) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setDomainStatusFilter("ALL")
-                setDnsProviderFilter("ALL")
-                setDomainSearch("")
-              }}
-            >
-              <X className="h-3 w-3 mr-1" /> Clear
-            </Button>
-          )}
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+          <Input
+            className="pl-9 h-9 text-sm"
+            placeholder="Search businesses or URLs…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-38 h-9 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="maintenance">Maintenance</SelectItem>
+            <SelectItem value="suspended">Suspended</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
-        {/* Domain table */}
-        {filteredDomains.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-8 text-center">
-            <Globe className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <h3 className="text-sm font-medium">No domains found</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Try adjusting your filters or add a new domain
+      {/* Architecture note */}
+      <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-gray-200 px-4 py-3">
+        <Info className="h-3.5 w-3.5 text-gray-400 shrink-0 mt-0.5" />
+        <p className="text-xs text-gray-500 leading-relaxed">
+          <span className="font-medium text-gray-700">One website per business.</span>{" "}
+          Websites are powered by a single shared storefront engine with dynamic tenant rendering.
+          Each business gets a subdomain on <span className="font-mono text-gray-600">{STOREFRONT_BASE}</span> and optionally a custom domain in the future.
+        </p>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-6 w-6 animate-spin text-gray-300" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Globe className="h-10 w-10 text-gray-200 mb-3" />
+            <p className="text-sm font-medium text-gray-500">No websites found</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Websites are automatically created with each business.
             </p>
           </div>
         ) : (
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Business Name</TableHead>
-                      <TableHead>Domain</TableHead>
-                      <TableHead>SSL Status</TableHead>
-                      <TableHead>DNS Provider</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredDomains.map((domain) => (
-                      <TableRow
-                        key={domain.id}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => handleDomainRowClick(domain)}
-                      >
-                        <TableCell>
-                          <div className="font-medium text-sm">{domain.businessName}</div>
-                          <div className="text-[10px] text-muted-foreground">{domain.id}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{domain.domain}</span>
-                            {domain.isPrimary && (
-                              <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/10 text-primary border-0 font-medium">
-                                PRIMARY
-                              </Badge>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60">
+                  <th className="text-left px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Business</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Website URL</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Status</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 hidden md:table-cell">SSL</th>
+                  <th className="text-left px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 hidden lg:table-cell">Updated</th>
+                  <th className="px-4 py-2.5 w-20" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((site, i) => {
+                  const sc = STATUS_CONFIG[site.websiteStatus] ?? STATUS_CONFIG.draft
+                  const sslKey = site.sslStatus in SSL_CONFIG ? site.sslStatus : "pending"
+                  const ssl = SSL_CONFIG[sslKey]
+                  const SslIcon = ssl.Icon
+                  return (
+                    <tr
+                      key={site.id}
+                      className={`hover:bg-gray-50/50 transition-colors ${i < filtered.length - 1 ? "border-b border-gray-50" : ""}`}
+                    >
+                      {/* Business */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
+                            style={{ backgroundColor: site.primaryColor || "#10B981" }}
+                          >
+                            {site.logo ? (
+                              <img
+                                src={site.logo}
+                                alt=""
+                                className="h-full w-full object-contain"
+                              />
+                            ) : (
+                              <span className="text-white font-bold text-[11px]">
+                                {site.name.slice(0, 2).toUpperCase()}
+                              </span>
                             )}
                           </div>
-                        </TableCell>
-                        <TableCell>{renderSSLStatus(domain.sslStatus)}</TableCell>
-                        <TableCell>
-                          <span className="text-sm">{domain.dnsProvider}</span>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={domain.status} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs gap-1"
-                              onClick={() => handleDomainRowClick(domain)}
-                            >
-                              View
-                            </Button>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 text-sm truncate">{site.name}</p>
+                            <p className="text-[11px] text-gray-400 truncate">
+                              {site.businessType.replace(/_/g, " ")}
+                            </p>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+                        </div>
+                      </td>
+
+                      {/* URL */}
+                      <td className="px-4 py-3">
+                        {site.websiteUrl ? (
+                          <div className="flex items-center gap-1.5">
+                            <Globe className="h-3 w-3 text-gray-300 shrink-0" />
+                            <span className="text-xs text-gray-700 font-mono truncate max-w-[220px]">
+                              {site.websiteUrl}
+                            </span>
+                            <a
+                              href={`https://${site.websiteUrl}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-gray-300 hover:text-blue-500 transition-colors shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className={`text-[10px] font-semibold ${sc.cls}`}>
+                          {sc.label}
+                        </Badge>
+                      </td>
+
+                      {/* SSL */}
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <div className={`flex items-center gap-1 text-[11px] font-medium ${ssl.cls}`}>
+                          <SslIcon className="h-3 w-3 shrink-0" />
+                          <span>{ssl.label}</span>
+                        </div>
+                      </td>
+
+                      {/* Updated */}
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <span className="text-xs text-gray-400">
+                          {new Date(site.updatedAt).toLocaleDateString("en-IN", {
+                            day: "numeric", month: "short", year: "numeric",
+                          })}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-gray-500 hover:text-gray-900"
+                          onClick={() => openSheet(site)}
+                        >
+                          <Settings2 className="h-3.5 w-3.5 mr-1" />
+                          Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
-    )
-  }
 
-  // ---------------------------------------------------------------------------
-  // Render: Deployments Tab
-  // ---------------------------------------------------------------------------
+      {/* Edit Sheet */}
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent className="w-full sm:max-w-md p-0 flex flex-col">
+          <SheetHeader className="px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
+            <SheetTitle className="text-base font-bold">{selected?.name}</SheetTitle>
+            <SheetDescription className="text-xs text-gray-400">
+              {selected?.websiteUrl ?? `${selected?.slug}.${STOREFRONT_BASE}`}
+            </SheetDescription>
+          </SheetHeader>
 
-  function renderDeploymentsTab() {
-    return (
-      <div className="space-y-4">
-        {/* Filter bar */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search deployments..."
-              className="pl-8 h-9"
-              value={deploySearch}
-              onChange={(e) => setDeploySearch(e.target.value)}
-            />
-          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="px-6 py-5 space-y-6">
 
-          <Select value={deployStatusFilter} onValueChange={setDeployStatusFilter}>
-            <SelectTrigger className="w-[160px] h-9">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              {deploymentStatusOptions.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {(deployStatusFilter !== "ALL" || deploySearch) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setDeployStatusFilter("ALL")
-                setDeploySearch("")
-              }}
-            >
-              <X className="h-3 w-3 mr-1" /> Clear
-            </Button>
-          )}
-        </div>
-
-        {/* Deployment table */}
-        {filteredDeployments.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-8 text-center">
-            <Server className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <h3 className="text-sm font-medium">No deployments found</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Try adjusting your filters
-            </p>
-          </div>
-        ) : (
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Business Name</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Hosting</TableHead>
-                      <TableHead>Version</TableHead>
-                      <TableHead>Health</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredDeployments.map((deployment) => (
-                      <TableRow
-                        key={deployment.id}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => handleDeploymentRowClick(deployment)}
-                      >
-                        <TableCell>
-                          <div className="font-medium text-sm">{deployment.businessName}</div>
-                          <div className="text-[10px] text-muted-foreground">{deployment.id}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px] h-5 font-medium">
-                            {getDeploymentTypeLabel(deployment.type)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{getHostingProviderLabel(deployment.hostingProvider)}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm font-mono">{deployment.version}</span>
-                        </TableCell>
-                        <TableCell>{renderHealthStatus(deployment.healthStatus)}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={deployment.status} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs gap-1"
-                              onClick={() => handleDeploymentRowClick(deployment)}
-                            >
-                              View
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: DNS Instructions Tab
-  // ---------------------------------------------------------------------------
-
-  function renderDNSInstructionsTab() {
-    return (
-      <div className="space-y-6">
-        {/* DNS Setup by Provider */}
-        {dnsInstructions.map((provider) => (
-          <Card key={provider.provider}>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <span className="text-lg">{provider.icon}</span>
-                {provider.provider} Setup
-              </CardTitle>
-              <CardDescription>
-                Follow these steps to configure DNS at {provider.provider}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Steps */}
+              {/* Website Status */}
               <div className="space-y-2">
-                {provider.steps.map((step, i) => (
-                  <div key={i} className="flex items-start gap-2.5">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary shrink-0 mt-0.5">
-                      {i + 1}
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Website Status</p>
+                <Select value={editStatus} onValueChange={setEditStatus}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active — publicly visible to customers</SelectItem>
+                    <SelectItem value="draft">Draft — not visible, under configuration</SelectItem>
+                    <SelectItem value="maintenance">Maintenance — temporarily offline</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Separator />
+
+              {/* URL & Domain */}
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Website URL</p>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-gray-500">Auto-generated URL</Label>
+                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+                    <Globe className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                    <span className="text-xs font-mono text-gray-600">
+                      {selected?.slug}.{STOREFRONT_BASE}
                     </span>
-                    <p className="text-sm text-muted-foreground">{step}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    Custom Domain{" "}
+                    <span className="text-gray-400 font-normal">(optional, future)</span>
+                  </Label>
+                  <Input
+                    placeholder="e.g. freshmart.in"
+                    value={editCustomDomain}
+                    onChange={(e) => setEditCustomDomain(e.target.value)}
+                    className="h-9 text-sm font-mono"
+                  />
+                  <p className="text-[10px] text-gray-400">
+                    Leave blank to use the auto-generated URL. DNS must point to Quantix servers.
+                  </p>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Branding */}
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Branding</p>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Business Logo URL</Label>
+                  <Input
+                    placeholder="https://cdn.example.com/logo.png"
+                    value={editLogo}
+                    onChange={(e) => setEditLogo(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                  <p className="text-[10px] text-gray-400">
+                    Used in storefront header, invoices, customer app, emails, and receipts.
+                  </p>
+                </div>
+
+                {/* Color pickers */}
+                {[
+                  { label: "Primary Color",   val: editPrimary,   set: setEditPrimary,   ph: "#10B981" },
+                  { label: "Secondary Color", val: editSecondary, set: setEditSecondary, ph: "#ffffff" },
+                  { label: "Accent Color",    val: editAccent,    set: setEditAccent,    ph: "#3B82F6" },
+                ].map(({ label, val, set, ph }) => (
+                  <div key={label} className="space-y-1">
+                    <Label className="text-xs">{label}</Label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={val || ph}
+                        onChange={(e) => set(e.target.value)}
+                        className="h-9 w-10 rounded border border-gray-200 cursor-pointer p-0.5 shrink-0"
+                      />
+                      <Input
+                        value={val}
+                        onChange={(e) => set(e.target.value)}
+                        placeholder={ph}
+                        className="h-9 text-sm font-mono"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
 
               <Separator />
 
-              {/* DNS Records */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Required DNS Records
+              {/* Contact Info */}
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Contact Information</p>
+                <p className="text-[11px] text-gray-400 -mt-1">
+                  Displayed on storefront, checkout, WhatsApp integrations, and customer support.
                 </p>
-                {provider.records.map((record) => {
-                  const recordKey = `${provider.provider}-${record.type}-${record.name}`
-                  return (
-                    <div
-                      key={recordKey}
-                      className="flex items-center justify-between rounded-lg border bg-muted/30 p-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Badge variant="outline" className="text-[10px] h-6 w-14 justify-center font-mono shrink-0">
-                          {record.type}
-                        </Badge>
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-medium">
-                            <span className="text-muted-foreground">Name:</span> {record.name}
-                          </p>
-                          <p className="text-xs font-medium">
-                            <span className="text-muted-foreground">Value:</span> {record.value}
-                          </p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1.5 h-7 text-xs shrink-0"
-                        onClick={() => handleCopyToClipboard(record.value, recordKey)}
-                      >
-                        {copiedRecord === recordKey ? (
-                          <>
-                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-3 w-3" />
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
 
-        {/* SSL Certificate Instructions */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="h-4.5 w-4.5 text-emerald-600" />
-              SSL Certificate Instructions
-            </CardTitle>
-            <CardDescription>
-              SSL certificates are automatically managed once DNS is configured correctly
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {sslInstructions.map((instruction, i) => (
-                <div key={i} className="flex items-start gap-2.5">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <p className="text-sm text-muted-foreground">{instruction}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // Main render
-  // ---------------------------------------------------------------------------
-
-  return (
-    <div className="space-y-6">
-      {/* ================================================================== */}
-      {/* Page Header                                                        */}
-      {/* ================================================================== */}
-      <PageHeader
-        title="Domains & Deployment"
-        description="Manage custom domains, SSL certificates, DNS configuration, and deployments"
-        icon={Globe}
-        action={
-          <Dialog
-            open={addDomainOpen}
-            onOpenChange={(open) => {
-              setAddDomainOpen(open)
-              if (!open) resetAddDomainForm()
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Domain
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Add New Domain</DialogTitle>
-                <DialogDescription>
-                  Configure a custom domain for a business on the Quantix platform
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                {/* Business Select */}
-                <div className="space-y-2">
-                  <Label>Business</Label>
-                  <Select value={formBusiness} onValueChange={setFormBusiness}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select business" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {businesses.map((biz) => (
-                        <SelectItem key={biz.id} value={biz.id}>
-                          {biz.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Domain Name + Subdomain */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Domain Name</Label>
-                    <Input
-                      placeholder="e.g. freshmart.in"
-                      value={formDomain}
-                      onChange={(e) => setFormDomain(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Subdomain</Label>
-                    <Input
-                      placeholder="e.g. www or order"
-                      value={formSubdomain}
-                      onChange={(e) => setFormSubdomain(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {/* DNS Provider */}
-                <div className="space-y-2">
-                  <Label>DNS Provider</Label>
-                  <Select value={formDnsProvider} onValueChange={setFormDnsProvider}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cloudflare">Cloudflare</SelectItem>
-                      <SelectItem value="GoDaddy">GoDaddy</SelectItem>
-                      <SelectItem value="Route53">Route53 (AWS)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Is Primary */}
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm font-medium">Primary Domain</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Set this as the primary domain for the business
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formIsPrimary}
-                    onChange={(e) => setFormIsPrimary(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                <div className="space-y-1">
+                  <Label className="text-xs">Business Phone</Label>
+                  <Input
+                    placeholder="+91 98765 43210"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="h-9 text-sm"
                   />
                 </div>
-
-                {/* Info notice */}
-                <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
-                  <AlertTriangle className="h-4 w-4 text-sky-600 mt-0.5 shrink-0" />
-                  <div className="text-xs text-sky-800">
-                    <p className="font-medium">DNS Configuration Required</p>
-                    <p className="mt-0.5">
-                      After adding a domain, you will need to configure DNS records at your provider.
-                      DNS propagation may take up to 48 hours. SSL certificates are auto-issued once DNS resolves.
-                    </p>
+                <div className="space-y-1">
+                  <Label className="text-xs">Business Email</Label>
+                  <Input
+                    type="email"
+                    placeholder="contact@business.in"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Address</Label>
+                  <Input
+                    placeholder="Full business address"
+                    value={editAddress}
+                    onChange={(e) => setEditAddress(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">City</Label>
+                    <Input
+                      placeholder="Mumbai"
+                      value={editCity}
+                      onChange={(e) => setEditCity(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">State</Label>
+                    <Input
+                      placeholder="Maharashtra"
+                      value={editState}
+                      onChange={(e) => setEditState(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Pincode</Label>
+                    <Input
+                      placeholder="400001"
+                      value={editPincode}
+                      onChange={(e) => setEditPincode(e.target.value)}
+                      className="h-9 text-sm"
+                    />
                   </div>
                 </div>
               </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setAddDomainOpen(false)
-                    resetAddDomainForm()
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={() => setAddDomainOpen(false)}>Add Domain</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        }
-      />
 
-      {/* ================================================================== */}
-      {/* Summary Stat Cards                                                 */}
-      {/* ================================================================== */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard
-          title="Total Domains"
-          value={stats.totalDomains}
-          change="All businesses"
-          changeType="neutral"
-          icon={Globe}
-          iconColor="text-primary"
-          iconBg="bg-primary/10"
-        />
-        <StatCard
-          title="Active (with SSL)"
-          value={stats.activeWithSSL}
-          change={`${stats.totalDomains - stats.activeWithSSL} pending`}
-          changeType={stats.activeWithSSL === stats.totalDomains ? "positive" : "neutral"}
-          icon={Shield}
-          iconColor="text-emerald-600"
-          iconBg="bg-emerald-50"
-        />
-        <StatCard
-          title="Pending DNS"
-          value={stats.pendingDNS}
-          change="Awaiting configuration"
-          changeType={stats.pendingDNS > 0 ? "negative" : "neutral"}
-          icon={AlertTriangle}
-          iconColor="text-amber-600"
-          iconBg="bg-amber-50"
-        />
-        <StatCard
-          title="Live Deployments"
-          value={stats.liveDeployments}
-          change={`${deployments.length} total`}
-          changeType="positive"
-          icon={Server}
-          iconColor="text-sky-600"
-          iconBg="bg-sky-50"
-        />
-        <StatCard
-          title="Failed Deployments"
-          value={stats.failedDeployments}
-          change={stats.failedDeployments === 0 ? "All healthy" : "Needs attention"}
-          changeType={stats.failedDeployments > 0 ? "negative" : "positive"}
-          icon={AlertTriangle}
-          iconColor="text-red-600"
-          iconBg="bg-red-50"
-        />
-      </div>
+              {/* SSL info (read-only) */}
+              {selected && (
+                <>
+                  <Separator />
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Domain & SSL</p>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 flex items-center justify-between">
+                      <span className="text-xs text-gray-600">SSL Status</span>
+                      {(() => {
+                        const key = selected.sslStatus in SSL_CONFIG ? selected.sslStatus : "pending"
+                        const cfg = SSL_CONFIG[key]
+                        const Icon = cfg.Icon
+                        return (
+                          <div className={`flex items-center gap-1 text-xs font-semibold ${cfg.cls}`}>
+                            <Icon className="h-3.5 w-3.5" />
+                            {cfg.label}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                    {selected.sslExpiryDate && (
+                      <p className="text-[10px] text-gray-400">
+                        Expires:{" "}
+                        {new Date(selected.sslExpiryDate).toLocaleDateString("en-IN", {
+                          day: "numeric", month: "short", year: "numeric",
+                        })}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-gray-400">
+                      SSL provisioning is managed by the Quantix deployment team.
+                    </p>
+                  </div>
+                </>
+              )}
 
-      {/* ================================================================== */}
-      {/* Tabs: Domains | Deployments | DNS Instructions                     */}
-      {/* ================================================================== */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="domains" className="gap-1.5">
-            <Globe className="h-3.5 w-3.5" />
-            Domains
-          </TabsTrigger>
-          <TabsTrigger value="deployments" className="gap-1.5">
-            <Server className="h-3.5 w-3.5" />
-            Deployments
-          </TabsTrigger>
-          <TabsTrigger value="dns-instructions" className="gap-1.5">
-            <ExternalLink className="h-3.5 w-3.5" />
-            DNS Instructions
-          </TabsTrigger>
-        </TabsList>
+            </div>
+          </ScrollArea>
 
-        <TabsContent value="domains">{renderDomainsTab()}</TabsContent>
-        <TabsContent value="deployments">{renderDeploymentsTab()}</TabsContent>
-        <TabsContent value="dns-instructions">{renderDNSInstructionsTab()}</TabsContent>
-      </Tabs>
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-gray-100 flex gap-2 shrink-0">
+            <Button className="flex-1" onClick={handleSave} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Save Changes
+            </Button>
+            <Button variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
-      {/* ================================================================== */}
-      {/* Detail Sheets                                                      */}
-      {/* ================================================================== */}
-      {renderDomainSheet()}
-      {renderDeploymentSheet()}
     </div>
   )
 }

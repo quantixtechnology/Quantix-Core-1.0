@@ -53,7 +53,7 @@ const platformNavItems: NavItem[] = [
   { key: "subscriptions",    label: "Subscriptions",    icon: CreditCard,  permission: "subscriptions:view" },
   { key: "plan-management",  label: "Plan Management",  icon: Receipt,     superAdminOnly: true },
   { key: "payment-plugins",  label: "Payment Plugins",  icon: CreditCard,  superAdminOnly: true },
-  { key: "domains",          label: "Domains & Deploys",icon: Globe,       permission: "platform:manage_domains" },
+  { key: "domains",          label: "Website Management",icon: Globe,       permission: "platform:manage_domains" },
   { key: "sales",            label: "Sales Team",       icon: Users,       permission: "sales:view" },
   { key: "platform-users",   label: "User Management",  icon: ShieldCheck, permission: "users:view" },
 ]
