@@ -21,6 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAdminStore, type AdminPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
+import { ADMIN_NAV_PERMISSIONS } from "@/lib/permissions"
 import { useState } from "react"
 
 const NAVY = "#081028"
@@ -37,65 +38,66 @@ const sidebarVars = {
   "--sidebar-ring": "#2563EB",
 } as React.CSSProperties
 
+// Nav items carry only key, label, and icon.
+// Visibility is driven entirely by ADMIN_NAV_PERMISSIONS — no inline permission
+// fields, no superAdminOnly flags. One source of truth for all access control.
 type NavItem = {
   key: AdminPage
   label: string
   icon: React.ComponentType<{ className?: string }>
-  permission?: string      // required permission key from user's permissions array
-  superAdminOnly?: boolean // only QUANTIX_SUPER_ADMIN or PLATFORM_ADMIN
 }
 
 const platformNavItems: NavItem[] = [
-  { key: "dashboard",        label: "Dashboard",        icon: LayoutDashboard },
-  { key: "workflow-engine",  label: "Workflow Engine",  icon: Workflow,    permission: "platform:manage_deployments" },
-  { key: "businesses",       label: "Businesses",       icon: Building2,   permission: "businesses:view" },
-  { key: "leads",            label: "Sales & Leads",    icon: UserCheck,   permission: "leads:view" },
-  { key: "subscriptions",    label: "Subscriptions",    icon: CreditCard,  permission: "subscriptions:view" },
-  { key: "plan-management",  label: "Plan Management",  icon: Receipt,     superAdminOnly: true },
-  { key: "payment-plugins",  label: "Payment Plugins",  icon: CreditCard,  superAdminOnly: true },
-  { key: "domains",          label: "Website Management",icon: Globe,       permission: "platform:manage_domains" },
-  { key: "sales",            label: "Sales Team",       icon: Users,       permission: "sales:view" },
-  { key: "platform-users",   label: "User Management",  icon: ShieldCheck, permission: "users:view" },
+  { key: "dashboard",         label: "Dashboard",          icon: LayoutDashboard },
+  { key: "workflow-engine",   label: "Workflow Engine",    icon: Workflow    },
+  { key: "businesses",        label: "Businesses",         icon: Building2   },
+  { key: "leads",             label: "Sales & Leads",      icon: UserCheck   },
+  { key: "subscriptions",     label: "Subscriptions",      icon: CreditCard  },
+  { key: "plan-management",   label: "Plan Management",    icon: Receipt     },
+  { key: "payment-plugins",   label: "Payment Plugins",    icon: CreditCard  },
+  { key: "domains",           label: "Website Management", icon: Globe       },
+  { key: "sales",             label: "Sales Team",         icon: Users       },
+  { key: "platform-users",    label: "User Management",    icon: ShieldCheck },
 ]
 
 const mobileNavItems: NavItem[] = [
-  { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone, permission: "platform:manage_deployments" },
+  { key: "mobile-apps", label: "Mobile Apps", icon: Smartphone },
 ]
 
 const deployNavItems: NavItem[] = [
-  { key: "ops-dashboard",       label: "Operations Dashboard", icon: Activity,   permission: "platform:manage_deployments" },
-  { key: "deployment-pipeline", label: "Deployment Pipeline",  icon: Rocket,     permission: "platform:manage_deployments" },
-  { key: "build-automation",    label: "Build Automation",     icon: Hammer,     permission: "platform:manage_deployments" },
-  { key: "release-management",  label: "Release Management",   icon: GitBranch,  permission: "platform:manage_deployments" },
-  { key: "play-store",          label: "Play Store",           icon: PlayCircle, permission: "platform:manage_deployments" },
-  { key: "mobile-versions",     label: "Version Control",      icon: Smartphone, permission: "platform:manage_deployments" },
+  { key: "ops-dashboard",       label: "Operations Dashboard", icon: Activity   },
+  { key: "deployment-pipeline", label: "Deployment Pipeline",  icon: Rocket     },
+  { key: "build-automation",    label: "Build Automation",     icon: Hammer     },
+  { key: "release-management",  label: "Release Management",   icon: GitBranch  },
+  { key: "play-store",          label: "Play Store",           icon: PlayCircle },
+  { key: "mobile-versions",     label: "Version Control",      icon: Smartphone },
 ]
 
 const clientNavItems: NavItem[] = [
-  { key: "client-assets",       label: "Client Assets",        icon: Image,      permission: "businesses:edit" },
-  { key: "tenant-provisioning", label: "Tenant Provisioning",  icon: Workflow,   permission: "businesses:create" },
-  { key: "product-import",      label: "Product Import",       icon: Upload,     permission: "businesses:edit" },
-  { key: "onboarding-checklist",label: "Onboarding Checklist", icon: FileCheck,  permission: "businesses:edit" },
+  { key: "client-assets",        label: "Client Assets",       icon: Image    },
+  { key: "tenant-provisioning",  label: "Tenant Provisioning", icon: Workflow },
+  { key: "product-import",       label: "Product Import",      icon: Upload   },
+  { key: "onboarding-checklist", label: "Onboarding Checklist",icon: FileCheck},
 ]
 
 const opsNavItems: NavItem[] = [
-  { key: "platform-analytics", label: "Analytics & Reports",  icon: BarChart3,      permission: "platform:view_analytics" },
-  { key: "revenue",            label: "Revenue & Payouts",    icon: Wallet,         permission: "subscriptions:view" },
-  { key: "support",            label: "Support & Tickets",    icon: HeadphonesIcon, permission: "leads:view" },
-  { key: "notifications",      label: "Notifications",        icon: Bell,           permission: "notifications:view" },
+  { key: "platform-analytics", label: "Analytics & Reports", icon: BarChart3      },
+  { key: "revenue",            label: "Revenue & Payouts",   icon: Wallet         },
+  { key: "support",            label: "Support & Tickets",   icon: HeadphonesIcon },
+  { key: "notifications",      label: "Notifications",       icon: Bell           },
 ]
 
 const importNavItems: NavItem[] = [
-  { key: "leads-import",         label: "Lead Import",         icon: Upload,       permission: "import:leads" },
-  { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap, permission: "import:business" },
+  { key: "leads-import",         label: "Lead Import",          icon: Upload     },
+  { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap},
 ]
 
 const systemNavItems: NavItem[] = [
-  { key: "roles-permissions", label: "Roles & Permissions", icon: KeyRound,  superAdminOnly: true },
-  { key: "backup-monitoring", label: "Backup & Monitoring", icon: Server,    superAdminOnly: true },
-  { key: "security-access",   label: "Security & Access",   icon: Lock,      permission: "platform:security" },
-  { key: "audit-logs",        label: "Audit Logs",          icon: ScrollText,permission: "platform:audit_logs" },
-  { key: "settings",          label: "Settings",            icon: Settings,  superAdminOnly: true },
+  { key: "roles-permissions", label: "Roles & Permissions", icon: KeyRound  },
+  { key: "backup-monitoring", label: "Backup & Monitoring", icon: Server    },
+  { key: "security-access",   label: "Security & Access",   icon: Lock      },
+  { key: "audit-logs",        label: "Audit Logs",          icon: ScrollText},
+  { key: "settings",          label: "Settings",            icon: Settings  },
 ]
 
 function CollapsibleSection({
@@ -151,8 +153,6 @@ interface AppSidebarProps {
   onMobileOpenChange?: (open: boolean) => void
 }
 
-const SUPER_ADMIN_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
-
 export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSidebarProps) {
   const { activePage, setActivePage } = useAdminStore()
   const { user, permissions } = useAuthStore()
@@ -164,13 +164,13 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   const userName = user?.name ?? "Quantix Admin"
   const userEmail = user?.email ?? "admin@quantix.in"
 
-  const isSuperAdmin = user?.role ? SUPER_ADMIN_ROLES.has(user.role) : false
-
+  // Visibility is driven entirely by ADMIN_NAV_PERMISSIONS.
+  // A nav item with no entry in the map is always hidden (fail-closed).
   function filterItems(items: NavItem[]): NavItem[] {
     return items.filter((item) => {
-      if (item.superAdminOnly && !isSuperAdmin) return false
-      if (item.permission && !permissions.includes(item.permission as never)) return false
-      return true
+      const required = ADMIN_NAV_PERMISSIONS[item.key]
+      if (!required) return false
+      return permissions.includes(required as never)
     })
   }
 

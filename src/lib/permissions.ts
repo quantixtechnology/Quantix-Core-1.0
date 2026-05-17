@@ -3,13 +3,28 @@
 // ============================================================================
 
 export type Permission =
+  // ── Navigation access (VIEW = sidebar visibility + route access) ──────────
+  | "dashboard:view"
+  | "workflow:view"
+  | "plan_management:view"
+  | "payment_plugins:view"
+  | "roles_permissions:view"
+  | "backup:view"
+  | "revenue:view"
+  | "support:view"
+  // ── Leads / CRM ───────────────────────────────────────────────────────────
   | "leads:view" | "leads:create" | "leads:edit" | "leads:delete" | "leads:export"
+  // ── Businesses ────────────────────────────────────────────────────────────
   | "businesses:view" | "businesses:create" | "businesses:edit" | "businesses:delete" | "businesses:impersonate"
+  // ── Subscriptions & Billing ───────────────────────────────────────────────
   | "subscriptions:view" | "subscriptions:create" | "subscriptions:edit" | "subscriptions:delete" | "subscriptions:override_price" | "subscriptions:export"
   | "stores:view" | "stores:create" | "stores:edit" | "stores:delete"
+  // ── Sales ─────────────────────────────────────────────────────────────────
   | "sales:view" | "sales:create" | "sales:edit" | "sales:delete" | "sales:export"
   | "sales_team:view" | "sales_team:create" | "sales_team:edit" | "sales_team:delete"
+  // ── Platform ──────────────────────────────────────────────────────────────
   | "platform:view_analytics" | "platform:manage_deployments" | "platform:manage_domains" | "platform:audit_logs" | "platform:security"
+  // ── Business modules ──────────────────────────────────────────────────────
   | "orders:view" | "orders:edit" | "orders:cancel"
   | "products:view" | "products:create" | "products:edit" | "products:delete" | "products:export"
   | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
@@ -82,17 +97,28 @@ export const BUSINESS_ROLES: PlatformRole[] = [
 
 export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   QUANTIX_SUPER_ADMIN: [
+    // Navigation access — Super Admin sees all modules
+    "dashboard:view", "workflow:view", "plan_management:view", "payment_plugins:view",
+    "roles_permissions:view", "backup:view", "revenue:view", "support:view",
+    // Leads / CRM
     "leads:view", "leads:create", "leads:edit", "leads:delete", "leads:export",
+    // Businesses
     "businesses:view", "businesses:create", "businesses:edit", "businesses:delete", "businesses:impersonate",
+    // Subscriptions
     "subscriptions:view", "subscriptions:create", "subscriptions:edit", "subscriptions:delete", "subscriptions:override_price", "subscriptions:export",
     "stores:view", "stores:create", "stores:edit", "stores:delete",
+    // Sales
     "sales:view", "sales:create", "sales:edit", "sales:delete", "sales:export",
     "sales_team:view", "sales_team:create", "sales_team:edit", "sales_team:delete",
+    // Platform
     "platform:view_analytics", "platform:manage_deployments", "platform:manage_domains", "platform:audit_logs", "platform:security",
+    // Notifications & Users
     "notifications:view", "notifications:create", "notifications:send", "notifications:delete",
     "users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate",
+    // Billing & Finance
     "billing:view", "billing:create", "billing:edit", "billing:delete",
     "domains:view", "domains:create", "domains:edit", "domains:delete",
+    // Business modules
     "products:view", "products:create", "products:edit", "products:delete", "products:export",
     "customers:view", "customers:create", "customers:edit", "customers:delete",
     "reports:view", "reports:export",
@@ -103,20 +129,31 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "import:leads", "import:business", "export:leads",
   ],
   PLATFORM_ADMIN: [
+    // Navigation — near-full admin, no destructive system access
+    "dashboard:view", "workflow:view", "payment_plugins:view", "revenue:view", "support:view",
+    // Leads
     "leads:view", "leads:create", "leads:edit", "leads:export",
+    // Businesses
     "businesses:view", "businesses:create", "businesses:edit",
+    // Subscriptions
     "subscriptions:view", "subscriptions:create", "subscriptions:edit", "subscriptions:override_price", "subscriptions:export",
     "stores:view", "stores:create", "stores:edit",
+    // Sales
     "sales:view", "sales:edit", "sales:export",
     "sales_team:view", "sales_team:create", "sales_team:edit",
-    "platform:view_analytics", "platform:audit_logs",
+    // Platform
+    "platform:view_analytics", "platform:audit_logs", "platform:manage_domains",
+    // Notifications & Users
     "notifications:view", "notifications:create", "notifications:send",
     "users:view", "users:create", "users:edit", "users:reset_password", "users:suspend",
+    // Billing & Domains
     "billing:view", "billing:create", "billing:edit",
     "domains:view", "domains:create", "domains:edit",
+    "settings:view", "settings:edit",
     "import:leads", "import:business", "export:leads",
   ],
   QUANTIX_SALES_TEAM: [
+    // Navigation — Sales Team sees only Sales & Leads
     "leads:view", "leads:create", "leads:edit", "leads:export",
     "businesses:view",
     "sales:view", "sales:create", "sales:edit", "sales:export",
@@ -125,6 +162,8 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "import:leads", "export:leads",
   ],
   SUPPORT_TEAM: [
+    // Navigation — Support Team sees only Support & Tickets
+    "support:view",
     "leads:view",
     "businesses:view",
     "orders:view",
@@ -133,13 +172,16 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "platform:audit_logs",
   ],
   DEPLOYMENT_TEAM: [
-    "businesses:view",
+    // Navigation — Deployment Team sees deployment ops + backup
+    "dashboard:view", "workflow:view", "backup:view",
     "platform:manage_deployments",
     "platform:audit_logs",
-    "notifications:view",
     "domains:view",
+    "notifications:view",
   ],
   FINANCE_TEAM: [
+    // Navigation — Finance Team sees subscriptions + revenue + billing
+    "dashboard:view", "revenue:view", "payment_plugins:view",
     "subscriptions:view", "subscriptions:edit", "subscriptions:export",
     "billing:view", "billing:create", "billing:edit",
     "reports:view", "reports:export",
@@ -283,6 +325,16 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
 
 // Human-readable labels for individual permissions
 export const PERMISSION_LABELS: Record<Permission, string> = {
+  // Navigation access
+  "dashboard:view":               "View Dashboard",
+  "workflow:view":                "View Workflow Engine",
+  "plan_management:view":         "View Plan Management",
+  "payment_plugins:view":         "View Payment Plugins",
+  "roles_permissions:view":       "View Roles & Permissions",
+  "backup:view":                  "View Backup & Monitoring",
+  "revenue:view":                 "View Revenue & Payouts",
+  "support:view":                 "View Support & Tickets",
+  // Leads
   "leads:view":                   "View Leads",
   "leads:create":                 "Create Leads",
   "leads:edit":                   "Edit Leads",
@@ -403,20 +455,46 @@ export function filterNavByPermissions<T extends NavItem>(
   })
 }
 
+// Every sidebar nav key → the VIEW permission that gates it.
+// Sidebar and PAGE_PERMISSIONS both derive from this single source of truth.
 export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
-  leads:                "leads:view",
-  businesses:           "businesses:view",
-  subscriptions:        "subscriptions:view",
-  sales:                "sales:view",
-  "platform-users":     "users:view",
-  "platform-analytics": "platform:view_analytics",
-  "audit-logs":         "platform:audit_logs",
-  "security-access":    "platform:security",
-  "deployment-pipeline":"platform:manage_deployments",
-  "build-automation":   "platform:manage_deployments",
-  "release-management": "platform:manage_deployments",
-  domains:              "platform:manage_domains",
-  notifications:        "notifications:view",
-  "leads-import":       "import:leads",
-  "business-data-import": "import:business",
+  // Platform Control
+  "dashboard":              "dashboard:view",
+  "workflow-engine":        "workflow:view",
+  "businesses":             "businesses:view",
+  "leads":                  "leads:view",
+  "subscriptions":          "subscriptions:view",
+  "plan-management":        "plan_management:view",
+  "payment-plugins":        "payment_plugins:view",
+  "domains":                "platform:manage_domains",
+  "sales":                  "sales_team:view",
+  "platform-users":         "users:view",
+  // Mobile & Apps
+  "mobile-apps":            "platform:manage_deployments",
+  // Deployment & Ops
+  "ops-dashboard":          "platform:manage_deployments",
+  "deployment-pipeline":    "platform:manage_deployments",
+  "build-automation":       "platform:manage_deployments",
+  "release-management":     "platform:manage_deployments",
+  "play-store":             "platform:manage_deployments",
+  "mobile-versions":        "platform:manage_deployments",
+  // Client Operations
+  "client-assets":          "businesses:edit",
+  "tenant-provisioning":    "businesses:create",
+  "product-import":         "businesses:edit",
+  "onboarding-checklist":   "businesses:edit",
+  // Data Imports
+  "leads-import":           "import:leads",
+  "business-data-import":   "import:business",
+  // Platform Ops
+  "platform-analytics":     "platform:view_analytics",
+  "revenue":                "revenue:view",
+  "support":                "support:view",
+  "notifications":          "notifications:view",
+  // System
+  "roles-permissions":      "roles_permissions:view",
+  "backup-monitoring":      "backup:view",
+  "security-access":        "platform:security",
+  "audit-logs":             "platform:audit_logs",
+  "settings":               "settings:view",
 }

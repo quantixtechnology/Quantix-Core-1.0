@@ -5,6 +5,7 @@ import dynamic from "next/dynamic"
 import { useSearchParams } from "next/navigation"
 import { AuthProvider } from "@/components/auth/auth-provider"
 import { useAuthStore } from "@/stores/auth-store"
+import { ADMIN_NAV_PERMISSIONS } from "@/lib/permissions"
 import { AdminLayout } from "@/components/admin/layout/admin-layout"
 import { BusinessLayout } from "@/components/business/layout/business-layout"
 import { CustomerLayout } from "@/components/customer/layout/customer-layout"
@@ -72,49 +73,12 @@ function AccessDenied() {
   )
 }
 
-const SUPER_ADMIN_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
-
-const PAGE_PERMISSIONS: Record<string, { permission?: string; superAdminOnly?: boolean }> = {
-  "workflow-engine":      { permission: "platform:manage_deployments" },
-  "plan-management":      { superAdminOnly: true },
-  "payment-plugins":      { superAdminOnly: true },
-  "leads":                { permission: "leads:view" },
-  "businesses":           { permission: "businesses:view" },
-  "subscriptions":        { permission: "subscriptions:view" },
-  "onboarding":           { permission: "businesses:create" },
-  "domains":              { permission: "platform:manage_domains" },
-  "sales":                { permission: "sales:view" },
-  "platform-users":       { permission: "users:view" },
-  "roles-permissions":    { superAdminOnly: true },
-  "notifications":        { permission: "notifications:view" },
-  "settings":             { superAdminOnly: true },
-  "mobile-apps":          { permission: "platform:manage_deployments" },
-  "ops-dashboard":        { permission: "platform:manage_deployments" },
-  "deployment-pipeline":  { permission: "platform:manage_deployments" },
-  "build-automation":     { permission: "platform:manage_deployments" },
-  "release-management":   { permission: "platform:manage_deployments" },
-  "play-store":           { permission: "platform:manage_deployments" },
-  "mobile-versions":      { permission: "platform:manage_deployments" },
-  "client-assets":        { permission: "businesses:edit" },
-  "tenant-provisioning":  { permission: "businesses:create" },
-  "product-import":         { permission: "businesses:edit" },
-  "onboarding-checklist":   { permission: "businesses:edit" },
-  "leads-import":           { permission: "import:leads" },
-  "business-data-import":   { permission: "import:business" },
-  "platform-analytics":   { permission: "platform:view_analytics" },
-  "revenue":              { permission: "subscriptions:view" },
-  "support":              { permission: "leads:view" },
-  "backup-monitoring":    { superAdminOnly: true },
-  "security-access":      { permission: "platform:security" },
-  "audit-logs":           { permission: "platform:audit_logs" },
-}
-
-function canAccessPage(page: string, permissions: string[], role: string): boolean {
-  const req = PAGE_PERMISSIONS[page]
-  if (!req) return true
-  if (req.superAdminOnly) return SUPER_ADMIN_ROLES.has(role)
-  if (req.permission) return permissions.includes(req.permission)
-  return true
+// Page access derives directly from ADMIN_NAV_PERMISSIONS — the single source
+// of truth for all navigation and route visibility. No hardcoded role checks.
+function canAccessPage(page: string, permissions: string[]): boolean {
+  const required = ADMIN_NAV_PERMISSIONS[page]
+  if (!required) return true  // unmapped pages (e.g. sub-routes) are unrestricted
+  return permissions.includes(required)
 }
 
 // ── Admin pages (lazy) ────────────────────────────────────────────────────
@@ -230,7 +194,8 @@ function AppContent() {
   // Sync viewMode from auth session on mount / auth change
   useEffect(() => {
     if (!isAuthenticated) return
-    if (currentRole === "QUANTIX_SUPER_ADMIN" || currentRole === "PLATFORM_ADMIN" || currentRole === "QUANTIX_SALES_TEAM") {
+    const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM", "SUPPORT_TEAM", "FINANCE_TEAM", "DEPLOYMENT_TEAM"])
+    if (PLATFORM_ROLES.has(currentRole || "")) {
       if (viewMode !== "super_admin") setViewMode("super_admin")
     } else if (BUSINESS_ROLES.has(currentRole || "")) {
       if (currentBusinessId && viewMode !== "business_owner") {
@@ -253,7 +218,7 @@ function AppContent() {
   }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, setViewMode])
 
   const renderSuperAdminPage = () => {
-    if (activePage !== "dashboard" && !canAccessPage(activePage, permissions as string[], currentRole || "")) {
+    if (!canAccessPage(activePage, permissions as string[])) {
       return <AccessDenied />
     }
     switch (activePage) {
