@@ -63,6 +63,7 @@ import {
   Receipt,
 } from "lucide-react"
 import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -198,6 +199,8 @@ function CategoryIcon({ icon, color, name }: { icon: string; color: string; name
 export function ProductsView() {
   // Get real business context
   const { businessId, isLoading: contextLoading } = useBusinessContext()
+  const { permissions } = useAuthStore()
+  const canDeleteProducts = permissions.includes('products:delete')
   const queryClient = useQueryClient()
 
   // ---- Fetch products from API ----
@@ -1005,17 +1008,19 @@ export function ProductsView() {
                                 >
                                   <Edit className="h-3 w-3" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
-                                  onClick={() => {
-                                    setDeletingProduct(product)
-                                    setDeleteDialogOpen(true)
-                                  }}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
+                                {canDeleteProducts && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
+                                    onClick={() => {
+                                      setDeletingProduct(product)
+                                      setDeleteDialogOpen(true)
+                                    }}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1267,18 +1272,20 @@ export function ProductsView() {
                             This action cannot be undone. All variants will be permanently removed.
                           </p>
                         </div>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="gap-1"
-                          onClick={() => {
-                            setDeletingProduct(product)
-                            setDeleteDialogOpen(true)
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Delete
-                        </Button>
+                        {canDeleteProducts && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => {
+                              setDeletingProduct(product)
+                              setDeleteDialogOpen(true)
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>

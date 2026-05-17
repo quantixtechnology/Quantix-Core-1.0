@@ -49,7 +49,16 @@ const PLATFORM_ADMIN_PERMISSIONS: string[] = [
     ['backup',           ['view']],
     ['security',         ['view']],
   ),
-].filter(k => !k.includes(':impersonate') && !k.includes('users.platform:delete'));
+].filter(k =>
+  !k.includes(':impersonate') &&
+  !k.includes('users.platform:delete') &&
+  !k.includes('users.business:delete') &&
+  !k.includes('businesses:delete') &&
+  !k.includes('leads:delete') &&
+  !k.includes('leads.pipeline:delete') &&
+  !k.includes('leads.follow_ups:delete') &&
+  !k.includes('sales_team.reps:delete')
+);
 
 const QUANTIX_SALES_TEAM_PERMISSIONS: string[] = [
   ...keys(
@@ -57,9 +66,10 @@ const QUANTIX_SALES_TEAM_PERMISSIONS: string[] = [
     ['businesses',                ['view', 'export']],
     ['businesses.onboarding',     ['view', 'create', 'edit']],
     ['businesses.analytics',      ['view']],
-    ['leads',                     ['view', 'create', 'edit', 'delete', 'assign', 'export']],
-    ['leads.pipeline',            ['view', 'create', 'edit', 'delete', 'assign', 'export']],
-    ['leads.follow_ups',          ['view', 'create', 'edit', 'delete']],
+    // Sales team can view/create/edit/assign leads — NO delete
+    ['leads',                     ['view', 'create', 'edit', 'assign', 'export']],
+    ['leads.pipeline',            ['view', 'create', 'edit', 'assign', 'export']],
+    ['leads.follow_ups',          ['view', 'create', 'edit']],
     ['leads.reports',             ['view', 'export']],
     ['sales_team',                ['view', 'export']],
     ['sales_team.reps',           ['view']],

@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { logActivity } from '@/lib/core/audit';
 
 export async function GET(
   request: Request,
@@ -192,7 +193,7 @@ export async function DELETE(
   const { productId } = await params;
   return withMiddleware({
     requireAuth: true,
-    requiredRoles: ['CLIENT_OWNER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'],
+    requiredPermission: 'products:delete',
   })(async (req) => {
     try {
       const user = req.user!;
@@ -207,6 +208,19 @@ export async function DELETE(
       }
 
       await db.product.delete({ where: { id: productId } });
+
+      await logActivity({
+        userId: user.id,
+        businessId: existing.businessId ?? null,
+        action: 'product.deleted',
+        entity: 'Product',
+        entityId: productId,
+        details: {
+          name: existing.name,
+          sku: (existing as Record<string, unknown>).sku ?? null,
+          deletedBy: user.email,
+        },
+      });
 
       return NextResponse.json({ success: true, message: 'Product deleted successfully' });
     } catch (error) {

@@ -54,6 +54,7 @@ import {
   Check,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
 
@@ -238,6 +239,8 @@ function MiniBarChart({ data }: { data: { month: string; revenue: number }[] }) 
 // ---------------------------------------------------------------------------
 export function SalesView() {
   const { searchQuery } = useAdminStore()
+  const { permissions } = useAuthStore()
+  const canDeleteSalesTeam = permissions.includes('sales_team:delete')
 
   // API-driven state
   const [salesTeam, setSalesTeam] = useState<SalesRep[]>([])
@@ -1088,10 +1091,12 @@ export function SalesView() {
                     <Button variant="outline" size="sm" onClick={handleOpenAudit}>
                       Activity Logs
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)}>
-                      <Trash2 className="h-3.5 w-3.5 mr-1" />
-                      Delete
-                    </Button>
+                    {canDeleteSalesTeam && (
+                      <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -1251,10 +1256,12 @@ export function SalesView() {
                     <Button variant="outline" size="sm" onClick={handleOpenAudit}>
                       Activity Logs
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)}>
-                      <Trash2 className="h-3.5 w-3.5 mr-1" />
-                      Delete
-                    </Button>
+                    {canDeleteSalesTeam && (
+                      <Button variant="destructive" size="sm" onClick={() => setDeleteConfirmOpen(true)}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

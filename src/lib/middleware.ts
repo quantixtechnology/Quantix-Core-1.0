@@ -154,7 +154,9 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
       }
     }
 
-    const platAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'QUANTIX_SALES_TEAM';
+    // Only true platform admins get isPlatformAdmin=true — SALES_TEAM is a platform user
+    // but does NOT inherit blanket admin access to all platform endpoints.
+    const platAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'PLATFORM_ADMIN';
 
     return {
       id: user.id,

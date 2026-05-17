@@ -3,23 +3,26 @@
 // ============================================================================
 
 export type Permission =
-  | "leads:view" | "leads:edit" | "leads:delete"
+  | "leads:view" | "leads:create" | "leads:edit" | "leads:delete" | "leads:export"
   | "businesses:view" | "businesses:create" | "businesses:edit" | "businesses:delete" | "businesses:impersonate"
-  | "subscriptions:view" | "subscriptions:edit" | "subscriptions:override_price"
-  | "sales:view" | "sales:edit"
+  | "subscriptions:view" | "subscriptions:create" | "subscriptions:edit" | "subscriptions:delete" | "subscriptions:override_price" | "subscriptions:export"
+  | "stores:view" | "stores:create" | "stores:edit" | "stores:delete"
+  | "sales:view" | "sales:create" | "sales:edit" | "sales:delete" | "sales:export"
+  | "sales_team:view" | "sales_team:create" | "sales_team:edit" | "sales_team:delete"
   | "platform:view_analytics" | "platform:manage_deployments" | "platform:manage_domains" | "platform:audit_logs" | "platform:security"
   | "orders:view" | "orders:edit" | "orders:cancel"
-  | "products:view" | "products:create" | "products:edit" | "products:delete"
-  | "customers:view" | "customers:edit"
+  | "products:view" | "products:create" | "products:edit" | "products:delete" | "products:export"
+  | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
   | "reports:view" | "reports:export"
   | "settings:view" | "settings:edit"
   | "staff:view" | "staff:manage"
   | "pos:access"
-  | "notifications:view" | "notifications:send"
+  | "notifications:view" | "notifications:create" | "notifications:send" | "notifications:delete"
   | "users:view" | "users:create" | "users:edit" | "users:delete" | "users:reset_password" | "users:suspend" | "users:impersonate"
   | "inventory:view" | "inventory:edit"
-  | "billing:view" | "billing:edit"
+  | "billing:view" | "billing:create" | "billing:edit" | "billing:delete"
   | "refunds:process"
+  | "domains:view" | "domains:create" | "domains:edit" | "domains:delete"
   | "import:leads"
   | "import:business"
   | "export:leads"
@@ -79,29 +82,47 @@ export const BUSINESS_ROLES: PlatformRole[] = [
 
 export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   QUANTIX_SUPER_ADMIN: [
-    "leads:view", "leads:edit", "leads:delete",
+    "leads:view", "leads:create", "leads:edit", "leads:delete", "leads:export",
     "businesses:view", "businesses:create", "businesses:edit", "businesses:delete", "businesses:impersonate",
-    "subscriptions:view", "subscriptions:edit", "subscriptions:override_price",
-    "sales:view", "sales:edit",
+    "subscriptions:view", "subscriptions:create", "subscriptions:edit", "subscriptions:delete", "subscriptions:override_price", "subscriptions:export",
+    "stores:view", "stores:create", "stores:edit", "stores:delete",
+    "sales:view", "sales:create", "sales:edit", "sales:delete", "sales:export",
+    "sales_team:view", "sales_team:create", "sales_team:edit", "sales_team:delete",
     "platform:view_analytics", "platform:manage_deployments", "platform:manage_domains", "platform:audit_logs", "platform:security",
-    "notifications:view", "notifications:send",
+    "notifications:view", "notifications:create", "notifications:send", "notifications:delete",
     "users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate",
+    "billing:view", "billing:create", "billing:edit", "billing:delete",
+    "domains:view", "domains:create", "domains:edit", "domains:delete",
+    "products:view", "products:create", "products:edit", "products:delete", "products:export",
+    "customers:view", "customers:create", "customers:edit", "customers:delete",
+    "reports:view", "reports:export",
+    "inventory:view", "inventory:edit",
+    "settings:view", "settings:edit",
+    "staff:view", "staff:manage",
+    "pos:access", "refunds:process",
     "import:leads", "import:business", "export:leads",
   ],
   PLATFORM_ADMIN: [
-    "leads:view", "leads:edit",
-    "businesses:view", "businesses:edit",
-    "subscriptions:view",
+    "leads:view", "leads:create", "leads:edit", "leads:export",
+    "businesses:view", "businesses:create", "businesses:edit",
+    "subscriptions:view", "subscriptions:create", "subscriptions:edit", "subscriptions:override_price", "subscriptions:export",
+    "stores:view", "stores:create", "stores:edit",
+    "sales:view", "sales:edit", "sales:export",
+    "sales_team:view", "sales_team:create", "sales_team:edit",
     "platform:view_analytics", "platform:audit_logs",
-    "notifications:view",
+    "notifications:view", "notifications:create", "notifications:send",
     "users:view", "users:create", "users:edit", "users:reset_password", "users:suspend",
+    "billing:view", "billing:create", "billing:edit",
+    "domains:view", "domains:create", "domains:edit",
+    "import:leads", "import:business", "export:leads",
   ],
   QUANTIX_SALES_TEAM: [
-    "leads:view", "leads:edit",
+    "leads:view", "leads:create", "leads:edit", "leads:export",
     "businesses:view",
-    "sales:view", "sales:edit",
+    "sales:view", "sales:create", "sales:edit", "sales:export",
+    "sales_team:view",
     "notifications:view",
-    "import:leads",
+    "import:leads", "export:leads",
   ],
   SUPPORT_TEAM: [
     "leads:view",
@@ -116,37 +137,40 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "platform:manage_deployments",
     "platform:audit_logs",
     "notifications:view",
+    "domains:view",
   ],
   FINANCE_TEAM: [
-    "subscriptions:view", "subscriptions:edit",
-    "billing:view", "billing:edit",
+    "subscriptions:view", "subscriptions:edit", "subscriptions:export",
+    "billing:view", "billing:create", "billing:edit",
     "reports:view", "reports:export",
     "platform:view_analytics",
     "notifications:view",
+    "refunds:process",
   ],
   CLIENT_OWNER: [
     "orders:view", "orders:edit", "orders:cancel",
-    "products:view", "products:create", "products:edit", "products:delete",
-    "customers:view", "customers:edit",
+    "products:view", "products:create", "products:edit", "products:delete", "products:export",
+    "customers:view", "customers:create", "customers:edit",
     "reports:view", "reports:export",
     "settings:view", "settings:edit",
     "staff:view", "staff:manage",
     "pos:access",
     "notifications:view",
     "inventory:view", "inventory:edit",
-    "billing:view",
+    "billing:view", "billing:create", "billing:edit",
     "users:view", "users:create", "users:edit", "users:reset_password", "users:suspend",
     "import:business",
+    "refunds:process",
   ],
   STORE_MANAGER: [
     "orders:view", "orders:edit",
-    "products:view", "products:edit",
+    "products:view", "products:create", "products:edit", "products:export",
     "customers:view",
     "reports:view",
     "settings:view",
     "pos:access",
     "notifications:view",
-    "inventory:view",
+    "inventory:view", "inventory:edit",
   ],
   BILLING_STAFF: [
     "orders:view",
@@ -157,7 +181,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "pos:access",
   ],
   INVENTORY_STAFF: [
-    "products:view", "products:edit",
+    "products:view", "products:edit", "products:export",
     "inventory:view", "inventory:edit",
     "reports:view",
   ],
@@ -173,8 +197,32 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
 // Granular permission groups for UI display
 export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] = [
   {
+    label: "Leads",
+    permissions: ["leads:view", "leads:create", "leads:edit", "leads:delete", "leads:export"],
+  },
+  {
+    label: "Businesses",
+    permissions: ["businesses:view", "businesses:create", "businesses:edit", "businesses:delete", "businesses:impersonate"],
+  },
+  {
+    label: "Subscriptions",
+    permissions: ["subscriptions:view", "subscriptions:create", "subscriptions:edit", "subscriptions:delete", "subscriptions:override_price", "subscriptions:export"],
+  },
+  {
+    label: "Stores",
+    permissions: ["stores:view", "stores:create", "stores:edit", "stores:delete"],
+  },
+  {
+    label: "Sales",
+    permissions: ["sales:view", "sales:create", "sales:edit", "sales:delete", "sales:export"],
+  },
+  {
+    label: "Sales Team",
+    permissions: ["sales_team:view", "sales_team:create", "sales_team:edit", "sales_team:delete"],
+  },
+  {
     label: "Products",
-    permissions: ["products:view", "products:create", "products:edit", "products:delete"],
+    permissions: ["products:view", "products:create", "products:edit", "products:delete", "products:export"],
   },
   {
     label: "Orders",
@@ -182,7 +230,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
   },
   {
     label: "Customers",
-    permissions: ["customers:view", "customers:edit"],
+    permissions: ["customers:view", "customers:create", "customers:edit", "customers:delete"],
   },
   {
     label: "Inventory",
@@ -190,7 +238,19 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
   },
   {
     label: "Billing",
-    permissions: ["billing:view", "billing:edit"],
+    permissions: ["billing:view", "billing:create", "billing:edit", "billing:delete"],
+  },
+  {
+    label: "Domains",
+    permissions: ["domains:view", "domains:create", "domains:edit", "domains:delete"],
+  },
+  {
+    label: "Notifications",
+    permissions: ["notifications:view", "notifications:create", "notifications:send", "notifications:delete"],
+  },
+  {
+    label: "Users",
+    permissions: ["users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate"],
   },
   {
     label: "POS",
@@ -201,20 +261,12 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
     permissions: ["staff:view", "staff:manage"],
   },
   {
-    label: "Users",
-    permissions: ["users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate"],
-  },
-  {
     label: "Reports",
     permissions: ["reports:view", "reports:export"],
   },
   {
     label: "Settings",
     permissions: ["settings:view", "settings:edit"],
-  },
-  {
-    label: "Notifications",
-    permissions: ["notifications:view", "notifications:send"],
   },
   {
     label: "Platform",
@@ -232,18 +284,34 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
 // Human-readable labels for individual permissions
 export const PERMISSION_LABELS: Record<Permission, string> = {
   "leads:view":                   "View Leads",
+  "leads:create":                 "Create Leads",
   "leads:edit":                   "Edit Leads",
   "leads:delete":                 "Delete Leads",
+  "leads:export":                 "Export Leads",
   "businesses:view":              "View Businesses",
   "businesses:create":            "Create Businesses",
   "businesses:edit":              "Edit Businesses",
   "businesses:delete":            "Delete Businesses",
   "businesses:impersonate":       "Impersonate Business",
   "subscriptions:view":           "View Subscriptions",
+  "subscriptions:create":         "Create Subscriptions",
   "subscriptions:edit":           "Edit Subscriptions",
+  "subscriptions:delete":         "Delete Subscriptions",
   "subscriptions:override_price": "Override Subscription Price",
+  "subscriptions:export":         "Export Subscriptions",
+  "stores:view":                  "View Stores",
+  "stores:create":                "Create Stores",
+  "stores:edit":                  "Edit Stores",
+  "stores:delete":                "Delete Stores",
   "sales:view":                   "View Sales",
+  "sales:create":                 "Create Sales",
   "sales:edit":                   "Edit Sales",
+  "sales:delete":                 "Delete Sales Records",
+  "sales:export":                 "Export Sales",
+  "sales_team:view":              "View Sales Team",
+  "sales_team:create":            "Add Sales Team Members",
+  "sales_team:edit":              "Edit Sales Team Members",
+  "sales_team:delete":            "Delete Sales Team Members",
   "platform:view_analytics":      "View Platform Analytics",
   "platform:manage_deployments":  "Manage Deployments",
   "platform:manage_domains":      "Manage Domains",
@@ -256,8 +324,11 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "products:create":              "Create Products",
   "products:edit":                "Edit Products",
   "products:delete":              "Delete Products",
+  "products:export":              "Export Products",
   "customers:view":               "View Customers",
+  "customers:create":             "Create Customers",
   "customers:edit":               "Edit Customers",
+  "customers:delete":             "Delete Customers",
   "reports:view":                 "View Reports",
   "reports:export":               "Export Reports",
   "settings:view":                "View Settings",
@@ -266,7 +337,9 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "staff:manage":                 "Manage Staff",
   "pos:access":                   "Access POS",
   "notifications:view":           "View Notifications",
+  "notifications:create":         "Create Notifications",
   "notifications:send":           "Send Notifications",
+  "notifications:delete":         "Delete Notifications",
   "users:view":                   "View Users",
   "users:create":                 "Create Users",
   "users:edit":                   "Edit Users",
@@ -277,7 +350,13 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "inventory:view":               "View Inventory",
   "inventory:edit":               "Edit Inventory",
   "billing:view":                 "View Billing",
-  "billing:edit":                 "Edit Billing",
+  "billing:create":               "Create Billing Records",
+  "billing:edit":                 "Edit Billing Records",
+  "billing:delete":               "Delete Billing Records",
+  "domains:view":                 "View Domains",
+  "domains:create":               "Add Domains",
+  "domains:edit":                 "Edit Domains",
+  "domains:delete":               "Delete Domains",
   "refunds:process":              "Process Refunds",
   "import:leads":                 "Import Leads & Sales Data",
   "import:business":              "Import Business Data",

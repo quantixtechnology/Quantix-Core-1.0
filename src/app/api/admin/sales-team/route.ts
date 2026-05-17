@@ -9,6 +9,7 @@
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { withMiddleware, withPlatformAccess, createSuccessResponse, createErrorResponse } from '@/lib/middleware';
+import { logActivity } from '@/lib/core/audit';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const GET = withMiddleware({
@@ -222,43 +223,62 @@ export async function PATCH(request: NextRequest) {
 }
 
 // ============================================================================
-// DELETE /api/admin/sales-team?id=memberId — Soft delete (deactivate)
+// DELETE /api/admin/sales-team?id=memberId — Soft delete (deactivate member + user)
+// Requires explicit sales_team:delete permission — Super Admin only by default.
 // ============================================================================
 
-export async function DELETE(request: NextRequest) {
-  return withPlatformAccess(async (req) => {
-    try {
-      const { searchParams } = new URL(req.url);
-      const memberId = searchParams.get('id');
+export const DELETE = withMiddleware({
+  requireAuth: true,
+  requiredPermission: 'sales_team:delete',
+})(async (req) => {
+  try {
+    const { searchParams } = new URL(req.url);
+    const memberId = searchParams.get('id');
 
-      if (!memberId) {
-        return createErrorResponse('Missing ?id= query parameter', 400);
-      }
-
-      const existing = await db.salesTeamMember.findUnique({
-        where: { id: memberId },
-      });
-
-      if (!existing) {
-        return createErrorResponse('Sales team member not found', 404);
-      }
-
-      await db.$transaction(async (tx) => {
-        await tx.salesTeamMember.delete({
-          where: { id: memberId },
-        });
-
-        if (existing.userId) {
-          await tx.user.delete({
-            where: { id: existing.userId },
-          });
-        }
-      });
-
-      return createSuccessResponse({ message: 'Sales team member deleted' });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to delete sales team member';
-      return createErrorResponse(message, 500);
+    if (!memberId) {
+      return createErrorResponse('Missing ?id= query parameter', 400);
     }
-  })(request);
-}
+
+    const existing = await db.salesTeamMember.findUnique({
+      where: { id: memberId },
+    });
+
+    if (!existing) {
+      return createErrorResponse('Sales team member not found', 404);
+    }
+
+    // Soft delete: deactivate both SalesTeamMember and the linked User record.
+    // Hard deletion is intentionally avoided to preserve audit history.
+    await db.$transaction(async (tx) => {
+      await tx.salesTeamMember.update({
+        where: { id: memberId },
+        data: { isActive: false },
+      });
+
+      if (existing.userId) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: { isActive: false },
+        });
+      }
+    });
+
+    await logActivity({
+      userId: req.user?.id ?? null,
+      action: 'sales_team.member_deactivated',
+      entity: 'SalesTeamMember',
+      entityId: memberId,
+      details: {
+        name: existing.name,
+        email: existing.email,
+        region: existing.region,
+        deactivatedBy: req.user?.email ?? 'unknown',
+      },
+    });
+
+    return createSuccessResponse({ message: 'Sales team member deactivated' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to deactivate sales team member';
+    return createErrorResponse(message, 500);
+  }
+});
