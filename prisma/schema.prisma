@@ -1181,6 +1181,9 @@ model BusinessSubscription {
   cancelledAt         DateTime?
   cancelReason        String?
 
+  // ── Reminder Tracking ─────────────────────────────────────────────────────
+  reminderSentAt      DateTime?
+
   // ── Notes ─────────────────────────────────────────────────────────────────
   notes               String?
   createdAt           DateTime           @default(now())
@@ -1206,13 +1209,22 @@ model BillingRecord {
   dueDate               DateTime
   paidDate              DateTime?
   description           String?
+  // Manual payment tracking fields
+  paymentMode           String?  // "CASH" | "BANK_TRANSFER" | "UPI" | "CHEQUE" | "ONLINE"
+  paidBy                String?  // Name of person who paid / contact name
+  receiptReference      String?  // Receipt number, transaction ID, cheque number
+  remarks               String?  // Admin notes about this payment
+  periodYear            Int?     // Billing year (e.g. 2025)
+  periodLabel           String?  // Human label e.g. "May 2025", "Q1 2025", "2025–2026"
   createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   subscription          BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
 
   @@index([businessSubscriptionId])
   @@index([status])
   @@index([dueDate])
+  @@index([periodYear])
 }
 
 // ============================================================================
