@@ -236,6 +236,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
         iosFinalAmount,
         iosSubscriptionCycle,
         addOns: addOnsJson,
+        allowedStores: data.allowedStores ?? 1,
         billingCycle: billingCycle as 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY',
         billingCycleDay: billingCycleDay,
         currentPeriodStart: periodStart,

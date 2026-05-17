@@ -165,6 +165,7 @@ export function BusinessesView() {
   const [formGST, setFormGST] = useState("")
   // Form state — plan (feature access)
   const [formPlan, setFormPlan] = useState<string>("")
+  const [formAllowedStores, setFormAllowedStores] = useState<string>("1")
   // Form state — subscription billing
   const [formBillingCycle, setFormBillingCycle] = useState<string>("MONTHLY")
   const [formSubscriptionAmount, setFormSubscriptionAmount] = useState("")
@@ -324,6 +325,7 @@ export function BusinessesView() {
           implementationAmount,
           ...iosPayload,
           addOns: addOnsPayload.length > 0 ? addOnsPayload : undefined,
+          allowedStores: Number(formAllowedStores),
           city: formCity, state: formState, pincode: formPincode,
           contactPhone: formPhone, contactEmail: formEmail,
           address: formAddress, gstNumber: formGST,
@@ -611,6 +613,22 @@ export function BusinessesView() {
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Allowed Stores</Label>
+                      <Select value={formAllowedStores} onValueChange={setFormAllowedStores}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 store</SelectItem>
+                          <SelectItem value="2">2 stores</SelectItem>
+                          <SelectItem value="3">3 stores</SelectItem>
+                          <SelectItem value="4">4 stores</SelectItem>
+                          <SelectItem value="5">5 stores</SelectItem>
+                          <SelectItem value="10">10 stores</SelectItem>
+                          <SelectItem value="15">15 stores</SelectItem>
+                          <SelectItem value="20">20 stores</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2"><Label>City</Label><Input placeholder="e.g. Mumbai" value={formCity} onChange={(e) => setFormCity(e.target.value)} /></div>

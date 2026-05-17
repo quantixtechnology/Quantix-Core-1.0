@@ -1144,6 +1144,9 @@ model BusinessSubscription {
   // ── Add-Ons (dynamic, JSON array) ─────────────────────────────────────────
   addOns                  String             @default("[]") // [{name,amount,cycle,description}]
 
+  // ── Resource Limits (subscription-level — Super Admin sets per business) ──
+  allowedStores           Int                @default(1)   // How many stores this business can create
+
   // ── Legacy pricing fields (kept for existing records / backward compat) ───
   planPrice               Float?             // Legacy: was plan's base price (use subscriptionAmount instead)
   customPrice             Float?             // Legacy: was custom override price

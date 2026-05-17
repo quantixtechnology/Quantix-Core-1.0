@@ -1,7 +1,7 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { Check, X, ShoppingCart, Truck, Calendar, CreditCard, Receipt, Store, Package, ShoppingBag, Users, UserCheck, Info } from "lucide-react"
+import { Check, X, ShoppingCart, Truck, Calendar, CreditCard, Receipt, Store, Info } from "lucide-react"
 import { PLAN_CONFIGS, WORKFLOW_CONFIGS, type PlanTier } from "@/stores/admin-store"
 
 const workflowIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -54,16 +54,13 @@ export function PlanComparison() {
 
               <div className="p-4 space-y-4">
 
-                {/* Limits */}
+                {/* Limits — store count is set per subscription, not enforced by plan */}
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Limits</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Store Config</p>
                   <div className="flex flex-wrap gap-1.5">
-                    <LimitPill value={plan.limits.stores}   label="stores"    icon={Store} />
-                    <LimitPill value={plan.limits.products.toLocaleString()} label="products" icon={Package} />
-                    <LimitPill value={`${(plan.limits.orders / 1000).toFixed(0)}K`} label="orders/mo" icon={ShoppingBag} />
-                    <LimitPill value={plan.limits.staff}    label="staff"     icon={Users} />
-                    <LimitPill value={plan.limits.partners} label="partners"  icon={UserCheck} />
+                    <LimitPill value={plan.limits.stores} label="stores (default)" icon={Store} />
                   </div>
+                  <p className="text-[10px] text-gray-400 mt-1.5">Actual store limit is set per subscription during business creation.</p>
                 </div>
 
                 {/* Workflow access */}

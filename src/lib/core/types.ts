@@ -327,6 +327,9 @@ export interface CreateBusinessRequest {
   // ── Add-ons (dynamic, unlimited) ───────────────────────────────────────
   addOns?: AddOnItem[];
 
+  // ── Resource limits (subscription-level) ───────────────────────────────
+  allowedStores?: number;        // How many stores this business can create (default: 1)
+
   // ── Legacy / notes ─────────────────────────────────────────────────────
   customPrice?: number;          // Legacy override — prefer subscriptionAmount
   overrideReason?: string;

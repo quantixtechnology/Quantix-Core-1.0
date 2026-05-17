@@ -48,18 +48,20 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
     throw new Error(`Business "${businessId}" not found`);
   }
 
-  // 2. Enforce subscription store limit — read plan.maxStores (never hardcode plan names)
+  // 2. Enforce subscription store limit — reads allowedStores from BusinessSubscription
   const subscription = await db.businessSubscription.findUnique({
     where: { businessId },
     include: { plan: true },
   });
-  if (subscription?.plan) {
-    const maxStores = subscription.plan.maxStores;
+  if (subscription) {
+    const allowedStores = subscription.allowedStores > 0
+      ? subscription.allowedStores
+      : (subscription.plan?.maxStores ?? 0);
     const currentCount = business._count.stores;
-    // maxStores <= 0 is treated as unlimited
-    if (maxStores > 0 && currentCount >= maxStores) {
+    // allowedStores <= 0 is treated as unlimited
+    if (allowedStores > 0 && currentCount >= allowedStores) {
       throw new Error(
-        `Store limit reached. Your current plan allows ${maxStores} store${maxStores === 1 ? '' : 's'}. Upgrade your plan to add more stores.`
+        `Store limit reached. Your subscription allows ${allowedStores} store${allowedStores === 1 ? '' : 's'}. Contact support to increase your store limit.`
       );
     }
   }

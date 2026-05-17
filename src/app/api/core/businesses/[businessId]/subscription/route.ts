@@ -52,6 +52,7 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX_
       iosDiscountAmount?: number;
       iosSubscriptionCycle?: PlatformBillingCycle;
       addOns?: unknown[];
+      allowedStores?: number;
       customPrice?: number;
       overrideReason?: string;
       autoRenew?: boolean;
@@ -105,6 +106,7 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX_
     if (body.iosDiscountAmount !== undefined) updateData.iosDiscountAmount = body.iosDiscountAmount;
     if (body.iosSubscriptionCycle !== undefined) updateData.iosSubscriptionCycle = body.iosSubscriptionCycle;
     if (body.addOns !== undefined) updateData.addOns = JSON.stringify(body.addOns);
+    if (body.allowedStores !== undefined) updateData.allowedStores = body.allowedStores;
     if (body.autoRenew !== undefined) updateData.autoRenew = body.autoRenew;
     if (body.currentPeriodStart) updateData.currentPeriodStart = new Date(body.currentPeriodStart);
     if (body.currentPeriodEnd) updateData.currentPeriodEnd = new Date(body.currentPeriodEnd);
