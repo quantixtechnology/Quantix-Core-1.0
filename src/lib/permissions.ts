@@ -41,6 +41,8 @@ export type Permission =
   | "import:leads"
   | "import:business"
   | "export:leads"
+  | "proposals:view"
+  | "proposals:create"
 
 // All roles supported by the platform
 export type PlatformRole =
@@ -127,6 +129,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "staff:view", "staff:manage",
     "pos:access", "refunds:process",
     "import:leads", "import:business", "export:leads",
+    "proposals:view", "proposals:create",
   ],
   PLATFORM_ADMIN: [
     // Navigation — near-full admin, no destructive system access
@@ -151,6 +154,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "domains:view", "domains:create", "domains:edit",
     "settings:view", "settings:edit",
     "import:leads", "import:business", "export:leads",
+    "proposals:view", "proposals:create",
   ],
   QUANTIX_SALES_TEAM: [
     // Navigation — Sales Team sees only Sales & Leads
@@ -160,6 +164,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "sales_team:view",
     "notifications:view",
     "import:leads", "export:leads",
+    "proposals:view", "proposals:create",
   ],
   SUPPORT_TEAM: [
     // Navigation — Support Team sees only Support & Tickets
@@ -413,6 +418,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "import:leads":                 "Import Leads & Sales Data",
   "import:business":              "Import Business Data",
   "export:leads":                 "Export Lead Data (CRM)",
+  "proposals:view":               "View Quote & Proposals",
+  "proposals:create":             "Create & Download Proposals",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {
@@ -491,6 +498,8 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "revenue":                "revenue:view",
   "support":                "support:view",
   "notifications":          "notifications:view",
+  // Quote & Proposals
+  "proposals":              "proposals:view",
   // System
   "roles-permissions":      "roles_permissions:view",
   "backup-monitoring":      "backup:view",

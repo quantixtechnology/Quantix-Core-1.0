@@ -6,7 +6,7 @@ import {
   Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
-  DatabaseZap,
+  DatabaseZap, FileText,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -52,6 +52,7 @@ const platformNavItems: NavItem[] = [
   { key: "workflow-engine",   label: "Workflow Engine",    icon: Workflow    },
   { key: "businesses",        label: "Businesses",         icon: Building2   },
   { key: "leads",             label: "Sales & Leads",      icon: UserCheck   },
+  { key: "proposals",        label: "Quote & Proposals",  icon: FileText    },
   { key: "subscriptions",     label: "Subscriptions",      icon: CreditCard  },
   { key: "plan-management",   label: "Plan Management",    icon: Receipt     },
   { key: "payment-plugins",   label: "Payment Plugins",    icon: CreditCard  },

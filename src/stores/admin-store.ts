@@ -42,6 +42,7 @@ export type AdminPage =
   | "roles-permissions"
   | "leads-import"
   | "business-data-import"
+  | "proposals"
 
 export type BusinessPage =
   | "dashboard"

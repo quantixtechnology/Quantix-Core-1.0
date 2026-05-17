@@ -106,6 +106,7 @@ const MobileAppsView = dynamic(() => import("@/components/dashboard/mobile-apps-
 // ── Data Imports (lazy) ───────────────────────────────────────────────────
 const LeadsImportView = dynamic(() => import("@/components/admin/imports/leads-import-view").then(m => ({ default: m.LeadsImportView })), { loading: () => <PageLoader /> })
 const BusinessImportView = dynamic(() => import("@/components/admin/imports/business-import-view").then(m => ({ default: m.BusinessImportView })), { loading: () => <PageLoader /> })
+const QuoteProposalView = dynamic(() => import("@/components/admin/leads/quote-proposal-view").then(m => ({ default: m.QuoteProposalView })), { loading: () => <PageLoader /> })
 
 // ── Client Operations (lazy) ──────────────────────────────────────────────
 const ClientAssetsView = dynamic(() => import("@/components/dashboard/client-assets-view").then(m => ({ default: m.ClientAssetsView })), { loading: () => <PageLoader /> })
@@ -230,6 +231,7 @@ function AppContent() {
       // Core
       case "dashboard": return <DashboardView />
       case "leads": return <LeadsView />
+      case "proposals": return <QuoteProposalView />
       case "businesses": return <BusinessesView />
       case "subscriptions": return <SubscriptionsView />
       case "onboarding": return <OnboardingView />
