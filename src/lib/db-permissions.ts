@@ -19,3 +19,36 @@ export async function getDbPermissionsForRole(role: string): Promise<string[]> {
   }
   return (ROLE_PERMISSIONS[role] ?? []) as string[];
 }
+
+/**
+ * Resolve the effective permissions for a specific user.
+ * = role permissions (from RBAC DB or static defaults)
+ * + user-level added overrides
+ * - user-level removed overrides
+ *
+ * If platformPermissions is null → pure role inheritance.
+ * If platformPermissions is a JSON array (legacy) → treat as full explicit override.
+ * If platformPermissions is {added, removed} → apply as delta to role permissions.
+ */
+export async function resolveUserPermissions(
+  role: string,
+  platformPermissions: string | null
+): Promise<string[]> {
+  const rolePerms = await getDbPermissionsForRole(role);
+  if (!platformPermissions) return rolePerms;
+  try {
+    const stored: unknown = JSON.parse(platformPermissions);
+    if (Array.isArray(stored)) {
+      // Legacy full-array override — use as-is
+      return stored as string[];
+    }
+    if (stored && typeof stored === 'object') {
+      const obj = stored as Record<string, unknown>;
+      const added: string[] = Array.isArray(obj.added) ? (obj.added as string[]) : [];
+      const removed: string[] = Array.isArray(obj.removed) ? (obj.removed as string[]) : [];
+      if (added.length === 0 && removed.length === 0) return rolePerms;
+      return [...new Set([...rolePerms, ...added].filter(p => !removed.includes(p)))];
+    }
+  } catch { /* ignore — fall through to role defaults */ }
+  return rolePerms;
+}

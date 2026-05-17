@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
-import { getDbPermissionsForRole } from '@/lib/db-permissions';
+import { resolveUserPermissions } from '@/lib/db-permissions';
 import { NextResponse } from 'next/server';
 
 const PLATFORM_ROLES = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
@@ -62,20 +62,24 @@ export async function GET(request: Request) {
       );
     }
 
-    // Determine primary role and fetch DB-aware permissions
+    // Determine primary role and resolve permissions (role + user-level overrides)
     let primaryRole = 'CUSTOMER';
-    if (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) {
-      primaryRole = user.platformRole;
+    const isPlatformUser = user.platformRole && PLATFORM_ROLES.includes(user.platformRole);
+    if (isPlatformUser) {
+      primaryRole = user.platformRole!;
     } else if (user.businessUsers.length > 0) {
       primaryRole = user.businessUsers[0].role;
     }
-    const primaryPermissions = await getDbPermissionsForRole(primaryRole);
+    const primaryPermissions = await resolveUserPermissions(
+      primaryRole,
+      isPlatformUser ? (user.platformPermissions ?? null) : null
+    );
 
     // Build enriched business list with DB-aware permissions
     const businesses = await Promise.all(user.businessUsers.map(async (bu) => ({
       businessId: bu.businessId,
       role: bu.role,
-      permissions: await getDbPermissionsForRole(bu.role),
+      permissions: await resolveUserPermissions(bu.role, null),
       business: bu.business,
       storeId: bu.storeId,
       store: bu.store,

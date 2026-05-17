@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
@@ -28,14 +27,14 @@ import {
 import {
   Users, Plus, Search, RefreshCw, KeyRound, ShieldOff, ShieldCheck,
   Eye, Copy, Check, AlertTriangle, ChevronRight, MoreVertical,
-  Shuffle, LogIn, X, Filter,
+  Shuffle, LogIn, X, Shield, ExternalLink, Info,
 } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import {
-  ROLE_LABELS, PERMISSION_GROUPS, PERMISSION_LABELS, ROLE_PERMISSIONS,
-  ADMIN_NAV_PERMISSIONS, type Permission,
+  ROLE_LABELS, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission,
 } from "@/lib/permissions"
+import { useAdminStore } from "@/stores/admin-store"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -50,57 +49,15 @@ interface PlatformUser {
 interface UserDetail extends PlatformUser {
   authProvider: string; emailVerified: boolean
   platformPermissions: string | null
+  platformRole: string | null
   businessUsers: Array<{
     id: string; role: string; businessId: string; isActive: boolean; permissions: string
     business: { id: string; name: string; slug: string; businessType: string; status: string }
   }>
 }
 
-// Platform-relevant permission groups (for platform team members)
-const PLATFORM_PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] = [
-  {
-    label: "Leads & Sales CRM",
-    permissions: ["leads:view", "leads:edit", "leads:delete", "sales:view", "sales:edit"],
-  },
-  {
-    label: "Business Management",
-    permissions: ["businesses:view", "businesses:create", "businesses:edit", "businesses:delete", "businesses:impersonate"],
-  },
-  {
-    label: "Subscriptions",
-    permissions: ["subscriptions:view", "subscriptions:edit", "subscriptions:override_price"],
-  },
-  {
-    label: "Platform Admin Pages",
-    permissions: ["platform:view_analytics", "platform:manage_deployments", "platform:manage_domains", "platform:audit_logs", "platform:security"],
-  },
-  {
-    label: "User Management",
-    permissions: ["users:view", "users:create", "users:edit", "users:delete", "users:reset_password", "users:suspend", "users:impersonate"],
-  },
-  {
-    label: "Notifications",
-    permissions: ["notifications:view", "notifications:send"],
-  },
-  {
-    label: "Reports",
-    permissions: ["reports:view", "reports:export"],
-  },
-]
-
-// Map permissions → which admin sidebar pages they unlock
-const PAGE_LABELS: Partial<Record<string, string>> = {
-  "leads:view":                  "Sales & Leads",
-  "businesses:view":             "Businesses",
-  "subscriptions:view":          "Subscriptions",
-  "sales:view":                  "Sales Team",
-  "users:view":                  "User Management",
-  "platform:view_analytics":     "Analytics & Reports",
-  "platform:manage_deployments": "Deployment Pages",
-  "platform:manage_domains":     "Domains & Deploys",
-  "platform:audit_logs":         "Audit Logs",
-  "platform:security":           "Security & Access",
-  "notifications:view":          "Notifications",
+interface RolePermsData {
+  role: string; permissions: string[]; isCustomized: boolean
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -123,8 +80,6 @@ const PLATFORM_ROLES = [
   "DEPLOYMENT_TEAM",
   "FINANCE_TEAM",
 ]
-
-const POS_PRESET = ["pos:access", "orders:view", "products:view", "customers:view", "reports:view"]
 
 const roleColors: Record<string, string> = {
   QUANTIX_SUPER_ADMIN: "bg-red-100 text-red-700",
@@ -234,103 +189,125 @@ function AccordionSection({
   )
 }
 
-// ─── Compact Permission Editor ────────────────────────────────────────────────
+// ─── Permission Override Editor ───────────────────────────────────────────────
+// Shows delta from role: what permissions are added / removed for this specific user.
 
-function CompactPermissionEditor({
-  current, onChange, groups: groupsProp,
-}: { current: string[]; onChange: (p: string[]) => void; groups?: { label: string; permissions: Permission[] }[] }) {
-  const [search, setSearch] = useState("")
-  const groups = groupsProp ?? PERMISSION_GROUPS
-  const allPerms = groups.flatMap(g => g.permissions as string[])
-  const viewOnlyPerms = allPerms.filter(p => p.endsWith(":view"))
+function PermissionOverrideEditor({
+  rolePerms,
+  draftAdded,
+  draftRemoved,
+  onChangeAdded,
+  onChangeRemoved,
+}: {
+  rolePerms: string[]
+  draftAdded: string[]
+  draftRemoved: string[]
+  onChangeAdded: (p: string[]) => void
+  onChangeRemoved: (p: string[]) => void
+}) {
+  const allPerms = PERMISSION_GROUPS.flatMap(g => g.permissions as string[])
 
-  const toggle = (perm: string) =>
-    onChange(current.includes(perm) ? current.filter(p => p !== perm) : [...current, perm])
-
-  const applyPreset = (perms: string[]) => onChange(perms)
-
-  const filteredGroups = useMemo(() => {
-    if (!search) return groups
-    const q = search.toLowerCase()
-    return groups.map(g => ({
-      ...g,
-      permissions: g.permissions.filter(p =>
-        (PERMISSION_LABELS[p as Permission] ?? p).toLowerCase().includes(q)
-      ),
-    })).filter(g => g.permissions.length > 0)
-  }, [search])
-
-  const activeCount = current.length
+  // Permissions NOT in role that can be added
+  const addablePerms = allPerms.filter(p => !rolePerms.includes(p) && !draftAdded.includes(p))
+  // Role permissions NOT already in removed list
+  const removablePerms = rolePerms.filter(p => !draftRemoved.includes(p))
 
   return (
-    <div>
-      {/* Search + presets */}
-      <div className="px-4 pt-2 pb-2 space-y-2">
-        <div className="relative">
-          <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Filter permissions…"
-            className="pl-7 h-7 text-xs"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-              <X className="w-3 h-3" />
-            </button>
+    <div className="px-4 pb-4 pt-2 space-y-4">
+      <p className="text-[11px] text-muted-foreground">
+        Overrides apply on top of the role. Role changes cascade automatically — overrides persist until cleared.
+      </p>
+
+      {/* Added overrides */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
+            + Added ({draftAdded.length})
+          </span>
+          {addablePerms.length > 0 && (
+            <Select onValueChange={v => { if (v) onChangeAdded([...draftAdded, v]) }}>
+              <SelectTrigger className="h-5 px-2 text-[10px] w-auto gap-1 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                <SelectValue placeholder="+ Add permission" />
+              </SelectTrigger>
+              <SelectContent className="max-h-64">
+                {PERMISSION_GROUPS.map(g => {
+                  const available = g.permissions.filter(p => addablePerms.includes(p))
+                  if (available.length === 0) return null
+                  return (
+                    <div key={g.label}>
+                      <p className="px-2 py-1 text-[9px] font-bold uppercase text-muted-foreground">{g.label}</p>
+                      {available.map(p => (
+                        <SelectItem key={p} value={p} className="text-xs">
+                          {PERMISSION_LABELS[p as Permission] ?? p}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  )
+                })}
+              </SelectContent>
+            </Select>
           )}
         </div>
-
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-[10px] text-muted-foreground mr-0.5">Preset:</span>
-          {[
-            { label: "Full Access",  fn: () => applyPreset([...allPerms]) },
-            { label: "View Only",    fn: () => applyPreset([...viewOnlyPerms]) },
-            { label: "POS Only",     fn: () => applyPreset([...POS_PRESET]) },
-            { label: "Clear All",    fn: () => applyPreset([]) },
-          ].map(p => (
-            <button
-              key={p.label}
-              onClick={p.fn}
-              className="text-[10px] px-1.5 py-px rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {p.label}
-            </button>
-          ))}
-          <span className="ml-auto text-[10px] text-muted-foreground">{activeCount} active</span>
-        </div>
+        {draftAdded.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground italic">No permissions added beyond role.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {draftAdded.map(p => (
+              <span key={p} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {PERMISSION_LABELS[p as Permission] ?? p}
+                <button onClick={() => onChangeAdded(draftAdded.filter(x => x !== p))} className="hover:text-emerald-900 ml-0.5">
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Permission grid */}
-      <div className="px-4 pb-3 space-y-3">
-        {filteredGroups.map(group => (
-          <div key={group.label}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-              {group.label}
-            </p>
-            <div className="grid grid-cols-2 gap-x-2">
-              {group.permissions.map(perm => {
-                const label = PERMISSION_LABELS[perm as Permission] ?? perm
-                const isOn = current.includes(perm)
-                return (
-                  <label
-                    key={perm}
-                    className="flex items-center justify-between py-[3px] px-1.5 rounded cursor-pointer hover:bg-muted/50 group"
-                  >
-                    <span className={`text-[11px] leading-tight select-none ${isOn ? "text-foreground" : "text-muted-foreground"}`}>
-                      {label}
-                    </span>
-                    <Switch
-                      checked={isOn}
-                      onCheckedChange={() => toggle(perm)}
-                      className="scale-[0.65] origin-right shrink-0"
-                    />
-                  </label>
-                )
-              })}
-            </div>
+      {/* Removed overrides */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-red-700">
+            − Removed ({draftRemoved.length})
+          </span>
+          {removablePerms.length > 0 && (
+            <Select onValueChange={v => { if (v) onChangeRemoved([...draftRemoved, v]) }}>
+              <SelectTrigger className="h-5 px-2 text-[10px] w-auto gap-1 border-red-200 text-red-700 hover:bg-red-50">
+                <SelectValue placeholder="− Remove from role" />
+              </SelectTrigger>
+              <SelectContent className="max-h-64">
+                {PERMISSION_GROUPS.map(g => {
+                  const available = g.permissions.filter(p => removablePerms.includes(p))
+                  if (available.length === 0) return null
+                  return (
+                    <div key={g.label}>
+                      <p className="px-2 py-1 text-[9px] font-bold uppercase text-muted-foreground">{g.label}</p>
+                      {available.map(p => (
+                        <SelectItem key={p} value={p} className="text-xs">
+                          {PERMISSION_LABELS[p as Permission] ?? p}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        {draftRemoved.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground italic">No permissions removed from role.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {draftRemoved.map(p => (
+              <span key={p} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 line-through">
+                {PERMISSION_LABELS[p as Permission] ?? p}
+                <button onClick={() => onChangeRemoved(draftRemoved.filter(x => x !== p))} className="hover:text-red-900 ml-0.5 no-underline" style={{ textDecoration: "none" }}>
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   )
@@ -361,12 +338,11 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          name:              form.name,
-          email:             form.email,
-          phone:             form.phone || undefined,
-          role:              form.role,
-          password:          form.password || undefined,
-          // Sales-specific fields (ignored for non-sales roles)
+          name:    form.name,
+          email:   form.email,
+          phone:   form.phone || undefined,
+          role:    form.role,
+          password: form.password || undefined,
           ...(isSales && {
             region:            form.region || "Pan India",
             target:            form.target ? Number(form.target) : 0,
@@ -389,8 +365,7 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
   }
 
   const handleClose = () => {
-    setOpen(false)
-    setCreds(null)
+    setOpen(false); setCreds(null)
     setForm({ name: "", email: "", phone: "", role: "", password: "", region: "Pan India", target: "", commissionPercent: "5", designation: "", reportingManager: "" })
   }
 
@@ -405,7 +380,6 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
             <DialogTitle>Create Platform User</DialogTitle>
             <DialogDescription>All credentials are admin-assigned. No self-signup.</DialogDescription>
           </DialogHeader>
-
           {creds ? (
             <div className="space-y-3">
               <CredentialBox email={creds.email} password={creds.password} onDismiss={handleClose} />
@@ -434,9 +408,7 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
                     <SelectContent>
                       <p className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">Platform Team</p>
                       {PLATFORM_ROLES.map((r: string) => (
-                        <SelectItem key={r} value={r} className="text-xs">
-                          {ROLE_LABELS[r] ?? r}
-                        </SelectItem>
+                        <SelectItem key={r} value={r} className="text-xs">{ROLE_LABELS[r] ?? r}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -445,8 +417,6 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
                   <Label className="text-xs">Password <span className="text-muted-foreground">(blank = auto)</span></Label>
                   <Input type="text" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Auto-generated if blank" className="h-8 font-mono" />
                 </div>
-
-                {/* Sales-specific fields shown only when role = QUANTIX_SALES_TEAM */}
                 {isSales && (
                   <>
                     <div className="col-span-2">
@@ -493,7 +463,7 @@ function CreateUserDialog({ onCreated }: { onCreated: () => void }) {
   )
 }
 
-// ─── Compact User Detail Sheet ────────────────────────────────────────────────
+// ─── User Detail Sheet ────────────────────────────────────────────────────────
 
 function UserDetailSheet({
   userId, onClose, onRefresh,
@@ -501,43 +471,91 @@ function UserDetailSheet({
   userId: string | null; onClose: () => void; onRefresh: () => void
 }) {
   const qc = useQueryClient()
+  const { setActivePage } = useAdminStore()
   const pwInputRef = useRef<HTMLInputElement>(null)
 
   const [resetCreds, setResetCreds] = useState<{ email: string; password: string } | null>(null)
   const [newPassword, setNewPassword] = useState("")
-  const [editPermissions, setEditPermissions] = useState<string[] | null>(null)
-  const [selectedBizId, setSelectedBizId] = useState<string | null>(null)
-  const [platformEditPerms, setPlatformEditPerms] = useState<string[] | null>(null)
+  const [editingOverrides, setEditingOverrides] = useState(false)
+  const [draftAdded, setDraftAdded] = useState<string[]>([])
+  const [draftRemoved, setDraftRemoved] = useState<string[]>([])
+  const [showInherited, setShowInherited] = useState(false)
+  const [changingRole, setChangingRole] = useState(false)
+  const [newRole, setNewRole] = useState("")
   const [sections, setSections] = useState({
     passwordReset: false,
+    roleAndPerms: true,
     businessAccess: true,
-    permissions: false,
-    platformPerms: false,
   })
 
-  const toggle = (k: keyof typeof sections) =>
-    setSections(s => ({ ...s, [k]: !s[k] }))
+  const toggle = (k: keyof typeof sections) => setSections(s => ({ ...s, [k]: !s[k] }))
 
+  // ── Fetch user detail ──────────────────────────────────────────────────────
   const { data: user, isLoading } = useQuery({
     queryKey: ["user-detail", userId],
     queryFn: () => fetchUserDetail(userId!),
     enabled: !!userId,
   })
 
-  // Generate random password
-  const generatePassword = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!"
-    const pw = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join("")
-    setNewPassword(pw)
+  // ── Fetch RBAC permissions for this user's role ───────────────────────────
+  const { data: rbacData, isLoading: rbacLoading } = useQuery({
+    queryKey: ["user-role-perms", user?.platformRole ?? user?.role],
+    queryFn: async () => {
+      const role = user!.platformRole ?? user!.role
+      if (!role) return null
+      const res = await fetch(`/api/admin/rbac/${role}`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      return json.data as RolePermsData | null
+    },
+    enabled: !!(user?.platformRole ?? user?.role),
+  })
+
+  const rolePerms: string[] = rbacData?.permissions ?? []
+
+  // ── Parse existing overrides from User.platformPermissions ────────────────
+  const { overrideAdded, overrideRemoved } = useMemo(() => {
+    if (!user?.platformPermissions || rolePerms.length === 0) {
+      return { overrideAdded: [] as string[], overrideRemoved: [] as string[] }
+    }
+    try {
+      const stored: unknown = JSON.parse(user.platformPermissions)
+      if (Array.isArray(stored)) {
+        // Legacy full array — compute delta from current role
+        const added = (stored as string[]).filter(p => !rolePerms.includes(p))
+        const removed = rolePerms.filter(p => !(stored as string[]).includes(p))
+        return { overrideAdded: added, overrideRemoved: removed }
+      }
+      if (stored && typeof stored === "object") {
+        const obj = stored as Record<string, unknown>
+        return {
+          overrideAdded: Array.isArray(obj.added) ? (obj.added as string[]) : [],
+          overrideRemoved: Array.isArray(obj.removed) ? (obj.removed as string[]) : [],
+        }
+      }
+    } catch { /* ignore */ }
+    return { overrideAdded: [] as string[], overrideRemoved: [] as string[] }
+  }, [user?.platformPermissions, rolePerms])
+
+  const hasOverrides = overrideAdded.length > 0 || overrideRemoved.length > 0
+
+  const startEditingOverrides = () => {
+    setDraftAdded([...overrideAdded])
+    setDraftRemoved([...overrideRemoved])
+    setEditingOverrides(true)
   }
 
-  // Copy user info
   const copyInfo = () => {
     if (!user) return
     navigator.clipboard.writeText(`Name: ${user.name}\nEmail: ${user.email}\nPhone: ${user.phone ?? "N/A"}`)
     toast.success("Copied")
   }
 
+  const generatePassword = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!"
+    setNewPassword(Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""))
+  }
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
   const resetMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/core/users/${userId}/reset-password`, {
@@ -549,11 +567,7 @@ function UserDetailSheet({
       if (!json.success) throw new Error(json.error)
       return json
     },
-    onSuccess: (data) => {
-      setResetCreds(data.credentials)
-      setNewPassword("")
-      toast.success("Password reset")
-    },
+    onSuccess: (data) => { setResetCreds(data.credentials); setNewPassword(""); toast.success("Password reset") },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Reset failed"),
   })
 
@@ -566,7 +580,6 @@ function UserDetailSheet({
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
-      return json
     },
     onSuccess: (_d, active) => {
       toast.success(active ? "User activated" : "User suspended")
@@ -576,83 +589,51 @@ function UserDetailSheet({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   })
 
-  const savePermMutation = useMutation({
+  const saveOverridesMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedBizId || !editPermissions) return
       const res = await fetch(`/api/core/users/${userId}`, {
         method: "PUT",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ permissions: editPermissions, businessId: selectedBizId }),
+        body: JSON.stringify({ permissionOverrides: { added: draftAdded, removed: draftRemoved } }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
     },
     onSuccess: () => {
-      toast.success("Permissions saved")
-      setEditPermissions(null)
-      setSelectedBizId(null)
+      toast.success("Permission overrides saved")
+      setEditingOverrides(false)
       qc.invalidateQueries({ queryKey: ["user-detail", userId] })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   })
 
-  const savePlatformPermMutation = useMutation({
-    mutationFn: async () => {
-      if (!platformEditPerms) return
+  const saveRoleMutation = useMutation({
+    mutationFn: async (role: string) => {
       const res = await fetch(`/api/core/users/${userId}`, {
         method: "PUT",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ platformPermissions: platformEditPerms }),
+        body: JSON.stringify({ role }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
     },
     onSuccess: () => {
-      toast.success("Platform permissions saved")
-      setPlatformEditPerms(null)
+      toast.success("Role updated")
+      setChangingRole(false)
+      setNewRole("")
       qc.invalidateQueries({ queryKey: ["user-detail", userId] })
+      qc.invalidateQueries({ queryKey: ["user-role-perms"] })
+      onRefresh()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   })
-
-  const initPlatformPermEdit = (u: UserDetail) => {
-    let perms: string[]
-    if (u.platformPermissions) {
-      try { perms = JSON.parse(u.platformPermissions) as string[] } catch { perms = [] }
-    } else {
-      // fallback to role defaults
-      perms = (ROLE_PERMISSIONS[u.role ?? ""] ?? []) as string[]
-    }
-    setPlatformEditPerms(perms)
-    setSections(s => ({ ...s, platformPerms: true }))
-  }
-
-  // Pages unlocked by current platform permissions
-  const unlockedPages = useMemo(() => {
-    if (!platformEditPerms) return []
-    return Object.entries(ADMIN_NAV_PERMISSIONS)
-      .filter(([, perm]) => platformEditPerms.includes(perm))
-      .map(([page]) => PAGE_LABELS[Object.values(ADMIN_NAV_PERMISSIONS).find(p => p === ADMIN_NAV_PERMISSIONS[page]) ?? ""] ?? page)
-      .filter(Boolean)
-  }, [platformEditPerms])
-
-  const initPermEdit = (bu: NonNullable<UserDetail["businessUsers"]>[0]) => {
-    setSelectedBizId(bu.businessId)
-    try { setEditPermissions(JSON.parse(bu.permissions) as string[]) }
-    catch { setEditPermissions([]) }
-    setSections(s => ({ ...s, permissions: true, businessAccess: true }))
-  }
-
-  const openPasswordReset = () => {
-    setSections(s => ({ ...s, passwordReset: true }))
-    setTimeout(() => pwInputRef.current?.focus(), 120)
-  }
 
   if (!userId) return null
 
+  const displayRole = user?.platformRole ?? user?.role
+
   return (
     <Sheet open={!!userId} onOpenChange={onClose}>
-      {/* Fixed 440px width, full height, no overflow on the panel itself */}
       <SheetContent className="w-[440px] max-w-[440px] p-0 flex flex-col h-full overflow-hidden">
 
         {/* ── STICKY HEADER ──────────────────────────────────────── */}
@@ -664,8 +645,7 @@ function UserDetailSheet({
               <>
                 <Skeleton className="w-8 h-8 rounded-full shrink-0" />
                 <div className="flex-1 space-y-1">
-                  <Skeleton className="h-3.5 w-32" />
-                  <Skeleton className="h-3 w-44" />
+                  <Skeleton className="h-3.5 w-32" /><Skeleton className="h-3 w-44" />
                 </div>
               </>
             ) : (
@@ -675,50 +655,35 @@ function UserDetailSheet({
                     {initials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-sm font-semibold leading-tight truncate">{user.name}</span>
-                    {user.role && (
-                      <Badge className={`text-[9px] px-1 py-px border-0 h-4 ${roleColors[user.role] ?? "bg-gray-100 text-gray-700"}`}>
-                        {ROLE_LABELS[user.role] ?? user.role}
+                    {displayRole && (
+                      <Badge className={`text-[9px] px-1 py-px border-0 h-4 ${roleColors[displayRole] ?? "bg-gray-100 text-gray-700"}`}>
+                        {ROLE_LABELS[displayRole] ?? displayRole}
                       </Badge>
                     )}
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
                   {user.phone && <p className="text-[10px] text-muted-foreground">{user.phone}</p>}
                 </div>
-
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Badge className={`text-[9px] px-1.5 py-px border-0 h-4 ${user.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
                     {user.isActive ? "Active" : "Suspended"}
                   </Badge>
-
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                        <MoreVertical className="w-3.5 h-3.5" />
-                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0"><MoreVertical className="w-3.5 h-3.5" /></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="text-xs w-44">
-                      <DropdownMenuItem onClick={copyInfo} className="text-xs gap-2">
-                        <Copy className="w-3.5 h-3.5" /> Copy Info
-                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={copyInfo} className="text-xs gap-2"><Copy className="w-3.5 h-3.5" /> Copy Info</DropdownMenuItem>
                       <DropdownMenuSeparator />
                       {user.isActive ? (
-                        <DropdownMenuItem
-                          className="text-xs gap-2 text-red-600 focus:text-red-600"
-                          onClick={() => toggleStatusMutation.mutate(false)}
-                          disabled={toggleStatusMutation.isPending}
-                        >
+                        <DropdownMenuItem className="text-xs gap-2 text-red-600 focus:text-red-600" onClick={() => toggleStatusMutation.mutate(false)} disabled={toggleStatusMutation.isPending}>
                           <ShieldOff className="w-3.5 h-3.5" /> Suspend User
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem
-                          className="text-xs gap-2 text-emerald-600 focus:text-emerald-600"
-                          onClick={() => toggleStatusMutation.mutate(true)}
-                          disabled={toggleStatusMutation.isPending}
-                        >
+                        <DropdownMenuItem className="text-xs gap-2 text-emerald-600 focus:text-emerald-600" onClick={() => toggleStatusMutation.mutate(true)} disabled={toggleStatusMutation.isPending}>
                           <ShieldCheck className="w-3.5 h-3.5" /> Activate User
                         </DropdownMenuItem>
                       )}
@@ -744,32 +709,20 @@ function UserDetailSheet({
                       onClick={() => toggleStatusMutation.mutate(!user.isActive)}
                       disabled={toggleStatusMutation.isPending}
                     >
-                      {user.isActive
-                        ? <><ShieldOff className="w-3.5 h-3.5" /> Suspend</>
-                        : <><ShieldCheck className="w-3.5 h-3.5" /> Activate</>
-                      }
+                      {user.isActive ? <><ShieldOff className="w-3.5 h-3.5" /> Suspend</> : <><ShieldCheck className="w-3.5 h-3.5" /> Activate</>}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    {user.isActive ? "Block all logins immediately" : "Restore access"}
-                  </TooltipContent>
+                  <TooltipContent side="bottom" className="text-xs">{user.isActive ? "Block all logins immediately" : "Restore access"}</TooltipContent>
                 </Tooltip>
-
                 <Separator orientation="vertical" className="h-4 mx-0.5" />
-
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost" size="sm"
-                      className="h-7 px-2 text-[11px] gap-1.5"
-                      onClick={openPasswordReset}
-                    >
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] gap-1.5" onClick={() => { setSections(s => ({ ...s, passwordReset: true })); setTimeout(() => pwInputRef.current?.focus(), 120) }}>
                       <KeyRound className="w-3.5 h-3.5" /> Reset PW
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-xs">Admin password reset</TooltipContent>
                 </Tooltip>
-
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] gap-1.5" onClick={copyInfo}>
@@ -778,14 +731,13 @@ function UserDetailSheet({
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-xs">Copy name, email, phone</TooltipContent>
                 </Tooltip>
-
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] gap-1.5 text-muted-foreground cursor-not-allowed" disabled>
                       <LogIn className="w-3.5 h-3.5" /> Login As
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">Coming soon — admin impersonation</TooltipContent>
+                  <TooltipContent side="bottom" className="text-xs">Coming soon</TooltipContent>
                 </Tooltip>
               </div>
             </TooltipProvider>
@@ -810,7 +762,6 @@ function UserDetailSheet({
 
         {/* ── SCROLLABLE BODY ─────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto min-h-0">
-
           {isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -820,238 +771,266 @@ function UserDetailSheet({
           ) : user ? (
             <>
               {/* ── Password Reset ─────────────────────────────── */}
-              <AccordionSection
-                label="Password Reset"
-                isOpen={sections.passwordReset}
-                onToggle={() => toggle("passwordReset")}
-              >
+              <AccordionSection label="Password Reset" isOpen={sections.passwordReset} onToggle={() => toggle("passwordReset")}>
                 <div className="px-4 pb-3 pt-1 space-y-2">
-                  <p className="text-[11px] text-muted-foreground">
-                    Admin-assigned only. Users cannot reset their own passwords.
-                  </p>
+                  <p className="text-[11px] text-muted-foreground">Admin-assigned only. Users cannot reset their own passwords.</p>
                   <div className="flex items-center gap-1.5">
-                    <Input
-                      ref={pwInputRef}
-                      type="text"
-                      value={newPassword}
-                      onChange={e => setNewPassword(e.target.value)}
-                      placeholder="New password…"
-                      className="h-7 text-xs flex-1 font-mono"
-                    />
+                    <Input ref={pwInputRef} type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="New password…" className="h-7 text-xs flex-1 font-mono" />
                     <TooltipProvider delayDuration={300}>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button
-                            variant="outline" size="sm"
-                            className="h-7 w-7 p-0 shrink-0"
-                            onClick={generatePassword}
-                          >
+                          <Button variant="outline" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={generatePassword}>
                             <Shuffle className="w-3.5 h-3.5" />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="text-xs">Generate random password</TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                    <Button
-                      size="sm"
-                      className="h-7 px-3 text-xs shrink-0"
-                      onClick={() => resetMutation.mutate()}
-                      disabled={resetMutation.isPending}
-                    >
+                    <Button size="sm" className="h-7 px-3 text-xs shrink-0" onClick={() => resetMutation.mutate()} disabled={resetMutation.isPending}>
                       {resetMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Reset"}
                     </Button>
                   </div>
-                  {resetCreds && (
-                    <CredentialBox
-                      email={resetCreds.email}
-                      password={resetCreds.password}
-                      onDismiss={() => setResetCreds(null)}
-                    />
-                  )}
+                  {resetCreds && <CredentialBox email={resetCreds.email} password={resetCreds.password} onDismiss={() => setResetCreds(null)} />}
+                </div>
+              </AccordionSection>
+
+              {/* ── Role & Permissions ─────────────────────────── */}
+              <AccordionSection
+                label="Role & Permissions"
+                isOpen={sections.roleAndPerms}
+                onToggle={() => toggle("roleAndPerms")}
+                rightSlot={
+                  hasOverrides ? (
+                    <Badge className="text-[9px] bg-amber-100 text-amber-700 border-0 h-4 px-1.5">Overrides Active</Badge>
+                  ) : undefined
+                }
+              >
+                <div className="px-4 pb-3 pt-2 space-y-3">
+
+                  {/* Assigned role */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned Role</p>
+                      {displayRole ? (
+                        <Badge className={`text-[10px] px-2 py-0.5 border-0 h-5 ${roleColors[displayRole] ?? "bg-gray-100 text-gray-700"}`}>
+                          {ROLE_LABELS[displayRole] ?? displayRole}
+                        </Badge>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">No role assigned</span>
+                      )}
+                    </div>
+                    {!changingRole ? (
+                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => { setNewRole(displayRole ?? ""); setChangingRole(true) }}>
+                        Change Role
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Select value={newRole} onValueChange={setNewRole}>
+                          <SelectTrigger className="h-6 text-[10px] w-[140px]"><SelectValue placeholder="Select role" /></SelectTrigger>
+                          <SelectContent>
+                            {PLATFORM_ROLES.map(r => (
+                              <SelectItem key={r} value={r} className="text-xs">{ROLE_LABELS[r] ?? r}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => newRole && saveRoleMutation.mutate(newRole)} disabled={saveRoleMutation.isPending || !newRole}>
+                          {saveRoleMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Save"}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setChangingRole(false)}><X className="w-3 h-3" /></Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Authority note */}
+                  <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+                    <Info className="w-3 h-3 text-sky-600 mt-0.5 shrink-0" />
+                    <p className="text-[10px] text-sky-700 leading-relaxed">
+                      Role permissions are managed centrally in <strong>Roles & Permissions</strong>. Changes there cascade to all users with this role.
+                    </p>
+                  </div>
+
+                  {/* Go to RBAC */}
+                  <button
+                    onClick={() => { setActivePage("roles-permissions"); onClose() }}
+                    className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                  >
+                    <Shield className="w-3 h-3" /> Manage Role Permissions
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+
+                  <Separator />
+
+                  {/* Inherited permissions (collapsible) */}
+                  {rbacLoading ? (
+                    <Skeleton className="h-6 w-full" />
+                  ) : rolePerms.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <button
+                        onClick={() => setShowInherited(v => !v)}
+                        className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <ChevronRight className={`w-3 h-3 transition-transform ${showInherited ? "rotate-90" : ""}`} />
+                        Inherited from Role ({rolePerms.length} permissions)
+                        {rbacData?.isCustomized && (
+                          <Badge variant="secondary" className="text-[8px] h-3.5 px-1">Customized</Badge>
+                        )}
+                      </button>
+                      {showInherited && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {rolePerms.map(p => (
+                            <span
+                              key={p}
+                              className={`text-[9px] px-1.5 py-0.5 rounded border ${
+                                overrideRemoved.includes(p)
+                                  ? "bg-red-50 text-red-400 border-red-200 line-through"
+                                  : "bg-muted text-muted-foreground border-border"
+                              }`}
+                            >
+                              {PERMISSION_LABELS[p as Permission] ?? p}
+                            </span>
+                          ))}
+                          {overrideAdded.map(p => (
+                            <span key={p} className="text-[9px] px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              +{PERMISSION_LABELS[p as Permission] ?? p}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  <Separator />
+
+                  {/* Override section */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">User-Level Overrides</p>
+                      <div className="flex items-center gap-1">
+                        {hasOverrides && !editingOverrides && (
+                          <Button
+                            variant="ghost" size="sm"
+                            className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-red-600"
+                            onClick={() => saveOverridesMutation.mutate()}
+                            disabled={saveOverridesMutation.isPending}
+                          >
+                            Clear All
+                          </Button>
+                        )}
+                        {!editingOverrides ? (
+                          <Button variant="outline" size="sm" className="h-5 px-1.5 text-[10px]" onClick={startEditingOverrides}>
+                            Edit
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {!editingOverrides ? (
+                      hasOverrides ? (
+                        <div className="rounded-lg border px-3 py-2 space-y-1.5">
+                          {overrideAdded.length > 0 && (
+                            <div>
+                              <span className="text-[9px] font-semibold text-emerald-700 uppercase">+ Added ({overrideAdded.length})</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {overrideAdded.map(p => (
+                                  <span key={p} className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    {PERMISSION_LABELS[p as Permission] ?? p}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {overrideRemoved.length > 0 && (
+                            <div>
+                              <span className="text-[9px] font-semibold text-red-700 uppercase">− Removed ({overrideRemoved.length})</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {overrideRemoved.map(p => (
+                                  <span key={p} className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 line-through">
+                                    {PERMISSION_LABELS[p as Permission] ?? p}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground">
+                          No overrides — this user inherits all {rolePerms.length > 0 ? `${rolePerms.length} ` : ""}permissions from their role.
+                        </p>
+                      )
+                    ) : (
+                      <PermissionOverrideEditor
+                        rolePerms={rolePerms}
+                        draftAdded={draftAdded}
+                        draftRemoved={draftRemoved}
+                        onChangeAdded={setDraftAdded}
+                        onChangeRemoved={setDraftRemoved}
+                      />
+                    )}
+                  </div>
                 </div>
               </AccordionSection>
 
               {/* ── Business Access ────────────────────────────── */}
-              <AccordionSection
-                label="Business Access"
-                count={user.businessUsers.length}
-                isOpen={sections.businessAccess}
-                onToggle={() => toggle("businessAccess")}
-              >
+              <AccordionSection label="Business Access" count={user.businessUsers.length} isOpen={sections.businessAccess} onToggle={() => toggle("businessAccess")}>
                 <div className="px-4 pb-3 pt-1">
                   {user.businessUsers.length === 0 ? (
                     <p className="text-[11px] text-muted-foreground">No business associations — platform-level account.</p>
                   ) : (
                     <div className="space-y-1">
-                      {user.businessUsers.map(bu => {
-                        const isEditing = editPermissions !== null && selectedBizId === bu.businessId
-                        let permCount = 0
-                        try { permCount = (JSON.parse(bu.permissions) as string[]).length } catch { /* ok */ }
-
-                        return (
-                          <div
-                            key={bu.id}
-                            className={`border rounded-md px-3 py-2 transition-colors ${isEditing ? "border-primary/30 bg-primary/5" : "hover:border-muted-foreground/20"}`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-xs font-semibold leading-tight truncate">{bu.business.name}</p>
-                                <p className="text-[10px] text-muted-foreground">{bu.business.businessType}</p>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <Badge className={`text-[9px] px-1 py-px border-0 h-4 ${roleColors[bu.role] ?? "bg-gray-100 text-gray-700"}`}>
-                                  {ROLE_LABELS[bu.role] ?? bu.role}
-                                </Badge>
-                                {permCount > 0 && (
-                                  <span className="text-[10px] text-muted-foreground">{permCount}p</span>
-                                )}
-                                <Button
-                                  variant={isEditing ? "default" : "ghost"}
-                                  size="sm"
-                                  className="h-5 px-1.5 text-[10px]"
-                                  onClick={() => isEditing ? (setEditPermissions(null), setSelectedBizId(null)) : initPermEdit(bu)}
-                                >
-                                  {isEditing ? "Close" : "Perms"}
-                                </Button>
-                              </div>
-                            </div>
+                      {user.businessUsers.map(bu => (
+                        <div key={bu.id} className="border rounded-md px-3 py-2 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold leading-tight truncate">{bu.business.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{bu.business.businessType}</p>
                           </div>
-                        )
-                      })}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Badge className={`text-[9px] px-1 py-px border-0 h-4 ${roleColors[bu.role] ?? "bg-gray-100 text-gray-700"}`}>
+                              {ROLE_LABELS[bu.role] ?? bu.role}
+                            </Badge>
+                            {!bu.isActive && (
+                              <Badge className="text-[9px] px-1 py-px border-0 h-4 bg-red-100 text-red-600">Inactive</Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-[10px] text-muted-foreground pt-1">
+                        Business-level permissions are managed via <button onClick={() => { setActivePage("roles-permissions"); onClose() }} className="font-medium text-primary hover:underline">Roles & Permissions</button>.
+                      </p>
                     </div>
                   )}
                 </div>
               </AccordionSection>
-
-              {/* ── Business Permissions ───────────────────────── */}
-              <AccordionSection
-                label="Business Role Permissions"
-                isOpen={sections.permissions}
-                onToggle={() => toggle("permissions")}
-                rightSlot={
-                  editPermissions !== null ? (
-                    <Badge className="text-[9px] bg-primary/10 text-primary border-0 h-4 px-1.5">Editing</Badge>
-                  ) : undefined
-                }
-              >
-                {editPermissions !== null ? (
-                  <CompactPermissionEditor current={editPermissions} onChange={setEditPermissions} />
-                ) : (
-                  <div className="px-4 pb-3 pt-1">
-                    {user.businessUsers.length === 0 ? (
-                      <p className="text-[11px] text-muted-foreground">No business associations — use Platform Permissions below.</p>
-                    ) : (
-                      <p className="text-[11px] text-muted-foreground">
-                        Click <span className="font-semibold text-foreground">Perms</span> on a business above to edit permissions for that role.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </AccordionSection>
-
-              {/* ── Platform Page Permissions ───────────────────── */}
-              <AccordionSection
-                label="Platform Page Permissions"
-                isOpen={sections.platformPerms}
-                onToggle={() => toggle("platformPerms")}
-                rightSlot={
-                  platformEditPerms !== null ? (
-                    <Badge className="text-[9px] bg-primary/10 text-primary border-0 h-4 px-1.5">Editing</Badge>
-                  ) : (
-                    <button
-                      onClick={() => initPlatformPermEdit(user)}
-                      className="text-[10px] px-1.5 py-px rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Edit
-                    </button>
-                  )
-                }
-              >
-                {platformEditPerms !== null ? (
-                  <>
-                    {/* Page visibility preview */}
-                    {unlockedPages.length > 0 && (
-                      <div className="px-4 pt-2 pb-1">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Pages this user can access</p>
-                        <div className="flex flex-wrap gap-1">
-                          {unlockedPages.map(p => (
-                            <span key={p} className="text-[10px] px-1.5 py-px rounded bg-emerald-50 text-emerald-700 border border-emerald-200">{p}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <CompactPermissionEditor
-                      current={platformEditPerms}
-                      onChange={(p) => setPlatformEditPerms(p)}
-                      groups={PLATFORM_PERMISSION_GROUPS}
-                    />
-                  </>
-                ) : (
-                  <div className="px-4 pb-3 pt-1 space-y-2">
-                    <p className="text-[11px] text-muted-foreground">
-                      Controls which admin pages and actions this platform team member can access.
-                      Defaults to role permissions if not customized.
-                    </p>
-                    {user.platformPermissions && (() => {
-                      try {
-                        const perms = JSON.parse(user.platformPermissions) as string[]
-                        const pages = Object.entries(ADMIN_NAV_PERMISSIONS)
-                          .filter(([, perm]) => perms.includes(perm))
-                          .map(([page]) => PAGE_LABELS[Object.values(ADMIN_NAV_PERMISSIONS).find(p => p === ADMIN_NAV_PERMISSIONS[page]) ?? ""] ?? page)
-                          .filter(Boolean)
-                        if (pages.length === 0) return null
-                        return (
-                          <div className="flex flex-wrap gap-1">
-                            {pages.map(p => (
-                              <span key={p} className="text-[10px] px-1.5 py-px rounded bg-emerald-50 text-emerald-700 border border-emerald-200">{p}</span>
-                            ))}
-                          </div>
-                        )
-                      } catch { return null }
-                    })()}
-                    <button
-                      onClick={() => initPlatformPermEdit(user)}
-                      className="text-[11px] font-medium text-primary hover:underline"
-                    >
-                      Edit platform permissions →
-                    </button>
-                  </div>
-                )}
-              </AccordionSection>
             </>
           ) : (
-            <div className="p-4">
-              <p className="text-sm text-muted-foreground">User not found.</p>
-            </div>
+            <div className="p-4"><p className="text-sm text-muted-foreground">User not found.</p></div>
           )}
         </div>
 
-        {/* ── STICKY FOOTER — editing business or platform permissions ── */}
-        {(editPermissions !== null || platformEditPerms !== null) && (
+        {/* ── STICKY FOOTER — override save ──────────────────── */}
+        {editingOverrides && (
           <div className="shrink-0 border-t bg-background px-4 py-2 flex items-center gap-2">
-            {editPermissions !== null && (
-              <>
-                <Button size="sm" className="h-7 text-xs" onClick={() => savePermMutation.mutate()} disabled={savePermMutation.isPending}>
-                  {savePermMutation.isPending && <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />}
-                  Save Business Perms
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditPermissions(null); setSelectedBizId(null) }}>Cancel</Button>
-                <span className="ml-auto text-[10px] text-muted-foreground">{editPermissions.length} selected</span>
-              </>
-            )}
-            {platformEditPerms !== null && (
-              <>
-                <Button size="sm" className="h-7 text-xs" onClick={() => savePlatformPermMutation.mutate()} disabled={savePlatformPermMutation.isPending}>
-                  {savePlatformPermMutation.isPending && <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />}
-                  Save Platform Perms
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setPlatformEditPerms(null)}>Cancel</Button>
-                <span className="ml-auto text-[10px] text-muted-foreground">{platformEditPerms.length} selected</span>
-              </>
-            )}
+            <Button
+              size="sm" className="h-7 text-xs"
+              onClick={() => saveOverridesMutation.mutate()}
+              disabled={saveOverridesMutation.isPending}
+            >
+              {saveOverridesMutation.isPending && <RefreshCw className="w-3 h-3 mr-1.5 animate-spin" />}
+              Save Overrides
+            </Button>
+            <Button
+              variant="ghost" size="sm" className="h-7 text-xs"
+              onClick={() => { setEditingOverrides(false); setDraftAdded([]); setDraftRemoved([]) }}
+            >
+              Cancel
+            </Button>
+            <span className="ml-auto text-[10px] text-muted-foreground">
+              {draftAdded.length > 0 && `+${draftAdded.length} added`}
+              {draftAdded.length > 0 && draftRemoved.length > 0 && " · "}
+              {draftRemoved.length > 0 && `−${draftRemoved.length} removed`}
+              {draftAdded.length === 0 && draftRemoved.length === 0 && "No overrides"}
+            </span>
           </div>
         )}
-
       </SheetContent>
     </Sheet>
   )
@@ -1118,10 +1097,10 @@ export function PlatformUsersView() {
       {/* Stats */}
       <div className="grid grid-cols-4 gap-0 border-b">
         {[
-          { label: "Total",    value: stats.total,     color: "text-foreground" },
-          { label: "Active",   value: stats.active,    color: "text-emerald-600" },
-          { label: "Suspended",value: stats.suspended, color: "text-red-600" },
-          { label: "Admins",   value: stats.admins,    color: "text-blue-600" },
+          { label: "Total",     value: stats.total,     color: "text-foreground" },
+          { label: "Active",    value: stats.active,    color: "text-emerald-600" },
+          { label: "Suspended", value: stats.suspended, color: "text-red-600" },
+          { label: "Admins",    value: stats.admins,    color: "text-blue-600" },
         ].map(s => (
           <div key={s.label} className="px-5 py-2 border-r last:border-r-0">
             <p className={`text-xl font-bold leading-tight ${s.color}`}>{s.value}</p>
@@ -1171,10 +1150,7 @@ export function PlatformUsersView() {
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3">
                 <Skeleton className="w-8 h-8 rounded-full shrink-0" />
-                <div className="space-y-1 flex-1">
-                  <Skeleton className="h-3.5 w-36" />
-                  <Skeleton className="h-3 w-52" />
-                </div>
+                <div className="space-y-1 flex-1"><Skeleton className="h-3.5 w-36" /><Skeleton className="h-3 w-52" /></div>
                 <Skeleton className="h-4 w-16 rounded-full" />
                 <Skeleton className="h-4 w-14 rounded-full" />
               </div>
@@ -1201,11 +1177,7 @@ export function PlatformUsersView() {
             </TableHeader>
             <TableBody>
               {users.map(user => (
-                <TableRow
-                  key={user.id}
-                  className="cursor-pointer hover:bg-muted/30"
-                  onClick={() => setSelectedUserId(user.id)}
-                >
+                <TableRow key={user.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setSelectedUserId(user.id)}>
                   <TableCell className="py-2">
                     <div className="flex items-center gap-2.5">
                       <Avatar className="w-7 h-7 shrink-0">
@@ -1245,9 +1217,7 @@ export function PlatformUsersView() {
                   </TableCell>
                   <TableCell className="py-2 text-[11px] text-muted-foreground">{fmtDate(user.lastLoginAt)}</TableCell>
                   <TableCell className="py-2 text-[11px] text-muted-foreground">{fmtDate(user.createdAt)}</TableCell>
-                  <TableCell className="py-2">
-                    <Eye className="w-3.5 h-3.5 text-muted-foreground/50" />
-                  </TableCell>
+                  <TableCell className="py-2"><Eye className="w-3.5 h-3.5 text-muted-foreground/50" /></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -1256,11 +1226,7 @@ export function PlatformUsersView() {
       </div>
 
       {/* Detail sheet */}
-      <UserDetailSheet
-        userId={selectedUserId}
-        onClose={() => setSelectedUserId(null)}
-        onRefresh={refresh}
-      />
+      <UserDetailSheet userId={selectedUserId} onClose={() => setSelectedUserId(null)} onRefresh={refresh} />
     </div>
   )
 }

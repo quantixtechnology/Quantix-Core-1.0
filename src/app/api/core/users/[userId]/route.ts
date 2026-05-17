@@ -67,7 +67,12 @@ export async function PUT(
       const { userId } = await params;
       const body = await req.json() as {
         name?: string; phone?: string; avatar?: string; role?: string;
-        businessId?: string; permissions?: string[]; platformPermissions?: string[];
+        businessId?: string; permissions?: string[];
+        // Legacy: full permissions array override
+        platformPermissions?: string[];
+        // Preferred: explicit delta from role — {added, removed}
+        // Pass {added:[], removed:[]} to clear all overrides (null stored)
+        permissionOverrides?: { added: string[]; removed: string[] };
       };
 
       const user = await db.user.findUnique({ where: { id: userId } });
@@ -84,7 +89,16 @@ export async function PUT(
         updateData.platformRole = body.role as Role;
       }
 
-      if (body.platformPermissions !== undefined) {
+      if (body.permissionOverrides !== undefined) {
+        const { added = [], removed = [] } = body.permissionOverrides;
+        if (added.length === 0 && removed.length === 0) {
+          // Clear all overrides — user inherits purely from role
+          updateData.platformPermissions = null;
+        } else {
+          updateData.platformPermissions = JSON.stringify({ added, removed });
+        }
+      } else if (body.platformPermissions !== undefined) {
+        // Legacy path: full permissions array
         updateData.platformPermissions = JSON.stringify(body.platformPermissions);
       }
 

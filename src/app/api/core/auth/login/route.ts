@@ -5,7 +5,7 @@
 
 import { db } from '@/lib/db';
 import { verifyPassword, createAccessToken } from '@/lib/password-utils';
-import { getDbPermissionsForRole } from '@/lib/db-permissions';
+import { resolveUserPermissions } from '@/lib/db-permissions';
 import { checkRateLimit } from '@/lib/middleware';
 import { logAuthActivity } from '@/lib/core/audit';
 import { NextResponse } from 'next/server';
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       where: { email: normalizedEmail },
       select: {
         id: true, name: true, email: true, avatar: true,
-        passwordHash: true, isActive: true, platformRole: true,
+        passwordHash: true, isActive: true, platformRole: true, platformPermissions: true,
         businessUsers: {
           where: { isActive: true },
           select: {
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
           where: { id: rows[0].id },
           select: {
             id: true, name: true, email: true, avatar: true,
-            passwordHash: true, isActive: true, platformRole: true,
+            passwordHash: true, isActive: true, platformRole: true, platformPermissions: true,
             businessUsers: {
               where: { isActive: true },
               select: {
@@ -157,7 +157,11 @@ export async function POST(request: Request) {
 
     console.log(`[login] SUCCESS — user=${user.id}, email=${user.email}, role=${role}, isPlatformAdmin=${isPlatformAdmin}`);
 
-    const permissions: Permission[] = await getDbPermissionsForRole(role) as Permission[];
+    // Resolve permissions: role defaults → RBAC DB overrides → user-level overrides
+    const permissions: Permission[] = await resolveUserPermissions(
+      role,
+      isPlatformAdmin ? (user.platformPermissions ?? null) : null
+    ) as Permission[];
 
     const sessionUser = {
       id: user.id, name: user.name, email: user.email, avatar: user.avatar,
@@ -172,7 +176,7 @@ export async function POST(request: Request) {
       role: bu.role as Role,
       storeId: bu.storeId || null,
       storeName: bu.store?.name || null,
-      permissions: await getDbPermissionsForRole(bu.role) as Permission[],
+      permissions: await resolveUserPermissions(bu.role, null) as Permission[],
     })));
 
     // Create access token (stored in DB for middleware validation)
