@@ -343,7 +343,7 @@ export function ProposalDocument({
       {/* ═══════════════════════════ PAGE 2 ═══════════════════════════════ */}
       <div style={{
         width: "794px", minHeight: "1123px", background: "#ffffff",
-        fontSize: "13px", padding: "48px 52px", boxSizing: "border-box" as const,
+        fontSize: "13px", padding: "48px 52px 160px 52px", boxSizing: "border-box" as const,
         position: "relative" as const,
         borderTop: "3px solid #e5e7eb",
         pageBreakBefore: "always" as const,
@@ -462,63 +462,70 @@ export function ProposalDocument({
 
         {/* ── SALES TEAM ───────────────────────────────────────────────── */}
         {(form.salesTeamMember || form.salesTeamEmail) && (
-          <div style={{ marginBottom: "28px" }}>
+          <div style={{ marginBottom: "24px" }}>
             {sectionLabel("YOUR SALES CONTACT")}
             <div style={{
               border: "1px solid #e5e7eb", borderRadius: "10px",
               padding: "14px 20px", background: "#f9fafb",
-              display: "flex", gap: "40px",
             }}>
-              {form.salesTeamMember && (
-                <div>
-                  <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Sales Team Member</div>
-                  <div style={{ fontWeight: 700, color: "#111827", marginTop: "2px" }}>{form.salesTeamMember}</div>
-                </div>
-              )}
-              {form.salesTeamEmail && (
-                <div>
-                  <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Sales Team Email</div>
-                  <div style={{ fontWeight: 700, color: "#111827", marginTop: "2px" }}>{form.salesTeamEmail}</div>
-                </div>
-              )}
+              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "24px 40px" }}>
+                {form.salesTeamMember && (
+                  <div>
+                    <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Sales Team Member</div>
+                    <div style={{ fontWeight: 700, color: "#111827", marginTop: "4px", fontSize: "13px" }}>{form.salesTeamMember}</div>
+                  </div>
+                )}
+                {form.salesTeamEmail && (
+                  <div>
+                    <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Sales Team Email</div>
+                    <div style={{ fontWeight: 700, color: "#111827", marginTop: "4px", fontSize: "13px" }}>{form.salesTeamEmail}</div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* ── BOTTOM: QR + FOOTER ──────────────────────────────────────── */}
+        {/* ── SYSTEM NOTE (in flow — above absolute footer) ─────────────── */}
+        <div style={{
+          textAlign: "center" as const, fontSize: "10px", color: "#9ca3af",
+          fontStyle: "italic", marginTop: "8px",
+        }}>
+          This is a system-generated document and does not require physical signature.
+        </div>
+
+        {/* ── BOTTOM FOOTER: website + copyright (left) · QR (right) ───── */}
         <div style={{
           position: "absolute" as const, bottom: "48px", left: "52px", right: "52px",
+          display: "flex", justifyContent: "space-between", alignItems: "flex-end",
         }}>
-          <div style={{
-            textAlign: "center" as const, fontSize: "10px", color: "#9ca3af",
-            fontStyle: "italic", marginBottom: "20px",
-          }}>
-            This is a system-generated document and does not require physical signature.
+          <div>
+            <div style={{ fontWeight: 700, color: accentBlue, fontSize: "13px", marginBottom: "4px" }}>www.quantixtechnology.in</div>
+            <div style={{ fontSize: "10px", color: "#9ca3af" }}>Quantix Technology · Enterprise SaaS Platform</div>
+            <div style={{ fontSize: "10px", color: "#9ca3af" }}>© {new Date().getFullYear()} Quantix Technology. All rights reserved.</div>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-            <div>
-              <div style={{ fontWeight: 700, color: accentBlue, fontSize: "13px", marginBottom: "4px" }}>www.quantixtechnology.in</div>
-              <div style={{ fontSize: "10px", color: "#9ca3af" }}>Quantix Technology · Enterprise SaaS Platform</div>
-              <div style={{ fontSize: "10px", color: "#9ca3af" }}>© {new Date().getFullYear()} Quantix Technology. All rights reserved.</div>
+          {qrUrl ? (
+            <div style={{ textAlign: "center" as const }}>
+              <div style={{ fontSize: "9px", color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>Scan to Pay</div>
+              <img
+                src={qrUrl}
+                alt="Payment QR"
+                style={{ width: "90px", height: "90px", border: "1px solid #e5e7eb", borderRadius: "8px", display: "block" }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+              />
             </div>
-
-            {qrUrl && (
-              <div style={{ textAlign: "center" as const }}>
-                <div style={{ fontSize: "9px", color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>Scan to Pay</div>
-                <img
-                  src={qrUrl}
-                  alt="Payment QR"
-                  style={{
-                    width: "90px", height: "90px",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "8px", display: "block",
-                  }}
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-                />
+          ) : (
+            <div style={{
+              width: "90px", height: "90px", border: "1px dashed #d1d5db",
+              borderRadius: "8px", display: "flex", alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <div style={{ fontSize: "8px", color: "#d1d5db", textAlign: "center" as const, lineHeight: 1.4 }}>
+                No payment<br />QR configured
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
