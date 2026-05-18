@@ -52,9 +52,12 @@ export async function GET(
       );
     }
 
+    let parsedImages: string[] = []
+    try { parsedImages = JSON.parse(product.images) } catch { /* keep empty */ }
+
     return NextResponse.json({
       success: true,
-      data: product,
+      data: { ...product, images: parsedImages },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get product';
@@ -172,7 +175,9 @@ export async function PUT(
           return product;
         });
 
-        return NextResponse.json({ success: true, data: updated, message: 'Product updated successfully' });
+        let updatedImages: string[] = []
+        try { updatedImages = JSON.parse(updated.images) } catch { /* keep empty */ }
+        return NextResponse.json({ success: true, data: { ...updated, images: updatedImages }, message: 'Product updated successfully' });
       }
 
       const product = await db.product.update({
@@ -181,7 +186,9 @@ export async function PUT(
         include: { category: true, variants: true },
       });
 
-      return NextResponse.json({ success: true, data: product, message: 'Product updated successfully' });
+      let productImages: string[] = []
+      try { productImages = JSON.parse(product.images) } catch { /* keep empty */ }
+      return NextResponse.json({ success: true, data: { ...product, images: productImages }, message: 'Product updated successfully' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update product';
       return NextResponse.json({ success: false, error: message }, { status: 500 });

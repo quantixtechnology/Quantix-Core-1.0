@@ -54,9 +54,17 @@ export const GET = withMiddleware({ requireAuth: true })(
         }),
       ])
 
+      // Parse the images JSON string into a real array before sending to the client.
+      // The DB stores images as String @default("[]") so Prisma returns a raw string.
+      const serialized = products.map((p) => {
+        let parsedImages: string[] = []
+        try { parsedImages = JSON.parse(p.images) } catch { /* keep empty */ }
+        return { ...p, images: parsedImages }
+      })
+
       return NextResponse.json({
         success: true,
-        data: products,
+        data: serialized,
         pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       })
     } catch (error) {
