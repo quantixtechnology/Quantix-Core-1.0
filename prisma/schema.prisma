@@ -24,8 +24,8 @@ model Lead {
   contactEmail           String
   contactPhone           String
   businessType           BusinessType
-  source                 LeadSource       @default("WEBSITE_INQUIRY")
-  stage                  LeadStage        @default("LEAD")
+  source                 LeadSource       @default(WEBSITE_INQUIRY)
+  stage                  LeadStage        @default(LEAD)
   demoTenantId           String?
   demoSharedAt           DateTime?
   demoCredentials        String?
@@ -140,7 +140,7 @@ model DemoTenant {
   name             String
   slug             String           @unique
   businessType     BusinessType
-  status           DemoTenantStatus @default("AVAILABLE")
+  status           DemoTenantStatus @default(AVAILABLE)
   accessEmail      String
   accessPassword   String
   accessUrl        String?
@@ -165,7 +165,7 @@ model Business {
   name                  String
   slug                  String                  @unique
   businessType          BusinessType
-  status                BusinessStatus          @default("ONBOARDING")
+  status                BusinessStatus          @default(ONBOARDING)
   leadId                String?
   logo                  String?
   favicon               String?
@@ -239,7 +239,7 @@ model OnboardingStep {
   businessId  String
   stepKey     String
   stepName    String
-  status      OnboardingStepStatus @default("PENDING")
+  status      OnboardingStepStatus @default(PENDING)
   completedBy String?
   completedAt DateTime?
   notes       String?
@@ -259,7 +259,7 @@ model BusinessModule {
   moduleKey  String
   moduleName String
   version    String       @default("1.0.0")
-  status     ModuleStatus @default("DISABLED")
+  status     ModuleStatus @default(DISABLED)
   config     String       @default("{}")
   enabledAt  DateTime?
   disabledAt DateTime?
@@ -288,7 +288,7 @@ model Store {
   longitude           Float?
   phone               String?
   email               String?
-  status              StoreStatus    @default("ACTIVE")
+  status              StoreStatus    @default(ACTIVE)
   isMainStore         Boolean        @default(false)
   deliveryRadius      Float          @default(5.0)
   minOrderAmount      Float          @default(0)
@@ -340,7 +340,7 @@ model User {
   name                String
   avatar              String?
   passwordHash        String?
-  authProvider        AuthProvider      @default("EMAIL_OTP")
+  authProvider        AuthProvider      @default(EMAIL_OTP)
   emailVerified       Boolean           @default(false)
   phoneVerified       Boolean           @default(false)
   isActive            Boolean           @default(true)
@@ -421,8 +421,8 @@ model Order {
   orderNumber          String
   orderType            OrderType
   orderSource          String                @default("online")
-  status               OrderStatus           @default("PENDING")
-  paymentStatus        PaymentStatus         @default("PENDING")
+  status               OrderStatus           @default(PENDING)
+  paymentStatus        PaymentStatus         @default(PENDING)
   paymentMethod        PaymentMethodType?
   customerId           String?
   customerName         String?
@@ -541,7 +541,7 @@ model Delivery {
   orderId               String           @unique
   deliveryPartnerId     String?
   pickupPartnerId       String?
-  status                DeliveryStatus   @default("ASSIGNING")
+  status                DeliveryStatus   @default(ASSIGNING)
   pickupLat             Float?
   pickupLng             Float?
   pickupAddress         String?
@@ -629,7 +629,7 @@ model POSSession {
   storeId        String
   sessionNumber  String
   operatorId     String
-  status         POSSessionStatus @default("OPEN")
+  status         POSSessionStatus @default(OPEN)
   openingBalance Float            @default(0)
   closingBalance Float?
   totalSales     Float            @default(0)
@@ -659,7 +659,7 @@ model Payment {
   amount               Float
   currency             String            @default("INR")
   method               PaymentMethodType
-  status               PaymentStatus     @default("PENDING")
+  status               PaymentStatus     @default(PENDING)
   gatewayTransactionId String?
   gatewayName          String?
   gatewayResponse      String?
@@ -730,7 +730,7 @@ model BusinessGatewayAccess {
 
 model PlatformPlan {
   id                        String                 @id @default(cuid())
-  tier                      PlanTier               @unique @default("STANDARD")
+  tier                      PlanTier               @unique @default(STANDARD)
   name                      String
   description               String?
   features                  String                 @default("[]")
@@ -764,7 +764,7 @@ model BusinessSubscription {
   id                   String             @id @default(cuid())
   businessId           String             @unique
   planId               String
-  status               SubscriptionStatus @default("ACTIVE")
+  status               SubscriptionStatus @default(ACTIVE)
   subscriptionAmount   Float?
   discountAmount       Float?
   finalAmount          Float?
@@ -891,7 +891,7 @@ model CustomerSubscription {
   businessId         String
   customerId         String
   planId             String
-  status             CustomerSubscriptionStatus @default("ACTIVE")
+  status             CustomerSubscriptionStatus @default(ACTIVE)
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   nextBillingDate    DateTime
@@ -1051,7 +1051,7 @@ model Invoice {
   orderId       String?     @unique
   customerId    String?
   invoiceNumber String
-  invoiceType   InvoiceType @default("TAX_INVOICE")
+  invoiceType   InvoiceType @default(TAX_INVOICE)
   subtotal      Float       @default(0)
   totalTax      Float       @default(0)
   totalDiscount Float       @default(0)
@@ -1155,7 +1155,7 @@ model DomainMapping {
   sslExpiryDate DateTime?
   dnsProvider   String?
   dnsConfig     String       @default("{}")
-  status        DomainStatus @default("PENDING_DNS")
+  status        DomainStatus @default(PENDING_DNS)
   configuredBy  String?
   configuredAt  DateTime?
   deployedAt    DateTime?
@@ -1171,7 +1171,7 @@ model Deployment {
   id              String           @id @default(cuid())
   businessId      String
   type            DeploymentType
-  status          DeploymentStatus @default("PENDING")
+  status          DeploymentStatus @default(PENDING)
   environment     String           @default("production")
   hostingProvider String           @default("replit")
   hostingConfig   String           @default("{}")
@@ -1221,7 +1221,7 @@ model Category {
   image        String?
   icon         String?
   parentId     String?
-  workflowType WorkflowType @default("ECOMMERCE")
+  workflowType WorkflowType @default(ECOMMERCE)
   sortOrder    Int          @default(0)
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
@@ -1246,8 +1246,8 @@ model Product {
   slug            String
   description     String?
   shortDesc       String?
-  type            ProductType      @default("PHYSICAL")
-  status          ProductStatus    @default("ACTIVE")
+  type            ProductType      @default(PHYSICAL)
+  status          ProductStatus    @default(ACTIVE)
   sku             String?
   barcode         String?
   images          String           @default("[]")
@@ -1315,7 +1315,7 @@ model Inventory {
   reservedQty     Int             @default(0)
   minStock        Int             @default(5)
   maxStock        Int             @default(1000)
-  status          InventoryStatus @default("IN_STOCK")
+  status          InventoryStatus @default(IN_STOCK)
   lastRestockedAt DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
