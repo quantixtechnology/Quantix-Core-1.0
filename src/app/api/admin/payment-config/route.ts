@@ -15,7 +15,7 @@ const CONFIG_KEY = 'payment.config'
 // ── GET ───────────────────────────────────────────────────────────────────────
 export const GET = withMiddleware({
   requireAuth: true,
-  requiredPermission: 'payment_config:view',
+  requiredPermission: 'proposals:view',
 })(async (_req: NextRequest) => {
   try {
     const row = await db.platformConfig.findUnique({ where: { key: CONFIG_KEY } })

@@ -1,7 +1,7 @@
 // ============================================================================
 // GET    /api/admin/documents/[id]  — Full document (incl. formSnapshot) for PDF render
-// PATCH  /api/admin/documents/[id]  — Soft-archive a document (documents:delete)
-// DELETE /api/admin/documents/[id]  — Hard delete (documents:delete, Super Admin only)
+// PATCH  /api/admin/documents/[id]  — Soft-archive a document (proposals:delete)
+// DELETE /api/admin/documents/[id]  — Hard delete (proposals:delete, Super Admin only)
 //
 // Soft archive sets status = "ARCHIVED" + deletedAt + deletedBy.
 // Documents are never permanently removed unless Super Admin explicitly hard-deletes.
@@ -21,7 +21,7 @@ type Ctx = { params?: Promise<Record<string, string | string[]>> }
 // ── GET — full document for PDF regeneration ──────────────────────────────────
 export const GET = withMiddleware({
   requireAuth: true,
-  requiredPermission: 'documents:view',
+  requiredPermission: 'proposals:view',
 })(async (_req: NextRequest, ctx?: Ctx) => {
   try {
     const params = await ctx?.params
@@ -50,7 +50,7 @@ export const GET = withMiddleware({
 // ── PATCH — soft archive ──────────────────────────────────────────────────────
 export const PATCH = withMiddleware({
   requireAuth: true,
-  requiredPermission: 'documents:delete',
+  requiredPermission: 'proposals:delete',
 })(async (req: AuthenticatedRequest, ctx?: Ctx) => {
   try {
     const params = await ctx?.params
@@ -81,7 +81,7 @@ export const PATCH = withMiddleware({
 // ── DELETE — hard delete (Super Admin only) ───────────────────────────────────
 export const DELETE = withMiddleware({
   requireAuth: true,
-  requiredPermission: 'documents:delete',
+  requiredPermission: 'proposals:delete',
 })(async (_req: NextRequest, ctx?: Ctx) => {
   try {
     const params = await ctx?.params

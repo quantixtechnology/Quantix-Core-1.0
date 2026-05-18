@@ -43,8 +43,8 @@ export type Permission =
   | "export:leads"
   | "proposals:view"
   | "proposals:create"
-  | "documents:view"
-  | "documents:delete"
+  | "proposals:delete"
+  | "proposals:export"
   | "payment_config:view"
   | "payment_config:edit"
 
@@ -133,8 +133,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "staff:view", "staff:manage",
     "pos:access", "refunds:process",
     "import:leads", "import:business", "export:leads",
-    "proposals:view", "proposals:create",
-    "documents:view", "documents:delete",
+    "proposals:view", "proposals:create", "proposals:delete", "proposals:export",
     "payment_config:view", "payment_config:edit",
   ],
   PLATFORM_ADMIN: [
@@ -160,8 +159,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "domains:view", "domains:create", "domains:edit",
     "settings:view", "settings:edit",
     "import:leads", "import:business", "export:leads",
-    "proposals:view", "proposals:create",
-    "documents:view",
+    "proposals:view", "proposals:create", "proposals:export",
   ],
   QUANTIX_SALES_TEAM: [
     // Navigation — Sales Team sees only Sales & Leads
@@ -171,8 +169,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "sales_team:view",
     "notifications:view",
     "import:leads", "export:leads",
-    "proposals:view", "proposals:create",
-    "documents:view",
+    "proposals:view", "proposals:create", "proposals:export",
   ],
   SUPPORT_TEAM: [
     // Navigation — Support Team sees only Support & Tickets
@@ -428,8 +425,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "export:leads":                 "Export Lead Data (CRM)",
   "proposals:view":               "View Quote & Proposals",
   "proposals:create":             "Create & Download Proposals",
-  "documents:view":               "View Document Center",
-  "documents:delete":             "Delete Documents (Super Admin only)",
+  "proposals:delete":             "Delete Proposal Documents",
+  "proposals:export":             "Export Proposal Documents (PDF)",
   "payment_config:view":          "View Payment Configuration",
   "payment_config:edit":          "Edit Payment Configuration",
 }
@@ -512,8 +509,8 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "notifications":          "notifications:view",
   // Quote & Proposals
   "proposals":              "proposals:view",
-  // Document Center
-  "document-center":        "documents:view",
+  // Proposal Documents
+  "proposal-documents":     "proposals:view",
   // Payment Configuration
   "payment-config":         "payment_config:view",
   // System

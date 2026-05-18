@@ -87,20 +87,11 @@ export const PERMISSION_MODULES: ModuleDef[] = [
   },
   {
     id: 'proposals',
-    label: 'Quote & Proposals',
+    label: 'Quote & Proposals / Documents',
     icon: 'FileText',
     group: 'platform',
-    description: 'Generate and manage client proposals and quotes',
-    actions: ['view', 'create'],
-    submodules: [],
-  },
-  {
-    id: 'documents',
-    label: 'Document Center',
-    icon: 'Archive',
-    group: 'platform',
-    description: 'Central repository for all business documents',
-    actions: ['view', 'delete'],
+    description: 'Generate, manage and archive client proposals and quote documents',
+    actions: ['view', 'create', 'delete', 'export'],
     submodules: [],
   },
   {

@@ -43,7 +43,7 @@ export type AdminPage =
   | "leads-import"
   | "business-data-import"
   | "proposals"
-  | "document-center"
+  | "proposal-documents"
   | "payment-config"
 
 export type BusinessPage =

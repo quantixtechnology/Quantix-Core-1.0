@@ -11,7 +11,7 @@ import type { NextRequest } from 'next/server'
 // ── GET ───────────────────────────────────────────────────────────────────────
 export const GET = withMiddleware({
   requireAuth: true,
-  requiredPermission: 'documents:view',
+  requiredPermission: 'proposals:view',
 })(async (req: NextRequest) => {
   try {
     const { page, limit, skip } = getPaginationParams(req)

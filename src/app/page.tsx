@@ -108,7 +108,7 @@ const MobileAppsView = dynamic(() => import("@/components/dashboard/mobile-apps-
 const LeadsImportView = dynamic(() => import("@/components/admin/imports/leads-import-view").then(m => ({ default: m.LeadsImportView })), { loading: () => <PageLoader /> })
 const BusinessImportView = dynamic(() => import("@/components/admin/imports/business-import-view").then(m => ({ default: m.BusinessImportView })), { loading: () => <PageLoader /> })
 const QuoteProposalView = dynamic(() => import("@/components/admin/leads/quote-proposal-view").then(m => ({ default: m.QuoteProposalView })), { loading: () => <PageLoader /> })
-const DocumentCenterView = dynamic(() => import("@/components/admin/documents/document-center-view").then(m => ({ default: m.DocumentCenterView })), { loading: () => <PageLoader /> })
+const ProposalDocumentsView = dynamic(() => import("@/components/admin/documents/proposal-documents-view").then(m => ({ default: m.ProposalDocumentsView })), { loading: () => <PageLoader /> })
 const PaymentConfigView = dynamic(() => import("@/components/admin/settings/payment-config-view").then(m => ({ default: m.PaymentConfigView })), { loading: () => <PageLoader /> })
 
 // ── Client Operations (lazy) ──────────────────────────────────────────────
@@ -239,7 +239,7 @@ function AppContent() {
       case "dashboard": return <DashboardView />
       case "leads": return <LeadsView />
       case "proposals": return <QuoteProposalView />
-      case "document-center": return <ErrorBoundary view="admin"><DocumentCenterView /></ErrorBoundary>
+      case "proposal-documents": return <ErrorBoundary view="admin"><ProposalDocumentsView /></ErrorBoundary>
       case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
       case "subscriptions": return <SubscriptionsView />
