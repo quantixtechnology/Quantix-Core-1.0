@@ -64,6 +64,15 @@ export const GET = withMiddleware({
           modules: {
             select: { moduleKey: true, moduleName: true, status: true },
           },
+          businessUsers: {
+            where: { role: 'CLIENT_OWNER', isActive: true },
+            include: {
+              user: {
+                select: { id: true, email: true, name: true, phone: true, lastLoginAt: true },
+              },
+            },
+            take: 1,
+          },
           salesRep: { select: { name: true } },
           stores: {
             where: { isMainStore: true },
@@ -167,6 +176,12 @@ export const GET = withMiddleware({
       customerCount: b._count.customers,
       // Revenue
       totalRevenue: revenueMap.get(b.id) || 0,
+      // Owner account
+      ownerUserId: b.businessUsers[0]?.user.id ?? null,
+      ownerName: b.businessUsers[0]?.user.name ?? null,
+      ownerEmail: b.businessUsers[0]?.user.email ?? null,
+      ownerPhone: b.businessUsers[0]?.user.phone ?? null,
+      ownerLastLogin: b.businessUsers[0]?.user.lastLoginAt ?? null,
     }));
 
     const totalPages = Math.ceil(total / limit);

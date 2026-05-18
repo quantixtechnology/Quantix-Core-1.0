@@ -26,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
-  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2, Loader2,
+  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2, Loader2, KeyRound, Eye, EyeOff,
 } from "lucide-react"
 import { AvatarImage } from "@/components/ui/avatar"
 import { useAdminStore } from "@/stores/admin-store"
@@ -73,6 +73,8 @@ interface BusinessApiData {
   salesRep: string | null
   mainStore: { id: string; storeCode: string | null } | null
   storeCount: number; orderCount: number; customerCount: number; totalRevenue: number
+  ownerUserId: string | null; ownerName: string | null; ownerEmail: string | null
+  ownerPhone: string | null; ownerLastLogin: string | null
 }
 
 // Filter options
@@ -126,6 +128,12 @@ export function BusinessesView() {
 
   // Module toggle state (super admin)
   const [togglingModule, setTogglingModule] = useState<string | null>(null)
+
+  // Owner password reset state
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [newOwnerPassword, setNewOwnerPassword] = useState<string | null>(null)
+  const [copiedPassword, setCopiedPassword] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   // Branding & domain edit state
   const [brandingOpen, setBrandingOpen] = useState(false)
@@ -385,6 +393,29 @@ export function BusinessesView() {
       await fetchBusinesses()
     } finally {
       setTogglingModule(null)
+    }
+  }
+
+  const handleResetPassword = async (biz: BusinessApiData) => {
+    setResettingPassword(true)
+    setNewOwnerPassword(null)
+    setCopiedPassword(false)
+    try {
+      const res = await fetch(`/api/admin/businesses/${biz.id}/reset-password`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setNewOwnerPassword(json.data.newPassword)
+        toast.success("Password reset — share it securely with the owner")
+      } else {
+        toast.error(json.error || "Failed to reset password")
+      }
+    } catch {
+      toast.error("Failed to reset password")
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -925,7 +956,7 @@ export function BusinessesView() {
       )}
 
       {/* Business Detail Sheet */}
-      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false) } }}>
+      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false); setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false) } }}>
         <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
           {selectedBusiness && (() => {
             const biz = selectedBusiness
@@ -1301,6 +1332,92 @@ export function BusinessesView() {
                             <div className="size-5 rounded-full border" style={{ backgroundColor: biz.primaryColor }} />
                             <div><p className="text-[10px] text-muted-foreground">Brand Color</p><p className="text-xs font-mono">{biz.primaryColor}</p></div>
                           </div>
+                        </div>
+                      )}
+                    </div>
+                    <Separator />
+                    {/* Owner Account */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Owner Account</h4>
+                        {canEdit && biz.ownerUserId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => { setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false); handleResetPassword(biz) }}
+                            disabled={resettingPassword}
+                          >
+                            {resettingPassword ? <Loader2 className="size-3 animate-spin" /> : <KeyRound className="size-3" />}
+                            {resettingPassword ? "Resetting…" : "Reset Password"}
+                          </Button>
+                        )}
+                      </div>
+                      {biz.ownerUserId ? (
+                        <div className="space-y-2">
+                          <div className="rounded-lg border p-3 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{biz.ownerName || "—"}</p>
+                                <p className="text-xs text-muted-foreground truncate">{biz.ownerEmail}</p>
+                                {biz.ownerPhone && <p className="text-xs text-muted-foreground">{biz.ownerPhone}</p>}
+                                {biz.ownerLastLogin && (
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Last login: {new Date(biz.ownerLastLogin).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => copyBusinessId(biz.ownerUserId!, e)}
+                                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                              >
+                                {copiedId === biz.ownerUserId ? <><Check className="h-3 w-3 text-emerald-600" /> Copied</> : <><Copy className="h-3 w-3" /> Copy ID</>}
+                              </button>
+                            </div>
+                            <div className="rounded-md bg-muted/40 px-2 py-1">
+                              <p className="text-[10px] font-mono text-muted-foreground truncate">UID: {biz.ownerUserId}</p>
+                            </div>
+                          </div>
+
+                          {/* New password reveal panel */}
+                          {newOwnerPassword && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">New Password — share once</p>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 rounded border bg-white px-2 py-1.5 font-mono text-sm font-semibold tracking-wider select-all">
+                                  {showPassword ? newOwnerPassword : "•".repeat(newOwnerPassword.length)}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPassword((v) => !v)}
+                                  className="p-1.5 rounded border text-muted-foreground hover:text-foreground transition-colors"
+                                  title={showPassword ? "Hide" : "Show"}
+                                >
+                                  {showPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(newOwnerPassword)
+                                    setCopiedPassword(true)
+                                    setTimeout(() => setCopiedPassword(false), 2000)
+                                  }}
+                                  className="p-1.5 rounded border text-muted-foreground hover:text-foreground transition-colors"
+                                  title="Copy password"
+                                >
+                                  {copiedPassword ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-amber-700">This password will not be shown again after you close this panel.</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed p-4 text-center">
+                          <KeyRound className="size-4 text-muted-foreground mx-auto mb-1" />
+                          <p className="text-sm text-muted-foreground">No owner account found</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">Owner is created when business is provisioned</p>
                         </div>
                       )}
                     </div>
