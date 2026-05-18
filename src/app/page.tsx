@@ -108,6 +108,7 @@ const LeadsImportView = dynamic(() => import("@/components/admin/imports/leads-i
 const BusinessImportView = dynamic(() => import("@/components/admin/imports/business-import-view").then(m => ({ default: m.BusinessImportView })), { loading: () => <PageLoader /> })
 const QuoteProposalView = dynamic(() => import("@/components/admin/leads/quote-proposal-view").then(m => ({ default: m.QuoteProposalView })), { loading: () => <PageLoader /> })
 const DocumentCenterView = dynamic(() => import("@/components/admin/documents/document-center-view").then(m => ({ default: m.DocumentCenterView })), { loading: () => <PageLoader /> })
+const PaymentConfigView = dynamic(() => import("@/components/admin/settings/payment-config-view").then(m => ({ default: m.PaymentConfigView })), { loading: () => <PageLoader /> })
 
 // ── Client Operations (lazy) ──────────────────────────────────────────────
 const ClientAssetsView = dynamic(() => import("@/components/dashboard/client-assets-view").then(m => ({ default: m.ClientAssetsView })), { loading: () => <PageLoader /> })
@@ -234,6 +235,7 @@ function AppContent() {
       case "leads": return <LeadsView />
       case "proposals": return <QuoteProposalView />
       case "document-center": return <DocumentCenterView />
+      case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
       case "subscriptions": return <SubscriptionsView />
       case "onboarding": return <OnboardingView />

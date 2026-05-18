@@ -95,6 +95,7 @@ const importNavItems: NavItem[] = [
 ]
 
 const systemNavItems: NavItem[] = [
+  { key: "payment-config",    label: "Payment Config",      icon: Receipt   },
   { key: "roles-permissions", label: "Roles & Permissions", icon: KeyRound  },
   { key: "backup-monitoring", label: "Backup & Monitoring", icon: Server    },
   { key: "security-access",   label: "Security & Access",   icon: Lock      },

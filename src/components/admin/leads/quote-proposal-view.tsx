@@ -1,62 +1,5 @@
 "use client"
 
-// ============================================================================
-// PROPOSAL GENERATION DESIGN REFERENCE — Claude System Prompt
-// ============================================================================
-export const PROPOSAL_DESIGN_PROMPT = `IMPORTANT DESIGN REFERENCE FOR PROPOSAL PDF
-
-Use the uploaded quotation document ONLY as a:
-* structural reference
-* spacing reference
-* proposal formatting reference
-
-DO NOT copy it exactly.
-
-IMPORTANT EXCLUSIONS
-DO NOT include:
-* bank details
-* payment QR
-* account numbers
-* IFSC
-* payment links
-* company legal payment section
-
-Also DO NOT use the company name/logo from the sample document.
-Instead use: Quantix branding, Quantix logo, Quantix proposal structure.
-
-TARGET DOCUMENT STYLE
-The proposal preview should resemble:
-* clean business quotation
-* corporate proposal PDF
-* implementation proposal
-* SaaS onboarding proposal
-
-VISUAL DIRECTION
-Use:
-* clean typography
-* professional spacing
-* section separators
-* modern quotation layout
-* proper hierarchy
-
-The PDF should feel: premium, enterprise-grade, printable, client-ready.
-
-PROPOSAL STRUCTURE:
-HEADER: Quantix Logo | Proposal Title | Proposal ID | Date
-CLIENT SECTION: Client Name | Business Name | Mobile | Email
-COMMERCIALS SECTION (table): Service | Amount | Cycle | Notes
-Services: Subscription, Implementation, iOS App, Add-ons
-TOTAL SECTION: Subtotal | Discounts | Final proposal amount
-SUBSCRIPTION INCLUDES: Premium checklist of included deliverables
-PAGE 2: Terms & Conditions | Payment Terms | Customer Confirmation | QR
-
-IMPORTANT: NO PAYMENT COLLECTION SECTION. This is Proposal Stage, NOT payment invoice.
-
-PDF STYLE: A4 proportion, white background, soft shadow, realistic margins, printable.
-FINAL GOAL: Professional enterprise SaaS onboarding quotation — NOT a raw HTML invoice.`
-
-// ============================================================================
-
 import { useState, useCallback, useEffect } from "react"
 import { PageHeader } from "../shared/page-header"
 import { Button } from "@/components/ui/button"
@@ -65,13 +8,13 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Download, Sparkles, RefreshCw, Save } from "lucide-react"
+import { FileText, Sparkles, RefreshCw, Save, Eye, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
 import { useAuthStore } from "@/stores/auth-store"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types
+// Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
 const WORKFLOW_OPTIONS = [
@@ -94,7 +37,11 @@ const SUBSCRIPTION_INCLUDES = [
   "Server & Hosting",
 ]
 
-interface ProposalForm {
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ProposalForm {
   clientName: string
   businessName: string
   mobile: string
@@ -118,6 +65,17 @@ interface ProposalForm {
   salesTeamMember: string
   salesTeamEmail: string
   executiveSummary: string
+}
+
+export interface BankDetails {
+  accountName:   string
+  bankName:      string
+  accountNumber: string
+  ifsc:          string
+  upiId:         string
+  branch:        string
+  qrUrl:         string
+  active:        boolean
 }
 
 const EMPTY_FORM: ProposalForm = {
@@ -145,16 +103,16 @@ function formatDateDDMMMYYYY(date: Date): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A4 Proposal Document (2 pages)
+// A4 Proposal Document (2 pages) — exported for reuse in Document Center
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProposalDocument({
-  form, proposalId, proposalDate, qrUrl,
+export function ProposalDocument({
+  form, proposalId, proposalDate, bankDetails,
 }: {
   form: ProposalForm
   proposalId: string
   proposalDate: string
-  qrUrl: string | null
+  bankDetails?: BankDetails | null
 }) {
   const sub    = parseFloat(form.subscriptionAmount)   || 0
   const impl   = parseFloat(form.implementationAmount) || 0
@@ -171,9 +129,11 @@ function ProposalDocument({
     { name: "Add-ons",        amount: form.addOnsAmount,         cycle: form.addOnsCycle,         notes: form.addOnsDescription || form.addOnsNotes },
   ].filter(s => parseFloat(s.amount) > 0)
 
-  const headerBg  = "#0f1729"
+  const headerBg   = "#0f1729"
   const accentBlue = "#2563EB"
   const confirmDate = formatDateDDMMMYYYY(new Date())
+  const showBank   = !!(bankDetails?.active && bankDetails?.bankName)
+  const qrUrl      = bankDetails?.active && bankDetails?.qrUrl ? bankDetails.qrUrl : null
 
   const sectionLabel = (text: string) => (
     <div style={{
@@ -439,6 +399,28 @@ function ProposalDocument({
                 <span style={{ color: "#92400e", lineHeight: 1.6, fontWeight: 500 }}>{term}</span>
               </div>
             ))}
+
+            {/* Bank details — only shown when payment config is active */}
+            {showBank && (
+              <div style={{
+                marginTop: "16px", paddingTop: "14px", borderTop: "1px solid #fde68a",
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px 16px",
+              }}>
+                {[
+                  { label: "Account Name",   value: bankDetails!.accountName },
+                  { label: "Bank Name",      value: bankDetails!.bankName },
+                  { label: "Account No.",    value: bankDetails!.accountNumber },
+                  { label: "IFSC",           value: bankDetails!.ifsc },
+                  { label: "UPI ID",         value: bankDetails!.upiId },
+                  { label: "Branch",         value: bankDetails!.branch },
+                ].filter(f => f.value).map(f => (
+                  <div key={f.label}>
+                    <div style={{ fontSize: "9.5px", color: "#92400e", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.07em" }}>{f.label}</div>
+                    <div style={{ fontWeight: 700, color: "#78350f", fontSize: "11px", marginTop: "2px" }}>{f.value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -457,7 +439,6 @@ function ProposalDocument({
               </div>
             ))}
 
-            {/* Confirmation details */}
             <div style={{
               display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
               gap: "20px", marginTop: "20px", paddingTop: "16px",
@@ -508,7 +489,6 @@ function ProposalDocument({
         <div style={{
           position: "absolute" as const, bottom: "48px", left: "52px", right: "52px",
         }}>
-          {/* system note */}
           <div style={{
             textAlign: "center" as const, fontSize: "10px", color: "#9ca3af",
             fontStyle: "italic", marginBottom: "20px",
@@ -517,14 +497,12 @@ function ProposalDocument({
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-            {/* website + footer left */}
             <div>
               <div style={{ fontWeight: 700, color: accentBlue, fontSize: "13px", marginBottom: "4px" }}>www.quantixtechnology.in</div>
               <div style={{ fontSize: "10px", color: "#9ca3af" }}>Quantix Technology · Enterprise SaaS Platform</div>
               <div style={{ fontSize: "10px", color: "#9ca3af" }}>© {new Date().getFullYear()} Quantix Technology. All rights reserved.</div>
             </div>
 
-            {/* Proprietor QR — only rendered when configured in Platform Settings */}
             {qrUrl && (
               <div style={{ textAlign: "center" as const }}>
                 <div style={{ fontSize: "9px", color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>Scan to Pay</div>
@@ -548,17 +526,35 @@ function ProposalDocument({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main View
+// PDF print helper — exported for reuse in Document Center
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function printProposalPDF(proposalId: string, htmlContent: string) {
+  const style = `
+    @page { size: A4; margin: 0; }
+    body { margin: 0; padding: 0; background: #fff; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    #proposal-preview > div + div { page-break-before: always; }
+  `
+  const win = window.open("", "_blank")
+  if (!win) { toast.error("Allow popups to download PDF"); return }
+  win.document.write(`<!DOCTYPE html><html><head><title>Proposal ${proposalId}</title><style>${style}</style></head><body>${htmlContent}</body></html>`)
+  win.document.close()
+  win.focus()
+  setTimeout(() => { win.print(); win.close() }, 400)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main View — Save-first flow
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function QuoteProposalView() {
   const { user, permissions } = useAuthStore()
-  const [form, setForm] = useState<ProposalForm>({ ...EMPTY_FORM })
-  const [proposalId, setProposalId] = useState<string>("")
-  const [idLoading, setIdLoading] = useState(true)
+  const [form, setForm]         = useState<ProposalForm>({ ...EMPTY_FORM })
   const [generating, setGenerating] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [qrUrl, setQrUrl] = useState<string | null>(null)
+  const [saving, setSaving]     = useState(false)
+  const [savedId, setSavedId]   = useState<string>("")
+  const [bankDetails, setBankDetails] = useState<BankDetails | null>(null)
 
   const proposalDate = new Date().toLocaleDateString("en-IN", {
     day: "numeric", month: "long", year: "numeric",
@@ -575,26 +571,12 @@ export function QuoteProposalView() {
     }
   }, [user])
 
-  // Fetch immutable proposal ID + QR config on mount (parallel)
+  // Fetch payment/bank config on mount (QR + bank details for PDF)
   useEffect(() => {
-    const fetchId = authFetch("/api/admin/documents/proposal-id", { method: "POST" })
+    authFetch("/api/admin/payment-config")
       .then(r => r.json())
-      .then(json => { if (json.success) setProposalId(json.proposalId) })
-      .catch(() => toast.error("Could not generate proposal ID"))
-      .finally(() => setIdLoading(false))
-
-    // QR URL from PlatformConfig key "branding.proprietor_qr_url" — optional, no error if missing
-    const fetchQr = authFetch("/api/core/platform/config")
-      .then(r => r.json())
-      .then(json => {
-        if (json.success) {
-          const url = json.data?.map?.["branding.proprietor_qr_url"] as string | undefined
-          setQrUrl(url ?? null)
-        }
-      })
-      .catch(() => { /* QR is optional — fail silently */ })
-
-    return () => { void fetchId; void fetchQr }
+      .then(json => { if (json.success && json.data) setBankDetails(json.data) })
+      .catch(() => { /* optional — fail silently */ })
   }, [])
 
   const set = useCallback(<K extends keyof ProposalForm>(key: K, value: ProposalForm[K]) => {
@@ -617,17 +599,28 @@ export function QuoteProposalView() {
   const disc  = parseFloat(form.discountAmount)       || 0
   const total = Math.max(0, sub + impl + ios + addOn - disc)
 
-  const handleSaveToDocCenter = async () => {
-    if (!proposalId) { toast.error("Proposal ID not ready"); return }
+  // Save-first: generate ID atomically in DB, then save document
+  const handleSaveProposal = async () => {
+    if (!form.businessName.trim()) {
+      toast.error("Business Name is required before saving")
+      return
+    }
     setSaving(true)
     try {
-      await authFetch("/api/admin/documents", {
+      // Step 1: Generate proposal ID (atomic — server generates sequence)
+      const idRes  = await authFetch("/api/admin/documents/proposal-id", { method: "POST" })
+      const idJson = await idRes.json()
+      if (!idJson.success) throw new Error(idJson.error ?? "Failed to generate proposal ID")
+      const newId: string = idJson.proposalId
+
+      // Step 2: Save to Document Center
+      const saveRes  = await authFetch("/api/admin/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          proposalId,
-          documentType: "PROPOSAL",
-          businessName:    form.businessName || "Unknown",
+          proposalId:      newId,
+          documentType:    "PROPOSAL",
+          businessName:    form.businessName,
           clientName:      form.clientName,
           contactPhone:    form.mobile,
           contactEmail:    form.email,
@@ -635,25 +628,26 @@ export function QuoteProposalView() {
           salesTeamEmail:  form.salesTeamEmail,
           totalAmount:     total,
           formSnapshot:    form,
-          createdBy:       user?.id ?? "unknown",
+          createdBy:       user?.id   ?? "unknown",
           createdByName:   user?.name ?? "",
         }),
       })
-      toast.success("Saved to Document Center")
-    } catch {
-      toast.error("Failed to save document")
+      const saveJson = await saveRes.json()
+      if (!saveJson.success) throw new Error(saveJson.error ?? "Failed to save document")
+
+      setSavedId(newId)
+      toast.success(`Proposal saved as ${newId} — download from Document Center`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed")
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDownloadPDF = async () => {
+  // Print preview — opens current form data as printable PDF without saving
+  const handlePrintPreview = () => {
     const preview = document.getElementById("proposal-preview")
     if (!preview) return
-
-    // Auto-save to Document Center on download
-    await handleSaveToDocCenter()
-
     const style = `
       @page { size: A4; margin: 0; }
       body { margin: 0; padding: 0; background: #fff; }
@@ -661,8 +655,8 @@ export function QuoteProposalView() {
       #proposal-preview > div + div { page-break-before: always; }
     `
     const win = window.open("", "_blank")
-    if (!win) { toast.error("Allow popups to download PDF"); return }
-    win.document.write(`<!DOCTYPE html><html><head><title>Proposal ${proposalId}</title><style>${style}</style></head><body>${preview.outerHTML}</body></html>`)
+    if (!win) { toast.error("Allow popups for print preview"); return }
+    win.document.write(`<!DOCTYPE html><html><head><title>Proposal Preview</title><style>${style}</style></head><body>${preview.outerHTML}</body></html>`)
     win.document.close()
     win.focus()
     setTimeout(() => { win.print(); win.close() }, 400)
@@ -681,11 +675,11 @@ export function QuoteProposalView() {
         const d = json.data
         setForm(prev => ({
           ...prev,
-          executiveSummary:    d.executiveSummary                         ?? prev.executiveSummary,
-          subscriptionNotes:   d.serviceDescriptions?.subscription         ?? prev.subscriptionNotes,
-          implementationNotes: d.serviceDescriptions?.implementation       ?? prev.implementationNotes,
-          iosAppNotes:         d.serviceDescriptions?.ios                  ?? prev.iosAppNotes,
-          addOnsDescription:   d.serviceDescriptions?.addons               ?? prev.addOnsDescription,
+          executiveSummary:    d.executiveSummary                    ?? prev.executiveSummary,
+          subscriptionNotes:   d.serviceDescriptions?.subscription    ?? prev.subscriptionNotes,
+          implementationNotes: d.serviceDescriptions?.implementation  ?? prev.implementationNotes,
+          iosAppNotes:         d.serviceDescriptions?.ios             ?? prev.iosAppNotes,
+          addOnsDescription:   d.serviceDescriptions?.addons          ?? prev.addOnsDescription,
         }))
         toast.success("AI enhanced proposal content applied")
       } else {
@@ -698,7 +692,7 @@ export function QuoteProposalView() {
     }
   }
 
-  const canSave = (permissions as string[]).includes("documents:view")
+  const canSave = (permissions as string[]).includes("proposals:create")
 
   return (
     <div className="flex flex-col h-full">
@@ -712,18 +706,32 @@ export function QuoteProposalView() {
               {generating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               {generating ? "Enhancing…" : "Enhance with AI"}
             </Button>
+            <Button variant="outline" className="gap-2" onClick={handlePrintPreview}>
+              <Eye className="h-4 w-4" /> Print Preview
+            </Button>
             {canSave && (
-              <Button variant="outline" className="gap-2" onClick={handleSaveToDocCenter} disabled={saving || !proposalId}>
-                {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? "Saving…" : "Save to Docs"}
+              <Button className="gap-2" onClick={handleSaveProposal} disabled={saving}>
+                {saving
+                  ? <RefreshCw className="h-4 w-4 animate-spin" />
+                  : savedId
+                  ? <CheckCircle2 className="h-4 w-4" />
+                  : <Save className="h-4 w-4" />}
+                {saving ? "Saving…" : savedId ? `Saved (${savedId})` : "Save Proposal"}
               </Button>
             )}
-            <Button className="gap-2" onClick={handleDownloadPDF} disabled={idLoading}>
-              <Download className="h-4 w-4" /> Download PDF
-            </Button>
           </div>
         }
       />
+
+      {/* Saved banner */}
+      {savedId && (
+        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <p className="text-xs text-emerald-800 font-medium">
+            Proposal <span className="font-mono font-bold">{savedId}</span> saved to Document Center. Go to Document Center to download the PDF.
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-6 flex-1 min-h-0 mt-5">
         {/* ── LEFT: FORM ─────────────────────────────────────────────── */}
@@ -734,10 +742,10 @@ export function QuoteProposalView() {
               {/* Proposal Meta */}
               <div className="rounded-xl border bg-card p-4 space-y-1">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Proposal ID</p>
-                {idLoading ? (
-                  <div className="h-5 w-36 bg-muted animate-pulse rounded" />
+                {savedId ? (
+                  <p className="text-sm font-mono font-semibold text-emerald-700">{savedId}</p>
                 ) : (
-                  <p className="text-sm font-mono font-semibold">{proposalId}</p>
+                  <p className="text-xs text-muted-foreground italic">Generated when you save</p>
                 )}
                 <p className="text-[11px] text-muted-foreground">{proposalDate}</p>
               </div>
@@ -751,7 +759,7 @@ export function QuoteProposalView() {
                     <Input placeholder="e.g. Amit Patel" className="h-8 text-xs" value={form.clientName} onChange={e => set("clientName", e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Business Name</Label>
+                    <Label className="text-xs">Business Name <span className="text-destructive">*</span></Label>
                     <Input placeholder="e.g. FreshMart Grocers" className="h-8 text-xs" value={form.businessName} onChange={e => set("businessName", e.target.value)} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -879,7 +887,6 @@ export function QuoteProposalView() {
                     </div>
                   </div>
 
-                  {/* Workflows */}
                   <div>
                     <Label className="text-[10px] mb-2 block">Workflows</Label>
                     <div className="flex flex-wrap gap-1.5">
@@ -934,7 +941,12 @@ export function QuoteProposalView() {
               overflow: "hidden",
             }}
           >
-            <ProposalDocument form={form} proposalId={proposalId} proposalDate={proposalDate} qrUrl={qrUrl} />
+            <ProposalDocument
+              form={form}
+              proposalId={savedId || "QX-PENDING"}
+              proposalDate={proposalDate}
+              bankDetails={bankDetails}
+            />
           </div>
         </div>
       </div>

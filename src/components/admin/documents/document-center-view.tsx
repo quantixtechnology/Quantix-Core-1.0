@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { PageHeader } from "../shared/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,11 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Archive, Search, Trash2, RefreshCw, FileText, FileCheck,
   FileBadge, FileSignature, Receipt, File, ChevronLeft, ChevronRight,
-  ArchiveX, BookOpen,
+  ArchiveX, BookOpen, Download, X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
 import { useAuthStore } from "@/stores/auth-store"
+import { ProposalDocument, type ProposalForm, type BankDetails } from "@/components/admin/leads/quote-proposal-view"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -81,9 +83,41 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
 }
 
-function formatINR(val: number | null) {
-  if (!val) return "—"
-  return `₹${val.toLocaleString("en-IN")}`
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF Download — renders ProposalDocument off-screen and triggers print
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PDFPreviewPortalProps {
+  form: ProposalForm
+  proposalId: string
+  proposalDate: string
+  bankDetails: BankDetails | null
+  onReady: () => void
+}
+
+function PDFPreviewPortal({ form, proposalId, proposalDate, bankDetails, onReady }: PDFPreviewPortalProps) {
+  useEffect(() => {
+    // Wait one tick for React to render the component into the DOM
+    const timer = setTimeout(onReady, 200)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (typeof document === "undefined") return null
+  return createPortal(
+    <div
+      id="dc-pdf-portal"
+      style={{ position: "fixed", top: "-9999px", left: "-9999px", pointerEvents: "none" }}
+    >
+      <ProposalDocument
+        form={form}
+        proposalId={proposalId}
+        proposalDate={proposalDate}
+        bankDetails={bankDetails}
+      />
+    </div>,
+    document.body,
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,6 +138,21 @@ export function DocumentCenterView() {
   const [total, setTotal]           = useState(0)
   const [selected, setSelected]     = useState<Set<string>>(new Set())
   const [busy, setBusy]             = useState(false)
+
+  // PDF download state
+  const [bankDetails, setBankDetails] = useState<BankDetails | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [pdfPortalData, setPdfPortalData] = useState<{
+    form: ProposalForm; proposalId: string; proposalDate: string
+  } | null>(null)
+
+  // Fetch bank/QR config for PDF generation
+  useEffect(() => {
+    authFetch("/api/admin/payment-config")
+      .then(r => r.json())
+      .then(json => { if (json.success) setBankDetails(json.data) })
+      .catch(() => { /* optional */ })
+  }, [])
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true)
@@ -148,7 +197,63 @@ export function DocumentCenterView() {
     )
   }
 
-  // ── Soft-archive one or many ──────────────────────────────────────────────
+  // ── Download PDF ──────────────────────────────────────────────────────────
+  const handleDownload = async (doc: DocumentRecord) => {
+    if (downloadingId) return
+    setDownloadingId(doc.id)
+    try {
+      const res  = await authFetch(`/api/admin/documents/${doc.id}`)
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error ?? "Failed to fetch document")
+
+      const snapshot = json.data.formSnapshot
+      let form: ProposalForm
+      try {
+        form = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot
+      } catch {
+        throw new Error("Invalid document snapshot")
+      }
+
+      const proposalDate = new Date(json.data.createdAt).toLocaleDateString("en-IN", {
+        day: "numeric", month: "long", year: "numeric",
+      })
+
+      // Mount PDF portal, let it render, then print
+      setPdfPortalData({ form, proposalId: doc.proposalId, proposalDate })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to download")
+      setDownloadingId(null)
+    }
+  }
+
+  const handlePdfReady = () => {
+    const portal = document.getElementById("dc-pdf-portal")
+    const preview = portal?.querySelector("#proposal-preview")
+    if (!preview || !pdfPortalData) {
+      setDownloadingId(null)
+      setPdfPortalData(null)
+      return
+    }
+    const style = `
+      @page { size: A4; margin: 0; }
+      body { margin: 0; padding: 0; background: #fff; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      #proposal-preview > div + div { page-break-before: always; }
+    `
+    const win = window.open("", "_blank")
+    if (!win) {
+      toast.error("Allow popups to download PDF")
+    } else {
+      win.document.write(`<!DOCTYPE html><html><head><title>Proposal ${pdfPortalData.proposalId}</title><style>${style}</style></head><body>${preview.outerHTML}</body></html>`)
+      win.document.close()
+      win.focus()
+      setTimeout(() => { win.print(); win.close() }, 400)
+    }
+    setPdfPortalData(null)
+    setDownloadingId(null)
+  }
+
+  // ── Soft-archive ──────────────────────────────────────────────────────────
   const archiveOne = async (id: string) => {
     if (!canDelete) { toast.error("Insufficient permissions"); return }
     try {
@@ -165,9 +270,8 @@ export function DocumentCenterView() {
     setBusy(true)
     let failed = 0
     for (const id of selected) {
-      try {
-        await authFetch(`/api/admin/documents/${id}`, { method: "PATCH" })
-      } catch { failed++ }
+      try { await authFetch(`/api/admin/documents/${id}`, { method: "PATCH" }) }
+      catch { failed++ }
     }
     setBusy(false)
     setSelected(new Set())
@@ -177,7 +281,7 @@ export function DocumentCenterView() {
     fetchDocuments()
   }
 
-  // ── Hard-delete one (Super Admin) ─────────────────────────────────────────
+  // ── Hard-delete ───────────────────────────────────────────────────────────
   const deleteOne = async (id: string) => {
     if (!canDelete) { toast.error("Insufficient permissions"); return }
     try {
@@ -194,9 +298,8 @@ export function DocumentCenterView() {
     setBusy(true)
     let failed = 0
     for (const id of selected) {
-      try {
-        await authFetch(`/api/admin/documents/${id}`, { method: "DELETE" })
-      } catch { failed++ }
+      try { await authFetch(`/api/admin/documents/${id}`, { method: "DELETE" }) }
+      catch { failed++ }
     }
     setBusy(false)
     setSelected(new Set())
@@ -209,12 +312,23 @@ export function DocumentCenterView() {
   const allSelected = documents.length > 0 && selected.size === documents.length
   const anySelected = selected.size > 0
 
-  // ── Stat counts ───────────────────────────────────────────────────────────
-  const activeCount   = statusFilter === "ACTIVE"   ? total : null
-  const archivedCount = statusFilter === "ARCHIVED"  ? total : null
+  // Column count for colSpan
+  const colCount = 9 + (canDelete ? 2 : 0) // checkbox + actions when canDelete
 
   return (
     <div className="flex flex-col h-full">
+
+      {/* Off-screen PDF render portal */}
+      {pdfPortalData && (
+        <PDFPreviewPortal
+          form={pdfPortalData.form}
+          proposalId={pdfPortalData.proposalId}
+          proposalDate={pdfPortalData.proposalDate}
+          bankDetails={bankDetails}
+          onReady={handlePdfReady}
+        />
+      )}
+
       <PageHeader
         title="Document Center"
         description="Central repository for all generated proposals, quotes, agreements, and business documents"
@@ -317,6 +431,7 @@ export function DocumentCenterView() {
                 {[
                   "ID", "Business Name", "Phone", "Date",
                   "Document Type", "Created By", "Version", "Status",
+                  "Download",
                   canDelete ? "Actions" : null,
                 ].filter(Boolean).map(header => (
                   <th key={header!} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
@@ -330,7 +445,7 @@ export function DocumentCenterView() {
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="border-b">
                     {canDelete && <td className="px-4 py-3"><div className="h-4 w-4 bg-muted animate-pulse rounded" /></td>}
-                    {Array.from({ length: canDelete ? 9 : 8 }).map((_, j) => (
+                    {Array.from({ length: colCount }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-3.5 bg-muted animate-pulse rounded" style={{ width: `${50 + (j * 13) % 40}%` }} />
                       </td>
@@ -339,7 +454,7 @@ export function DocumentCenterView() {
                 ))
               ) : documents.length === 0 ? (
                 <tr>
-                  <td colSpan={canDelete ? 10 : 9} className="px-4 py-16 text-center">
+                  <td colSpan={colCount + (canDelete ? 1 : 0)} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
                         <FileCheck className="h-6 w-6 text-muted-foreground" />
@@ -350,13 +465,14 @@ export function DocumentCenterView() {
                       <p className="text-xs text-muted-foreground max-w-xs text-center">
                         {statusFilter === "ARCHIVED"
                           ? "Archived proposals will appear here."
-                          : "Generate and save proposals from the Quote & Proposals builder to see them here."}
+                          : "Save proposals from the Quote & Proposals builder to see them here."}
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : documents.map((doc, idx) => {
-                const isArchived = doc.status === "ARCHIVED"
+                const isArchived  = doc.status === "ARCHIVED"
+                const isDownloading = downloadingId === doc.id
                 return (
                   <tr
                     key={doc.id}
@@ -456,6 +572,21 @@ export function DocumentCenterView() {
                           Active
                         </Badge>
                       )}
+                    </td>
+
+                    {/* Download */}
+                    <td className="px-4 py-3">
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-7 gap-1.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        onClick={() => handleDownload(doc)}
+                        disabled={isDownloading || !!downloadingId}
+                      >
+                        {isDownloading
+                          ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          : <Download className="h-3.5 w-3.5" />}
+                        {isDownloading ? "…" : "PDF"}
+                      </Button>
                     </td>
 
                     {/* Actions */}

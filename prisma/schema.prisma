@@ -1,44 +1,3 @@
-// ============================================================================
-// QUANTIX CORE PLATFORM — Managed White-Label Multi-Tenant SaaS
-// "Run Your Business Smarter" — www.quantixtechnology.in
-//
-// BUSINESS MODEL (FINAL):
-//   - NO free trial, NO self-signup, NO self-onboarding, NO public creation
-//   - 2 plans: STANDARD (₹2,999/mo, ₹30,000/yr) and PRO (₹4,999/mo, ₹49,999/yr)
-//   - ₹1,999 implementation charge for both plans
-//   - Super Admin can override pricing per customer
-//   - Lead → Demo → Negotiation → Payment → Onboarding → Deployment → Active
-//   - Demo credentials given first; tenant created ONLY after payment verified
-//   - Business owners CANNOT create businesses — only Quantix team does
-//   - Quantix controls: deployment, domains, branding, onboarding, app activation
-//
-// ARCHITECTURE — PRODUCT/SERVICE WORKFLOW ENGINE:
-//   The platform does NOT design around business types.
-//   Instead, each CATEGORY/PRODUCT/SERVICE gets assigned a WORKFLOW TYPE.
-//   Within the SAME business, different products can use different workflows.
-//
-//   Example: Car Wash Business:
-//     - Subscription Wash → Subscription Workflow
-//     - Pickup Wash → Pickup Workflow
-//     - Accessories → Ecommerce Workflow
-//     - Appointment Wash → Appointment Workflow
-//
-//   5 Supported Workflow Types:
-//     1. ECOMMERCE — cart → checkout → payment → delivery
-//     2. PICKUP_DELIVERY — pickup scheduling → delivery scheduling → assignment → return
-//     3. APPOINTMENT — date/time booking → technician assignment → slot management
-//     4. SUBSCRIPTION — package purchase → credit tracking → usage deduction → renewal
-//     5. POST_SERVICE_BILLING — estimated pricing → inspection → final billing → approval → delayed payment
-//
-//   ALL workflows reuse: same backend, auth, inventory, notifications, POS, delivery, deployment
-//
-// EXTENSIBILITY:
-//   - BusinessModule table tracks which modules a business has enabled
-//   - Category/Product.workflowType determines the workflow for each item
-//   - OrderItem uses itemType/itemId (polymorphic) so any workflow's items
-//     can be added to an order without core knowing about them
-// ============================================================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -48,27 +7,1371 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================================
-// SECTION 1: PLATFORM CONFIG
-// ============================================================================
-
 model PlatformConfig {
-  id              String   @id @default(cuid())
-  key             String   @unique
-  value           String   // JSON string for complex configs
-  description     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
-// ============================================================================
-// SECTION 2: LEAD LIFECYCLE — The ONLY way businesses enter the platform
-// No self-signup. Every business starts as a Lead managed by Quantix Sales.
-//
-// FLOW: LEAD → FOLLOW_UP → INTERESTED → HOT_LEAD → DEMO_PLANNED → DEMO_DONE
-//       → NEGOTIATION → PAYMENT_PENDING → PAYMENT_RECEIVED → CLOSED_WON
-// Terminal: NOT_INTERESTED | WRONG_NUMBER | RNR | LOST | DUPLICATE
-// ============================================================================
+model Lead {
+  id                     String           @id @default(cuid())
+  salesRepId             String?
+  businessName           String
+  contactName            String
+  contactEmail           String
+  contactPhone           String
+  businessType           BusinessType
+  source                 LeadSource       @default("WEBSITE_INQUIRY")
+  stage                  LeadStage        @default("LEAD")
+  demoTenantId           String?
+  demoSharedAt           DateTime?
+  demoCredentials        String?
+  demoFeedback           String?
+  negotiatedMonthlyPrice Float?
+  negotiatedYearlyPrice  Float?
+  negotiationNotes       String?
+  paymentProof           String?
+  paymentVerifiedAt      DateTime?
+  paymentVerifiedBy      String?
+  selectedBillingCycle   String?
+  convertedBusinessId    String?
+  convertedAt            DateTime?
+  lostReason             String?
+  notes                  String?
+  followUpDate           DateTime?
+  estimatedValue         Float?
+  tags                   String           @default("[]")
+  lastContactedAt        DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  city                   String?
+  createdById            String?
+  lastFollowUpAt         DateTime?
+  leadId                 String?          @unique
+  pincode                String?
+  state                  String?
+  salesRep               SalesTeamMember? @relation(fields: [salesRepId], references: [id])
+
+  @@index([leadId])
+  @@index([salesRepId])
+  @@index([stage])
+  @@index([source])
+  @@index([createdAt])
+}
+
+model LeadSequence {
+  monthKey  String   @id
+  nextVal   Int      @default(1)
+  updatedAt DateTime @updatedAt
+}
+
+model ProposalSequence {
+  monthKey  String   @id
+  nextVal   Int      @default(1)
+  updatedAt DateTime @updatedAt
+}
+
+model ProposalDocument {
+  id              String    @id @default(cuid())
+  proposalId      String    @unique
+  documentType    String    @default("PROPOSAL")
+  status          String    @default("ACTIVE")
+  businessName    String
+  clientName      String
+  contactPhone    String?
+  contactEmail    String?
+  leadId          String?
+  totalAmount     Float?
+  salesTeamMember String?
+  salesTeamEmail  String?
+  formSnapshot    String    @default("{}")
+  pdfPath         String?
+  pdfVersion      Int       @default(1)
+  createdBy       String
+  createdByName   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  deletedBy       String?
+
+  @@index([proposalId])
+  @@index([businessName])
+  @@index([contactPhone])
+  @@index([leadId])
+  @@index([status])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([documentType])
+}
+
+model LeadImportLog {
+  id         String   @id @default(cuid())
+  importedBy String
+  importedAt DateTime @default(now())
+  fileName   String?
+  totalRows  Int      @default(0)
+  imported   Int      @default(0)
+  duplicates Int      @default(0)
+  errors     Int      @default(0)
+  notes      String?
+
+  @@index([importedBy])
+  @@index([importedAt])
+}
+
+model LeadExportLog {
+  id         String    @id @default(cuid())
+  exportedBy String
+  exportedAt DateTime  @default(now())
+  fromDate   DateTime?
+  toDate     DateTime?
+  filters    String?
+  rowCount   Int       @default(0)
+
+  @@index([exportedBy])
+  @@index([exportedAt])
+}
+
+model DemoTenant {
+  id               String           @id @default(cuid())
+  name             String
+  slug             String           @unique
+  businessType     BusinessType
+  status           DemoTenantStatus @default("AVAILABLE")
+  accessEmail      String
+  accessPassword   String
+  accessUrl        String?
+  currentLeadId    String?
+  currentLeadName  String?
+  sessionStartedAt DateTime?
+  sessionExpiresAt DateTime?
+  sampleDataConfig String           @default("{}")
+  resetAfterUse    Boolean          @default(true)
+  lastResetAt      DateTime?
+  description      String?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([businessType])
+  @@index([status])
+}
+
+model Business {
+  id                    String                  @id @default(cuid())
+  name                  String
+  slug                  String                  @unique
+  businessType          BusinessType
+  status                BusinessStatus          @default("ONBOARDING")
+  leadId                String?
+  logo                  String?
+  favicon               String?
+  primaryColor          String                  @default("#10B981")
+  secondaryColor        String?
+  darkMode              Boolean                 @default(false)
+  tagline               String?
+  description           String?
+  gstNumber             String?
+  panNumber             String?
+  cinNumber             String?
+  fssaiLicense          String?
+  address               String?
+  city                  String?
+  state                 String?
+  pincode               String?
+  country               String                  @default("India")
+  latitude              Float?
+  longitude             Float?
+  contactEmail          String?
+  contactPhone          String?
+  supportEmail          String?
+  supportPhone          String?
+  defaultCurrency       String                  @default("INR")
+  defaultLocale         String                  @default("en-IN")
+  timezone              String                  @default("Asia/Kolkata")
+  isOnline              Boolean                 @default(false)
+  settings              String                  @default("{}")
+  features              String                  @default("{}")
+  notificationConfig    String                  @default("{}")
+  onboardedAt           DateTime?
+  activatedAt           DateTime?
+  suspendedAt           DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  salesRepId            String?
+  businessCode          String?                 @unique
+  activityLogs          ActivityLog[]
+  salesRep              SalesTeamMember?        @relation("SalesRepClients", fields: [salesRepId], references: [id])
+  gatewayAccess         BusinessGatewayAccess[]
+  modules               BusinessModule[]
+  businessSubscription  BusinessSubscription?
+  businessUsers         BusinessUser[]
+  categories            Category[]
+  customers             Customer[]
+  customerSubscriptions CustomerSubscription[]
+  deliveryPartners      DeliveryPartner[]
+  deliveryZones         DeliveryZone[]
+  deployments           Deployment[]
+  domain                DomainMapping?
+  invoices              Invoice[]
+  notifications         Notification[]
+  onboardingSteps       OnboardingStep[]
+  orders                Order[]
+  posSessions           POSSession[]
+  payments              Payment[]
+  paymentGateways       PaymentGateway[]
+  products              Product[]
+  promoCodes            PromoCode[]
+  stores                Store[]
+  subscriptionPlans     SubscriptionPlan[]
+  taxConfigs            TaxConfig[]
+
+  @@index([businessType])
+  @@index([status])
+  @@index([salesRepId])
+}
+
+model OnboardingStep {
+  id          String               @id @default(cuid())
+  businessId  String
+  stepKey     String
+  stepName    String
+  status      OnboardingStepStatus @default("PENDING")
+  completedBy String?
+  completedAt DateTime?
+  notes       String?
+  sortOrder   Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  business    Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, stepKey])
+  @@index([businessId])
+  @@index([status])
+}
+
+model BusinessModule {
+  id         String       @id @default(cuid())
+  businessId String
+  moduleKey  String
+  moduleName String
+  version    String       @default("1.0.0")
+  status     ModuleStatus @default("DISABLED")
+  config     String       @default("{}")
+  enabledAt  DateTime?
+  disabledAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, moduleKey])
+  @@index([businessId])
+  @@index([moduleKey])
+  @@index([status])
+}
+
+model Store {
+  id                  String         @id @default(cuid())
+  businessId          String
+  name                String
+  slug                String
+  code                String?
+  address             String?
+  city                String?
+  state               String?
+  pincode             String?
+  country             String         @default("India")
+  latitude            Float?
+  longitude           Float?
+  phone               String?
+  email               String?
+  status              StoreStatus    @default("ACTIVE")
+  isMainStore         Boolean        @default(false)
+  deliveryRadius      Float          @default(5.0)
+  minOrderAmount      Float          @default(0)
+  deliveryFee         Float          @default(0)
+  freeDeliveryAbove   Float?
+  maxDeliveryDistance Float?         @default(10.0)
+  preparationTime     Int            @default(30)
+  operatingHours      String         @default("{}")
+  posEnabled          Boolean        @default(true)
+  printerConfig       String         @default("{}")
+  printerType         String?
+  paperSize           String         @default("80mm")
+  gstNumber           String?
+  settings            String         @default("{}")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  storeCode           String?        @unique
+  staff               BusinessUser[]
+  inventory           Inventory[]
+  orders              Order[]
+  posSessions         POSSession[]
+  business            Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  storeTimings        StoreTiming[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([status])
+}
+
+model StoreTiming {
+  id        String   @id @default(cuid())
+  storeId   String
+  day       Int
+  openTime  String
+  closeTime String
+  isClosed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, day])
+  @@index([storeId])
+}
+
+model User {
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  phone               String?
+  name                String
+  avatar              String?
+  passwordHash        String?
+  authProvider        AuthProvider      @default("EMAIL_OTP")
+  emailVerified       Boolean           @default(false)
+  phoneVerified       Boolean           @default(false)
+  isActive            Boolean           @default(true)
+  fcmToken            String?
+  lastLoginAt         DateTime?
+  metadata            String            @default("{}")
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  platformRole        Role?
+  platformPermissions String?
+  activityLogs        ActivityLog[]
+  businessUsers       BusinessUser[]
+  customerProfiles    Customer[]
+  customerNotes       CustomerNote[]
+  deliveryProfiles    DeliveryPartner[]
+  otpCodes            OTPCode[]
+  refreshTokens       RefreshToken[]
+  salesProfile        SalesTeamMember?
+}
+
+model OTPCode {
+  id         String       @id @default(cuid())
+  userId     String?
+  email      String?
+  phone      String?
+  code       String
+  channel    AuthProvider
+  isVerified Boolean      @default(false)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime     @default(now())
+  user       User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([phone])
+  @@index([code])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model BusinessUser {
+  id          String    @id @default(cuid())
+  userId      String
+  businessId  String
+  role        Role
+  storeId     String?
+  permissions String    @default("[]")
+  isActive    Boolean   @default(true)
+  invitedAt   DateTime?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  store       Store?    @relation(fields: [storeId], references: [id])
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+  @@index([userId])
+  @@index([role])
+}
+
+model Order {
+  id                   String                @id @default(cuid())
+  businessId           String
+  storeId              String
+  orderNumber          String
+  orderType            OrderType
+  orderSource          String                @default("online")
+  status               OrderStatus           @default("PENDING")
+  paymentStatus        PaymentStatus         @default("PENDING")
+  paymentMethod        PaymentMethodType?
+  customerId           String?
+  customerName         String?
+  customerPhone        String?
+  customerEmail        String?
+  deliveryAddressId    String?
+  deliveryAddress      String?
+  deliveryLat          Float?
+  deliveryLng          Float?
+  deliveryInstructions String?
+  scheduledAt          DateTime?
+  pickupAddress        String?
+  pickupScheduledAt    DateTime?
+  pickupCompletedAt    DateTime?
+  subtotal             Float                 @default(0)
+  totalDiscount        Float                 @default(0)
+  totalTax             Float                 @default(0)
+  deliveryFee          Float                 @default(0)
+  packagingFee         Float                 @default(0)
+  convenienceFee       Float                 @default(0)
+  tip                  Float                 @default(0)
+  roundOff             Float                 @default(0)
+  totalAmount          Float                 @default(0)
+  cgstAmount           Float                 @default(0)
+  sgstAmount           Float                 @default(0)
+  igstAmount           Float                 @default(0)
+  cessAmount           Float                 @default(0)
+  posSessionId         String?
+  posOperatorId        String?
+  tableNumber          String?
+  subscriptionId       String?
+  promoCodeId          String?
+  pickupPartnerId      String?
+  deliveryPartnerId    String?
+  deliveryOtp          String?
+  pickupOtp            String?
+  notes                String?
+  cancelReason         String?
+  metadata             String                @default("{}")
+  confirmedAt          DateTime?
+  preparedAt           DateTime?
+  deliveredAt          DateTime?
+  cancelledAt          DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  delivery             Delivery?
+  invoice              Invoice?
+  promoCode            PromoCode?            @relation(fields: [promoCodeId], references: [id])
+  customerSubscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id])
+  posSession           POSSession?           @relation(fields: [posSessionId], references: [id])
+  customer             Customer?             @relation(fields: [customerId], references: [id])
+  store                Store                 @relation(fields: [storeId], references: [id])
+  business             Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  items                OrderItem[]
+  statusHistory        OrderStatusHistory[]
+  payments             Payment[]
+
+  @@unique([businessId, orderNumber])
+  @@index([businessId])
+  @@index([storeId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([orderType])
+}
+
+model OrderItem {
+  id                  String   @id @default(cuid())
+  orderId             String
+  itemType            String
+  itemId              String
+  itemName            String
+  variantName         String?
+  sku                 String?
+  barcode             String?
+  quantity            Float
+  unitPrice           Float
+  mrp                 Float?
+  discountPrice       Float?
+  discountPercent     Float?
+  totalPrice          Float
+  totalMrp            Float?
+  gstRate             Float    @default(0)
+  gstAmount           Float    @default(0)
+  cgstAmount          Float    @default(0)
+  sgstAmount          Float    @default(0)
+  igstAmount          Float    @default(0)
+  specialInstructions String?
+  customizations      String?
+  isVeg               Boolean?
+  unit                String?
+  metadata            String   @default("{}")
+  createdAt           DateTime @default(now())
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([itemType])
+  @@index([itemId])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  note      String?
+  changedBy String?
+  createdAt DateTime    @default(now())
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model Delivery {
+  id                    String           @id @default(cuid())
+  orderId               String           @unique
+  deliveryPartnerId     String?
+  pickupPartnerId       String?
+  status                DeliveryStatus   @default("ASSIGNING")
+  pickupLat             Float?
+  pickupLng             Float?
+  pickupAddress         String?
+  dropLat               Float?
+  dropLng               Float?
+  dropAddress           String?
+  estimatedPickupTime   DateTime?
+  estimatedDeliveryTime DateTime?
+  actualPickupTime      DateTime?
+  actualDeliveryTime    DateTime?
+  distance              Float?
+  deliveryOtp           String?
+  pickupOtp             String?
+  rating                Int?
+  feedback              String?
+  cancelReason          String?
+  liveTracking          String           @default("[]")
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  deliveryPartner       DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
+  order                 Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryPartnerId])
+  @@index([status])
+}
+
+model DeliveryZone {
+  id                String   @id @default(cuid())
+  businessId        String
+  storeId           String?
+  name              String
+  zoneType          ZoneType
+  centerLat         Float?
+  centerLng         Float?
+  radius            Float?
+  polygon           String?
+  pincodes          String?
+  deliveryFee       Float    @default(0)
+  minOrderAmount    Float    @default(0)
+  freeDeliveryAbove Float?
+  estimatedTime     Int      @default(30)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([storeId])
+}
+
+model DeliveryPartner {
+  id              String     @id @default(cuid())
+  businessId      String
+  userId          String?
+  name            String
+  phone           String
+  email           String?
+  avatar          String?
+  vehicleType     String?
+  vehicleNumber   String?
+  licenseNumber   String?
+  isOnline        Boolean    @default(false)
+  isActive        Boolean    @default(true)
+  currentLat      Float?
+  currentLng      Float?
+  rating          Float      @default(0)
+  totalDeliveries Int        @default(0)
+  totalEarnings   Float      @default(0)
+  fcmToken        String?
+  bankAccount     String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deliveries      Delivery[]
+  user            User?      @relation(fields: [userId], references: [id])
+  business        Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, phone])
+  @@index([businessId])
+  @@index([isOnline])
+}
+
+model POSSession {
+  id             String           @id @default(cuid())
+  businessId     String
+  storeId        String
+  sessionNumber  String
+  operatorId     String
+  status         POSSessionStatus @default("OPEN")
+  openingBalance Float            @default(0)
+  closingBalance Float?
+  totalSales     Float            @default(0)
+  totalCash      Float            @default(0)
+  totalCard      Float            @default(0)
+  totalUpi       Float            @default(0)
+  totalOther     Float            @default(0)
+  totalRefunds   Float            @default(0)
+  totalOrders    Int              @default(0)
+  openedAt       DateTime         @default(now())
+  closedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  orders         Order[]
+  store          Store            @relation(fields: [storeId], references: [id])
+  business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([storeId])
+  @@index([status])
+}
+
+model Payment {
+  id                   String            @id @default(cuid())
+  orderId              String
+  businessId           String
+  amount               Float
+  currency             String            @default("INR")
+  method               PaymentMethodType
+  status               PaymentStatus     @default("PENDING")
+  gatewayTransactionId String?
+  gatewayName          String?
+  gatewayResponse      String?
+  refundAmount         Float?
+  refundStatus         String?
+  refundedAt           DateTime?
+  paidAt               DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  business             Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order                Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([businessId])
+  @@index([status])
+}
+
+model PaymentGateway {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  gateway    String
+  isActive   Boolean  @default(true)
+  isTestMode Boolean  @default(true)
+  config     String   @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+model PlatformPaymentPlugin {
+  id                String                  @id @default(cuid())
+  gateway           String                  @unique
+  displayName       String
+  description       String?
+  isGloballyEnabled Boolean                 @default(false)
+  supportedMethods  String                  @default("[]")
+  configSchema      String                  @default("{}")
+  webhookPath       String?
+  docsUrl           String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  businessAccess    BusinessGatewayAccess[]
+}
+
+model BusinessGatewayAccess {
+  id           String                @id @default(cuid())
+  businessId   String
+  pluginId     String
+  isAssigned   Boolean               @default(false)
+  canConfigure Boolean               @default(false)
+  isActive     Boolean               @default(false)
+  config       String                @default("{}")
+  notes        String?
+  assignedAt   DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  plugin       PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, pluginId])
+  @@index([businessId])
+  @@index([pluginId])
+}
+
+model PlatformPlan {
+  id                        String                 @id @default(cuid())
+  tier                      PlanTier               @unique @default("STANDARD")
+  name                      String
+  description               String?
+  features                  String                 @default("[]")
+  maxStores                 Int                    @default(5)
+  maxProducts               Int                    @default(5000)
+  maxOrders                 Int                    @default(10000)
+  maxDeliveryPartners       Int                    @default(50)
+  maxStaff                  Int                    @default(50)
+  hasPOS                    Boolean                @default(true)
+  hasDelivery               Boolean                @default(true)
+  hasSubscription           Boolean                @default(true)
+  hasCustomDomain           Boolean                @default(true)
+  hasWhiteLabel             Boolean                @default(true)
+  hasAdvancedReports        Boolean                @default(true)
+  hasAPIAccess              Boolean                @default(true)
+  hasEcommerceWorkflow      Boolean                @default(true)
+  hasPickupWorkflow         Boolean                @default(false)
+  hasAppointmentWorkflow    Boolean                @default(false)
+  hasSubscriptionWorkflow   Boolean                @default(false)
+  hasPostServiceWorkflow    Boolean                @default(false)
+  hasAdvancedWorkflowEngine Boolean                @default(false)
+  isActive                  Boolean                @default(true)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  subscriptions             BusinessSubscription[]
+
+  @@index([isActive])
+}
+
+model BusinessSubscription {
+  id                   String             @id @default(cuid())
+  businessId           String             @unique
+  planId               String
+  status               SubscriptionStatus @default("ACTIVE")
+  subscriptionAmount   Float?
+  discountAmount       Float?
+  finalAmount          Float?
+  billingCycle         PlanBillingCycle
+  billingCycleDay      Int?
+  implementationAmount Float?
+  iosAppAmount         Float?
+  iosDiscountAmount    Float?
+  iosFinalAmount       Float?
+  iosSubscriptionCycle PlanBillingCycle?
+  addOns               String             @default("[]")
+  allowedStores        Int                @default(1)
+  planPrice            Float?
+  customPrice          Float?
+  discountPercentage   Float?
+  manualPriceOverride  Boolean            @default(false)
+  overrideReason       String?
+  overrideApprovedBy   String?
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  nextBillingDate      DateTime
+  paymentVerified      Boolean            @default(false)
+  paymentVerifiedAt    DateTime?
+  paymentVerifiedBy    String?
+  pausedAt             DateTime?
+  pauseReason          String?
+  resumeAt             DateTime?
+  lastPaymentDate      DateTime?
+  lastPaymentAmount    Float?
+  nextPaymentAmount    Float?
+  paymentMethod        String?
+  autoRenew            Boolean            @default(true)
+  cancelledAt          DateTime?
+  cancelReason         String?
+  notes                String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  reminderSentAt       DateTime?
+  billingHistory       BillingRecord[]
+  plan                 PlatformPlan       @relation(fields: [planId], references: [id])
+  business             Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([nextBillingDate])
+}
+
+model BillingRecord {
+  id                     String               @id @default(cuid())
+  businessSubscriptionId String
+  amount                 Float
+  currency               String               @default("INR")
+  status                 String               @default("pending")
+  invoiceNumber          String?
+  paymentGateway         String?
+  gatewayTransactionId   String?
+  dueDate                DateTime
+  paidDate               DateTime?
+  description            String?
+  paymentMode            String?
+  paidBy                 String?
+  receiptReference       String?
+  remarks                String?
+  periodYear             Int?
+  periodLabel            String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  subscription           BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([businessSubscriptionId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([periodYear])
+}
+
+model SubscriptionPlan {
+  id                 String                   @id @default(cuid())
+  businessId         String
+  name               String
+  slug               String
+  description        String?
+  serviceType        SubscriptionServiceType
+  billingCycle       SubscriptionBillingCycle
+  price              Float
+  originalPrice      Float?
+  setupFee           Float                    @default(0)
+  totalCredits       Int                      @default(0)
+  creditLabel        String?
+  features           String                   @default("[]")
+  isFeatured         Boolean                  @default(false)
+  maxSubscribers     Int?
+  currentSubscribers Int                      @default(0)
+  isActive           Boolean                  @default(true)
+  sortOrder          Int                      @default(0)
+  startsAt           DateTime?
+  endsAt             DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  subscriptions      CustomerSubscription[]
+  business           Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  planItems          SubscriptionPlanItem[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([isActive])
+}
+
+model SubscriptionPlanItem {
+  id              String           @id @default(cuid())
+  planId          String
+  productId       String?
+  serviceName     String?
+  creditsPerCycle Int              @default(1)
+  maxPerUse       Int              @default(1)
+  rollover        Boolean          @default(false)
+  rolloverMax     Int              @default(0)
+  createdAt       DateTime         @default(now())
+  plan            SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+model CustomerSubscription {
+  id                 String                     @id @default(cuid())
+  businessId         String
+  customerId         String
+  planId             String
+  status             CustomerSubscriptionStatus @default("ACTIVE")
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  nextBillingDate    DateTime
+  totalCredits       Int                        @default(0)
+  usedCredits        Int                        @default(0)
+  remainingCredits   Int                        @default(0)
+  autoRenew          Boolean                    @default(true)
+  cancelledAt        DateTime?
+  cancelAtPeriodEnd  Boolean                    @default(false)
+  pauseStartAt       DateTime?
+  pauseEndAt         DateTime?
+  paymentMethodId    String?
+  lastPaymentAt      DateTime?
+  lastPaymentAmount  Float?
+  metadata           String                     @default("{}")
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  plan               SubscriptionPlan           @relation(fields: [planId], references: [id])
+  customer           Customer                   @relation(fields: [customerId], references: [id])
+  business           Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders             Order[]
+  usages             SubscriptionUsage[]
+
+  @@index([businessId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model SubscriptionUsage {
+  id             String               @id @default(cuid())
+  subscriptionId String
+  orderId        String?
+  creditsUsed    Int                  @default(1)
+  description    String?
+  createdAt      DateTime             @default(now())
+  subscription   CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([createdAt])
+}
+
+model Customer {
+  id            String                 @id @default(cuid())
+  businessId    String
+  userId        String?
+  name          String
+  email         String?
+  phone         String?
+  avatar        String?
+  gstNumber     String?
+  dateOfBirth   DateTime?
+  gender        String?
+  loyaltyTier   String                 @default("BRONZE")
+  notes         String                 @default("")
+  loyaltyPoints Int                    @default(0)
+  totalOrders   Int                    @default(0)
+  totalSpent    Float                  @default(0)
+  avgOrderValue Float                  @default(0)
+  lastOrderAt   DateTime?
+  tags          String                 @default("[]")
+  metadata      String                 @default("{}")
+  isActive      Boolean                @default(true)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  addresses     Address[]
+  user          User?                  @relation(fields: [userId], references: [id])
+  business      Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerNotes CustomerNote[]
+  subscriptions CustomerSubscription[]
+  invoices      Invoice[]
+  orders        Order[]
+
+  @@unique([businessId, phone])
+  @@index([businessId])
+  @@index([userId])
+  @@index([phone])
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  customerId   String
+  label        String?
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  pincode      String
+  country      String   @default("India")
+  latitude     Float?
+  longitude    Float?
+  isDefault    Boolean  @default(false)
+  landmark     String?
+  instructions String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  userId     String
+  content    String
+  isPrivate  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([userId])
+}
+
+model NotificationTemplate {
+  id        String              @id @default(cuid())
+  key       String
+  name      String
+  channel   NotificationChannel
+  subject   String?
+  body      String
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([key, channel])
+}
+
+model Notification {
+  id         String              @id @default(cuid())
+  businessId String
+  userId     String?
+  type       NotificationType
+  channel    NotificationChannel
+  title      String
+  message    String
+  data       String              @default("{}")
+  isRead     Boolean             @default(false)
+  readAt     DateTime?
+  sentAt     DateTime?
+  failedAt   DateTime?
+  error      String?
+  createdAt  DateTime            @default(now())
+  business   Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model Invoice {
+  id            String      @id @default(cuid())
+  businessId    String
+  orderId       String?     @unique
+  customerId    String?
+  invoiceNumber String
+  invoiceType   InvoiceType @default("TAX_INVOICE")
+  subtotal      Float       @default(0)
+  totalTax      Float       @default(0)
+  totalDiscount Float       @default(0)
+  totalAmount   Float       @default(0)
+  cgstAmount    Float       @default(0)
+  sgstAmount    Float       @default(0)
+  igstAmount    Float       @default(0)
+  dueDate       DateTime?
+  paidAt        DateTime?
+  status        String      @default("pending")
+  pdfUrl        String?
+  metadata      String      @default("{}")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  customer      Customer?   @relation(fields: [customerId], references: [id])
+  order         Order?      @relation(fields: [orderId], references: [id])
+  business      Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, invoiceNumber])
+  @@index([businessId])
+  @@index([orderId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model TaxConfig {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  taxType    String
+  rate       Float
+  cgstRate   Float?
+  sgstRate   Float?
+  igstRate   Float?
+  cessRate   Float?
+  isActive   Boolean  @default(true)
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([taxType])
+}
+
+model PromoCode {
+  id                String    @id @default(cuid())
+  businessId        String
+  code              String
+  description       String?
+  type              PromoType
+  value             Float
+  minOrderAmount    Float     @default(0)
+  maxDiscount       Float?
+  usageLimit        Int?
+  usedCount         Int       @default(0)
+  perUserLimit      Int       @default(1)
+  validFrom         DateTime
+  validUntil        DateTime
+  isActive          Boolean   @default(true)
+  applicableModules String    @default("[]")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  orders            Order[]
+  business          Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([code])
+  @@index([isActive])
+}
+
+model SalesTeamMember {
+  id                String     @id @default(cuid())
+  userId            String     @unique
+  name              String
+  email             String
+  phone             String
+  avatar            String?
+  designation       String?
+  region            String?
+  reportingManager  String?
+  commissionPercent Float      @default(0)
+  target            Float      @default(0)
+  achieved          Float      @default(0)
+  isActive          Boolean    @default(true)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  clients           Business[] @relation("SalesRepClients")
+  leads             Lead[]
+  user              User       @relation(fields: [userId], references: [id])
+}
+
+model DomainMapping {
+  id            String       @id @default(cuid())
+  businessId    String       @unique
+  domain        String       @unique
+  subdomain     String?
+  isPrimary     Boolean      @default(true)
+  sslStatus     String       @default("pending")
+  sslExpiryDate DateTime?
+  dnsProvider   String?
+  dnsConfig     String       @default("{}")
+  status        DomainStatus @default("PENDING_DNS")
+  configuredBy  String?
+  configuredAt  DateTime?
+  deployedAt    DateTime?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  business      Business     @relation(fields: [businessId], references: [id])
+
+  @@index([status])
+}
+
+model Deployment {
+  id              String           @id @default(cuid())
+  businessId      String
+  type            DeploymentType
+  status          DeploymentStatus @default("PENDING")
+  environment     String           @default("production")
+  hostingProvider String           @default("replit")
+  hostingConfig   String           @default("{}")
+  buildUrl        String?
+  liveUrl         String?
+  version         String?
+  deployedBy      String?
+  deployedAt      DateTime?
+  lastCheckedAt   DateTime?
+  healthStatus    String           @default("unknown")
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  business        Business         @relation(fields: [businessId], references: [id])
+
+  @@index([businessId])
+  @@index([type])
+  @@index([status])
+}
+
+model ActivityLog {
+  id         String    @id @default(cuid())
+  businessId String?
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  details    String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  user       User?     @relation(fields: [userId], references: [id])
+  business   Business? @relation(fields: [businessId], references: [id])
+
+  @@index([businessId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Category {
+  id           String       @id @default(cuid())
+  businessId   String
+  name         String
+  slug         String
+  description  String?
+  image        String?
+  icon         String?
+  parentId     String?
+  workflowType WorkflowType @default("ECOMMERCE")
+  sortOrder    Int          @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  parent       Category?    @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     Category[]   @relation("CategoryHierarchy")
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([parentId])
+  @@index([workflowType])
+}
+
+model Product {
+  id              String           @id @default(cuid())
+  businessId      String
+  storeId         String?
+  categoryId      String?
+  name            String
+  slug            String
+  description     String?
+  shortDesc       String?
+  type            ProductType      @default("PHYSICAL")
+  status          ProductStatus    @default("ACTIVE")
+  sku             String?
+  barcode         String?
+  images          String           @default("[]")
+  unit            String?
+  unitQuantity    Float?
+  isVeg           Boolean?
+  isFeatured      Boolean          @default(false)
+  isPopular       Boolean          @default(false)
+  preparationTime Int?
+  minOrderQty     Float            @default(1)
+  maxOrderQty     Float            @default(100)
+  tags            String           @default("[]")
+  nutritionInfo   String?
+  allergenInfo    String?
+  workflowType    WorkflowType?
+  sortOrder       Int              @default(0)
+  metadata        String           @default("{}")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  inventory       Inventory[]
+  category        Category?        @relation(fields: [categoryId], references: [id])
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  variants        ProductVariant[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([storeId])
+  @@index([workflowType])
+}
+
+model ProductVariant {
+  id              String      @id @default(cuid())
+  productId       String
+  name            String
+  sku             String?
+  barcode         String?
+  price           Float
+  mrp             Float
+  costPrice       Float?
+  discountPrice   Float?
+  discountPercent Float?
+  stock           Int         @default(0)
+  minStock        Int         @default(0)
+  isDefault       Boolean     @default(false)
+  isActive        Boolean     @default(true)
+  attributes      String      @default("{}")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  inventory       Inventory[]
+  product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([isActive])
+}
+
+model Inventory {
+  id              String          @id @default(cuid())
+  businessId      String
+  storeId         String
+  productId       String
+  variantId       String?
+  quantity        Int             @default(0)
+  reservedQty     Int             @default(0)
+  minStock        Int             @default(5)
+  maxStock        Int             @default(1000)
+  status          InventoryStatus @default("IN_STOCK")
+  lastRestockedAt DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  variant         ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store           Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  logs            InventoryLog[]
+
+  @@unique([storeId, productId, variantId])
+  @@index([storeId])
+  @@index([productId])
+  @@index([status])
+}
+
+model InventoryLog {
+  id          String    @id @default(cuid())
+  inventoryId String
+  action      String
+  quantity    Int
+  previousQty Int
+  newQty      Int
+  note        String?
+  performedBy String?
+  createdAt   DateTime  @default(now())
+  inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId])
+  @@index([createdAt])
+}
+
+model RolePermission {
+  id          String   @id @default(cuid())
+  role        String   @unique
+  permissions Json
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@index([role])
+}
+
+model PermissionChangeLog {
+  id             String   @id @default(cuid())
+  role           String
+  changedBy      String
+  changedByEmail String?
+  oldPerms       Json
+  newPerms       Json
+  added          Json
+  removed        Json
+  note           String?
+  createdAt      DateTime @default(now())
+
+  @@index([role])
+  @@index([changedBy])
+  @@index([createdAt])
+}
 
 enum LeadSource {
   META_ADS
@@ -99,191 +1402,12 @@ enum LeadStage {
   DUPLICATE
 }
 
-model Lead {
-  id              String     @id @default(cuid())
-  leadId          String?    @unique  // Human-readable ID: LED-YYYYMM-XXXX (immutable once set)
-  salesRepId      String?
-  createdById     String?    // User ID of whoever created this lead (platform user or admin)
-  businessName    String
-  contactName     String
-  contactEmail    String
-  contactPhone    String
-  city            String?
-  state           String?
-  pincode         String?
-  businessType    BusinessType
-  source          LeadSource @default(WEBSITE_INQUIRY)
-  stage           LeadStage  @default(LEAD)
-  // Demo tracking
-  demoTenantId    String?
-  demoSharedAt    DateTime?
-  demoCredentials String?
-  demoFeedback    String?
-  // Negotiation
-  negotiatedMonthlyPrice Float?
-  negotiatedYearlyPrice  Float?
-  negotiationNotes String?
-  // Payment
-  paymentProof     String?
-  paymentVerifiedAt DateTime?
-  paymentVerifiedBy String?
-  selectedBillingCycle String?
-  // Conversion
-  convertedBusinessId String?
-  convertedAt      DateTime?
-  // Lost/churn reason
-  lostReason       String?
-  // General
-  notes           String?
-  followUpDate    DateTime?
-  lastFollowUpAt  DateTime?  // When was the last follow-up actually done
-  estimatedValue  Float?
-  tags            String    @default("[]")
-  lastContactedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  salesRep        SalesTeamMember? @relation(fields: [salesRepId], references: [id])
-
-  @@index([leadId])
-  @@index([salesRepId])
-  @@index([stage])
-  @@index([source])
-  @@index([createdAt])
-}
-
-// Sequential counter for generating human-readable Lead IDs (LED-YYYYMM-XXXX)
-model LeadSequence {
-  monthKey  String   @id  // YYYYMM e.g. "202605"
-  nextVal   Int      @default(1)
-  updatedAt DateTime @updatedAt
-}
-
-// Sequential counter for Proposal IDs (QX-YYYYMM-XXX)
-model ProposalSequence {
-  monthKey  String   @id  // YYYYMM e.g. "202605"
-  nextVal   Int      @default(1)
-  updatedAt DateTime @updatedAt
-}
-
-// Document Center — stores every generated proposal/document permanently
-// documentType: QUOTE | PROPOSAL | AGREEMENT | INVOICE | RENEWAL | ONBOARDING | OTHER
-// status: ACTIVE | ARCHIVED
-model ProposalDocument {
-  id              String    @id @default(cuid())
-  proposalId      String    @unique  // QX-YYYYMM-XXX — immutable once assigned
-  documentType    String    @default("PROPOSAL")
-  status          String    @default("ACTIVE")  // ACTIVE | ARCHIVED (soft-delete)
-  // Core metadata
-  businessName    String
-  clientName      String
-  contactPhone    String?
-  contactEmail    String?
-  leadId          String?   // Link to Lead.leadId (e.g. LED-202605-0001) — optional
-  // Commercials
-  totalAmount     Float?
-  // Sales context
-  salesTeamMember String?
-  salesTeamEmail  String?
-  // Document state
-  formSnapshot    String    @default("{}")  // JSON: full ProposalForm at time of generation
-  pdfPath         String?   // future: stored PDF file path or URL
-  pdfVersion      Int       @default(1)
-  // Audit: creation
-  createdBy       String    // user id who generated it
-  createdByName   String?   // display name
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  // Audit: soft-delete
-  deletedAt       DateTime?
-  deletedBy       String?   // user id who archived it
-
-  @@index([proposalId])
-  @@index([businessName])
-  @@index([contactPhone])
-  @@index([leadId])
-  @@index([status])
-  @@index([createdBy])
-  @@index([createdAt])
-  @@index([documentType])
-}
-
-// Audit: who imported leads, when, and summary
-model LeadImportLog {
-  id          String   @id @default(cuid())
-  importedBy  String   // user id of importer
-  importedAt  DateTime @default(now())
-  fileName    String?
-  totalRows   Int      @default(0)
-  imported    Int      @default(0)
-  duplicates  Int      @default(0)
-  errors      Int      @default(0)
-  notes       String?
-
-  @@index([importedBy])
-  @@index([importedAt])
-}
-
-// Audit: who exported leads, when, and what filters were used
-model LeadExportLog {
-  id         String   @id @default(cuid())
-  exportedBy String   // user id
-  exportedAt DateTime @default(now())
-  fromDate   DateTime?
-  toDate     DateTime?
-  filters    String?  // JSON: { stage, source, salesRepId }
-  rowCount   Int      @default(0)
-
-  @@index([exportedBy])
-  @@index([exportedAt])
-}
-
-// ============================================================================
-// SECTION 3: DEMO TENANT — Shared demo environment for prospects
-// Quantix creates demo tenants with sample data.
-// Prospects receive demo credentials (no real tenant created yet).
-// ============================================================================
-
 enum DemoTenantStatus {
   AVAILABLE
   IN_USE
   MAINTENANCE
   DISABLED
 }
-
-model DemoTenant {
-  id              String           @id @default(cuid())
-  name            String           // "Demo - Grocery Store"
-  slug            String           @unique // "demo-grocery-1"
-  businessType    BusinessType
-  status          DemoTenantStatus @default(AVAILABLE)
-  // Access credentials (shared — reset after each use)
-  accessEmail     String
-  accessPassword  String           // Hashed
-  accessUrl       String?          // e.g., https://demo-grocery.quantixtechnology.in
-  // Current prospect
-  currentLeadId   String?
-  currentLeadName String?
-  sessionStartedAt DateTime?
-  sessionExpiresAt DateTime?
-  // Sample data config
-  sampleDataConfig String          @default("{}") // JSON: what demo data to include
-  resetAfterUse   Boolean          @default(true)
-  lastResetAt     DateTime?
-  // Metadata
-  description     String?
-  notes           String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  @@index([businessType])
-  @@index([status])
-}
-
-// ============================================================================
-// SECTION 4: TENANT (BUSINESS) — Created ONLY by Quantix Super Admin
-// AFTER payment verification. No public creation. No self-signup.
-// ============================================================================
 
 enum BusinessType {
   GROCERY
@@ -299,114 +1423,22 @@ enum BusinessType {
   DIRECTORY
 }
 
-// ============================================================================
-// WORKFLOW TYPE — Assigned per Category/Product/Service, NOT per business
-// ============================================================================
-
 enum WorkflowType {
-  ECOMMERCE              // cart → checkout → payment → delivery
-  PICKUP_DELIVERY        // pickup scheduling → delivery scheduling → assignment → return delivery
-  APPOINTMENT            // date/time booking → technician assignment → slot management
-  SUBSCRIPTION           // package purchase → credit tracking → usage deduction → renewal reminders
-  POST_SERVICE_BILLING   // estimated pricing → inspection/weight → final billing → customer approval → delayed payment
+  ECOMMERCE
+  PICKUP_DELIVERY
+  APPOINTMENT
+  SUBSCRIPTION
+  POST_SERVICE_BILLING
 }
 
 enum BusinessStatus {
-  ONBOARDING          // Being set up by Quantix team after payment
-  TRIAL               // On a trial period (future use)
-  ACTIVE              // Fully operational
-  SUSPENDED           // Payment issue or policy violation
-  EXPIRED             // Subscription expired (future automation)
-  CHURNED             // Left the platform
+  ONBOARDING
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  CHURNED
 }
-
-model Business {
-  id                String         @id @default(cuid())
-  businessCode      String?        @unique  // BUS-YYYYMM-XXXX — human-readable audit ID
-  name              String
-  slug              String         @unique
-  businessType      BusinessType
-  status            BusinessStatus @default(ONBOARDING)
-  // Origin — every business comes from a paid lead
-  leadId            String?        // The Lead that converted to this business
-  // Branding (configured by Quantix ONLY)
-  logo              String?
-  favicon           String?
-  primaryColor      String         @default("#10B981")
-  secondaryColor    String?
-  darkMode          Boolean        @default(false)
-  // Business details
-  tagline           String?
-  description       String?
-  gstNumber         String?
-  panNumber         String?
-  cinNumber         String?
-  fssaiLicense      String?
-  // Address
-  address           String?
-  city              String?
-  state             String?
-  pincode           String?
-  country           String         @default("India")
-  latitude          Float?
-  longitude         Float?
-  // Contact
-  contactEmail      String?
-  contactPhone      String?
-  supportEmail      String?
-  supportPhone      String?
-  // Configuration
-  defaultCurrency   String         @default("INR")
-  defaultLocale     String         @default("en-IN")
-  timezone          String         @default("Asia/Kolkata")
-  isOnline          Boolean        @default(false) // Quantix activates after deployment
-  // JSON configuration blobs
-  settings          String         @default("{}")
-  features          String         @default("{}")  // Feature flags — controlled by Quantix
-  notificationConfig String        @default("{}")
-  // Timestamps — NO trial fields. Business is born from payment.
-  onboardedAt       DateTime?      // When onboarding was completed
-  activatedAt       DateTime?      // When Quantix activated the business
-  suspendedAt       DateTime?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  // Relations
-  businessUsers     BusinessUser[]
-  modules           BusinessModule[]
-  stores            Store[]
-  orders            Order[]
-  customers         Customer[]
-  deliveryZones     DeliveryZone[]
-  deliveryPartners  DeliveryPartner[]
-  taxConfigs        TaxConfig[]
-  invoices          Invoice[]
-  posSessions       POSSession[]
-  promoCodes        PromoCode[]
-  notifications     Notification[]
-  activityLogs      ActivityLog[]
-  businessSubscription BusinessSubscription?
-  domain            DomainMapping?
-  deployments       Deployment[]
-  salesRepId        String?
-  salesRep          SalesTeamMember? @relation("SalesRepClients", fields: [salesRepId], references: [id])
-  paymentGateways   PaymentGateway[]
-  gatewayAccess     BusinessGatewayAccess[]
-  payments          Payment[]
-  subscriptionPlans SubscriptionPlan[]
-  customerSubscriptions CustomerSubscription[]
-  categories        Category[]
-  products          Product[]
-  onboardingSteps   OnboardingStep[]
-
-  @@index([businessType])
-  @@index([status])
-  @@index([salesRepId])
-}
-
-// ============================================================================
-// SECTION 5: ONBOARDING TRACKER — Quantix-controlled onboarding steps
-// ============================================================================
 
 enum OnboardingStepStatus {
   PENDING
@@ -415,140 +1447,16 @@ enum OnboardingStepStatus {
   SKIPPED
 }
 
-model OnboardingStep {
-  id          String              @id @default(cuid())
-  businessId  String
-  stepKey     String              // "branding", "stores", "products", "payment_gateway", "delivery_zones", etc.
-  stepName    String
-  status      OnboardingStepStatus @default(PENDING)
-  completedBy String?             // Quantix team member who completed this step
-  completedAt DateTime?
-  notes       String?
-  sortOrder   Int                 @default(0)
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  business    Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@unique([businessId, stepKey])
-  @@index([businessId])
-  @@index([status])
-}
-
-// ============================================================================
-// SECTION 6: BUSINESS MODULE REGISTRY — Extensibility System
-// ============================================================================
-
 enum ModuleStatus {
   DISABLED
   ENABLED
 }
-
-model BusinessModule {
-  id            String       @id @default(cuid())
-  businessId    String
-  business      Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  moduleKey     String       // "grocery", "restaurant", "pharmacy", "car_wash", etc.
-  moduleName    String       // Display name
-  version       String       @default("1.0.0")
-  status        ModuleStatus @default(DISABLED)
-  config        String       @default("{}")  // Module-specific config (JSON)
-  enabledAt     DateTime?
-  disabledAt    DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
-  @@unique([businessId, moduleKey])
-  @@index([businessId])
-  @@index([moduleKey])
-  @@index([status])
-}
-
-// ============================================================================
-// SECTION 7: STORES (Multi-Store per Business)
-// ============================================================================
 
 enum StoreStatus {
   ACTIVE
   INACTIVE
   MAINTENANCE
 }
-
-model Store {
-  id              String       @id @default(cuid())
-  businessId      String
-  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  name            String
-  slug            String
-  code            String?      // Short code for POS
-  storeCode       String?      @unique  // STR-XXXX — human-readable store ID
-  // Address
-  address         String?
-  city            String?
-  state           String?
-  pincode         String?
-  country         String       @default("India")
-  latitude        Float?
-  longitude       Float?
-  phone           String?
-  email           String?
-  status          StoreStatus  @default(ACTIVE)
-  isMainStore     Boolean      @default(false)
-  // Delivery configuration
-  deliveryRadius  Float        @default(5.0)
-  minOrderAmount  Float        @default(0)
-  deliveryFee     Float        @default(0)
-  freeDeliveryAbove Float?
-  maxDeliveryDistance Float?    @default(10.0)
-  preparationTime Int          @default(30)
-  // Operating hours
-  operatingHours  String       @default("{}")
-  // POS & Printer config
-  posEnabled      Boolean      @default(true)
-  printerConfig   String       @default("{}")
-  printerType     String?      // thermal_bluetooth, thermal_usb, laser
-  paperSize       String       @default("80mm") // 58mm, 80mm, A4
-  // GST
-  gstNumber       String?
-  // Settings
-  settings        String       @default("{}")
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  // Relations
-  inventory       Inventory[]
-  orders          Order[]
-  posSessions     POSSession[]
-  staff           BusinessUser[]
-  storeTimings    StoreTiming[]
-
-  @@unique([businessId, slug])
-  @@index([businessId])
-  @@index([status])
-}
-
-model StoreTiming {
-  id        String   @id @default(cuid())
-  storeId   String
-  day       Int      // 0=Sunday ... 6=Saturday
-  openTime  String
-  closeTime String
-  isClosed  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@unique([storeId, day])
-  @@index([storeId])
-}
-
-// ============================================================================
-// SECTION 8: USERS & AUTHENTICATION
-// Auth: Email OTP, WhatsApp OTP, Push Notification — NO SMS
-// No self-signup for business owners. Only customers can self-register.
-// Business team members are invited by Quantix or Client Owner.
-// ============================================================================
 
 enum AuthProvider {
   EMAIL_OTP
@@ -558,90 +1466,20 @@ enum AuthProvider {
   PASSWORD
 }
 
-model User {
-  id              String       @id @default(cuid())
-  email           String       @unique
-  phone           String?
-  name            String
-  avatar          String?
-  passwordHash    String?
-  authProvider    AuthProvider @default(EMAIL_OTP)
-  emailVerified   Boolean      @default(false)
-  phoneVerified   Boolean      @default(false)
-  isActive        Boolean      @default(true)
-  platformRole        Role?                    // Set for platform staff; null for business users
-  platformPermissions String?                  // JSON array of custom permissions for platform users
-  fcmToken            String?
-  lastLoginAt     DateTime?
-  metadata        String       @default("{}")
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  businessUsers   BusinessUser[]
-  customerProfiles Customer[]
-  deliveryProfiles DeliveryPartner[]
-  otpCodes        OTPCode[]
-  refreshTokens   RefreshToken[]
-  activityLogs    ActivityLog[]
-  salesProfile    SalesTeamMember?
-  customerNotes   CustomerNote[]
-}
-
-model OTPCode {
-  id          String       @id @default(cuid())
-  userId      String?
-  email       String?
-  phone       String?
-  code        String       // 6-digit OTP
-  channel     AuthProvider // EMAIL_OTP, WHATSAPP_OTP, PUSH_NOTIFICATION
-  isVerified  Boolean      @default(false)
-  expiresAt   DateTime
-  verifiedAt  DateTime?
-  createdAt   DateTime     @default(now())
-
-  user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([email])
-  @@index([phone])
-  @@index([code])
-  @@index([expiresAt])
-}
-
-model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([token])
-}
-
-// ============================================================================
-// SECTION 9: ROLES & PERMISSIONS
-// Platform roles: stored on User.platformRole (no businessId required)
-// Business roles: stored on BusinessUser.role (scoped to a business)
-// ============================================================================
-
 enum Role {
-  // ── Platform Team (Quantix internal) ─────────────────────────────────────
-  QUANTIX_SUPER_ADMIN    // Full platform control, creates businesses, overrides pricing
-  PLATFORM_ADMIN         // Platform operations and support management
-  QUANTIX_SALES_TEAM     // Manages leads, demos, negotiations
-  SUPPORT_TEAM           // Quantix platform support team
-  DEPLOYMENT_TEAM        // Deployment, onboarding, and technical operations
-  FINANCE_TEAM           // Finance, billing oversight, and revenue reporting
-  // ── Business Staff (scoped per tenant) ───────────────────────────────────
-  CLIENT_OWNER           // Business owner — invited after payment, CANNOT create businesses
-  STORE_MANAGER          // Manages store operations
-  BILLING_STAFF          // Handles billing and payments within a business
-  INVENTORY_STAFF        // Manages inventory within a business
-  SUPPORT_STAFF          // Business-level customer support staff
-  DELIVERY_STAFF         // Handles deliveries
-  CUSTOMER               // End customer — only self-registerable role
+  QUANTIX_SUPER_ADMIN
+  PLATFORM_ADMIN
+  QUANTIX_SALES_TEAM
+  SUPPORT_TEAM
+  DEPLOYMENT_TEAM
+  FINANCE_TEAM
+  CLIENT_OWNER
+  STORE_MANAGER
+  BILLING_STAFF
+  INVENTORY_STAFF
+  SUPPORT_STAFF
+  DELIVERY_STAFF
+  CUSTOMER
 }
 
 enum CustomerPermission {
@@ -654,33 +1492,6 @@ enum CustomerPermission {
   EDIT_ORDERS
   VIEW_REVENUE
 }
-
-model BusinessUser {
-  id           String   @id @default(cuid())
-  userId       String
-  businessId   String
-  role         Role
-  storeId      String?
-  permissions  String   @default("[]") // JSON array of CustomerPermission
-  isActive     Boolean  @default(true)
-  invitedAt    DateTime?  // Invited by Quantix or Client Owner
-  acceptedAt   DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store      Store?   @relation(fields: [storeId], references: [id])
-
-  @@unique([userId, businessId])
-  @@index([businessId])
-  @@index([userId])
-  @@index([role])
-}
-
-// ============================================================================
-// SECTION 10: ORDERS (CORE — Polymorphic OrderItem)
-// ============================================================================
 
 enum OrderType {
   DELIVERY
@@ -727,146 +1538,6 @@ enum PaymentMethodType {
   MIXED
 }
 
-model Order {
-  id              String        @id @default(cuid())
-  businessId      String
-  storeId         String
-  orderNumber     String
-  orderType       OrderType
-  orderSource     String        @default("online")
-  status          OrderStatus   @default(PENDING)
-  paymentStatus   PaymentStatus @default(PENDING)
-  paymentMethod   PaymentMethodType?
-  // Customer info
-  customerId      String?
-  customerName    String?
-  customerPhone   String?
-  customerEmail   String?
-  // Delivery
-  deliveryAddressId String?
-  deliveryAddress  String?
-  deliveryLat     Float?
-  deliveryLng     Float?
-  deliveryInstructions String?
-  scheduledAt     DateTime?
-  // Pickup
-  pickupAddress   String?
-  pickupScheduledAt DateTime?
-  pickupCompletedAt DateTime?
-  // Billing
-  subtotal        Float         @default(0)
-  totalDiscount   Float         @default(0)
-  totalTax        Float         @default(0)
-  deliveryFee     Float         @default(0)
-  packagingFee    Float         @default(0)
-  convenienceFee  Float         @default(0)
-  tip             Float         @default(0)
-  roundOff        Float         @default(0)
-  totalAmount     Float         @default(0)
-  // GST
-  cgstAmount      Float         @default(0)
-  sgstAmount      Float         @default(0)
-  igstAmount      Float         @default(0)
-  cessAmount      Float         @default(0)
-  // POS
-  posSessionId    String?
-  posOperatorId   String?
-  tableNumber     String?
-  // Subscription
-  subscriptionId  String?
-  // Promo
-  promoCodeId     String?
-  // Pickup & Delivery specific
-  pickupPartnerId String?
-  deliveryPartnerId String?
-  deliveryOtp     String?
-  pickupOtp       String?
-  // Metadata
-  notes           String?
-  cancelReason    String?
-  metadata        String        @default("{}")
-  confirmedAt     DateTime?
-  preparedAt      DateTime?
-  deliveredAt     DateTime?
-  cancelledAt     DateTime?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  // Relations
-  business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store           Store         @relation(fields: [storeId], references: [id])
-  customer        Customer?     @relation(fields: [customerId], references: [id])
-  items           OrderItem[]
-  delivery        Delivery?
-  invoice         Invoice?
-  statusHistory   OrderStatusHistory[]
-  payments        Payment[]
-  posSession      POSSession?   @relation(fields: [posSessionId], references: [id])
-  customerSubscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id])
-  promoCode       PromoCode?    @relation(fields: [promoCodeId], references: [id])
-
-  @@unique([businessId, orderNumber])
-  @@index([businessId])
-  @@index([storeId])
-  @@index([customerId])
-  @@index([status])
-  @@index([createdAt])
-  @@index([orderType])
-}
-
-model OrderItem {
-  id                  String   @id @default(cuid())
-  orderId             String
-  itemType            String   // Polymorphic: "grocery_product", "menu_item", etc.
-  itemId              String
-  itemName            String
-  variantName         String?
-  sku                 String?
-  barcode             String?
-  quantity            Float
-  unitPrice           Float
-  mrp                 Float?
-  discountPrice       Float?
-  discountPercent     Float?
-  totalPrice          Float
-  totalMrp            Float?
-  gstRate             Float    @default(0)
-  gstAmount           Float    @default(0)
-  cgstAmount          Float    @default(0)
-  sgstAmount          Float    @default(0)
-  igstAmount          Float    @default(0)
-  specialInstructions String?
-  customizations      String?
-  isVeg               Boolean?
-  unit                String?
-  metadata            String   @default("{}")
-  createdAt           DateTime @default(now())
-
-  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([itemType])
-  @@index([itemId])
-}
-
-model OrderStatusHistory {
-  id        String      @id @default(cuid())
-  orderId   String
-  status    OrderStatus
-  note      String?
-  changedBy String?
-  createdAt DateTime    @default(now())
-
-  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// SECTION 11: DELIVERY CORE
-// ============================================================================
-
 enum DeliveryStatus {
   ASSIGNING
   ASSIGNED
@@ -884,235 +1555,15 @@ enum ZoneType {
   PINCODE
 }
 
-model Delivery {
-  id                  String         @id @default(cuid())
-  orderId             String         @unique
-  deliveryPartnerId   String?
-  pickupPartnerId     String?
-  status              DeliveryStatus @default(ASSIGNING)
-  pickupLat           Float?
-  pickupLng           Float?
-  pickupAddress       String?
-  dropLat             Float?
-  dropLng             Float?
-  dropAddress         String?
-  estimatedPickupTime DateTime?
-  estimatedDeliveryTime DateTime?
-  actualPickupTime    DateTime?
-  actualDeliveryTime  DateTime?
-  distance            Float?
-  deliveryOtp         String?
-  pickupOtp           String?
-  rating              Int?
-  feedback            String?
-  cancelReason        String?
-  liveTracking        String         @default("[]")
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-
-  order               Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  deliveryPartner     DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
-
-  @@index([deliveryPartnerId])
-  @@index([status])
-}
-
-model DeliveryZone {
-  id              String    @id @default(cuid())
-  businessId      String
-  storeId         String?
-  name            String
-  zoneType        ZoneType
-  centerLat       Float?
-  centerLng       Float?
-  radius          Float?
-  polygon         String?
-  pincodes        String?
-  deliveryFee     Float     @default(0)
-  minOrderAmount  Float     @default(0)
-  freeDeliveryAbove Float?
-  estimatedTime   Int       @default(30)
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@index([businessId])
-  @@index([storeId])
-}
-
-model DeliveryPartner {
-  id              String   @id @default(cuid())
-  businessId      String
-  userId          String?
-  name            String
-  phone           String
-  email           String?
-  avatar          String?
-  vehicleType     String?
-  vehicleNumber   String?
-  licenseNumber   String?
-  isOnline        Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  currentLat      Float?
-  currentLng      Float?
-  rating          Float    @default(0)
-  totalDeliveries Int      @default(0)
-  totalEarnings   Float    @default(0)
-  fcmToken        String?
-  bankAccount     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user            User?    @relation(fields: [userId], references: [id])
-  deliveries      Delivery[]
-
-  @@unique([businessId, phone])
-  @@index([businessId])
-  @@index([isOnline])
-}
-
-// ============================================================================
-// SECTION 12: POS CORE
-// ============================================================================
-
 enum POSSessionStatus {
   OPEN
   CLOSED
   SUSPENDED
 }
 
-model POSSession {
-  id              String          @id @default(cuid())
-  businessId      String
-  storeId         String
-  sessionNumber   String
-  operatorId      String
-  status          POSSessionStatus @default(OPEN)
-  openingBalance  Float           @default(0)
-  closingBalance  Float?
-  totalSales      Float           @default(0)
-  totalCash       Float           @default(0)
-  totalCard       Float           @default(0)
-  totalUpi        Float           @default(0)
-  totalOther      Float           @default(0)
-  totalRefunds    Float           @default(0)
-  totalOrders     Int             @default(0)
-  openedAt        DateTime        @default(now())
-  closedAt        DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  business        Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store           Store           @relation(fields: [storeId], references: [id])
-  orders          Order[]
-
-  @@index([businessId])
-  @@index([storeId])
-  @@index([status])
-}
-
-// ============================================================================
-// SECTION 13: PAYMENTS
-// ============================================================================
-
-model Payment {
-  id                  String          @id @default(cuid())
-  orderId             String
-  businessId          String
-  amount              Float
-  currency            String          @default("INR")
-  method              PaymentMethodType
-  status              PaymentStatus   @default(PENDING)
-  gatewayTransactionId String?
-  gatewayName         String?
-  gatewayResponse     String?
-  refundAmount        Float?
-  refundStatus        String?
-  refundedAt          DateTime?
-  paidAt              DateTime?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-
-  order               Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  business            Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([businessId])
-  @@index([status])
-}
-
-model PaymentGateway {
-  id              String   @id @default(cuid())
-  businessId      String
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  name            String
-  gateway         String
-  isActive        Boolean  @default(true)
-  isTestMode      Boolean  @default(true)
-  config          String   @default("{}")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@unique([businessId, name])
-  @@index([businessId])
-}
-
-// ============================================================================
-// PLATFORM PAYMENT PLUGIN REGISTRY (Super Admin controlled)
-// Controls which payment gateways are available globally and per business.
-// ============================================================================
-
-model PlatformPaymentPlugin {
-  id                  String   @id @default(cuid())
-  gateway             String   @unique  // "razorpay" | "phonepe" | "paytm" etc.
-  displayName         String            // "Razorpay", "PhonePe Business"
-  description         String?
-  isGloballyEnabled   Boolean  @default(false)
-  supportedMethods    String   @default("[]")   // JSON: ["UPI","CARD","NETBANKING"]
-  configSchema        String   @default("{}")   // JSON schema for credential fields
-  webhookPath         String?
-  docsUrl             String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  businessAccess      BusinessGatewayAccess[]
-}
-
-// Per-business gateway assignment and permission control (Super Admin sets this)
-model BusinessGatewayAccess {
-  id            String   @id @default(cuid())
-  businessId    String
-  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  pluginId      String
-  plugin        PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
-  isAssigned    Boolean  @default(false)   // Super Admin assigned gateway to this business
-  canConfigure  Boolean  @default(false)   // Business Owner can edit credentials
-  isActive      Boolean  @default(false)   // Business has activated this gateway
-  config        String   @default("{}")    // Admin-provided config when canConfigure=false
-  notes         String?
-  assignedAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@unique([businessId, pluginId])
-  @@index([businessId])
-  @@index([pluginId])
-}
-
-// ============================================================================
-// SECTION 14: SUBSCRIPTION ENGINE (Platform → Business)
-//
-// PLANS = feature access only (Standard vs Pro). NO pricing in plan definitions.
-// Pricing is always dynamic and negotiated — captured on BusinessSubscription.
-// Super Admin controls all billing. NO trial. Business created after payment.
-// ============================================================================
-
 enum PlanTier {
-  STANDARD    // Basic workflow access, standard badge, core features
-  PRO         // Advanced workflows, premium badge, multi-workflow support
+  STANDARD
+  PRO
 }
 
 enum PlanBillingCycle {
@@ -1123,163 +1574,12 @@ enum PlanBillingCycle {
 }
 
 enum SubscriptionStatus {
-  ACTIVE       // Paid and running
-  PAST_DUE     // Payment overdue
-  SUSPENDED    // Suspended due to non-payment or policy
-  CANCELLED    // Cancelled by Quantix
-  EXPIRED      // Subscription ended
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
 }
-
-// Plan = feature access group ONLY. No pricing. No billing cycle.
-// Pricing is captured on BusinessSubscription, not here.
-model PlatformPlan {
-  id              String    @id @default(cuid())
-  tier            PlanTier  @unique @default(STANDARD)
-  name            String    // "Quantix Standard", "Quantix Pro"
-  description     String?
-  features        String    @default("[]")
-  // Limits
-  maxStores       Int       @default(5)
-  maxProducts     Int       @default(5000)
-  maxOrders       Int       @default(10000)
-  maxDeliveryPartners Int   @default(50)
-  maxStaff        Int       @default(50)
-  // Feature flags
-  hasPOS                  Boolean  @default(true)
-  hasDelivery             Boolean  @default(true)
-  hasSubscription         Boolean  @default(true)
-  hasCustomDomain         Boolean  @default(true)
-  hasWhiteLabel           Boolean  @default(true)
-  hasAdvancedReports      Boolean  @default(true)
-  hasAPIAccess            Boolean  @default(true)
-  // Workflow access — STANDARD: Ecommerce only; PRO: all workflows
-  hasEcommerceWorkflow    Boolean  @default(true)
-  hasPickupWorkflow       Boolean  @default(false)
-  hasAppointmentWorkflow  Boolean  @default(false)
-  hasSubscriptionWorkflow Boolean  @default(false)
-  hasPostServiceWorkflow  Boolean  @default(false)
-  hasAdvancedWorkflowEngine Boolean @default(false)
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  subscriptions   BusinessSubscription[]
-
-  @@index([isActive])
-}
-
-model BusinessSubscription {
-  id                  String             @id @default(cuid())
-  businessId          String             @unique
-  planId              String
-  status              SubscriptionStatus @default(ACTIVE)
-
-  // ── Core Subscription Billing (admin-entered, fully flexible) ─────────────
-  subscriptionAmount      Float?             // Base subscription amount
-  discountAmount          Float?             // Discount amount (absolute)
-  finalAmount             Float?             // Auto-calculated: subscriptionAmount - discountAmount
-  billingCycle            PlanBillingCycle   // Subscription renewal cycle
-  billingCycleDay         Int?               // Day of month for recurring renewal (1–31)
-
-  // ── Implementation Charge (one-time) ──────────────────────────────────────
-  implementationAmount    Float?             // One-time implementation / setup fee
-
-  // ── iOS App Billing (optional) ────────────────────────────────────────────
-  iosAppAmount            Float?             // iOS subscription amount
-  iosDiscountAmount       Float?             // iOS discount amount
-  iosFinalAmount          Float?             // Auto-calculated: iosAppAmount - iosDiscountAmount
-  iosSubscriptionCycle    PlanBillingCycle?  // iOS billing cycle
-
-  // ── Add-Ons (dynamic, JSON array) ─────────────────────────────────────────
-  addOns                  String             @default("[]") // [{name,amount,cycle,description}]
-
-  // ── Resource Limits (subscription-level — Super Admin sets per business) ──
-  allowedStores           Int                @default(1)   // How many stores this business can create
-
-  // ── Legacy pricing fields (kept for existing records / backward compat) ───
-  planPrice               Float?             // Legacy: was plan's base price (use subscriptionAmount instead)
-  customPrice             Float?             // Legacy: was custom override price
-  discountPercentage      Float?             // Legacy: was discount percentage
-  manualPriceOverride     Boolean            @default(false)
-  overrideReason          String?
-  overrideApprovedBy      String?
-
-  // ── Period Tracking ───────────────────────────────────────────────────────
-  currentPeriodStart  DateTime
-  currentPeriodEnd    DateTime
-  nextBillingDate     DateTime
-
-  // ── Payment Verification ──────────────────────────────────────────────────
-  paymentVerified     Boolean            @default(false)
-  paymentVerifiedAt   DateTime?
-  paymentVerifiedBy   String?
-
-  // ── Pause ─────────────────────────────────────────────────────────────────
-  pausedAt            DateTime?
-  pauseReason         String?
-  resumeAt            DateTime?
-
-  // ── Payment History ───────────────────────────────────────────────────────
-  lastPaymentDate     DateTime?
-  lastPaymentAmount   Float?
-  nextPaymentAmount   Float?
-  paymentMethod       String?
-
-  // ── Auto Renewal ──────────────────────────────────────────────────────────
-  autoRenew           Boolean            @default(true)
-  cancelledAt         DateTime?
-  cancelReason        String?
-
-  // ── Reminder Tracking ─────────────────────────────────────────────────────
-  reminderSentAt      DateTime?
-
-  // ── Notes ─────────────────────────────────────────────────────────────────
-  notes               String?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-
-  business            Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  plan                PlatformPlan       @relation(fields: [planId], references: [id])
-  billingHistory      BillingRecord[]
-
-  @@index([status])
-  @@index([nextBillingDate])
-}
-
-model BillingRecord {
-  id                    String   @id @default(cuid())
-  businessSubscriptionId String
-  amount                Float
-  currency              String   @default("INR")
-  status                String   @default("pending")
-  invoiceNumber         String?
-  paymentGateway        String?
-  gatewayTransactionId  String?
-  dueDate               DateTime
-  paidDate              DateTime?
-  description           String?
-  // Manual payment tracking fields
-  paymentMode           String?  // "CASH" | "BANK_TRANSFER" | "UPI" | "CHEQUE" | "ONLINE"
-  paidBy                String?  // Name of person who paid / contact name
-  receiptReference      String?  // Receipt number, transaction ID, cheque number
-  remarks               String?  // Admin notes about this payment
-  periodYear            Int?     // Billing year (e.g. 2025)
-  periodLabel           String?  // Human label e.g. "May 2025", "Q1 2025", "2025–2026"
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  subscription          BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
-
-  @@index([businessSubscriptionId])
-  @@index([status])
-  @@index([dueDate])
-  @@index([periodYear])
-}
-
-// ============================================================================
-// SECTION 15: CUSTOMER-SUBSCRIPTION ENGINE (Business → Customer)
-// Credit-based packages for Car Wash, Home Services, Laundry etc.
-// ============================================================================
 
 enum SubscriptionServiceType {
   CAR_WASH
@@ -1304,189 +1604,6 @@ enum CustomerSubscriptionStatus {
   EXPIRED
 }
 
-model SubscriptionPlan {
-  id                String                 @id @default(cuid())
-  businessId        String
-  name              String
-  slug              String
-  description       String?
-  serviceType       SubscriptionServiceType
-  billingCycle      SubscriptionBillingCycle
-  price             Float
-  originalPrice     Float?
-  setupFee          Float                  @default(0)
-  totalCredits      Int                    @default(0)
-  creditLabel       String?
-  features          String                 @default("[]")
-  isFeatured        Boolean                @default(false)
-  maxSubscribers    Int?
-  currentSubscribers Int                   @default(0)
-  isActive          Boolean                @default(true)
-  sortOrder         Int                    @default(0)
-  startsAt          DateTime?
-  endsAt            DateTime?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-
-  business          Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  planItems         SubscriptionPlanItem[]
-  subscriptions     CustomerSubscription[]
-
-  @@unique([businessId, slug])
-  @@index([businessId])
-  @@index([isActive])
-}
-
-model SubscriptionPlanItem {
-  id              String            @id @default(cuid())
-  planId          String
-  productId       String?
-  serviceName     String?
-  creditsPerCycle Int               @default(1)
-  maxPerUse       Int               @default(1)
-  rollover        Boolean           @default(false)
-  rolloverMax     Int               @default(0)
-  createdAt       DateTime          @default(now())
-
-  plan            SubscriptionPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
-
-  @@index([planId])
-}
-
-model CustomerSubscription {
-  id                String                   @id @default(cuid())
-  businessId        String
-  customerId        String
-  planId            String
-  status            CustomerSubscriptionStatus @default(ACTIVE)
-  currentPeriodStart DateTime
-  currentPeriodEnd   DateTime
-  nextBillingDate    DateTime
-  totalCredits      Int                      @default(0)
-  usedCredits       Int                      @default(0)
-  remainingCredits  Int                      @default(0)
-  autoRenew         Boolean                  @default(true)
-  cancelledAt       DateTime?
-  cancelAtPeriodEnd Boolean                  @default(false)
-  pauseStartAt      DateTime?
-  pauseEndAt        DateTime?
-  paymentMethodId   String?
-  lastPaymentAt     DateTime?
-  lastPaymentAmount Float?
-  metadata          String                   @default("{}")
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
-
-  business          Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer          Customer                 @relation(fields: [customerId], references: [id])
-  plan              SubscriptionPlan          @relation(fields: [planId], references: [id])
-  usages            SubscriptionUsage[]
-  orders            Order[]
-
-  @@index([businessId])
-  @@index([customerId])
-  @@index([status])
-}
-
-model SubscriptionUsage {
-  id              String   @id @default(cuid())
-  subscriptionId  String
-  orderId         String?
-  creditsUsed     Int      @default(1)
-  description     String?
-  createdAt       DateTime @default(now())
-
-  subscription    CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
-  @@index([subscriptionId])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// SECTION 16: CUSTOMER
-// ============================================================================
-
-model Customer {
-  id            String   @id @default(cuid())
-  businessId    String
-  userId        String?
-  name          String
-  email         String?
-  phone         String?
-  avatar        String?
-  gstNumber     String?
-  dateOfBirth   DateTime?
-  gender        String?  // "MALE", "FEMALE", "OTHER"
-  loyaltyTier   String   @default("BRONZE") // "BRONZE", "SILVER", "GOLD", "PLATINUM"
-  notes         String   @default("")
-  loyaltyPoints Int      @default(0)
-  totalOrders   Int      @default(0)
-  totalSpent    Float    @default(0)
-  avgOrderValue Float    @default(0)
-  lastOrderAt   DateTime?
-  tags          String   @default("[]")
-  metadata      String   @default("{}")
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user          User?    @relation(fields: [userId], references: [id])
-  addresses     Address[]
-  orders        Order[]
-  subscriptions CustomerSubscription[]
-  invoices      Invoice[]
-  customerNotes CustomerNote[]
-
-  @@unique([businessId, phone])
-  @@index([businessId])
-  @@index([userId])
-  @@index([phone])
-}
-
-model Address {
-  id           String   @id @default(cuid())
-  customerId   String
-  label        String?
-  addressLine1 String
-  addressLine2 String?
-  city         String
-  state        String
-  pincode      String
-  country      String   @default("India")
-  latitude     Float?
-  longitude    Float?
-  isDefault    Boolean  @default(false)
-  landmark     String?
-  instructions String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([customerId])
-}
-
-model CustomerNote {
-  id         String   @id @default(cuid())
-  customerId String
-  userId     String
-  content    String
-  isPrivate  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id])
-
-  @@index([customerId])
-  @@index([userId])
-}
-
-// ============================================================================
-// SECTION 17: NOTIFICATIONS (Push, WhatsApp, Email — NO SMS)
-// ============================================================================
-
 enum NotificationType {
   ORDER_STATUS
   DELIVERY_UPDATE
@@ -1503,49 +1620,6 @@ enum NotificationChannel {
   IN_APP
 }
 
-model NotificationTemplate {
-  id          String              @id @default(cuid())
-  key         String
-  name        String
-  channel     NotificationChannel
-  subject     String?
-  body        String
-  isActive    Boolean             @default(true)
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  @@unique([key, channel])
-}
-
-model Notification {
-  id          String             @id @default(cuid())
-  businessId  String
-  userId      String?
-  type        NotificationType
-  channel     NotificationChannel
-  title       String
-  message     String
-  data        String             @default("{}")
-  isRead      Boolean            @default(false)
-  readAt      DateTime?
-  sentAt      DateTime?
-  failedAt    DateTime?
-  error       String?
-  createdAt   DateTime           @default(now())
-
-  business    Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@index([businessId])
-  @@index([userId])
-  @@index([type])
-  @@index([isRead])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// SECTION 18: INVOICE & TAX
-// ============================================================================
-
 enum InvoiceType {
   TAX_INVOICE
   CREDIT_NOTE
@@ -1554,64 +1628,6 @@ enum InvoiceType {
   RECEIPT
 }
 
-model Invoice {
-  id              String      @id @default(cuid())
-  businessId      String
-  orderId         String?     @unique
-  customerId      String?
-  invoiceNumber   String
-  invoiceType     InvoiceType @default(TAX_INVOICE)
-  subtotal        Float       @default(0)
-  totalTax        Float       @default(0)
-  totalDiscount   Float       @default(0)
-  totalAmount     Float       @default(0)
-  cgstAmount      Float       @default(0)
-  sgstAmount      Float       @default(0)
-  igstAmount      Float       @default(0)
-  dueDate         DateTime?
-  paidAt          DateTime?
-  status          String      @default("pending")
-  pdfUrl          String?
-  metadata        String      @default("{}")
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  business        Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  order           Order?      @relation(fields: [orderId], references: [id])
-  customer        Customer?   @relation(fields: [customerId], references: [id])
-
-  @@unique([businessId, invoiceNumber])
-  @@index([businessId])
-  @@index([orderId])
-  @@index([customerId])
-  @@index([status])
-}
-
-model TaxConfig {
-  id          String   @id @default(cuid())
-  businessId  String
-  name        String
-  taxType     String
-  rate        Float
-  cgstRate    Float?
-  sgstRate    Float?
-  igstRate    Float?
-  cessRate    Float?
-  isActive    Boolean  @default(true)
-  isDefault   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@index([businessId])
-  @@index([taxType])
-}
-
-// ============================================================================
-// SECTION 19: PROMO CODES
-// ============================================================================
-
 enum PromoType {
   PERCENTAGE
   FLAT
@@ -1619,96 +1635,12 @@ enum PromoType {
   BOGO
 }
 
-model PromoCode {
-  id              String    @id @default(cuid())
-  businessId      String
-  code            String
-  description     String?
-  type            PromoType
-  value           Float
-  minOrderAmount  Float     @default(0)
-  maxDiscount     Float?
-  usageLimit      Int?
-  usedCount       Int       @default(0)
-  perUserLimit    Int       @default(1)
-  validFrom       DateTime
-  validUntil      DateTime
-  isActive        Boolean   @default(true)
-  applicableModules String  @default("[]")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  orders          Order[]
-
-  @@unique([businessId, code])
-  @@index([businessId])
-  @@index([code])
-  @@index([isActive])
-}
-
-// ============================================================================
-// SECTION 20: SALES TEAM (Quantix Internal)
-// Manages leads, demos, negotiations — NOT business creation.
-// ============================================================================
-
-model SalesTeamMember {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  name               String
-  email              String
-  phone              String
-  avatar             String?
-  designation        String?
-  region             String?
-  reportingManager   String?
-  commissionPercent  Float    @default(0)
-  target             Float    @default(0)
-  achieved           Float    @default(0)
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  user        User     @relation(fields: [userId], references: [id])
-  leads       Lead[]
-  clients     Business[]  @relation("SalesRepClients")
-}
-
-// ============================================================================
-// SECTION 21: DOMAIN & DEPLOYMENT (Quantix Managed)
-// Quantix controls all deployment, domains, and branding.
-// ============================================================================
-
 enum DomainStatus {
   PENDING_DNS
   DNS_PROPAGATING
   SSL_PENDING
   ACTIVE
   ERROR
-}
-
-model DomainMapping {
-  id              String       @id @default(cuid())
-  businessId      String       @unique
-  domain          String
-  subdomain       String?
-  isPrimary       Boolean      @default(true)
-  sslStatus       String       @default("pending")
-  sslExpiryDate   DateTime?
-  dnsProvider     String?
-  dnsConfig       String       @default("{}")
-  status          DomainStatus @default(PENDING_DNS)
-  configuredBy    String?      // Quantix team member
-  configuredAt    DateTime?
-  deployedAt      DateTime?
-  notes           String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  business        Business     @relation(fields: [businessId], references: [id])
-
-  @@unique([domain])
-  @@index([status])
 }
 
 enum DeploymentStatus {
@@ -1727,62 +1659,6 @@ enum DeploymentType {
   DELIVERY_APP
   ADMIN_APP
 }
-
-model Deployment {
-  id              String           @id @default(cuid())
-  businessId      String
-  type            DeploymentType
-  status          DeploymentStatus @default(PENDING)
-  environment     String           @default("production")
-  hostingProvider String           @default("replit")
-  hostingConfig   String           @default("{}")
-  buildUrl        String?
-  liveUrl         String?
-  version         String?
-  deployedBy      String?          // Quantix team member who deployed
-  deployedAt      DateTime?
-  lastCheckedAt   DateTime?
-  healthStatus    String           @default("unknown")
-  notes           String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  business        Business         @relation(fields: [businessId], references: [id])
-
-  @@index([businessId])
-  @@index([type])
-  @@index([status])
-}
-
-// ============================================================================
-// SECTION 22: AUDIT LOG
-// ============================================================================
-
-model ActivityLog {
-  id          String   @id @default(cuid())
-  businessId  String?
-  userId      String?
-  action      String
-  entity      String
-  entityId    String?
-  details     String?
-  ip          String?
-  userAgent   String?
-  createdAt   DateTime @default(now())
-
-  business    Business? @relation(fields: [businessId], references: [id])
-  user        User?     @relation(fields: [userId], references: [id])
-
-  @@index([businessId])
-  @@index([userId])
-  @@index([action])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// SECTION 23: CATALOG MODULE (Shared product/category/inventory)
-// Used by: GROCERY, PHARMACY, ECOMMERCE, COSMETICS, MEAT_DELIVERY, FURNITURE
-// ============================================================================
 
 enum ProductType {
   PHYSICAL
@@ -1803,174 +1679,4 @@ enum InventoryStatus {
   LOW_STOCK
   OUT_OF_STOCK
   DISCONTINUED
-}
-
-model Category {
-  id            String      @id @default(cuid())
-  businessId    String
-  name          String
-  slug          String
-  description   String?
-  image         String?
-  icon          String?
-  parentId      String?
-  // WORKFLOW ASSIGNMENT — determines how products in this category are processed
-  workflowType  WorkflowType @default(ECOMMERCE)
-  sortOrder     Int         @default(0)
-  isActive      Boolean     @default(true)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  business      Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  parent        Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children      Category[]  @relation("CategoryHierarchy")
-  products      Product[]
-
-  @@unique([businessId, slug])
-  @@index([businessId])
-  @@index([parentId])
-  @@index([workflowType])
-}
-
-model Product {
-  id              String        @id @default(cuid())
-  businessId      String
-  storeId         String?
-  categoryId      String?
-  name            String
-  slug            String
-  description     String?
-  shortDesc       String?
-  type            ProductType   @default(PHYSICAL)
-  status          ProductStatus @default(ACTIVE)
-  sku             String?
-  barcode         String?
-  images          String        @default("[]")
-  unit            String?
-  unitQuantity    Float?
-  isVeg           Boolean?
-  isFeatured      Boolean       @default(false)
-  isPopular       Boolean       @default(false)
-  preparationTime Int?
-  minOrderQty     Float         @default(1)
-  maxOrderQty     Float         @default(100)
-  tags            String        @default("[]")
-  nutritionInfo   String?
-  allergenInfo    String?
-  // WORKFLOW ASSIGNMENT — overrides category workflow if set, inherits from category if null
-  workflowType    WorkflowType? 
-  sortOrder       Int           @default(0)
-  metadata        String        @default("{}")
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  category        Category?     @relation(fields: [categoryId], references: [id])
-  variants        ProductVariant[]
-  inventory       Inventory[]
-
-  @@unique([businessId, slug])
-  @@index([businessId])
-  @@index([categoryId])
-  @@index([status])
-  @@index([storeId])
-  @@index([workflowType])
-}
-
-model ProductVariant {
-  id              String   @id @default(cuid())
-  productId       String
-  name            String
-  sku             String?
-  barcode         String?
-  price           Float
-  mrp             Float
-  costPrice       Float?
-  discountPrice   Float?
-  discountPercent Float?
-  stock           Int      @default(0)
-  minStock        Int      @default(0)
-  isDefault       Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  attributes      String   @default("{}")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  inventory       Inventory[]
-
-  @@index([productId])
-  @@index([isActive])
-}
-
-model Inventory {
-  id             String          @id @default(cuid())
-  businessId     String
-  storeId        String
-  productId      String
-  variantId      String?
-  quantity       Int             @default(0)
-  reservedQty    Int             @default(0)
-  minStock       Int             @default(5)
-  maxStock       Int             @default(1000)
-  status         InventoryStatus @default(IN_STOCK)
-  lastRestockedAt DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-
-  store          Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant        ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  logs           InventoryLog[]
-
-  @@unique([storeId, productId, variantId])
-  @@index([storeId])
-  @@index([productId])
-  @@index([status])
-}
-
-model InventoryLog {
-  id          String   @id @default(cuid())
-  inventoryId String
-  action      String
-  quantity    Int
-  previousQty Int
-  newQty      Int
-  note        String?
-  performedBy String?
-  createdAt   DateTime @default(now())
-
-  inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
-
-  @@index([inventoryId])
-  @@index([createdAt])
-}
-
-// ── Enterprise RBAC ──────────────────────────────────────────────────────────
-
-model RolePermission {
-  id          String   @id @default(cuid())
-  role        String   @unique          // role identifier e.g. "PLATFORM_ADMIN"
-  permissions Json                      // string[] of permission keys
-  updatedAt   DateTime @updatedAt
-  updatedBy   String?                   // userId who last saved
-
-  @@index([role])
-}
-
-model PermissionChangeLog {
-  id          String   @id @default(cuid())
-  role        String
-  changedBy   String                    // userId
-  changedByEmail String?
-  oldPerms    Json                      // previous permission array
-  newPerms    Json                      // new permission array
-  added       Json                      // keys added in this change
-  removed     Json                      // keys removed in this change
-  note        String?
-  createdAt   DateTime @default(now())
-
-  @@index([role])
-  @@index([changedBy])
-  @@index([createdAt])
 }

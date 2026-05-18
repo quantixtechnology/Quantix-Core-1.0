@@ -1,4 +1,5 @@
 // ============================================================================
+// GET    /api/admin/documents/[id]  — Full document (incl. formSnapshot) for PDF render
 // PATCH  /api/admin/documents/[id]  — Soft-archive a document (documents:delete)
 // DELETE /api/admin/documents/[id]  — Hard delete (documents:delete, Super Admin only)
 //
@@ -16,6 +17,35 @@ interface AuthenticatedRequest extends NextRequest {
 }
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
+
+// ── GET — full document for PDF regeneration ──────────────────────────────────
+export const GET = withMiddleware({
+  requireAuth: true,
+  requiredPermission: 'documents:view',
+})(async (_req: NextRequest, ctx?: Ctx) => {
+  try {
+    const params = await ctx?.params
+    const id = params?.id as string | undefined
+    if (!id) return createErrorResponse('Missing document id', 400)
+
+    const doc = await db.proposalDocument.findUnique({
+      where: { id },
+      select: {
+        id: true, proposalId: true, documentType: true, status: true,
+        businessName: true, clientName: true, contactPhone: true, contactEmail: true,
+        leadId: true, salesTeamMember: true, salesTeamEmail: true, totalAmount: true,
+        pdfVersion: true, createdBy: true, createdByName: true, createdAt: true,
+        formSnapshot: true,
+      },
+    })
+    if (!doc) return createErrorResponse('Document not found', 404)
+
+    return NextResponse.json({ success: true, data: doc })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch document'
+    return createErrorResponse(message, 500)
+  }
+})
 
 // ── PATCH — soft archive ──────────────────────────────────────────────────────
 export const PATCH = withMiddleware({

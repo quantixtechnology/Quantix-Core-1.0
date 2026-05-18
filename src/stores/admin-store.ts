@@ -44,6 +44,7 @@ export type AdminPage =
   | "business-data-import"
   | "proposals"
   | "document-center"
+  | "payment-config"
 
 export type BusinessPage =
   | "dashboard"

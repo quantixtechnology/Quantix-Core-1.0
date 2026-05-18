@@ -45,6 +45,8 @@ export type Permission =
   | "proposals:create"
   | "documents:view"
   | "documents:delete"
+  | "payment_config:view"
+  | "payment_config:edit"
 
 // All roles supported by the platform
 export type PlatformRole =
@@ -133,6 +135,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "import:leads", "import:business", "export:leads",
     "proposals:view", "proposals:create",
     "documents:view", "documents:delete",
+    "payment_config:view", "payment_config:edit",
   ],
   PLATFORM_ADMIN: [
     // Navigation — near-full admin, no destructive system access
@@ -427,6 +430,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "proposals:create":             "Create & Download Proposals",
   "documents:view":               "View Document Center",
   "documents:delete":             "Delete Documents (Super Admin only)",
+  "payment_config:view":          "View Payment Configuration",
+  "payment_config:edit":          "Edit Payment Configuration",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {
@@ -509,6 +514,8 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "proposals":              "proposals:view",
   // Document Center
   "document-center":        "documents:view",
+  // Payment Configuration
+  "payment-config":         "payment_config:view",
   // System
   "roles-permissions":      "roles_permissions:view",
   "backup-monitoring":      "backup:view",
