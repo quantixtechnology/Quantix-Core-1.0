@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useRef } from "react"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { StatusBadge } from "@/components/admin/shared/status-badge"
 import { EmptyState } from "@/components/ui/loading-states"
@@ -392,6 +392,11 @@ export function ProductsView() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
 
+  // ---- Image upload state ----
+  const [formImageUrl, setFormImageUrl] = useState("")
+  const [imageUploading, setImageUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   // ---- Add category dialog ----
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
   const [catFormName, setCatFormName] = useState("")
@@ -485,6 +490,7 @@ export function ProductsView() {
     setFormIsFeatured(false)
     setFormStatus("ACTIVE")
     setFormVariants([{ name: "", sku: "", mrp: "", price: "", stock: "" }])
+    setFormImageUrl("")
     setEditingProduct(null)
   }
 
@@ -501,6 +507,7 @@ export function ProductsView() {
     setFormIsVeg(product.isVeg)
     setFormIsFeatured(product.isFeatured)
     setFormStatus(product.status)
+    setFormImageUrl(product.image || "")
     setFormVariants(
       product.variants.map((v) => ({
         name: v.name,
@@ -526,6 +533,8 @@ export function ProductsView() {
     const categoryObj = syncedCategoryList.find((c) => c.id === formCategory)
 
     try {
+      const imageList = formImageUrl ? [formImageUrl] : []
+
       if (editingProduct) {
         // Update via API
         await updateProductMutation.mutateAsync({
@@ -537,6 +546,7 @@ export function ProductsView() {
             status: formStatus,
             isVeg: formIsVeg,
             isFeatured: formIsFeatured,
+            images: imageList,
             variants: formVariants.map((fv) => ({
               name: fv.name || formName,
               sku: fv.sku,
@@ -556,6 +566,7 @@ export function ProductsView() {
           status: formStatus,
           isVeg: formIsVeg,
           isFeatured: formIsFeatured,
+          images: imageList,
           variants: formVariants.map((fv) => ({
             name: fv.name || formName,
             sku: fv.sku,
@@ -662,6 +673,31 @@ export function ProductsView() {
     setFormVariants((prev) =>
       prev.map((v, i) => (i === index ? { ...v, [field]: value } : v))
     )
+  }
+
+  // ---- Image upload handler ----
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !businessId) return
+    setImageUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('businessId', businessId)
+      const res = await fetch('/api/core/upload', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (json.success) {
+        setFormImageUrl(json.url)
+      } else {
+        showError(json.error || 'Upload failed')
+      }
+    } catch {
+      showError('Upload failed')
+    } finally {
+      setImageUploading(false)
+      // Reset input so re-selecting same file triggers onChange again
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   // ---- Category handlers ----
@@ -1147,17 +1183,27 @@ export function ProductsView() {
 
                 <ScrollArea className="h-[calc(100vh-120px)]">
                   <div className="space-y-6 p-6">
-                    {/* ---- Image Placeholder ---- */}
+                    {/* ---- Product Image ---- */}
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         Product Image
                       </h4>
-                      <div className="flex h-40 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30">
-                        <div className="text-center">
-                          <Upload className="h-8 w-8 text-muted-foreground/50 mx-auto" />
-                          <p className="text-xs text-muted-foreground mt-2">No image uploaded</p>
+                      {product.image ? (
+                        <div className="rounded-lg overflow-hidden border bg-muted/20 h-40">
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            className="w-full h-full object-contain"
+                          />
                         </div>
-                      </div>
+                      ) : (
+                        <div className="flex h-40 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30">
+                          <div className="text-center">
+                            <Upload className="h-8 w-8 text-muted-foreground/50 mx-auto" />
+                            <p className="text-xs text-muted-foreground mt-2">No image — edit product to upload</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <Separator />
@@ -1489,16 +1535,58 @@ export function ProductsView() {
 
             <Separator />
 
-            {/* ---- Image Upload Placeholder ---- */}
+            {/* ---- Image Upload ---- */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Product Image</Label>
-              <div className="flex h-32 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors">
-                <div className="text-center">
-                  <Upload className="h-6 w-6 text-muted-foreground/50 mx-auto" />
-                  <p className="text-xs text-muted-foreground mt-1">Click to upload or drag & drop</p>
-                  <p className="text-[10px] text-muted-foreground">PNG, JPG up to 5MB</p>
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                onChange={handleImageFileChange}
+              />
+              {formImageUrl ? (
+                <div className="relative rounded-lg overflow-hidden border bg-muted/20 h-32">
+                  <img
+                    src={formImageUrl}
+                    alt="Product"
+                    className="w-full h-full object-contain"
+                  />
+                  <button
+                    type="button"
+                    className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold hover:opacity-90"
+                    onClick={() => setFormImageUrl("")}
+                  >
+                    ×
+                  </button>
+                  <button
+                    type="button"
+                    className="absolute bottom-2 right-2 bg-background/80 text-foreground rounded px-2 py-0.5 text-xs border hover:bg-background"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Change
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <div
+                  className="flex h-32 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {imageUploading ? (
+                    <div className="text-center">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary mx-auto" />
+                      <p className="text-xs text-muted-foreground mt-1">Uploading…</p>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <Upload className="h-6 w-6 text-muted-foreground/50 mx-auto" />
+                      <p className="text-xs text-muted-foreground mt-1">Click to upload or drag &amp; drop</p>
+                      <p className="text-[10px] text-muted-foreground">PNG, JPG, WebP up to 5MB</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
