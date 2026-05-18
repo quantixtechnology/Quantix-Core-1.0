@@ -471,6 +471,16 @@ export async function createBusiness(data: CreateBusinessRequest) {
       },
     });
 
+    // Auto-create deployment records for all 4 app types (status=PENDING)
+    await tx.deployment.createMany({
+      data: [
+        { businessId: business.id, type: 'CUSTOMER_APP',    status: 'PENDING', environment: 'production', hostingProvider: 'replit', hostingConfig: '{}', healthStatus: 'unknown' },
+        { businessId: business.id, type: 'WEBSITE',         status: 'PENDING', environment: 'production', hostingProvider: 'replit', hostingConfig: '{}', healthStatus: 'unknown' },
+        { businessId: business.id, type: 'DELIVERY_APP',    status: 'PENDING', environment: 'production', hostingProvider: 'replit', hostingConfig: '{}', healthStatus: 'unknown' },
+        { businessId: business.id, type: 'ADMIN_APP',       status: 'PENDING', environment: 'production', hostingProvider: 'replit', hostingConfig: '{}', healthStatus: 'unknown' },
+      ],
+    });
+
     // Log activity
     await tx.activityLog.create({
       data: {

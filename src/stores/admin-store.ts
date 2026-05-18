@@ -69,6 +69,15 @@ export type BusinessPage =
   | "workflows"
   | "gateway-config"
   | "business-data-import"
+  | "categories"
+  | "branding"
+  | "feature-flags"
+  | "subscription-view"
+  | "customer-app"
+  | "delivery-app"
+  | "admin-app"
+  | "website"
+  | "onboarding-progress"
 
 export type CustomerPage =
   | "auth"

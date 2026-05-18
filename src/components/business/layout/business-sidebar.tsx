@@ -5,7 +5,7 @@ import {
   Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
   Workflow, Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
-  DatabaseZap,
+  DatabaseZap, Tag, Palette, Smartphone, Globe,
 } from "lucide-react"
 import {
   Sidebar,
@@ -67,6 +67,7 @@ const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; i
 const managementNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "stores", label: "Stores", icon: Store },
   { key: "customers", label: "Customers", icon: Users },
+  { key: "categories", label: "Categories", icon: Tag },
   { key: "product-import",      label: "Product Import",       icon: Upload },
   { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap },
   { key: "pos", label: "POS Billing", icon: Monitor },
@@ -80,6 +81,16 @@ const managementNavItems: { key: BusinessPage; label: string; icon: React.Compon
 
 const storefrontNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "storefront", label: "Storefront Preview", icon: Eye },
+]
+
+const platformNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "branding",           label: "Branding",           icon: Palette },
+  { key: "feature-flags",      label: "Feature Flags",      icon: Zap },
+  { key: "subscription-view",  label: "Subscription",       icon: CreditCard },
+  { key: "customer-app",       label: "Customer App",       icon: Smartphone },
+  { key: "delivery-app",       label: "Delivery App",       icon: Truck },
+  { key: "admin-app",          label: "Admin App",          icon: Globe },
+  { key: "onboarding-progress", label: "Onboarding",        icon: LayoutDashboard },
 ]
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -209,6 +220,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
             <NavSection title="Workflows" items={[workflowConfigItem, ...workflowNavItems]} activePage={businessPage} onNavigate={handleNavigate} compact badge={`${activeWorkflows.length} active`} />
             <NavSection title="Management" items={managementNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
             <NavSection title="Store" items={storefrontNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
+            <NavSection title="Platform" items={platformNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
           </ScrollArea>
 
           <div className="border-t p-4">
@@ -307,6 +319,22 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
           <SidebarGroupContent>
             <SidebarMenu>
               {storefrontNavItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
+                    <item.icon className="size-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Platform</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {platformNavItems.map((item) => (
                 <SidebarMenuItem key={item.key}>
                   <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
                     <item.icon className="size-4" />

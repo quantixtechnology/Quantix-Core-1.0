@@ -883,14 +883,16 @@ export function BusinessesView() {
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
                             {canImpersonate && (
-                              <Button
-                                variant="outline" size="sm"
-                                className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400"
-                                onClick={() => setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)}
-                              >
-                                <LogIn className="size-3" />
-                                Login As
-                              </Button>
+                              <>
+                                <Button
+                                  variant="outline" size="sm"
+                                  className="h-7 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400"
+                                  onClick={() => { setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}
+                                >
+                                  <LogIn className="size-3" />
+                                  Workspace
+                                </Button>
+                              </>
                             )}
                           </div>
                         </TableCell>

@@ -145,6 +145,12 @@ const TaxView = dynamic(() => import("@/components/dashboard/tax-view").then(m =
 const LoyaltyView = dynamic(() => import("@/components/dashboard/loyalty-view").then(m => ({ default: m.LoyaltyView })), { loading: () => <PageLoader /> })
 const DeliveryZonesView = dynamic(() => import("@/components/dashboard/delivery-zones-view").then(m => ({ default: m.DeliveryZonesView })), { loading: () => <PageLoader /> })
 const StoresView = dynamic(() => import("@/components/business/stores/stores-view").then(m => ({ default: m.StoresView })), { loading: () => <PageLoader /> })
+const CategoriesView = dynamic(() => import("@/components/business/categories/categories-view").then(m => ({ default: m.CategoriesView })), { loading: () => <PageLoader /> })
+const BrandingView = dynamic(() => import("@/components/business/branding/branding-view").then(m => ({ default: m.BrandingView })), { loading: () => <PageLoader /> })
+const FeatureFlagsView = dynamic(() => import("@/components/business/feature-flags/feature-flags-view").then(m => ({ default: m.FeatureFlagsView })), { loading: () => <PageLoader /> })
+const SubscriptionView = dynamic(() => import("@/components/business/subscription/subscription-view").then(m => ({ default: m.SubscriptionView })), { loading: () => <PageLoader /> })
+const AppsView = dynamic(() => import("@/components/business/apps/apps-view").then(m => ({ default: m.AppsView })), { loading: () => <PageLoader /> })
+const WorkspaceOverview = dynamic(() => import("@/components/business/workspace/workspace-overview").then(m => ({ default: m.WorkspaceOverview })), { loading: () => <PageLoader /> })
 
 // ── Customer App (lazy) ───────────────────────────────────────────────────
 const CustomerAuth = dynamic(() => import("@/components/customer/auth/customer-auth").then(m => ({ default: m.CustomerAuth })), { loading: () => <PageLoader /> })
@@ -305,6 +311,16 @@ function AppContent() {
       case "workflows": return <WorkflowEngineView />
       // Payment
       case "gateway-config": return <GatewayConfigView />
+      // Platform config
+      case "categories": return <CategoriesView />
+      case "branding": return <BrandingView />
+      case "feature-flags": return <FeatureFlagsView />
+      case "subscription-view": return <SubscriptionView />
+      case "customer-app": return <AppsView />
+      case "delivery-app": return <AppsView />
+      case "admin-app": return <AppsView />
+      case "website": return <AppsView />
+      case "onboarding-progress": return <WorkspaceOverview />
       default: return <BusinessDashboard />
     }
   }

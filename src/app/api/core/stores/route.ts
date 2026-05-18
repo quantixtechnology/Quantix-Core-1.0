@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { listStores, createStore, getStore } from '@/lib/core/store';
+import { db } from '@/lib/db';
 import type { CreateStoreRequest } from '@/lib/core/types';
 
 export const GET = withMiddleware({ requireAuth: true })(async (req) => {
@@ -82,6 +83,69 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
     }
 
     const store = await createStore(businessId, body);
+
+    // Auto-provision tax configs (copy business-level defaults) and delivery zone for the new store
+    try {
+      const [existingTaxConfigs, existingZone] = await Promise.all([
+        db.taxConfig.findMany({ where: { businessId, storeId: null, isActive: true } }),
+        db.deliveryZone.findFirst({ where: { businessId, storeId: null } }),
+      ]);
+
+      if (existingTaxConfigs.length > 0) {
+        await db.taxConfig.createMany({
+          data: existingTaxConfigs.map(tc => ({
+            businessId,
+            storeId:    store.id,
+            name:       tc.name,
+            taxType:    tc.taxType,
+            rate:       tc.rate,
+            cgstRate:   tc.cgstRate,
+            sgstRate:   tc.sgstRate,
+            igstRate:   tc.igstRate,
+            cessRate:   tc.cessRate,
+            isDefault:  tc.isDefault,
+            isActive:   true,
+          })),
+        });
+      }
+
+      if (existingZone) {
+        await db.deliveryZone.create({
+          data: {
+            businessId,
+            storeId:          store.id,
+            name:             `${store.name} Delivery Zone`,
+            zoneType:         existingZone.zoneType,
+            centerLat:        body.latitude  ?? existingZone.centerLat,
+            centerLng:        body.longitude ?? existingZone.centerLng,
+            radius:           existingZone.radius,
+            deliveryFee:      existingZone.deliveryFee,
+            minOrderAmount:   existingZone.minOrderAmount,
+            freeDeliveryAbove: existingZone.freeDeliveryAbove,
+            estimatedTime:    existingZone.estimatedTime,
+            isActive:         true,
+          },
+        });
+      } else {
+        await db.deliveryZone.create({
+          data: {
+            businessId,
+            storeId:        store.id,
+            name:           `${store.name} Delivery Zone`,
+            zoneType:       'CIRCLE',
+            centerLat:      body.latitude  ?? null,
+            centerLng:      body.longitude ?? null,
+            radius:         5,
+            deliveryFee:    0,
+            minOrderAmount: 0,
+            estimatedTime:  30,
+            isActive:       true,
+          },
+        });
+      }
+    } catch {
+      // Non-fatal — store is created; provisioning can be done manually
+    }
 
     return NextResponse.json(
       { success: true, data: store, message: 'Store created successfully' },
