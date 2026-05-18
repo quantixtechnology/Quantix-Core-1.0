@@ -234,6 +234,8 @@ model Business {
   workflowRules         WorkflowRule[]
   branding              BusinessBranding?
   appConfig             AppConfig?
+  cartItems             CartItem[]
+  favorites             Favorite[]
 
   @@index([businessType])
   @@index([status])
@@ -984,6 +986,8 @@ model Customer {
   subscriptions CustomerSubscription[]
   invoices      Invoice[]
   orders        Order[]
+  cartItems     CartItem[]
+  favorites     Favorite[]
 
   @@unique([businessId, phone])
   @@index([businessId])
@@ -1300,6 +1304,8 @@ model Product {
   store           Store?           @relation(fields: [storeId], references: [id])
   business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   variants        ProductVariant[]
+  cartItems       CartItem[]
+  favorites       Favorite[]
 
   @@unique([businessId, slug])
   @@index([businessId])
@@ -1472,6 +1478,41 @@ model WorkflowRule {
   @@index([storeId])
   @@index([trigger])
   @@index([isActive])
+}
+
+model CartItem {
+  id         String   @id @default(cuid())
+  businessId String
+  customerId String
+  storeId    String
+  productId  String
+  variantId  String?
+  quantity   Int      @default(1)
+  addedAt    DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, storeId, productId, variantId])
+  @@index([customerId])
+  @@index([businessId])
+  @@index([storeId])
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  businessId String
+  customerId String
+  productId  String
+  addedAt    DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, productId])
+  @@index([customerId])
+  @@index([businessId])
 }
 
 enum LeadSource {
