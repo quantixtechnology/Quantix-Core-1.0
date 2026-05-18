@@ -30,6 +30,18 @@ const nextConfig: NextConfig = {
           destination: "/?_storefront=:slug",
         },
       ],
+      // In standalone production mode, the static server only serves files
+      // from .next/standalone/public/ (copied at build time). Uploaded files
+      // land in project/public/uploads/ after the build, so they're invisible
+      // to the static server. This afterFiles rewrite catches any /uploads/*
+      // request that wasn't resolved as a static file and routes it to the
+      // file-serving API route which reads directly from process.cwd()/public/.
+      afterFiles: [
+        {
+          source: "/uploads/:path*",
+          destination: "/api/core/files/:path*",
+        },
+      ],
     };
   },
 };
