@@ -6,7 +6,11 @@
 
 import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
-import { PROPOSAL_DESIGN_PROMPT } from '@/components/admin/leads/quote-proposal-view'
+
+const PROPOSAL_DESIGN_PROMPT = `You are a professional SaaS sales proposal writer for Quantix Technology.
+Generate polished, concise, client-facing proposal content.
+Be specific to the services listed. Use formal but approachable language.
+Highlight value, timelines, and deliverables. Return only valid JSON as instructed.`
 
 export const POST = withMiddleware({
   requireAuth: true,
