@@ -326,6 +326,110 @@ export async function createBusiness(data: CreateBusinessRequest) {
       },
     });
 
+    // Auto-provision: GST tax configs for the main store
+    await tx.taxConfig.createMany({
+      data: [
+        { businessId: business.id, storeId: mainStore.id, name: 'GST 0% (Exempt)', taxType: 'GST_0', rate: 0, cgstRate: 0, sgstRate: 0, igstRate: 0, isDefault: true,  isActive: true },
+        { businessId: business.id, storeId: mainStore.id, name: 'GST 5%',           taxType: 'GST_5', rate: 5, cgstRate: 2.5, sgstRate: 2.5, igstRate: 5, isDefault: false, isActive: true },
+        { businessId: business.id, storeId: mainStore.id, name: 'GST 12%',          taxType: 'GST_12', rate: 12, cgstRate: 6, sgstRate: 6, igstRate: 12, isDefault: false, isActive: true },
+        { businessId: business.id, storeId: mainStore.id, name: 'GST 18%',          taxType: 'GST_18', rate: 18, cgstRate: 9, sgstRate: 9, igstRate: 18, isDefault: false, isActive: true },
+        { businessId: business.id, storeId: mainStore.id, name: 'GST 28%',          taxType: 'GST_28', rate: 28, cgstRate: 14, sgstRate: 14, igstRate: 28, isDefault: false, isActive: true },
+      ],
+    });
+
+    // Auto-provision: default delivery zone (5 km radius) for the main store
+    await tx.deliveryZone.create({
+      data: {
+        businessId: business.id,
+        storeId:    mainStore.id,
+        name:       'Default Delivery Zone',
+        zoneType:   'CIRCLE',
+        radius:     5.0,
+        deliveryFee:    0,
+        minOrderAmount: 0,
+        estimatedTime:  30,
+        isActive:       true,
+      },
+    });
+
+    // Auto-provision: COD payment gateway (always on by default)
+    await tx.paymentGateway.create({
+      data: {
+        businessId: business.id,
+        name:       'Cash on Delivery',
+        gateway:    'COD',
+        isActive:   true,
+        isTestMode: false,
+        config:     JSON.stringify({ method: 'COD' }),
+      },
+    });
+
+    // Auto-provision: BusinessBranding record
+    await tx.businessBranding.create({
+      data: {
+        businessId:     business.id,
+        primaryColor:   data.primaryColor   || '#10B981',
+        secondaryColor: data.secondaryColor || null,
+        logo:           data.logo           || null,
+        darkMode:       false,
+      },
+    });
+
+    // Auto-provision: AppConfig
+    await tx.appConfig.create({
+      data: {
+        businessId:  business.id,
+        appName:     data.name,
+        tagline:     data.tagline || null,
+        theme:       JSON.stringify({ primaryColor: data.primaryColor || '#10B981' }),
+        contactInfo: JSON.stringify({
+          email:   data.contactEmail || '',
+          phone:   data.contactPhone || '',
+          address: data.address      || '',
+        }),
+      },
+    });
+
+    // Auto-provision: default feature flags
+    await tx.featureFlag.createMany({
+      data: [
+        { businessId: business.id, key: 'pos_enabled',            enabled: true,  value: '{}' },
+        { businessId: business.id, key: 'delivery_enabled',       enabled: true,  value: '{}' },
+        { businessId: business.id, key: 'online_orders_enabled',  enabled: true,  value: '{}' },
+        { businessId: business.id, key: 'promo_codes_enabled',    enabled: true,  value: '{}' },
+        { businessId: business.id, key: 'loyalty_enabled',        enabled: false, value: '{}' },
+        { businessId: business.id, key: 'subscription_enabled',   enabled: false, value: '{}' },
+      ],
+    });
+
+    // Auto-provision: default workflow rules (order lifecycle)
+    await tx.workflowRule.createMany({
+      data: [
+        {
+          businessId: business.id,
+          storeId:    mainStore.id,
+          ruleKey:    'notify_on_delivery',
+          ruleName:   'Notify customer on delivery',
+          trigger:    'ORDER_DELIVERED',
+          conditions: '[]',
+          actions:    JSON.stringify([{ type: 'SEND_NOTIFICATION', channel: 'PUSH' }]),
+          isActive:   true,
+          priority:   10,
+        },
+        {
+          businessId: business.id,
+          storeId:    mainStore.id,
+          ruleKey:    'order_auto_confirm',
+          ruleName:   'Auto-confirm new orders',
+          trigger:    'ORDER_CREATED',
+          conditions: '[]',
+          actions:    JSON.stringify([{ type: 'SET_STATUS', value: 'CONFIRMED' }]),
+          isActive:   false,
+          priority:   10,
+        },
+      ],
+    });
+
     // Update lead if provided — mark as CLOSED_WON and link the business
     if (data.leadId) {
       await tx.lead.update({
