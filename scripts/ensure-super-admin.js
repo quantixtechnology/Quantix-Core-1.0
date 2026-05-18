@@ -40,6 +40,18 @@ async function main() {
     console.log('Admin CREATED with deploy default password');
   }
 
+  // Remove any DB permission override for QUANTIX_SUPER_ADMIN so it always
+  // falls back to the full static permission set. A stale row causes new
+  // permissions (added to the code) to be ignored until manually re-saved.
+  try {
+    const deleted = await db.rolePermission.deleteMany({ where: { role: 'QUANTIX_SUPER_ADMIN' } });
+    if (deleted.count > 0) {
+      console.log('Removed stale QUANTIX_SUPER_ADMIN permission override from DB');
+    }
+  } catch {
+    // Table may not exist yet on first deploy — safe to ignore
+  }
+
   await db.$disconnect();
 }
 

@@ -8,7 +8,15 @@
 import { db } from './db';
 import { ROLE_PERMISSIONS } from './permissions';
 
+// QUANTIX_SUPER_ADMIN always gets the full static permission set — never
+// restricted by a DB row, because the Permission Matrix can save a stale row
+// that predates newly-added permissions.
+const SUPER_ADMIN_BYPASS_ROLES = new Set(['QUANTIX_SUPER_ADMIN']);
+
 export async function getDbPermissionsForRole(role: string): Promise<string[]> {
+  if (SUPER_ADMIN_BYPASS_ROLES.has(role)) {
+    return (ROLE_PERMISSIONS[role] ?? []) as string[];
+  }
   try {
     const record = await db.rolePermission.findUnique({ where: { role } });
     if (record && Array.isArray(record.permissions)) {
