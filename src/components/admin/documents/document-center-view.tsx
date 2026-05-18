@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, type ComponentType } from "react"
 import { createPortal } from "react-dom"
 import { PageHeader } from "../shared/page-header"
 import { Button } from "@/components/ui/button"
@@ -10,12 +10,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Archive, Search, Trash2, RefreshCw, FileText, FileCheck,
   FileBadge, FileSignature, Receipt, File, ChevronLeft, ChevronRight,
-  ArchiveX, BookOpen, Download, X,
+  ArchiveX, BookOpen, Download,
 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
 import { useAuthStore } from "@/stores/auth-store"
-import { ProposalDocument, type ProposalForm, type BankDetails } from "@/components/admin/leads/quote-proposal-view"
+
+// ─── Lazy types (no static import of quote-proposal-view to avoid chunk issues) ──
+export interface ProposalForm {
+  clientName: string; businessName: string; mobile: string; email: string
+  subscriptionAmount: string; subscriptionCycle: string; subscriptionNotes: string
+  implementationAmount: string; implementationNotes: string
+  iosAppAmount: string; iosAppCycle: string; iosAppNotes: string
+  addOnsAmount: string; addOnsCycle: string; addOnsDescription: string; addOnsNotes: string
+  discountAmount: string; planTier: "STANDARD" | "PRO"; storeCount: string
+  enabledWorkflows: string[]; salesTeamMember: string; salesTeamEmail: string
+  executiveSummary: string
+}
+export interface BankDetails {
+  accountName: string; bankName: string; accountNumber: string; ifsc: string
+  upiId: string; branch: string; qrUrl: string; active: boolean
+}
+type ProposalDocumentComponent = ComponentType<{
+  form: ProposalForm; proposalId: string; proposalDate: string; bankDetails?: BankDetails | null
+}>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -84,7 +102,9 @@ function formatDate(iso: string) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PDF Download — renders ProposalDocument off-screen and triggers print
+// PDF Download — renders ProposalDocument off-screen and triggers print.
+// ProposalDocument is loaded lazily on first download click to avoid
+// including quote-proposal-view in this chunk.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface PDFPreviewPortalProps {
@@ -92,12 +112,12 @@ interface PDFPreviewPortalProps {
   proposalId: string
   proposalDate: string
   bankDetails: BankDetails | null
+  DocComponent: ProposalDocumentComponent
   onReady: () => void
 }
 
-function PDFPreviewPortal({ form, proposalId, proposalDate, bankDetails, onReady }: PDFPreviewPortalProps) {
+function PDFPreviewPortal({ form, proposalId, proposalDate, bankDetails, DocComponent, onReady }: PDFPreviewPortalProps) {
   useEffect(() => {
-    // Wait one tick for React to render the component into the DOM
     const timer = setTimeout(onReady, 200)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,7 +129,7 @@ function PDFPreviewPortal({ form, proposalId, proposalDate, bankDetails, onReady
       id="dc-pdf-portal"
       style={{ position: "fixed", top: "-9999px", left: "-9999px", pointerEvents: "none" }}
     >
-      <ProposalDocument
+      <DocComponent
         form={form}
         proposalId={proposalId}
         proposalDate={proposalDate}
@@ -139,11 +159,11 @@ export function DocumentCenterView() {
   const [selected, setSelected]     = useState<Set<string>>(new Set())
   const [busy, setBusy]             = useState(false)
 
-  // PDF download state
+  // PDF download state — ProposalDocument loaded lazily on first click
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [pdfPortalData, setPdfPortalData] = useState<{
-    form: ProposalForm; proposalId: string; proposalDate: string
+    form: ProposalForm; proposalId: string; proposalDate: string; DocComponent: ProposalDocumentComponent
   } | null>(null)
 
   // Fetch bank/QR config for PDF generation
@@ -202,6 +222,10 @@ export function DocumentCenterView() {
     if (downloadingId) return
     setDownloadingId(doc.id)
     try {
+      // Load ProposalDocument lazily — avoids pulling quote-proposal-view into this bundle
+      const mod = await import("@/components/admin/leads/quote-proposal-view")
+      const DocComponent = mod.ProposalDocument as ProposalDocumentComponent
+
       const res  = await authFetch(`/api/admin/documents/${doc.id}`)
       const json = await res.json()
       if (!json.success) throw new Error(json.error ?? "Failed to fetch document")
@@ -218,8 +242,7 @@ export function DocumentCenterView() {
         day: "numeric", month: "long", year: "numeric",
       })
 
-      // Mount PDF portal, let it render, then print
-      setPdfPortalData({ form, proposalId: doc.proposalId, proposalDate })
+      setPdfPortalData({ form, proposalId: doc.proposalId, proposalDate, DocComponent })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download")
       setDownloadingId(null)
@@ -325,6 +348,7 @@ export function DocumentCenterView() {
           proposalId={pdfPortalData.proposalId}
           proposalDate={pdfPortalData.proposalDate}
           bankDetails={bankDetails}
+          DocComponent={pdfPortalData.DocComponent}
           onReady={handlePdfReady}
         />
       )}

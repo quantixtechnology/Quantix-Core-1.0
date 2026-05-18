@@ -12,6 +12,7 @@ import { CustomerLayout } from "@/components/customer/layout/customer-layout"
 import { DeliveryLayout } from "@/components/delivery/layout/delivery-layout"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import { ErrorBoundary } from "@/components/error/error-boundary"
 
 // ── Storefront subdomain detector ────────────────────────────────────────
 // Reads ?_storefront=<slug> injected by next.config.ts rewrites when
@@ -238,7 +239,7 @@ function AppContent() {
       case "dashboard": return <DashboardView />
       case "leads": return <LeadsView />
       case "proposals": return <QuoteProposalView />
-      case "document-center": return <DocumentCenterView />
+      case "document-center": return <ErrorBoundary view="admin"><DocumentCenterView /></ErrorBoundary>
       case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
       case "subscriptions": return <SubscriptionsView />
