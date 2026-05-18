@@ -560,6 +560,66 @@ export async function updateOrderStatus(
       },
     });
 
+    // Inventory: deduct on CONFIRMED (with stock check), restore on CANCELLED
+    if (newStatus === 'CONFIRMED' || newStatus === 'CANCELLED') {
+      for (const item of order.items) {
+        const inv = await tx.inventory.findFirst({
+          where: {
+            storeId:   order.storeId,
+            productId: item.itemId,
+          },
+        });
+        if (!inv) continue;
+
+        if (newStatus === 'CONFIRMED') {
+          const needed = Math.ceil(item.quantity);
+          if (inv.quantity < needed) {
+            throw new Error(
+              `Insufficient stock for "${item.itemName}": available ${inv.quantity}, required ${needed}`
+            );
+          }
+          const newQty    = inv.quantity - needed;
+          const newStatus2: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK' =
+            newQty <= 0 ? 'OUT_OF_STOCK' : newQty <= inv.minStock ? 'LOW_STOCK' : 'IN_STOCK';
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data:  { quantity: newQty, status: newStatus2 },
+          });
+          await tx.inventoryLog.create({
+            data: {
+              inventoryId: inv.id,
+              action:      'ORDER_CONFIRMED',
+              quantity:    -Math.ceil(item.quantity),
+              previousQty: inv.quantity,
+              newQty,
+              note:        `Order ${orderId} confirmed`,
+              performedBy: changedBy,
+            },
+          });
+        } else {
+          // CANCELLED — restore the stock
+          const restored = inv.quantity + Math.ceil(item.quantity);
+          const newStatusR: 'IN_STOCK' | 'LOW_STOCK' =
+            restored <= inv.minStock ? 'LOW_STOCK' : 'IN_STOCK';
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data:  { quantity: restored, status: newStatusR },
+          });
+          await tx.inventoryLog.create({
+            data: {
+              inventoryId: inv.id,
+              action:      'ORDER_CANCELLED',
+              quantity:    Math.ceil(item.quantity),
+              previousQty: inv.quantity,
+              newQty:      restored,
+              note:        `Order ${orderId} cancelled — stock restored`,
+              performedBy: changedBy,
+            },
+          });
+        }
+      }
+    }
+
     // Update delivery status in tandem if applicable
     if (['DELIVERY', 'PICKUP_AND_DELIVERY'].includes(order.orderType)) {
       const deliveryStatusMap: Record<string, 'ASSIGNED' | 'ON_THE_WAY' | 'DELIVERED' | 'CANCELLED'> = {
