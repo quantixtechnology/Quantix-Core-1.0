@@ -159,6 +159,41 @@ model LeadSequence {
   updatedAt DateTime @updatedAt
 }
 
+// Sequential counter for Proposal IDs (QX-YYYYMM-XXX)
+model ProposalSequence {
+  monthKey  String   @id  // YYYYMM e.g. "202605"
+  nextVal   Int      @default(1)
+  updatedAt DateTime @updatedAt
+}
+
+// Document Center — stores every generated proposal/document permanently
+model ProposalDocument {
+  id             String   @id @default(cuid())
+  proposalId     String   @unique  // QX-YYYYMM-XXX — immutable once assigned
+  documentType   String   @default("PROPOSAL")  // QUOTE | PROPOSAL | AGREEMENT | RENEWAL | INVOICE | OTHER
+  businessName   String
+  clientName     String
+  contactPhone   String?
+  contactEmail   String?
+  salesTeamMember String?
+  salesTeamEmail  String?
+  totalAmount    Float?
+  formSnapshot   String   @default("{}")  // JSON: full ProposalForm at time of generation
+  pdfPath        String?  // future: stored PDF path
+  pdfVersion     Int      @default(1)
+  createdBy      String   // user id who generated it
+  createdByName  String?  // display name
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([proposalId])
+  @@index([businessName])
+  @@index([contactPhone])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([documentType])
+}
+
 // Audit: who imported leads, when, and summary
 model LeadImportLog {
   id          String   @id @default(cuid())
