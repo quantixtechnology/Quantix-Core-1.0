@@ -135,10 +135,10 @@ export function ProposalDocument({
   const showBank   = !!(bankDetails?.active && bankDetails?.bankName)
   const qrUrl      = bankDetails?.active && bankDetails?.qrUrl ? bankDetails.qrUrl : null
 
-  const sectionLabel = (text: string) => (
+  const sectionLabel = (text: string, mb = "10px") => (
     <div style={{
       fontSize: "10px", fontWeight: 700, letterSpacing: "0.16em",
-      textTransform: "uppercase" as const, color: accentBlue, marginBottom: "10px",
+      textTransform: "uppercase" as const, color: accentBlue, marginBottom: mb,
     }}>{text}</div>
   )
 
@@ -341,22 +341,23 @@ export function ProposalDocument({
       </div>
 
       {/* ═══════════════════════════ PAGE 2 ═══════════════════════════════ */}
+      {/* Budget: 1123px page. Top pad 40px + content ~670px + bottom pad 120px = 830px → footer clears at 944px (bottom:40 + footer~139px). */}
       <div style={{
         width: "794px", minHeight: "1123px", background: "#ffffff",
-        fontSize: "13px", padding: "48px 52px 160px 52px", boxSizing: "border-box" as const,
+        fontSize: "13px", padding: "40px 52px 120px 52px", boxSizing: "border-box" as const,
         position: "relative" as const,
         borderTop: "3px solid #e5e7eb",
         pageBreakBefore: "always" as const,
       }}>
 
         {/* PAGE 2 HEADER strip */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
           <div style={{
             background: "#fff", border: "1px solid #e5e7eb",
-            borderRadius: "10px", padding: "6px 12px",
+            borderRadius: "10px", padding: "5px 12px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           }}>
-            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "24px", display: "block" }} />
+            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "22px", display: "block" }} />
           </div>
           <div style={{ fontSize: "11px", color: "#6b7280" }}>
             <span style={{ fontWeight: 600, color: "#374151" }}>Proposal No:</span> {proposalId || "QX-000000-000"}
@@ -365,46 +366,45 @@ export function ProposalDocument({
           </div>
         </div>
 
-        <div style={{ height: "3px", background: `linear-gradient(90deg, ${accentBlue}, #06b6d4)`, borderRadius: "2px", marginBottom: "32px" }} />
+        <div style={{ height: "2px", background: `linear-gradient(90deg, ${accentBlue}, #06b6d4)`, borderRadius: "2px", marginBottom: "20px" }} />
 
         {/* ── TERMS & CONDITIONS ───────────────────────────────────────── */}
-        <div style={{ marginBottom: "28px" }}>
-          {sectionLabel("TERMS & CONDITIONS")}
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: "10px", padding: "20px 24px", background: "#f9fafb" }}>
+        <div style={{ marginBottom: "14px" }}>
+          {sectionLabel("TERMS & CONDITIONS", "8px")}
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "13px 18px", background: "#f9fafb" }}>
             {[
               "Quantix Technology will initiate development based on selected services and business details.",
               "Mobile application and website will be developed and prepared by Quantix Technology.",
               "The next subscription date becomes the final delivery date.",
               "Customer must provide (.com / .in) domain.",
             ].map((term, i) => (
-              <div key={i} style={{ display: "flex", gap: "10px", marginBottom: i < 3 ? "10px" : 0 }}>
-                <span style={{ color: accentBlue, fontWeight: 700, flexShrink: 0, marginTop: "1px" }}>•</span>
-                <span style={{ color: "#374151", lineHeight: 1.6 }}>{term}</span>
+              <div key={i} style={{ display: "flex", gap: "8px", marginBottom: i < 3 ? "7px" : 0 }}>
+                <span style={{ color: accentBlue, fontWeight: 700, flexShrink: 0 }}>•</span>
+                <span style={{ color: "#374151", lineHeight: 1.4 }}>{term}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* ── PAYMENT TERMS ────────────────────────────────────────────── */}
-        <div style={{ marginBottom: "28px" }}>
-          {sectionLabel("PAYMENT TERMS")}
-          <div style={{ border: "1px solid #fde68a", borderRadius: "10px", padding: "20px 24px", background: "#fffbeb" }}>
+        <div style={{ marginBottom: "14px" }}>
+          {sectionLabel("PAYMENT TERMS", "8px")}
+          <div style={{ border: "1px solid #fde68a", borderRadius: "8px", padding: "13px 18px", background: "#fffbeb" }}>
             {[
               "Implementation fee is non-refundable.",
               "First subscription amount must be paid in advance with implementation fee.",
               "Quantix Technology reserves rights to pause services if subscriptions are unpaid.",
             ].map((term, i) => (
-              <div key={i} style={{ display: "flex", gap: "10px", marginBottom: i < 2 ? "10px" : 0 }}>
-                <span style={{ color: "#d97706", fontWeight: 700, flexShrink: 0, marginTop: "1px" }}>•</span>
-                <span style={{ color: "#92400e", lineHeight: 1.6, fontWeight: 500 }}>{term}</span>
+              <div key={i} style={{ display: "flex", gap: "8px", marginBottom: i < 2 ? "7px" : 0 }}>
+                <span style={{ color: "#d97706", fontWeight: 700, flexShrink: 0 }}>•</span>
+                <span style={{ color: "#92400e", lineHeight: 1.4, fontWeight: 500 }}>{term}</span>
               </div>
             ))}
 
-            {/* Bank details — only shown when payment config is active */}
             {showBank && (
               <div style={{
-                marginTop: "16px", paddingTop: "14px", borderTop: "1px solid #fde68a",
-                display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px 16px",
+                marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #fde68a",
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px 12px",
               }}>
                 {[
                   { label: "Account Name",   value: bankDetails!.accountName },
@@ -415,8 +415,8 @@ export function ProposalDocument({
                   { label: "Branch",         value: bankDetails!.branch },
                 ].filter(f => f.value).map(f => (
                   <div key={f.label}>
-                    <div style={{ fontSize: "9.5px", color: "#92400e", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.07em" }}>{f.label}</div>
-                    <div style={{ fontWeight: 700, color: "#78350f", fontSize: "11px", marginTop: "2px" }}>{f.value}</div>
+                    <div style={{ fontSize: "9px", color: "#92400e", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.07em" }}>{f.label}</div>
+                    <div style={{ fontWeight: 700, color: "#78350f", fontSize: "11px", marginTop: "1px" }}>{f.value}</div>
                   </div>
                 ))}
               </div>
@@ -425,107 +425,100 @@ export function ProposalDocument({
         </div>
 
         {/* ── CUSTOMER CONFIRMATION ────────────────────────────────────── */}
-        <div style={{ marginBottom: "28px" }}>
-          {sectionLabel("CUSTOMER CONFIRMATION")}
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: "10px", padding: "20px 24px", background: "#f9fafb" }}>
-            <p style={{ margin: "0 0 12px 0", color: "#374151", fontWeight: 600 }}>Customer confirms:</p>
+        <div style={{ marginBottom: "14px" }}>
+          {sectionLabel("CUSTOMER CONFIRMATION", "8px")}
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "13px 18px", background: "#f9fafb" }}>
+            <p style={{ margin: "0 0 8px 0", color: "#374151", fontWeight: 600, fontSize: "12px" }}>Customer confirms:</p>
             {[
               "Acceptance of selected services and pricing",
               "Authorization to Quantix Technology to proceed",
             ].map((item, i) => (
-              <div key={i} style={{ display: "flex", gap: "10px", marginBottom: i < 1 ? "8px" : 0 }}>
+              <div key={i} style={{ display: "flex", gap: "8px", marginBottom: i < 1 ? "6px" : 0 }}>
                 <span style={{ color: "#16a34a", fontWeight: 800, flexShrink: 0 }}>✓</span>
-                <span style={{ color: "#374151", lineHeight: 1.6 }}>{item}</span>
+                <span style={{ color: "#374151", lineHeight: 1.4 }}>{item}</span>
               </div>
             ))}
 
             <div style={{
               display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
-              gap: "20px", marginTop: "20px", paddingTop: "16px",
+              gap: "12px", marginTop: "12px", paddingTop: "10px",
               borderTop: "1px solid #e5e7eb",
             }}>
-              <div>
-                <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Date</div>
-                <div style={{ fontWeight: 700, color: "#111827", marginTop: "4px", fontSize: "13px" }}>{confirmDate}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Authorized By</div>
-                <div style={{ fontWeight: 700, color: "#111827", marginTop: "4px", fontSize: "13px" }}>{form.clientName || "—"}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Mode of Confirmation</div>
-                <div style={{ fontWeight: 700, color: "#111827", marginTop: "4px", fontSize: "13px" }}>Digital (Email Acknowledgement)</div>
-              </div>
+              {[
+                { label: "Date",                   value: confirmDate },
+                { label: "Authorized By",          value: form.clientName || "—" },
+                { label: "Mode of Confirmation",   value: "Digital (Email Acknowledgement)" },
+              ].map(col => (
+                <div key={col.label}>
+                  <div style={{ fontSize: "9.5px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{col.label}</div>
+                  <div style={{ fontWeight: 700, color: "#111827", marginTop: "3px", fontSize: "12px" }}>{col.value}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* ── SALES TEAM ───────────────────────────────────────────────── */}
+        {/* ── SALES TEAM — compact single-row ──────────────────────────── */}
         {(form.salesTeamMember || form.salesTeamEmail) && (
-          <div style={{ marginBottom: "24px" }}>
-            {sectionLabel("YOUR SALES CONTACT")}
+          <div style={{ marginBottom: "10px" }}>
+            {sectionLabel("YOUR SALES CONTACT", "7px")}
             <div style={{
-              border: "1px solid #e5e7eb", borderRadius: "10px",
-              padding: "14px 20px", background: "#f9fafb",
+              border: "1px solid #e5e7eb", borderRadius: "8px",
+              padding: "9px 16px", background: "#f9fafb",
+              display: "flex", flexWrap: "wrap" as const, gap: "6px 32px",
             }}>
-              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "24px 40px" }}>
-                {form.salesTeamMember && (
-                  <div>
-                    <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Sales Team Member</div>
-                    <div style={{ fontWeight: 700, color: "#111827", marginTop: "4px", fontSize: "13px" }}>{form.salesTeamMember}</div>
-                  </div>
-                )}
-                {form.salesTeamEmail && (
-                  <div>
-                    <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Sales Team Email</div>
-                    <div style={{ fontWeight: 700, color: "#111827", marginTop: "4px", fontSize: "13px" }}>{form.salesTeamEmail}</div>
-                  </div>
-                )}
-              </div>
+              {form.salesTeamMember && (
+                <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                  <span style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>Sales Contact:</span>
+                  <span style={{ fontWeight: 700, color: "#111827", fontSize: "12px" }}>{form.salesTeamMember}</span>
+                </div>
+              )}
+              {form.salesTeamEmail && (
+                <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                  <span style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>Email:</span>
+                  <span style={{ fontWeight: 700, color: "#111827", fontSize: "12px" }}>{form.salesTeamEmail}</span>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ── SYSTEM NOTE (in flow — above absolute footer) ─────────────── */}
+        {/* ── FOOTER: left=website · center=system note · right=QR ─────── */}
+        {/* Absolute at bottom:40px. Footer height ≈ 139px (QR 120px + label 14px + gap 5px). */}
         <div style={{
-          textAlign: "center" as const, fontSize: "10px", color: "#9ca3af",
-          fontStyle: "italic", marginTop: "8px",
-        }}>
-          This is a system-generated document and does not require physical signature.
-        </div>
-
-        {/* ── BOTTOM FOOTER: website + copyright (left) · QR (right) ───── */}
-        <div style={{
-          position: "absolute" as const, bottom: "48px", left: "52px", right: "52px",
+          position: "absolute" as const, bottom: "40px", left: "52px", right: "52px",
           display: "flex", justifyContent: "space-between", alignItems: "flex-end",
         }}>
-          <div>
-            <div style={{ fontWeight: 700, color: accentBlue, fontSize: "13px", marginBottom: "4px" }}>www.quantixtechnology.in</div>
-            <div style={{ fontSize: "10px", color: "#9ca3af" }}>Quantix Technology · Enterprise SaaS Platform</div>
-            <div style={{ fontSize: "10px", color: "#9ca3af" }}>© {new Date().getFullYear()} Quantix Technology. All rights reserved.</div>
+          {/* LEFT — branding */}
+          <div style={{ flex: "0 0 auto" }}>
+            <div style={{ fontWeight: 700, color: accentBlue, fontSize: "12px", marginBottom: "3px" }}>www.quantixtechnology.in</div>
+            <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>Quantix Technology · Enterprise SaaS Platform</div>
+            <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>© {new Date().getFullYear()} Quantix Technology. All rights reserved.</div>
           </div>
 
-          {qrUrl ? (
-            <div style={{ textAlign: "center" as const }}>
-              <div style={{ fontSize: "9px", color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>Scan to Pay</div>
-              <img
-                src={qrUrl}
-                alt="Payment QR"
-                style={{ width: "90px", height: "90px", border: "1px solid #e5e7eb", borderRadius: "8px", display: "block" }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-              />
-            </div>
-          ) : (
-            <div style={{
-              width: "90px", height: "90px", border: "1px dashed #d1d5db",
-              borderRadius: "8px", display: "flex", alignItems: "center",
-              justifyContent: "center",
-            }}>
-              <div style={{ fontSize: "8px", color: "#d1d5db", textAlign: "center" as const, lineHeight: 1.4 }}>
-                No payment<br />QR configured
-              </div>
-            </div>
-          )}
+          {/* CENTER — system note */}
+          <div style={{
+            flex: "1 1 auto", textAlign: "center" as const,
+            fontSize: "9.5px", color: "#9ca3af", fontStyle: "italic",
+            padding: "0 16px", lineHeight: 1.4,
+          }}>
+            This is a system-generated document<br />and does not require physical signature.
+          </div>
+
+          {/* RIGHT — QR */}
+          <div style={{ flex: "0 0 auto", textAlign: "center" as const }}>
+            {qrUrl ? (
+              <>
+                <div style={{ fontSize: "8.5px", color: "#9ca3af", marginBottom: "5px", textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>Scan to Pay</div>
+                <img
+                  src={qrUrl}
+                  alt="Payment QR"
+                  style={{ width: "120px", height: "120px", display: "block" }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                />
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
