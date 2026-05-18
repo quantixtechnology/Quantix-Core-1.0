@@ -33,7 +33,6 @@ export async function GET(
             mrp: true,
             discountPrice: true,
             discountPercent: true,
-            stock: true,
             isDefault: true,
             isActive: true,
             attributes: true,
@@ -115,31 +114,35 @@ export async function PUT(
         const updated = await db.$transaction(async (tx) => {
           await tx.productVariant.deleteMany({ where: { productId } });
 
+          const variantInputs = body.variants.map((v: Record<string, unknown>, i: number) => ({
+            name: String(v.name || body.name || existing.name),
+            sku: v.sku ? String(v.sku) : null,
+            barcode: v.barcode ? String(v.barcode) : null,
+            price: Number(v.price) || 0,
+            mrp: Number(v.mrp) || Number(v.price) || 0,
+            discountPrice: v.discountPrice ? Number(v.discountPrice) : null,
+            discountPercent: v.discountPercent ? Number(v.discountPercent) : null,
+            isDefault: i === 0,
+            isActive: v.isActive !== undefined ? Boolean(v.isActive) : true,
+            attributes: JSON.stringify(v.attributes || {}),
+            _stock: Number(v.stock) || 0,
+          }));
+
           const product = await tx.product.update({
             where: { id: productId },
             data: {
               ...updateData,
               variants: {
-                create: body.variants.map((v: Record<string, unknown>, i: number) => ({
-                  name: String(v.name || body.name || existing.name),
-                  sku: v.sku ? String(v.sku) : null,
-                  barcode: v.barcode ? String(v.barcode) : null,
-                  price: Number(v.price) || 0,
-                  mrp: Number(v.mrp) || Number(v.price) || 0,
-                  discountPrice: v.discountPrice ? Number(v.discountPrice) : null,
-                  discountPercent: v.discountPercent ? Number(v.discountPercent) : null,
-                  stock: Number(v.stock) || 0,
-                  isDefault: i === 0,
-                  isActive: v.isActive !== undefined ? Boolean(v.isActive) : true,
-                  attributes: JSON.stringify(v.attributes || {}),
-                })),
+                create: variantInputs.map(({ _stock: _, ...rest }) => rest),
               },
             },
             include: { category: true, variants: true },
           });
 
           if (existing.storeId) {
-            for (const variant of product.variants) {
+            for (let i = 0; i < product.variants.length; i++) {
+              const variant = product.variants[i];
+              const qty = variantInputs[i]?._stock ?? 0;
               await tx.inventory.upsert({
                 where: {
                   storeId_productId_variantId: {
@@ -149,18 +152,18 @@ export async function PUT(
                   },
                 },
                 update: {
-                  quantity: variant.stock || 0,
-                  status: (variant.stock || 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+                  quantity: qty,
+                  status: qty > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
                 },
                 create: {
                   businessId: existing.businessId,
                   storeId: existing.storeId,
                   productId: existing.id,
                   variantId: variant.id,
-                  quantity: variant.stock || 0,
+                  quantity: qty,
                   minStock: 10,
                   maxStock: 1000,
-                  status: (variant.stock || 0) > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+                  status: qty > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
                 },
               });
             }

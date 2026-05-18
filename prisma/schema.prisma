@@ -54,6 +54,7 @@ model Lead {
   pincode                String?
   state                  String?
   salesRep               SalesTeamMember? @relation(fields: [salesRepId], references: [id])
+  convertedBusiness      Business?        @relation("LeadConversion", fields: [convertedBusinessId], references: [id])
 
   @@index([leadId])
   @@index([salesRepId])
@@ -210,12 +211,14 @@ model Business {
   businessSubscription  BusinessSubscription?
   businessUsers         BusinessUser[]
   categories            Category[]
+  convertedLeads        Lead[]                  @relation("LeadConversion")
   customers             Customer[]
   customerSubscriptions CustomerSubscription[]
   deliveryPartners      DeliveryPartner[]
   deliveryZones         DeliveryZone[]
   deployments           Deployment[]
   domain                DomainMapping?
+  featureFlags          FeatureFlag[]
   invoices              Invoice[]
   notifications         Notification[]
   onboardingSteps       OnboardingStep[]
@@ -228,6 +231,9 @@ model Business {
   stores                Store[]
   subscriptionPlans     SubscriptionPlan[]
   taxConfigs            TaxConfig[]
+  workflowRules         WorkflowRule[]
+  branding              BusinessBranding?
+  appConfig             AppConfig?
 
   @@index([businessType])
   @@index([status])
@@ -307,9 +313,14 @@ model Store {
   updatedAt           DateTime       @updatedAt
   storeCode           String?        @unique
   staff               BusinessUser[]
+  categories          Category[]
+  deliveryZones       DeliveryZone[]
   inventory           Inventory[]
   orders              Order[]
   posSessions         POSSession[]
+  products            Product[]
+  taxConfigs          TaxConfig[]
+  workflowRules       WorkflowRule[]
   business            Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   storeTimings        StoreTiming[]
 
@@ -356,7 +367,9 @@ model User {
   customerProfiles    Customer[]
   customerNotes       CustomerNote[]
   deliveryProfiles    DeliveryPartner[]
+  notifications       Notification[]
   otpCodes            OTPCode[]
+  posSessions         POSSession[]      @relation("POSOperator")
   refreshTokens       RefreshToken[]
   salesProfile        SalesTeamMember?
 }
@@ -476,6 +489,8 @@ model Order {
   customer             Customer?             @relation(fields: [customerId], references: [id])
   store                Store                 @relation(fields: [storeId], references: [id])
   business             Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  deliveryPartner      DeliveryPartner?      @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id])
+  pickupPartner        DeliveryPartner?      @relation("OrderPickupPartner", fields: [pickupPartnerId], references: [id])
   items                OrderItem[]
   statusHistory        OrderStatusHistory[]
   payments             Payment[]
@@ -561,7 +576,8 @@ model Delivery {
   liveTracking          String           @default("[]")
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
-  deliveryPartner       DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
+  deliveryPartner       DeliveryPartner? @relation("DeliveryAssignedPartner", fields: [deliveryPartnerId], references: [id])
+  pickupPartner         DeliveryPartner? @relation("DeliveryPickupPartner", fields: [pickupPartnerId], references: [id])
   order                 Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([deliveryPartnerId])
@@ -586,6 +602,7 @@ model DeliveryZone {
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  store             Store?   @relation(fields: [storeId], references: [id])
   business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
@@ -614,9 +631,12 @@ model DeliveryPartner {
   bankAccount     String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
-  deliveries      Delivery[]
-  user            User?      @relation(fields: [userId], references: [id])
-  business        Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  deliveries      Delivery[]    @relation("DeliveryAssignedPartner")
+  pickupDeliveries Delivery[]   @relation("DeliveryPickupPartner")
+  deliveryOrders  Order[]       @relation("OrderDeliveryPartner")
+  pickupOrders    Order[]       @relation("OrderPickupPartner")
+  user            User?         @relation(fields: [userId], references: [id])
+  business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, phone])
   @@index([businessId])
@@ -644,6 +664,7 @@ model POSSession {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   orders         Order[]
+  operator       User             @relation("POSOperator", fields: [operatorId], references: [id])
   store          Store            @relation(fields: [storeId], references: [id])
   business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1036,6 +1057,7 @@ model Notification {
   failedAt   DateTime?
   error      String?
   createdAt  DateTime            @default(now())
+  user       User?               @relation(fields: [userId], references: [id])
   business   Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
@@ -1080,6 +1102,7 @@ model Invoice {
 model TaxConfig {
   id         String   @id @default(cuid())
   businessId String
+  storeId    String?
   name       String
   taxType    String
   rate       Float
@@ -1091,9 +1114,11 @@ model TaxConfig {
   isDefault  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  store      Store?   @relation(fields: [storeId], references: [id])
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+  @@index([storeId])
   @@index([taxType])
 }
 
@@ -1215,6 +1240,7 @@ model ActivityLog {
 model Category {
   id           String       @id @default(cuid())
   businessId   String
+  storeId      String?
   name         String
   slug         String
   description  String?
@@ -1228,11 +1254,13 @@ model Category {
   updatedAt    DateTime     @updatedAt
   parent       Category?    @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children     Category[]   @relation("CategoryHierarchy")
+  store        Store?       @relation(fields: [storeId], references: [id])
   business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   products     Product[]
 
   @@unique([businessId, slug])
   @@index([businessId])
+  @@index([storeId])
   @@index([parentId])
   @@index([workflowType])
 }
@@ -1269,6 +1297,7 @@ model Product {
   updatedAt       DateTime         @updatedAt
   inventory       Inventory[]
   category        Category?        @relation(fields: [categoryId], references: [id])
+  store           Store?           @relation(fields: [storeId], references: [id])
   business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   variants        ProductVariant[]
 
@@ -1291,8 +1320,6 @@ model ProductVariant {
   costPrice       Float?
   discountPrice   Float?
   discountPercent Float?
-  stock           Int         @default(0)
-  minStock        Int         @default(0)
   isDefault       Boolean     @default(false)
   isActive        Boolean     @default(true)
   attributes      String      @default("{}")
@@ -1371,6 +1398,80 @@ model PermissionChangeLog {
   @@index([role])
   @@index([changedBy])
   @@index([createdAt])
+}
+
+model BusinessBranding {
+  id             String   @id @default(cuid())
+  businessId     String   @unique
+  primaryColor   String   @default("#10B981")
+  secondaryColor String?
+  accentColor    String?
+  logo           String?
+  favicon        String?
+  coverImage     String?
+  appIcon        String?
+  fontFamily     String?
+  borderRadius   String   @default("8")
+  darkMode       Boolean  @default(false)
+  customCss      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model AppConfig {
+  id          String   @id @default(cuid())
+  businessId  String   @unique
+  appName     String?
+  tagline     String?
+  splashColor String?
+  theme       String   @default("{}")
+  social      String   @default("{}")
+  contactInfo String   @default("{}")
+  seoConfig   String   @default("{}")
+  analytics   String   @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model FeatureFlag {
+  id         String   @id @default(cuid())
+  businessId String
+  key        String
+  enabled    Boolean  @default(false)
+  value      String   @default("{}")
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, key])
+  @@index([businessId])
+  @@index([key])
+}
+
+model WorkflowRule {
+  id         String   @id @default(cuid())
+  businessId String
+  storeId    String?
+  ruleKey    String
+  ruleName   String
+  trigger    String
+  conditions String   @default("[]")
+  actions    String   @default("[]")
+  isActive   Boolean  @default(true)
+  priority   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  store      Store?   @relation(fields: [storeId], references: [id])
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, ruleKey])
+  @@index([businessId])
+  @@index([storeId])
+  @@index([trigger])
+  @@index([isActive])
 }
 
 enum LeadSource {

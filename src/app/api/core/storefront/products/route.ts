@@ -104,7 +104,6 @@ export async function GET(request: Request) {
               mrp: true,
               discountPrice: true,
               discountPercent: true,
-              stock: true,
               isDefault: true,
               isActive: includeAllVariants ? true : undefined,
               sku: true,
@@ -190,7 +189,6 @@ export async function GET(request: Request) {
           mrp: v.mrp,
           discountPrice: v.discountPrice,
           discountPercent: v.discountPercent,
-          stock: v.stock,
           isDefault: v.isDefault,
           isActive: (v as Record<string, unknown>)?.isActive ?? true,
           attributes: JSON.parse(v.attributes || '{}') as Record<string, string>,
@@ -311,8 +309,6 @@ export const POST = withMiddleware({
                 mrp: Number(v.mrp) || Number(v.price) || 0,
                 discountPrice: v.discountPrice ? Number(v.discountPrice) : null,
                 discountPercent: v.discountPercent ? Number(v.discountPercent) : null,
-                stock: Number(v.stock) || 0,
-                minStock: Number(v.minStock) || 0,
                 isDefault: i === 0,
                 isActive: true,
                 attributes: JSON.stringify(v.attributes || {}),
@@ -323,7 +319,6 @@ export const POST = withMiddleware({
                 name: body.name,
                 price: Number(body.price) || 0,
                 mrp: Number(body.mrp) || Number(body.price) || 0,
-                stock: Number(body.stock) || 0,
                 isDefault: true,
                 isActive: true,
                 attributes: '{}',
@@ -337,7 +332,15 @@ export const POST = withMiddleware({
     });
 
     if (storeId) {
-      for (const variant of product.variants) {
+      const variantStockMap: Record<number, number> = {};
+      if (body.variants && body.variants.length > 0) {
+        body.variants.forEach((v: Record<string, unknown>, i: number) => {
+          variantStockMap[i] = Number(v.stock) || 0;
+        });
+      }
+      for (let i = 0; i < product.variants.length; i++) {
+        const variant = product.variants[i];
+        const qty = variantStockMap[i] ?? Number(body.stock) ?? 0;
         const existingInventory = await db.inventory.findFirst({
           where: { productId: product.id, variantId: variant.id, storeId },
         });
@@ -348,10 +351,10 @@ export const POST = withMiddleware({
               storeId,
               productId: product.id,
               variantId: variant.id,
-              quantity: variant.stock,
+              quantity: qty,
               minStock: 0,
               maxStock: 1000,
-              status: variant.stock > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+              status: qty > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
             },
           });
         }

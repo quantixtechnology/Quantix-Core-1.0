@@ -787,8 +787,6 @@ export async function seed() {
             isDefault: prodData.variants.indexOf(vd) === 0,
             isActive: true,
             attributes: JSON.stringify({}),
-            stock: vd.stock || 0,
-            minStock: 5,
           },
         });
       }
