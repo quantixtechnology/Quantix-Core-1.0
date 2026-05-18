@@ -149,11 +149,12 @@ function formatDateDDMMMYYYY(date: Date): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ProposalDocument({
-  form, proposalId, proposalDate,
+  form, proposalId, proposalDate, qrUrl,
 }: {
   form: ProposalForm
   proposalId: string
   proposalDate: string
+  qrUrl: string | null
 }) {
   const sub    = parseFloat(form.subscriptionAmount)   || 0
   const impl   = parseFloat(form.implementationAmount) || 0
@@ -523,20 +524,22 @@ function ProposalDocument({
               <div style={{ fontSize: "10px", color: "#9ca3af" }}>© {new Date().getFullYear()} Quantix Technology. All rights reserved.</div>
             </div>
 
-            {/* Proprietor QR */}
-            <div style={{ textAlign: "center" as const }}>
-              <div style={{ fontSize: "9px", color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>Scan to Pay</div>
-              <img
-                src="/proprietor-qr.png"
-                alt="Payment QR"
-                style={{
-                  width: "90px", height: "90px",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px", display: "block",
-                }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-              />
-            </div>
+            {/* Proprietor QR — only rendered when configured in Platform Settings */}
+            {qrUrl && (
+              <div style={{ textAlign: "center" as const }}>
+                <div style={{ fontSize: "9px", color: "#9ca3af", marginBottom: "6px", textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>Scan to Pay</div>
+                <img
+                  src={qrUrl}
+                  alt="Payment QR"
+                  style={{
+                    width: "90px", height: "90px",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px", display: "block",
+                  }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -555,6 +558,7 @@ export function QuoteProposalView() {
   const [idLoading, setIdLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [qrUrl, setQrUrl] = useState<string | null>(null)
 
   const proposalDate = new Date().toLocaleDateString("en-IN", {
     day: "numeric", month: "long", year: "numeric",
@@ -571,15 +575,26 @@ export function QuoteProposalView() {
     }
   }, [user])
 
-  // Fetch immutable proposal ID once on mount
+  // Fetch immutable proposal ID + QR config on mount (parallel)
   useEffect(() => {
-    authFetch("/api/admin/documents/proposal-id", { method: "POST" })
+    const fetchId = authFetch("/api/admin/documents/proposal-id", { method: "POST" })
       .then(r => r.json())
-      .then(json => {
-        if (json.success) setProposalId(json.proposalId)
-      })
+      .then(json => { if (json.success) setProposalId(json.proposalId) })
       .catch(() => toast.error("Could not generate proposal ID"))
       .finally(() => setIdLoading(false))
+
+    // QR URL from PlatformConfig key "branding.proprietor_qr_url" — optional, no error if missing
+    const fetchQr = authFetch("/api/core/platform/config")
+      .then(r => r.json())
+      .then(json => {
+        if (json.success) {
+          const url = json.data?.map?.["branding.proprietor_qr_url"] as string | undefined
+          setQrUrl(url ?? null)
+        }
+      })
+      .catch(() => { /* QR is optional — fail silently */ })
+
+    return () => { void fetchId; void fetchQr }
   }, [])
 
   const set = useCallback(<K extends keyof ProposalForm>(key: K, value: ProposalForm[K]) => {
@@ -919,7 +934,7 @@ export function QuoteProposalView() {
               overflow: "hidden",
             }}
           >
-            <ProposalDocument form={form} proposalId={proposalId} proposalDate={proposalDate} />
+            <ProposalDocument form={form} proposalId={proposalId} proposalDate={proposalDate} qrUrl={qrUrl} />
           </div>
         </div>
       </div>

@@ -167,28 +167,42 @@ model ProposalSequence {
 }
 
 // Document Center — stores every generated proposal/document permanently
+// documentType: QUOTE | PROPOSAL | AGREEMENT | INVOICE | RENEWAL | ONBOARDING | OTHER
+// status: ACTIVE | ARCHIVED
 model ProposalDocument {
-  id             String   @id @default(cuid())
-  proposalId     String   @unique  // QX-YYYYMM-XXX — immutable once assigned
-  documentType   String   @default("PROPOSAL")  // QUOTE | PROPOSAL | AGREEMENT | RENEWAL | INVOICE | OTHER
-  businessName   String
-  clientName     String
-  contactPhone   String?
-  contactEmail   String?
+  id              String    @id @default(cuid())
+  proposalId      String    @unique  // QX-YYYYMM-XXX — immutable once assigned
+  documentType    String    @default("PROPOSAL")
+  status          String    @default("ACTIVE")  // ACTIVE | ARCHIVED (soft-delete)
+  // Core metadata
+  businessName    String
+  clientName      String
+  contactPhone    String?
+  contactEmail    String?
+  leadId          String?   // Link to Lead.leadId (e.g. LED-202605-0001) — optional
+  // Commercials
+  totalAmount     Float?
+  // Sales context
   salesTeamMember String?
   salesTeamEmail  String?
-  totalAmount    Float?
-  formSnapshot   String   @default("{}")  // JSON: full ProposalForm at time of generation
-  pdfPath        String?  // future: stored PDF path
-  pdfVersion     Int      @default(1)
-  createdBy      String   // user id who generated it
-  createdByName  String?  // display name
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  // Document state
+  formSnapshot    String    @default("{}")  // JSON: full ProposalForm at time of generation
+  pdfPath         String?   // future: stored PDF file path or URL
+  pdfVersion      Int       @default(1)
+  // Audit: creation
+  createdBy       String    // user id who generated it
+  createdByName   String?   // display name
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  // Audit: soft-delete
+  deletedAt       DateTime?
+  deletedBy       String?   // user id who archived it
 
   @@index([proposalId])
   @@index([businessName])
   @@index([contactPhone])
+  @@index([leadId])
+  @@index([status])
   @@index([createdBy])
   @@index([createdAt])
   @@index([documentType])

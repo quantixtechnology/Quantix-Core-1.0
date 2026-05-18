@@ -1,6 +1,6 @@
 // ============================================================================
-// GET  /api/admin/documents  — List all stored proposal documents
-// POST /api/admin/documents  — Save a generated proposal to the Document Center
+// GET  /api/admin/documents  — List documents (defaults to ACTIVE only)
+// POST /api/admin/documents  — Save / upsert a generated proposal
 // ============================================================================
 
 import { NextResponse } from 'next/server'
@@ -8,7 +8,7 @@ import { withMiddleware, createErrorResponse, getPaginationParams } from '@/lib/
 import { db } from '@/lib/db'
 import type { NextRequest } from 'next/server'
 
-// ── GET — List documents ──────────────────────────────────────────────────────
+// ── GET ───────────────────────────────────────────────────────────────────────
 export const GET = withMiddleware({
   requireAuth: true,
   requiredPermission: 'documents:view',
@@ -17,12 +17,18 @@ export const GET = withMiddleware({
     const { page, limit, skip } = getPaginationParams(req)
     const { searchParams } = new URL(req.url)
 
-    const search      = searchParams.get('search') ?? ''
-    const docType     = searchParams.get('type') ?? ''
-    const dateFrom    = searchParams.get('dateFrom')
-    const dateTo      = searchParams.get('dateTo')
+    const search   = searchParams.get('search')  ?? ''
+    const docType  = searchParams.get('type')    ?? ''
+    const status   = searchParams.get('status')  ?? 'ACTIVE'   // ACTIVE | ARCHIVED | ALL
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo   = searchParams.get('dateTo')
 
     const where: Record<string, unknown> = {}
+
+    // Status filter — "ALL" skips filter (Super Admin view)
+    if (status !== 'ALL') {
+      where.status = status
+    }
 
     if (search) {
       where.OR = [
@@ -30,6 +36,7 @@ export const GET = withMiddleware({
         { businessName: { contains: search } },
         { clientName:   { contains: search } },
         { contactPhone: { contains: search } },
+        { leadId:       { contains: search } },
       ]
     }
     if (docType) where.documentType = docType
@@ -51,10 +58,12 @@ export const GET = withMiddleware({
           id: true,
           proposalId: true,
           documentType: true,
+          status: true,
           businessName: true,
           clientName: true,
           contactPhone: true,
           contactEmail: true,
+          leadId: true,
           salesTeamMember: true,
           salesTeamEmail: true,
           totalAmount: true,
@@ -62,6 +71,8 @@ export const GET = withMiddleware({
           createdBy: true,
           createdByName: true,
           createdAt: true,
+          deletedAt: true,
+          deletedBy: true,
         },
       }),
     ])
@@ -77,7 +88,7 @@ export const GET = withMiddleware({
   }
 })
 
-// ── POST — Save document ──────────────────────────────────────────────────────
+// ── POST ──────────────────────────────────────────────────────────────────────
 export const POST = withMiddleware({
   requireAuth: true,
   requiredPermission: 'proposals:create',
@@ -86,7 +97,8 @@ export const POST = withMiddleware({
     const body = await req.json()
     const {
       proposalId, documentType = 'PROPOSAL',
-      businessName, clientName, contactPhone, contactEmail,
+      businessName, clientName,
+      contactPhone, contactEmail, leadId,
       salesTeamMember, salesTeamEmail,
       totalAmount, formSnapshot,
       createdBy, createdByName,
@@ -96,22 +108,23 @@ export const POST = withMiddleware({
       return createErrorResponse('proposalId, businessName, and createdBy are required', 400)
     }
 
-    // Upsert: if same proposalId is saved again (re-download), update snapshot only
     const doc = await db.proposalDocument.upsert({
       where: { proposalId },
       create: {
         proposalId,
         documentType,
+        status:          'ACTIVE',
         businessName,
         clientName:      clientName      ?? '',
-        contactPhone:    contactPhone     ?? null,
-        contactEmail:    contactEmail     ?? null,
-        salesTeamMember: salesTeamMember  ?? null,
-        salesTeamEmail:  salesTeamEmail   ?? null,
-        totalAmount:     totalAmount      ?? null,
-        formSnapshot:    formSnapshot     ? JSON.stringify(formSnapshot) : '{}',
+        contactPhone:    contactPhone    ?? null,
+        contactEmail:    contactEmail    ?? null,
+        leadId:          leadId          ?? null,
+        salesTeamMember: salesTeamMember ?? null,
+        salesTeamEmail:  salesTeamEmail  ?? null,
+        totalAmount:     totalAmount     ?? null,
+        formSnapshot:    formSnapshot ? JSON.stringify(formSnapshot) : '{}',
         createdBy,
-        createdByName:   createdByName    ?? null,
+        createdByName:   createdByName   ?? null,
       },
       update: {
         formSnapshot: formSnapshot ? JSON.stringify(formSnapshot) : '{}',
