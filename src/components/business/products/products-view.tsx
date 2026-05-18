@@ -684,7 +684,9 @@ export function ProductsView() {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('businessId', businessId)
-      const res = await fetch('/api/core/upload', { method: 'POST', body: fd })
+      // Strip Content-Type so the browser sets the correct multipart/form-data boundary
+      const { 'Content-Type': _ct, ...uploadHeaders } = getAuthHeaders()
+      const res = await fetch('/api/core/upload', { method: 'POST', body: fd, headers: uploadHeaders })
       const json = await res.json()
       if (json.success) {
         setFormImageUrl(json.url)
