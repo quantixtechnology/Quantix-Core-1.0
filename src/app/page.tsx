@@ -189,7 +189,7 @@ const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF"
 
 function AppContent() {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
-  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated } = useAuthStore()
+  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
@@ -221,6 +221,10 @@ function AppContent() {
   }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, setViewMode])
 
   const renderSuperAdminPage = () => {
+    // Wait for syncPermissions() to finish before running access checks —
+    // avoids showing AccessDenied for users whose localStorage cache predates
+    // a new permission being added to a role.
+    if (!_isSynced) return <PageLoader />
     if (!canAccessPage(activePage, permissions as string[])) {
       return <AccessDenied />
     }

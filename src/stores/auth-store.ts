@@ -21,6 +21,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   _isHydrated: boolean; // Whether the store has been initialized from localStorage
+  _isSynced:   boolean; // Whether syncPermissions() has completed at least once
 
   // Business context
   currentBusinessId: string | null;
@@ -171,6 +172,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: false,
   error: null,
   _isHydrated: false,
+  _isSynced:   false,
   currentBusinessId: null,
   currentBusinessName: null,
   currentRole: null,
@@ -194,11 +196,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         permissions: stored.permissions || [],
         businesses: stored.businesses || [],
         _isHydrated: true,
+        _isSynced:   false,  // wait for fresh permissions before access checks
       });
-      // Sync fresh permissions from DB in background — doesn't block render
-      get().syncPermissions().catch(() => null);
+      // Sync fresh permissions; set _isSynced=true on completion regardless of outcome
+      get().syncPermissions()
+        .catch(() => null)
+        .finally(() => set({ _isSynced: true }));
     } else {
-      set({ _isHydrated: true });
+      set({ _isHydrated: true, _isSynced: true });
     }
   },
 
@@ -282,6 +287,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         currentRole,
         permissions: permissions || [],
         businesses: businesses || [],
+        _isSynced: true,
       };
 
       // Persist to localStorage
@@ -357,6 +363,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         currentRole,
         permissions: permissions || [],
         businesses: businesses || [],
+        _isSynced: true,
       };
 
       saveToStorage(newState);
