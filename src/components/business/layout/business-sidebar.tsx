@@ -1,11 +1,12 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import {
   LayoutDashboard, ShoppingBag, Package, Monitor, Users, BarChart3,
   Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
-  Workflow, Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
-  DatabaseZap, Tag, Palette, Smartphone, Globe,
+  Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
+  DatabaseZap, Tag, Palette, Smartphone, Globe, Shield,
 } from "lucide-react"
 import {
   Sidebar,
@@ -39,59 +40,71 @@ import {
 } from "@/stores/admin-store"
 import { useResponsive } from "@/hooks/use-responsive"
 
-// Map workflow types to sidebar navigation items
+// ── Workflow → nav items (derived from business type, owned by platform admin) ──
 const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[]> = {
   ECOMMERCE: [
-    { key: "orders", label: "Orders", icon: ShoppingBag },
-    { key: "products", label: "Products", icon: Package },
+    { key: "orders",    label: "Orders",    icon: ShoppingBag },
+    { key: "products",  label: "Products",  icon: Package },
     { key: "inventory", label: "Inventory", icon: Warehouse },
   ],
   PICKUP_DELIVERY: [
-    { key: "orders", label: "Pickup Orders", icon: Truck },
+    { key: "orders",         label: "Pickup Orders",  icon: Truck },
     { key: "delivery-zones", label: "Delivery Zones", icon: MapPin },
   ],
   APPOINTMENT: [
     { key: "orders", label: "Appointments", icon: Calendar },
-    { key: "staff", label: "Technicians", icon: UserCog },
+    { key: "staff",  label: "Technicians",  icon: UserCog },
   ],
   SUBSCRIPTION: [
-    { key: "customers", label: "Customers", icon: Users },
-    { key: "offers", label: "Subscription Plans", icon: CreditCard },
+    { key: "customers", label: "Customers",          icon: Users },
+    { key: "offers",    label: "Subscription Plans", icon: CreditCard },
   ],
   POST_SERVICE_BILLING: [
-    { key: "orders", label: "Service Orders", icon: Receipt },
-    { key: "reports", label: "Billing Reports", icon: BarChart3 },
+    { key: "orders",   label: "Service Orders", icon: Receipt },
+    { key: "reports",  label: "Billing Reports", icon: BarChart3 },
   ],
 }
 
-const managementNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "stores", label: "Stores", icon: Store },
-  { key: "customers", label: "Customers", icon: Users },
-  { key: "categories", label: "Categories", icon: Tag },
+// ── Core management items — always visible ────────────────────────────────────
+const coreManagementItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "stores",              label: "Stores",               icon: Store },
+  { key: "customers",           label: "Customers",            icon: Users },
+  { key: "categories",          label: "Categories",           icon: Tag },
   { key: "product-import",      label: "Product Import",       icon: Upload },
   { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap },
-  { key: "pos", label: "POS Billing", icon: Monitor },
-  { key: "gateway-config", label: "Payment Gateways", icon: CreditCard },
-  { key: "marketing", label: "Marketing", icon: Megaphone },
-  { key: "tax", label: "Tax & GST", icon: Receipt },
-  { key: "loyalty", label: "Loyalty Program", icon: Heart },
-  { key: "reports", label: "Reports", icon: BarChart3 },
-  { key: "settings", label: "Settings", icon: Settings },
+  { key: "tax",                 label: "Tax & GST",            icon: Receipt },
+  { key: "gateway-config",      label: "Payment Gateways",     icon: CreditCard },
+  { key: "reports",             label: "Reports",              icon: BarChart3 },
+  { key: "settings",            label: "Settings",             icon: Settings },
 ]
 
-const storefrontNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "storefront", label: "Storefront Preview", icon: Eye },
+// ── Flag-gated items — hidden when flag is disabled ───────────────────────────
+const flagGatedItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }>; flag: string }[] = [
+  { key: "pos",       label: "POS Billing",     icon: Monitor,  flag: "pos_enabled" },
+  { key: "marketing", label: "Marketing",        icon: Megaphone, flag: "promo_codes_enabled" },
+  { key: "loyalty",   label: "Loyalty Program",  icon: Heart,    flag: "loyalty_enabled" },
 ]
 
+// ── Storefront — shown only when online_orders is enabled ─────────────────────
+const storefrontItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
+  key: "storefront", label: "Storefront Preview", icon: Eye,
+}
+
+// ── Platform section — always visible, read-only for business owner ───────────
 const platformNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "branding",           label: "Branding",           icon: Palette },
-  { key: "feature-flags",      label: "Feature Flags",      icon: Zap },
-  { key: "subscription-view",  label: "Subscription",       icon: CreditCard },
-  { key: "customer-app",       label: "Customer App",       icon: Smartphone },
-  { key: "delivery-app",       label: "Delivery App",       icon: Truck },
-  { key: "admin-app",          label: "Admin App",          icon: Globe },
-  { key: "onboarding-progress", label: "Onboarding",        icon: LayoutDashboard },
+  { key: "branding",            label: "Branding",       icon: Palette },
+  { key: "feature-flags",       label: "Feature Flags",  icon: Zap },
+  { key: "subscription-view",   label: "Subscription",   icon: CreditCard },
+  { key: "customer-app",        label: "Customer App",   icon: Smartphone },
+  { key: "delivery-app",        label: "Delivery App",   icon: Truck },
+  { key: "admin-app",           label: "Admin App",      icon: Globe },
+  { key: "onboarding-progress", label: "Onboarding",     icon: LayoutDashboard },
 ]
+
+// Plan & Workflows info item (read-only for business owner, managed by platform)
+const planWorkflowsItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
+  key: "workflow-config", label: "Plan & Workflows", icon: Shield,
+}
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   ShoppingCart, ShoppingBag, Zap, Droplets, Car, Truck, Calendar, CreditCard,
@@ -158,17 +171,37 @@ interface BusinessSidebarProps {
 }
 
 export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: BusinessSidebarProps) {
-  const { businessPage, setBusinessPage, currentBusinessName, currentBusinessType } = useAdminStore()
+  const { businessPage, setBusinessPage, currentBusinessName, currentBusinessType, currentBusinessId } = useAdminStore()
   const { isMobile } = useResponsive()
 
   const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
   const activeWorkflows = BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]
 
-  // Build workflow-specific nav items (deduplicate by page key)
+  // Feature flags — fetched to control which management items are visible
+  const [enabledFlags, setEnabledFlags] = useState<Set<string>>(new Set(["pos_enabled", "promo_codes_enabled", "loyalty_enabled", "online_orders_enabled"]))
+
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/core/businesses/${currentBusinessId}/feature-flags`, {
+      headers: { "x-business-id": currentBusinessId },
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (!json.success) return
+        const flags = new Set<string>()
+        for (const f of (json.data ?? [])) {
+          if (f.enabled) flags.add(f.key)
+        }
+        setEnabledFlags(flags)
+      })
+      .catch(() => {/* non-fatal — keep defaults */})
+  }, [currentBusinessId])
+
+  // Build workflow-specific nav items (dedup by page key)
   const workflowNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = []
   const seen = new Set<string>()
   activeWorkflows.forEach((wf) => {
-    workflowNavMap[wf]?.forEach((item) => {
+    workflowNavMap[wf as WorkflowType]?.forEach((item) => {
       if (!seen.has(item.key)) {
         seen.add(item.key)
         workflowNavItems.push(item)
@@ -176,17 +209,26 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
     })
   })
 
-  const workflowConfigItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
-    key: "workflow-config",
-    label: "Workflow Config",
-    icon: Workflow,
-  }
+  // Management = core items + flag-gated items (only those whose flag is enabled)
+  const managementNavItems = [
+    ...coreManagementItems,
+    ...flagGatedItems.filter(item => enabledFlags.has(item.flag)),
+  ].sort((a, b) => {
+    // preserve deterministic order: core first, then flag-gated in original order
+    const coreOrder = coreManagementItems.findIndex(c => c.key === a.key)
+    const bCoreOrder = coreManagementItems.findIndex(c => c.key === b.key)
+    if (coreOrder !== -1 && bCoreOrder !== -1) return coreOrder - bCoreOrder
+    if (coreOrder !== -1) return -1
+    if (bCoreOrder !== -1) return 1
+    return 0
+  })
+
+  // Storefront — only if online_orders_enabled
+  const showStorefront = enabledFlags.has("online_orders_enabled")
 
   const handleNavigate = (page: BusinessPage) => {
     setBusinessPage(page)
-    if (isMobile && onMobileOpenChange) {
-      onMobileOpenChange(false)
-    }
+    if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }
 
   const displayName = currentBusinessName || typeUI.label || "Business"
@@ -208,7 +250,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
                 <SheetDescription className="text-left text-xs flex items-center gap-1.5">
                   {typeUI.label} Admin
                   <Badge variant="outline" className="text-[8px] px-1 py-0 h-3">
-                    {activeWorkflows.length} workflows
+                    {activeWorkflows.length} workflow{activeWorkflows.length !== 1 ? "s" : ""}
                   </Badge>
                 </SheetDescription>
               </div>
@@ -217,10 +259,19 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
 
           <ScrollArea className="flex-1 px-1 py-3">
             <NavSection title="Overview" items={[{ key: "dashboard", label: "Dashboard", icon: LayoutDashboard }]} activePage={businessPage} onNavigate={handleNavigate} compact />
-            <NavSection title="Workflows" items={[workflowConfigItem, ...workflowNavItems]} activePage={businessPage} onNavigate={handleNavigate} compact badge={`${activeWorkflows.length} active`} />
+            <NavSection
+              title="Operations"
+              items={[...workflowNavItems]}
+              activePage={businessPage}
+              onNavigate={handleNavigate}
+              compact
+              badge={`${activeWorkflows.length}`}
+            />
             <NavSection title="Management" items={managementNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
-            <NavSection title="Store" items={storefrontNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
-            <NavSection title="Platform" items={platformNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
+            {showStorefront && (
+              <NavSection title="Store" items={[storefrontItem]} activePage={businessPage} onNavigate={handleNavigate} compact />
+            )}
+            <NavSection title="Platform" items={[planWorkflowsItem, ...platformNavItems]} activePage={businessPage} onNavigate={handleNavigate} compact />
           </ScrollArea>
 
           <div className="border-t p-4">
@@ -275,17 +326,11 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
 
         <SidebarGroup>
           <SidebarGroupLabel className="flex items-center gap-1.5">
-            Workflows
+            Operations
             <Badge variant="outline" className="text-[8px] px-1 py-0 h-3 ml-auto">{activeWorkflows.length}</Badge>
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={businessPage === "workflow-config"} onClick={() => setBusinessPage("workflow-config")} tooltip="Workflow Config">
-                  <Workflow className="size-4" />
-                  <span>Workflow Config</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
               {workflowNavItems.map((item) => (
                 <SidebarMenuItem key={item.key + item.label}>
                   <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
@@ -314,26 +359,33 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Store</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {storefrontNavItems.map((item) => (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
-                    <item.icon className="size-4" />
-                    <span>{item.label}</span>
+        {showStorefront && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Store</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={businessPage === "storefront"} onClick={() => setBusinessPage("storefront")} tooltip="Storefront Preview">
+                    <Eye className="size-4" />
+                    <span>Storefront Preview</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         <SidebarGroup>
           <SidebarGroupLabel>Platform</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              {/* Plan & Workflows — read-only, managed by platform admin */}
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={businessPage === "workflow-config"} onClick={() => setBusinessPage("workflow-config")} tooltip="Plan & Workflows">
+                  <Shield className="size-4" />
+                  <span>Plan &amp; Workflows</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {platformNavItems.map((item) => (
                 <SidebarMenuItem key={item.key}>
                   <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>

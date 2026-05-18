@@ -177,6 +177,7 @@ const DeliveryProfile = dynamic(() => import("@/components/delivery/profile/deli
 // ── Workflow Engine (lazy) ────────────────────────────────────────────────
 const WorkflowEngineView = dynamic(() => import("@/components/workflow/workflow-engine-view").then(m => ({ default: m.WorkflowEngineView })), { loading: () => <PageLoader /> })
 const WorkflowConfigView = dynamic(() => import("@/components/workflow/workflow-config-view").then(m => ({ default: m.WorkflowConfigView })), { loading: () => <PageLoader /> })
+const WorkflowInfoView = dynamic(() => import("@/components/workflow/workflow-info-view").then(m => ({ default: m.WorkflowInfoView })), { loading: () => <PageLoader /> })
 const PlanComparison = dynamic(() => import("@/components/workflow/plan-comparison").then(m => ({ default: m.PlanComparison })), { loading: () => <PageLoader /> })
 
 // ── Payment (lazy) ────────────────────────────────────────────────────────
@@ -307,7 +308,7 @@ function AppContent() {
       case "stores": return <StoresView />
       case "storefront": return <StorefrontShell />
       // Workflow Engine
-      case "workflow-config": return <WorkflowConfigView />
+      case "workflow-config": return <WorkflowInfoView />
       case "workflows": return <WorkflowEngineView />
       // Payment
       case "gateway-config": return <GatewayConfigView />

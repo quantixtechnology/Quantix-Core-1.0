@@ -26,7 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
-  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2,
+  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2, Loader2,
 } from "lucide-react"
 import { AvatarImage } from "@/components/ui/avatar"
 import { useAdminStore } from "@/stores/admin-store"
@@ -123,6 +123,9 @@ export function BusinessesView() {
   const [plans, setPlans] = useState<PlanApiData[]>([])
   const [activatingBusiness, setActivatingBusiness] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // Module toggle state (super admin)
+  const [togglingModule, setTogglingModule] = useState<string | null>(null)
 
   // Branding & domain edit state
   const [brandingOpen, setBrandingOpen] = useState(false)
@@ -368,6 +371,21 @@ export function BusinessesView() {
     setEditSubdomain("")
     setEditPrimaryColor(biz.primaryColor ?? "#10B981")
     setBrandingOpen(true)
+  }
+
+  const handleToggleModule = async (biz: BusinessApiData, moduleKey: string, currentStatus: string) => {
+    setTogglingModule(moduleKey)
+    const newStatus = currentStatus === "ENABLED" ? "DISABLED" : "ENABLED"
+    try {
+      await fetch(`/api/core/businesses/${biz.id}/modules`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ moduleKey, status: newStatus }),
+      })
+      await fetchBusinesses()
+    } finally {
+      setTogglingModule(null)
+    }
   }
 
   const handleSaveBranding = async (biz: BusinessApiData) => {
@@ -981,14 +999,37 @@ export function BusinessesView() {
                       </div>
                     </div>
                     <Separator />
-                    {/* Active Modules */}
+                    {/* Modules — Super Admin can toggle */}
                     <div className="space-y-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active Modules</h4>
-                      {enabledModules.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {enabledModules.map((mod) => (<Badge key={mod.moduleKey} variant="secondary" className="text-xs gap-1.5 py-1 px-2.5 bg-muted/80"><Puzzle className="h-3 w-3 text-muted-foreground" />{mod.moduleName}</Badge>))}
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Modules</h4>
+                        {canEdit && <span className="text-[10px] text-muted-foreground">Toggle to enable/disable</span>}
+                      </div>
+                      {biz.modules.length > 0 ? (
+                        <div className="divide-y rounded-md border">
+                          {biz.modules.map((mod) => (
+                            <div key={mod.moduleKey} className="flex items-center gap-3 px-3 py-2">
+                              <Puzzle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{mod.moduleName}</p>
+                                <p className="text-[10px] text-muted-foreground">{mod.moduleKey}</p>
+                              </div>
+                              {canEdit ? (
+                                togglingModule === mod.moduleKey
+                                  ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                  : <Switch
+                                      checked={mod.status === "ENABLED"}
+                                      onCheckedChange={() => handleToggleModule(biz, mod.moduleKey, mod.status)}
+                                    />
+                              ) : (
+                                <Badge variant={mod.status === "ENABLED" ? "default" : "secondary"} className={`text-[10px] h-4 px-1.5 ${mod.status === "ENABLED" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" : ""}`}>
+                                  {mod.status === "ENABLED" ? "ON" : "OFF"}
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ) : (<p className="text-sm text-muted-foreground">No modules enabled</p>)}
+                      ) : (<p className="text-sm text-muted-foreground">No modules configured</p>)}
                     </div>
                     <Separator />
                     {/* Store Configuration */}
