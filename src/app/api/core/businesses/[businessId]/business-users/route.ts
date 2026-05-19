@@ -84,6 +84,7 @@ export const POST = withMiddleware({
     const newUser = await db.user.create({
       data: {
         email,
+        loginId: email,
         name: name || email.split('@')[0],
         phone: phone || null,
         passwordHash,

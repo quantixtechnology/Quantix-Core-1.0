@@ -36,64 +36,50 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Email and password are required' }, { status: 400 });
     }
 
-    // Always normalize: trim whitespace + lowercase
-    normalizedEmail = email.toLowerCase().trim();
+    // Normalize: trim whitespace + lowercase
+    const identifier = email.toLowerCase().trim();
+    normalizedEmail = identifier;
 
-    console.log(`[login] Attempt for: ${normalizedEmail}`);
+    console.log(`[login] Attempt for: ${identifier}`);
 
-    const rateLimitError = checkRateLimit(`login:${normalizedEmail}`, RATE_LIMIT_CONFIG);
+    const rateLimitError = checkRateLimit(`login:${identifier}`, RATE_LIMIT_CONFIG);
     if (rateLimitError) {
       return NextResponse.json({ success: false, error: rateLimitError }, { status: 429 });
     }
 
-    // Primary lookup: exact match on normalized email
-    let user = await db.user.findUnique({
-      where: { email: normalizedEmail },
-      select: {
-        id: true, name: true, email: true, avatar: true,
-        passwordHash: true, isActive: true, platformRole: true, platformPermissions: true,
-        businessUsers: {
-          where: { isActive: true },
-          select: {
-            role: true, storeId: true,
-            business: {
-              select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true },
-            },
-            store: { select: { id: true, name: true } },
+    const userSelect = {
+      id: true, name: true, email: true, loginId: true, avatar: true,
+      passwordHash: true, isActive: true, platformRole: true, platformPermissions: true,
+      businessUsers: {
+        where: { isActive: true },
+        select: {
+          role: true, storeId: true,
+          business: {
+            select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true },
           },
+          store: { select: { id: true, name: true } },
         },
-        salesProfile: { select: { id: true, name: true, region: true, isActive: true } },
       },
-    });
+      salesProfile: { select: { id: true, name: true, region: true, isActive: true } },
+    } as const;
+
+    // Lookup order: loginId first → email exact → email case-insensitive fallback
+    let user = await db.user.findUnique({ where: { loginId: identifier }, select: userSelect });
+
+    if (!user) {
+      user = await db.user.findUnique({ where: { email: identifier }, select: userSelect });
+    }
 
     // SQLite fallback: case-insensitive search via raw SQL
-    // Handles any stored emails that are not yet normalized to lowercase
     if (!user) {
-      console.log(`[login] Exact match failed. Trying LOWER() fallback for: ${normalizedEmail}`);
+      console.log(`[login] Exact match failed. Trying LOWER() fallback for: ${identifier}`);
       const rows = await db.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM User WHERE LOWER(email) = ${normalizedEmail} LIMIT 1
+        SELECT id FROM User WHERE LOWER(loginId) = ${identifier} OR LOWER(email) = ${identifier} LIMIT 1
       `;
       if (rows.length > 0) {
-        user = await db.user.findUnique({
-          where: { id: rows[0].id },
-          select: {
-            id: true, name: true, email: true, avatar: true,
-            passwordHash: true, isActive: true, platformRole: true, platformPermissions: true,
-            businessUsers: {
-              where: { isActive: true },
-              select: {
-                role: true, storeId: true,
-                business: {
-                  select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true },
-                },
-                store: { select: { id: true, name: true } },
-              },
-            },
-            salesProfile: { select: { id: true, name: true, region: true, isActive: true } },
-          },
-        });
+        user = await db.user.findUnique({ where: { id: rows[0].id }, select: userSelect });
         if (user) {
-          console.log(`[login] LOWER() fallback found user: ${user.email} (stored email differs from input)`);
+          console.log(`[login] LOWER() fallback found user: ${user.email}`);
         }
       }
     }
