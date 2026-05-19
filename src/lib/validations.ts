@@ -132,7 +132,9 @@ export const categorySchema = z.object({
   description: z.string().max(1000).optional(),
   image: z.string().url('Invalid image URL').optional(),
   icon: z.string().max(50).optional(),
+  color: z.string().max(20).optional(),
   parentId: z.string().optional(),
+  workflowType: z.string().optional(),
   sortOrder: z.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
 });

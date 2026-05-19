@@ -9,6 +9,13 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import {
@@ -25,6 +32,7 @@ interface Category {
   description: string | null
   image: string | null
   icon: string | null
+  color: string | null
   parentId: string | null
   isActive: boolean
   sortOrder: number
@@ -33,9 +41,38 @@ interface Category {
   children?: Category[]
 }
 
+const WORKFLOW_OPTIONS = [
+  { value: "ECOMMERCE",            label: "Ecommerce" },
+  { value: "PICKUP_DELIVERY",      label: "Pickup & Delivery" },
+  { value: "APPOINTMENT",          label: "Appointment" },
+  { value: "SUBSCRIPTION",         label: "Subscription" },
+  { value: "POST_SERVICE_BILLING", label: "Post Service Billing" },
+]
+
+const PRESET_COLORS = [
+  "#10B981", "#3B82F6", "#F59E0B", "#EF4444",
+  "#8B5CF6", "#EC4899", "#0891B2", "#D97706",
+  "#6366F1", "#14B8A6",
+]
+
+const CATEGORY_EMOJIS = [
+  "🥬","🥛","🍪","🌾","🌶️","✨","🧹","❄️","👕","🧥",
+  "♨️","🚚","🔄","⚖️","🚗","📅","🧴","📦","🛒","🎨",
+  "💊","🍕","🎂","🧁","☕","🍖","🥩","🐟","📱","💡",
+]
+
+function slugify(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 80)
+}
+
 const emptyForm = {
-  name: "", description: "", image: "", icon: "", sortOrder: "0",
-  isActive: true, parentId: "", workflowType: "",
+  name: "", slug: "", description: "", image: "", icon: "📦",
+  color: "#10B981", sortOrder: "0", isActive: true, parentId: "", workflowType: "ECOMMERCE",
 }
 
 export function CategoriesView() {
@@ -68,15 +105,35 @@ export function CategoriesView() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => { setForm({ ...emptyForm }); setEditTarget(null); setCreateOpen(true) }
+  const openCreate = () => {
+    setForm({ ...emptyForm })
+    setEditTarget(null)
+    setCreateOpen(true)
+  }
+
   const openEdit = (cat: Category) => {
     setForm({
-      name: cat.name, description: cat.description ?? "", image: cat.image ?? "",
-      icon: cat.icon ?? "", sortOrder: String(cat.sortOrder), isActive: cat.isActive,
-      parentId: cat.parentId ?? "", workflowType: cat.workflowType ?? "",
+      name: cat.name,
+      slug: cat.slug,
+      description: cat.description ?? "",
+      image: cat.image ?? "",
+      icon: cat.icon ?? "📦",
+      color: cat.color ?? "#10B981",
+      sortOrder: String(cat.sortOrder),
+      isActive: cat.isActive,
+      parentId: cat.parentId ?? "",
+      workflowType: cat.workflowType ?? "ECOMMERCE",
     })
     setEditTarget(cat)
     setCreateOpen(true)
+  }
+
+  const handleNameChange = (value: string) => {
+    setForm(f => ({
+      ...f,
+      name: value,
+      slug: editTarget ? f.slug : slugify(value),
+    }))
   }
 
   const handleSave = async () => {
@@ -84,14 +141,23 @@ export function CategoriesView() {
     setSaving(true)
     try {
       const method = editTarget ? "PATCH" : "POST"
-      const url = `/api/core/businesses/${businessId}/categories`
-      const body = editTarget
-        ? { id: editTarget.id, ...form, sortOrder: Number(form.sortOrder), parentId: form.parentId || null, workflowType: form.workflowType || null }
-        : { ...form, sortOrder: Number(form.sortOrder), parentId: form.parentId || null, workflowType: form.workflowType || null }
-
-      const res = await fetch(url, {
-        method, headers: { "Content-Type": "application/json", "x-business-id": businessId },
-        body: JSON.stringify(body),
+      const payload = {
+        ...(editTarget ? { id: editTarget.id } : {}),
+        name: form.name.trim(),
+        slug: form.slug || slugify(form.name),
+        description: form.description || null,
+        image: form.image || null,
+        icon: form.icon || null,
+        color: form.color || null,
+        sortOrder: Number(form.sortOrder),
+        isActive: form.isActive,
+        parentId: form.parentId || null,
+        workflowType: form.workflowType || "ECOMMERCE",
+      }
+      const res = await fetch(`/api/core/businesses/${businessId}/categories`, {
+        method,
+        headers: { "Content-Type": "application/json", "x-business-id": businessId },
+        body: JSON.stringify(payload),
       })
       if (res.ok) { setCreateOpen(false); load() }
     } finally {
@@ -100,11 +166,12 @@ export function CategoriesView() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this category? Products in it will become uncategorized.")) return
+    if (!confirm("Delete this category? Products will be uncategorized; subcategories will become top-level.")) return
     setDeleting(id)
     try {
       await fetch(`/api/core/businesses/${businessId}/categories?id=${id}`, {
-        method: "DELETE", headers: { "x-business-id": businessId },
+        method: "DELETE",
+        headers: { "x-business-id": businessId },
       })
       load()
     } finally {
@@ -126,7 +193,7 @@ export function CategoriesView() {
     <div className="space-y-6">
       <PageHeader
         title="Categories"
-        description="Manage product categories and sub-categories"
+        description="Single source of truth for all product categories and sub-categories"
         icon={Tag}
         action={
           <Button size="sm" className="gap-1.5" onClick={openCreate}>
@@ -146,10 +213,10 @@ export function CategoriesView() {
         />
       </div>
 
-      {/* Stats row */}
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Total", value: categories.length, color: "text-foreground" },
+          { label: "Total",    value: categories.length,                         color: "text-foreground" },
           { label: "Active",   value: categories.filter(c => c.isActive).length,  color: "text-emerald-600" },
           { label: "Inactive", value: categories.filter(c => !c.isActive).length, color: "text-muted-foreground" },
         ].map(s => (
@@ -190,17 +257,27 @@ export function CategoriesView() {
                 <div key={cat.id}>
                   {/* Parent row */}
                   <div className="flex items-center gap-3 px-6 py-3 hover:bg-muted/30 group">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
-                      {cat.image
-                        ? <img src={cat.image} alt="" className="h-6 w-6 object-contain rounded" />
-                        : <Tag className="h-4 w-4 text-emerald-600" />
-                      }
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-sm shrink-0"
+                      style={{ backgroundColor: cat.color ? `${cat.color}20` : "#10B98120" }}
+                    >
+                      {cat.icon || <Tag className="h-4 w-4" style={{ color: cat.color ?? "#10B981" }} />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{cat.name}</p>
                         {!cat.isActive && <Badge variant="secondary" className="text-[10px] h-4">Inactive</Badge>}
-                        {cat.workflowType && <Badge variant="outline" className="text-[10px] h-4">{cat.workflowType}</Badge>}
+                        {cat.workflowType && (
+                          <Badge variant="outline" className="text-[10px] h-4">
+                            {cat.workflowType.replace(/_/g, " ")}
+                          </Badge>
+                        )}
+                        {cat.color && (
+                          <span
+                            className="inline-block h-3 w-3 rounded-full shrink-0"
+                            style={{ backgroundColor: cat.color }}
+                          />
+                        )}
                       </div>
                       {cat.description && <p className="text-xs text-muted-foreground truncate">{cat.description}</p>}
                     </div>
@@ -218,7 +295,10 @@ export function CategoriesView() {
                         disabled={deleting === cat.id}
                         onClick={() => handleDelete(cat.id)}
                       >
-                        {deleting === cat.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        {deleting === cat.id
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Trash2 className="h-3.5 w-3.5" />
+                        }
                       </Button>
                     </div>
                   </div>
@@ -231,6 +311,12 @@ export function CategoriesView() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm truncate">{child.name}</p>
                           {!child.isActive && <Badge variant="secondary" className="text-[10px] h-4">Inactive</Badge>}
+                          {child.color && (
+                            <span
+                              className="inline-block h-3 w-3 rounded-full shrink-0"
+                              style={{ backgroundColor: child.color }}
+                            />
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -242,7 +328,10 @@ export function CategoriesView() {
                           disabled={deleting === child.id}
                           onClick={() => handleDelete(child.id)}
                         >
-                          {deleting === child.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          {deleting === child.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Trash2 className="h-3.5 w-3.5" />
+                          }
                         </Button>
                       </div>
                     </div>
@@ -256,29 +345,61 @@ export function CategoriesView() {
 
       {/* Create / Edit Dialog */}
       <Dialog open={createOpen} onOpenChange={o => { setCreateOpen(o); if (!o) setEditTarget(null) }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editTarget ? "Edit Category" : "New Category"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Name *</Label>
-              <Input placeholder="e.g. Fresh Vegetables" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea placeholder="Optional description…" rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-            </div>
+            {/* Name + Slug */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Image URL</Label>
-                <Input placeholder="https://…" value={form.image} onChange={e => setForm(f => ({ ...f, image: e.target.value }))} />
+                <Label>Name *</Label>
+                <Input
+                  placeholder="e.g. Fresh Vegetables"
+                  value={form.name}
+                  onChange={e => handleNameChange(e.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
-                <Label>Sort Order</Label>
-                <Input type="number" value={form.sortOrder} onChange={e => setForm(f => ({ ...f, sortOrder: e.target.value }))} />
+                <Label>Slug</Label>
+                <Input
+                  placeholder="auto-generated"
+                  value={form.slug}
+                  onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
+                />
               </div>
             </div>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                placeholder="Optional description…"
+                rows={2}
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+
+            {/* Workflow Type */}
+            <div className="space-y-1.5">
+              <Label>Workflow Type</Label>
+              <Select
+                value={form.workflowType}
+                onValueChange={v => setForm(f => ({ ...f, workflowType: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select workflow" />
+                </SelectTrigger>
+                <SelectContent>
+                  {WORKFLOW_OPTIONS.map(wf => (
+                    <SelectItem key={wf.value} value={wf.value}>{wf.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Parent Category */}
             <div className="space-y-1.5">
               <Label>Parent Category</Label>
               <select
@@ -292,9 +413,81 @@ export function CategoriesView() {
                 ))}
               </select>
             </div>
+
+            {/* Icon picker */}
+            <div className="space-y-1.5">
+              <Label>Icon</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {CATEGORY_EMOJIS.map(emoji => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    className={`h-8 w-8 rounded-lg border-2 flex items-center justify-center text-sm transition-all ${
+                      form.icon === emoji
+                        ? "border-primary scale-110 bg-primary/10"
+                        : "border-transparent hover:border-muted-foreground/30"
+                    }`}
+                    onClick={() => setForm(f => ({ ...f, icon: emoji }))}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Color picker */}
+            <div className="space-y-1.5">
+              <Label>Color</Label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={form.color}
+                  onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                  className="h-9 w-12 cursor-pointer rounded border border-input bg-transparent p-0.5"
+                />
+                <div className="flex gap-2 flex-wrap">
+                  {PRESET_COLORS.map(color => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={`h-7 w-7 rounded-full border-2 transition-all ${
+                        form.color === color ? "border-foreground scale-110" : "border-transparent"
+                      }`}
+                      style={{ backgroundColor: color }}
+                      onClick={() => setForm(f => ({ ...f, color }))}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Image URL + Sort Order */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Image URL</Label>
+                <Input
+                  placeholder="https://…"
+                  value={form.image}
+                  onChange={e => setForm(f => ({ ...f, image: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Sort Order</Label>
+                <Input
+                  type="number"
+                  value={form.sortOrder}
+                  onChange={e => setForm(f => ({ ...f, sortOrder: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Active toggle */}
             <div className="flex items-center justify-between">
               <Label>Active</Label>
-              <Switch checked={form.isActive} onCheckedChange={v => setForm(f => ({ ...f, isActive: v }))} />
+              <Switch
+                checked={form.isActive}
+                onCheckedChange={v => setForm(f => ({ ...f, isActive: v }))}
+              />
             </div>
           </div>
           <DialogFooter>

@@ -56,11 +56,7 @@ import {
   Grid3X3,
   List,
   Workflow,
-  ShoppingCart,
-  Truck,
-  Calendar,
-  CreditCard,
-  Receipt,
+  ExternalLink,
 } from "lucide-react"
 import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -75,15 +71,6 @@ type ProductStatus = "ACTIVE" | "INACTIVE" | "DRAFT" | "OUT_OF_STOCK"
 type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
 
 
-
-// Workflow icon mapping for category dialog
-const workflowIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  ShoppingCart,
-  Truck,
-  Calendar,
-  CreditCard,
-  Receipt,
-}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -199,6 +186,7 @@ function CategoryIcon({ icon, color, name }: { icon: string; color: string; name
 export function ProductsView() {
   // Get real business context
   const { businessId, isLoading: contextLoading } = useBusinessContext()
+  const { setBusinessPage } = useAdminStore()
   const { permissions } = useAuthStore()
   const canDeleteProducts = permissions.includes('products:delete')
   const queryClient = useQueryClient()
@@ -291,27 +279,6 @@ export function ProductsView() {
     },
   })
 
-  // ---- Create category mutation ----
-  const createCategoryMutation = useMutation({
-    mutationFn: async (categoryData: Record<string, unknown>) => {
-      const response = await fetch('/api/core/storefront/categories', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ ...categoryData, businessId }),
-      })
-      const data = await response.json()
-      if (!data.success) throw new Error(data.error || data.message || 'Failed to create category')
-      return data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories", businessId] })
-      showSuccess("Category created successfully")
-    },
-    onError: (error) => {
-      showError(error instanceof Error ? error.message : "Failed to create category")
-    },
-  })
-
   // Map API products to local Product type
   const apiProductList: Product[] = useMemo(() => {
     const rawData = productsResponse?.data
@@ -396,18 +363,6 @@ export function ProductsView() {
   const [formImageUrl, setFormImageUrl] = useState("")
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // ---- Add category dialog ----
-  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
-  const [catFormName, setCatFormName] = useState("")
-  const [catFormSlug, setCatFormSlug] = useState("")
-  const [catFormColor, setCatFormColor] = useState("#10B981")
-  const [catFormSortOrder, setCatFormSortOrder] = useState("")
-  const [catFormWorkflow, setCatFormWorkflow] = useState<WorkflowType>("ECOMMERCE")
-  const [catFormIcon, setCatFormIcon] = useState("📦")
-
-  // ---- Category emoji options ----
-  const categoryEmojis = ["🥬", "🥛", "🍪", "🌾", "🌶️", "✨", "🧹", "❄️", "👕", "🧥", "♨️", "🚚", "🔄", "⚖️", "🚗", "📅", "🧴", "📦", "🛒", "🎨", "💊", "🍕", "🎂", "🧁", "☕", "🍖", "🥩", "🐟", "📱", "💡"]
 
   // ---- Edit variant dialog ----
   const [editVariantDialogOpen, setEditVariantDialogOpen] = useState(false)
@@ -702,39 +657,6 @@ export function ProductsView() {
     }
   }
 
-  // ---- Category handlers ----
-  const resetCategoryForm = () => {
-    setCatFormName("")
-    setCatFormSlug("")
-    setCatFormColor("#10B981")
-    setCatFormSortOrder("")
-    setCatFormWorkflow("ECOMMERCE")
-    setCatFormIcon("📦")
-  }
-
-  const handleCatNameChange = (value: string) => {
-    setCatFormName(value)
-    setCatFormSlug(slugify(value))
-  }
-
-  const handleSaveCategory = async () => {
-    if (!catFormName || !businessId) return
-    try {
-      await createCategoryMutation.mutateAsync({
-        name: catFormName,
-        slug: catFormSlug || slugify(catFormName),
-        icon: catFormIcon,
-        color: catFormColor,
-        sortOrder: Number(catFormSortOrder) || undefined,
-        workflowType: catFormWorkflow,
-      })
-      setCategoryDialogOpen(false)
-      resetCategoryForm()
-    } catch {
-      showError("Failed to create category")
-    }
-  }
-
   // ---- Category stats ----
   const categoryStats = useMemo(() => {
     const stats: Record<string, number> = {}
@@ -758,9 +680,9 @@ export function ProductsView() {
         icon={Package}
         action={
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-2" onClick={() => setCategoryDialogOpen(true)}>
+            <Button variant="outline" className="gap-2" onClick={() => setBusinessPage("categories")}>
               <Tag className="h-4 w-4" />
-              Add Category
+              Manage Categories
             </Button>
             <Button className="gap-2" onClick={openAddProduct}>
               <Plus className="h-4 w-4" />
@@ -1121,16 +1043,17 @@ export function ProductsView() {
               )
             })}
 
-            {/* Add Category Card */}
+            {/* Manage Categories CTA */}
             <Card
               className="border-dashed hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => setCategoryDialogOpen(true)}
+              onClick={() => setBusinessPage("categories")}
             >
               <CardContent className="p-4 flex flex-col items-center justify-center h-full min-h-[100px]">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
-                  <Plus className="h-5 w-5 text-muted-foreground" />
+                  <ExternalLink className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium text-muted-foreground mt-2">Add Category</p>
+                <p className="text-sm font-medium text-muted-foreground mt-2">Manage Categories</p>
+                <p className="text-[10px] text-muted-foreground">Go to Categories</p>
               </CardContent>
             </Card>
           </div>
@@ -1707,138 +1630,6 @@ export function ProductsView() {
         </DialogContent>
       </Dialog>
 
-      {/* ================================================================== */}
-      {/* Add Category Dialog                                                */}
-      {/* ================================================================== */}
-      <Dialog
-        open={categoryDialogOpen}
-        onOpenChange={(open) => {
-          setCategoryDialogOpen(open)
-          if (!open) resetCategoryForm()
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add Category</DialogTitle>
-            <DialogDescription>
-              Create a new product category and assign a workflow type
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Category Name</Label>
-                <Input
-                  placeholder="e.g. Dairy & Eggs"
-                  value={catFormName}
-                  onChange={(e) => handleCatNameChange(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Slug</Label>
-                <Input
-                  placeholder="Auto-generated"
-                  value={catFormSlug}
-                  onChange={(e) => setCatFormSlug(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Workflow Type */}
-            <div className="space-y-2">
-              <Label>Workflow Type</Label>
-              <Select value={catFormWorkflow} onValueChange={(v) => setCatFormWorkflow(v as WorkflowType)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select workflow" />
-                </SelectTrigger>
-                <SelectContent>
-                  {WORKFLOW_CONFIGS.map((wf) => {
-                    const Icon = workflowIconMap[wf.icon] || ShoppingCart
-                    return (
-                      <SelectItem key={wf.type} value={wf.type}>
-                        <div className="flex items-center gap-2">
-                          <Icon className={`h-4 w-4 ${wf.color}`} />
-                          <span>{wf.label}</span>
-                        </div>
-                      </SelectItem>
-                    )
-                  })}
-                </SelectContent>
-              </Select>
-              <p className="text-[10px] text-muted-foreground">
-                Determines how orders for products in this category are processed
-              </p>
-            </div>
-
-            {/* Icon Picker */}
-            <div className="space-y-2">
-              <Label>Icon</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {categoryEmojis.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    className={`h-8 w-8 rounded-lg border-2 flex items-center justify-center text-sm transition-all ${
-                      catFormIcon === emoji ? "border-primary scale-110 bg-primary/10" : "border-transparent hover:border-muted-foreground/30"
-                    }`}
-                    onClick={() => setCatFormIcon(emoji)}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Color Picker */}
-            <div className="space-y-2">
-              <Label>Color</Label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={catFormColor}
-                  onChange={(e) => setCatFormColor(e.target.value)}
-                  className="h-9 w-12 cursor-pointer rounded border border-input bg-transparent p-0.5"
-                />
-                <div className="flex gap-2">
-                  {["#10B981", "#3B82F6", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#0891B2", "#D97706"].map(
-                    (color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        className={`h-7 w-7 rounded-full border-2 transition-all ${
-                          catFormColor === color ? "border-foreground scale-110" : "border-transparent"
-                        }`}
-                        style={{ backgroundColor: color }}
-                        onClick={() => setCatFormColor(color)}
-                      />
-                    )
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Sort Order */}
-            <div className="space-y-2">
-              <Label>Sort Order</Label>
-              <Input
-                type="number"
-                placeholder="e.g. 1"
-                value={catFormSortOrder}
-                onChange={(e) => setCatFormSortOrder(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCategoryDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveCategory}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add Category
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

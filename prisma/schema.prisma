@@ -1250,6 +1250,7 @@ model Category {
   description  String?
   image        String?
   icon         String?
+  color        String?
   parentId     String?
   workflowType WorkflowType @default(ECOMMERCE)
   sortOrder    Int          @default(0)
