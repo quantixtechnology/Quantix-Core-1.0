@@ -115,6 +115,7 @@ export async function GET(request: Request) {
             // When scoped to a store, only return that store's inventory rows
             where: storeId ? { storeId } : undefined,
             select: {
+              variantId: true,
               storeId: true,
               quantity: true,
               reservedQty: true,
@@ -134,6 +135,11 @@ export async function GET(request: Request) {
 
     // Transform products for response
     const storefrontProducts = products.map((product) => {
+      // Build variantId → inventory lookup for per-variant stock
+      const invByVariant = new Map(
+        product.inventory.map(inv => [inv.variantId, inv])
+      );
+
       const availableStock = product.inventory.reduce(
         (sum, inv) => sum + Math.max(0, inv.quantity - inv.reservedQty),
         0
@@ -181,18 +187,23 @@ export async function GET(request: Request) {
           image: product.category.image,
           workflowType: (product.category as Record<string, unknown>)?.workflowType || undefined,
         } : null,
-        variants: product.variants.map((v) => ({
-          id: v.id,
-          name: v.name,
-          sku: v.sku,
-          price: v.price,
-          mrp: v.mrp,
-          discountPrice: v.discountPrice,
-          discountPercent: v.discountPercent,
-          isDefault: v.isDefault,
-          isActive: (v as Record<string, unknown>)?.isActive ?? true,
-          attributes: JSON.parse(v.attributes || '{}') as Record<string, string>,
-        })),
+        variants: product.variants.map((v) => {
+          const inv = invByVariant.get(v.id)
+          const variantStock = inv ? Math.max(0, inv.quantity - inv.reservedQty) : 0
+          return {
+            id: v.id,
+            name: v.name,
+            sku: v.sku,
+            price: v.price,
+            mrp: v.mrp,
+            discountPrice: v.discountPrice,
+            discountPercent: v.discountPercent,
+            isDefault: v.isDefault,
+            isActive: (v as Record<string, unknown>)?.isActive ?? true,
+            attributes: JSON.parse(v.attributes || '{}') as Record<string, string>,
+            stock: variantStock,
+          }
+        }),
         defaultPrice: defaultVariant?.price || 0,
         defaultMrp: defaultVariant?.mrp || 0,
         stockStatus,
@@ -345,6 +356,7 @@ export const POST = withMiddleware({
           where: { productId: product.id, variantId: variant.id, storeId },
         });
         if (!existingInventory) {
+          const minStock = 10
           await db.inventory.create({
             data: {
               businessId: body.businessId,
@@ -352,9 +364,9 @@ export const POST = withMiddleware({
               productId: product.id,
               variantId: variant.id,
               quantity: qty,
-              minStock: 0,
+              minStock,
               maxStock: 1000,
-              status: qty > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+              status: qty <= 0 ? 'OUT_OF_STOCK' : qty <= minStock ? 'LOW_STOCK' : 'IN_STOCK',
             },
           });
         }

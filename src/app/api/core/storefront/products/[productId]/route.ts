@@ -142,33 +142,43 @@ export async function PUT(
             include: { category: true, variants: true },
           });
 
-          if (existing.storeId) {
+          // Resolve store: client-supplied > product.storeId > main store for business
+          const storeIdForInv: string | null =
+            body.storeId ||
+            existing.storeId ||
+            (await tx.store.findFirst({
+              where: { businessId: existing.businessId },
+              orderBy: [{ isMainStore: 'desc' }, { createdAt: 'asc' }],
+            }))?.id ||
+            null
+
+          if (storeIdForInv) {
+            const minStock = 10
             for (let i = 0; i < product.variants.length; i++) {
-              const variant = product.variants[i];
-              const qty = variantInputs[i]?._stock ?? 0;
+              const variant = product.variants[i]
+              const qty = variantInputs[i]?._stock ?? 0
+              const invStatus =
+                qty <= 0 ? 'OUT_OF_STOCK' : qty <= minStock ? 'LOW_STOCK' : 'IN_STOCK'
               await tx.inventory.upsert({
                 where: {
                   storeId_productId_variantId: {
-                    storeId: existing.storeId,
+                    storeId: storeIdForInv,
                     productId: existing.id,
                     variantId: variant.id,
                   },
                 },
-                update: {
-                  quantity: qty,
-                  status: qty > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
-                },
+                update: { quantity: qty, status: invStatus },
                 create: {
                   businessId: existing.businessId,
-                  storeId: existing.storeId,
+                  storeId: storeIdForInv,
                   productId: existing.id,
                   variantId: variant.id,
                   quantity: qty,
-                  minStock: 10,
+                  minStock,
                   maxStock: 1000,
-                  status: qty > 0 ? 'IN_STOCK' : 'OUT_OF_STOCK',
+                  status: invStatus,
                 },
-              });
+              })
             }
           }
 

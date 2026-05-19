@@ -186,17 +186,24 @@ function CategoryIcon({ icon, color, name }: { icon: string; color: string; name
 export function ProductsView() {
   // Get real business context
   const { businessId, isLoading: contextLoading } = useBusinessContext()
-  const { setBusinessPage } = useAdminStore()
+  const { setBusinessPage, currentStoreId } = useAdminStore()
   const { permissions } = useAuthStore()
   const canDeleteProducts = permissions.includes('products:delete')
   const queryClient = useQueryClient()
 
   // ---- Fetch products from API ----
   const { data: productsResponse, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useQuery({
-    queryKey: ["products", businessId, "ALL"],
+    queryKey: ["products", businessId, currentStoreId, "ALL"],
     queryFn: async () => {
       if (!businessId) return { data: [], pagination: { total: 0 } }
-      const response = await fetch(`/api/core/storefront/products?businessId=${encodeURIComponent(businessId)}&status=ALL&includeAllVariants=true&limit=100`)
+      const params = new URLSearchParams({
+        businessId,
+        status: 'ALL',
+        includeAllVariants: 'true',
+        limit: '100',
+      })
+      if (currentStoreId) params.set('storeId', currentStoreId)
+      const response = await fetch(`/api/core/storefront/products?${params}`)
       const data = await response.json()
       if (!data.success) throw new Error(data.error || 'Failed to fetch products')
       return data
@@ -300,7 +307,7 @@ export function ProductsView() {
             sku: String(v.sku || ""),
             mrp: Number(v.mrp) || 0,
             price: Number(v.price) || 0,
-            stock: Number(v.stock) || 0,
+            stock: Number(v.stock) ?? 0,
             isDefault: Boolean(v.isDefault),
           }))
         : [],
@@ -490,8 +497,15 @@ export function ProductsView() {
     try {
       const imageList = formImageUrl ? [formImageUrl] : []
 
+      const variantPayload = formVariants.map((fv) => ({
+        name: fv.name || formName,
+        sku: fv.sku,
+        price: Number(fv.price) || 0,
+        mrp: Number(fv.mrp) || 0,
+        stock: Number(fv.stock) || 0,
+      }))
+
       if (editingProduct) {
-        // Update via API
         await updateProductMutation.mutateAsync({
           productId: editingProduct.id,
           data: {
@@ -502,18 +516,12 @@ export function ProductsView() {
             isVeg: formIsVeg,
             isFeatured: formIsFeatured,
             images: imageList,
-            variants: formVariants.map((fv) => ({
-              name: fv.name || formName,
-              sku: fv.sku,
-              price: Number(fv.price) || 0,
-              mrp: Number(fv.mrp) || 0,
-              stock: Number(fv.stock) || 0,
-            })),
+            variants: variantPayload,
             workflowType: categoryObj?.workflow || "ECOMMERCE",
+            ...(currentStoreId ? { storeId: currentStoreId } : {}),
           },
         })
       } else {
-        // Create via API
         await createProductMutation.mutateAsync({
           name: formName,
           slug: formSlug || slugify(formName),
@@ -522,14 +530,9 @@ export function ProductsView() {
           isVeg: formIsVeg,
           isFeatured: formIsFeatured,
           images: imageList,
-          variants: formVariants.map((fv) => ({
-            name: fv.name || formName,
-            sku: fv.sku,
-            price: Number(fv.price) || 0,
-            mrp: Number(fv.mrp) || 0,
-            stock: Number(fv.stock) || 0,
-          })),
+          variants: variantPayload,
           workflowType: categoryObj?.workflow || "ECOMMERCE",
+          ...(currentStoreId ? { storeId: currentStoreId } : {}),
         })
       }
 
@@ -607,7 +610,10 @@ export function ProductsView() {
 
       await updateProductMutation.mutateAsync({
         productId: editVariantProductId,
-        data: { variants: updatedVariants },
+        data: {
+          variants: updatedVariants,
+          ...(currentStoreId ? { storeId: currentStoreId } : {}),
+        },
       })
     } catch {
       // Error handled by mutation
