@@ -29,7 +29,7 @@ import {
   LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2, Loader2, KeyRound, Eye, EyeOff,
 } from "lucide-react"
 import { AvatarImage } from "@/components/ui/avatar"
-import { useAdminStore } from "@/stores/admin-store"
+import { useAdminStore, BUSINESS_TYPE_WORKFLOWS } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -190,6 +190,8 @@ export function BusinessesView() {
   const [formIOSCycle, setFormIOSCycle] = useState<string>("MONTHLY")
   // Form state — add-ons (dynamic)
   const [formAddOns, setFormAddOns] = useState<AddOnFormItem[]>([])
+  // Form state — enabled workflows (Super Admin controlled)
+  const [formEnabledWorkflows, setFormEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
   // Form state — notes + owner
   const [formSubscriptionNotes, setFormSubscriptionNotes] = useState("")
   const [formOwnerName, setFormOwnerName] = useState("")
@@ -272,8 +274,18 @@ export function BusinessesView() {
     setFormIncludeIOS(false); setFormIOSAmount(""); setFormIOSDiscount(""); setFormIOSCycle("MONTHLY")
     setFormAddOns([]); setFormSubscriptionNotes("")
     setFormOwnerName(""); setFormOwnerEmail(""); setFormOwnerPassword("")
+    setFormEnabledWorkflows(["ECOMMERCE"])
     setCreatedResult(null)
   }
+
+  // Auto-derive enabledWorkflows when plan or business type changes
+  useEffect(() => {
+    if (formPlan === "STANDARD") {
+      setFormEnabledWorkflows(["ECOMMERCE"])
+    } else if (formPlan === "PRO" && formType) {
+      setFormEnabledWorkflows((BUSINESS_TYPE_WORKFLOWS[formType] ?? ["ECOMMERCE"]) as string[])
+    }
+  }, [formPlan, formType])
 
   const handleNameChange = (value: string) => {
     setFormName(value)
@@ -330,6 +342,7 @@ export function BusinessesView() {
           name: formName, slug: formSlug, businessType: formType,
           planId: matchingPlan.id,
           planTier: formPlan,
+          enabledWorkflows: formEnabledWorkflows,
           billingCycle: formBillingCycle,
           subscriptionAmount,
           discountAmount,
@@ -663,6 +676,58 @@ export function BusinessesView() {
                         </Select>
                       </div>
                     </div>
+                    {/* Enabled Workflows — locked for STANDARD, selectable for PRO */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-semibold">Enabled Workflows</Label>
+                        {formPlan === "STANDARD" && (
+                          <Badge variant="secondary" className="text-[10px]">Standard — Ecommerce only</Badge>
+                        )}
+                        {formPlan === "PRO" && (
+                          <Badge variant="outline" className="text-[10px]">PRO — select workflows</Badge>
+                        )}
+                      </div>
+                      <div className="rounded-lg border p-3 space-y-2">
+                        {[
+                          { value: "ECOMMERCE",            label: "Ecommerce" },
+                          { value: "PICKUP_DELIVERY",      label: "Pickup & Delivery" },
+                          { value: "APPOINTMENT",          label: "Appointment" },
+                          { value: "SUBSCRIPTION",         label: "Subscription" },
+                          { value: "POST_SERVICE_BILLING", label: "Post Service Billing" },
+                        ].map(wf => {
+                          const isStandard = formPlan === "STANDARD"
+                          const isChecked = formEnabledWorkflows.includes(wf.value)
+                          const isLocked = isStandard || wf.value === "ECOMMERCE"
+                          return (
+                            <label
+                              key={wf.value}
+                              className={`flex items-center gap-2.5 cursor-pointer select-none ${isLocked && isStandard ? "opacity-50 cursor-not-allowed" : ""}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-3.5 w-3.5 rounded"
+                                checked={isChecked}
+                                disabled={isStandard}
+                                onChange={e => {
+                                  if (isStandard) return
+                                  if (wf.value === "ECOMMERCE") return // ECOMMERCE always required
+                                  setFormEnabledWorkflows(prev =>
+                                    e.target.checked
+                                      ? [...prev, wf.value]
+                                      : prev.filter(w => w !== wf.value)
+                                  )
+                                }}
+                              />
+                              <span className="text-xs">{wf.label}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      {!formPlan && (
+                        <p className="text-[10px] text-muted-foreground">Select a plan to configure workflows.</p>
+                      )}
+                    </div>
+
                     <div className="space-y-2">
                       <Label>Allowed Stores</Label>
                       <Select value={formAllowedStores} onValueChange={setFormAllowedStores}>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,13 +41,13 @@ interface Category {
   children?: Category[]
 }
 
-const WORKFLOW_OPTIONS = [
-  { value: "ECOMMERCE",            label: "Ecommerce" },
-  { value: "PICKUP_DELIVERY",      label: "Pickup & Delivery" },
-  { value: "APPOINTMENT",          label: "Appointment" },
-  { value: "SUBSCRIPTION",         label: "Subscription" },
-  { value: "POST_SERVICE_BILLING", label: "Post Service Billing" },
-]
+const WORKFLOW_LABELS: Record<string, string> = {
+  ECOMMERCE:            "Ecommerce",
+  PICKUP_DELIVERY:      "Pickup & Delivery",
+  APPOINTMENT:          "Appointment",
+  SUBSCRIPTION:         "Subscription",
+  POST_SERVICE_BILLING: "Post Service Billing",
+}
 
 const PRESET_COLORS = [
   "#10B981", "#3B82F6", "#F59E0B", "#EF4444",
@@ -88,25 +88,39 @@ export function CategoriesView() {
   const [form, setForm] = useState({ ...emptyForm })
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [enabledWorkflows, setEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
+  const [planTier, setPlanTier] = useState<string>("STANDARD")
 
   const load = useCallback(async () => {
     if (!businessId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/core/businesses/${businessId}/categories`, {
-        headers: { "x-business-id": businessId },
-      })
-      const json = await res.json()
-      if (json.success) setCategories(json.data ?? [])
+      const [catRes, wfRes] = await Promise.all([
+        fetch(`/api/core/businesses/${businessId}/categories`, {
+          headers: { "x-business-id": businessId },
+        }),
+        fetch(`/api/core/businesses/${businessId}/workflows`, {
+          headers: { "x-business-id": businessId },
+        }),
+      ])
+      const catJson = await catRes.json()
+      if (catJson.success) setCategories(catJson.data ?? [])
+      const wfJson = await wfRes.json()
+      if (wfJson.success) {
+        setEnabledWorkflows(wfJson.data.enabledWorkflows ?? ["ECOMMERCE"])
+        setPlanTier(wfJson.data.planTier ?? "STANDARD")
+      }
     } finally {
       setLoading(false)
     }
   }, [businessId])
 
+  const isMultiWorkflow = useMemo(() => enabledWorkflows.length > 1, [enabledWorkflows])
+
   useEffect(() => { load() }, [load])
 
   const openCreate = () => {
-    setForm({ ...emptyForm })
+    setForm({ ...emptyForm, workflowType: enabledWorkflows[0] ?? "ECOMMERCE" })
     setEditTarget(null)
     setCreateOpen(true)
   }
@@ -267,9 +281,9 @@ export function CategoriesView() {
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{cat.name}</p>
                         {!cat.isActive && <Badge variant="secondary" className="text-[10px] h-4">Inactive</Badge>}
-                        {cat.workflowType && (
+                        {cat.workflowType && isMultiWorkflow && (
                           <Badge variant="outline" className="text-[10px] h-4">
-                            {cat.workflowType.replace(/_/g, " ")}
+                            {WORKFLOW_LABELS[cat.workflowType] ?? cat.workflowType.replace(/_/g, " ")}
                           </Badge>
                         )}
                         {cat.color && (
@@ -381,23 +395,40 @@ export function CategoriesView() {
               />
             </div>
 
-            {/* Workflow Type */}
-            <div className="space-y-1.5">
-              <Label>Workflow Type</Label>
-              <Select
-                value={form.workflowType}
-                onValueChange={v => setForm(f => ({ ...f, workflowType: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select workflow" />
-                </SelectTrigger>
-                <SelectContent>
-                  {WORKFLOW_OPTIONS.map(wf => (
-                    <SelectItem key={wf.value} value={wf.value}>{wf.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Workflow Type — shown only when business has multiple enabled workflows (PRO) */}
+            {isMultiWorkflow ? (
+              <div className="space-y-1.5">
+                <Label>Workflow Type</Label>
+                <Select
+                  value={form.workflowType}
+                  onValueChange={v => setForm(f => ({ ...f, workflowType: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select workflow" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {enabledWorkflows.map(wf => (
+                      <SelectItem key={wf} value={wf}>{WORKFLOW_LABELS[wf] ?? wf}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  Only workflows enabled for this business are shown.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-md bg-muted/40 border px-3 py-2 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium">Workflow</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {WORKFLOW_LABELS[enabledWorkflows[0]] ?? enabledWorkflows[0]} · auto-assigned by {planTier} plan
+                  </p>
+                </div>
+                <Badge variant="secondary" className="text-[10px]">
+                  {WORKFLOW_LABELS[enabledWorkflows[0]] ?? enabledWorkflows[0]}
+                </Badge>
+              </div>
+            )}
 
             {/* Parent Category */}
             <div className="space-y-1.5">

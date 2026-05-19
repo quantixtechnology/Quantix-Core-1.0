@@ -308,6 +308,11 @@ export interface CreateBusinessRequest {
   planId?: string;           // Direct plan ID lookup
   planTier?: 'STANDARD' | 'PRO'; // Alternative: look up by tier
 
+  // ── Workflow permissions (set by Super Admin at creation, stored in settings) ──
+  // STANDARD: always ["ECOMMERCE"], ignored if provided
+  // PRO: subset of ["ECOMMERCE","PICKUP_DELIVERY","APPOINTMENT","SUBSCRIPTION","POST_SERVICE_BILLING"]
+  enabledWorkflows?: string[];
+
   // ── Subscription billing (flexible, admin-entered) ─────────────────────
   billingCycle?: PlanBillingCycle;
   subscriptionAmount?: number;     // Base subscription amount

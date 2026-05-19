@@ -3,6 +3,11 @@
 // POST   /api/core/businesses/[businessId]/categories — Create category
 // PATCH  /api/core/businesses/[businessId]/categories — Update category (id in body)
 // DELETE /api/core/businesses/[businessId]/categories?id=xxx — Delete category
+//
+// workflowType is ALWAYS derived from the business's enabledWorkflows (stored in
+// Business.settings by Super Admin at provisioning). The client cannot override it:
+//   • 1 enabled workflow  → auto-assigned, client value ignored
+//   • 2+ enabled workflows → client value validated against allowed set, defaults to first
 // ============================================================================
 
 import { NextResponse } from 'next/server'
@@ -11,6 +16,50 @@ import { db } from '@/lib/db'
 import type { NextRequest } from 'next/server'
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
+
+const ALL_WORKFLOWS = new Set(['ECOMMERCE', 'PICKUP_DELIVERY', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'])
+const BUSINESS_TYPE_DEFAULT_WORKFLOWS: Record<string, string[]> = {
+  GROCERY:       ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  ECOMMERCE:     ['ECOMMERCE'],
+  FOOD_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  LAUNDRY:       ['ECOMMERCE', 'PICKUP_DELIVERY', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
+  CAR_WASH:      ['ECOMMERCE', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
+  PHARMACY:      ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  HOME_SERVICES: ['APPOINTMENT', 'POST_SERVICE_BILLING'],
+  MEAT_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  COSMETICS:     ['ECOMMERCE'],
+  FURNITURE:     ['ECOMMERCE'],
+  DIRECTORY:     ['ECOMMERCE'],
+}
+
+async function getBusinessEnabledWorkflows(businessId: string): Promise<string[]> {
+  const biz = await db.business.findUnique({
+    where: { id: businessId },
+    select: {
+      settings: true,
+      businessType: true,
+      businessSubscription: { select: { plan: { select: { tier: true } } } },
+    },
+  })
+  if (!biz) return ['ECOMMERCE']
+
+  const planTier = biz.businessSubscription?.plan?.tier ?? 'STANDARD'
+  if (planTier === 'STANDARD') return ['ECOMMERCE']
+
+  const settings = JSON.parse(biz.settings || '{}') as Record<string, unknown>
+  const fromSettings = settings.enabledWorkflows
+  if (Array.isArray(fromSettings) && fromSettings.length > 0) {
+    const filtered = (fromSettings as string[]).filter(w => ALL_WORKFLOWS.has(w))
+    if (filtered.length > 0) return filtered
+  }
+  return BUSINESS_TYPE_DEFAULT_WORKFLOWS[biz.businessType] ?? ['ECOMMERCE']
+}
+
+function resolveWorkflowType(enabledWorkflows: string[], requested?: string | null): string {
+  if (enabledWorkflows.length === 1) return enabledWorkflows[0]
+  if (requested && enabledWorkflows.includes(requested)) return requested
+  return enabledWorkflows[0]
+}
 
 export const GET = withMiddleware({ requireAuth: true })(
   async (req: NextRequest, ctx?: Ctx) => {
@@ -59,9 +108,12 @@ export const POST = withMiddleware({
     if (!businessId) return createErrorResponse('Missing businessId', 400)
 
     const body = await req.json()
-    const { name, storeId, parentId, description, image, icon, color, workflowType, sortOrder } = body
+    const { name, storeId, parentId, description, image, icon, color, sortOrder } = body
 
     if (!name) return createErrorResponse('name is required', 400)
+
+    const enabledWorkflows = await getBusinessEnabledWorkflows(businessId)
+    const workflowType = resolveWorkflowType(enabledWorkflows, body.workflowType)
 
     const slug = (body.slug || name)
       .toLowerCase()
@@ -83,7 +135,7 @@ export const POST = withMiddleware({
         image:        image        ?? null,
         icon:         icon         ?? null,
         color:        color        ?? null,
-        workflowType: workflowType ?? 'ECOMMERCE',
+        workflowType: workflowType as import('@prisma/client').WorkflowType,
         sortOrder:    sortOrder    ?? 0,
         isActive:     true,
       },
@@ -107,7 +159,7 @@ export const PATCH = withMiddleware({
     if (!businessId) return createErrorResponse('Missing businessId', 400)
 
     const body = await req.json()
-    const { id, name, description, image, icon, color, parentId, workflowType, sortOrder, isActive, storeId } = body
+    const { id, name, description, image, icon, color, parentId, sortOrder, isActive, storeId } = body
 
     if (!id) return createErrorResponse('id is required', 400)
 
@@ -130,16 +182,21 @@ export const PATCH = withMiddleware({
         updateData.slug = slugConflict ? `${newSlug}-${Date.now()}` : newSlug
       }
     }
-    if (body.slug !== undefined)      updateData.slug        = body.slug
-    if (description !== undefined)    updateData.description = description ?? null
-    if (image !== undefined)          updateData.image       = image       ?? null
-    if (icon !== undefined)           updateData.icon        = icon        ?? null
-    if (color !== undefined)          updateData.color       = color       ?? null
-    if (parentId !== undefined)       updateData.parentId    = parentId    ?? null
-    if (workflowType !== undefined)   updateData.workflowType = workflowType
-    if (sortOrder !== undefined)      updateData.sortOrder   = sortOrder
-    if (isActive !== undefined)       updateData.isActive    = isActive
-    if (storeId !== undefined)        updateData.storeId     = storeId     ?? null
+    if (body.slug !== undefined)   updateData.slug        = body.slug
+    if (description !== undefined) updateData.description = description ?? null
+    if (image !== undefined)       updateData.image       = image       ?? null
+    if (icon !== undefined)        updateData.icon        = icon        ?? null
+    if (color !== undefined)       updateData.color       = color       ?? null
+    if (parentId !== undefined)    updateData.parentId    = parentId    ?? null
+    if (sortOrder !== undefined)   updateData.sortOrder   = sortOrder
+    if (isActive !== undefined)    updateData.isActive    = isActive
+    if (storeId !== undefined)     updateData.storeId     = storeId     ?? null
+
+    // workflowType: only Super Admin can change it, validated against business allowedWorkflows
+    if (body.workflowType !== undefined) {
+      const enabledWorkflows = await getBusinessEnabledWorkflows(businessId)
+      updateData.workflowType = resolveWorkflowType(enabledWorkflows, body.workflowType)
+    }
 
     const updated = await db.category.update({ where: { id }, data: updateData })
 
@@ -167,11 +224,8 @@ export const DELETE = withMiddleware({
     const existing = await db.category.findFirst({ where: { id, businessId } })
     if (!existing) return createErrorResponse('Category not found', 404)
 
-    // Unlink products before deleting
     await db.product.updateMany({ where: { categoryId: id }, data: { categoryId: null } })
-    // Reparent children to top level
     await db.category.updateMany({ where: { parentId: id }, data: { parentId: null } })
-
     await db.category.delete({ where: { id } })
 
     return NextResponse.json({ success: true, message: 'Category deleted' })

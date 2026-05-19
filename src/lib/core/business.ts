@@ -111,6 +111,36 @@ const DEFAULT_ONBOARDING_STEPS = [
  * Auto-creates BusinessSubscription as ACTIVE, enables default modules,
  * creates onboarding steps, and creates a main store.
  */
+const ALL_WORKFLOWS = ['ECOMMERCE', 'PICKUP_DELIVERY', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'] as const;
+
+const BUSINESS_TYPE_DEFAULT_WORKFLOWS: Record<string, string[]> = {
+  GROCERY:       ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  ECOMMERCE:     ['ECOMMERCE'],
+  FOOD_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  LAUNDRY:       ['ECOMMERCE', 'PICKUP_DELIVERY', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
+  CAR_WASH:      ['ECOMMERCE', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
+  PHARMACY:      ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  HOME_SERVICES: ['APPOINTMENT', 'POST_SERVICE_BILLING'],
+  MEAT_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  COSMETICS:     ['ECOMMERCE'],
+  FURNITURE:     ['ECOMMERCE'],
+  DIRECTORY:     ['ECOMMERCE'],
+};
+
+function resolveEnabledWorkflows(
+  planTier: string,
+  businessType: string,
+  adminSelected?: string[],
+): string[] {
+  if (planTier === 'STANDARD') return ['ECOMMERCE'];
+  const valid = new Set(ALL_WORKFLOWS as readonly string[]);
+  if (Array.isArray(adminSelected) && adminSelected.length > 0) {
+    const filtered = adminSelected.filter(w => valid.has(w));
+    if (filtered.length > 0) return filtered;
+  }
+  return BUSINESS_TYPE_DEFAULT_WORKFLOWS[businessType] ?? ['ECOMMERCE'];
+}
+
 export async function createBusiness(data: CreateBusinessRequest) {
   // 1. Check slug uniqueness
   const existing = await db.business.findUnique({ where: { slug: data.slug } });
@@ -214,6 +244,9 @@ export async function createBusiness(data: CreateBusinessRequest) {
             homepageStyle: 'grid',
             font: 'inter',
           },
+          // Workflow permissions — set by Super Admin at provisioning.
+          // STANDARD: locked to ECOMMERCE. PRO: admin-selected subset.
+          enabledWorkflows: resolveEnabledWorkflows(plan.tier, data.businessType, data.enabledWorkflows),
         }),
         features: '{}',
         notificationConfig: '{}',
