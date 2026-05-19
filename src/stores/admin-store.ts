@@ -69,6 +69,7 @@ export type BusinessPage =
   | "workflows"
   | "gateway-config"
   | "business-data-import"
+  | "customer-import"
   | "categories"
   | "branding"
   | "feature-flags"

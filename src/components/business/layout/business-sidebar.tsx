@@ -6,7 +6,7 @@ import {
   Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
   Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
-  DatabaseZap, Tag, Palette, Smartphone, Globe, Shield,
+  Tag, Palette, Smartphone, Globe, Shield,
 } from "lucide-react"
 import {
   Sidebar,
@@ -71,7 +71,7 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   { key: "customers",           label: "Customers",            icon: Users },
   { key: "categories",          label: "Categories",           icon: Tag },
   { key: "product-import",      label: "Product Import",       icon: Upload },
-  { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap },
+  { key: "customer-import",      label: "Bulk Customer Upload", icon: Users },
   { key: "tax",                 label: "Tax & GST",            icon: Receipt },
   { key: "gateway-config",      label: "Payment Gateways",     icon: CreditCard },
   { key: "reports",             label: "Reports",              icon: BarChart3 },

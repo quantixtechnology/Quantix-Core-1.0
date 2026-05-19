@@ -115,6 +115,7 @@ const PaymentConfigView = dynamic(() => import("@/components/admin/settings/paym
 const ClientAssetsView = dynamic(() => import("@/components/dashboard/client-assets-view").then(m => ({ default: m.ClientAssetsView })), { loading: () => <PageLoader /> })
 const TenantProvisioningView = dynamic(() => import("@/components/dashboard/tenant-provisioning-view").then(m => ({ default: m.TenantProvisioningView })), { loading: () => <PageLoader /> })
 const ProductImportView = dynamic(() => import("@/components/dashboard/product-import-view").then(m => ({ default: m.ProductImportView })), { loading: () => <PageLoader /> })
+const BulkCustomerUploadView = dynamic(() => import("@/components/business/customers/bulk-customer-upload").then(m => ({ default: m.BulkCustomerUploadView })), { loading: () => <PageLoader /> })
 const OnboardingChecklistView = dynamic(() => import("@/components/dashboard/onboarding-checklist-view").then(m => ({ default: m.OnboardingChecklistView })), { loading: () => <PageLoader /> })
 
 // ── Platform Operations (lazy) ────────────────────────────────────────────
@@ -304,6 +305,7 @@ function AppContent() {
       case "loyalty": return <LoyaltyView />
       case "product-import": return <ProductImportView />
       case "business-data-import": return <BusinessImportView />
+      case "customer-import": return <BulkCustomerUploadView />
       case "delivery-zones": return <DeliveryZonesView />
       case "stores": return <StoresView />
       case "storefront": return <StorefrontShell />
