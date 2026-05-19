@@ -212,16 +212,22 @@ export function ProductsView() {
   })
 
   // ---- Fetch categories from API ----
-  const { data: categoriesResponse, isLoading: categoriesLoading } = useQuery({
+  const { data: categoriesResponse, isLoading: categoriesLoading, refetch: refetchCategories } = useQuery({
     queryKey: ["categories", businessId],
     queryFn: async () => {
       if (!businessId) return { data: [] }
-      const response = await fetch(`/api/core/storefront/categories?businessId=${encodeURIComponent(businessId)}&includeInactive=true&productStatus=ALL`)
+      const response = await fetch(
+        `/api/core/businesses/${encodeURIComponent(businessId)}/categories`,
+        { headers: getAuthHeaders() }
+      )
       const data = await response.json()
       if (!data.success) throw new Error(data.error || 'Failed to fetch categories')
       return data
     },
     enabled: !!businessId,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   })
 
   // ---- Update product mutation ----
@@ -318,16 +324,21 @@ export function ProductsView() {
   const apiCategoryList: Category[] = useMemo(() => {
     const rawData = categoriesResponse?.data
     if (!Array.isArray(rawData)) return []
-    return rawData.map((c: Record<string, unknown>) => ({
-      id: String(c.id || ""),
-      name: String(c.name || ""),
-      slug: String(c.slug || ""),
-      productCount: Number(c.productCount || 0),
-      icon: String(c.icon || "📦"),
-      color: String(c.color || c.image || "#10B981"),
-      sortOrder: Number(c.sortOrder || 0),
-      workflow: String(c.workflow || c.workflowType || "ECOMMERCE") as WorkflowType,
-    }))
+    return rawData
+      .filter((c: Record<string, unknown>) => c.isActive !== false)
+      .map((c: Record<string, unknown>) => {
+        const count = (c._count as Record<string, unknown>)
+        return {
+          id: String(c.id || ""),
+          name: String(c.name || ""),
+          slug: String(c.slug || ""),
+          productCount: Number(count?.products ?? c.productCount ?? 0),
+          icon: String(c.icon || "📦"),
+          color: String(c.color || c.image || "#10B981"),
+          sortOrder: Number(c.sortOrder || 0),
+          workflow: String(c.workflowType || c.workflow || "ECOMMERCE") as WorkflowType,
+        }
+      })
   }, [categoriesResponse])
 
   // Use API data directly
@@ -1280,6 +1291,7 @@ export function ProductsView() {
         open={productDialogOpen}
         onOpenChange={(open) => {
           setProductDialogOpen(open)
+          if (open) refetchCategories()
           if (!open) resetProductForm()
         }}
       >

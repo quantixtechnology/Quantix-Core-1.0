@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -78,6 +79,7 @@ export function CategoriesView() {
   const { currentBusinessId } = useAdminStore()
   const { currentBusinessId: authBizId } = useAuthStore()
   const businessId = currentBusinessId || authBizId || ""
+  const queryClient = useQueryClient()
 
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -176,6 +178,7 @@ export function CategoriesView() {
         showSuccess(editTarget ? "Category updated" : "Category created")
         setCreateOpen(false)
         load()
+        queryClient.invalidateQueries({ queryKey: ["categories", businessId] })
       } else {
         showError(json.error || json.message || "Failed to save category")
       }
@@ -198,6 +201,7 @@ export function CategoriesView() {
       if (res.ok && json.success) {
         showSuccess("Category deleted")
         load()
+        queryClient.invalidateQueries({ queryKey: ["categories", businessId] })
       } else {
         showError(json.error || "Failed to delete category")
       }
