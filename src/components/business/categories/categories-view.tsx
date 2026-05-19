@@ -19,11 +19,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import {
-  Tag, Plus, Search, Loader2, ChevronRight, ImageIcon, Edit2, Trash2, FolderOpen,
+  Tag, Plus, Search, Loader2, ImageIcon, Edit2, Trash2, FolderOpen,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { PageHeader } from "@/components/admin/shared/page-header"
+import { getAuthHeaders } from "@/lib/admin-fetch"
+import { showSuccess, showError } from "@/lib/toast-utils"
 
 interface Category {
   id: string
@@ -33,12 +35,9 @@ interface Category {
   image: string | null
   icon: string | null
   color: string | null
-  parentId: string | null
   isActive: boolean
   sortOrder: number
   workflowType: string | null
-  storeId: string | null
-  children?: Category[]
 }
 
 const WORKFLOW_LABELS: Record<string, string> = {
@@ -72,7 +71,7 @@ function slugify(text: string) {
 
 const emptyForm = {
   name: "", slug: "", description: "", image: "", icon: "📦",
-  color: "#10B981", sortOrder: "0", isActive: true, parentId: "", workflowType: "ECOMMERCE",
+  color: "#10B981", sortOrder: "0", isActive: true, workflowType: "ECOMMERCE",
 }
 
 export function CategoriesView() {
@@ -91,17 +90,18 @@ export function CategoriesView() {
   const [enabledWorkflows, setEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
   const [planTier, setPlanTier] = useState<string>("STANDARD")
 
+  const authHeaders = useMemo(() => ({
+    ...getAuthHeaders(),
+    "x-business-id": businessId,
+  }), [businessId])
+
   const load = useCallback(async () => {
     if (!businessId) return
     setLoading(true)
     try {
       const [catRes, wfRes] = await Promise.all([
-        fetch(`/api/core/businesses/${businessId}/categories`, {
-          headers: { "x-business-id": businessId },
-        }),
-        fetch(`/api/core/businesses/${businessId}/workflows`, {
-          headers: { "x-business-id": businessId },
-        }),
+        fetch(`/api/core/businesses/${businessId}/categories`, { headers: authHeaders }),
+        fetch(`/api/core/businesses/${businessId}/workflows`,  { headers: authHeaders }),
       ])
       const catJson = await catRes.json()
       if (catJson.success) setCategories(catJson.data ?? [])
@@ -113,7 +113,7 @@ export function CategoriesView() {
     } finally {
       setLoading(false)
     }
-  }, [businessId])
+  }, [businessId, authHeaders])
 
   const isMultiWorkflow = useMemo(() => enabledWorkflows.length > 1, [enabledWorkflows])
 
@@ -135,7 +135,6 @@ export function CategoriesView() {
       color: cat.color ?? "#10B981",
       sortOrder: String(cat.sortOrder),
       isActive: cat.isActive,
-      parentId: cat.parentId ?? "",
       workflowType: cat.workflowType ?? "ECOMMERCE",
     })
     setEditTarget(cat)
@@ -165,29 +164,43 @@ export function CategoriesView() {
         color: form.color || null,
         sortOrder: Number(form.sortOrder),
         isActive: form.isActive,
-        parentId: form.parentId || null,
-        workflowType: form.workflowType || "ECOMMERCE",
+        workflowType: form.workflowType || enabledWorkflows[0] || "ECOMMERCE",
       }
       const res = await fetch(`/api/core/businesses/${businessId}/categories`, {
         method,
-        headers: { "Content-Type": "application/json", "x-business-id": businessId },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify(payload),
       })
-      if (res.ok) { setCreateOpen(false); load() }
+      const json = await res.json()
+      if (res.ok && json.success) {
+        showSuccess(editTarget ? "Category updated" : "Category created")
+        setCreateOpen(false)
+        load()
+      } else {
+        showError(json.error || json.message || "Failed to save category")
+      }
+    } catch {
+      showError("Failed to save category")
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this category? Products will be uncategorized; subcategories will become top-level.")) return
+    if (!confirm("Delete this category? Products will be uncategorized.")) return
     setDeleting(id)
     try {
-      await fetch(`/api/core/businesses/${businessId}/categories?id=${id}`, {
+      const res = await fetch(`/api/core/businesses/${businessId}/categories?id=${id}`, {
         method: "DELETE",
-        headers: { "x-business-id": businessId },
+        headers: authHeaders,
       })
-      load()
+      const json = await res.json()
+      if (res.ok && json.success) {
+        showSuccess("Category deleted")
+        load()
+      } else {
+        showError(json.error || "Failed to delete category")
+      }
     } finally {
       setDeleting(null)
     }
@@ -197,17 +210,12 @@ export function CategoriesView() {
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.description?.toLowerCase().includes(search.toLowerCase()) ?? false)
   )
-  const parents  = filtered.filter(c => !c.parentId)
-  const childMap = filtered.reduce<Record<string, Category[]>>((acc, c) => {
-    if (c.parentId) { acc[c.parentId] = [...(acc[c.parentId] ?? []), c] }
-    return acc
-  }, {})
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Categories"
-        description="Single source of truth for all product categories and sub-categories"
+        description="Single source of truth for all product categories"
         icon={Tag}
         action={
           <Button size="sm" className="gap-1.5" onClick={openCreate}>
@@ -243,113 +251,72 @@ export function CategoriesView() {
         ))}
       </div>
 
-      {/* Category tree */}
+      {/* Category list */}
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : parents.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <Card className="shadow-none">
           <CardContent className="flex flex-col items-center justify-center py-16 gap-3">
             <FolderOpen className="h-12 w-12 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">No categories yet</p>
-            <Button size="sm" variant="outline" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1.5" /> Create First Category
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              {search ? "No categories match your search" : "No categories yet"}
+            </p>
+            {!search && (
+              <Button size="sm" variant="outline" onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-1.5" /> Create First Category
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
         <Card className="shadow-none">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {parents.length} top-level {parents.length === 1 ? "category" : "categories"}
+              {filtered.length} {filtered.length === 1 ? "category" : "categories"}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y">
-              {parents.map(cat => (
-                <div key={cat.id}>
-                  {/* Parent row */}
-                  <div className="flex items-center gap-3 px-6 py-3 hover:bg-muted/30 group">
-                    <div
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-sm shrink-0"
-                      style={{ backgroundColor: cat.color ? `${cat.color}20` : "#10B98120" }}
-                    >
-                      {cat.icon || <Tag className="h-4 w-4" style={{ color: cat.color ?? "#10B981" }} />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{cat.name}</p>
-                        {!cat.isActive && <Badge variant="secondary" className="text-[10px] h-4">Inactive</Badge>}
-                        {cat.workflowType && isMultiWorkflow && (
-                          <Badge variant="outline" className="text-[10px] h-4">
-                            {WORKFLOW_LABELS[cat.workflowType] ?? cat.workflowType.replace(/_/g, " ")}
-                          </Badge>
-                        )}
-                        {cat.color && (
-                          <span
-                            className="inline-block h-3 w-3 rounded-full shrink-0"
-                            style={{ backgroundColor: cat.color }}
-                          />
-                        )}
-                      </div>
-                      {cat.description && <p className="text-xs text-muted-foreground truncate">{cat.description}</p>}
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {childMap[cat.id] && (
-                        <Badge variant="outline" className="text-[10px] h-5 px-1.5">
-                          {childMap[cat.id].length} sub
+              {filtered.map(cat => (
+                <div key={cat.id} className="flex items-center gap-3 px-6 py-3 hover:bg-muted/30 group">
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-sm shrink-0"
+                    style={{ backgroundColor: cat.color ? `${cat.color}20` : "#10B98120" }}
+                  >
+                    {cat.icon || <Tag className="h-4 w-4" style={{ color: cat.color ?? "#10B981" }} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{cat.name}</p>
+                      {!cat.isActive && <Badge variant="secondary" className="text-[10px] h-4">Inactive</Badge>}
+                      {cat.workflowType && isMultiWorkflow && (
+                        <Badge variant="outline" className="text-[10px] h-4">
+                          {WORKFLOW_LABELS[cat.workflowType] ?? cat.workflowType.replace(/_/g, " ")}
                         </Badge>
                       )}
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(cat)}>
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="icon" variant="ghost" className="h-7 w-7 text-destructive"
-                        disabled={deleting === cat.id}
-                        onClick={() => handleDelete(cat.id)}
-                      >
-                        {deleting === cat.id
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <Trash2 className="h-3.5 w-3.5" />
-                        }
-                      </Button>
+                      {cat.color && (
+                        <span className="inline-block h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                      )}
                     </div>
+                    {cat.description && <p className="text-xs text-muted-foreground truncate">{cat.description}</p>}
                   </div>
-
-                  {/* Children */}
-                  {childMap[cat.id]?.map(child => (
-                    <div key={child.id} className="flex items-center gap-3 px-6 py-2.5 bg-muted/20 hover:bg-muted/40 group border-l-2 border-l-muted ml-6">
-                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm truncate">{child.name}</p>
-                          {!child.isActive && <Badge variant="secondary" className="text-[10px] h-4">Inactive</Badge>}
-                          {child.color && (
-                            <span
-                              className="inline-block h-3 w-3 rounded-full shrink-0"
-                              style={{ backgroundColor: child.color }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(child)}>
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="icon" variant="ghost" className="h-7 w-7 text-destructive"
-                          disabled={deleting === child.id}
-                          onClick={() => handleDelete(child.id)}
-                        >
-                          {deleting === child.id
-                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            : <Trash2 className="h-3.5 w-3.5" />
-                          }
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(cat)}>
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon" variant="ghost" className="h-7 w-7 text-destructive"
+                      disabled={deleting === cat.id}
+                      onClick={() => handleDelete(cat.id)}
+                    >
+                      {deleting === cat.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Trash2 className="h-3.5 w-3.5" />
+                      }
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -364,6 +331,7 @@ export function CategoriesView() {
             <DialogTitle>{editTarget ? "Edit Category" : "New Category"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+
             {/* Name + Slug */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -395,7 +363,7 @@ export function CategoriesView() {
               />
             </div>
 
-            {/* Workflow Type — shown only when business has multiple enabled workflows (PRO) */}
+            {/* Workflow — read-only badge or filtered selector */}
             {isMultiWorkflow ? (
               <div className="space-y-1.5">
                 <Label>Workflow Type</Label>
@@ -429,21 +397,6 @@ export function CategoriesView() {
                 </Badge>
               </div>
             )}
-
-            {/* Parent Category */}
-            <div className="space-y-1.5">
-              <Label>Parent Category</Label>
-              <select
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                value={form.parentId}
-                onChange={e => setForm(f => ({ ...f, parentId: e.target.value }))}
-              >
-                <option value="">— None (top-level) —</option>
-                {categories.filter(c => !c.parentId && c.id !== editTarget?.id).map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
 
             {/* Icon picker */}
             <div className="space-y-1.5">
@@ -520,6 +473,7 @@ export function CategoriesView() {
                 onCheckedChange={v => setForm(f => ({ ...f, isActive: v }))}
               />
             </div>
+
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
