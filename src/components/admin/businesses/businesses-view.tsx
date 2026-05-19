@@ -73,8 +73,9 @@ interface BusinessApiData {
   salesRep: string | null
   mainStore: { id: string; storeCode: string | null } | null
   storeCount: number; orderCount: number; customerCount: number; totalRevenue: number
-  ownerUserId: string | null; ownerName: string | null; ownerEmail: string | null
-  ownerPhone: string | null; ownerLastLogin: string | null
+  ownerLoginId: string | null; ownerInternalId: string | null
+  ownerEmail: string | null; ownerName: string | null
+  ownerPhone: string | null; ownerLastLogin: string | null; ownerIsActive: boolean | null
 }
 
 // Filter options
@@ -135,6 +136,11 @@ export function BusinessesView() {
   const [copiedPassword, setCopiedPassword] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
+  // Edit Login ID state
+  const [editingLoginId, setEditingLoginId] = useState(false)
+  const [newLoginIdValue, setNewLoginIdValue] = useState("")
+  const [savingLoginId, setSavingLoginId] = useState(false)
+
   // Branding & domain edit state
   const [brandingOpen, setBrandingOpen] = useState(false)
   const [editLogo, setEditLogo] = useState("")
@@ -158,8 +164,8 @@ export function BusinessesView() {
     businessCode: string | null; businessId: string
     mainStoreCode: string | null; registrationDate: string
     subscriptionStart: string; renewalDate: string
-    ownerEmail: string; ownerPassword: string; ownerUserId: string
-    mainStoreEmail: string; mainStorePassword: string; mainStoreUserId: string
+    ownerEmail: string; ownerPassword: string; ownerLoginId: string
+    mainStoreEmail: string; mainStorePassword: string; mainStoreLoginId: string
   } | null>(null)
 
   const copyBusinessId = (slug: string, e: React.MouseEvent) => {
@@ -389,10 +395,10 @@ export function BusinessesView() {
           renewalDate: d?.businessSubscription?.nextBillingDate ? new Date(d.businessSubscription.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—",
           ownerEmail: d?.ownerCredentials?.email ?? formOwnerEmail,
           ownerPassword: d?.ownerCredentials?.password ?? "—",
-          ownerUserId: d?.ownerCredentials?.userId ?? "—",
+          ownerLoginId: d?.ownerCredentials?.loginId ?? d?.ownerCredentials?.email ?? "—",
           mainStoreEmail: d?.mainStoreCredentials?.email ?? "—",
           mainStorePassword: d?.mainStoreCredentials?.password ?? "—",
-          mainStoreUserId: d?.mainStoreCredentials?.userId ?? "—",
+          mainStoreLoginId: d?.mainStoreCredentials?.loginId ?? d?.mainStoreCredentials?.email ?? "—",
         })
         fetchBusinesses()
       } else {
@@ -449,6 +455,38 @@ export function BusinessesView() {
       toast.error("Failed to reset password")
     } finally {
       setResettingPassword(false)
+    }
+  }
+
+  const handleSaveLoginId = async (biz: BusinessApiData) => {
+    if (!newLoginIdValue.trim()) {
+      toast.error("Login ID cannot be empty")
+      return
+    }
+    if (!biz.ownerInternalId) {
+      toast.error("Owner account not found")
+      return
+    }
+    setSavingLoginId(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${biz.id}/update-login-id`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ userId: biz.ownerInternalId, newLoginId: newLoginIdValue.trim(), userType: "owner" }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success("Login ID updated successfully")
+        setEditingLoginId(false)
+        setNewLoginIdValue("")
+        fetchBusinesses()
+      } else {
+        toast.error(json.error || "Failed to update Login ID")
+      }
+    } catch {
+      toast.error("Failed to update Login ID")
+    } finally {
+      setSavingLoginId(false)
     }
   }
 
@@ -686,8 +724,8 @@ export function BusinessesView() {
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business Owner Login</p>
                       <div className="rounded-md bg-white/60 border border-emerald-200 p-2 space-y-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-emerald-600">User ID</span>
-                          <span className="font-mono text-[11px] font-semibold text-emerald-900 truncate max-w-[180px]">{createdResult.ownerUserId}</span>
+                          <span className="text-[10px] text-emerald-600">Login ID</span>
+                          <span className="font-mono text-[11px] font-semibold text-emerald-900 truncate max-w-[180px]">{createdResult.ownerLoginId}</span>
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[10px] text-emerald-600">Email</span>
@@ -705,8 +743,8 @@ export function BusinessesView() {
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Primary Store Login</p>
                       <div className="rounded-md bg-blue-50/60 border border-blue-200 p-2 space-y-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-blue-600">User ID</span>
-                          <span className="font-mono text-[11px] font-semibold text-blue-900 truncate max-w-[180px]">{createdResult.mainStoreUserId}</span>
+                          <span className="text-[10px] text-blue-600">Login ID</span>
+                          <span className="font-mono text-[11px] font-semibold text-blue-900 truncate max-w-[180px]">{createdResult.mainStoreLoginId}</span>
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[10px] text-blue-600">Email</span>
@@ -1489,7 +1527,7 @@ export function BusinessesView() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Access Credentials</h4>
-                        {canEdit && biz.ownerUserId && (
+                        {canEdit && biz.ownerInternalId && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -1502,7 +1540,7 @@ export function BusinessesView() {
                           </Button>
                         )}
                       </div>
-                      {biz.ownerUserId ? (
+                      {biz.ownerInternalId ? (
                         <div className="space-y-2">
                           {/* Business Owner */}
                           <div className="rounded-lg border p-3 space-y-2.5">
@@ -1512,20 +1550,52 @@ export function BusinessesView() {
                               </div>
                               <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Business Owner Login</p>
                             </div>
-                            {/* Prominent User ID */}
-                            <div className="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 flex items-center justify-between gap-2">
-                              <div>
-                                <p className="text-[10px] text-emerald-600 font-medium">User ID</p>
-                                <p className="font-mono text-xs font-bold text-emerald-900 mt-0.5">{biz.ownerUserId}</p>
+                            {/* Login ID (editable) */}
+                            {editingLoginId ? (
+                              <div className="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 space-y-2">
+                                <p className="text-[10px] text-emerald-600 font-medium">Edit Login ID</p>
+                                <div className="flex items-center gap-1.5">
+                                  <Input
+                                    value={newLoginIdValue}
+                                    onChange={(e) => setNewLoginIdValue(e.target.value)}
+                                    placeholder="e.g. freshmart-admin"
+                                    className="h-7 text-xs font-mono flex-1"
+                                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveLoginId(biz); if (e.key === "Escape") { setEditingLoginId(false); setNewLoginIdValue("") } }}
+                                  />
+                                  <Button size="sm" className="h-7 text-xs px-2" onClick={() => handleSaveLoginId(biz)} disabled={savingLoginId}>
+                                    {savingLoginId ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => { setEditingLoginId(false); setNewLoginIdValue("") }} disabled={savingLoginId}>
+                                    <X className="size-3" />
+                                  </Button>
+                                </div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={(e) => copyBusinessId(biz.ownerUserId!, e)}
-                                className="flex items-center gap-1 text-[10px] text-emerald-600 hover:text-emerald-800 transition-colors shrink-0"
-                              >
-                                {copiedId === biz.ownerUserId ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
-                              </button>
-                            </div>
+                            ) : (
+                              <div className="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 flex items-center justify-between gap-2">
+                                <div>
+                                  <p className="text-[10px] text-emerald-600 font-medium">Login ID</p>
+                                  <p className="font-mono text-xs font-bold text-emerald-900 mt-0.5">{biz.ownerLoginId || biz.ownerEmail || "—"}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => copyBusinessId(biz.ownerLoginId || biz.ownerEmail || "", e)}
+                                    className="flex items-center gap-1 text-[10px] text-emerald-600 hover:text-emerald-800 transition-colors"
+                                  >
+                                    {copiedId === (biz.ownerLoginId || biz.ownerEmail) ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setEditingLoginId(true); setNewLoginIdValue(biz.ownerLoginId || biz.ownerEmail || "") }}
+                                      className="text-[10px] text-emerald-600 hover:text-emerald-800 transition-colors border border-emerald-200 rounded px-1.5 py-0.5"
+                                    >
+                                      Edit
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                             <div className="space-y-1 text-xs">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-muted-foreground">Name</span>
@@ -1594,6 +1664,7 @@ export function BusinessesView() {
                           <p className="text-[11px] text-muted-foreground mt-0.5">Owner is created when business is provisioned</p>
                         </div>
                       )}
+
                     </div>
                     <Separator />
                     {/* Business Details */}

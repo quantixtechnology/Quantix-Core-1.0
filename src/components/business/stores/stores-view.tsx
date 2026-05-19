@@ -78,7 +78,7 @@ export function StoresView() {
   const [createLoginCredentials, setCreateLoginCredentials] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [storeCredentials, setStoreCredentials] = useState<{ email: string; password: string; userId: string } | null>(null)
+  const [storeCredentials, setStoreCredentials] = useState<{ email: string; password: string; userId: string; loginId?: string } | null>(null)
   const [copiedCred, setCopiedCred] = useState<string | null>(null)
 
   const fetchStores = useCallback(async () => {
@@ -214,7 +214,7 @@ export function StoresView() {
           </div>
           <div className="space-y-2">
             {[
-              { label: 'User ID', value: storeCredentials.userId },
+              { label: 'Login ID', value: storeCredentials.loginId || storeCredentials.email },
               { label: 'Email', value: storeCredentials.email },
               { label: 'Password', value: storeCredentials.password },
             ].map(({ label, value }) => (

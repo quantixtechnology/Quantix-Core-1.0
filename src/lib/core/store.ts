@@ -147,7 +147,7 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
   });
 
   // Optionally create store login credentials (default: true)
-  let storeCredentials: { email: string; password: string; userId: string } | undefined;
+  let storeCredentials: { email: string; password: string; userId: string; loginId: string } | undefined;
   if (data.createLoginCredentials !== false) {
     const storeEmail = data.storeUserEmail || `store-${data.slug}@store.in`;
     const storeRawPassword = `Store@${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -155,6 +155,7 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
     const storeUser = await db.user.create({
       data: {
         email: storeEmail,
+        loginId: storeEmail,
         name: `${data.name}`,
         passwordHash: storePasswordHash,
         authProvider: 'PASSWORD',
@@ -181,7 +182,7 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
         details: JSON.stringify({ email: storeEmail, storeId: result.id }),
       },
     });
-    storeCredentials = { email: storeEmail, password: storeRawPassword, userId: storeUser.id };
+    storeCredentials = { email: storeEmail, password: storeRawPassword, userId: storeUser.id, loginId: storeEmail };
   }
 
   const storeWithTimings = await getStore(result.id);

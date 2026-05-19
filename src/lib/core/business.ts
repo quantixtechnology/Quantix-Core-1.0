@@ -484,6 +484,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
     const ownerUser = await tx.user.create({
       data: {
         email: ownerEmail,
+        loginId: ownerEmail,
         name: ownerName,
         phone: data.contactPhone || null,
         passwordHash: ownerPasswordHash,
@@ -511,6 +512,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
     const storeUser = await tx.user.create({
       data: {
         email: storeEmail,
+        loginId: storeEmail,
         name: `${data.name} - Main Store`,
         passwordHash: storePasswordHash,
         authProvider: 'PASSWORD',
@@ -569,6 +571,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
         email: storeEmail,
         password: storeRawPassword,
         userId: storeUser.id,
+        loginId: storeEmail,
       },
     };
   });
@@ -581,6 +584,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
       email: result.ownerEmail,
       password: result.ownerPassword,
       userId: result.ownerUserId,
+      loginId: result.ownerEmail,
     },
     mainStoreCode: result.mainStoreCode,
     mainStoreId: result.mainStoreId,
