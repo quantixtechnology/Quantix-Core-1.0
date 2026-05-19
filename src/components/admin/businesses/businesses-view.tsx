@@ -143,6 +143,11 @@ export function BusinessesView() {
   const [editPrimaryColor, setEditPrimaryColor] = useState("")
   const [savingBranding, setSavingBranding] = useState(false)
 
+  // Order stage config state
+  const [stageLabels, setStageLabels] = useState<{ status: string; label: string; order: number }[]>([])
+  const [stageSaving, setStageSaving] = useState(false)
+  const [stageEditing, setStageEditing] = useState(false)
+
   // Pricing edit state
   const [pricingOpen, setPricingOpen] = useState(false)
   const [editCustomPrice, setEditCustomPrice] = useState("")
@@ -249,6 +254,16 @@ export function BusinessesView() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchBusinesses(); fetchPlans()
   }, [])
+
+  // Fetch order stage config when a business is selected
+  useEffect(() => {
+    if (!selectedBusiness) return
+    const id = selectedBusiness.id
+    fetch(`/api/core/businesses/${id}/order-stages`, { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(j => { if (j.success) setStageLabels(j.data.stages) })
+      .catch(() => {/* non-critical */})
+  }, [selectedBusiness])
 
   const filteredBusinesses = useMemo(() => {
     return businesses.filter((biz) => {
@@ -554,6 +569,38 @@ export function BusinessesView() {
     } finally {
       setActivatingBusiness(false)
     }
+  }
+
+  const handleSaveStages = async () => {
+    if (!selectedBusiness) return
+    setStageSaving(true)
+    try {
+      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}/order-stages`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ stages: stageLabels }),
+      })
+      const json = await res.json()
+      if (json.success) { toast.success('Order stages saved'); setStageEditing(false) }
+      else toast.error(json.error || 'Failed to save stages')
+    } catch { toast.error('Failed to save stages') }
+    finally { setStageSaving(false) }
+  }
+
+  const handleResetStages = async () => {
+    if (!selectedBusiness) return
+    setStageSaving(true)
+    try {
+      await fetch(`/api/core/businesses/${selectedBusiness.id}/order-stages`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      })
+      // Reload defaults
+      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}/order-stages`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) { setStageLabels(json.data.stages); setStageEditing(false); toast.success('Reset to defaults') }
+    } catch { toast.error('Failed to reset') }
+    finally { setStageSaving(false) }
   }
 
   // Loading state
@@ -1520,6 +1567,83 @@ export function BusinessesView() {
                         </div>
                       </div>
                     </div>
+                    <Separator />
+
+                    {/* Order Stages */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Order Stages</h4>
+                        <div className="flex items-center gap-1.5">
+                          {stageEditing ? (
+                            <>
+                              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setStageEditing(false)}>Cancel</Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleResetStages} disabled={stageSaving}>Reset</Button>
+                              <Button size="sm" className="h-7 text-xs gap-1" onClick={handleSaveStages} disabled={stageSaving}>
+                                {stageSaving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                                Save
+                              </Button>
+                            </>
+                          ) : (
+                            canEdit && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setStageEditing(true)}>Edit Labels</Button>
+                          )}
+                        </div>
+                      </div>
+                      {stageLabels.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Loading…</p>
+                      ) : (
+                        <div className="divide-y rounded-md border">
+                          {stageLabels.map((s, i) => (
+                            <div key={s.status} className="flex items-center gap-3 px-3 py-2">
+                              <span className="text-[10px] font-mono text-muted-foreground w-5 shrink-0">{s.order}</span>
+                              <div className="flex-1 min-w-0">
+                                {stageEditing ? (
+                                  <Input
+                                    value={s.label}
+                                    onChange={(e) => setStageLabels(prev => prev.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                                    className="h-7 text-xs"
+                                  />
+                                ) : (
+                                  <p className="text-sm font-medium">{s.label}</p>
+                                )}
+                                <p className="text-[10px] text-muted-foreground font-mono">{s.status}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Separator />
+
+                    {/* APIs */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">API Reference</h4>
+                      <p className="text-[11px] text-muted-foreground">Base: <span className="font-mono">/api/core</span> — all endpoints require <span className="font-mono">Authorization: Bearer &lt;token&gt;</span></p>
+                      <div className="divide-y rounded-md border text-[11px]">
+                        {[
+                          { label: 'Business',   path: `/api/core/businesses/${biz.id}` },
+                          { label: 'Stores',     path: `/api/core/stores?businessId=${biz.id}` },
+                          { label: 'Categories', path: `/api/core/businesses/${biz.id}/categories` },
+                          { label: 'Products',   path: `/api/core/businesses/${biz.id}/products` },
+                          { label: 'Inventory',  path: `/api/core/businesses/${biz.id}/inventory` },
+                          { label: 'Orders',     path: `/api/core/businesses/${biz.id}/orders` },
+                          { label: 'Order Stages', path: `/api/core/businesses/${biz.id}/order-stages` },
+                          { label: 'Customers',  path: `/api/core/businesses/${biz.id}/customers` },
+                        ].map(({ label, path }) => (
+                          <div key={label} className="flex items-center justify-between gap-2 px-3 py-2">
+                            <span className="text-muted-foreground w-20 shrink-0">{label}</span>
+                            <span className="font-mono text-[10px] text-foreground flex-1 truncate">{path}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => copyBusinessId(path, e)}
+                              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {copiedId === path ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                   </div>
                 </ScrollArea>
               </>

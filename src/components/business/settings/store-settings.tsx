@@ -8,6 +8,8 @@ import {
   MapPin,
   Clock,
   Printer,
+  Building2,
+  Lock,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -26,6 +28,7 @@ import { showSuccess, showError } from "@/lib/toast-utils"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { useAdminStore } from "@/stores/admin-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 
 // ─── Fallback Store Timing ────────────────────────────────────────────────
 
@@ -78,8 +81,73 @@ export function StoreSettingsView() {
     return null
   }, [storesData])
 
+  // Business Profile state (fetched from API)
+  const { currentBusinessName, currentBusinessId } = useAdminStore()
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileName, setProfileName]       = useState("")
+  const [profilePhone, setProfilePhone]     = useState("")
+  const [profileEmail, setProfileEmail]     = useState("")
+  const [profileGst, setProfileGst]         = useState("")
+  const [profileAddress, setProfileAddress] = useState("")
+  const [profileCity, setProfileCity]       = useState("")
+  const [profileState, setProfileState]     = useState("")
+  const [profilePincode, setProfilePincode] = useState("")
+  const [profileStatus, setProfileStatus]   = useState("")
+  const [profileBizId, setProfileBizId]     = useState("")
+
+  useEffect(() => {
+    const id = currentBusinessId || businessId
+    if (!id) return
+    setProfileLoading(true)
+    fetch(`/api/core/businesses/${id}`, { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(j => {
+        if (j.success && j.data) {
+          const d = j.data
+          setProfileBizId(d.id ?? "")
+          setProfileName(d.name ?? "")
+          setProfilePhone(d.contactPhone ?? "")
+          setProfileEmail(d.contactEmail ?? "")
+          setProfileGst(d.gstNumber ?? "")
+          setProfileAddress(d.address ?? "")
+          setProfileCity(d.city ?? "")
+          setProfileState(d.state ?? "")
+          setProfilePincode(d.pincode ?? "")
+          setProfileStatus(d.status ?? "")
+        }
+      })
+      .catch(() => {/* silently fail */})
+      .finally(() => setProfileLoading(false))
+  }, [currentBusinessId, businessId])
+
+  const handleSaveProfile = async () => {
+    const id = currentBusinessId || businessId
+    if (!id) return
+    setProfileSaving(true)
+    try {
+      const res = await fetch(`/api/core/businesses/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          name: profileName,
+          contactPhone: profilePhone,
+          contactEmail: profileEmail,
+          gstNumber: profileGst,
+          address: profileAddress,
+          city: profileCity,
+          state: profileState,
+          pincode: profilePincode,
+        }),
+      })
+      const json = await res.json()
+      if (json.success) showSuccess('Business profile saved')
+      else showError(json.error || 'Failed to save profile')
+    } catch { showError('Failed to save profile') }
+    finally { setProfileSaving(false) }
+  }
+
   // General tab state - initialized with API data when available
-  const { currentBusinessName } = useAdminStore()
   const [storeName, setStoreName] = useState(currentBusinessName || "My Store")
   const [storePhone, setStorePhone] = useState("")
   const [storeEmail, setStoreEmail] = useState("")
@@ -148,13 +216,96 @@ export function StoreSettingsView() {
       />
 
       {/* Tabs */}
-      <Tabs defaultValue="general" className="space-y-6">
+      <Tabs defaultValue="profile" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="profile">Business Profile</TabsTrigger>
+          <TabsTrigger value="general">Store</TabsTrigger>
           <TabsTrigger value="delivery">Delivery</TabsTrigger>
           <TabsTrigger value="taxes">Taxes</TabsTrigger>
           <TabsTrigger value="printer">Printer</TabsTrigger>
         </TabsList>
+
+        {/* ── Business Profile Tab ─────────────────────────────────────────── */}
+        <TabsContent value="profile" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Building2 className="size-4" /> Business Profile
+                  </CardTitle>
+                  <CardDescription>Your registered business details. Contact support to update Business ID or Status.</CardDescription>
+                </div>
+                <Button size="sm" onClick={handleSaveProfile} disabled={profileSaving} className="gap-1.5">
+                  <Save className="size-3.5" />
+                  {profileSaving ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {profileLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : (
+                <>
+                  {/* Read-only fields */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1"><Lock className="size-3" /> Business ID</Label>
+                      <Input value={profileBizId} readOnly className="h-9 text-xs font-mono bg-muted/40" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1"><Lock className="size-3" /> Status</Label>
+                      <div className="flex items-center h-9">
+                        <Badge variant="outline" className={`text-xs ${profileStatus === 'ACTIVE' ? 'border-emerald-500 text-emerald-600' : 'border-amber-500 text-amber-600'}`}>
+                          {profileStatus || '—'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <Separator />
+                  {/* Editable fields */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Business Name</Label>
+                    <Input value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Business name" className="h-9" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Contact Phone</Label>
+                      <Input value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="+91 98765 43210" className="h-9" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Contact Email</Label>
+                      <Input value={profileEmail} onChange={e => setProfileEmail(e.target.value)} placeholder="contact@business.in" className="h-9" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">GST Number</Label>
+                    <Input value={profileGst} onChange={e => setProfileGst(e.target.value)} placeholder="22AAAAA0000A1Z5" className="h-9 font-mono" />
+                  </div>
+                  <Separator />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Address</Label>
+                    <Textarea value={profileAddress} onChange={e => setProfileAddress(e.target.value)} placeholder="Street address" rows={2} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">City</Label>
+                      <Input value={profileCity} onChange={e => setProfileCity(e.target.value)} placeholder="City" className="h-9" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">State</Label>
+                      <Input value={profileState} onChange={e => setProfileState(e.target.value)} placeholder="State" className="h-9" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Pincode</Label>
+                      <Input value={profilePincode} onChange={e => setProfilePincode(e.target.value)} placeholder="560001" className="h-9" />
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* ── General Tab ──────────────────────────────────────────────────── */}
         <TabsContent value="general" className="space-y-6">
