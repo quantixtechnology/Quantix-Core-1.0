@@ -11,6 +11,7 @@ import { NotificationBell } from "@/components/shared/notification-bell"
 import { useResponsive } from "@/hooks/use-responsive"
 import { ImpersonationBar } from "@/components/admin/shared/impersonation-bar"
 import { UserMenu } from "@/components/auth/user-menu"
+import { StoreSelector } from "@/components/business/layout/store-selector"
 
 const pageTitles: Record<string, string> = {
   dashboard: "Dashboard",
@@ -52,6 +53,10 @@ export function BusinessHeader({ onMobileMenuClick }: BusinessHeaderProps) {
         </>
       )}
       <h2 className="text-sm font-semibold truncate">{pageTitles[businessPage] || "Dashboard"}</h2>
+
+      <div className="ml-4 hidden md:block">
+        <StoreSelector />
+      </div>
 
       <div className="ml-auto flex items-center gap-2">
         {isMobile && (
