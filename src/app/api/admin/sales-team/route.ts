@@ -94,6 +94,7 @@ export const POST = withMiddleware({
       const user = await tx.user.create({
         data: {
           email,
+          loginId: email,
           name,
           phone,
           passwordHash,

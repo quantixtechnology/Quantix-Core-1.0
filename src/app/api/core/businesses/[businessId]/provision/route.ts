@@ -49,7 +49,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX
     let ownerUserId: string;
 
     if (existingOwner && body.resetExisting) {
-      await db.user.update({ where: { id: existingOwner.userId }, data: { passwordHash, isActive: true } });
+      await db.user.update({ where: { id: existingOwner.userId }, data: { passwordHash, isActive: true, loginId: ownerEmail } });
       ownerUserId = existingOwner.userId;
     } else {
       const emailTaken = await db.user.findUnique({ where: { email: ownerEmail } });
@@ -59,12 +59,12 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX
           update: { role: 'CLIENT_OWNER', isActive: true, acceptedAt: new Date() },
           create: { userId: emailTaken.id, businessId, role: 'CLIENT_OWNER', isActive: true, invitedAt: new Date(), acceptedAt: new Date() },
         });
-        await db.user.update({ where: { id: emailTaken.id }, data: { passwordHash, isActive: true } });
+        await db.user.update({ where: { id: emailTaken.id }, data: { passwordHash, isActive: true, loginId: emailTaken.loginId ?? ownerEmail } });
         ownerUserId = emailTaken.id;
       } else {
         const newUser = await db.user.create({
           data: {
-            email: ownerEmail, name: ownerName, phone: business.contactPhone || null,
+            email: ownerEmail, loginId: ownerEmail, name: ownerName, phone: business.contactPhone || null,
             passwordHash, authProvider: 'PASSWORD', emailVerified: false, isActive: true,
           },
         });
@@ -85,7 +85,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['QUANTIX
     return NextResponse.json({
       success: true,
       message: existingOwner && body.resetExisting ? 'Owner credentials reset successfully' : 'Owner account provisioned successfully',
-      ownerCredentials: { email: ownerEmail, password: rawPassword, userId: ownerUserId, businessId, role: 'CLIENT_OWNER' },
+      ownerCredentials: { email: ownerEmail, loginId: ownerEmail, password: rawPassword, userId: ownerUserId, businessId, role: 'CLIENT_OWNER' },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to provision owner';

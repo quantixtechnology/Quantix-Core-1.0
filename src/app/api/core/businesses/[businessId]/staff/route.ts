@@ -58,7 +58,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, phone: true, avatar: true,
+            id: true, name: true, email: true, loginId: true, phone: true, avatar: true,
             isActive: true, createdAt: true, lastLoginAt: true,
           },
         },
@@ -71,6 +71,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
       userId: bu.userId,
       name: bu.user.name,
       email: bu.user.email,
+      loginId: bu.user.loginId,
       phone: bu.user.phone,
       avatar: bu.user.avatar,
       role: bu.role,
@@ -135,7 +136,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
       const passwordHash = await hashPassword(rawPassword);
       dbUser = await db.user.create({
         data: {
-          name: body.name, email: body.email, phone: body.phone || null,
+          name: body.name, email: body.email, loginId: body.email, phone: body.phone || null,
           passwordHash, authProvider: 'PASSWORD', emailVerified: false, isActive: true,
         },
       });

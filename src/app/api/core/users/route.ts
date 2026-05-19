@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
       const result = await db.$transaction(async (tx) => {
         const user = await tx.user.create({
           data: {
-            name: body.name, email: body.email, phone: body.phone || null,
+            name: body.name, email: body.email, loginId: body.email, phone: body.phone || null,
             passwordHash, authProvider: 'PASSWORD', emailVerified: false,
             isActive: true, platformRole: body.role as Role,
           },
