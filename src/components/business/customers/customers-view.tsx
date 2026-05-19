@@ -291,12 +291,19 @@ export function CustomersView() {
     queryKey: ["customers", businessId],
     queryFn: async () => {
       if (!businessId) return { data: [], pagination: { total: 0 } }
-      const res  = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers?limit=200`)
+      console.log("[CustomersView] Fetching customers for businessId:", businessId)
+      const res  = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers?limit=200`, {
+        headers: getAuthHeaders(),
+      })
       const data = await res.json()
+      console.log("[CustomersView] Customers response:", data.success, "count:", data.data?.length)
       if (!data.success) throw new Error(data.error || "Failed to fetch customers")
       return data
     },
     enabled: !!businessId,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   })
 
   const { data: ordersData } = useQuery<CustomerOrder[]>({
@@ -351,15 +358,21 @@ export function CustomersView() {
   const createCustomerMutation = useMutation({
     mutationFn: async (d: { name: string; email?: string; phone?: string; dateOfBirth?: string; gender?: string; loyaltyTier?: string; notes?: string }) => {
       if (!businessId) throw new Error("No business context")
+      console.log("[CustomersView] Submitting customer:", d)
+      console.log("[CustomersView] Business:", businessId)
       const res  = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers`, {
         method: "POST", headers: getAuthHeaders(), body: JSON.stringify(d),
       })
       const data = await res.json()
+      console.log("[CustomersView] Create response:", data)
       if (!data.success) throw new Error(data.error || "Failed to create customer")
       return data
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["customers", businessId] }); showSuccess("Customer added") },
-    onError:   (e) => showError(e instanceof Error ? e.message : "Failed to add customer"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers", businessId] })
+      showSuccess("Customer added successfully")
+    },
+    onError: (e) => showError(e instanceof Error ? e.message : "Unable to create customer. Check logs."),
   })
 
   const updateCustomerMutation = useMutation({

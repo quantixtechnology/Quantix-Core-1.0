@@ -76,6 +76,8 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
       metadata?: Record<string, unknown>; userId?: string;
     };
 
+    console.log('[customers/POST] businessId:', businessId, 'body:', JSON.stringify(body));
+
     if (!body.name) return NextResponse.json({ success: false, error: 'Missing required field: name' }, { status: 400 });
 
     const business = await db.business.findUnique({ where: { id: businessId } });
