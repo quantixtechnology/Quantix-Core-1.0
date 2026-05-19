@@ -72,6 +72,8 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   { key: "categories",          label: "Categories",           icon: Tag },
   { key: "product-import",      label: "Product Import",       icon: Upload },
   { key: "customer-import",      label: "Bulk Customer Upload", icon: Users },
+  { key: "user-creation",       label: "User Creation",        icon: UserCog },
+  { key: "user-management",     label: "User Management",      icon: Shield },
   { key: "tax",                 label: "Tax & GST",            icon: Receipt },
   { key: "gateway-config",      label: "Payment Gateways",     icon: CreditCard },
   { key: "reports",             label: "Reports",              icon: BarChart3 },

@@ -210,6 +210,8 @@ model Business {
   modules               BusinessModule[]
   businessSubscription  BusinessSubscription?
   businessUsers         BusinessUser[]
+  businessRoles         BusinessRole[]
+  auditLogs             BusinessAuditLog[]
   categories            Category[]
   convertedLeads        Lead[]                  @relation("LeadConversion")
   customers             Customer[]
@@ -323,6 +325,7 @@ model Store {
   products            Product[]
   taxConfigs          TaxConfig[]
   workflowRules       WorkflowRule[]
+  userAssignments     UserStoreAssignment[]
   business            Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   storeTimings        StoreTiming[]
 
@@ -409,25 +412,79 @@ model RefreshToken {
 }
 
 model BusinessUser {
-  id          String    @id @default(cuid())
-  userId      String
-  businessId  String
-  role        Role
-  storeId     String?
-  permissions String    @default("[]")
-  isActive    Boolean   @default(true)
-  invitedAt   DateTime?
-  acceptedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  store       Store?    @relation(fields: [storeId], references: [id])
-  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String                @id @default(cuid())
+  userId          String
+  businessId      String
+  role            Role
+  storeId         String?
+  businessRoleId  String?
+  createdBy       String?
+  permissions     String                @default("[]")
+  isActive        Boolean               @default(true)
+  invitedAt       DateTime?
+  acceptedAt      DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  store           Store?                @relation(fields: [storeId], references: [id])
+  businessRole    BusinessRole?         @relation(fields: [businessRoleId], references: [id])
+  business        Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeAssignments UserStoreAssignment[]
 
   @@unique([userId, businessId])
   @@index([businessId])
   @@index([userId])
   @@index([role])
+  @@index([businessRoleId])
+}
+
+model BusinessRole {
+  id          String         @id @default(cuid())
+  businessId  String
+  name        String
+  description String?
+  permissions String         @default("{}")
+  isSystem    Boolean        @default(false)
+  isActive    Boolean        @default(true)
+  createdBy   String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  users       BusinessUser[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+model UserStoreAssignment {
+  id             String       @id @default(cuid())
+  businessUserId String
+  storeId        String
+  createdAt      DateTime     @default(now())
+  businessUser   BusinessUser @relation(fields: [businessUserId], references: [id], onDelete: Cascade)
+  store          Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([businessUserId, storeId])
+  @@index([businessUserId])
+  @@index([storeId])
+}
+
+model BusinessAuditLog {
+  id         String   @id @default(cuid())
+  businessId String
+  actorId    String?
+  actorName  String?
+  action     String
+  entityType String
+  entityId   String?
+  details    String   @default("{}")
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 model Order {

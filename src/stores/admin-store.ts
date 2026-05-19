@@ -70,6 +70,8 @@ export type BusinessPage =
   | "gateway-config"
   | "business-data-import"
   | "customer-import"
+  | "user-creation"
+  | "user-management"
   | "categories"
   | "branding"
   | "feature-flags"

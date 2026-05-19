@@ -25,6 +25,8 @@ const pageTitles: Record<string, string> = {
   workflows: "Workflows",
   "product-import": "Product Import",
   "customer-import": "Bulk Customer Upload",
+  "user-creation": "User Creation",
+  "user-management": "User Management",
   categories: "Categories",
   tax: "Tax & GST",
   "gateway-config": "Payment Gateways",
