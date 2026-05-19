@@ -158,7 +158,8 @@ export function BusinessesView() {
     businessCode: string | null; businessId: string
     mainStoreCode: string | null; registrationDate: string
     subscriptionStart: string; renewalDate: string
-    ownerEmail: string; ownerPassword: string
+    ownerEmail: string; ownerPassword: string; ownerUserId: string
+    mainStoreEmail: string; mainStorePassword: string; mainStoreUserId: string
   } | null>(null)
 
   const copyBusinessId = (slug: string, e: React.MouseEvent) => {
@@ -388,6 +389,10 @@ export function BusinessesView() {
           renewalDate: d?.businessSubscription?.nextBillingDate ? new Date(d.businessSubscription.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—",
           ownerEmail: d?.ownerCredentials?.email ?? formOwnerEmail,
           ownerPassword: d?.ownerCredentials?.password ?? "—",
+          ownerUserId: d?.ownerCredentials?.userId ?? "—",
+          mainStoreEmail: d?.mainStoreCredentials?.email ?? "—",
+          mainStorePassword: d?.mainStoreCredentials?.password ?? "—",
+          mainStoreUserId: d?.mainStoreCredentials?.userId ?? "—",
         })
         fetchBusinesses()
       } else {
@@ -676,12 +681,44 @@ export function BusinessesView() {
                       </div>
                     </div>
                     <Separator className="border-emerald-200" />
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Owner Credentials</p>
-                      <p className="font-mono text-sm text-emerald-900">{createdResult.ownerEmail}</p>
-                      <p className="font-mono text-sm text-emerald-900">{createdResult.ownerPassword}</p>
+                    {/* Business Owner Credentials */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business Owner Login</p>
+                      <div className="rounded-md bg-white/60 border border-emerald-200 p-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-emerald-600">User ID</span>
+                          <span className="font-mono text-[11px] font-semibold text-emerald-900 truncate max-w-[180px]">{createdResult.ownerUserId}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-emerald-600">Email</span>
+                          <span className="font-mono text-[11px] text-emerald-900">{createdResult.ownerEmail}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-emerald-600">Password</span>
+                          <span className="font-mono text-[11px] font-bold tracking-wider text-emerald-900">{createdResult.ownerPassword}</span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-emerald-700">Share these credentials securely with the business owner. This password will not be shown again.</p>
+                    <Separator className="border-emerald-200" />
+                    {/* Primary Store Credentials */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Primary Store Login</p>
+                      <div className="rounded-md bg-blue-50/60 border border-blue-200 p-2 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-blue-600">User ID</span>
+                          <span className="font-mono text-[11px] font-semibold text-blue-900 truncate max-w-[180px]">{createdResult.mainStoreUserId}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-blue-600">Email</span>
+                          <span className="font-mono text-[11px] text-blue-900">{createdResult.mainStoreEmail}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-blue-600">Password</span>
+                          <span className="font-mono text-[11px] font-bold tracking-wider text-blue-900">{createdResult.mainStorePassword}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-emerald-700">Share these credentials securely. Passwords will not be shown again.</p>
                   </div>
                   <DialogFooter>
                     <Button onClick={() => { setCreateOpen(false); resetForm() }}>Done</Button>
@@ -1448,10 +1485,10 @@ export function BusinessesView() {
                       )}
                     </div>
                     <Separator />
-                    {/* Owner Account */}
+                    {/* Access Credentials */}
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Owner Account</h4>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Access Credentials</h4>
                         {canEdit && biz.ownerUserId && (
                           <Button
                             size="sm"
@@ -1467,28 +1504,53 @@ export function BusinessesView() {
                       </div>
                       {biz.ownerUserId ? (
                         <div className="space-y-2">
-                          <div className="rounded-lg border p-3 space-y-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="space-y-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{biz.ownerName || "—"}</p>
-                                <p className="text-xs text-muted-foreground truncate">{biz.ownerEmail}</p>
-                                {biz.ownerPhone && <p className="text-xs text-muted-foreground">{biz.ownerPhone}</p>}
-                                {biz.ownerLastLogin && (
-                                  <p className="text-[10px] text-muted-foreground">
-                                    Last login: {new Date(biz.ownerLastLogin).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                                  </p>
-                                )}
+                          {/* Business Owner */}
+                          <div className="rounded-lg border p-3 space-y-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="size-6 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                                <KeyRound className="size-3 text-emerald-700" />
+                              </div>
+                              <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Business Owner Login</p>
+                            </div>
+                            {/* Prominent User ID */}
+                            <div className="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[10px] text-emerald-600 font-medium">User ID</p>
+                                <p className="font-mono text-xs font-bold text-emerald-900 mt-0.5">{biz.ownerUserId}</p>
                               </div>
                               <button
                                 type="button"
                                 onClick={(e) => copyBusinessId(biz.ownerUserId!, e)}
-                                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                                className="flex items-center gap-1 text-[10px] text-emerald-600 hover:text-emerald-800 transition-colors shrink-0"
                               >
-                                {copiedId === biz.ownerUserId ? <><Check className="h-3 w-3 text-emerald-600" /> Copied</> : <><Copy className="h-3 w-3" /> Copy ID</>}
+                                {copiedId === biz.ownerUserId ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
                               </button>
                             </div>
-                            <div className="rounded-md bg-muted/40 px-2 py-1">
-                              <p className="text-[10px] font-mono text-muted-foreground truncate">UID: {biz.ownerUserId}</p>
+                            <div className="space-y-1 text-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-muted-foreground">Name</span>
+                                <span className="font-medium truncate">{biz.ownerName || "—"}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-muted-foreground">Email</span>
+                                <span className="font-mono truncate">{biz.ownerEmail}</span>
+                              </div>
+                              {biz.ownerPhone && (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-muted-foreground">Phone</span>
+                                  <span>{biz.ownerPhone}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-muted-foreground">Role</span>
+                                <Badge variant="outline" className="text-[10px] h-4 px-1.5">CLIENT_OWNER</Badge>
+                              </div>
+                              {biz.ownerLastLogin && (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-muted-foreground">Last Login</span>
+                                  <span>{new Date(biz.ownerLastLogin).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
 

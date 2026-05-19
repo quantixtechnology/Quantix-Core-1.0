@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
+import { hashPassword } from '@/lib/password-utils';
 import type {
   CreateStoreRequest,
   StoreTimingInput,
@@ -145,8 +146,46 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
     return store;
   });
 
-  // Return store with timings
-  return getStore(result.id);
+  // Optionally create store login credentials (default: true)
+  let storeCredentials: { email: string; password: string; userId: string } | undefined;
+  if (data.createLoginCredentials !== false) {
+    const storeEmail = data.storeUserEmail || `store-${data.slug}@store.in`;
+    const storeRawPassword = `Store@${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const storePasswordHash = await hashPassword(storeRawPassword);
+    const storeUser = await db.user.create({
+      data: {
+        email: storeEmail,
+        name: `${data.name}`,
+        passwordHash: storePasswordHash,
+        authProvider: 'PASSWORD',
+        isActive: true,
+      },
+    });
+    await db.businessUser.create({
+      data: {
+        userId: storeUser.id,
+        businessId,
+        storeId: result.id,
+        role: 'STORE_MANAGER',
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    });
+    await db.activityLog.create({
+      data: {
+        businessId,
+        action: 'store.login_created',
+        entity: 'Store',
+        entityId: result.id,
+        details: JSON.stringify({ email: storeEmail, storeId: result.id }),
+      },
+    });
+    storeCredentials = { email: storeEmail, password: storeRawPassword, userId: storeUser.id };
+  }
+
+  const storeWithTimings = await getStore(result.id);
+  return { ...storeWithTimings, storeCredentials };
 }
 
 // ============================================================================

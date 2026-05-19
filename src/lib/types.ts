@@ -43,6 +43,7 @@ export type Role =
   // Business staff (stored on BusinessUser.role)
   | 'CLIENT_OWNER'
   | 'STORE_MANAGER'
+  | 'STORE_OPERATOR'
   | 'BILLING_STAFF'
   | 'INVENTORY_STAFF'
   | 'SUPPORT_STAFF'

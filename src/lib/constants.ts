@@ -159,6 +159,12 @@ export const ROLES: Record<Role, { label: string; description: string; level: nu
     level: 60,
     scope: 'business',
   },
+  STORE_OPERATOR: {
+    label: 'Store Operator',
+    description: 'Day-to-day store operations, order processing',
+    level: 50,
+    scope: 'business',
+  },
   BILLING_STAFF: {
     label: 'Billing Staff',
     description: 'Handles billing operations and payment processing',

@@ -386,6 +386,8 @@ export interface CreateStoreRequest {
   gstNumber?: string;
   paperSize?: string;
   printerType?: string;
+  createLoginCredentials?: boolean;
+  storeUserEmail?: string;
 }
 
 export interface CreateOrderRequest {

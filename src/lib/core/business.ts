@@ -504,6 +504,31 @@ export async function createBusiness(data: CreateBusinessRequest) {
       },
     });
 
+    // Create primary store login user (STORE_MANAGER scoped to main store)
+    const storeEmail = `store@${data.slug}.in`;
+    const storeRawPassword = `Store@${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const storePasswordHash = await hashPassword(storeRawPassword);
+    const storeUser = await tx.user.create({
+      data: {
+        email: storeEmail,
+        name: `${data.name} - Main Store`,
+        passwordHash: storePasswordHash,
+        authProvider: 'PASSWORD',
+        isActive: true,
+      },
+    });
+    await tx.businessUser.create({
+      data: {
+        userId: storeUser.id,
+        businessId: business.id,
+        storeId: mainStore.id,
+        role: 'STORE_MANAGER',
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    });
+
     // Auto-create deployment records for all 4 app types (status=PENDING)
     await tx.deployment.createMany({
       data: [
@@ -540,6 +565,11 @@ export async function createBusiness(data: CreateBusinessRequest) {
       ownerEmail,
       ownerPassword: rawPassword,
       ownerUserId: ownerUser.id,
+      mainStoreCredentials: {
+        email: storeEmail,
+        password: storeRawPassword,
+        userId: storeUser.id,
+      },
     };
   });
 
@@ -554,6 +584,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
     },
     mainStoreCode: result.mainStoreCode,
     mainStoreId: result.mainStoreId,
+    mainStoreCredentials: result.mainStoreCredentials,
   };
 }
 

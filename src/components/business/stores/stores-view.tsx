@@ -17,8 +17,10 @@ import {
 } from '@/components/ui/dialog'
 import {
   Store, Plus, MapPin, Phone, Mail, Clock, CheckCircle2,
-  XCircle, Star, AlertCircle, Loader2,
+  XCircle, Star, AlertCircle, Loader2, KeyRound, Copy, Check, Users,
 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Separator } from '@/components/ui/separator'
 import { useAdminStore } from '@/stores/admin-store'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -73,8 +75,11 @@ export function StoresView() {
   const [limitError, setLimitError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM)
+  const [createLoginCredentials, setCreateLoginCredentials] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [storeCredentials, setStoreCredentials] = useState<{ email: string; password: string; userId: string } | null>(null)
+  const [copiedCred, setCopiedCred] = useState<string | null>(null)
 
   const fetchStores = useCallback(async () => {
     if (!currentBusinessId) return
@@ -110,6 +115,7 @@ export function StoresView() {
     if (!form.name || !form.slug) return
     setSaving(true)
     setSaveError(null)
+    setStoreCredentials(null)
     try {
       const res = await fetch('/api/core/stores', {
         method: 'POST',
@@ -132,6 +138,7 @@ export function StoresView() {
           minOrderAmount: form.minOrderAmount ? parseFloat(form.minOrderAmount) : undefined,
           latitude: form.latitude ? parseFloat(form.latitude) : undefined,
           longitude: form.longitude ? parseFloat(form.longitude) : undefined,
+          createLoginCredentials,
         }),
       })
       const json = await res.json()
@@ -146,12 +153,21 @@ export function StoresView() {
       }
       setDialogOpen(false)
       setForm(EMPTY_FORM)
+      if (json.data?.storeCredentials) {
+        setStoreCredentials(json.data.storeCredentials)
+      }
       await fetchStores()
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to create store')
     } finally {
       setSaving(false)
     }
+  }
+
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedCred(text)
+    setTimeout(() => setCopiedCred(null), 2000)
   }
 
   const activeCount = stores.filter(s => s.status === 'ACTIVE').length
@@ -164,7 +180,7 @@ export function StoresView() {
         <Button
           size="sm"
           className="text-xs h-7"
-          onClick={() => { setLimitError(null); setSaveError(null); setForm(EMPTY_FORM); setDialogOpen(true) }}
+          onClick={() => { setLimitError(null); setSaveError(null); setForm(EMPTY_FORM); setCreateLoginCredentials(true); setDialogOpen(true) }}
         >
           <Plus className="size-3 mr-1" />Add Store
         </Button>
@@ -177,6 +193,47 @@ export function StoresView() {
             <p className="font-medium">Store limit reached</p>
             <p className="text-xs mt-0.5">{limitError}</p>
           </div>
+        </div>
+      )}
+
+      {/* Store Login Credentials reveal panel */}
+      {storeCredentials && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <KeyRound className="size-4 text-blue-700" />
+              <p className="text-sm font-semibold text-blue-800">Store Login Created</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStoreCredentials(null)}
+              className="text-[10px] text-blue-600 hover:text-blue-800"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="space-y-2">
+            {[
+              { label: 'User ID', value: storeCredentials.userId },
+              { label: 'Email', value: storeCredentials.email },
+              { label: 'Password', value: storeCredentials.password },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-md bg-white/70 border border-blue-200 px-3 py-1.5">
+                <div>
+                  <p className="text-[10px] text-blue-600 font-medium">{label}</p>
+                  <p className="font-mono text-xs font-semibold text-blue-900">{value}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyText(value)}
+                  className="text-blue-500 hover:text-blue-700 transition-colors shrink-0"
+                >
+                  {copiedCred === value ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-blue-700">Share these credentials with the store manager. Password will not be shown again.</p>
         </div>
       )}
 
@@ -225,7 +282,7 @@ export function StoresView() {
         <Card className="flex flex-col items-center justify-center py-16 gap-3 border-dashed">
           <Store className="size-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No stores yet. Add your first store.</p>
-          <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
+          <Button size="sm" variant="outline" onClick={() => { setCreateLoginCredentials(true); setDialogOpen(true) }}>
             <Plus className="size-3 mr-1" />Add Store
           </Button>
         </Card>
@@ -388,6 +445,18 @@ export function StoresView() {
                 <Label className="text-xs">Longitude</Label>
                 <Input className="h-8 text-sm" type="number" step="any" placeholder="e.g. 72.8777" value={form.longitude} onChange={e => handleFieldChange('longitude', e.target.value)} />
               </div>
+            </div>
+
+            {/* Create Login Credentials toggle */}
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-medium flex items-center gap-1.5">
+                  <KeyRound className="size-3 text-muted-foreground" />
+                  Create Login Credentials
+                </p>
+                <p className="text-[11px] text-muted-foreground">Auto-generate a STORE_MANAGER login for this store</p>
+              </div>
+              <Switch checked={createLoginCredentials} onCheckedChange={setCreateLoginCredentials} />
             </div>
 
             {saveError && (
