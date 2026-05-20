@@ -348,7 +348,7 @@ export async function createBusiness(data: CreateBusinessRequest) {
     });
 
     // Always create a domain mapping — use custom domain if provided, otherwise auto-generate subdomain
-    const storefrontBaseDomain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixshop.in';
+    const storefrontBaseDomain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
     await tx.domainMapping.create({
       data: {
         businessId: business.id,

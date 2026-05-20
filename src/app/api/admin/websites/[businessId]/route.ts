@@ -87,7 +87,7 @@ export const PUT = withMiddleware({
 
     // Custom domain update
     if (body.customDomain !== undefined) {
-      const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixshop.in';
+      const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
       const newDomain = body.customDomain || `${business.slug}.${storefrontBase}`;
 
       if (body.customDomain) {

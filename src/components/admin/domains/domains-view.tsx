@@ -156,7 +156,7 @@ function domainStatusBadge(domainStatus: string | null) {
   }
 }
 
-const STOREFRONT_BASE = "quantixshop.in"
+const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 
 // ── Main component ────────────────────────────────────────────────────────
 

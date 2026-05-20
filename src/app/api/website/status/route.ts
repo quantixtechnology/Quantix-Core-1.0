@@ -12,7 +12,7 @@ import dns from 'dns/promises'
 import { db } from '@/lib/db'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 
-const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixshop.in'
+const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in'
 const VPS_IP          = process.env.VPS_HOST || ''   // Set in .env — the public VPS IP
 
 type DnsStatus      = 'active' | 'pending' | 'error'
@@ -45,7 +45,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       ssl:        { status: 'pending', expiryDate: null, httpsReachable: false },
       tenant:     { status: 'not_found', businessId: null, businessName: null },
       storefront: { status: 'unknown', isOnline: false },
-      deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: 'Add wildcard A record for *.quantixshop.in to your DNS provider' },
+      deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: 'Add wildcard A record for *.quantixtechnology.in to your DNS provider' },
       checkedAt:  new Date().toISOString(),
     }
 

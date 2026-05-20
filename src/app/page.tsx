@@ -16,7 +16,7 @@ import { ErrorBoundary } from "@/components/error/error-boundary"
 
 // ── Storefront subdomain detector ────────────────────────────────────────
 // Reads ?_storefront=<slug> injected by next.config.ts rewrites when
-// a visitor lands on <slug>.quantixshop.in. Fetches store-context and
+// a visitor lands on <slug>.quantixtechnology.in. Fetches store-context and
 // switches the app into customer mode for that business.
 function StorefrontParamDetector() {
   const searchParams = useSearchParams()

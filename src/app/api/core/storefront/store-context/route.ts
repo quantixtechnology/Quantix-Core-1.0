@@ -44,10 +44,10 @@ export async function GET(request: Request) {
       resolvedBusinessId = biz.id;
     }
 
-    // Resolve from Host header (subdomain: slug.quantixshop.in)
+    // Resolve from Host header (subdomain: slug.quantixtechnology.in)
     if (!resolvedBusinessId) {
       const host = request.headers.get('host') || '';
-      const storefrontBaseDomain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixshop.in';
+      const storefrontBaseDomain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
       const subdomainMatch = host.replace(`.${storefrontBaseDomain}`, '');
       if (subdomainMatch && subdomainMatch !== host) {
         // subdomainMatch is the slug

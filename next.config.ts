@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixshop.in";
+const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
         // Pass API, Next.js internals, and static files through unchanged
         // for subdomain requests — nothing to rewrite there.
 
-        // For storefront subdomains (slug.quantixshop.in or custom domains),
+        // For storefront subdomains (slug.quantixtechnology.in or custom domains),
         // rewrite all page requests to the root SPA and inject the slug as a
         // query param so the client can switch to customer mode automatically.
         {
@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
           has: [
             {
               type: "host",
-              // Captures e.g. "mygrocery" from "mygrocery.quantixshop.in"
+              // Captures e.g. "mygrocery" from "mygrocery.quantixtechnology.in"
               value: `(?<slug>[^\\.]+)\\.${storefrontBase.replace(/\./g, "\\.")}`,
             },
           ],

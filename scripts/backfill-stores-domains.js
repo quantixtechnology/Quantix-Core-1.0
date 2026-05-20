@@ -16,7 +16,7 @@ const { PrismaClient } = require('@prisma/client');
 
 const db = new PrismaClient();
 const DRY_RUN = process.argv.includes('--dry-run');
-const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixshop.in';
+const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
