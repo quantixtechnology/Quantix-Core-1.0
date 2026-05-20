@@ -231,6 +231,7 @@ model Business {
   storePaymentGateways  StorePaymentGateway[]
   products              Product[]
   promoCodes            PromoCode[]
+  reviews               Review[]
   stores                Store[]
   subscriptionPlans     SubscriptionPlan[]
   taxConfigs            TaxConfig[]
@@ -1077,6 +1078,7 @@ model Customer {
   orders        Order[]
   cartItems     CartItem[]
   favorites     Favorite[]
+  reviews       Review[]
 
   @@unique([businessId, phone])
   @@index([businessId])
@@ -1242,6 +1244,29 @@ model PromoCode {
   @@index([isActive])
 }
 
+model Review {
+  id          String   @id @default(cuid())
+  businessId  String
+  customerId  String
+  productId   String
+  orderId     String?
+  rating      Int
+  title       String?
+  body        String?
+  images      String   @default("[]")
+  isVerified  Boolean  @default(false)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([productId])
+  @@index([customerId])
+}
+
 model SalesTeamMember {
   id                String     @id @default(cuid())
   userId            String     @unique
@@ -1396,6 +1421,7 @@ model Product {
   variants        ProductVariant[]
   cartItems       CartItem[]
   favorites       Favorite[]
+  reviews         Review[]
 
   @@unique([businessId, slug])
   @@index([businessId])

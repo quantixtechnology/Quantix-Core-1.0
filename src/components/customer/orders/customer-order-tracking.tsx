@@ -273,12 +273,24 @@ export function CustomerOrderTracking() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}10` }}>
-                  <Phone className="w-4 h-4" style={{ color: brandColor }} />
-                </button>
-                <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}10` }}>
-                  <MessageCircle className="w-4 h-4" style={{ color: brandColor }} />
-                </button>
+                {(order.deliveryPartner?.phone || latestUpdate?.partnerPhone) && (
+                  <a
+                    href={`tel:${order.deliveryPartner?.phone || latestUpdate?.partnerPhone}`}
+                    className="w-9 h-9 rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: `${brandColor}10` }}
+                  >
+                    <Phone className="w-4 h-4" style={{ color: brandColor }} />
+                  </a>
+                )}
+                {(order.deliveryPartner?.phone || latestUpdate?.partnerPhone) && (
+                  <a
+                    href={`sms:${order.deliveryPartner?.phone || latestUpdate?.partnerPhone}`}
+                    className="w-9 h-9 rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: `${brandColor}10` }}
+                  >
+                    <MessageCircle className="w-4 h-4" style={{ color: brandColor }} />
+                  </a>
+                )}
               </div>
             </div>
           </div>

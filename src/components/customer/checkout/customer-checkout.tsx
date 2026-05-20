@@ -18,7 +18,7 @@ import {
 import {
   ArrowLeft, MapPin, CreditCard, Smartphone, Banknote, CheckCircle2,
   MessageSquare, ChevronRight, Package, Loader2, AlertTriangle, Store,
-  Clock, Tag, Plus, Calendar,
+  Clock, Tag, Plus, Calendar, FileText,
 } from "lucide-react"
 
 interface SavedAddress {
@@ -78,6 +78,8 @@ export function CustomerCheckout() {
   const [validatingZone, setValidatingZone] = useState(false)
   const [couponInput, setCouponInput]     = useState("")
   const [couponApplying, setCouponApplying] = useState(false)
+  const [wantGstInvoice, setWantGstInvoice] = useState(false)
+  const [gstInvoiceNumber, setGstInvoiceNumber] = useState("")
 
   // Delivery slot selection
   const [selectedDate, setSelectedDate] = useState<"today" | "tomorrow" | "day_after">("today")
@@ -171,6 +173,7 @@ export function CustomerCheckout() {
         deliveryInstructions: [slotNote, deliveryInstructions].filter(Boolean).join(" | ") || undefined,
         items: orderItems,
         promoCodeId: couponCode || undefined,
+        ...(wantGstInvoice && gstInvoiceNumber ? { notes: `GST: ${gstInvoiceNumber}` } : {}),
       }
 
       const result = await createOrderMutation.mutateAsync(orderData)
@@ -421,6 +424,43 @@ export function CustomerCheckout() {
             onChange={(e) => setDeliveryInstructions(e.target.value)}
             className="h-9 text-xs rounded-lg border-gray-200"
           />
+        </div>
+      </div>
+
+      {/* GST Invoice */}
+      <div className="px-4 mb-4">
+        <div className="bg-white border border-gray-100 rounded-xl p-4">
+          <button
+            onClick={() => setWantGstInvoice((v) => !v)}
+            className="w-full flex items-center gap-3"
+          >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${brandColor}10` }}>
+              <FileText className="w-4 h-4" style={{ color: brandColor }} />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-medium text-gray-800">GST Invoice</p>
+              <p className="text-[10px] text-gray-400">For business purchases</p>
+            </div>
+            <div
+              className={`w-10 h-5 rounded-full transition-colors relative ${wantGstInvoice ? "" : "bg-gray-200"}`}
+              style={wantGstInvoice ? { backgroundColor: brandColor } : undefined}
+            >
+              <div
+                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${wantGstInvoice ? "translate-x-5" : "translate-x-0.5"}`}
+              />
+            </div>
+          </button>
+          {wantGstInvoice && (
+            <div className="mt-3">
+              <Input
+                placeholder="Enter your GST number (e.g. 22AAAAA0000A1Z5)"
+                value={gstInvoiceNumber}
+                onChange={(e) => setGstInvoiceNumber(e.target.value.toUpperCase())}
+                className="h-9 text-xs rounded-lg border-gray-200"
+                maxLength={15}
+              />
+            </div>
+          )}
         </div>
       </div>
 

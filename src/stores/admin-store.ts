@@ -95,6 +95,8 @@ export type CustomerPage =
   | "addresses"
   | "support"
   | "notifications"
+  | "wishlist"
+  | "review"
 
 export type DeliveryPage =
   | "login"
@@ -342,6 +344,8 @@ interface AdminState {
   setSelectedProductId: (id: string | null) => void
   selectedOrderId: string | null
   setSelectedOrderId: (id: string | null) => void
+  selectedReviewProductId: string | null
+  setSelectedReviewProductId: (id: string | null) => void
   selectedLeadId: string | null
   setSelectedLeadId: (id: string | null) => void
   selectedBusinessId: string | null
@@ -440,6 +444,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   setSelectedProductId: (id) => set({ selectedProductId: id }),
   selectedOrderId: null,
   setSelectedOrderId: (id) => set({ selectedOrderId: id }),
+  selectedReviewProductId: null,
+  setSelectedReviewProductId: (id) => set({ selectedReviewProductId: id }),
   selectedLeadId: null,
   setSelectedLeadId: (id) => set({ selectedLeadId: id, isDetailSheetOpen: id !== null }),
   selectedBusinessId: null,

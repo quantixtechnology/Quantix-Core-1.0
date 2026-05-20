@@ -1,9 +1,9 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { getDemoCoupons } from "@/lib/demo-data"
+import { useAuthStore } from "@/stores/auth-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -21,12 +21,40 @@ import {
   X,
 } from "lucide-react"
 
-export function CustomerCart() {
-  const { setCustomerPage, currentBusinessType, currentBusinessPrimaryColor, currentStoreName } = useAdminStore()
-  const brandColor = currentBusinessPrimaryColor || "#10B981"
+interface ApiCoupon {
+  id: string
+  code: string
+  description: string | null
+  type: "PERCENTAGE" | "FIXED_AMOUNT"
+  value: number
+  minOrder: number
+  maxDiscount: number | null
+  usageLeft: number | null
+  validUntil: string
+}
 
-  // Dynamic coupons from business context
-  const validCoupons = useMemo(() => getDemoCoupons(currentBusinessType), [currentBusinessType])
+export function CustomerCart() {
+  const { setCustomerPage, currentBusinessPrimaryColor, currentStoreName } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#10B981"
+  const { token } = useAuthStore()
+
+  const [apiCoupons, setApiCoupons] = useState<ApiCoupon[]>([])
+
+  const fetchCoupons = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch("/api/core/storefront/coupons", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await res.json()
+      if (json.success) setApiCoupons(json.data || [])
+    } catch {
+      // fall back to no coupons
+    }
+  }, [token])
+
+  useEffect(() => { fetchCoupons() }, [fetchCoupons])
+
   const {
     items,
     updateQuantity,
@@ -53,7 +81,7 @@ export function CustomerCart() {
     setCouponError("")
     setCouponSuccess("")
     const code = couponInput.toUpperCase().trim()
-    const coupon = validCoupons[code]
+    const coupon = apiCoupons.find((c) => c.code === code)
 
     if (!coupon) {
       setCouponError("Invalid coupon code")
@@ -65,8 +93,21 @@ export function CustomerCart() {
       return
     }
 
-    applyCoupon(code, coupon.discount)
-    setCouponSuccess(`Coupon ${code} applied! You save ${formatPrice(coupon.discount)}`)
+    if (coupon.usageLeft !== null && coupon.usageLeft <= 0) {
+      setCouponError("Coupon usage limit reached")
+      return
+    }
+
+    const discount =
+      coupon.type === "PERCENTAGE"
+        ? Math.min(
+            Math.round((subtotal * coupon.value) / 100),
+            coupon.maxDiscount ?? Infinity,
+          )
+        : coupon.value
+
+    applyCoupon(code, discount)
+    setCouponSuccess(`Coupon ${code} applied! You save ${formatPrice(discount)}`)
     setCouponInput("")
   }
 
