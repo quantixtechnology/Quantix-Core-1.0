@@ -5,20 +5,104 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useProduct, useProducts } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
-import { getDemoProducts, getDemoCategories } from "@/lib/demo-data"
+import { getDemoProducts } from "@/lib/demo-data"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState } from "@/components/ui/loading-states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Plus, Minus, Leaf, Share2, Heart, Truck, Clock, ShieldCheck, Loader2 } from "lucide-react"
+import {
+  ArrowLeft, Plus, Minus, Share2, Heart, Truck, Clock, ShieldCheck,
+  Flame, Droplets, Scissors, Leaf, ChefHat, Sparkles,
+} from "lucide-react"
+
+// Meat-delivery metadata: these keys are stored in product.metadata JSON
+interface MeatMeta {
+  freshnessTag?: string          // e.g. "Farm Fresh Today"
+  cleaningOptions?: string[]     // e.g. ["Full Clean", "With Skin", "Without Skin"]
+  cutTypes?: string[]            // e.g. ["Whole", "Curry Cut", "Boneless", "Keema"]
+  marinade?: string[]            // e.g. ["Plain", "Tandoori", "Pepper Garlic"]
+  isHalal?: boolean
+  isOrganic?: boolean
+}
+
+// Inline image with fallback
+function ProductImage({ src, alt, catColor }: { src?: string; alt: string; catColor: string }) {
+  const [error, setError] = useState(false)
+  if (src && !error) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className="w-full h-full object-cover"
+        onError={() => setError(true)}
+      />
+    )
+  }
+  return (
+    <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: `${catColor}10` }}>
+      <Leaf className="w-20 h-20 text-gray-200" />
+    </div>
+  )
+}
+
+// Single-select pill row for meat options
+function OptionSelector({
+  label,
+  icon: Icon,
+  options,
+  value,
+  onChange,
+  brandColor,
+}: {
+  label: string
+  icon: React.ElementType
+  options: string[]
+  value: string | null
+  onChange: (v: string) => void
+  brandColor: string
+}) {
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-1.5 mb-2">
+        <Icon className="w-3.5 h-3.5 text-gray-400" />
+        <p className="text-xs font-semibold text-gray-600">{label}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {options.map((opt) => {
+          const active = value === opt
+          return (
+            <button
+              key={opt}
+              onClick={() => onChange(opt)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+              style={active
+                ? { borderColor: brandColor, backgroundColor: `${brandColor}12`, color: brandColor }
+                : { borderColor: '#e5e7eb', color: '#4b5563' }
+              }
+            >
+              {opt}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export function CustomerProductDetail() {
-  const { selectedProductId, setSelectedProductId, setCustomerPage, currentBusinessType, currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
-  const brandColor = currentBusinessPrimaryColor || "#10B981"
+  const {
+    selectedProductId, setSelectedProductId, setCustomerPage,
+    currentBusinessType, currentBusinessId, currentBusinessPrimaryColor,
+  } = useAdminStore()
+  const brandColor = currentBusinessPrimaryColor || "#E53E3E"
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
+
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [isWishlisted, setIsWishlisted] = useState(false)
+  const [selectedCleaning, setSelectedCleaning] = useState<string | null>(null)
+  const [selectedCutType, setSelectedCutType] = useState<string | null>(null)
+  const [selectedMarinade, setSelectedMarinade] = useState<string | null>(null)
 
   const BIZ_ID = currentBusinessId || ""
 
@@ -26,123 +110,85 @@ export function CustomerProductDetail() {
     if (BIZ_ID) setBusinessContext(BIZ_ID)
   }, [BIZ_ID])
 
-  // Fetch single product by ID
   const { data: productData, isLoading: productLoading, error: productError, refetch } = useProduct(selectedProductId || "")
-
-  // Fetch related products (same business, for similar products)
   const { data: relatedData } = useProducts(BIZ_ID, { limit: 20 })
 
-  // Demo product from business context (business-type-aware)
   const demoProduct = useMemo(() => {
     const allDemoProducts = getDemoProducts(currentBusinessType)
     const found = allDemoProducts.find((p) => p.id === selectedProductId)
     if (!found) return null
     return {
-      id: found.id,
-      name: found.name,
-      categoryId: found.categoryId,
-      category: found.category,
-      status: found.status,
-      isVeg: found.isVeg,
-      isFeatured: found.isFeatured,
-      image: found.image,
-      shortDesc: null as string | null,
+      id: found.id, name: found.name, categoryId: found.categoryId,
+      category: found.category, status: found.status,
+      isVeg: found.isVeg, isFeatured: found.isFeatured,
+      images: found.image ? [found.image] : [],
+      shortDesc: null as string | null, meta: null as MeatMeta | null,
       variants: found.variants.map((v) => ({
-        id: v.id,
-        name: v.name,
-        price: v.price,
-        mrp: v.mrp,
-        stock: v.stock as number | undefined,
-        isDefault: v.isDefault as boolean | undefined,
+        id: v.id, name: v.name, price: v.price, mrp: v.mrp,
+        stock: v.stock as number | undefined, isDefault: v.isDefault as boolean | undefined,
       })),
     }
   }, [currentBusinessType, selectedProductId])
 
-  // Parse product from API
   const apiProduct = useMemo(() => {
     if (!productData?.data) return null
     const p = productData.data as unknown as Record<string, unknown>
+    let meta: MeatMeta | null = null
+    try {
+      const raw = p.metadata
+      if (typeof raw === "string") meta = JSON.parse(raw) as MeatMeta
+      else if (raw && typeof raw === "object") meta = raw as MeatMeta
+    } catch { /* ignore */ }
+
     return {
-      id: p.id as string,
-      name: p.name as string,
+      id: p.id as string, name: p.name as string,
       categoryId: (p.category as Record<string, string>)?.id || "",
       category: (p.category as Record<string, string>)?.name || "",
-      status: p.status as string,
-      isVeg: p.isVeg as boolean | null,
+      status: p.status as string, isVeg: p.isVeg as boolean | null,
       isFeatured: p.isFeatured as boolean,
-      image: Array.isArray(p.images) && p.images.length > 0 ? (p.images[0] as string) : "",
-      shortDesc: p.shortDesc as string | null,
+      images: Array.isArray(p.images) ? (p.images as string[]) : [],
+      shortDesc: p.shortDesc as string | null, meta,
       variants: Array.isArray(p.variants)
         ? (p.variants as Array<Record<string, unknown>>).map((v) => ({
-            id: v.id as string,
-            name: v.name as string,
-            price: v.price as number,
-            mrp: v.mrp as number,
-            stock: v.stock as number | undefined,
-            isDefault: v.isDefault as boolean | undefined,
+            id: v.id as string, name: v.name as string,
+            price: v.price as number, mrp: v.mrp as number,
+            stock: v.stock as number | undefined, isDefault: v.isDefault as boolean | undefined,
           }))
         : [],
     }
   }, [productData])
 
-  // Merge: prefer demo product, fall back to API
   const product = demoProduct || apiProduct
 
   const activeVariant = useMemo(() => {
     if (!product) return null
-    if (selectedVariantId) {
-      return product.variants.find((v) => v.id === selectedVariantId) || product.variants[0]
-    }
+    if (selectedVariantId) return product.variants.find((v) => v.id === selectedVariantId) || product.variants[0]
     return product.variants.find((v) => v.isDefault) || product.variants[0]
   }, [product, selectedVariantId])
 
-  const catColor = useMemo(() => {
-    if (!product) return "#10B981"
-    // Simple color mapping by category name
-    const colorMap: Record<string, string> = {
-      "Fruits & Vegetables": "#10B981",
-      "Dairy & Eggs": "#3B82F6",
-      "Bakery": "#F59E0B",
-      "Snacks & Chips": "#EF4444",
-      "Beverages": "#8B5CF6",
-      "Rice & Grains": "#D97706",
-      "Spices & Masala": "#DC2626",
-      "Personal Care": "#EC4899",
-      "Cleaning": "#0891B2",
-      "Frozen Foods": "#6366F1",
-    }
-    return colorMap[product.category] || "#10B981"
-  }, [product])
-
+  const meta = product?.meta
   const savings = activeVariant ? activeVariant.mrp - activeVariant.price : 0
   const savingsPercent = activeVariant ? Math.round((savings / activeVariant.mrp) * 100) : 0
-
   const cartItem = product && activeVariant
     ? items.find((i) => i.productId === product.id && i.variantId === activeVariant.id)
     : null
   const cartQty = cartItem?.quantity || 0
+  const isOutOfStock = product?.status === "OUT_OF_STOCK" || (activeVariant?.stock !== undefined && activeVariant.stock === 0)
 
-  // Related products — prefer demo data, fall back to API
   const relatedProducts = useMemo(() => {
     if (!product) return []
-    // Try demo products first
     const demoRelated = getDemoProducts(currentBusinessType)
       .filter((p) => p.categoryId === product.categoryId && p.id !== product.id && p.status === "ACTIVE")
       .slice(0, 4)
       .map((p) => ({
-        id: p.id,
-        name: p.name,
-        category: p.category,
+        id: p.id, name: p.name, category: p.category,
+        image: p.image || "",
         variants: p.variants.map((v) => ({
-          id: v.id,
-          name: v.name,
-          price: v.price,
-          mrp: v.mrp,
+          id: v.id, name: v.name, price: v.price, mrp: v.mrp,
           isDefault: v.isDefault as boolean | undefined,
         })),
       }))
     if (demoRelated.length > 0) return demoRelated
-    // Fall back to API data
     if (!relatedData?.data) return []
     const prods = (Array.isArray(relatedData.data) ? relatedData.data : []) as unknown as Record<string, unknown>[]
     return prods
@@ -152,20 +198,26 @@ export function CustomerProductDetail() {
       })
       .slice(0, 4)
       .map((p) => ({
-        id: p.id as string,
-        name: p.name as string,
+        id: p.id as string, name: p.name as string,
         category: (p.category as Record<string, string>)?.name || "",
+        image: Array.isArray(p.images) ? (p.images[0] as string || "") : "",
         variants: Array.isArray(p.variants)
           ? (p.variants as Array<Record<string, unknown>>).map((v) => ({
-              id: v.id as string,
-              name: v.name as string,
-              price: v.price as number,
-              mrp: v.mrp as number,
+              id: v.id as string, name: v.name as string,
+              price: v.price as number, mrp: v.mrp as number,
               isDefault: v.isDefault as boolean | undefined,
             }))
           : [],
       }))
   }, [product, relatedData, currentBusinessType])
+
+  const buildOptionsLabel = () => {
+    const parts: string[] = []
+    if (selectedCutType) parts.push(selectedCutType)
+    if (selectedCleaning) parts.push(selectedCleaning)
+    if (selectedMarinade) parts.push(selectedMarinade)
+    return parts.length > 0 ? ` (${parts.join(", ")})` : ""
+  }
 
   const handleAddToCart = () => {
     if (!product || !activeVariant) return
@@ -173,43 +225,30 @@ export function CustomerProductDetail() {
       productId: product.id,
       variantId: activeVariant.id,
       name: product.name,
-      variantName: activeVariant.name,
+      variantName: `${activeVariant.name}${buildOptionsLabel()}`,
       price: activeVariant.price,
       mrp: activeVariant.mrp,
-      image: product.image,
+      image: product.images[0] || "",
       isVeg: product.isVeg ?? true,
     })
     setQuantity(1)
   }
 
-  const handleBack = () => {
-    setSelectedProductId(null)
-    setCustomerPage("products")
-  }
+  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
-  const handleRelatedClick = (productId: string) => {
-    setSelectedProductId(productId)
-    setSelectedVariantId(null)
-    setQuantity(1)
+  const handleBack = () => { setSelectedProductId(null); setCustomerPage("products") }
+  const handleRelatedClick = (id: string) => {
+    setSelectedProductId(id); setSelectedVariantId(null); setQuantity(1)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
-  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
-
-  const isOutOfStock = product?.status === "OUT_OF_STOCK" || (activeVariant?.stock !== undefined && activeVariant.stock === 0)
-
-  // Loading state
   if (productLoading) {
     return (
       <div className="pb-20">
         <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 py-2 border-b border-gray-100">
           <Skeleton className="w-9 h-9 rounded-full" />
-          <div className="flex gap-2">
-            <Skeleton className="w-9 h-9 rounded-full" />
-            <Skeleton className="w-9 h-9 rounded-full" />
-          </div>
         </div>
-        <Skeleton className="h-56 w-full" />
+        <Skeleton className="h-64 w-full" />
         <div className="px-4 pt-4 space-y-4">
           <Skeleton className="h-5 w-1/3" />
           <Skeleton className="h-7 w-3/4" />
@@ -220,7 +259,6 @@ export function CustomerProductDetail() {
     )
   }
 
-  // Error state
   if (productError || !product || !activeVariant) {
     return (
       <div className="pb-20">
@@ -231,7 +269,7 @@ export function CustomerProductDetail() {
         </div>
         <ErrorState
           title="Product not found"
-          description="We couldn't load this product. It may have been removed or is temporarily unavailable."
+          description="This product may have been removed or is temporarily unavailable."
           onRetry={() => refetch()}
           className="py-20"
         />
@@ -240,13 +278,10 @@ export function CustomerProductDetail() {
   }
 
   return (
-    <div className="pb-20">
+    <div className="pb-24">
       {/* Top Bar */}
-      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 py-2 border-b border-gray-100">
-        <button
-          onClick={handleBack}
-          className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-        >
+      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm flex items-center justify-between px-4 py-2 border-b border-gray-100">
+        <button onClick={handleBack} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-700" />
         </button>
         <div className="flex items-center gap-2">
@@ -263,59 +298,103 @@ export function CustomerProductDetail() {
       </div>
 
       {/* Product Image */}
-      <div
-        className="h-56 flex items-center justify-center relative"
-        style={{ backgroundColor: `${catColor}10` }}
-      >
-        <Leaf className="w-20 h-20 text-gray-300" />
-        {product.isVeg && (
-          <div className="absolute top-3 left-3 w-5 h-5 border-2 border-green-600 flex items-center justify-center rounded-sm bg-white">
-            <div className="w-3 h-3 bg-green-600 rounded-full" />
+      <div className="relative h-64 bg-gray-50 overflow-hidden">
+        <ProductImage src={product.images[0]} alt={product.name} catColor={brandColor} />
+        {/* Veg / Non-veg indicator */}
+        <div className="absolute top-3 left-3">
+          <div className={`w-5 h-5 border-2 flex items-center justify-center rounded-sm bg-white ${product.isVeg ? "border-green-600" : "border-red-600"}`}>
+            <div className={`w-3 h-3 rounded-full ${product.isVeg ? "bg-green-600" : "bg-red-600"}`} />
+          </div>
+        </div>
+        {/* Freshness tag */}
+        {meta?.freshnessTag && (
+          <div className="absolute top-3 right-3 flex items-center gap-1 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1 shadow-sm">
+            <Sparkles className="w-3 h-3 text-amber-500" />
+            <span className="text-[11px] font-semibold text-gray-700">{meta.freshnessTag}</span>
+          </div>
+        )}
+        {/* Halal / Organic badges */}
+        {(meta?.isHalal || meta?.isOrganic) && (
+          <div className="absolute bottom-3 left-3 flex gap-1.5">
+            {meta.isHalal && (
+              <span className="bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">HALAL</span>
+            )}
+            {meta.isOrganic && (
+              <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">ORGANIC</span>
+            )}
           </div>
         )}
         {isOutOfStock && (
-          <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-            <span className="text-sm font-bold text-gray-500 bg-gray-200 px-4 py-2 rounded-lg">Out of Stock</span>
+          <div className="absolute inset-0 bg-white/75 flex items-center justify-center">
+            <span className="text-sm font-bold text-gray-500 bg-gray-100 px-4 py-2 rounded-xl border">Out of Stock</span>
           </div>
         )}
       </div>
 
       {/* Product Info */}
       <div className="px-4 pt-4">
-        <div className="flex items-start justify-between mb-1">
-          <div className="flex-1">
-            <Badge variant="outline" className="text-[10px] mb-1.5" style={{ borderColor: catColor, color: catColor }}>
-              {product.category}
-            </Badge>
-            <h1 className="text-lg font-bold text-gray-900">{product.name}</h1>
-          </div>
-        </div>
+        <Badge variant="outline" className="text-[10px] mb-1.5" style={{ borderColor: brandColor, color: brandColor }}>
+          {product.category}
+        </Badge>
+        <h1 className="text-lg font-bold text-gray-900">{product.name}</h1>
 
-        {/* Variant Selector */}
+        {product.shortDesc && (
+          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{product.shortDesc}</p>
+        )}
+
+        {/* Weight / Variant Selector */}
         {product.variants.length > 1 && (
           <div className="mt-3">
-            <p className="text-xs font-medium text-gray-500 mb-2">Select Size</p>
+            <p className="text-xs font-semibold text-gray-600 mb-2">Select Weight</p>
             <div className="flex flex-wrap gap-2">
-              {product.variants.map((variant) => (
-                <button
-                  key={variant.id}
-                  onClick={() => {
-                    setSelectedVariantId(variant.id)
-                    setQuantity(1)
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                    variant.id === activeVariant.id
-                      ? ""
-                      : "border-gray-200 text-gray-600 hover:border-gray-300"
-                  }`}
-                  style={variant.id === activeVariant.id ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : undefined}
-                >
-                  {variant.name}
-                  <span className="ml-1 text-[10px] opacity-70">{formatPrice(variant.price)}</span>
-                </button>
-              ))}
+              {product.variants.map((variant) => {
+                const active = variant.id === activeVariant.id
+                return (
+                  <button
+                    key={variant.id}
+                    onClick={() => { setSelectedVariantId(variant.id); setQuantity(1) }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+                    style={active ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : undefined}
+                  >
+                    {variant.name}
+                    <span className="ml-1 text-[10px] opacity-70">{formatPrice(variant.price)}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
+        )}
+
+        {/* Meat-Specific Selectors */}
+        {meta?.cutTypes && meta.cutTypes.length > 0 && (
+          <OptionSelector
+            label="Cut Type"
+            icon={Scissors}
+            options={meta.cutTypes}
+            value={selectedCutType}
+            onChange={setSelectedCutType}
+            brandColor={brandColor}
+          />
+        )}
+        {meta?.cleaningOptions && meta.cleaningOptions.length > 0 && (
+          <OptionSelector
+            label="Cleaning"
+            icon={Droplets}
+            options={meta.cleaningOptions}
+            value={selectedCleaning}
+            onChange={setSelectedCleaning}
+            brandColor={brandColor}
+          />
+        )}
+        {meta?.marinade && meta.marinade.length > 0 && (
+          <OptionSelector
+            label="Marinade"
+            icon={ChefHat}
+            options={meta.marinade}
+            value={selectedMarinade}
+            onChange={setSelectedMarinade}
+            brandColor={brandColor}
+          />
         )}
 
         {/* Price */}
@@ -331,13 +410,13 @@ export function CustomerProductDetail() {
           )}
         </div>
         {savings > 0 && (
-          <p className="text-xs font-medium mt-1" style={{ color: brandColor }}>
+          <p className="text-xs font-medium mt-0.5" style={{ color: brandColor }}>
             You save {formatPrice(savings)} on this item
           </p>
         )}
 
-        {/* Stock */}
-        <div className="mt-3 flex items-center gap-1.5">
+        {/* Stock status */}
+        <div className="mt-2 flex items-center gap-1.5">
           <div
             className={`w-2 h-2 rounded-full ${isOutOfStock ? "bg-red-500" : (activeVariant.stock !== undefined && activeVariant.stock < 10) ? "bg-amber-500" : ""}`}
             style={!isOutOfStock && !(activeVariant.stock !== undefined && activeVariant.stock < 10) ? { backgroundColor: brandColor } : undefined}
@@ -354,7 +433,7 @@ export function CustomerProductDetail() {
             <div className="flex items-center gap-0 border border-gray-200 rounded-lg overflow-hidden">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-40"
                 disabled={quantity <= 1}
               >
                 <Minus className="w-4 h-4 text-gray-500" />
@@ -372,15 +451,15 @@ export function CustomerProductDetail() {
           </div>
         )}
 
-        {/* Delivery Info */}
+        {/* Delivery Info Badges */}
         <div className="mt-5 grid grid-cols-3 gap-3">
           <div className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3">
             <Truck className="w-5 h-5" style={{ color: brandColor }} />
             <span className="text-[10px] text-gray-600 text-center">Free delivery above ₹500</span>
           </div>
           <div className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3">
-            <Clock className="w-5 h-5" style={{ color: brandColor }} />
-            <span className="text-[10px] text-gray-600 text-center">30 min delivery</span>
+            <Flame className="w-5 h-5" style={{ color: brandColor }} />
+            <span className="text-[10px] text-gray-600 text-center">Same day fresh cuts</span>
           </div>
           <div className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3">
             <ShieldCheck className="w-5 h-5" style={{ color: brandColor }} />
@@ -391,36 +470,25 @@ export function CustomerProductDetail() {
         {/* Related Products */}
         {relatedProducts.length > 0 && (
           <div className="mt-6">
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Similar Products</h3>
+            <h3 className="text-sm font-bold text-gray-900 mb-3">You May Also Like</h3>
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
               {relatedProducts.map((rp) => {
                 const rpVariant = rp.variants.find((v) => v.isDefault) || rp.variants[0]
                 if (!rpVariant) return null
-                const rpColorMap: Record<string, string> = {
-                  "Fruits & Vegetables": "#10B981",
-                  "Dairy & Eggs": "#3B82F6",
-                  "Bakery": "#F59E0B",
-                  "Snacks & Chips": "#EF4444",
-                  "Beverages": "#8B5CF6",
-                  "Rice & Grains": "#D97706",
-                  "Spices & Masala": "#DC2626",
-                  "Personal Care": "#EC4899",
-                  "Cleaning": "#0891B2",
-                  "Frozen Foods": "#6366F1",
-                }
-                const rpColor = rpColorMap[rp.category] || "#10B981"
-
                 return (
                   <button
                     key={rp.id}
                     onClick={() => handleRelatedClick(rp.id)}
-                    className="flex-shrink-0 w-32 bg-white border border-gray-100 rounded-xl overflow-hidden"
+                    className="flex-shrink-0 w-32 bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm"
                   >
-                    <div
-                      className="h-24 flex items-center justify-center"
-                      style={{ backgroundColor: `${rpColor}10` }}
-                    >
-                      <Leaf className="w-8 h-8 text-gray-300" />
+                    <div className="h-24 bg-gray-50 overflow-hidden">
+                      {rp.image ? (
+                        <img src={rp.image} alt={rp.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Leaf className="w-8 h-8 text-gray-200" />
+                        </div>
+                      )}
                     </div>
                     <div className="p-2">
                       <p className="text-[11px] font-medium text-gray-800 line-clamp-1">{rp.name}</p>
@@ -437,11 +505,11 @@ export function CustomerProductDetail() {
 
       {/* Sticky Add to Cart */}
       {!isOutOfStock && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-200 p-3 z-40">
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-100 p-3 z-40 shadow-lg">
           {cartQty === 0 ? (
             <Button
               onClick={handleAddToCart}
-              className="w-full h-11 text-sm font-bold rounded-xl text-white"
+              className="w-full h-11 text-sm font-bold rounded-xl text-white shadow-md"
               style={{ backgroundColor: brandColor }}
             >
               <Plus className="w-4 h-4 mr-2" />

@@ -176,6 +176,8 @@ const CustomerOrderTracking = dynamic(() => import("@/components/customer/orders
 const CustomerProfile = dynamic(() => import("@/components/customer/profile/customer-profile").then(m => ({ default: m.CustomerProfile })), { loading: () => <PageLoader /> })
 const CustomerOrders = dynamic(() => import("@/components/customer/orders/customer-orders").then(m => ({ default: m.CustomerOrders })), { loading: () => <PageLoader /> })
 const CustomerAddresses = dynamic(() => import("@/components/customer/addresses/customer-addresses").then(m => ({ default: m.CustomerAddresses })), { loading: () => <PageLoader /> })
+const CustomerNotifications = dynamic(() => import("@/components/customer/notifications/customer-notifications").then(m => ({ default: m.CustomerNotifications })), { loading: () => <PageLoader /> })
+const CustomerSupport = dynamic(() => import("@/components/customer/support/customer-support").then(m => ({ default: m.CustomerSupport })), { loading: () => <PageLoader /> })
 
 // ── Storefront Shell (lazy) ───────────────────────────────────────────────
 const StorefrontShell = dynamic(() => import("@/components/storefront/storefront-shell").then(m => ({ default: m.StorefrontShell })), { loading: () => <PageLoader /> })
@@ -382,7 +384,8 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "profile": return <CustomerProfile />
       case "orders": return <CustomerOrders />
       case "addresses": return <CustomerAddresses />
-      case "support": return <CustomerProfile />
+      case "notifications": return <CustomerNotifications />
+      case "support": return <CustomerSupport />
       default: return <CustomerHome />
     }
   }

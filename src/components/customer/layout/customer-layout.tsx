@@ -37,7 +37,7 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
     if (customerPage === "products" || customerPage === "product-detail") return "categories"
     if (customerPage === "cart" || customerPage === "checkout") return "cart"
     if (customerPage === "orders" || customerPage === "order-tracking") return "orders"
-    if (customerPage === "profile" || customerPage === "addresses" || customerPage === "support") return "profile"
+    if (customerPage === "profile" || customerPage === "addresses" || customerPage === "support" || customerPage === "notifications") return "profile"
     return "home"
   }
 
@@ -71,6 +71,7 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
               <button
                 className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
                 aria-label="Notifications"
+                onClick={() => navigate("notifications")}
               >
                 <Bell className="w-5 h-5" />
               </button>

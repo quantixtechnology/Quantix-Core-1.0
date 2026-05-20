@@ -94,6 +94,7 @@ export type CustomerPage =
   | "orders"
   | "addresses"
   | "support"
+  | "notifications"
 
 export type DeliveryPage =
   | "login"
