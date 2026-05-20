@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, Suspense } from "react"
+import { useEffect, Suspense, useState } from "react"
 import dynamic from "next/dynamic"
 import { useSearchParams } from "next/navigation"
 import { AuthProvider } from "@/components/auth/auth-provider"
@@ -14,23 +14,33 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { ErrorBoundary } from "@/components/error/error-boundary"
 
-// ── Storefront subdomain detector ────────────────────────────────────────
-// Reads ?_storefront=<slug> injected by next.config.ts rewrites when
-// a visitor lands on <slug>.quantixtechnology.in. Fetches store-context and
-// switches the app into customer mode for that business.
-function StorefrontParamDetector() {
-  const searchParams = useSearchParams()
-  const slug = searchParams.get("_storefront")
+// ── Storefront context loader ─────────────────────────────────────────────
+// Receives slug directly (no useSearchParams needed here).
+// Fetches store-context and hydrates business/store state + sets viewMode.
+// Does NOT bail out on isAuthenticated — authenticated customers (CUSTOMER role)
+// must also load store context. Platform/business admins are handled separately
+// by the auth effect in AppContent.
+function StorefrontContextLoader({
+  slug,
+  onNotFound,
+}: {
+  slug: string
+  onNotFound: () => void
+}) {
   const { setCurrentBusiness, setViewMode, setCurrentStoreId, setCurrentStoreName, setCurrentBusinessPrimaryColor } = useAdminStore()
   const { setCartStoreId, setStoreContext } = useCartStore()
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, currentRole } = useAuthStore()
 
   useEffect(() => {
-    if (!slug || isAuthenticated) return
+    // Platform/business admins visiting a storefront URL keep their admin session
+    const isAdminSession = isAuthenticated && currentRole &&
+      !['CUSTOMER', 'DELIVERY_STAFF'].includes(currentRole)
+    if (isAdminSession) return
+
     fetch(`/api/core/storefront/store-context?slug=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((json) => {
-        if (!json.success || !json.data?.business) return
+        if (!json.success || !json.data?.business) { onNotFound(); return }
         const biz = json.data.business
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
         if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
@@ -43,9 +53,9 @@ function StorefrontParamDetector() {
         }
         setViewMode("customer")
       })
-      .catch(() => {/* non-fatal */})
+      .catch(() => { onNotFound() })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, isAuthenticated])
+  }, [slug, isAuthenticated, currentRole])
 
   return null
 }
@@ -188,19 +198,47 @@ const PaymentPluginsView = dynamic(() => import("@/components/admin/payment-plug
 const GatewayConfigView = dynamic(() => import("@/components/business/payment/gateway-config-view").then(m => ({ default: m.GatewayConfigView })), { loading: () => <PageLoader /> })
 const POSEnterprise = dynamic(() => import("@/components/business/pos/pos-enterprise").then(m => ({ default: m.POSEnterprise })), { loading: () => <PageLoader /> })
 
+// ── Top-level routing ────────────────────────────────────────────────────
+// AppRouter reads ?_storefront via useSearchParams() SYNCHRONOUSLY before
+// any layout renders. This eliminates the admin login flash entirely:
+// the slug is known at first render, so the correct layout is chosen
+// before the browser paints anything.
+//
+// Suspense fallback shows a spinner (not the login page) while the
+// client-side router initialises, which takes <100 ms.
 export default function Home() {
   return (
     <AuthProvider>
-      <AppContent />
+      <Suspense fallback={<SplashLoader />}>
+        <AppRouter />
+      </Suspense>
     </AuthProvider>
   )
 }
 
+function SplashLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+    </div>
+  )
+}
+
+// Reads the slug from the URL synchronously via useSearchParams.
+// Passes it into AppContent so the correct layout is known at render time.
+function AppRouter() {
+  const searchParams = useSearchParams()
+  const storefrontSlug = searchParams.get("_storefront")
+  return <AppContent storefrontSlug={storefrontSlug} />
+}
+
 const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF"])
 
-function AppContent() {
+function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
+
+  const [storefrontNotFound, setStorefrontNotFound] = useState(false)
 
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
@@ -360,14 +398,48 @@ function AppContent() {
     }
   }
 
+  // ── Storefront subdomain request ────────────────────────────────────────
+  // storefrontSlug is set synchronously via useSearchParams() in AppRouter,
+  // so this branch runs on the very first render — before any admin layout
+  // is painted. Platform/business admins (auth hydrated, non-customer role)
+  // fall through to the normal admin layout below.
+  if (storefrontSlug) {
+    const isAdminSession = _isHydrated && isAuthenticated && currentRole &&
+      !['CUSTOMER', 'DELIVERY_STAFF'].includes(currentRole)
+
+    if (!isAdminSession) {
+      if (storefrontNotFound) {
+        return (
+          <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-gray-50 text-center px-4">
+            <div className="text-5xl">🏪</div>
+            <h1 className="text-2xl font-bold text-gray-800">Store Not Found</h1>
+            <p className="text-gray-500 max-w-sm">
+              <strong>{storefrontSlug}</strong> doesn&apos;t exist or is not active yet.
+              If you&apos;re the owner, log in to the admin panel to activate your storefront.
+            </p>
+          </div>
+        )
+      }
+      return (
+        <>
+          <StorefrontContextLoader
+            slug={storefrontSlug}
+            onNotFound={() => setStorefrontNotFound(true)}
+          />
+          <CustomerLayout>
+            {viewMode === "customer" ? renderCustomerPage() : <SplashLoader />}
+          </CustomerLayout>
+        </>
+      )
+    }
+  }
+
+  // ── Standard SPA routing ─────────────────────────────────────────────────
   if (viewMode === "customer") {
     return (
-      <>
-        <Suspense fallback={null}><StorefrontParamDetector /></Suspense>
-        <CustomerLayout>
-          {renderCustomerPage()}
-        </CustomerLayout>
-      </>
+      <CustomerLayout>
+        {renderCustomerPage()}
+      </CustomerLayout>
     )
   }
 
@@ -390,11 +462,8 @@ function AppContent() {
   }
 
   return (
-    <>
-      <Suspense fallback={null}><StorefrontParamDetector /></Suspense>
-      <AdminLayout>
-        {renderSuperAdminPage()}
-      </AdminLayout>
-    </>
+    <AdminLayout>
+      {renderSuperAdminPage()}
+    </AdminLayout>
   )
 }
