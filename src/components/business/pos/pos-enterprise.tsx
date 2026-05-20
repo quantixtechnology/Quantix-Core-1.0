@@ -46,6 +46,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { showSuccess, showError } from "@/lib/toast-utils"
+import { calculatePOSCart } from "@/lib/core/pos"
 
 // ─── Core Types ───────────────────────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ interface Product {
 interface CartItem {
   productId: string; variantId: string; productName: string; variantName: string
   quantity: number; unitPrice: number; mrp: number; discountPrice: number | null
+  gstRate?: number
   meta?: Record<string, string | number | boolean>
 }
 
@@ -919,7 +921,7 @@ export function POSEnterprise() {
     setCart((prev) => {
       const idx = prev.findIndex((i) => i.productId === product.id && i.variantId === variant.id)
       if (idx >= 0) return prev.map((item, i) => i === idx ? { ...item, quantity: item.quantity + 1 } : item)
-      return [...prev, { productId: product.id, variantId: variant.id, productName: product.name, variantName: variant.name, quantity: 1, unitPrice: variant.price, mrp: variant.mrp, discountPrice: variant.discountPrice, meta: meta as CartItem["meta"] }]
+      return [...prev, { productId: product.id, variantId: variant.id, productName: product.name, variantName: variant.name, quantity: 1, unitPrice: variant.price, mrp: variant.mrp, discountPrice: variant.discountPrice, gstRate: Number(product.metadata?.tax ?? 0), meta: meta as CartItem["meta"] }]
     })
   }, [])
 
@@ -950,9 +952,18 @@ export function POSEnterprise() {
   }, [cart.length])
 
   // Totals
-  const subtotal = cart.reduce((s, item) => s + (item.discountPrice ?? item.unitPrice) * item.quantity, 0)
-  const gstAmount = subtotal * 0.05
-  const grandTotal = subtotal + gstAmount
+  const cartSummary = calculatePOSCart({
+    items: cart.map(i => ({
+      productId: i.productId, variantId: i.variantId,
+      productName: i.productName, variantName: i.variantName,
+      quantity: i.quantity, unitPrice: i.unitPrice, mrp: i.mrp,
+      discountPrice: i.discountPrice ?? undefined, gstRate: i.gstRate ?? 0,
+    })),
+    isInterState: false,
+  })
+  const subtotal  = cartSummary.subtotal
+  const gstAmount = cartSummary.totalTax
+  const grandTotal = cartSummary.totalAmount
 
   // Payment state
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -1003,6 +1014,7 @@ export function POSEnterprise() {
             quantity: i.quantity,
             unitPrice: i.discountPrice ?? i.unitPrice,
             mrp: i.mrp,
+            gstRate: i.gstRate,
           })),
         }),
       })
@@ -1196,7 +1208,7 @@ export function POSEnterprise() {
             <span className="tabular-nums">{formatCurrency(subtotal)}</span>
           </div>
           <div className="flex justify-between text-[10px] text-muted-foreground">
-            <span>GST 5%</span>
+            <span>GST</span>
             <span className="tabular-nums">{formatCurrency(gstAmount)}</span>
           </div>
           <Separator />

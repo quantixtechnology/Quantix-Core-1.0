@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from '@/components/ui/card'
@@ -8,51 +9,192 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Receipt, IndianRupee, CheckCircle2, AlertTriangle,
-  Shield, Download,
+  Shield, Download, Loader2, Building2,
 } from 'lucide-react'
+import { useBusinessContext } from '@/hooks/use-business-context'
+import { getAuthHeaders } from '@/lib/admin-fetch'
 
-const stats = [
-  { label: 'GST Configured', value: '3 rates', icon: Receipt, color: 'text-emerald-600 bg-emerald-50' },
-  { label: 'Tax Collected', value: '₹45,200', icon: IndianRupee, color: 'text-blue-600 bg-blue-50' },
-  { label: 'Monthly Filing', value: 'Filed', icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-  { label: 'Compliance', value: '100%', icon: Shield, color: 'text-purple-600 bg-purple-50' },
-]
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const gstRates = [
-  { rate: '5%', categories: ['Essential Groceries', 'Packaged Food', 'Dairy Products'], products: 42, color: 'bg-emerald-100 text-emerald-700' },
-  { rate: '12%', categories: ['Processed Food', 'Beverages', 'Frozen Items'], products: 28, color: 'bg-blue-100 text-blue-700' },
-  { rate: '18%', categories: ['Personal Care', 'Household Items', 'Snacks'], products: 35, color: 'bg-amber-100 text-amber-700' },
-  { rate: '28%', categories: ['Premium Items', 'Luxury Goods'], products: 8, color: 'bg-red-100 text-red-700' },
-]
+interface TaxSettings {
+  gstEnabled: boolean
+  hsnEnabled: boolean
+  inclusivePricing: boolean
+  autoTaxCalculation: boolean
+  categoryTaxMap: Record<string, { gstRate: number; hsnCode: string }>
+}
 
-const monthlySummary = [
-  { month: 'Jul 2024', taxable: '₹2,84,500', cgst: '₹25,605', sgst: '₹25,605', igst: '₹0', total: '₹51,210', filed: true },
-  { month: 'Jun 2024', taxable: '₹2,56,800', cgst: '₹23,112', sgst: '₹23,112', igst: '₹1,200', total: '₹47,424', filed: true },
-  { month: 'May 2024', taxable: '₹2,31,200', cgst: '₹20,808', sgst: '₹20,808', igst: '₹0', total: '₹41,616', filed: true },
-  { month: 'Apr 2024', taxable: '₹2,45,600', cgst: '₹22,104', sgst: '₹22,104', igst: '₹800', total: '₹45,008', filed: true },
-  { month: 'Mar 2024', taxable: '₹2,67,400', cgst: '₹24,066', sgst: '₹24,066', igst: '₹0', total: '₹48,132', filed: true },
-  { month: 'Feb 2024', taxable: '₹2,12,900', cgst: '₹19,161', sgst: '₹19,161', igst: '₹500', total: '₹38,822', filed: true },
-]
+interface TaxConfigSlab {
+  id: string
+  name: string
+  rate: number
+  description?: string | null
+}
 
-const recentFilings = [
-  { period: 'GSTR-1 Jul 2024', type: 'GSTR-1', dueDate: '11 Aug 2024', filedDate: '9 Aug 2024', status: 'filed' },
-  { period: 'GSTR-3B Jul 2024', type: 'GSTR-3B', dueDate: '20 Aug 2024', filedDate: '18 Aug 2024', status: 'filed' },
-  { period: 'GSTR-1 Jun 2024', type: 'GSTR-1', dueDate: '11 Jul 2024', filedDate: '10 Jul 2024', status: 'filed' },
-  { period: 'GSTR-3B Jun 2024', type: 'GSTR-3B', dueDate: '20 Jul 2024', filedDate: '19 Jul 2024', status: 'filed' },
-  { period: 'GSTR-1 Aug 2024', type: 'GSTR-1', dueDate: '11 Sep 2024', filedDate: '—', status: 'pending' },
-]
+interface MonthlyRow {
+  month: string
+  orderCount: number
+  taxableAmount: number
+  cgst: number
+  sgst: number
+  igst: number
+  totalTax: number
+}
 
-const configToggles = [
-  { key: 'gst_enabled', label: 'GST Enabled', desc: 'Apply GST on all invoices', enabled: true },
-  { key: 'hsn_sac', label: 'HSN/SAC Codes', desc: 'Show HSN codes on invoices', enabled: true },
-  { key: 'inclusive_pricing', label: 'Inclusive Pricing', desc: 'Display prices including tax', enabled: false },
-  { key: 'auto_tax', label: 'Auto Tax Calculation', desc: 'Automatically compute tax from product category', enabled: true },
+interface CurrentSummary {
+  orderCount: number
+  taxableAmount: number
+  cgst: number
+  sgst: number
+  igst: number
+  cess: number
+  totalTax: number
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmt(n: number) {
+  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
+
+function fmtDec(n: number) {
+  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function slabColor(rate: number) {
+  if (rate <= 5)  return 'bg-emerald-100 text-emerald-700'
+  if (rate <= 12) return 'bg-blue-100 text-blue-700'
+  if (rate <= 18) return 'bg-amber-100 text-amber-700'
+  return 'bg-red-100 text-red-700'
+}
+
+// GSTR filing due dates: GSTR-1 on 11th, GSTR-3B on 20th
+function computeFilings(): { period: string; type: string; dueDate: string; filed: boolean }[] {
+  const now   = new Date()
+  const month = now.getMonth()
+  const year  = now.getFullYear()
+  const filings: { period: string; type: string; dueDate: string; filed: boolean }[] = []
+
+  for (let i = 2; i >= 0; i--) {
+    const d       = new Date(year, month - i, 1)
+    const mLabel  = d.toLocaleString('en-IN', { month: 'short', year: 'numeric' })
+    const due1    = new Date(year, month - i + 1, 11)
+    const due3b   = new Date(year, month - i + 1, 20)
+    const fmt1    = due1.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    const fmt3b   = due3b.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    const filed1  = now > due1
+    const filed3b = now > due3b
+
+    filings.push({ period: `GSTR-1 ${mLabel}`,  type: 'GSTR-1',  dueDate: fmt1,  filed: filed1 })
+    filings.push({ period: `GSTR-3B ${mLabel}`, type: 'GSTR-3B', dueDate: fmt3b, filed: filed3b })
+  }
+
+  return filings.reverse().slice(0, 6)
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+const TOGGLE_DEFS = [
+  { key: 'gstEnabled'        as const, label: 'GST Enabled',          desc: 'Apply GST on all invoices' },
+  { key: 'hsnEnabled'        as const, label: 'HSN/SAC Codes',         desc: 'Show HSN codes on invoices' },
+  { key: 'inclusivePricing'  as const, label: 'Inclusive Pricing',     desc: 'Display prices including tax' },
+  { key: 'autoTaxCalculation'as const, label: 'Auto Tax Calculation',  desc: 'Automatically compute tax from product category' },
 ]
 
 export function TaxView() {
-  const [toggles, setToggles] = useState<Record<string, boolean>>(
-    Object.fromEntries(configToggles.map(t => [t.key, t.enabled]))
-  )
+  const { businessId } = useBusinessContext()
+  const queryClient    = useQueryClient()
+  const [savingToggle, setSavingToggle] = useState<string | null>(null)
+
+  // ── Data fetching ──────────────────────────────────────────────────────────
+
+  const { data: taxSettingsData, isLoading: loadingSettings } = useQuery({
+    queryKey: ['tax-settings', businessId],
+    queryFn: async () => {
+      const res  = await fetch(`/api/core/businesses/${businessId}/tax-settings`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      return json.data as {
+        businessName: string
+        gstNumber: string | null
+        state: string | null
+        taxSettings: TaxSettings
+      }
+    },
+    enabled: !!businessId,
+  })
+
+  const { data: taxSlabs = [], isLoading: loadingSlabs } = useQuery<TaxConfigSlab[]>({
+    queryKey: ['tax-config', businessId],
+    queryFn: async () => {
+      const res  = await fetch(`/api/core/businesses/${businessId}/tax-config`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      return (json.data ?? []) as TaxConfigSlab[]
+    },
+    enabled: !!businessId,
+  })
+
+  const { data: monthlyData = [], isLoading: loadingMonthly } = useQuery<MonthlyRow[]>({
+    queryKey: ['tax-report-monthly', businessId],
+    queryFn: async () => {
+      const res  = await fetch(`/api/core/businesses/${businessId}/reports/tax?groupByMonth=true`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      return (json.data?.monthly ?? []) as MonthlyRow[]
+    },
+    enabled: !!businessId,
+  })
+
+  const { data: currentSummary, isLoading: loadingSummary } = useQuery<CurrentSummary>({
+    queryKey: ['tax-report-current', businessId],
+    queryFn: async () => {
+      const now   = new Date()
+      const from  = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+      const res   = await fetch(`/api/core/businesses/${businessId}/reports/tax?from=${from}`, { headers: getAuthHeaders() })
+      const json  = await res.json()
+      return json.data?.summary as CurrentSummary
+    },
+    enabled: !!businessId,
+  })
+
+  // ── Toggle mutation ────────────────────────────────────────────────────────
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ key, value }: { key: keyof TaxSettings; value: boolean }) => {
+      const res = await fetch(`/api/core/businesses/${businessId}/tax-settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ [key]: value }),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tax-settings', businessId] })
+      setSavingToggle(null)
+    },
+    onError: () => setSavingToggle(null),
+  })
+
+  const handleToggle = useCallback((key: keyof TaxSettings, current: boolean) => {
+    setSavingToggle(key)
+    toggleMutation.mutate({ key, value: !current })
+  }, [toggleMutation])
+
+  // ── Computed stats ─────────────────────────────────────────────────────────
+
+  const taxSettings  = taxSettingsData?.taxSettings
+  const filings      = computeFilings()
+  const pendingCount = filings.filter(f => !f.filed).length
+  const totalMonthTax = currentSummary?.totalTax ?? 0
+
+  // ── Loading skeleton ───────────────────────────────────────────────────────
+
+  if (loadingSettings && loadingSlabs) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="animate-in fade-in duration-300 space-y-6">
@@ -65,17 +207,51 @@ export function TaxView() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map(s => (
-          <Card key={s.label} className="p-4">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${s.color}`}><s.icon className="size-4" /></div>
-              <div>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
-                <p className="text-xl font-bold">{s.value}</p>
-              </div>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg text-emerald-600 bg-emerald-50"><Receipt className="size-4" /></div>
+            <div>
+              <p className="text-xs text-muted-foreground">GST Slabs</p>
+              <p className="text-xl font-bold">
+                {loadingSlabs ? '—' : `${taxSlabs.length} rate${taxSlabs.length !== 1 ? 's' : ''}`}
+              </p>
             </div>
-          </Card>
-        ))}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg text-blue-600 bg-blue-50"><IndianRupee className="size-4" /></div>
+            <div>
+              <p className="text-xs text-muted-foreground">Tax This Month</p>
+              <p className="text-xl font-bold">
+                {loadingSummary ? '—' : fmt(totalMonthTax)}
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${pendingCount > 0 ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50'}`}>
+              {pendingCount > 0 ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Monthly Filing</p>
+              <p className="text-xl font-bold">{pendingCount > 0 ? 'Pending' : 'Filed'}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg text-purple-600 bg-purple-50"><Shield className="size-4" /></div>
+            <div>
+              <p className="text-xs text-muted-foreground">GST Status</p>
+              <p className="text-xl font-bold">{taxSettings?.gstEnabled ? 'Active' : 'Off'}</p>
+            </div>
+          </div>
+        </Card>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -85,33 +261,37 @@ export function TaxView() {
             <CardTitle className="text-sm font-semibold">GSTIN Details</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="p-4 rounded-lg border bg-muted/30">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs text-muted-foreground">GSTIN</span>
-                <Badge className="text-[10px] bg-emerald-100 text-emerald-700">
-                  <CheckCircle2 className="size-3 mr-1" />Verified
-                </Badge>
-              </div>
-              <p className="text-lg font-mono font-bold tracking-wide">27AABCF1234F1ZP</p>
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Legal Name</p>
-                  <p className="text-xs font-medium">FreshMart Grocers Pvt. Ltd.</p>
+            {loadingSettings ? (
+              <div className="flex items-center justify-center h-24"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
+            ) : taxSettingsData?.gstNumber ? (
+              <div className="p-4 rounded-lg border bg-muted/30">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs text-muted-foreground">GSTIN</span>
+                  <Badge className="text-[10px] bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 className="size-3 mr-1" />Registered
+                  </Badge>
                 </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">State</p>
-                  <p className="text-xs font-medium">Maharashtra (27)</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Registration Type</p>
-                  <p className="text-xs font-medium">Regular</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Date of Registration</p>
-                  <p className="text-xs font-medium">15 Mar 2022</p>
+                <p className="text-lg font-mono font-bold tracking-wide">{taxSettingsData.gstNumber}</p>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Legal Name</p>
+                    <p className="text-xs font-medium">{taxSettingsData.businessName}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">State</p>
+                    <p className="text-xs font-medium">{taxSettingsData.state ?? '—'}</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-4 rounded-lg border bg-muted/30 flex items-center gap-3">
+                <Building2 className="size-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">{taxSettingsData?.businessName ?? '—'}</p>
+                  <p className="text-[10px] text-muted-foreground">No GSTIN configured — update in Business Settings</p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -122,66 +302,70 @@ export function TaxView() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {configToggles.map(t => (
-                <div key={t.key} className="flex items-center justify-between p-3 rounded-lg border">
-                  <div>
-                    <p className="text-sm font-medium">{t.label}</p>
-                    <p className="text-[10px] text-muted-foreground">{t.desc}</p>
+              {TOGGLE_DEFS.map(t => {
+                const isOn   = taxSettings?.[t.key] ?? false
+                const saving = savingToggle === t.key
+                return (
+                  <div key={t.key} className="flex items-center justify-between p-3 rounded-lg border">
+                    <div>
+                      <p className="text-sm font-medium">{t.label}</p>
+                      <p className="text-[10px] text-muted-foreground">{t.desc}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={saving || loadingSettings}
+                      onClick={() => handleToggle(t.key, isOn)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${isOn ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                    >
+                      {saving
+                        ? <Loader2 className="size-3 animate-spin mx-auto text-white" />
+                        : <span className={`inline-block size-3.5 rounded-full bg-white transition-transform ${isOn ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                      }
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setToggles(prev => ({ ...prev, [t.key]: !prev[t.key] }))}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${toggles[t.key] ? 'bg-emerald-500' : 'bg-gray-300'}`}
-                  >
-                    <span
-                      className={`inline-block size-3.5 rounded-full bg-white transition-transform ${toggles[t.key] ? 'translate-x-4.5' : 'translate-x-0.5'}`}
-                    />
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* GST Rates */}
+      {/* GST Rate Slabs */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">GST Rate Slabs</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2 font-medium text-muted-foreground">Rate</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">Categories</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">Products</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">CGST</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">SGST</th>
-                </tr>
-              </thead>
-              <tbody>
-                {gstRates.map(g => (
-                  <tr key={g.rate} className="border-b hover:bg-muted/50">
-                    <td className="p-2">
-                      <Badge className={`text-[10px] ${g.color}`}>{g.rate}</Badge>
-                    </td>
-                    <td className="p-2">
-                      <div className="flex gap-1 flex-wrap">
-                        {g.categories.map(c => (
-                          <Badge key={c} variant="outline" className="text-[10px]">{c}</Badge>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-2 font-semibold">{g.products}</td>
-                    <td className="p-2 text-muted-foreground">{(parseFloat(g.rate) / 2).toFixed(1)}%</td>
-                    <td className="p-2 text-muted-foreground">{(parseFloat(g.rate) / 2).toFixed(1)}%</td>
+          {loadingSlabs ? (
+            <div className="flex items-center justify-center h-16"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
+          ) : taxSlabs.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">No tax slabs configured — add them in Tax Config</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2 font-medium text-muted-foreground">Rate</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">Name</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">CGST</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">SGST</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {taxSlabs.map(slab => (
+                    <tr key={slab.id} className="border-b hover:bg-muted/50">
+                      <td className="p-2">
+                        <Badge className={`text-[10px] ${slabColor(slab.rate)}`}>{slab.rate}%</Badge>
+                      </td>
+                      <td className="p-2 font-medium">{slab.name}</td>
+                      <td className="p-2 text-muted-foreground">{(slab.rate / 2).toFixed(1)}%</td>
+                      <td className="p-2 text-muted-foreground">{(slab.rate / 2).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -194,53 +378,56 @@ export function TaxView() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto max-h-56 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-background">
-                <tr className="border-b">
-                  <th className="text-left p-2 font-medium text-muted-foreground">Month</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">Taxable</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">CGST</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">SGST</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">IGST</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">Total</th>
-                  <th className="text-left p-2 font-medium text-muted-foreground">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthlySummary.map(m => (
-                  <tr key={m.month} className="border-b hover:bg-muted/50">
-                    <td className="p-2 font-medium">{m.month}</td>
-                    <td className="p-2">{m.taxable}</td>
-                    <td className="p-2 text-muted-foreground">{m.cgst}</td>
-                    <td className="p-2 text-muted-foreground">{m.sgst}</td>
-                    <td className="p-2 text-muted-foreground">{m.igst}</td>
-                    <td className="p-2 font-semibold">{m.total}</td>
-                    <td className="p-2">
-                      <Badge className={`text-[10px] ${m.filed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {m.filed ? 'Filed' : 'Pending'}
-                      </Badge>
-                    </td>
+          {loadingMonthly ? (
+            <div className="flex items-center justify-center h-16"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
+          ) : (
+            <div className="overflow-x-auto max-h-56 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b">
+                    <th className="text-left p-2 font-medium text-muted-foreground">Month</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">Taxable</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">CGST</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">SGST</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">IGST</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">Total Tax</th>
+                    <th className="text-left p-2 font-medium text-muted-foreground">Orders</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {monthlyData.map(m => (
+                    <tr key={m.month} className="border-b hover:bg-muted/50">
+                      <td className="p-2 font-medium">{m.month}</td>
+                      <td className="p-2">{fmtDec(m.taxableAmount)}</td>
+                      <td className="p-2 text-muted-foreground">{fmtDec(m.cgst)}</td>
+                      <td className="p-2 text-muted-foreground">{fmtDec(m.sgst)}</td>
+                      <td className="p-2 text-muted-foreground">{fmtDec(m.igst)}</td>
+                      <td className="p-2 font-semibold">{fmtDec(m.totalTax)}</td>
+                      <td className="p-2 text-muted-foreground">{m.orderCount}</td>
+                    </tr>
+                  ))}
+                  {monthlyData.length === 0 && (
+                    <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">No tax data yet</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Recent Filings */}
+      {/* Filing Calendar */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">Recent Tax Filings</CardTitle>
+          <CardTitle className="text-sm font-semibold">GST Filing Calendar</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {recentFilings.map(f => (
+            {filings.map(f => (
               <div key={f.period} className="flex items-center justify-between p-3 rounded-lg border">
                 <div className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-full ${f.status === 'filed' ? 'bg-emerald-50' : 'bg-amber-50'}`}>
-                    {f.status === 'filed'
+                  <div className={`p-1.5 rounded-full ${f.filed ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+                    {f.filed
                       ? <CheckCircle2 className="size-3 text-emerald-600" />
                       : <AlertTriangle className="size-3 text-amber-600" />
                     }
@@ -250,14 +437,9 @@ export function TaxView() {
                     <p className="text-[10px] text-muted-foreground">Due: {f.dueDate}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <Badge className={`text-[10px] ${f.status === 'filed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {f.status === 'filed' ? 'Filed' : 'Pending'}
-                  </Badge>
-                  {f.filedDate !== '—' && (
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{f.filedDate}</p>
-                  )}
-                </div>
+                <Badge className={`text-[10px] ${f.filed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {f.filed ? 'Filed' : 'Pending'}
+                </Badge>
               </div>
             ))}
           </div>
