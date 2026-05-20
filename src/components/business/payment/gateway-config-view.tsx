@@ -14,7 +14,8 @@ import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   CreditCard, Lock, Unlock, CheckCircle2, AlertCircle,
-  Shield, Save, Eye, EyeOff, Info, Globe, Zap, Settings2,
+  Shield, Save, Eye, EyeOff, Zap, Settings2, Store,
+  ChevronDown,
 } from "lucide-react"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -24,76 +25,85 @@ import { getAuthHeaders } from "@/lib/admin-fetch"
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-interface GatewayPlugin {
-  id: string
-  gateway: string
-  displayName: string
-  description: string | null
-  isGloballyEnabled: boolean
-  supportedMethods: string
-  webhookPath: string | null
-  docsUrl: string | null
-  businessAccess: BusinessAccess[]
+interface GatewayInfo {
+  pluginId:        string
+  gateway:         string
+  displayName:     string
+  description:     string | null
+  supportedMethods: string[]
+  webhookPath:     string | null
+  docsUrl:         string | null
+  accessId:        string
+  canConfigure:    boolean
+  isActive:        boolean
+  assignedStoreIds: string[]
+  storeConfigs: StoreConfig[]
 }
 
-interface BusinessAccess {
+interface StoreConfig {
+  id:               string
+  storeId:          string
+  storeName:        string
+  storeCode:        string | null
+  isActive:         boolean
+  environment:      string
+  merchantId:       string | null
+  hasApiKey:        boolean
+  hasSecret:        boolean
+  hasWebhookSecret: boolean
+}
+
+interface StoreInfo {
   id: string
-  businessId: string
-  pluginId: string
-  isAssigned: boolean
-  canConfigure: boolean
-  isActive: boolean
-  config: string
-  notes: string | null
+  name: string
+  storeCode: string | null
 }
 
 // Credential field definitions per gateway
 const GATEWAY_FIELDS: Record<string, { key: string; label: string; placeholder: string; secret?: boolean }[]> = {
   razorpay:  [
-    { key: "keyId",     label: "Key ID",     placeholder: "rzp_live_xxxxxxxxxx" },
-    { key: "keySecret", label: "Key Secret", placeholder: "xxxxxxxxxxxxxxxxxxxxxxxx", secret: true },
+    { key: "apiKey",     label: "Key ID",     placeholder: "rzp_live_xxxxxxxxxx" },
+    { key: "secretKey",  label: "Key Secret", placeholder: "xxxxxxxxxxxxxxxxxxxxxxxx", secret: true },
+    { key: "webhookSecret", label: "Webhook Secret", placeholder: "whsec_xxxxxxxxxx", secret: true },
   ],
   phonepe:   [
-    { key: "merchantId",   label: "Merchant ID",  placeholder: "PGTESTPAYUAT" },
-    { key: "saltKey",      label: "Salt Key",      placeholder: "099eb0cd-02cf-4dc2-a4d7", secret: true },
-    { key: "saltIndex",    label: "Salt Key Index",placeholder: "1" },
+    { key: "merchantId",   label: "Merchant ID",   placeholder: "PGTESTPAYUAT" },
+    { key: "apiKey",       label: "Salt Key",       placeholder: "099eb0cd-02cf-4dc2-a4d7", secret: true },
   ],
   paytm:     [
     { key: "merchantId",  label: "Merchant ID",  placeholder: "YourMID" },
-    { key: "merchantKey", label: "Merchant Key", placeholder: "xxxxxxxxxxxxxxxx", secret: true },
-    { key: "websiteName", label: "Website Name", placeholder: "WEBSTAGING" },
+    { key: "secretKey",   label: "Merchant Key", placeholder: "xxxxxxxxxxxxxxxx", secret: true },
   ],
   bharatpe:  [
-    { key: "merchantId", label: "Merchant ID",  placeholder: "BPxxxxxxxxxx" },
-    { key: "token",      label: "API Token",    placeholder: "Bearer xxxxxxxx", secret: true },
+    { key: "merchantId", label: "Merchant ID", placeholder: "BPxxxxxxxxxx" },
+    { key: "apiKey",     label: "API Token",   placeholder: "Bearer xxxxxxxx", secret: true },
   ],
   pinelabs:  [
-    { key: "merchantId",  label: "Merchant ID",   placeholder: "PLxxxxxxxx" },
-    { key: "terminalId",  label: "Terminal ID",   placeholder: "TERMxxxxxxx" },
-    { key: "accessCode",  label: "Access Code",   placeholder: "xxxxxxxxxx", secret: true },
+    { key: "merchantId",  label: "Merchant ID",  placeholder: "PLxxxxxxxx" },
+    { key: "apiKey",      label: "Access Code",  placeholder: "xxxxxxxxxx", secret: true },
   ],
   cashfree:  [
-    { key: "appId",     label: "App ID",     placeholder: "CF_APP_xxxxxxxxxx" },
-    { key: "secretKey", label: "Secret Key", placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", secret: true },
+    { key: "merchantId", label: "App ID",     placeholder: "CF_APP_xxxxxxxxxx" },
+    { key: "secretKey",  label: "Secret Key", placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", secret: true },
   ],
   payu:      [
-    { key: "merchantKey",  label: "Merchant Key",  placeholder: "gtKFFx" },
-    { key: "merchantSalt", label: "Merchant Salt", placeholder: "eCwWELxi", secret: true },
+    { key: "merchantId", label: "Merchant Key",  placeholder: "gtKFFx" },
+    { key: "secretKey",  label: "Merchant Salt", placeholder: "eCwWELxi", secret: true },
   ],
   stripe:    [
-    { key: "publishableKey", label: "Publishable Key", placeholder: "pk_live_xxxxxxxxxx" },
-    { key: "secretKey",      label: "Secret Key",      placeholder: "sk_live_xxxxxxxxxx", secret: true },
-    { key: "webhookSecret",  label: "Webhook Secret",  placeholder: "whsec_xxxxxxxxxx",   secret: true },
+    { key: "merchantId",  label: "Publishable Key", placeholder: "pk_live_xxxxxxxxxx" },
+    { key: "apiKey",      label: "Secret Key",      placeholder: "sk_live_xxxxxxxxxx",  secret: true },
+    { key: "webhookSecret", label: "Webhook Secret",placeholder: "whsec_xxxxxxxxxx",    secret: true },
   ],
   hdfc:      [
     { key: "merchantId",   label: "Merchant ID",   placeholder: "HDFC_MERCHxxxxxxxxxx" },
-    { key: "accessCode",   label: "Access Code",   placeholder: "xxxxxxxxxx",           secret: true },
-    { key: "encryptionKey",label: "Encryption Key",placeholder: "xxxxxxxxxxxxxxxx",     secret: true },
+    { key: "apiKey",       label: "Access Code",   placeholder: "xxxxxxxxxx",           secret: true },
+    { key: "secretKey",    label: "Encryption Key",placeholder: "xxxxxxxxxxxxxxxx",     secret: true },
   ],
   ccavenue:  [
     { key: "merchantId",  label: "Merchant ID",  placeholder: "CCA_xxxxxxx" },
-    { key: "accessCode",  label: "Access Code",  placeholder: "xxxxxxxxxxxxxxxx" },
-    { key: "workingKey",  label: "Working Key",  placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", secret: true },
+    { key: "apiKey",      label: "Access Code",  placeholder: "xxxxxxxxxxxxxxxx" },
+    { key: "secretKey",   label: "Working Key",  placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", secret: true },
   ],
 }
 
@@ -114,10 +124,6 @@ function gatewayStyle(gw: string) {
   return GATEWAY_STYLE[gw] || { color: "text-slate-700", bg: "bg-slate-50", border: "border-slate-200" }
 }
 
-function parseMethods(raw: string): string[] {
-  try { return JSON.parse(raw) } catch { return [] }
-}
-
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
@@ -125,73 +131,114 @@ export function GatewayConfigView() {
   const { businessId, businessName } = useBusinessContext()
   const queryClient = useQueryClient()
 
-  // Config edit dialog state
-  const [editPlugin, setEditPlugin] = useState<GatewayPlugin | null>(null)
+  // Dialog state
+  const [editGateway, setEditGateway]     = useState<GatewayInfo | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [configValues, setConfigValues] = useState<Record<string, string>>({})
-  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
-  const [isTestMode, setIsTestMode] = useState(true)
+  const [selectedStoreId, setSelectedStoreId] = useState<string>("")
+  const [configValues, setConfigValues]   = useState<Record<string, string>>({})
+  const [showSecrets, setShowSecrets]     = useState<Record<string, boolean>>({})
+  const [isLiveMode, setIsLiveMode]       = useState(false)
 
-  // ── Fetch assigned plugins for this business ──────────────────────────────
-  const { data: pluginsData, isLoading } = useQuery<GatewayPlugin[]>({
-    queryKey: ["business-gateways", businessId],
+  // ── Fetch assigned gateways ───────────────────────────────────────────────
+  const { data: gatewaysData, isLoading } = useQuery<GatewayInfo[]>({
+    queryKey: ["business-gateways-v2", businessId],
     queryFn: async () => {
       if (!businessId) return []
-      const res  = await fetch(`/api/admin/payment-plugins?businessId=${encodeURIComponent(businessId)}`, { headers: getAuthHeaders() })
+      const res  = await fetch(`/api/core/businesses/${businessId}/payment-gateways`, { headers: getAuthHeaders() })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
-      return data.data as GatewayPlugin[]
+      return data.data as GatewayInfo[]
     },
     enabled: !!businessId,
     refetchInterval: 120_000,
   })
 
+  // Fetch stores for the business (for the store selector)
+  const { data: storesData = [] } = useQuery<StoreInfo[]>({
+    queryKey: ["business-stores-list", businessId],
+    queryFn: async () => {
+      const res  = await fetch(`/api/core/stores?businessId=${businessId}&limit=50`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      return (json.data ?? []) as StoreInfo[]
+    },
+    enabled: !!businessId && editDialogOpen,
+  })
+
   const saveMutation = useMutation({
-    mutationFn: async ({ pluginId, config }: { pluginId: string; config: Record<string, string> }) => {
+    mutationFn: async (payload: {
+      storeId: string
+      pluginId: string
+      accessId: string
+      merchantId?: string
+      apiKey?: string
+      secretKey?: string
+      webhookSecret?: string
+      isActive: boolean
+      environment: string
+    }) => {
       if (!businessId) throw new Error("No business context")
-      const res  = await fetch("/api/admin/payment-plugins", {
-        method: "PATCH", headers: getAuthHeaders(),
-        body: JSON.stringify({ action: "save_config", pluginId, businessId, config: { ...config, isTestMode } }),
-      })
+      const res = await fetch(
+        `/api/core/businesses/${businessId}/stores/${payload.storeId}/payment-config`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify(payload),
+        },
+      )
       const data = await res.json()
-      if (!data.success) throw new Error(data.error)
+      if (!data.success) throw new Error(data.error ?? "Save failed")
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["business-gateways", businessId] })
-      showSuccess("Gateway configuration saved")
+      queryClient.invalidateQueries({ queryKey: ["business-gateways-v2", businessId] })
+      showSuccess("Gateway configuration saved for store")
       setEditDialogOpen(false)
-      setEditPlugin(null)
+      setEditGateway(null)
     },
     onError: (e) => showError(e instanceof Error ? e.message : "Failed to save configuration"),
   })
 
-  // Plugins assigned to this business (Super Admin assigned)
-  const assignedPlugins = useMemo(() => {
-    return (pluginsData || []).filter((p) => {
-      const access = p.businessAccess?.[0]
-      return p.isGloballyEnabled && access?.isAssigned
-    })
-  }, [pluginsData])
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const gateways = gatewaysData ?? []
 
-  const openEditDialog = (plugin: GatewayPlugin) => {
-    const access  = plugin.businessAccess?.[0]
-    let existing: Record<string, string> = {}
-    try { existing = JSON.parse(access?.config || "{}") } catch { existing = {} }
-
-    const fields  = GATEWAY_FIELDS[plugin.gateway] || []
-    const initial: Record<string, string> = {}
-    fields.forEach((f) => { initial[f.key] = (existing[f.key] as string) || "" })
-    setIsTestMode(typeof existing.isTestMode === "boolean" ? existing.isTestMode : true)
-    setConfigValues(initial)
+  const openEditDialog = (gw: GatewayInfo) => {
+    setEditGateway(gw)
+    // Default to first assigned store
+    const first = gw.assignedStoreIds[0] ?? ""
+    setSelectedStoreId(first)
+    prefillStoreConfig(gw, first)
     setShowSecrets({})
-    setEditPlugin(plugin)
     setEditDialogOpen(true)
   }
 
+  const prefillStoreConfig = (gw: GatewayInfo, storeId: string) => {
+    const existing = gw.storeConfigs.find((sc) => sc.storeId === storeId)
+    const fields   = GATEWAY_FIELDS[gw.gateway] ?? []
+    const initial: Record<string, string> = {}
+    fields.forEach((f) => { initial[f.key] = "" }) // secrets are never returned from API
+    if (existing?.merchantId) initial.merchantId = existing.merchantId
+    setIsLiveMode(existing?.environment === "PRODUCTION")
+    setConfigValues(initial)
+  }
+
+  const handleStoreChange = (storeId: string) => {
+    setSelectedStoreId(storeId)
+    if (editGateway) prefillStoreConfig(editGateway, storeId)
+  }
+
   const handleSave = () => {
-    if (!editPlugin) return
-    saveMutation.mutate({ pluginId: editPlugin.id, config: configValues })
+    if (!editGateway || !selectedStoreId) return
+    saveMutation.mutate({
+      storeId:      selectedStoreId,
+      pluginId:     editGateway.pluginId,
+      accessId:     editGateway.accessId,
+      merchantId:   configValues.merchantId  || undefined,
+      apiKey:       configValues.apiKey      || undefined,
+      secretKey:    configValues.secretKey   || undefined,
+      webhookSecret:configValues.webhookSecret || undefined,
+      isActive:     true,
+      environment:  isLiveMode ? "PRODUCTION" : "SANDBOX",
+    })
   }
 
   // ── Loading / no context ──────────────────────────────────────────────────
@@ -220,8 +267,8 @@ export function GatewayConfigView() {
       <div className="flex items-start gap-2.5 rounded-lg bg-blue-50 border border-blue-200 p-3">
         <Shield className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
         <div className="text-xs text-blue-800 space-y-0.5">
-          <p className="font-semibold">Managed by Quantix Platform</p>
-          <p>Payment gateways are enabled by your account manager. Gateways marked <strong>Read-only</strong> are configured centrally — contact support to make changes.</p>
+          <p className="font-semibold">Store-Level Configuration</p>
+          <p>Gateways are assigned per-store by your account manager. Click <strong>Configure</strong> to add API credentials for each assigned store. Credentials are encrypted at rest.</p>
         </div>
       </div>
 
@@ -230,7 +277,7 @@ export function GatewayConfigView() {
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
         </div>
-      ) : assignedPlugins.length === 0 ? (
+      ) : gateways.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="p-10 text-center">
             <CreditCard className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
@@ -240,19 +287,14 @@ export function GatewayConfigView() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {assignedPlugins.map((plugin) => {
-            const access      = plugin.businessAccess?.[0]
-            const canConfig   = access?.canConfigure  || false
-            const isActive    = access?.isActive      || false
-            const methods     = parseMethods(plugin.supportedMethods)
-            const style       = gatewayStyle(plugin.gateway)
-            const fields      = GATEWAY_FIELDS[plugin.gateway] || []
-            let cfg: Record<string, string> = {}
-            try { cfg = JSON.parse(access?.config || "{}") } catch { cfg = {} }
-            const hasConfig   = fields.some((f) => !!cfg[f.key])
+          {gateways.map((gw) => {
+            const style      = gatewayStyle(gw.gateway)
+            const fields     = GATEWAY_FIELDS[gw.gateway] ?? []
+            const configuredStores = gw.storeConfigs.filter((sc) => sc.hasApiKey || sc.merchantId)
+            const activeStores     = gw.storeConfigs.filter((sc) => sc.isActive)
 
             return (
-              <Card key={plugin.id} className={`shadow-none border ${isActive && hasConfig ? style.border : "border-border"}`}>
+              <Card key={gw.pluginId} className={`shadow-none border ${activeStores.length > 0 ? style.border : "border-border"}`}>
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${style.bg} ${style.border} border`}>
@@ -260,52 +302,50 @@ export function GatewayConfigView() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold">{plugin.displayName}</p>
-                        {isActive && hasConfig
-                          ? <Badge className="text-[9px] bg-emerald-100 text-emerald-700 border-0 gap-1"><CheckCircle2 className="h-2.5 w-2.5" />Active</Badge>
-                          : <Badge className="text-[9px] bg-amber-100 text-amber-700 border-0 gap-1"><AlertCircle className="h-2.5 w-2.5" />Not Configured</Badge>
+                        <p className="text-sm font-semibold">{gw.displayName}</p>
+                        {activeStores.length > 0
+                          ? <Badge className="text-[9px] bg-emerald-100 text-emerald-700 border-0 gap-1"><CheckCircle2 className="h-2.5 w-2.5" />{activeStores.length} store{activeStores.length !== 1 ? "s" : ""} active</Badge>
+                          : <Badge className="text-[9px] bg-amber-100 text-amber-700 border-0 gap-1"><AlertCircle className="h-2.5 w-2.5" />Not configured</Badge>
                         }
-                        {canConfig
+                        {gw.canConfigure
                           ? <Badge variant="outline" className="text-[9px] gap-1"><Unlock className="h-2.5 w-2.5" />Configurable</Badge>
-                          : <Badge variant="outline" className="text-[9px] gap-1 text-muted-foreground"><Lock className="h-2.5 w-2.5" />Read-only</Badge>
+                          : <Badge variant="outline" className="text-[9px] gap-1 text-muted-foreground"><Lock className="h-2.5 w-2.5" />Admin managed</Badge>
                         }
                       </div>
-                      <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{plugin.description}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{gw.description}</p>
 
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {methods.map((m) => (
-                          <span key={m} className="inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-medium bg-slate-100 text-slate-600">{m}</span>
-                        ))}
-                      </div>
-
-                      {/* Configured fields (masked) */}
-                      {hasConfig && (
-                        <div className="mt-2 grid grid-cols-2 gap-1.5">
-                          {fields.map((f) => cfg[f.key] ? (
-                            <div key={f.key} className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <CheckCircle2 className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
-                              <span>{f.label}</span>
-                            </div>
-                          ) : (
-                            <div key={f.key} className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <AlertCircle className="h-2.5 w-2.5 text-amber-500 shrink-0" />
-                              <span>{f.label}</span>
-                            </div>
-                          ))}
+                      {/* Per-store config summary */}
+                      {gw.assignedStoreIds.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {gw.assignedStoreIds.map((sid) => {
+                            const sc = gw.storeConfigs.find((s) => s.storeId === sid)
+                            const storeName = sc?.storeName ?? `Store ${sid.slice(-4)}`
+                            return (
+                              <div key={sid} className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium border ${sc?.isActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}>
+                                <Store className="h-2.5 w-2.5" />
+                                {storeName}
+                                {sc?.environment === "PRODUCTION" && <span className="text-rose-600 font-bold">·LIVE</span>}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
 
-                    {/* Edit or info button */}
                     <div className="shrink-0">
-                      {canConfig ? (
-                        <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => openEditDialog(plugin)}>
+                      {gw.canConfigure ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 gap-1.5 text-[11px]"
+                          disabled={gw.assignedStoreIds.length === 0}
+                          onClick={() => openEditDialog(gw)}
+                        >
                           <Settings2 className="h-3 w-3" />Configure
                         </Button>
                       ) : (
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground px-2">
-                          <Lock className="h-3 w-3" />
-                          <span>Admin managed</span>
+                          <Lock className="h-3 w-3" /><span>Admin managed</span>
                         </div>
                       )}
                     </div>
@@ -317,13 +357,15 @@ export function GatewayConfigView() {
         </div>
       )}
 
-      {/* ── Config Edit Dialog ────────────────────────────────────────────── */}
-      <Dialog open={editDialogOpen} onOpenChange={(o) => { setEditDialogOpen(o); if (!o) setEditPlugin(null) }}>
+      {/* ── Per-Store Config Dialog ───────────────────────────────────────────── */}
+      <Dialog open={editDialogOpen} onOpenChange={(o) => { setEditDialogOpen(o); if (!o) setEditGateway(null) }}>
         <DialogContent className="max-w-md">
-          {editPlugin && (() => {
-            const style  = gatewayStyle(editPlugin.gateway)
-            const fields = GATEWAY_FIELDS[editPlugin.gateway] || []
-            const allFilled = fields.filter((f) => !f.secret || f.secret).every((f) => !!configValues[f.key])
+          {editGateway && (() => {
+            const style  = gatewayStyle(editGateway.gateway)
+            const fields = GATEWAY_FIELDS[editGateway.gateway] ?? []
+            const existingConfig = editGateway.storeConfigs.find((sc) => sc.storeId === selectedStoreId)
+            // Assigned stores, fetched from business store list for name lookup
+            const assignedStores = storesData.filter((s) => editGateway.assignedStoreIds.includes(s.id))
 
             return (
               <>
@@ -332,44 +374,74 @@ export function GatewayConfigView() {
                     <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${style.bg} ${style.border} border`}>
                       <CreditCard className={`h-3.5 w-3.5 ${style.color}`} />
                     </div>
-                    Configure {editPlugin.displayName}
+                    Configure {editGateway.displayName}
                   </DialogTitle>
                   <DialogDescription className="text-xs">
-                    Enter your API credentials. Secret fields are encrypted at rest.
+                    API credentials are encrypted at rest. Set credentials per store.
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-3 py-2">
-                  {/* Test/Live mode toggle */}
-                  <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-                    <div>
-                      <p className="text-xs font-medium">{isTestMode ? "Test Mode" : "Live Mode"}</p>
-                      <p className="text-[10px] text-muted-foreground">{isTestMode ? "Use test credentials — no real charges" : "Live credentials — real transactions"}</p>
+                <div className="space-y-3 py-1">
+                  {/* Store selector */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] flex items-center gap-1.5"><Store className="h-3 w-3" />Select Store</Label>
+                    <div className="relative">
+                      <select
+                        value={selectedStoreId}
+                        onChange={(e) => handleStoreChange(e.target.value)}
+                        className="w-full h-8 pl-2 pr-8 text-xs rounded-md border bg-background appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        {assignedStores.length === 0
+                          ? <option value="">No stores assigned for this gateway</option>
+                          : assignedStores.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}{s.storeCode ? ` (#${s.storeCode})` : ""}</option>
+                          ))
+                        }
+                      </select>
+                      <ChevronDown className="absolute right-2 top-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={!isTestMode}
-                      onClick={() => setIsTestMode((v) => !v)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${!isTestMode ? "bg-emerald-500" : "bg-input"}`}
-                    >
-                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow-lg transition duration-200 ${!isTestMode ? "translate-x-4" : "translate-x-0"}`} />
-                    </button>
+                    {existingConfig && (
+                      <p className={`text-[9px] flex items-center gap-1 ${existingConfig.isActive ? "text-emerald-600" : "text-amber-600"}`}>
+                        {existingConfig.isActive ? <CheckCircle2 className="h-2.5 w-2.5" /> : <AlertCircle className="h-2.5 w-2.5" />}
+                        {existingConfig.isActive ? "Active" : "Inactive"} · {existingConfig.environment}
+                        {existingConfig.hasApiKey && " · API key saved"}
+                        {existingConfig.hasSecret && " · Secret saved"}
+                      </p>
+                    )}
                   </div>
 
                   <Separator />
 
+                  {/* Live/Test toggle */}
+                  <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+                    <div>
+                      <p className="text-xs font-medium">{isLiveMode ? "Live Mode" : "Sandbox / Test"}</p>
+                      <p className="text-[10px] text-muted-foreground">{isLiveMode ? "Real transactions — use production credentials" : "Test mode — no real charges"}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsLiveMode((v) => !v)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${isLiveMode ? "bg-emerald-500" : "bg-input"}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow-lg transition duration-200 ${isLiveMode ? "translate-x-4" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+
+                  {/* Credential fields */}
                   {fields.map((field) => (
                     <div key={field.key} className="space-y-1">
                       <Label className="text-[11px] flex items-center gap-1.5">
                         {field.label}
                         {field.secret && <Lock className="h-2.5 w-2.5 text-muted-foreground" />}
+                        {field.secret && existingConfig && field.key === "apiKey"      && existingConfig.hasApiKey      && <span className="text-[9px] text-emerald-600">(saved)</span>}
+                        {field.secret && existingConfig && field.key === "secretKey"   && existingConfig.hasSecret       && <span className="text-[9px] text-emerald-600">(saved)</span>}
+                        {field.secret && existingConfig && field.key === "webhookSecret" && existingConfig.hasWebhookSecret && <span className="text-[9px] text-emerald-600">(saved)</span>}
                       </Label>
                       <div className="relative">
                         <Input
                           className="h-8 text-xs pr-8"
                           type={field.secret && !showSecrets[field.key] ? "password" : "text"}
-                          placeholder={field.placeholder}
+                          placeholder={field.secret && existingConfig?.hasApiKey && field.key === "apiKey" ? "••••• (unchanged)" : field.placeholder}
                           value={configValues[field.key] || ""}
                           onChange={(e) => setConfigValues((v) => ({ ...v, [field.key]: e.target.value }))}
                         />
@@ -386,20 +458,25 @@ export function GatewayConfigView() {
                     </div>
                   ))}
 
-                  {/* Webhook info */}
-                  {editPlugin.webhookPath && (
+                  {/* Webhook URL */}
+                  {editGateway.webhookPath && selectedStoreId && (
                     <div className="rounded-lg bg-muted/50 p-2.5 text-[10px] text-muted-foreground">
-                      <p className="font-medium flex items-center gap-1"><Zap className="h-3 w-3 text-amber-500" />Webhook URL</p>
-                      <code className="mt-1 block break-all">{`${typeof window !== "undefined" ? window.location.origin : "https://yourdomain.com"}${editPlugin.webhookPath}`}</code>
+                      <p className="font-medium flex items-center gap-1"><Zap className="h-3 w-3 text-amber-500" />Store Webhook URL</p>
+                      <code className="mt-1 block break-all">{`${typeof window !== "undefined" ? window.location.origin : ""}/api/payment/webhook/${selectedStoreId}/${editGateway.gateway}`}</code>
                     </div>
                   )}
                 </div>
 
                 <DialogFooter>
                   <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-                  <Button size="sm" className="gap-1.5" disabled={saveMutation.isPending} onClick={handleSave}>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={saveMutation.isPending || !selectedStoreId}
+                    onClick={handleSave}
+                  >
                     <Save className="h-3 w-3" />
-                    {saveMutation.isPending ? "Saving…" : "Save Configuration"}
+                    {saveMutation.isPending ? "Saving…" : "Save for Store"}
                   </Button>
                 </DialogFooter>
               </>

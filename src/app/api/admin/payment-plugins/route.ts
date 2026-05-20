@@ -1,8 +1,7 @@
 // ============================================================================
 // GET  /api/admin/payment-plugins  — List all platform plugins + business access
-// POST /api/admin/payment-plugins  — Seed / upsert a plugin (Super Admin only)
 // PATCH /api/admin/payment-plugins — Toggle global enable, assign to business,
-//                                    set canConfigure permission
+//                                    assign stores, set canConfigure permission
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -65,13 +64,14 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = (await request.json()) as {
-      action: 'toggle_global' | 'assign_business' | 'set_can_configure' | 'set_active' | 'save_config';
+      action: 'toggle_global' | 'assign_business' | 'set_can_configure' | 'set_active' | 'save_config' | 'assign_stores';
       pluginId?: string;
       gateway?: string;
       businessId?: string;
       value?: boolean;
       config?: Record<string, unknown>;
       notes?: string;
+      storeIds?: string[];
     };
 
     if (body.action === 'toggle_global') {
@@ -115,6 +115,17 @@ export async function PATCH(request: NextRequest) {
         create: { businessId: body.businessId, pluginId: body.pluginId, isAssigned: true, config: JSON.stringify(body.config || {}), isActive: true },
       });
       return NextResponse.json({ success: true, data: access, message: 'Gateway configuration saved' });
+    }
+
+    if (body.action === 'assign_stores') {
+      if (!body.businessId || !body.pluginId) return NextResponse.json({ success: false, error: 'businessId and pluginId required' }, { status: 400 });
+      const storeIds = body.storeIds ?? [];
+      const access = await db.businessGatewayAccess.upsert({
+        where: { businessId_pluginId: { businessId: body.businessId, pluginId: body.pluginId } },
+        update: { assignedStoreIds: JSON.stringify(storeIds) },
+        create: { businessId: body.businessId, pluginId: body.pluginId, isAssigned: true, assignedStoreIds: JSON.stringify(storeIds) },
+      });
+      return NextResponse.json({ success: true, data: access, message: `${storeIds.length} store(s) assigned` });
     }
 
     return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 });

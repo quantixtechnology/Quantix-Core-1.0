@@ -228,6 +228,7 @@ model Business {
   posSessions           POSSession[]
   payments              Payment[]
   paymentGateways       PaymentGateway[]
+  storePaymentGateways  StorePaymentGateway[]
   products              Product[]
   promoCodes            PromoCode[]
   stores                Store[]
@@ -326,6 +327,7 @@ model Store {
   taxConfigs          TaxConfig[]
   workflowRules       WorkflowRule[]
   userAssignments     UserStoreAssignment[]
+  storePaymentGateways StorePaymentGateway[]
   business            Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   storeTimings        StoreTiming[]
 
@@ -787,25 +789,54 @@ model PlatformPaymentPlugin {
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
   businessAccess    BusinessGatewayAccess[]
+  storeConfigs      StorePaymentGateway[]
 }
 
 model BusinessGatewayAccess {
-  id           String                @id @default(cuid())
-  businessId   String
-  pluginId     String
-  isAssigned   Boolean               @default(false)
-  canConfigure Boolean               @default(false)
-  isActive     Boolean               @default(false)
-  config       String                @default("{}")
-  notes        String?
-  assignedAt   DateTime?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  plugin       PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
-  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                String                @id @default(cuid())
+  businessId        String
+  pluginId          String
+  isAssigned        Boolean               @default(false)
+  canConfigure      Boolean               @default(false)
+  isActive          Boolean               @default(false)
+  config            String                @default("{}")
+  assignedStoreIds  String                @default("[]")
+  notes             String?
+  assignedAt        DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  plugin            PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+  business          Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  storeConfigs      StorePaymentGateway[]
 
   @@unique([businessId, pluginId])
   @@index([businessId])
+  @@index([pluginId])
+}
+
+model StorePaymentGateway {
+  id               String                @id @default(cuid())
+  businessId       String
+  storeId          String
+  pluginId         String
+  accessId         String
+  isActive         Boolean               @default(false)
+  environment      String                @default("SANDBOX")
+  merchantId       String?
+  apiKeyEnc        String?
+  secretKeyEnc     String?
+  webhookSecretEnc String?
+  extraConfig      String                @default("{}")
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  business         Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store            Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  plugin           PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+  access           BusinessGatewayAccess @relation(fields: [accessId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, pluginId])
+  @@index([businessId])
+  @@index([storeId])
   @@index([pluginId])
 }
 
