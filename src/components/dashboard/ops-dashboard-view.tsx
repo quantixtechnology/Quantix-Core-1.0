@@ -52,18 +52,15 @@ type RunStatus = 'idle' | 'running' | 'done' | 'error'
 
 interface StoreCodeEntry {
   businessCode: string
-  businessName: string
   storeName: string
-  storeId: string
+  storeCode: string | null
   isMainStore: boolean
-  currentStoreCode: string | null
-  expectedStoreCode: string
-  status: 'OK' | 'NEEDS_REPAIR'
+  status: 'OK' | 'INVALID'
 }
 
 interface VerifyState {
   status: RunStatus
-  summary?: { total: number; ok: number; needsRepair: number; healthy: boolean }
+  summary?: { total: number; ok: number; invalid: number; healthy: boolean }
   data?: StoreCodeEntry[]
   error?: string
 }
@@ -71,7 +68,6 @@ interface VerifyState {
 interface RepairState {
   status: RunStatus
   storesUpdated?: number
-  updated?: { businessCode: string; businessName: string; storeName: string; oldCode: string | null; newCode: string }[]
   error?: string
 }
 
@@ -100,7 +96,7 @@ function DataRepairSection() {
       )
       const json = await res.json()
       if (!json.success) throw new Error(json.error || 'Repair failed')
-      setRepairState({ status: 'done', storesUpdated: json.data.storesUpdated, updated: json.data.updated })
+      setRepairState({ status: 'done', storesUpdated: json.data.storesUpdated })
       // Re-verify after repair so the table refreshes
       await runVerify()
     } catch (err) {
@@ -110,7 +106,7 @@ function DataRepairSection() {
 
   const v = verifyState
   const r = repairState
-  const hasProblems = v.summary && v.summary.needsRepair > 0
+  const hasProblems = v.summary && v.summary.invalid > 0
 
   return (
     <Card>
@@ -135,7 +131,7 @@ function DataRepairSection() {
               </div>
               <p className="text-xs text-muted-foreground">
                 Globally-unique store identifiers. Primary store always gets -001.
-                Startup auto-heals any STR-* / STO-* legacy codes.
+                Startup self-heal corrects any invalid codes automatically.
               </p>
             </div>
             <div className="flex gap-2 shrink-0">
@@ -182,8 +178,8 @@ function DataRepairSection() {
               {/* Summary row */}
               <div className={`flex items-center gap-3 rounded-md p-2 text-xs border ${v.summary.healthy ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
                 {v.summary.healthy
-                  ? <><CheckCircle2 className="size-3.5 shrink-0" /> All {v.summary.total} store(s) have correct codes.</>
-                  : <><XCircle className="size-3.5 shrink-0" /> {v.summary.needsRepair} of {v.summary.total} store(s) need repair. Click &quot;Repair Store Codes&quot; to fix.</>
+                  ? <><CheckCircle2 className="size-3.5 shrink-0" /> All {v.summary.total} store(s) have valid codes.</>
+                  : <><XCircle className="size-3.5 shrink-0" /> {v.summary.invalid} of {v.summary.total} store(s) have invalid codes. Click &quot;Repair Store Codes&quot; to fix.</>
                 }
               </div>
 
@@ -194,27 +190,25 @@ function DataRepairSection() {
                     <tr>
                       <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Business</th>
                       <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Store</th>
-                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Current Code</th>
-                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Expected</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Store Code</th>
                       <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {v.data.map((row) => (
-                      <tr key={row.storeId} className={row.status === 'NEEDS_REPAIR' ? 'bg-red-50/50' : ''}>
+                    {v.data.map((row, i) => (
+                      <tr key={i} className={row.status === 'INVALID' ? 'bg-red-50/50' : ''}>
                         <td className="px-2 py-1.5 font-mono text-muted-foreground">{row.businessCode}</td>
                         <td className="px-2 py-1.5">
                           {row.storeName}
                           {row.isMainStore && <span className="ml-1 text-[10px] text-muted-foreground">(main)</span>}
                         </td>
-                        <td className={`px-2 py-1.5 font-mono ${row.status === 'NEEDS_REPAIR' ? 'text-red-600' : 'text-muted-foreground'}`}>
-                          {row.currentStoreCode ?? <span className="italic text-red-500">NULL</span>}
+                        <td className={`px-2 py-1.5 font-mono ${row.status === 'INVALID' ? 'text-red-600' : 'text-emerald-700'}`}>
+                          {row.storeCode ?? <span className="italic text-red-500">—</span>}
                         </td>
-                        <td className="px-2 py-1.5 font-mono text-emerald-700">{row.expectedStoreCode}</td>
                         <td className="px-2 py-1.5">
                           {row.status === 'OK'
                             ? <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 className="size-3" />OK</span>
-                            : <span className="text-red-600 flex items-center gap-1"><XCircle className="size-3" />NEEDS REPAIR</span>
+                            : <span className="text-red-600 flex items-center gap-1"><XCircle className="size-3" />INVALID</span>
                           }
                         </td>
                       </tr>

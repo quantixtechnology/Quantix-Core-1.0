@@ -1,19 +1,3 @@
-// ============================================================================
-// MIGRATION: backfill-store-codes v3
-//
-// Assigns {businessCode}-{pad3(seq)} codes to ALL stores.
-// Format is globally unique by construction.
-//
-//   Fresh Mart  (BUS-202605-0001): Main → BUS-202605-0001-001
-//   Arbaz Chicken (BUS-202605-0002): Main → BUS-202605-0002-001
-//
-// verifyStoreCodes() — always runs on startup, even when lock is set.
-//   Returns per-store status: OK | NEEDS_REPAIR
-//   If any store needs repair → runStoreCodeBackfill(force=true) is called automatically.
-//
-// Lock: PlatformConfig key = migration:store_code_backfill_v3
-// ============================================================================
-
 import { db } from '@/lib/db'
 
 export const MIGRATION_KEY = 'migration:store_code_backfill_v3'
@@ -26,9 +10,8 @@ export interface StoreCodeStatus {
   storeName: string
   storeId: string
   isMainStore: boolean
-  currentStoreCode: string | null
-  expectedStoreCode: string
-  status: 'OK' | 'NEEDS_REPAIR'
+  storeCode: string | null
+  status: 'OK' | 'INVALID'
 }
 
 export interface BackfillResult {
@@ -36,8 +19,8 @@ export interface BackfillResult {
   storesChecked: number
   storesUpdated: number
   storesSkipped: number
-  updated: { businessCode: string; businessName: string; storeName: string; oldCode: string | null; newCode: string }[]
-  skipped: { businessCode: string; storeName: string; code: string }[]
+  updated: { businessCode: string; businessName: string; storeName: string; storeCode: string }[]
+  skipped: { businessCode: string; storeName: string; storeCode: string }[]
 }
 
 // ---- Helpers ----------------------------------------------------------------
@@ -46,17 +29,8 @@ function expectedCode(businessCode: string, seq: number): string {
   return `${businessCode}-${String(seq).padStart(3, '0')}`
 }
 
-function isLegacyCode(code: string | null): boolean {
-  if (!code) return true
-  return code.startsWith('STR-') || code.startsWith('STO-')
-}
-
 // ---- Verify -----------------------------------------------------------------
 
-/**
- * Computes expected store codes for every store across all businesses.
- * Does NOT write anything — read-only verification.
- */
 export async function verifyStoreCodes(): Promise<StoreCodeStatus[]> {
   const businesses = await db.business.findMany({
     select: { id: true, name: true, businessCode: true },
@@ -83,9 +57,8 @@ export async function verifyStoreCodes(): Promise<StoreCodeStatus[]> {
         storeName: store.name,
         storeId: store.id,
         isMainStore: store.isMainStore,
-        currentStoreCode: store.storeCode,
-        expectedStoreCode: expected,
-        status: store.storeCode === expected ? 'OK' : 'NEEDS_REPAIR',
+        storeCode: store.storeCode,
+        status: store.storeCode === expected ? 'OK' : 'INVALID',
       })
       seq++
     }
@@ -96,11 +69,6 @@ export async function verifyStoreCodes(): Promise<StoreCodeStatus[]> {
 
 // ---- Backfill ---------------------------------------------------------------
 
-/**
- * Assigns correct store codes to all stores that are missing them or have
- * legacy codes (STR-* / STO-*). Idempotent — skips stores already correct.
- * force=true bypasses the PlatformConfig lock (used by self-heal and admin UI).
- */
 export async function runStoreCodeBackfill(force = false): Promise<BackfillResult> {
   if (!force) {
     const lock = await db.platformConfig.findUnique({ where: { key: MIGRATION_KEY } })
@@ -124,7 +92,7 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
     const stores = await db.store.findMany({
       where: { businessId: business.id },
       orderBy: [{ isMainStore: 'desc' }, { createdAt: 'asc' }],
-      select: { id: true, name: true, storeCode: true, isMainStore: true },
+      select: { id: true, name: true, storeCode: true },
     })
 
     let seq = 1
@@ -133,7 +101,7 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
       const expected = expectedCode(business.businessCode, seq)
 
       if (store.storeCode === expected) {
-        skipped.push({ businessCode: business.businessCode, storeName: store.name, code: store.storeCode })
+        skipped.push({ businessCode: business.businessCode, storeName: store.name, storeCode: store.storeCode })
         seq++
         continue
       }
@@ -143,14 +111,12 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
         businessCode: business.businessCode,
         businessName: business.name,
         storeName: store.name,
-        oldCode: store.storeCode,
-        newCode: expected,
+        storeCode: expected,
       })
       seq++
     }
   }
 
-  // Update lock (sets completion timestamp for audit)
   await db.platformConfig.upsert({
     where: { key: MIGRATION_KEY },
     create: {

@@ -1,15 +1,6 @@
-// ============================================================================
 // GET /api/debug/store-codes
-//
 // Returns verification status for every store across all businesses.
-// Computes the expected storeCode and compares with what is actually stored.
-//
-// Response per store:
-//   businessCode, storeName, currentStoreCode, expectedStoreCode, status (OK|NEEDS_REPAIR)
-//
-// Used by the Operations Dashboard → Data Repair → Verify Store Codes button.
 // Requires QUANTIX_SUPER_ADMIN role.
-// ============================================================================
 
 import { NextResponse } from 'next/server'
 import { withMiddleware } from '@/lib/middleware'
@@ -21,16 +12,22 @@ export const GET = withMiddleware({
 })(async () => {
   try {
     const results = await verifyStoreCodes()
-    const needsRepair = results.filter(s => s.status === 'NEEDS_REPAIR')
+    const invalid = results.filter(s => s.status === 'INVALID')
     return NextResponse.json({
       success: true,
       summary: {
         total: results.length,
-        ok: results.length - needsRepair.length,
-        needsRepair: needsRepair.length,
-        healthy: needsRepair.length === 0,
+        ok: results.length - invalid.length,
+        invalid: invalid.length,
+        healthy: invalid.length === 0,
       },
-      data: results,
+      data: results.map(s => ({
+        businessCode: s.businessCode,
+        storeName: s.storeName,
+        storeCode: s.storeCode,
+        isMainStore: s.isMainStore,
+        status: s.status,
+      })),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Verification failed'

@@ -31,47 +31,42 @@ export async function register() {
 
     // ── Step 2: Verify + self-heal store codes ────────────────────────────────
     // Always verifies ALL stores, even if the migration lock is already set.
-    // If any store still has a legacy code (STR-* / STO-*) or a wrong code,
-    // the migration is force-re-run automatically — no human intervention needed.
+    // If any store has an invalid code, force-repair runs automatically.
     const { verifyStoreCodes, runStoreCodeBackfill } = await import('@/lib/migrations/backfill-store-codes')
 
     const verification = await verifyStoreCodes()
-    const needsRepair = verification.filter(s => s.status === 'NEEDS_REPAIR')
+    const invalid = verification.filter(s => s.status === 'INVALID')
 
-    console.log(`[startup] store-code-verification: ${verification.length} store(s) checked, ${needsRepair.length} need repair`)
+    console.log(`[startup] store-code-verification: ${verification.length} store(s) checked, ${invalid.length} invalid`)
     for (const s of verification) {
-      const tag = s.status === 'OK' ? '✓' : '✗ NEEDS_REPAIR'
       console.log(
         `  [startup] store-code-verification` +
         ` business=${s.businessCode} store="${s.storeName}"` +
-        ` current=${s.currentStoreCode ?? 'NULL'} expected=${s.expectedStoreCode} ${tag}`
+        ` storeCode=${s.storeCode ?? 'NULL'} ${s.status === 'OK' ? '✓' : '✗ INVALID'}`
       )
     }
 
-    if (needsRepair.length > 0) {
-      // Self-heal: lock is bypassed when codes are wrong, regardless of prior run
-      console.log(`[startup] store-code-self-heal: ${needsRepair.length} store(s) need repair — running migration`)
-      const result = await runStoreCodeBackfill(true) // force=true bypasses lock
-      console.log(`[startup] store-code-self-heal: updated ${result.storesUpdated} store(s)`)
+    if (invalid.length > 0) {
+      console.log(`[startup] store-code-self-heal: ${invalid.length} store(s) invalid — correcting`)
+      const result = await runStoreCodeBackfill(true)
+      console.log(`[startup] store-code-self-heal: corrected ${result.storesUpdated} store(s)`)
       for (const u of result.updated) {
         console.log(
           `  [startup] store-code-self-heal` +
           ` business=${u.businessCode} store="${u.storeName}"` +
-          ` old=${u.oldCode ?? 'NULL'} new=${u.newCode}`
+          ` storeCode=${u.storeCode}`
         )
       }
     } else {
-      // All codes correct — run normal backfill only if lock is not set
       const result = await runStoreCodeBackfill()
       if (!result.alreadyCompleted) {
-        console.log(`[startup] store-code-backfill v3: updated ${result.storesUpdated} store(s)`)
+        console.log(`[startup] store-code-backfill: assigned codes to ${result.storesUpdated} store(s)`)
         for (const u of result.updated) {
-          console.log(`  [startup] store-code-backfill  business=${u.businessCode} store="${u.storeName}" old=${u.oldCode ?? 'NULL'} new=${u.newCode}`)
+          console.log(`  [startup] store-code-backfill  business=${u.businessCode} store="${u.storeName}" storeCode=${u.storeCode}`)
         }
       }
     }
   } catch (err) {
-    // Non-fatal — logs error and continues startup. Admin UI button can retry.
     console.error('[startup] migration error:', err)
   }
 }
