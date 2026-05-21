@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig, getCategoryIcon } from "@/lib/business-type-config"
+import { resolveImageUrl } from "@/lib/image-url"
 import { ChevronRight, Plus, Zap, Shield, Star, Truck, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -136,15 +137,9 @@ function ProductCard({
   const [imgError, setImgError] = useState(false)
   const loggedRef = useRef(false)
 
-  // images and metadata are already parsed by the API — do not JSON.parse again
   const images = Array.isArray(product.images) ? product.images : []
   const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
-
-  // Log image URL once per product card (debug — remove after image loading confirmed)
-  if (!loggedRef.current && images.length > 0) {
-    loggedRef.current = true
-    console.log(`[ProductCard] ${product.name} | images[0]=${images[0]} | count=${images.length}`)
-  }
+  const imgSrc = resolveImageUrl(images[0])
 
   const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
   const price = defaultVariant?.price ?? 0
@@ -167,7 +162,7 @@ function ProductCard({
       price: defaultVariant.price,
       mrp: defaultVariant.mrp,
       quantity: 1,
-      image: images[0] || "",
+      image: imgSrc || "",
       isVeg: product.isVeg ?? false,
     })
   }
@@ -178,13 +173,13 @@ function ProductCard({
       onClick={() => nav.go("product", { productId: product.id })}
     >
       <div className="relative overflow-hidden">
-        {images[0] && !imgError ? (
+        {imgSrc && !imgError ? (
           <img
-            src={images[0]}
+            src={imgSrc}
             alt={product.name}
             className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
             onError={() => {
-              console.warn(`[ProductCard] image load failed: ${images[0]}`)
+              console.warn(`[ProductCard] image load failed: ${imgSrc}`)
               setImgError(true)
             }}
           />
@@ -414,7 +409,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
                     style={{ backgroundColor: c.color ? `${c.color}20` : `${brandColor}15` }}
                   >
                     {c.image ? (
-                      <img src={c.image} alt={c.name} className="w-full h-full object-cover rounded-2xl" />
+                      <img src={resolveImageUrl(c.image)} alt={c.name} className="w-full h-full object-cover rounded-2xl" />
                     ) : (
                       <span className="text-2xl">{c.icon || getCategoryIcon(currentBusinessType, c.name)}</span>
                     )}

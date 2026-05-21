@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"
+import { resolveImageUrl } from "@/lib/image-url"
 import { ChevronRight, ShoppingCart, Plus, Minus, Check, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -156,14 +157,9 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     )
   }
 
-  // images and metadata are already parsed by the API — do not JSON.parse again
-  const images = Array.isArray(product.images) ? product.images : []
-  const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
-
-  // Log image details for debugging (browser console)
-  if (typeof window !== "undefined" && images.length > 0) {
-    console.log(`[ProductPage] ${product.name} | images=`, images, `| firstExists=${!!images[0]}`)
-  }
+  const images    = Array.isArray(product.images) ? product.images : []
+  const resolvedImages = images.map(resolveImageUrl).filter(Boolean)
+  const meta      = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
 
   // Meat-specific fields — only read when business type supports them
   const cutTypes        = checkout.showCutType  ? ((meta.cutTypes        as string[] | undefined) || []) : []
@@ -196,7 +192,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
         price: selectedVariant.price,
         mrp: selectedVariant.mrp,
         quantity: qty,
-        image: images[0] || "",
+        image: resolvedImages[0] || "",
         isVeg: product.isVeg ?? false,
       })
     }
@@ -228,13 +224,13 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
         {/* ── Image gallery ────────────────────────────────── */}
         <div className="space-y-3">
           <div className="aspect-square rounded-2xl overflow-hidden border border-gray-100 bg-gray-50">
-            {images[activeImage] && !mainImgError ? (
+            {resolvedImages[activeImage] && !mainImgError ? (
               <img
-                src={images[activeImage]}
+                src={resolvedImages[activeImage]}
                 alt={product.name}
                 className="w-full h-full object-cover"
                 onError={() => {
-                  console.warn(`[ProductPage] image load failed: ${images[activeImage]}`)
+                  console.warn(`[ProductPage] image load failed: ${resolvedImages[activeImage]}`)
                   setMainImgError(true)
                 }}
               />
@@ -242,9 +238,9 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
               <div className="w-full h-full flex items-center justify-center text-8xl">{defaultEmoji}</div>
             )}
           </div>
-          {images.length > 1 && (
+          {resolvedImages.length > 1 && (
             <div className="flex gap-2 overflow-x-auto scrollbar-none">
-              {images.map((img, i) => (
+              {resolvedImages.map((img, i) => (
                 <button
                   key={i}
                   onClick={() => { setActiveImage(i); setMainImgError(false) }}
