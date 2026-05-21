@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { existsSync } from 'fs'
 import { join, resolve } from 'path'
+import { UPLOAD_ROOT } from '@/lib/upload-root'
 
 function resolveImageUrl(raw: string): string {
   if (!raw) return ''
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
       },
     })
 
-    const uploadsRoot = resolve(join(process.cwd(), 'public', 'uploads'))
+    const uploadsRoot = resolve(UPLOAD_ROOT)
     const cwd = process.cwd()
 
     const report = products.map((p) => {
@@ -136,8 +137,8 @@ export async function GET(request: Request) {
       serverPaths: {
         cwd,
         uploadsRoot,
-        note: 'Upload saves to: <cwd>/public/uploads/products/<businessId>/<filename>',
-        note2: 'Files route reads from: <uploadsRoot>/<path-after-/uploads/>',
+        note: 'Upload saves to: UPLOAD_ROOT/products/<businessId>/<filename>',
+        note2: 'Files route reads from: UPLOAD_ROOT/<path-after-/uploads/>',
       },
       resolver: {
         rule:    '/uploads/X → /api/core/files/X  (bypasses afterFiles rewrite entirely)',

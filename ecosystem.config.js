@@ -18,6 +18,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
         HOSTNAME: '0.0.0.0',
+        // Persistent upload directory — lives outside .next/ so rebuilds never delete files.
+        // The upload route writes here; the files route reads from here.
+        UPLOAD_ROOT: '/root/uploads',
       },
       error_file: '/root/logs/quantix-error.log',
       out_file:   '/root/logs/quantix-out.log',

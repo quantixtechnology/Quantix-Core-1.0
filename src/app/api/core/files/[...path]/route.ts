@@ -1,17 +1,19 @@
 // ============================================================================
 // GET /api/core/files/[...path]
-// Serves uploaded files from process.cwd()/public/uploads/.
+// Serves uploaded files from UPLOAD_ROOT (env var).
 //
-// In dev mode, Next.js serves public/ statically so this route is never
-// reached. In production standalone the static server only knows about files
-// that existed at build time; uploads land in project/public/uploads/ after
-// the build. The afterFiles rewrite in next.config.ts sends any unresolved
-// /uploads/* request here, and we read the file directly from disk.
+// All storefront components call resolveImageUrl() which maps
+//   /uploads/products/<id>/file.jpg → /api/core/files/products/<id>/file.jpg
+// so this route is always hit directly without relying on afterFiles rewrites.
+//
+// UPLOAD_ROOT defaults to <cwd>/public/uploads in dev.
+// In production: UPLOAD_ROOT=/root/uploads (set in ecosystem.config.js).
 // ============================================================================
 
 import { NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import { join, extname, resolve } from 'path';
+import { UPLOAD_ROOT } from '@/lib/upload-root';
 
 const MIME: Record<string, string> = {
   '.jpg':  'image/jpeg',
@@ -29,8 +31,8 @@ export async function GET(
   try {
     const { path } = await context.params;
 
-    // Reconstruct the path segments and resolve to an absolute path
-    const uploadsRoot = resolve(join(process.cwd(), 'public', 'uploads'));
+    // Resolve path segments against UPLOAD_ROOT
+    const uploadsRoot = resolve(UPLOAD_ROOT);
     const filePath    = resolve(join(uploadsRoot, ...path));
 
     // Prevent path traversal attacks

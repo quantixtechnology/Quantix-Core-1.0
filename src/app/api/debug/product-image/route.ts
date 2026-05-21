@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { existsSync } from 'fs'
 import { join, resolve } from 'path'
+import { UPLOAD_ROOT } from '@/lib/upload-root'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
     }
 
     // ── File system check ─────────────────────────────────────────────────
-    const uploadsRoot = resolve(join(process.cwd(), 'public', 'uploads'))
+    const uploadsRoot = resolve(UPLOAD_ROOT)
     const fileChecks = parsedImages.map((imageUrl) => {
       // imageUrl is typically "/uploads/products/<businessId>/<filename>"
       // Strip leading /uploads/ to get the relative path inside the uploads root

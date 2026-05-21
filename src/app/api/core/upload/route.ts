@@ -2,12 +2,17 @@
 // QUANTIX CORE — File Upload API
 // POST /api/core/upload — Upload product image (auth required)
 // Returns: { success: true, url: "/uploads/products/<businessId>/<filename>" }
+//
+// Files are written to UPLOAD_ROOT (env var), which defaults to
+// <cwd>/public/uploads in dev and /root/uploads in production.
+// UPLOAD_ROOT lives outside .next/ so it survives rebuilds.
 // ============================================================================
 
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { withMiddleware } from '@/lib/middleware';
+import { UPLOAD_ROOT, ensureDir } from '@/lib/upload-root';
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -30,19 +35,18 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
       return NextResponse.json({ success: false, error: 'File must be under 5 MB' }, { status: 400 });
     }
 
-    // Build safe filename: timestamp + sanitised original name
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const ext      = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-    // Resolve absolute path inside public/uploads/products/<businessId>/
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'products', businessId);
-    await mkdir(uploadDir, { recursive: true });
-
-    const filePath = join(uploadDir, safeName);
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // ensureDir creates UPLOAD_ROOT/products/<businessId>/ if missing
+    const uploadDir = await ensureDir(join('products', businessId));
+    const filePath  = join(uploadDir, safeName);
+    const buffer    = Buffer.from(await file.arrayBuffer());
     await writeFile(filePath, buffer);
 
-    // Public URL served by Next.js static file handling
+    console.log(`[upload] saved to ${filePath} (UPLOAD_ROOT=${UPLOAD_ROOT})`);
+
+    // URL is always /uploads/... — the files route maps it to UPLOAD_ROOT on disk
     const url = `/uploads/products/${businessId}/${safeName}`;
 
     return NextResponse.json({ success: true, url, filename: safeName });
