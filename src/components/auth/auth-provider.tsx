@@ -213,11 +213,24 @@ export function AuthProvider({
     );
   }
 
-  // ─── Not authenticated — show login page ────────────────────────────
+  // ─── Not authenticated — show login page (skip for storefront subdomains) ────
+  // Storefront subdomains (arbazchicken.quantixtechnology.in) have their own
+  // CustomerAuth flow inside CustomerLayout. Never show the admin LoginPage there.
   if (!isAuthenticated) {
-    return <LoginPage />;
+    const hostname = window.location.hostname.split(":")[0]
+    const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
+    const isStorefrontSubdomain =
+      hostname.endsWith(`.${storefrontBase}`) &&
+      !["www", "app", "admin", "api", "mail"].includes(hostname.split(".")[0])
+
+    console.log("[AuthProvider] unauthenticated | hostname=", hostname, "| isStorefront=", isStorefrontSubdomain)
+
+    if (!isStorefrontSubdomain) {
+      return <LoginPage />
+    }
+    // Storefront: fall through and render children (AppRouter → CustomerLayout)
   }
 
-  // ─── Authenticated — show the app ───────────────────────────────────
+  // ─── Authenticated or storefront subdomain — render the app ─────────
   return <>{children}</>;
 }
