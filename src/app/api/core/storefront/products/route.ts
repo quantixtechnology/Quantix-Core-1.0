@@ -250,6 +250,8 @@ export const POST = withMiddleware({
     const body = await req.json();
     const user = req.user!;
 
+    console.log(`[products/POST] userId=${user.id} role=${user.role} isPlatformAdmin=${user.isPlatformAdmin} userBusinessId=${user.businessId} bodyBusinessId=${body.businessId} productName=${body.name}`);
+
     if (!body.businessId) {
       return NextResponse.json(
         { success: false, error: 'businessId is required' },
@@ -258,6 +260,7 @@ export const POST = withMiddleware({
     }
 
     if (!user.isPlatformAdmin && user.businessId !== body.businessId) {
+      console.error(`[products/POST] REJECTED — user.businessId=${user.businessId} !== body.businessId=${body.businessId}`);
       return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
@@ -275,12 +278,18 @@ export const POST = withMiddleware({
 
     const store = await db.store.findFirst({ where: { businessId: body.businessId } });
 
-    const slug = body.slug || body.name
+    const slug = (body.slug || body.name)
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
       .slice(0, 60);
+
+    // Deduplicate slug — same pattern as business-specific POST route
+    const existingSlug = await db.product.findFirst({ where: { businessId: body.businessId, slug } });
+    const finalSlug = existingSlug ? `${slug}-${Date.now()}` : slug;
+
+    console.log(`[products/POST] businessId=${body.businessId} slug=${finalSlug} deduplicated=${!!existingSlug} storeId=${body.storeId || store?.id || null}`);
 
     const storeId = body.storeId || store?.id || null;
 
@@ -290,7 +299,7 @@ export const POST = withMiddleware({
         storeId,
         categoryId: body.categoryId || null,
         name: body.name,
-        slug,
+        slug: finalSlug,
         description: body.description || null,
         shortDesc: body.shortDesc || null,
         type: body.type || 'PHYSICAL',
@@ -380,6 +389,7 @@ export const POST = withMiddleware({
     }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create product';
+    console.error(`[products/POST] error: ${message}`, error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 });

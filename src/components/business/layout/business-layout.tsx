@@ -4,6 +4,7 @@ import { useState } from "react"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { BusinessSidebar } from "./business-sidebar"
 import { BusinessHeader } from "./business-header"
+import { BusinessContextBar } from "./business-context-bar"
 
 export function BusinessLayout({ children }: { children: React.ReactNode }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -16,6 +17,7 @@ export function BusinessLayout({ children }: { children: React.ReactNode }) {
       />
       <SidebarInset>
         <BusinessHeader onMobileMenuClick={() => setMobileSidebarOpen(true)} />
+        <BusinessContextBar />
         <main className="flex-1 overflow-auto">
           <div className="p-4 md:p-6">
             {children}
