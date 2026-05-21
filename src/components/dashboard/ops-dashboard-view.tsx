@@ -53,8 +53,11 @@ type RunStatus = 'idle' | 'running' | 'done' | 'error'
 interface StoreCodeEntry {
   businessCode: string
   storeName: string
-  storeCode: string | null
+  storeId: string
   isMainStore: boolean
+  storeSequence: number
+  expectedStoreCode: string
+  actualStoreCode: string | null
   status: 'OK' | 'INVALID'
 }
 
@@ -200,7 +203,9 @@ function DataRepairSection() {
                     <tr>
                       <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Business</th>
                       <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Store</th>
-                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Store Code</th>
+                      <th className="text-center px-2 py-1.5 font-medium text-muted-foreground">Seq</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Actual Code</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Expected Code</th>
                       <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Status</th>
                     </tr>
                   </thead>
@@ -212,9 +217,11 @@ function DataRepairSection() {
                           {row.storeName}
                           {row.isMainStore && <span className="ml-1 text-[10px] text-muted-foreground">(main)</span>}
                         </td>
+                        <td className="px-2 py-1.5 text-center text-muted-foreground">{row.storeSequence}</td>
                         <td className={`px-2 py-1.5 font-mono ${row.status === 'INVALID' ? 'text-red-600' : 'text-emerald-700'}`}>
-                          {row.storeCode ?? <span className="italic text-red-500">—</span>}
+                          {row.actualStoreCode ?? <span className="italic text-red-500">NULL</span>}
                         </td>
+                        <td className="px-2 py-1.5 font-mono text-muted-foreground">{row.expectedStoreCode}</td>
                         <td className="px-2 py-1.5">
                           {row.status === 'OK'
                             ? <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 className="size-3" />OK</span>

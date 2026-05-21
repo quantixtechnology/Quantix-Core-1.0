@@ -1,5 +1,5 @@
 // GET /api/debug/store-codes
-// Returns verification status for every store across all businesses.
+// Full store code audit — actual vs expected, per-store diagnostic fields.
 // Requires QUANTIX_SUPER_ADMIN role.
 
 import { NextResponse } from 'next/server'
@@ -22,12 +22,15 @@ export const GET = withMiddleware({
         healthy: invalid.length === 0,
       },
       data: results.map(s => ({
-        businessCode: s.businessCode,
-        storeName: s.storeName,
-        storeCode: s.storeCode,
-        storeSequence: s.storeSequence,
-        isMainStore: s.isMainStore,
-        status: s.status,
+        businessCode:      s.businessCode,
+        storeName:         s.storeName,
+        storeId:           s.storeId,
+        isMainStore:       s.isMainStore,
+        createdAt:         s.createdAt,
+        storeSequence:     s.storeSequence,
+        expectedStoreCode: s.expectedStoreCode,
+        actualStoreCode:   s.actualStoreCode,
+        status:            s.status,
       })),
     })
   } catch (error) {

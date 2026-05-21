@@ -1,13 +1,11 @@
 // Next.js instrumentation hook — runs once on server startup (Node.js runtime only).
-// Applies schema fixes and data migrations automatically on every deploy.
-// Each step is idempotent and guarded by PlatformConfig locks.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
 
   try {
     const { db } = await import('@/lib/db')
 
-    // ── Step 1: Fix storeCode SQLite index (runs once, idempotent) ────────────
+    // ── Step 1: Ensure per-business composite unique index (idempotent) ───────
     const constraintKey = 'migration:store_storeCode_constraint_v1'
     const constraintDone = await db.platformConfig.findUnique({ where: { key: constraintKey } })
     if (!constraintDone) {
@@ -18,69 +16,99 @@ export async function register() {
         )
         await db.platformConfig.upsert({
           where: { key: constraintKey },
-          create: { key: constraintKey, value: 'completed', description: 'Replaced Store.storeCode global unique with @@unique([businessId,storeCode])' },
+          create: { key: constraintKey, value: 'completed', description: 'Per-business composite unique on storeCode' },
           update: { value: 'completed' },
         })
-        console.log('[startup] store-constraint-fix: index updated')
+        console.log('[startup] store-constraint-fix: composite index applied')
       } catch (e) {
         console.warn('[startup] store-constraint-fix: skipped —', (e as Error).message)
       }
     }
 
-    // ── Step 2: Force-fix any STR-*/STO-* codes immediately ──────────────────
-    // Runs before verification. Directly detects and repairs invalid prefixes.
-    // Ignores migration lock — these codes must never persist.
+    // ── Step 2: Audit all stores — log full state before any repair ───────────
     const { runStoreCodeBackfill, verifyStoreCodes } = await import('@/lib/migrations/backfill-store-codes')
 
-    const invalidPrefixCount = await db.store.count({
-      where: {
-        OR: [
-          { storeCode: null },
-          { storeCode: { startsWith: 'STR-' } },
-          { storeCode: { startsWith: 'STO-' } },
-        ],
-      },
-    })
+    const preCheck = await verifyStoreCodes()
+    const preInvalid = preCheck.filter(s => s.status === 'INVALID')
 
-    if (invalidPrefixCount > 0) {
-      console.log(`[startup] store-code-prefixfix: ${invalidPrefixCount} store(s) with invalid codes — force correcting`)
-      const fix = await runStoreCodeBackfill(true)
-      console.log(`[startup] store-code-prefixfix: corrected ${fix.storesUpdated} store(s)`)
-      for (const u of fix.updated) {
-        console.log(`  [startup] store-code-prefixfix  business=${u.businessCode} store="${u.storeName}" storeCode=${u.storeCode}`)
-      }
-    }
-
-    // ── Step 3: Verify all codes and self-heal any remaining INVALID ──────────
-    const verification = await verifyStoreCodes()
-    const invalid = verification.filter(s => s.status === 'INVALID')
-
-    console.log(`[startup] store-code-verification: ${verification.length} store(s) checked, ${invalid.length} invalid`)
-    for (const s of verification) {
+    console.log(
+      `[startup] store-audit: ${preCheck.length} store(s) across ${new Set(preCheck.map(s => s.businessCode)).size} business(es)` +
+      ` — ${preInvalid.length} INVALID`
+    )
+    for (const s of preCheck) {
       console.log(
-        `  [startup] store-code-verification` +
-        ` business=${s.businessCode} store="${s.storeName}"` +
-        ` storeCode=${s.storeCode ?? 'NULL'} ${s.status === 'OK' ? '✓' : '✗ INVALID'}`
+        `  [startup] store-audit` +
+        ` storeId=${s.storeId}` +
+        ` business=${s.businessCode}` +
+        ` store="${s.storeName}"` +
+        ` isMain=${s.isMainStore}` +
+        ` createdAt=${s.createdAt.toISOString()}` +
+        ` seq=${s.storeSequence}` +
+        ` actual=${s.actualStoreCode ?? 'NULL'}` +
+        ` expected=${s.expectedStoreCode}` +
+        ` ${s.status === 'OK' ? '✓' : '✗ INVALID'}`
       )
     }
 
-    if (invalid.length > 0) {
-      console.log(`[startup] store-code-self-heal: ${invalid.length} store(s) invalid — correcting`)
+    // ── Step 3: Force-repair if ANY store is invalid ──────────────────────────
+    // Uses two-phase nullify → assign to eliminate unique-constraint collisions.
+    if (preInvalid.length > 0) {
+      console.log(`[startup] store-repair: ${preInvalid.length} INVALID store(s) — running two-phase repair`)
       const result = await runStoreCodeBackfill(true)
-      console.log(`[startup] store-code-self-heal: corrected ${result.storesUpdated} store(s)`)
+
       for (const u of result.updated) {
-        console.log(`  [startup] store-code-self-heal  business=${u.businessCode} store="${u.storeName}" storeCode=${u.storeCode}`)
+        console.log(
+          `  [startup] store-repair FIXED` +
+          ` storeId=${u.storeId}` +
+          ` business=${u.businessCode}` +
+          ` store="${u.storeName}"` +
+          ` isMain=${u.isMainStore}` +
+          ` seq=${u.storeSequence}` +
+          ` storeCode=${u.storeCode}`
+        )
+      }
+      for (const e of result.errors) {
+        console.error(
+          `  [startup] store-repair ERROR` +
+          ` storeId=${e.storeId}` +
+          ` business=${e.businessCode}` +
+          ` store="${e.storeName}"` +
+          ` error=${e.error}`
+        )
+      }
+
+      // Post-repair verification
+      const postCheck = await verifyStoreCodes()
+      const stillInvalid = postCheck.filter(s => s.status === 'INVALID')
+      console.log(
+        `[startup] store-repair RESULT: ${result.storesUpdated} fixed` +
+        `, ${result.errors.length} errors` +
+        `, ${stillInvalid.length} still INVALID after repair`
+      )
+      for (const s of stillInvalid) {
+        console.error(
+          `  [startup] store-repair UNRESOLVED` +
+          ` storeId=${s.storeId} store="${s.storeName}"` +
+          ` actual=${s.actualStoreCode ?? 'NULL'} expected=${s.expectedStoreCode}`
+        )
       }
     } else {
+      // All valid — run normal backfill only if lock not set
       const result = await runStoreCodeBackfill()
       if (!result.alreadyCompleted) {
-        console.log(`[startup] store-code-backfill: assigned codes to ${result.storesUpdated} store(s)`)
+        console.log(`[startup] store-backfill: assigned codes to ${result.storesUpdated} store(s)`)
         for (const u of result.updated) {
-          console.log(`  [startup] store-code-backfill  business=${u.businessCode} store="${u.storeName}" storeCode=${u.storeCode}`)
+          console.log(
+            `  [startup] store-backfill` +
+            ` storeId=${u.storeId} business=${u.businessCode}` +
+            ` store="${u.storeName}" storeCode=${u.storeCode}`
+          )
         }
+      } else {
+        console.log('[startup] store-backfill: all stores valid, lock set — no action needed')
       }
     }
   } catch (err) {
-    console.error('[startup] migration error:', err)
+    console.error('[startup] store-migration FATAL:', err)
   }
 }
