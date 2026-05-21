@@ -187,6 +187,9 @@ const CustomerCoupons = dynamic(() => import("@/components/customer/coupons/cust
 // ── Storefront Shell (lazy) ───────────────────────────────────────────────
 const StorefrontShell = dynamic(() => import("@/components/storefront/storefront-shell").then(m => ({ default: m.StorefrontShell })), { loading: () => <PageLoader /> })
 
+// ── Web Storefront (desktop ecommerce website) ────────────────────────────
+const StorefrontWebsite = dynamic(() => import("@/components/storefront/web/storefront-website").then(m => ({ default: m.StorefrontWebsite })), { loading: () => <SplashLoader /> })
+
 // ── Delivery Partner (lazy) ───────────────────────────────────────────────
 const DeliveryLogin = dynamic(() => import("@/components/delivery/auth/delivery-login").then(m => ({ default: m.DeliveryLogin })), { loading: () => <PageLoader /> })
 const DeliveryDashboard = dynamic(() => import("@/components/delivery/dashboard/delivery-dashboard").then(m => ({ default: m.DeliveryDashboard })), { loading: () => <PageLoader /> })
@@ -455,17 +458,16 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
           </div>
         )
       }
-      // Always render CustomerLayout while loading — never fall through to admin login.
-      // SplashLoader shows until StorefrontContextLoader sets viewMode = "customer".
+      // Render the full web storefront. StorefrontContextLoader hydrates the
+      // admin/cart stores (businessId, brandColor, storeId) before StorefrontWebsite
+      // renders its first data fetch.
       return (
         <>
           <StorefrontContextLoader
             slug={storefrontSlug}
             onNotFound={() => setStorefrontNotFound(true)}
           />
-          <CustomerLayout>
-            {viewMode === "customer" ? renderCustomerPage() : <SplashLoader />}
-          </CustomerLayout>
+          {viewMode === "customer" ? <StorefrontWebsite /> : <SplashLoader />}
         </>
       )
     }
