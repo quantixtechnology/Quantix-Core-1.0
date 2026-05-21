@@ -26,6 +26,7 @@ export function BusinessContextBar() {
     currentStoreName,
     setCurrentStoreId,
     setCurrentStoreName,
+    setCurrentStoreCode,
   } = useAdminStore()
 
   const [businessCode, setBusinessCode] = useState<string | null>(null)
@@ -63,17 +64,18 @@ export function BusinessContextBar() {
           isMainStore: s.isMainStore ?? false,
         }))
         setStores(opts)
-        // Auto-select first store if none selected
+        // Auto-select main store if none selected
         if (!currentStoreId && opts.length > 0) {
           const main = opts.find(s => s.isMainStore) ?? opts[0]
           setCurrentStoreId(main.id)
           setCurrentStoreName(main.name)
+          setCurrentStoreCode(main.storeCode ?? '')
         }
       }
     } catch {
       // non-critical
     }
-  }, [currentBusinessId, currentStoreId, setCurrentStoreId, setCurrentStoreName])
+  }, [currentBusinessId, currentStoreId, setCurrentStoreId, setCurrentStoreName, setCurrentStoreCode])
 
   useEffect(() => {
     setBusinessCode(null)
@@ -87,6 +89,12 @@ export function BusinessContextBar() {
   const currentStore = stores.find(s => s.id === currentStoreId)
   const storeCode = currentStore?.storeCode ?? null
   const displayStoreName = currentStoreName || currentStore?.name || "—"
+
+  const switchStore = (store: StoreInfo) => {
+    setCurrentStoreId(store.id)
+    setCurrentStoreName(store.name)
+    setCurrentStoreCode(store.storeCode ?? '')
+  }
 
   return (
     <div className="sticky top-14 z-40 flex items-center gap-0 border-b bg-muted/20 px-4 py-1.5 text-xs shrink-0">
@@ -103,7 +111,7 @@ export function BusinessContextBar() {
 
       <span className="text-border border-l h-4 mx-1" />
 
-      {/* Store */}
+      {/* Store — dropdown when multiple stores, plain label when single */}
       {stores.length > 1 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -116,23 +124,20 @@ export function BusinessContextBar() {
               <ChevronDown className="size-3 shrink-0 opacity-60 ml-0.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
+          <DropdownMenuContent align="start" className="w-72">
             {stores.map(store => (
               <DropdownMenuItem
                 key={store.id}
-                onClick={() => {
-                  setCurrentStoreId(store.id)
-                  setCurrentStoreName(store.name)
-                }}
+                onClick={() => switchStore(store)}
                 className="flex items-center gap-2 cursor-pointer"
               >
                 <Store className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="flex-1 truncate">{store.name}</span>
-                {store.storeCode && (
-                  <span className="text-[10px] text-muted-foreground font-mono shrink-0">
-                    {store.storeCode}
-                  </span>
-                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{store.name}</div>
+                  {store.storeCode && (
+                    <div className="text-[10px] text-muted-foreground font-mono">{store.storeCode}</div>
+                  )}
+                </div>
                 {store.isMainStore && (
                   <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
                     Main

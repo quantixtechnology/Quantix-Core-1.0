@@ -331,6 +331,8 @@ interface AdminState {
   setCurrentStoreId: (id: string) => void
   currentStoreName: string
   setCurrentStoreName: (name: string) => void
+  currentStoreCode: string
+  setCurrentStoreCode: (code: string) => void
   // Set all business context at once (used by login, impersonation, business selection)
   setCurrentBusiness: (id: string, name: string, type: string, slug?: string) => void
   // Set business context for real business owner login (does NOT set isImpersonating)
@@ -401,6 +403,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   setCurrentStoreId: (id) => set({ currentStoreId: id }),
   currentStoreName: "",
   setCurrentStoreName: (name) => set({ currentStoreName: name }),
+  currentStoreCode: "",
+  setCurrentStoreCode: (code) => set({ currentStoreCode: code }),
   currentBusinessName: "",
   currentBusinessType: "",
   currentBusinessSlug: "",
@@ -434,6 +438,7 @@ export const useAdminStore = create<AdminState>((set) => ({
     currentBusinessPrimaryColor: "",
     currentStoreId: "",
     currentStoreName: "",
+    currentStoreCode: "",
     isImpersonating: false,
     viewMode: "super_admin",
     searchQuery: "",

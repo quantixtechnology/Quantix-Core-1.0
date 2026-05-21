@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Package, CheckCircle2, AlertTriangle, XCircle,
-  RefreshCw, Eye, TrendingDown, Warehouse,
+  RefreshCw, Eye, TrendingDown, Warehouse, Building2, Store,
 } from 'lucide-react'
 import { useAdminStore } from '@/stores/admin-store'
 import { getAuthHeaders } from '@/lib/admin-fetch'
@@ -37,7 +37,7 @@ interface RawInventory {
 }
 
 export function InventoryView() {
-  const { currentBusinessId, currentStoreId, currentStoreName } = useAdminStore()
+  const { currentBusinessId, currentStoreId, currentStoreName, currentStoreCode, currentBusinessName } = useAdminStore()
   const [items, setItems]   = useState<RawInventory[]>([])
   const [loading, setLoading] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
@@ -85,6 +85,28 @@ export function InventoryView() {
 
   return (
     <div className="animate-in fade-in duration-300 space-y-6">
+      {/* Store context strip */}
+      {(currentStoreCode || currentStoreName) && (
+        <div className="flex items-center gap-4 rounded-lg border bg-muted/30 px-4 py-2.5 text-xs">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Building2 className="size-3.5 shrink-0" />
+            <span className="font-medium text-foreground">{currentBusinessName || '—'}</span>
+          </div>
+          <span className="text-border">·</span>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Store className="size-3.5 shrink-0" />
+            <span className="font-medium text-foreground">{currentStoreName || '—'}</span>
+          </div>
+          {currentStoreCode && (
+            <>
+              <span className="text-border">·</span>
+              <span className="font-mono font-semibold text-emerald-700">{currentStoreCode}</span>
+            </>
+          )}
+          <span className="ml-auto text-[10px] text-muted-foreground">Stock is store-scoped</span>
+        </div>
+      )}
+
       <PageHeader
         title="Inventory"
         description={subtitle}
@@ -189,7 +211,12 @@ export function InventoryView() {
                       <td className="p-2 font-mono">{i.variant?.sku || i.product.sku}</td>
                       <td className="p-2 font-medium">{i.product.name}</td>
                       <td className="p-2 text-muted-foreground">{i.variant?.name || '—'}</td>
-                      <td className="p-2 text-muted-foreground">{i.store.name}</td>
+                      <td className="p-2">
+                        <div className="text-muted-foreground">{i.store.name}</div>
+                        {i.store.storeCode && (
+                          <div className="font-mono text-[10px] text-emerald-700">{i.store.storeCode}</div>
+                        )}
+                      </td>
                       <td className="p-2">{i.quantity}</td>
                       <td className="p-2 text-muted-foreground">{i.minStock}</td>
                       <td className="p-2">

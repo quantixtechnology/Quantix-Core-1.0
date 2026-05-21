@@ -8,8 +8,6 @@ export async function register() {
     const { db } = await import('@/lib/db')
 
     // ── Step 1: Fix storeCode SQLite index (runs once, idempotent) ────────────
-    // Drops global unique index, creates per-business composite unique index.
-    // Required so two businesses can independently have the same store sequence.
     const constraintKey = 'migration:store_storeCode_constraint_v1'
     const constraintDone = await db.platformConfig.findUnique({ where: { key: constraintKey } })
     if (!constraintDone) {
@@ -23,17 +21,37 @@ export async function register() {
           create: { key: constraintKey, value: 'completed', description: 'Replaced Store.storeCode global unique with @@unique([businessId,storeCode])' },
           update: { value: 'completed' },
         })
-        console.log('[startup] store-constraint-fix: index updated to per-business composite')
+        console.log('[startup] store-constraint-fix: index updated')
       } catch (e) {
         console.warn('[startup] store-constraint-fix: skipped —', (e as Error).message)
       }
     }
 
-    // ── Step 2: Verify + self-heal store codes ────────────────────────────────
-    // Always verifies ALL stores, even if the migration lock is already set.
-    // If any store has an invalid code, force-repair runs automatically.
-    const { verifyStoreCodes, runStoreCodeBackfill } = await import('@/lib/migrations/backfill-store-codes')
+    // ── Step 2: Force-fix any STR-*/STO-* codes immediately ──────────────────
+    // Runs before verification. Directly detects and repairs invalid prefixes.
+    // Ignores migration lock — these codes must never persist.
+    const { runStoreCodeBackfill, verifyStoreCodes } = await import('@/lib/migrations/backfill-store-codes')
 
+    const invalidPrefixCount = await db.store.count({
+      where: {
+        OR: [
+          { storeCode: null },
+          { storeCode: { startsWith: 'STR-' } },
+          { storeCode: { startsWith: 'STO-' } },
+        ],
+      },
+    })
+
+    if (invalidPrefixCount > 0) {
+      console.log(`[startup] store-code-prefixfix: ${invalidPrefixCount} store(s) with invalid codes — force correcting`)
+      const fix = await runStoreCodeBackfill(true)
+      console.log(`[startup] store-code-prefixfix: corrected ${fix.storesUpdated} store(s)`)
+      for (const u of fix.updated) {
+        console.log(`  [startup] store-code-prefixfix  business=${u.businessCode} store="${u.storeName}" storeCode=${u.storeCode}`)
+      }
+    }
+
+    // ── Step 3: Verify all codes and self-heal any remaining INVALID ──────────
     const verification = await verifyStoreCodes()
     const invalid = verification.filter(s => s.status === 'INVALID')
 
@@ -51,11 +69,7 @@ export async function register() {
       const result = await runStoreCodeBackfill(true)
       console.log(`[startup] store-code-self-heal: corrected ${result.storesUpdated} store(s)`)
       for (const u of result.updated) {
-        console.log(
-          `  [startup] store-code-self-heal` +
-          ` business=${u.businessCode} store="${u.storeName}"` +
-          ` storeCode=${u.storeCode}`
-        )
+        console.log(`  [startup] store-code-self-heal  business=${u.businessCode} store="${u.storeName}" storeCode=${u.storeCode}`)
       }
     } else {
       const result = await runStoreCodeBackfill()
