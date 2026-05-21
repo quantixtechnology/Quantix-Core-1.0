@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useCallback, useEffect, useState } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { ArrowLeft, Tag, Copy, Check, Clock, Loader2 } from "lucide-react"
@@ -52,7 +53,7 @@ export function CustomerCoupons() {
   }
 
   const formatDiscount = (c: Coupon) =>
-    c.type === "PERCENTAGE" ? `${c.value}% off` : `₹${c.value} off`
+    c.type === "PERCENTAGE" ? `${c.value}% off` : `${formatINR(c.value)} off`
 
   const formatExpiry = (iso: string) => {
     try {
@@ -135,7 +136,7 @@ export function CustomerCoupons() {
                       <p className="text-[11px] text-gray-500 mb-1">{coupon.description}</p>
                     )}
                     <p className="text-[10px] text-gray-400">
-                      Min order ₹{coupon.minOrder}
+                      Min order {formatINR(coupon.minOrder)}
                       {coupon.usageLeft !== null ? ` • ${coupon.usageLeft} uses left` : ""}
                     </p>
                   </div>
@@ -146,7 +147,7 @@ export function CustomerCoupons() {
                     style={{ backgroundColor: `${brandColor}10` }}
                   >
                     <p className="text-lg font-extrabold leading-tight" style={{ color: brandColor }}>
-                      {coupon.type === "PERCENTAGE" ? `${coupon.value}%` : `₹${coupon.value}`}
+                      {coupon.type === "PERCENTAGE" ? `${coupon.value}%` : formatINR(coupon.value)}
                     </p>
                     <p className="text-[9px] text-gray-500">{coupon.type === "PERCENTAGE" ? "OFF" : "FLAT"}</p>
                   </div>

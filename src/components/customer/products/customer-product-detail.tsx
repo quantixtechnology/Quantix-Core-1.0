@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useProduct, useProducts } from "@/hooks/use-api"
@@ -234,7 +235,6 @@ export function CustomerProductDetail() {
     setQuantity(1)
   }
 
-  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
   const handleBack = () => { setSelectedProductId(null); setCustomerPage("products") }
   const handleRelatedClick = (id: string) => {
@@ -357,7 +357,7 @@ export function CustomerProductDetail() {
                     style={active ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : undefined}
                   >
                     {variant.name}
-                    <span className="ml-1 text-[10px] opacity-70">{formatPrice(variant.price)}</span>
+                    <span className="ml-1 text-[10px] opacity-70">{formatINR(variant.price)}</span>
                   </button>
                 )
               })}
@@ -399,10 +399,10 @@ export function CustomerProductDetail() {
 
         {/* Price */}
         <div className="mt-4 flex items-end gap-2">
-          <span className="text-2xl font-bold text-gray-900">{formatPrice(activeVariant.price)}</span>
+          <span className="text-2xl font-bold text-gray-900">{formatINR(activeVariant.price)}</span>
           {savings > 0 && (
             <>
-              <span className="text-base text-gray-400 line-through">{formatPrice(activeVariant.mrp)}</span>
+              <span className="text-base text-gray-400 line-through">{formatINR(activeVariant.mrp)}</span>
               <Badge className="text-white text-[10px]" style={{ backgroundColor: brandColor }}>
                 {savingsPercent}% OFF
               </Badge>
@@ -411,7 +411,7 @@ export function CustomerProductDetail() {
         </div>
         {savings > 0 && (
           <p className="text-xs font-medium mt-0.5" style={{ color: brandColor }}>
-            You save {formatPrice(savings)} on this item
+            You save {formatINR(savings)} on this item
           </p>
         )}
 
@@ -493,7 +493,7 @@ export function CustomerProductDetail() {
                     <div className="p-2">
                       <p className="text-[11px] font-medium text-gray-800 line-clamp-1">{rp.name}</p>
                       <p className="text-[10px] text-gray-400">{rpVariant.name}</p>
-                      <span className="text-xs font-bold">{formatPrice(rpVariant.price)}</span>
+                      <span className="text-xs font-bold">{formatINR(rpVariant.price)}</span>
                     </div>
                   </button>
                 )
@@ -513,7 +513,7 @@ export function CustomerProductDetail() {
               style={{ backgroundColor: brandColor }}
             >
               <Plus className="w-4 h-4 mr-2" />
-              Add to Cart — {formatPrice(activeVariant.price * quantity)}
+              Add to Cart — {formatINR(activeVariant.price * quantity)}
             </Button>
           ) : (
             <div className="flex items-center gap-3">

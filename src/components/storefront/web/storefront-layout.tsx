@@ -9,6 +9,7 @@ import {
   MapPin, Phone, Mail, Package,
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+import { formatINR } from "@/lib/currency"
 
 interface Category { id: string; name: string; slug: string; image: string | null }
 
@@ -275,7 +276,7 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 leading-tight truncate">{item.name}</p>
                         {item.variantName && <p className="text-xs text-gray-500">{item.variantName}</p>}
-                        <p className="text-sm font-bold mt-0.5" style={{ color: brandColor }}>₹{(item.price * item.quantity).toLocaleString("en-IN")}</p>
+                        <p className="text-sm font-bold mt-0.5" style={{ color: brandColor }}>{formatINR(item.price * item.quantity)}</p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
@@ -306,7 +307,7 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
                 <div className="px-5 py-4 border-t border-gray-100">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm text-gray-600">Subtotal</span>
-                    <span className="text-base font-bold text-gray-900">₹{subtotal().toLocaleString("en-IN")}</span>
+                    <span className="text-base font-bold text-gray-900">{formatINR(subtotal())}</span>
                   </div>
                   <button
                     onClick={() => { setCartOpen(false); nav.go("auth") }}

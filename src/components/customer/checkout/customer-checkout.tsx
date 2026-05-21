@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -136,7 +137,6 @@ export function CustomerCheckout() {
       .finally(() => setValidatingZone(false))
   }, [selectedAddress, currentBusinessId, addresses])
 
-  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return
@@ -393,7 +393,7 @@ export function CustomerCheckout() {
           {couponCode ? (
             <div className="flex items-center gap-2 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
               <CheckCircle2 className="w-4 h-4 text-green-600" />
-              <span className="text-xs text-green-700 font-medium">{couponCode} applied — saving {formatPrice(couponDiscount)}</span>
+              <span className="text-xs text-green-700 font-medium">{couponCode} applied — saving {formatINR(couponDiscount)}</span>
             </div>
           ) : (
             <div className="flex gap-2">
@@ -488,29 +488,29 @@ export function CustomerCheckout() {
                   {item.name} × {item.quantity}
                   {item.variantName && <span className="text-gray-400 ml-1">({item.variantName})</span>}
                 </span>
-                <span className="text-xs font-medium ml-2">{formatPrice(item.price * item.quantity)}</span>
+                <span className="text-xs font-medium ml-2">{formatINR(item.price * item.quantity)}</span>
               </div>
             ))}
           </div>
           <Separator />
           <div className="space-y-1.5 pt-2">
-            <div className="flex justify-between"><span className="text-xs text-gray-500">Subtotal</span><span className="text-xs">{formatPrice(subtotal)}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-gray-500">Subtotal</span><span className="text-xs">{formatINR(subtotal)}</span></div>
             {totalSavings > 0 && (
-              <div className="flex justify-between"><span className="text-xs" style={{ color: brandColor }}>Savings</span><span className="text-xs" style={{ color: brandColor }}>-{formatPrice(totalSavings)}</span></div>
+              <div className="flex justify-between"><span className="text-xs" style={{ color: brandColor }}>Savings</span><span className="text-xs" style={{ color: brandColor }}>-{formatINR(totalSavings)}</span></div>
             )}
             <div className="flex justify-between">
               <span className="text-xs text-gray-500">Delivery</span>
               <span className="text-xs" style={deliveryFee === 0 ? { color: brandColor } : undefined}>
-                {deliveryFee === 0 ? "FREE" : formatPrice(deliveryFee)}
+                {deliveryFee === 0 ? "FREE" : formatINR(deliveryFee)}
               </span>
             </div>
             {couponDiscount > 0 && (
-              <div className="flex justify-between"><span className="text-xs" style={{ color: brandColor }}>Coupon ({couponCode})</span><span className="text-xs" style={{ color: brandColor }}>-{formatPrice(couponDiscount)}</span></div>
+              <div className="flex justify-between"><span className="text-xs" style={{ color: brandColor }}>Coupon ({couponCode})</span><span className="text-xs" style={{ color: brandColor }}>-{formatINR(couponDiscount)}</span></div>
             )}
             <Separator />
             <div className="flex justify-between pt-1">
               <span className="text-sm font-bold">Total</span>
-              <span className="text-lg font-bold">{formatPrice(total)}</span>
+              <span className="text-lg font-bold">{formatINR(total)}</span>
             </div>
           </div>
         </div>
@@ -529,7 +529,7 @@ export function CustomerCheckout() {
               <Loader2 className="w-4 h-4 animate-spin" />
               {razorpayProcessing ? "Processing payment..." : "Placing Order..."}
             </span>
-          ) : `Place Order — ${formatPrice(total)}`}
+          ) : `Place Order — ${formatINR(total)}`}
         </Button>
         {addresses.length === 0 && (
           <p className="text-[11px] text-center text-amber-600 mt-2">Add a delivery address to continue</p>

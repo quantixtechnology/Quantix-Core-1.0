@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useCallback, useEffect, useState } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useCartStore } from "@/stores/cart-store"
@@ -90,7 +91,6 @@ export function CustomerWishlist() {
     showSuccess(`${product.name} added to cart`)
   }
 
-  const formatPrice = (n: number) => `₹${n.toLocaleString("en-IN")}`
 
   return (
     <div className="pb-20">
@@ -171,10 +171,10 @@ export function CustomerWishlist() {
                   )}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {price != null && (
-                      <span className="text-sm font-bold text-gray-900">{formatPrice(price)}</span>
+                      <span className="text-sm font-bold text-gray-900">{formatINR(price)}</span>
                     )}
                     {originalPrice != null && originalPrice !== price && (
-                      <span className="text-[10px] text-gray-400 line-through">{formatPrice(originalPrice)}</span>
+                      <span className="text-[10px] text-gray-400 line-through">{formatINR(originalPrice)}</span>
                     )}
                     {product.discountPercent != null && product.discountPercent > 0 && (
                       <span

@@ -5,6 +5,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"
 import { resolveImageUrl } from "@/lib/image-url"
+import { formatINR } from "@/lib/currency"
 import { ChevronRight, ShoppingCart, Plus, Minus, Check, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -282,14 +283,19 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
             <p className="text-gray-500 text-sm mb-4">{product.shortDesc}</p>
           )}
 
+          {/* Weight label for single-variant products */}
+          {selectedVariant && selectedVariant.name !== "Default" && product.variants.filter((v) => v.isActive).length === 1 && (
+            <p className="text-sm font-medium text-gray-600 mb-2">{selectedVariant.name}</p>
+          )}
+
           {/* Price */}
           <div className="flex items-baseline gap-3 mb-2">
             <span className="text-3xl font-extrabold" style={{ color: brandColor }}>
-              ₹{price.toLocaleString("en-IN")}
+              {formatINR(price)}
             </span>
             {hasDiscount && (
               <>
-                <span className="text-lg text-gray-400 line-through">₹{mrp.toLocaleString("en-IN")}</span>
+                <span className="text-lg text-gray-400 line-through">{formatINR(mrp)}</span>
                 <span className="text-sm font-bold text-white px-2 py-0.5 rounded-full" style={{ backgroundColor: brandColor }}>
                   {discountPct}% OFF
                 </span>
@@ -319,7 +325,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
                   >
                     {v.name}
                     {v.price !== price && (
-                      <span className="ml-1 opacity-80">· ₹{v.price.toLocaleString("en-IN")}</span>
+                      <span className="ml-1 opacity-80">· {formatINR(v.price)}</span>
                     )}
                   </button>
                 ))}
@@ -424,7 +430,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
               ) : (
                 <>
                   <ShoppingCart className="w-5 h-5" />
-                  {config.labels.addToCart} · ₹{(price * qty).toLocaleString("en-IN")}
+                  {config.labels.addToCart} · {formatINR(price * qty)}
                 </>
               )}
             </button>

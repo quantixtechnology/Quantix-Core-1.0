@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useOrders } from "@/hooks/use-api"
@@ -129,7 +130,6 @@ export function CustomerOrders() {
     }
   }
 
-  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
   const formatDate = (dateStr: string) => {
     try {
@@ -249,7 +249,7 @@ export function CustomerOrders() {
 
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-gray-400">{formatDate(order.createdAt)}</span>
-                <span className="text-sm font-bold text-gray-900">{formatPrice(order.totalAmount)}</span>
+                <span className="text-sm font-bold text-gray-900">{formatINR(order.totalAmount)}</span>
               </div>
 
               {order.status === "OUT_FOR_DELIVERY" && (

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -75,7 +76,6 @@ export function CustomerCart() {
   const [couponError, setCouponError] = useState("")
   const [couponSuccess, setCouponSuccess] = useState("")
 
-  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
   const handleApplyCoupon = () => {
     setCouponError("")
@@ -89,7 +89,7 @@ export function CustomerCart() {
     }
 
     if (subtotal < coupon.minOrder) {
-      setCouponError(`Minimum order of ${formatPrice(coupon.minOrder)} required`)
+      setCouponError(`Minimum order of ${formatINR(coupon.minOrder)} required`)
       return
     }
 
@@ -107,7 +107,7 @@ export function CustomerCart() {
         : coupon.value
 
     applyCoupon(code, discount)
-    setCouponSuccess(`Coupon ${code} applied! You save ${formatPrice(discount)}`)
+    setCouponSuccess(`Coupon ${code} applied! You save ${formatINR(discount)}`)
     setCouponInput("")
   }
 
@@ -168,7 +168,7 @@ export function CustomerCart() {
         <div className="mx-4 mb-3 bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-2">
           <Truck className="w-4 h-4 text-amber-600 flex-shrink-0" />
           <p className="text-[11px] text-amber-700">
-            Add {formatPrice(500 - subtotal)} more for <span className="font-semibold">FREE delivery</span>
+            Add {formatINR(500 - subtotal)} more for <span className="font-semibold">FREE delivery</span>
           </p>
         </div>
       )}
@@ -214,11 +214,11 @@ export function CustomerCart() {
                 <div className="flex items-center justify-between mt-2">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-bold text-gray-900">
-                      {formatPrice(item.price * item.quantity)}
+                      {formatINR(item.price * item.quantity)}
                     </span>
                     {savings > 0 && (
                       <span className="text-[10px] text-gray-400 line-through">
-                        {formatPrice(item.mrp * item.quantity)}
+                        {formatINR(item.mrp * item.quantity)}
                       </span>
                     )}
                   </div>
@@ -263,7 +263,7 @@ export function CustomerCart() {
             <div className="flex items-center justify-between rounded-lg px-3 py-2 border" style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}25` }}>
               <div>
                 <span className="text-xs font-bold" style={{ color: brandColor }}>{couponCode}</span>
-                <span className="text-[10px] ml-2" style={{ color: brandColor }}>-{formatPrice(couponDiscount)}</span>
+                <span className="text-[10px] ml-2" style={{ color: brandColor }}>-{formatINR(couponDiscount)}</span>
               </div>
               <button onClick={handleRemoveCoupon}>
                 <X className="w-3.5 h-3.5" style={{ color: brandColor }} />
@@ -310,37 +310,37 @@ export function CustomerCart() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Subtotal</span>
-              <span className="text-xs font-medium">{formatPrice(subtotal)}</span>
+              <span className="text-xs font-medium">{formatINR(subtotal)}</span>
             </div>
             {totalSavings > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-xs" style={{ color: brandColor }}>Savings</span>
-                <span className="text-xs font-medium" style={{ color: brandColor }}>-{formatPrice(totalSavings)}</span>
+                <span className="text-xs font-medium" style={{ color: brandColor }}>-{formatINR(totalSavings)}</span>
               </div>
             )}
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Delivery Fee</span>
               <span className="text-xs font-medium" style={deliveryFee === 0 ? { color: brandColor } : undefined}>
-                {deliveryFee === 0 ? "FREE" : formatPrice(deliveryFee)}
+                {deliveryFee === 0 ? "FREE" : formatINR(deliveryFee)}
               </span>
             </div>
             {couponDiscount > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-xs" style={{ color: brandColor }}>Coupon Discount</span>
-                <span className="text-xs font-medium" style={{ color: brandColor }}>-{formatPrice(couponDiscount)}</span>
+                <span className="text-xs font-medium" style={{ color: brandColor }}>-{formatINR(couponDiscount)}</span>
               </div>
             )}
             <Separator />
             <div className="flex items-center justify-between pt-1">
               <span className="text-sm font-bold text-gray-900">Total</span>
-              <span className="text-lg font-bold text-gray-900">{formatPrice(total)}</span>
+              <span className="text-lg font-bold text-gray-900">{formatINR(total)}</span>
             </div>
           </div>
           {totalSavings > 0 && (
             <div className="mt-3 rounded-lg px-3 py-2 flex items-center gap-1.5" style={{ backgroundColor: `${brandColor}0d` }}>
               <Badge className="text-white text-[9px] px-1 py-0 h-4" style={{ backgroundColor: brandColor }}>SAVING</Badge>
               <span className="text-xs font-medium" style={{ color: brandColor }}>
-                You&apos;re saving {formatPrice(totalSavings)} on this order
+                You&apos;re saving {formatINR(totalSavings)} on this order
               </span>
             </div>
           )}

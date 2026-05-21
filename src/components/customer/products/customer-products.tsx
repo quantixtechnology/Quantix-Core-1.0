@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useProducts, useCategories } from "@/hooks/use-api"
@@ -234,7 +235,6 @@ export function CustomerProducts() {
     setCustomerPage("product-detail")
   }
 
-  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
   const getCatColor = (categoryId: string) => {
     return categories.find((c) => c.id === categoryId)?.color || "#10B981"
@@ -358,7 +358,7 @@ export function CustomerProducts() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-gray-700">{f.label}</span>
                   <span className="text-xs font-medium" style={{ color: brandColor }}>
-                    {f.unit}{priceRange[0]} – {f.unit}{priceRange[1]}
+                    {formatINR(priceRange[0])} – {formatINR(priceRange[1])}
                   </span>
                 </div>
                 <input
@@ -463,9 +463,9 @@ export function CustomerProducts() {
                     <p className="text-[10px] text-gray-400">{defaultVariant.name}</p>
                   </button>
                   <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-sm font-bold text-gray-900">{formatPrice(defaultVariant.price)}</span>
+                    <span className="text-sm font-bold text-gray-900">{formatINR(defaultVariant.price)}</span>
                     {savings > 0 && (
-                      <span className="text-[10px] text-gray-400 line-through">{formatPrice(defaultVariant.mrp)}</span>
+                      <span className="text-[10px] text-gray-400 line-through">{formatINR(defaultVariant.mrp)}</span>
                     )}
                   </div>
                   {!isOutOfStock && (

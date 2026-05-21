@@ -5,6 +5,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig, getCategoryIcon } from "@/lib/business-type-config"
 import { resolveImageUrl } from "@/lib/image-url"
+import { formatINR } from "@/lib/currency"
 import { ChevronRight, Plus, Zap, Shield, Star, Truck, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -211,11 +212,14 @@ function ProductCard({
 
       <div className="p-3">
         <p className="text-sm font-semibold text-gray-900 truncate">{product.name}</p>
-        {product.shortDesc && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{product.shortDesc}</p>}
+        {defaultVariant && defaultVariant.name !== "Default" && (
+          <p className="text-xs text-gray-400 mt-0.5 truncate">{defaultVariant.name}</p>
+        )}
+        {!defaultVariant && product.shortDesc && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{product.shortDesc}</p>}
         <div className="mt-2 flex items-center justify-between">
           <div>
-            <span className="text-base font-bold" style={{ color: brandColor }}>₹{price.toLocaleString("en-IN")}</span>
-            {hasDiscount && <span className="ml-1.5 text-xs text-gray-400 line-through">₹{mrp.toLocaleString("en-IN")}</span>}
+            <span className="text-base font-bold" style={{ color: brandColor }}>{formatINR(price)}</span>
+            {hasDiscount && <span className="ml-1.5 text-xs text-gray-400 line-through">{formatINR(mrp)}</span>}
           </div>
           <button
             onClick={handleAdd}

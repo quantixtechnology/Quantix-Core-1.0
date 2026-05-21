@@ -20,31 +20,30 @@ export function cn(...inputs: ClassValue[]) {
 // ============================================================================
 
 /**
- * Format amount as INR currency (or other)
+ * Format amount as INR currency.
+ * Uses manual ₹ prefix — avoids Intl.NumberFormat currency style which
+ * requires full ICU data (outputs '$' on some Node.js VPS builds).
  */
 export function formatCurrency(amount: number, currency: string = 'INR'): string {
+  if (currency === 'INR') {
+    return '₹' + Math.round(amount).toLocaleString('en-IN')
+  }
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 /**
  * Format amount as compact INR (e.g., ₹1.2L, ₹1.5Cr)
  */
 export function formatCompactCurrency(amount: number, currency: string = 'INR'): string {
-  if (amount >= 10000000) {
-    return `${currency === 'INR' ? '₹' : ''}${(amount / 10000000).toFixed(1)}Cr`;
-  }
-  if (amount >= 100000) {
-    return `${currency === 'INR' ? '₹' : ''}${(amount / 100000).toFixed(1)}L`;
-  }
-  if (amount >= 1000) {
-    return `${currency === 'INR' ? '₹' : ''}${(amount / 1000).toFixed(1)}K`;
-  }
-  return formatCurrency(amount, currency);
+  if (currency !== 'INR') return formatCurrency(amount, currency)
+  if (amount >= 10_000_000) return `₹${(amount / 10_000_000).toFixed(1)}Cr`
+  if (amount >= 100_000)    return `₹${(amount / 100_000).toFixed(1)}L`
+  if (amount >= 1_000)      return `₹${(amount / 1_000).toFixed(1)}K`
+  return formatCurrency(amount)
 }
 
 // ============================================================================

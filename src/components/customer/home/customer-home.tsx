@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useMemo } from "react"
+import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { useProducts, useCategories } from "@/hooks/use-api"
@@ -211,7 +212,6 @@ export function CustomerHome() {
     setCustomerPage("product-detail")
   }
 
-  const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
 
   const getCatColor = (categoryId: string) => {
     return categories.find((c) => c.id === categoryId)?.color || "#10B981"
@@ -436,9 +436,9 @@ export function CustomerHome() {
                     <p className="text-xs font-medium text-gray-800 line-clamp-1">{product.name}</p>
                     <p className="text-[10px] text-gray-400">{defaultVariant.name}</p>
                     <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-sm font-bold text-gray-900">{formatPrice(defaultVariant.price)}</span>
+                      <span className="text-sm font-bold text-gray-900">{formatINR(defaultVariant.price)}</span>
                       {savings > 0 && (
-                        <span className="text-[10px] text-gray-400 line-through">{formatPrice(defaultVariant.mrp)}</span>
+                        <span className="text-[10px] text-gray-400 line-through">{formatINR(defaultVariant.mrp)}</span>
                       )}
                     </div>
                     <div className="mt-1.5">
@@ -516,9 +516,9 @@ export function CustomerHome() {
                       <p className="text-xs font-medium text-gray-800 truncate">{product.name}</p>
                       <p className="text-[10px] text-gray-400">{defaultVariant.name}</p>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold">{formatPrice(defaultVariant.price)}</span>
+                        <span className="text-xs font-bold">{formatINR(defaultVariant.price)}</span>
                         {defaultVariant.mrp > defaultVariant.price && (
-                          <span className="text-[10px] text-gray-400 line-through">{formatPrice(defaultVariant.mrp)}</span>
+                          <span className="text-[10px] text-gray-400 line-through">{formatINR(defaultVariant.mrp)}</span>
                         )}
                       </div>
                     </div>
