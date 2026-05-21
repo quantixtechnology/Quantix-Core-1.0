@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from '@/components/ui/card'
@@ -75,19 +75,7 @@ function DataRepairSection() {
   const [verifyState, setVerifyState] = useState<VerifyState>({ status: 'idle' })
   const [repairState, setRepairState] = useState<RepairState>({ status: 'idle' })
 
-  const runVerify = async () => {
-    setVerifyState({ status: 'running' })
-    try {
-      const res = await fetch('/api/debug/store-codes', { headers: getAuthHeaders() })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error || 'Verification failed')
-      setVerifyState({ status: 'done', summary: json.summary, data: json.data })
-    } catch (err) {
-      setVerifyState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
-    }
-  }
-
-  const runRepair = async () => {
+  const runRepair = useCallback(async (silent = false) => {
     setRepairState({ status: 'running' })
     try {
       const res = await fetch(
@@ -97,12 +85,34 @@ function DataRepairSection() {
       const json = await res.json()
       if (!json.success) throw new Error(json.error || 'Repair failed')
       setRepairState({ status: 'done', storesUpdated: json.data.storesUpdated })
-      // Re-verify after repair so the table refreshes
-      await runVerify()
     } catch (err) {
-      setRepairState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
+      if (!silent) setRepairState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
+      else setRepairState({ status: 'idle' })
     }
-  }
+  }, [])
+
+  const runVerify = useCallback(async (autoRepair = false) => {
+    setVerifyState({ status: 'running' })
+    try {
+      const res = await fetch('/api/debug/store-codes', { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Verification failed')
+      setVerifyState({ status: 'done', summary: json.summary, data: json.data })
+      // Auto-repair silently if any invalid codes detected
+      if (autoRepair && json.summary?.invalid > 0) {
+        await runRepair(true)
+        // Re-verify to show final state
+        const res2 = await fetch('/api/debug/store-codes', { headers: getAuthHeaders() })
+        const json2 = await res2.json()
+        if (json2.success) setVerifyState({ status: 'done', summary: json2.summary, data: json2.data })
+      }
+    } catch (err) {
+      setVerifyState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
+    }
+  }, [runRepair])
+
+  // Auto-verify on mount — auto-repairs silently if INVALID codes detected
+  useEffect(() => { runVerify(true) }, [runVerify])
 
   const v = verifyState
   const r = repairState
@@ -140,7 +150,7 @@ function DataRepairSection() {
                 variant="outline"
                 className="h-8 text-xs gap-1.5"
                 disabled={v.status === 'running' || r.status === 'running'}
-                onClick={runVerify}
+                onClick={() => runVerify(false)}
               >
                 {v.status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
                 Verify Store Codes
@@ -150,7 +160,7 @@ function DataRepairSection() {
                 variant={hasProblems ? 'default' : 'ghost'}
                 className={`h-8 text-xs gap-1.5 ${hasProblems ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'text-muted-foreground'}`}
                 disabled={v.status === 'running' || r.status === 'running'}
-                onClick={runRepair}
+                onClick={async () => { await runRepair(false); await runVerify(false) }}
               >
                 {r.status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <SkipForward className="size-3" />}
                 Repair Store Codes
