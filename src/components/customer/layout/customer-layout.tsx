@@ -17,7 +17,8 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
   const activeStyle = { color: brandColor }
 
   const handleTabPress = (page: "home" | "products" | "cart" | "orders" | "profile") => {
-    if (!customerLoggedIn && page !== "home") {
+    // Guests can browse products and cart; only orders and profile require login
+    if (!customerLoggedIn && (page === "orders" || page === "profile")) {
       setCustomerPage("auth")
       return
     }

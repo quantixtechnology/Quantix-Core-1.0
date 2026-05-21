@@ -49,7 +49,7 @@ function StorefrontContextLoader({
           setCurrentStoreId(store.id)
           setCurrentStoreName(store.name || "")
           setCartStoreId(store.id)
-          setStoreContext(store.deliveryFee ?? null, store.minOrderAmount ?? null)
+          setStoreContext(store.deliveryFee ?? null, store.minOrderAmount ?? null, json.data.paymentGateways || [])
         }
         setViewMode("customer")
       })
@@ -180,6 +180,7 @@ const CustomerNotifications = dynamic(() => import("@/components/customer/notifi
 const CustomerSupport = dynamic(() => import("@/components/customer/support/customer-support").then(m => ({ default: m.CustomerSupport })), { loading: () => <PageLoader /> })
 const CustomerWishlist = dynamic(() => import("@/components/customer/wishlist/customer-wishlist").then(m => ({ default: m.CustomerWishlist })), { loading: () => <PageLoader /> })
 const CustomerReview = dynamic(() => import("@/components/customer/review/customer-review").then(m => ({ default: m.CustomerReview })), { loading: () => <PageLoader /> })
+const CustomerCoupons = dynamic(() => import("@/components/customer/coupons/customer-coupons").then(m => ({ default: m.CustomerCoupons })), { loading: () => <PageLoader /> })
 
 // ── Storefront Shell (lazy) ───────────────────────────────────────────────
 const StorefrontShell = dynamic(() => import("@/components/storefront/storefront-shell").then(m => ({ default: m.StorefrontShell })), { loading: () => <PageLoader /> })
@@ -390,6 +391,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "support": return <CustomerSupport />
       case "wishlist": return <CustomerWishlist />
       case "review": return <CustomerReview />
+      case "coupons": return <CustomerCoupons />
       default: return <CustomerHome />
     }
   }

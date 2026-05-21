@@ -4,11 +4,13 @@ import { useState, useMemo, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useOrders } from "@/hooks/use-api"
+import { useCartStore } from "@/stores/cart-store"
 import { setBusinessContext } from "@/lib/api-client"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState, EmptyState } from "@/components/ui/loading-states"
 import { Badge } from "@/components/ui/badge"
-import { ClipboardList, ChevronRight, Package } from "lucide-react"
+import { showSuccess, showError } from "@/lib/toast-utils"
+import { ClipboardList, ChevronRight, Package, RotateCcw, Loader2 } from "lucide-react"
 
 const statusColors: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -38,8 +40,10 @@ interface OrderItem {
 export function CustomerOrders() {
   const { setCustomerPage, setSelectedOrderId, currentBusinessId, currentBusinessName, currentBusinessPrimaryColor } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
-  const { user } = useAuthStore()
+  const { user, token } = useAuthStore()
+  const addItem = useCartStore((s) => s.addItem)
   const [activeTab, setActiveTab] = useState<TabFilter>("active")
+  const [reordering, setReordering] = useState<string | null>(null)
 
   useEffect(() => {
     if (currentBusinessId) setBusinessContext(currentBusinessId)
@@ -90,6 +94,39 @@ export function CustomerOrders() {
   const handleOrderClick = (orderId: string) => {
     setSelectedOrderId(orderId)
     setCustomerPage("order-tracking")
+  }
+
+  const handleReorder = async (e: React.MouseEvent, orderId: string) => {
+    e.stopPropagation()
+    setReordering(orderId)
+    try {
+      const res = await fetch(`/api/core/storefront/orders/${orderId}/reorder`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await res.json()
+      if (!json.success) { showError(json.error || "Failed to reorder"); return }
+      const cartItems = (json.data as Array<Record<string, unknown>>) || []
+      cartItems.forEach((item) => {
+        addItem({
+          productId: item.productId as string,
+          variantId: item.variantId as string,
+          name: item.name as string,
+          variantName: item.variantName as string || "",
+          price: item.price as number,
+          mrp: item.mrp as number,
+          quantity: item.quantity as number,
+          image: item.image as string || "",
+          isVeg: (item.isVeg as boolean) || false,
+        })
+      })
+      showSuccess("Items added to cart")
+      setCustomerPage("cart")
+    } catch {
+      showError("Failed to reorder")
+    } finally {
+      setReordering(null)
+    }
   }
 
   const formatPrice = (price: number) => `₹${price.toLocaleString("en-IN")}`
@@ -221,6 +258,22 @@ export function CustomerOrders() {
                   <span className="text-[10px] font-medium" style={{ color: brandColor }}>
                     Your order is on the way!
                   </span>
+                </div>
+              )}
+              {order.status === "DELIVERED" && (
+                <div className="mt-2 flex justify-end">
+                  <button
+                    onClick={(e) => handleReorder(e, order.id)}
+                    disabled={reordering === order.id}
+                    className="flex items-center gap-1.5 px-3 h-7 rounded-full text-[11px] font-semibold border transition-colors"
+                    style={{ borderColor: `${brandColor}50`, color: brandColor }}
+                  >
+                    {reordering === order.id
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : <RotateCcw className="w-3 h-3" />
+                    }
+                    Reorder
+                  </button>
                 </div>
               )}
             </button>

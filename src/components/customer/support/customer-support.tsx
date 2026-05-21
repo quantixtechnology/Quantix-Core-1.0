@@ -2,11 +2,14 @@
 
 import React, { useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import {
   ArrowLeft, Phone, MessageCircle, Mail, ChevronDown, ChevronUp,
   HelpCircle, Clock, Package, RefreshCw, Truck, CreditCard, Scale,
+  Ticket, CheckCircle2, Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { showSuccess, showError } from "@/lib/toast-utils"
 
 interface FaqItem { q: string; a: string; icon: React.ElementType }
 
@@ -53,10 +56,53 @@ const FAQ: FaqItem[] = [
   },
 ]
 
+const TICKET_CATEGORIES = [
+  "Order Issue", "Payment", "Refund", "Product Quality", "Delivery", "Other",
+]
+
 export function CustomerSupport() {
-  const { setCustomerPage, currentBusinessPrimaryColor, currentBusinessName } = useAdminStore()
+  const { setCustomerPage, currentBusinessPrimaryColor, currentBusinessName, currentBusinessId } = useAdminStore()
+  const { user, token } = useAuthStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [showTicketForm, setShowTicketForm] = useState(false)
+  const [ticketSubmitted, setTicketSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [ticketForm, setTicketForm] = useState({
+    name: user?.name || "",
+    phone: "",
+    subject: "",
+    category: "Order Issue",
+    message: "",
+  })
+
+  const handleTicketSubmit = async () => {
+    if (!ticketForm.name.trim()) { showError("Name is required"); return }
+    if (!ticketForm.subject.trim()) { showError("Subject is required"); return }
+    if (!ticketForm.message.trim()) { showError("Message is required"); return }
+    setSubmitting(true)
+    try {
+      const res = await fetch("/api/core/storefront/support/ticket", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ...ticketForm, businessId: currentBusinessId }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setTicketSubmitted(true)
+        showSuccess("Ticket raised!", "We'll get back to you within 24 hours.")
+      } else {
+        showError(json.error || "Failed to raise ticket")
+      }
+    } catch {
+      showError("Failed to raise ticket")
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const phone   = "+91 98765 43210"
   const email   = "support@arbazchicken.com"
@@ -132,6 +178,90 @@ export function CustomerSupport() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Raise a Ticket */}
+      <div className="px-4 mb-4">
+        <button
+          onClick={() => { setShowTicketForm((v) => !v); setTicketSubmitted(false) }}
+          className="w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-colors"
+          style={showTicketForm ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : { borderColor: '#e5e7eb', backgroundColor: '#fff' }}
+        >
+          <div className="flex items-center gap-2">
+            <Ticket className="w-4 h-4" style={{ color: brandColor }} />
+            <span className="text-sm font-semibold text-gray-800">Raise a Support Ticket</span>
+          </div>
+          {showTicketForm
+            ? <ChevronUp className="w-4 h-4 text-gray-400" />
+            : <ChevronDown className="w-4 h-4 text-gray-400" />
+          }
+        </button>
+
+        {showTicketForm && (
+          <div className="mt-2 bg-white border border-gray-100 rounded-2xl p-4 space-y-3">
+            {ticketSubmitted ? (
+              <div className="flex flex-col items-center py-6 gap-3 text-center">
+                <CheckCircle2 className="w-10 h-10" style={{ color: brandColor }} />
+                <p className="text-sm font-semibold text-gray-800">Ticket Submitted!</p>
+                <p className="text-xs text-gray-500">Our team will reach out within 24 hours.</p>
+                <button
+                  onClick={() => { setTicketSubmitted(false); setTicketForm({ name: user?.name || "", phone: "", subject: "", category: "Order Issue", message: "" }) }}
+                  className="text-xs font-medium mt-1"
+                  style={{ color: brandColor }}
+                >
+                  Raise another ticket
+                </button>
+              </div>
+            ) : (
+              <>
+                {[
+                  { key: "name", label: "Your Name", type: "text", placeholder: "Full name" },
+                  { key: "phone", label: "Phone (optional)", type: "tel", placeholder: "+91 98765 43210" },
+                  { key: "subject", label: "Subject", type: "text", placeholder: "Brief issue summary" },
+                ].map(({ key, label, type, placeholder }) => (
+                  <div key={key}>
+                    <label className="text-[11px] font-medium text-gray-500 mb-1 block">{label}</label>
+                    <input
+                      type={type}
+                      value={ticketForm[key as keyof typeof ticketForm]}
+                      onChange={(e) => setTicketForm((f) => ({ ...f, [key]: e.target.value }))}
+                      placeholder={placeholder}
+                      className="w-full h-9 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400"
+                    />
+                  </div>
+                ))}
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">Category</label>
+                  <select
+                    value={ticketForm.category}
+                    onChange={(e) => setTicketForm((f) => ({ ...f, category: e.target.value }))}
+                    className="w-full h-9 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400"
+                  >
+                    {TICKET_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 mb-1 block">Message</label>
+                  <textarea
+                    value={ticketForm.message}
+                    onChange={(e) => setTicketForm((f) => ({ ...f, message: e.target.value }))}
+                    placeholder="Describe your issue in detail..."
+                    rows={3}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400 resize-none"
+                  />
+                </div>
+                <Button
+                  onClick={handleTicketSubmit}
+                  disabled={submitting}
+                  className="w-full h-10 text-sm font-semibold rounded-xl text-white"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit Ticket"}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* FAQ */}

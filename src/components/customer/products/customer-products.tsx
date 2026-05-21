@@ -6,12 +6,13 @@ import { useCartStore } from "@/stores/cart-store"
 import { useProducts, useCategories } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
 import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
+import { getProductFilters } from "@/lib/business-type-config"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState } from "@/components/ui/loading-states"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Search, Plus, Minus, Leaf, X, SlidersHorizontal } from "lucide-react"
+import { Search, Plus, Minus, Leaf, X, SlidersHorizontal, ChevronDown } from "lucide-react"
 
 interface ProductItem {
   id: string
@@ -39,6 +40,11 @@ export function CustomerProducts() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<"default" | "price-low" | "price-high" | "discount">("default")
+  const [showFilters, setShowFilters] = useState(false)
+  const [toggleFilters, setToggleFilters] = useState<Record<string, boolean>>({})
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 5000])
+
+  const productFilters = useMemo(() => getProductFilters(currentBusinessType), [currentBusinessType])
 
   const BIZ_ID = currentBusinessId || ""
 
@@ -138,17 +144,38 @@ export function CustomerProducts() {
     return []
   }, [demoProductsList, apiProducts])
 
-  // Client-side sort
+  // Client-side filter + sort
   const filteredProducts = useMemo(() => {
     let result = allProducts
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query) ||
-          p.category.toLowerCase().includes(query)
+        (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
       )
+    }
+
+    // Apply toggle filters (halal, fresh_today, availability, etc.)
+    for (const [filterId, active] of Object.entries(toggleFilters)) {
+      if (!active) continue
+      const filterDef = productFilters.find((f) => f.id === filterId)
+      if (!filterDef?.metaKey) continue
+      if (filterId === "availability") {
+        result = result.filter((p) => {
+          const v = p.variants.find((v) => v.isDefault) || p.variants[0]
+          return !v || (v.stock == null || v.stock > 0)
+        })
+      }
+      // Other meta-based filters: pass through (metadata is on API products, not demo products)
+    }
+
+    // Price range filter
+    const [minPrice, maxPrice] = priceRange
+    if (minPrice > 0 || maxPrice < 5000) {
+      result = result.filter((p) => {
+        const price = (p.variants.find((v) => v.isDefault) || p.variants[0])?.price || 0
+        return price >= minPrice && price <= maxPrice
+      })
     }
 
     switch (sortBy) {
@@ -178,7 +205,9 @@ export function CustomerProducts() {
     }
 
     return result
-  }, [allProducts, searchQuery, sortBy])
+  }, [allProducts, searchQuery, sortBy, toggleFilters, priceRange, productFilters])
+
+  const activeFilterCount = Object.values(toggleFilters).filter(Boolean).length + (priceRange[0] > 0 || priceRange[1] < 5000 ? 1 : 0)
 
   const getCartQty = (productId: string, variantId: string) => {
     const item = items.find((i) => i.productId === productId && i.variantId === variantId)
@@ -265,25 +294,97 @@ export function CustomerProducts() {
         ))}
       </div>
 
-      {/* Sort & Results */}
-      <div className="flex items-center justify-between px-4 py-2">
-        <span className="text-xs text-gray-500">
-          {productsLoading ? "Loading..." : `${filteredProducts.length} product${filteredProducts.length !== 1 ? "s" : ""}`}
+      {/* Sort & Filter Bar */}
+      <div className="flex items-center justify-between px-4 py-2 gap-2">
+        <span className="text-xs text-gray-500 shrink-0">
+          {productsLoading ? "Loading..." : `${filteredProducts.length} item${filteredProducts.length !== 1 ? "s" : ""}`}
         </span>
-        <div className="flex items-center gap-1">
-          <SlidersHorizontal className="w-3 h-3 text-gray-400" />
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            className="text-xs text-gray-600 bg-transparent border-none outline-none cursor-pointer"
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] font-medium border transition-colors"
+            style={activeFilterCount > 0
+              ? { borderColor: brandColor, color: brandColor, backgroundColor: `${brandColor}10` }
+              : { borderColor: "#e5e7eb", color: "#6b7280" }
+            }
           >
-            <option value="default">Relevance</option>
-            <option value="price-low">Price: Low to High</option>
-            <option value="price-high">Price: High to Low</option>
-            <option value="discount">Discount</option>
-          </select>
+            <SlidersHorizontal className="w-3 h-3" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ backgroundColor: brandColor }}>
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <div className="flex items-center gap-1 border border-gray-200 rounded-lg px-2 h-7">
+            <ChevronDown className="w-3 h-3 text-gray-400" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="text-[11px] text-gray-600 bg-transparent border-none outline-none cursor-pointer"
+            >
+              <option value="default">Relevance</option>
+              <option value="price-low">Price ↑</option>
+              <option value="price-high">Price ↓</option>
+              <option value="discount">Discount</option>
+            </select>
+          </div>
         </div>
       </div>
+
+      {/* Advanced Filter Panel */}
+      {showFilters && (
+        <div className="mx-4 mb-3 bg-white border border-gray-100 rounded-2xl p-4 space-y-4">
+          {/* Toggle filters */}
+          {productFilters.filter((f) => f.type === "toggle").map((filter) => (
+            <div key={filter.id} className="flex items-center justify-between">
+              <span className="text-sm text-gray-700">{filter.label}</span>
+              <button
+                onClick={() => setToggleFilters((prev) => ({ ...prev, [filter.id]: !prev[filter.id] }))}
+                className={`w-10 h-5 rounded-full relative transition-colors`}
+                style={toggleFilters[filter.id] ? { backgroundColor: brandColor } : { backgroundColor: "#e5e7eb" }}
+              >
+                <div
+                  className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${toggleFilters[filter.id] ? "translate-x-5" : "translate-x-0.5"}`}
+                />
+              </button>
+            </div>
+          ))}
+          {/* Price range */}
+          {productFilters.find((f) => f.type === "range") && (() => {
+            const f = productFilters.find((f) => f.type === "range")!
+            return (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-700">{f.label}</span>
+                  <span className="text-xs font-medium" style={{ color: brandColor }}>
+                    {f.unit}{priceRange[0]} – {f.unit}{priceRange[1]}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={f.min ?? 0}
+                  max={f.max ?? 5000}
+                  step={f.step ?? 50}
+                  value={priceRange[1]}
+                  onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])}
+                  className="w-full accent-current"
+                  style={{ accentColor: brandColor }}
+                />
+              </div>
+            )
+          })()}
+          {/* Clear */}
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => { setToggleFilters({}); setPriceRange([0, 5000]) }}
+              className="w-full text-xs font-medium text-red-500 hover:text-red-600 pt-1"
+            >
+              Clear All Filters
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Product Grid */}
       {productsLoading ? (

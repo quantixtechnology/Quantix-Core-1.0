@@ -97,6 +97,7 @@ export type CustomerPage =
   | "notifications"
   | "wishlist"
   | "review"
+  | "coupons"
 
 export type DeliveryPage =
   | "login"

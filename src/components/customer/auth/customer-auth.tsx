@@ -171,6 +171,21 @@ export function CustomerAuth() {
               )}
             </Button>
 
+            <div className="flex items-center gap-3 my-4">
+              <div className="flex-1 h-px bg-gray-100" />
+              <span className="text-[11px] text-gray-400">or</span>
+              <div className="flex-1 h-px bg-gray-100" />
+            </div>
+
+            <button
+              onClick={() => {
+                setCustomerPage("home")
+              }}
+              className="w-full h-11 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Browse as Guest
+            </button>
+
             <p className="text-[11px] text-gray-400 text-center mt-4 leading-relaxed">
               By continuing, you agree to our{" "}
               <span style={{ color: brandColor }}>Terms of Service</span> &{" "}

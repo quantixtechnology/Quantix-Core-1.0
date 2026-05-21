@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import {
   ChevronRight, Package, MapPin, Heart, HeadphonesIcon, Info,
-  LogOut, User, Shield, Store, Settings, Edit2, Check, X, Loader2,
+  LogOut, User, Shield, Store, Settings, Edit2, Check, X, Loader2, Tag,
 } from "lucide-react"
 
 interface CustomerProfile {
@@ -140,6 +140,13 @@ export function CustomerProfile() {
       desc: "Items you saved for later",
       icon: Heart,
       action: () => setCustomerPage("wishlist"),
+    },
+    {
+      id: "coupons",
+      label: "My Coupons",
+      desc: "View available discount coupons",
+      icon: Tag,
+      action: () => setCustomerPage("coupons"),
     },
     {
       id: "support",

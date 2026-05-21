@@ -55,7 +55,7 @@ export function CustomerCheckout() {
   } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const {
-    items, storeId: cartStoreId,
+    items, storeId: cartStoreId, paymentGateways,
     subtotal: getSubtotal, deliveryFee: getDeliveryFee, total: getTotal,
     couponCode, couponDiscount, totalSavings: getTotalSavings, clearCart,
   } = useCartStore()
@@ -348,11 +348,16 @@ export function CustomerCheckout() {
             <span className="text-sm font-bold text-gray-900">Payment Method</span>
           </div>
           <div className="space-y-2">
-            {[
-              { id: "upi" as const,  label: "UPI",               desc: "Google Pay, PhonePe, Paytm", icon: Smartphone },
-              { id: "card" as const, label: "Card",              desc: "Credit or Debit Card",        icon: CreditCard },
-              { id: "cod" as const,  label: "Cash on Delivery",  desc: "Pay when you receive",        icon: Banknote   },
-            ].map((method) => {
+            {(() => {
+              const ALL_METHODS = [
+                { id: "upi" as const,  label: "UPI",              desc: "Google Pay, PhonePe, Paytm", icon: Smartphone, gateways: ["RAZORPAY", "CASHFREE", "PAYU", "UPI"] },
+                { id: "card" as const, label: "Card",             desc: "Credit or Debit Card",        icon: CreditCard, gateways: ["RAZORPAY", "CASHFREE", "PAYU", "STRIPE", "CARD"] },
+                { id: "cod" as const,  label: "Cash on Delivery", desc: "Pay when you receive",        icon: Banknote,   gateways: ["COD"] },
+              ]
+              if (!paymentGateways || paymentGateways.length === 0) return ALL_METHODS
+              const enabledGatewayNames = paymentGateways.map((g) => g.gateway.toUpperCase())
+              return ALL_METHODS.filter((m) => m.gateways.some((g) => enabledGatewayNames.includes(g)))
+            })().map((method) => {
               const Icon = method.icon; const active = paymentMethod === method.id
               return (
                 <button

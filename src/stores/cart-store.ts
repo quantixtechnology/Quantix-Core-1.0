@@ -14,14 +14,22 @@ export interface CartItem {
   isVeg: boolean
 }
 
+export interface StorePaymentGateway {
+  id: string
+  name: string
+  gateway: string
+  isTestMode: boolean
+}
+
 interface CartState {
   items: CartItem[]
   storeId: string | null
   storeDeliveryFee: number | null
+  paymentGateways: StorePaymentGateway[]
   couponCode: string | null
   couponDiscount: number
   setCartStoreId: (id: string) => void
-  setStoreContext: (deliveryFee: number | null, minOrderAmount: number | null) => void
+  setStoreContext: (deliveryFee: number | null, minOrderAmount: number | null, paymentGateways?: StorePaymentGateway[]) => void
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void
   removeItem: (productId: string, variantId: string) => void
   updateQuantity: (productId: string, variantId: string, quantity: number) => void
@@ -39,11 +47,13 @@ export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   storeId: null,
   storeDeliveryFee: null,
+  paymentGateways: [],
   couponCode: null,
   couponDiscount: 0,
 
   setCartStoreId: (id) => set({ storeId: id }),
-  setStoreContext: (deliveryFee) => set({ storeDeliveryFee: deliveryFee }),
+  setStoreContext: (deliveryFee, _minOrderAmount, paymentGateways) =>
+    set({ storeDeliveryFee: deliveryFee, paymentGateways: paymentGateways || [] }),
 
   addItem: (item) => {
     set((state) => {
@@ -87,7 +97,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     }))
   },
 
-  clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, couponCode: null, couponDiscount: 0 }),
+  clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, paymentGateways: [], couponCode: null, couponDiscount: 0 }),
 
   applyCoupon: (code, discount) => set({ couponCode: code, couponDiscount: discount }),
   removeCoupon: () => set({ couponCode: null, couponDiscount: 0 }),

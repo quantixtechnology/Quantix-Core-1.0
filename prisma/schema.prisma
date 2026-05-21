@@ -240,6 +240,7 @@ model Business {
   appConfig             AppConfig?
   cartItems             CartItem[]
   favorites             Favorite[]
+  supportTickets        SupportTicket[]
 
   @@index([businessType])
   @@index([status])
@@ -1075,10 +1076,11 @@ model Customer {
   customerNotes CustomerNote[]
   subscriptions CustomerSubscription[]
   invoices      Invoice[]
-  orders        Order[]
-  cartItems     CartItem[]
-  favorites     Favorite[]
-  reviews       Review[]
+  orders          Order[]
+  cartItems       CartItem[]
+  favorites       Favorite[]
+  reviews         Review[]
+  supportTickets  SupportTicket[]
 
   @@unique([businessId, phone])
   @@index([businessId])
@@ -1629,6 +1631,25 @@ model Favorite {
   @@unique([customerId, productId])
   @@index([customerId])
   @@index([businessId])
+}
+
+model SupportTicket {
+  id         String   @id @default(cuid())
+  businessId String
+  customerId String?
+  name       String
+  phone      String?
+  subject    String
+  category   String
+  message    String
+  status     String   @default("OPEN")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([customerId])
 }
 
 enum LeadSource {

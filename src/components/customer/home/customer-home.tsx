@@ -34,6 +34,8 @@ import {
 
 import { getBanners, getOffers } from "@/components/customer/data"
 import { StorePickerModal } from "@/components/customer/store-picker/store-picker-modal"
+import { getDeliveryPromise, getLabels } from "@/lib/business-type-config"
+import { Zap, ShieldCheck, Star } from "lucide-react"
 
 const categoryIcons: Record<string, React.ReactNode> = {
   Apple: <Apple className="w-6 h-6" />,
@@ -167,6 +169,8 @@ export function CustomerHome() {
   // Context-aware banners and offers
   const banners = useMemo(() => getBanners(currentBusinessType), [currentBusinessType])
   const offers = useMemo(() => getOffers(currentBusinessType), [currentBusinessType])
+  const deliveryPromise = useMemo(() => getDeliveryPromise(currentBusinessType), [currentBusinessType])
+  const labels = useMemo(() => getLabels(currentBusinessType), [currentBusinessType])
 
   // Auto-scroll banner
   useEffect(() => {
@@ -285,6 +289,30 @@ export function CustomerHome() {
                 }`}
               />
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Delivery Promise */}
+      <div className="px-4 mb-4">
+        <div className="rounded-2xl p-3 flex items-center gap-3 border" style={{ backgroundColor: `${brandColor}08`, borderColor: `${brandColor}20` }}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${brandColor}15` }}>
+            <Zap className="w-5 h-5" style={{ color: brandColor }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-gray-900">{deliveryPromise.promiseHeadline}</p>
+            <p className="text-[11px] text-gray-500">{deliveryPromise.promiseSubtext}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5" style={{ color: brandColor }} />
+              <span className="text-[10px] font-medium" style={{ color: brandColor }}>Hygienic</span>
+            </div>
+            <div className="w-px h-3 bg-gray-200" />
+            <div className="flex items-center gap-1">
+              <Star className="w-3.5 h-3.5" style={{ color: brandColor }} />
+              <span className="text-[10px] font-medium" style={{ color: brandColor }}>Fresh</span>
+            </div>
           </div>
         </div>
       </div>
@@ -534,6 +562,23 @@ export function CustomerHome() {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <div className="mx-4 mt-6 mb-4 rounded-2xl overflow-hidden border border-gray-100">
+        <div className="p-4" style={{ backgroundColor: `${brandColor}08` }}>
+          <p className="text-sm font-bold text-gray-900 mb-0.5">{businessName}</p>
+          <p className="text-[11px] text-gray-500 mb-3">{labels.searchPlaceholder.replace("Search ", "").replace("...", "")}</p>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={() => setCustomerPage("home")} className="text-[11px] text-gray-500 hover:underline">Home</button>
+            <button onClick={() => setCustomerPage("products")} className="text-[11px] text-gray-500 hover:underline">Products</button>
+            <button onClick={() => setCustomerPage("orders")} className="text-[11px] text-gray-500 hover:underline">My Orders</button>
+            <button onClick={() => setCustomerPage("support")} className="text-[11px] text-gray-500 hover:underline">Support</button>
+          </div>
+        </div>
+        <div className="px-4 py-2 bg-white border-t border-gray-100 text-center">
+          <p className="text-[9px] text-gray-300">Powered by Quantix Technology · All rights reserved</p>
+        </div>
+      </div>
     </div>
   )
 }
