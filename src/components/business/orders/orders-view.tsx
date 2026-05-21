@@ -193,7 +193,10 @@ export function OrdersView() {
   // Get real business ID from context
   const { businessId } = useBusinessContext()
   const { user } = useAuthStore()
-  const userStoreId = user?.storeId || undefined
+  const { currentStoreId } = useAdminStore()
+  // STORE_MANAGER: their assigned store always takes precedence.
+  // BUSINESS_OWNER: respects context bar store selection.
+  const effectiveStoreId = user?.storeId || currentStoreId || undefined
 
   // Set business context for API client
   useEffect(() => {
@@ -202,10 +205,10 @@ export function OrdersView() {
     }
   }, [businessId])
 
-  // ---- API hooks — STORE_MANAGER sees only their store's orders ----
+  // ---- API hooks — scoped to effectiveStoreId when set ----
   const orderFilter = (
-    userStoreId
-      ? { businessId, storeId: userStoreId, limit: 100 }
+    effectiveStoreId
+      ? { businessId, storeId: effectiveStoreId, limit: 100 }
       : { businessId, limit: 100 }
   ) as Record<string, unknown>
 
@@ -219,8 +222,8 @@ export function OrdersView() {
 
   const updateStatusMutation = useUpdateOrderStatus()
 
-  // Real-time order updates — pass storeId so STORE_MANAGER only sees their store's events
-  const { latestOrder, orderCount } = useOrderUpdates(businessId, userStoreId)
+  // Real-time order updates — scoped to effectiveStoreId
+  const { latestOrder, orderCount } = useOrderUpdates(businessId, effectiveStoreId)
 
   // Show toast on real-time order updates
   useEffect(() => {

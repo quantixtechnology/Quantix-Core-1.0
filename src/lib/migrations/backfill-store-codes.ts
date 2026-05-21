@@ -45,7 +45,7 @@ export async function verifyStoreCodes(): Promise<StoreCodeStatus[]> {
 
     const stores = await db.store.findMany({
       where: { businessId: business.id },
-      orderBy: [{ isMainStore: 'desc' }, { createdAt: 'asc' }],
+      orderBy: [{ createdAt: 'asc' }],
       select: { id: true, name: true, storeCode: true, isMainStore: true },
     })
 
@@ -93,7 +93,7 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
 
     const stores = await db.store.findMany({
       where: { businessId: business.id },
-      orderBy: [{ isMainStore: 'desc' }, { createdAt: 'asc' }],
+      orderBy: [{ createdAt: 'asc' }],
       select: { id: true, name: true, storeCode: true },
     })
 

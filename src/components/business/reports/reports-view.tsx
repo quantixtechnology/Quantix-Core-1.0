@@ -76,21 +76,23 @@ function buildPaymentChartConfig(payments: { method: string }[]): ChartConfig {
 
 export function ReportsView() {
   const [dateRange, setDateRange] = useState("7d")
-  const { currentBusinessType } = useAdminStore()
+  const { currentBusinessType, currentStoreId } = useAdminStore()
   const { businessId } = useBusinessContext()
   const { user } = useAuthStore()
-  const userStoreId = user?.storeId || undefined
+  // STORE_MANAGER: their assigned store takes precedence.
+  // BUSINESS_OWNER: respects context bar store selection.
+  const effectiveStoreId = user?.storeId || currentStoreId || undefined
 
   // Set business context on mount
   useEffect(() => {
     if (businessId) setBusinessContext(businessId)
   }, [businessId])
 
-  // ---- API hooks ----
+  // ---- API hooks — scoped to effectiveStoreId when set ----
   const { data: statsData, isLoading: statsLoading } = useBusinessStats(businessId || "")
   const { data: ordersData, isLoading: ordersLoading } = useOrders(
-    (userStoreId
-      ? { businessId: businessId || "", storeId: userStoreId, limit: 100 }
+    (effectiveStoreId
+      ? { businessId: businessId || "", storeId: effectiveStoreId, limit: 100 }
       : { businessId: businessId || "", limit: 100 }
     ) as Record<string, unknown>,
     { enabled: !!businessId }
