@@ -1,17 +1,16 @@
 // ============================================================================
-// Quantix Technology — Next.js Proxy (Security Headers)
-// MANAGED PLATFORM
+// Quantix Technology — Next.js Proxy
 //
-// Adds security headers to all responses.
-// Next.js 16 uses "proxy" instead of "middleware".
+// Next.js 16 uses proxy.ts (replaces middleware.ts).
+// This file handles both:
+//   1. Subdomain → Storefront routing (slug.quantixtechnology.in → /?_storefront=slug)
+//   2. Security headers on all responses
 // ============================================================================
 
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-// ============================================================================
-// SECURITY HEADERS
-// ============================================================================
+const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in'
 
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
@@ -19,29 +18,40 @@ const SECURITY_HEADERS: Record<string, string> = {
   'X-XSS-Protection': '1; mode=block',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-};
-
-// ============================================================================
-// PROXY — Next.js 16 convention
-// ============================================================================
-
-export default function proxy(request: NextRequest) {
-  const response = NextResponse.next();
-
-  // Apply security headers to all responses
-  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
-    response.headers.set(key, value);
-  }
-
-  return response;
 }
 
-// ============================================================================
-// MATCHER — Apply to all routes except static assets
-// ============================================================================
+function withSecurityHeaders(response: NextResponse): NextResponse {
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    response.headers.set(key, value)
+  }
+  return response
+}
+
+export default function proxy(request: NextRequest) {
+  const host = request.headers.get('host') || ''
+  const { pathname } = request.nextUrl
+
+  // Storefront subdomain detection — skip for API, uploads, and Next internals
+  if (!pathname.startsWith('/api') && !pathname.startsWith('/uploads')) {
+    const hostWithoutPort = host.split(':')[0]
+
+    if (hostWithoutPort.endsWith(`.${STOREFRONT_BASE}`)) {
+      const slug = hostWithoutPort.slice(0, -(STOREFRONT_BASE.length + 1))
+
+      if (slug && !['www', 'app', 'admin', 'api', 'mail'].includes(slug)) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/'
+        url.searchParams.set('_storefront', slug)
+        return withSecurityHeaders(NextResponse.rewrite(url))
+      }
+    }
+  }
+
+  return withSecurityHeaders(NextResponse.next())
+}
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
-};
+}
