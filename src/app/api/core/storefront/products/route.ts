@@ -276,7 +276,13 @@ export const POST = withMiddleware({
       return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
-    const store = await db.store.findFirst({ where: { businessId: body.businessId } });
+    // Fetch ALL active stores for this business so we can create inventory rows for each.
+    // This guarantees the product is visible in every store's admin product list
+    // (which filters by inventory.some({storeId})) without requiring manual backfill.
+    const allStores = await db.store.findMany({
+      where: { businessId: body.businessId, status: 'ACTIVE' },
+      select: { id: true },
+    });
 
     const slug = (body.slug || body.name)
       .toLowerCase()
@@ -289,9 +295,10 @@ export const POST = withMiddleware({
     const existingSlug = await db.product.findFirst({ where: { businessId: body.businessId, slug } });
     const finalSlug = existingSlug ? `${slug}-${Date.now()}` : slug;
 
-    console.log(`[products/POST] businessId=${body.businessId} slug=${finalSlug} deduplicated=${!!existingSlug} storeId=${body.storeId || store?.id || null}`);
+    // Primary storeId for the product record itself (used for order routing)
+    const storeId = body.storeId || allStores[0]?.id || null;
 
-    const storeId = body.storeId || store?.id || null;
+    console.log(`[products/POST] businessId=${body.businessId} slug=${finalSlug} deduplicated=${!!existingSlug} primaryStoreId=${storeId} allStores=${allStores.length}`);
 
     const product = await db.product.create({
       data: {
@@ -351,33 +358,40 @@ export const POST = withMiddleware({
       },
     });
 
-    if (storeId) {
+    // Create inventory rows for EVERY active store in the business.
+    // The explicitly selected store gets the real stock quantity; all other stores get 0.
+    // This ensures the product appears in every store's admin product list
+    // (which filters via inventory.some({storeId})) from the moment it is created.
+    if (allStores.length > 0) {
       const variantStockMap: Record<number, number> = {};
       if (body.variants && body.variants.length > 0) {
         body.variants.forEach((v: Record<string, unknown>, i: number) => {
           variantStockMap[i] = Number(v.stock) || 0;
         });
       }
-      for (let i = 0; i < product.variants.length; i++) {
-        const variant = product.variants[i];
-        const qty = variantStockMap[i] ?? Number(body.stock) ?? 0;
-        const existingInventory = await db.inventory.findFirst({
-          where: { productId: product.id, variantId: variant.id, storeId },
-        });
-        if (!existingInventory) {
-          const minStock = 10
-          await db.inventory.create({
-            data: {
-              businessId: body.businessId,
-              storeId,
-              productId: product.id,
-              variantId: variant.id,
-              quantity: qty,
-              minStock,
-              maxStock: 1000,
-              status: qty <= 0 ? 'OUT_OF_STOCK' : qty <= minStock ? 'LOW_STOCK' : 'IN_STOCK',
-            },
+      const minStock = 10;
+      for (const s of allStores) {
+        const isSelectedStore = s.id === storeId;
+        for (let i = 0; i < product.variants.length; i++) {
+          const variant = product.variants[i];
+          const qty = isSelectedStore ? (variantStockMap[i] ?? Number(body.stock) ?? 0) : 0;
+          const exists = await db.inventory.findFirst({
+            where: { productId: product.id, variantId: variant.id, storeId: s.id },
           });
+          if (!exists) {
+            await db.inventory.create({
+              data: {
+                businessId: body.businessId,
+                storeId: s.id,
+                productId: product.id,
+                variantId: variant.id,
+                quantity: qty,
+                minStock,
+                maxStock: 1000,
+                status: qty <= 0 ? 'OUT_OF_STOCK' : qty <= minStock ? 'LOW_STOCK' : 'IN_STOCK',
+              },
+            });
+          }
         }
       }
     }

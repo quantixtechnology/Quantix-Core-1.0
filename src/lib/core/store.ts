@@ -313,6 +313,17 @@ export async function listStores(businessId: string) {
           staff: true,
         },
       },
+      staff: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          role: true,
+          isActive: true,
+          user: {
+            select: { id: true, name: true, email: true, phone: true, loginId: true },
+          },
+        },
+      },
     },
     orderBy: [{ isMainStore: 'desc' }, { name: 'asc' }],
   });

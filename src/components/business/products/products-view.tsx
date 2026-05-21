@@ -192,11 +192,8 @@ export function ProductsView() {
   const queryClient = useQueryClient()
 
   // ---- Fetch products from API ----
-  // NOTE: intentionally no storeId filter here — admin product list shows all products
-  // for the business regardless of which store has inventory. The storeId inventory
-  // filter is only for the customer-facing storefront.
   const { data: productsResponse, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useQuery({
-    queryKey: ["products", businessId, "ALL"],
+    queryKey: ["products", businessId, currentStoreId, "ALL"],
     queryFn: async () => {
       if (!businessId) return { data: [], pagination: { total: 0 } }
       const params = new URLSearchParams({
@@ -205,6 +202,10 @@ export function ProductsView() {
         includeAllVariants: 'true',
         limit: '200',
       })
+      // Store-scoped: show only products with inventory at the selected store.
+      // This maintains multi-store isolation — each store sees its own product list.
+      // Products missing inventory rows at this store are fixed by the repair endpoint.
+      if (currentStoreId) params.set('storeId', currentStoreId)
       const response = await fetch(`/api/core/storefront/products?${params}`, {
         headers: { 'x-business-id': businessId },
       })
