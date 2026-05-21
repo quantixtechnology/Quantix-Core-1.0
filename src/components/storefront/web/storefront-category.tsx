@@ -26,10 +26,10 @@ interface Product {
   id: string
   name: string
   shortDesc: string | null
-  images: string
+  images: string[]                    // already an array from API
   isVeg: boolean | null
   isFeatured: boolean
-  metadata: string
+  metadata: Record<string, unknown>   // already parsed from API
   variants: Variant[]
   category: { id: string; name: string } | null
 }
@@ -73,8 +73,9 @@ function ProductCard({
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const config = getBusinessTypeConfig(businessType)
 
-  const images = (() => { try { return JSON.parse(product.images) as string[] } catch { return [] } })()
-  const meta   = (() => { try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} } })()
+  // images and metadata are already parsed by the API
+  const images = Array.isArray(product.images) ? product.images : []
+  const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
 
   const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
   const price = defaultVariant?.price ?? 0
@@ -255,7 +256,9 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
       .then((r) => r.json())
       .then((j) => {
         if (j.success) {
-          let prods: Product[] = j.data?.products || []
+          // API returns { success, data: Product[], pagination: { total } }
+          // data IS the array — NOT an object with a .products key
+          let prods: Product[] = Array.isArray(j.data) ? j.data : []
 
           if (priceMax !== null) {
             prods = prods.filter((p) => {
@@ -276,14 +279,14 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
           if (sort === "name_asc")   prods.sort((a, b) => a.name.localeCompare(b.name))
 
           setProducts(prods)
-          setTotal(j.data?.total ?? prods.length)
+          setTotal(j.pagination?.total ?? prods.length)
 
           console.log("[StorefrontCategory] loaded", {
             businessId:   currentBusinessId,
             businessType: currentBusinessType,
             categoryId:   nav.categoryId,
             productCount: prods.length,
-            totalInDb:    j.data?.total,
+            totalInDb:    j.pagination?.total,
           })
         }
       })

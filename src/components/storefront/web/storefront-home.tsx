@@ -4,8 +4,12 @@ import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig, getCategoryIcon } from "@/lib/business-type-config"
-import { ChevronRight, Plus, Zap, Shield, Star, Truck, Clock, Package } from "lucide-react"
+import { ChevronRight, Plus, Zap, Shield, Star, Truck, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+
+// ── Types ─────────────────────────────────────────────────────────────────
+// These mirror what the products API actually returns (images/metadata are
+// already parsed — the API does JSON.parse before sending the response).
 
 interface Category {
   id: string
@@ -22,69 +26,39 @@ interface Variant {
   price: number
   mrp: number
   isDefault: boolean
+  isActive: boolean
 }
 
 interface Product {
   id: string
   name: string
   shortDesc: string | null
-  images: string
+  images: string[]                     // already an array from API
   isVeg: boolean | null
   isFeatured: boolean
-  metadata: string
+  isPopular: boolean
+  metadata: Record<string, unknown>    // already parsed from API
   variants: Variant[]
 }
 
-interface StorefrontHomeProps {
-  brandColor: string
-  nav: WebNav
-}
-
-// ── Hero content per business type ────────────────────────────────────────
+// ── Business-type helpers ────────────────────────────────────────────────
 
 function getHeroContent(businessType: string) {
   switch (businessType) {
     case "MEAT_DELIVERY":
-      return {
-        headline: "Fresh. Halal.\nDelivered Fast.",
-        sub: "Premium quality meat & poultry, hygienically processed and delivered to your doorstep.",
-        cta: "Shop Now",
-        tagline: "Fresh Delivery",
-      }
+      return { headline: "Fresh. Halal.\nDelivered Fast.", sub: "Premium quality meat & poultry, hygienically processed and delivered to your doorstep.", cta: "Shop Now" }
     case "GROCERY":
-      return {
-        headline: "Fresh Groceries,\nDelivered Daily.",
-        sub: "Everything you need — vegetables, dairy, grains, and more — delivered in minutes.",
-        cta: "Shop Now",
-        tagline: "Daily Essentials",
-      }
+      return { headline: "Fresh Groceries,\nDelivered Daily.", sub: "Everything you need — vegetables, dairy, grains and more — delivered in minutes.", cta: "Shop Now" }
     case "FOOD_DELIVERY":
-      return {
-        headline: "Delicious Food,\nDelivered Hot.",
-        sub: "Restaurant-quality meals at your door in 30–45 minutes.",
-        cta: "Order Now",
-        tagline: "Fast Delivery",
-      }
+      return { headline: "Delicious Food,\nDelivered Hot.", sub: "Restaurant-quality meals at your door in 30–45 minutes.", cta: "Order Now" }
     case "PHARMACY":
-      return {
-        headline: "Medicines\nDelivered in 30 min.",
-        sub: "Genuine medicines, vitamins, and healthcare products from licensed pharmacists.",
-        cta: "Order Now",
-        tagline: "Healthcare Delivery",
-      }
+      return { headline: "Medicines\nDelivered in 30 min.", sub: "Genuine medicines and vitamins from licensed pharmacists.", cta: "Order Now" }
     default:
-      return {
-        headline: "Quality Products,\nDelivered Fast.",
-        sub: "Browse our selection and get everything you need delivered to your door.",
-        cta: "Shop Now",
-        tagline: "Fast Delivery",
-      }
+      return { headline: "Quality Products,\nDelivered Fast.", sub: "Browse our selection and get everything you need delivered to your door.", cta: "Shop Now" }
   }
 }
 
-// ── Default product emoji by business type ───────────────────────────────
-
-function getDefaultProductEmoji(businessType: string): string {
+function getDefaultEmoji(businessType: string) {
   switch (businessType) {
     case "MEAT_DELIVERY":  return "🥩"
     case "GROCERY":        return "🛒"
@@ -94,36 +68,27 @@ function getDefaultProductEmoji(businessType: string): string {
   }
 }
 
-// ── Why-choose-us cards per business type ───────────────────────────────
-
 function getWhyChooseUs(businessType: string) {
   switch (businessType) {
     case "MEAT_DELIVERY":
       return [
-        { emoji: "🥩", title: "Fresh Daily", desc: "Sourced and processed every morning" },
-        { emoji: "✅", title: "Halal Certified", desc: "100% halal slaughter, no compromise" },
-        { emoji: "⚡", title: "Fast Delivery", desc: "Within 2 hours of order" },
+        { emoji: "🥩", title: "Fresh Daily",       desc: "Sourced and processed every morning" },
+        { emoji: "✅", title: "Halal Certified",  desc: "100% halal, no compromise" },
+        { emoji: "⚡", title: "Fast Delivery",    desc: "Within 2 hours of order" },
         { emoji: "🧊", title: "Hygienic Packing", desc: "Vacuum sealed, temp maintained" },
       ]
     case "GROCERY":
       return [
-        { emoji: "🌿", title: "Farm Fresh", desc: "Direct from farms to your home" },
-        { emoji: "💰", title: "Best Prices", desc: "Everyday low prices, guaranteed" },
-        { emoji: "⚡", title: "30-min Delivery", desc: "Express delivery in your area" },
-        { emoji: "🔄", title: "Easy Returns", desc: "No-questions-asked return policy" },
-      ]
-    case "FOOD_DELIVERY":
-      return [
-        { emoji: "👨‍🍳", title: "Chef Prepared", desc: "Cooked fresh for every order" },
-        { emoji: "🌡️", title: "Served Hot", desc: "Temperature-controlled delivery" },
-        { emoji: "⚡", title: "30–45 min", desc: "From kitchen to your door" },
-        { emoji: "🍽️", title: "Restaurant Quality", desc: "Same taste, delivered home" },
+        { emoji: "🌿", title: "Farm Fresh",   desc: "Direct from farms to your home" },
+        { emoji: "💰", title: "Best Prices",  desc: "Everyday low prices, guaranteed" },
+        { emoji: "⚡", title: "30-min",        desc: "Express delivery in your area" },
+        { emoji: "🔄", title: "Easy Returns", desc: "No-questions-asked returns" },
       ]
     default:
       return [
-        { emoji: "✅", title: "Quality Products", desc: "Verified and genuine products" },
-        { emoji: "⚡", title: "Fast Delivery", desc: "Express delivery options" },
-        { emoji: "💰", title: "Best Prices", desc: "Competitive pricing daily" },
+        { emoji: "✅", title: "Quality",      desc: "Verified and genuine products" },
+        { emoji: "⚡", title: "Fast",         desc: "Express delivery options" },
+        { emoji: "💰", title: "Best Prices",  desc: "Competitive pricing daily" },
         { emoji: "🔄", title: "Easy Returns", desc: "Hassle-free returns" },
       ]
   }
@@ -169,20 +134,21 @@ function ProductCard({
   const { addItem } = useCartStore()
   const config = getBusinessTypeConfig(businessType)
 
-  const images = (() => { try { return JSON.parse(product.images) as string[] } catch { return [] } })()
-  const meta = (() => { try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} } })()
+  // images and metadata are already parsed by the API — do not JSON.parse again
+  const images = Array.isArray(product.images) ? product.images : []
+  const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
+
   const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
   const price = defaultVariant?.price ?? 0
-  const mrp = defaultVariant?.mrp ?? 0
+  const mrp   = defaultVariant?.mrp   ?? 0
   const hasDiscount = mrp > price && mrp > 0
   const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
 
-  // Gate badge visibility by business type config
-  const showHalal  = config.productMeta.some((m) => m.key === "isHalal"      && m.showOnCard)
-  const showFresh  = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
-  const defaultEmoji = getDefaultProductEmoji(businessType)
+  const showHalal = config.productMeta.some((m) => m.key === "isHalal"      && m.showOnCard)
+  const showFresh = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
+  const defaultEmoji = getDefaultEmoji(businessType)
 
-  const handleAddToCart = (e: React.MouseEvent) => {
+  const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!defaultVariant) return
     addItem({
@@ -217,12 +183,8 @@ function ProductCard({
         )}
 
         <div className="absolute top-2 left-2 flex gap-1.5 flex-wrap max-w-[calc(100%-1rem)]">
-          {product.isVeg === true && (
-            <span className="px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full">VEG</span>
-          )}
-          {product.isVeg === false && (
-            <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">NON-VEG</span>
-          )}
+          {product.isVeg === true  && <span className="px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full">VEG</span>}
+          {product.isVeg === false && <span className="px-2 py-0.5 bg-red-500  text-white text-[10px] font-bold rounded-full">NON-VEG</span>}
           {showHalal && !!meta.isHalal && (
             <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full">HALAL</span>
           )}
@@ -242,20 +204,14 @@ function ProductCard({
 
       <div className="p-3">
         <p className="text-sm font-semibold text-gray-900 truncate">{product.name}</p>
-        {product.shortDesc && (
-          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{product.shortDesc}</p>
-        )}
+        {product.shortDesc && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{product.shortDesc}</p>}
         <div className="mt-2 flex items-center justify-between">
           <div>
-            <span className="text-base font-bold" style={{ color: brandColor }}>
-              ₹{price.toLocaleString("en-IN")}
-            </span>
-            {hasDiscount && (
-              <span className="ml-1.5 text-xs text-gray-400 line-through">₹{mrp.toLocaleString("en-IN")}</span>
-            )}
+            <span className="text-base font-bold" style={{ color: brandColor }}>₹{price.toLocaleString("en-IN")}</span>
+            {hasDiscount && <span className="ml-1.5 text-xs text-gray-400 line-through">₹{mrp.toLocaleString("en-IN")}</span>}
           </div>
           <button
-            onClick={handleAddToCart}
+            onClick={handleAdd}
             className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-sm hover:opacity-90 transition-opacity"
             style={{ backgroundColor: brandColor }}
           >
@@ -269,24 +225,25 @@ function ProductCard({
 
 // ── Main component ───────────────────────────────────────────────────────
 
+interface StorefrontHomeProps { brandColor: string; nav: WebNav }
+
 export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessType, currentStoreId } = useAdminStore()
 
-  const config        = getBusinessTypeConfig(currentBusinessType)
-  const heroContent   = getHeroContent(currentBusinessType)
-  const whyChooseUs   = getWhyChooseUs(currentBusinessType)
-  const deliveryCfg   = config.deliveryConfig
-  const labels        = config.labels
+  const config      = getBusinessTypeConfig(currentBusinessType)
+  const heroContent = getHeroContent(currentBusinessType)
+  const whyChoose   = getWhyChooseUs(currentBusinessType)
+  const deliveryCfg = config.deliveryConfig
+  const labels      = config.labels
 
-  const [categories, setCategories]     = useState<Category[]>([])
-  const [catLoading, setCatLoading]     = useState(true)
-  const [products, setProducts]         = useState<Product[]>([])
-  const [prodsLoading, setProdsLoading] = useState(true)
-  const [totalProducts, setTotalProducts] = useState(0)
+  const [categories, setCategories]       = useState<Category[]>([])
+  const [catLoading, setCatLoading]       = useState(true)
+  const [products, setProducts]           = useState<Product[]>([])
+  const [prodsLoading, setProdsLoading]   = useState(true)
 
   const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
 
-  // ── Categories fetch ────────────────────────────────────────────
+  // ── Categories ─────────────────────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
     setCatLoading(true)
@@ -297,49 +254,48 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
       .finally(() => setCatLoading(false))
   }, [currentBusinessId])
 
-  // ── Products fetch ──────────────────────────────────────────────
+  // ── Products ───────────────────────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
     setProdsLoading(true)
 
-    const params = new URLSearchParams({
-      businessId: currentBusinessId,
-      limit: "16",
-    })
-
-    fetch(`/api/core/storefront/products?${params}`)
+    // No storeId param — inventory scoping is NOT applied for storefront product
+    // listing to avoid hiding products that lack inventory records.
+    fetch(`/api/core/storefront/products?businessId=${currentBusinessId}&limit=16`)
       .then((r) => r.json())
       .then((j) => {
-        if (j.success) {
-          const allProds: Product[] = j.data?.products || []
-          setProducts(allProds)
-          setTotalProducts(j.data?.total ?? allProds.length)
+        // The API returns { success, data: Product[], pagination: { total } }
+        // data IS the array — NOT an object with a .products key.
+        const prods: Product[] = Array.isArray(j.data) ? j.data : []
 
-          console.log("[StorefrontHome] loaded", {
-            slug:          currentBusinessId,
-            businessId:    currentBusinessId,
-            businessType:  currentBusinessType,
-            storeId:       currentStoreId,
-            productCount:  allProds.length,
-            categoryCount: "(fetching separately)",
-          })
-        }
+        console.log("[StorefrontHome] products loaded", {
+          businessId:   currentBusinessId,
+          businessType: currentBusinessType,
+          storeId:      currentStoreId,
+          returned:     prods.length,
+          apiSuccess:   j.success,
+          paginationTotal: j.pagination?.total,
+        })
+
+        setProducts(prods)
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("[StorefrontHome] products fetch error", err)
+      })
       .finally(() => setProdsLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBusinessId])
 
-  const featured = products.filter((p) => p.isFeatured)
+  // Split into featured + rest — both from the SAME fetch
+  const featured        = products.filter((p) => p.isFeatured)
   const displayProducts = featured.length > 0 ? featured.slice(0, 8) : products.slice(0, 8)
-  const popularProducts = products.slice(8, 16)
+  const moreProducts    = featured.length > 0 ? products.filter((p) => !p.isFeatured).slice(0, 8) : products.slice(8, 16)
 
-  // Delivery promise bar items — use deliveryConfig from business type
   const promiseItems = [
     { icon: Zap,    label: deliveryCfg.promiseHeadline, sub: deliveryCfg.promiseSubtext },
-    { icon: Shield, label: "Verified Store",   sub: "Quality guaranteed" },
-    { icon: Star,   label: "Top Rated",        sub: "Trusted by customers" },
-    { icon: Truck,  label: "Free Delivery",    sub: "On qualifying orders" },
+    { icon: Shield, label: "Verified Store",  sub: "Quality guaranteed" },
+    { icon: Star,   label: "Top Rated",       sub: "Trusted by customers" },
+    { icon: Truck,  label: "Free Delivery",   sub: "On qualifying orders" },
   ]
 
   return (
@@ -458,7 +414,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
           )}
         </section>
 
-        {/* ── Products section ─────────────────────────────────── */}
+        {/* ── Primary products section ─────────────────────────── */}
         <section className="pb-10">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -482,7 +438,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
             <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
               <Package className="w-14 h-14 text-gray-200" />
               <p className="text-base font-semibold text-gray-500">No products added yet</p>
-              <p className="text-sm text-gray-400">Check back soon — products are being stocked.</p>
+              <p className="text-sm text-gray-400">Products are being stocked. Check back soon.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -493,8 +449,8 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
           )}
         </section>
 
-        {/* ── Popular / more products ──────────────────────────── */}
-        {!prodsLoading && popularProducts.length > 0 && (
+        {/* ── More products ────────────────────────────────────── */}
+        {!prodsLoading && moreProducts.length > 0 && (
           <section className="pb-12">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -510,7 +466,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
               </button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {popularProducts.map((p) => (
+              {moreProducts.map((p) => (
                 <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
               ))}
             </div>
@@ -521,7 +477,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
         <section className="py-10 border-t border-gray-100">
           <h2 className="text-xl font-bold text-gray-900 mb-8 text-center">Why Choose Us?</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {whyChooseUs.map(({ emoji, title, desc }) => (
+            {whyChoose.map(({ emoji, title, desc }) => (
               <div key={title} className="text-center">
                 <div className="text-4xl mb-3">{emoji}</div>
                 <h3 className="text-sm font-bold text-gray-900 mb-1">{title}</h3>
@@ -531,7 +487,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
           </div>
         </section>
 
-        {/* ── CTA Banner ───────────────────────────────────────── */}
+        {/* ── CTA ──────────────────────────────────────────────── */}
         <section className="mb-12">
           <div
             className="rounded-3xl p-8 sm:p-12 text-white relative overflow-hidden"
@@ -540,9 +496,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
             <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl bg-white/5" />
             <div className="relative max-w-lg">
               <p className="text-sm font-semibold text-white/70 mb-2">Limited time offer</p>
-              <h3 className="text-2xl sm:text-3xl font-extrabold mb-3">
-                First Order?<br />Get 20% Off!
-              </h3>
+              <h3 className="text-2xl sm:text-3xl font-extrabold mb-3">First Order?<br />Get 20% Off!</h3>
               <p className="text-white/70 text-sm mb-6">
                 Sign up and use code <strong className="text-white">WELCOME20</strong> on your first order.
               </p>

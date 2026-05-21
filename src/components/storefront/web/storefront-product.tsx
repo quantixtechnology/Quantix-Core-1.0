@@ -25,7 +25,7 @@ interface ProductDetail {
   name: string
   description: string | null
   shortDesc: string | null
-  images: string
+  images: string[]                    // already an array from API
   isVeg: boolean | null
   isFeatured: boolean
   unit: string | null
@@ -33,7 +33,7 @@ interface ProductDetail {
   preparationTime: number | null
   minOrderQty: number
   maxOrderQty: number
-  metadata: string
+  metadata: Record<string, unknown>   // already parsed from API
   variants: Variant[]
   category: { id: string; name: string; slug: string } | null
 }
@@ -113,7 +113,9 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
       .then((r) => r.json())
       .then((j) => {
         if (!j.success) { setNotFound(true); return }
-        const prods: ProductDetail[] = j.data?.products || []
+        // API returns { success, data: Product[], pagination }
+        // data IS the array — NOT an object with a .products key
+        const prods: ProductDetail[] = Array.isArray(j.data) ? j.data : []
         const found = prods.find((p) => p.id === nav.productId)
 
         console.log("[StorefrontProduct] lookup", {
@@ -153,8 +155,9 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     )
   }
 
-  const images = (() => { try { return JSON.parse(product.images) as string[] } catch { return [] } })()
-  const meta   = (() => { try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} } })()
+  // images and metadata are already parsed by the API — do not JSON.parse again
+  const images = Array.isArray(product.images) ? product.images : []
+  const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
 
   // Meat-specific fields — only read when business type supports them
   const cutTypes        = checkout.showCutType  ? ((meta.cutTypes        as string[] | undefined) || []) : []
