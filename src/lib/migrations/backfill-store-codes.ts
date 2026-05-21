@@ -1,21 +1,23 @@
 // ============================================================================
-// MIGRATION: backfill-store-codes v2
+// MIGRATION: backfill-store-codes v3
 //
-// Assigns STO-YYYYMM-NNNN codes per-business to stores that are missing them
-// or have the old global STR-XXXXX format. The sequence is business-scoped:
-//   BUS-202605-0001 → STO-202605-0001, STO-202605-0002
-//   BUS-202605-0002 → STO-202605-0001, STO-202605-0002   ← same codes, different business
+// Assigns {businessCode}-{pad3(seq)} codes to ALL stores (replaces any
+// prior STO-* or STR-* codes). Format is globally unique by construction.
 //
-// This is safe because storeCode is now @@unique([businessId, storeCode]),
-// not globally unique.
+// Examples:
+//   Fresh Mart  (BUS-202605-0001): Main → BUS-202605-0001-001, 2nd → BUS-202605-0001-002
+//   Arbaz Chicken (BUS-202605-0002): Main → BUS-202605-0002-001, 2nd → BUS-202605-0002-002
 //
-// Migration lock: PlatformConfig key = migration:store_code_backfill_v2
-// Runs automatically on startup. Admin can force re-run via Ops Dashboard.
+// Rules:
+//   - Per-business sequence, starts at 001.
+//   - isMainStore=true always sorted first → always gets -001.
+//   - Idempotent: skips stores whose code already matches {businessCode}-NNN pattern.
+//   - Lock: PlatformConfig key = migration:store_code_backfill_v3
 // ============================================================================
 
 import { db } from '@/lib/db'
 
-const MIGRATION_KEY = 'migration:store_code_backfill_v2'
+const MIGRATION_KEY = 'migration:store_code_backfill_v3'
 
 export interface BackfillResult {
   alreadyCompleted: boolean
@@ -44,55 +46,45 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
   let storesChecked = 0
 
   for (const business of businesses) {
-    // Main store first (isMainStore desc), then by creation order.
-    // This guarantees the primary store always receives sequence 0001.
+    if (!business.businessCode) continue // skip unprovisioned businesses
+
+    // Main store first, then by createdAt — guarantees main store = -001
     const stores = await db.store.findMany({
       where: { businessId: business.id },
       orderBy: [{ isMainStore: 'desc' }, { createdAt: 'asc' }],
-      select: { id: true, name: true, storeCode: true, isMainStore: true, createdAt: true },
+      select: { id: true, name: true, storeCode: true, isMainStore: true },
     })
 
-    // Per-business sequence: reset to 1 for every business.
     let seq = 1
     for (const store of stores) {
       storesChecked++
+      const expectedCode = `${business.businessCode}-${String(seq).padStart(3, '0')}`
 
-      // Already has a valid STO- code — skip and advance sequence counter.
-      if (store.storeCode?.startsWith('STO-')) {
-        skipped.push({
-          businessCode: business.businessCode ?? business.id,
-          storeName: store.name,
-          code: store.storeCode,
-        })
+      // Already has the correct new-format code — skip
+      if (store.storeCode === expectedCode) {
+        skipped.push({ businessCode: business.businessCode, storeName: store.name, code: store.storeCode })
         seq++
         continue
       }
 
-      // Use store's own createdAt for YYYYMM so the code reflects when it was made.
-      const d = store.createdAt
-      const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`
-      const newCode = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`
-
-      await db.store.update({ where: { id: store.id }, data: { storeCode: newCode } })
-
+      await db.store.update({ where: { id: store.id }, data: { storeCode: expectedCode } })
       updated.push({
-        businessCode: business.businessCode ?? business.id,
+        businessCode: business.businessCode,
         businessName: business.name,
         storeName: store.name,
         oldCode: store.storeCode,
-        newCode,
+        newCode: expectedCode,
       })
       seq++
     }
   }
 
-  // Set v2 lock — v1 key is irrelevant; v2 runs independently.
   await db.platformConfig.upsert({
     where: { key: MIGRATION_KEY },
     create: {
       key: MIGRATION_KEY,
       value: JSON.stringify({ completedAt: new Date().toISOString(), storesUpdated: updated.length }),
-      description: 'Store code backfill v2 — per-business STO-YYYYMM-NNNN sequence',
+      description: 'Store code backfill v3 — {businessCode}-{pad3(seq)} format, globally unique',
     },
     update: {
       value: JSON.stringify({ completedAt: new Date().toISOString(), storesUpdated: updated.length }),

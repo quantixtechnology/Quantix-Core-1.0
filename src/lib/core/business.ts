@@ -207,8 +207,8 @@ export async function createBusiness(data: CreateBusinessRequest) {
     const bizCount = await tx.business.count();
     const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
     const businessCode = `BUS-${yyyymm}-${String(bizCount + 1).padStart(4, '0')}`;
-    // Primary store is always the first for this business → STO-YYYYMM-0001
-    const storeCodeVal = `STO-${yyyymm}-0001`;
+    // Primary store of every business → {businessCode}-001
+    const storeCodeVal = `${businessCode}-001`;
 
     // Create business — status is ONBOARDING (will be set to ACTIVE after deployment)
     const business = await tx.business.create({

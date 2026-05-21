@@ -99,11 +99,11 @@ function DataRepairSection() {
               <div className="flex items-center gap-2">
                 <Hash className="size-3.5 text-muted-foreground" />
                 <span className="text-sm font-medium">Backfill Store Codes</span>
-                <Badge variant="outline" className="text-[10px]">STO-YYYYMM-NNNN</Badge>
+                <Badge variant="outline" className="text-[10px]">{'{businessCode}'}-001</Badge>
               </div>
               <p className="text-xs text-muted-foreground">
-                Assigns human-readable store codes to stores missing them. Primary store always gets 0001.
-                Runs automatically on each deploy — use Force Re-run only if codes need reassigning.
+                Assigns globally-unique store codes in format BUS-YYYYMM-NNNN-001.
+                Primary store always gets -001. Runs automatically on deploy — use Force Re-run to reassign.
               </p>
             </div>
             <div className="flex gap-2 shrink-0">

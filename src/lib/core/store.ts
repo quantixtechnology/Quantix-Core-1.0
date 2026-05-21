@@ -36,22 +36,25 @@ export function getDefaultStoreTimings(): DefaultStoreTiming[] {
 // ============================================================================
 
 /**
- * Generate next store code for a business: STO-YYYYMM-NNNN.
- * Sequence is per-business and starts at 0001 (primary store is always 0001).
- * Uses current date for YYYYMM.
+ * Generate next store code for a business: {businessCode}-{pad3(seq)}.
+ * Format: BUS-202605-0001-001, BUS-202605-0001-002, ...
+ * Globally unique by construction (businessCode is unique, seq is per-business).
+ * Main store of every business always gets -001.
  */
 export async function generateStoreCode(businessId: string): Promise<string> {
-  const now = new Date();
-  const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const business = await db.business.findUnique({
+    where: { id: businessId },
+    select: { businessCode: true },
+  });
+  const businessCode = business?.businessCode;
+  if (!businessCode) throw new Error(`Business ${businessId} has no businessCode assigned yet`);
 
-  // Per-business sequence: count only THIS business's stores.
-  // Collision check is also scoped to businessId so different businesses
-  // can independently both have STO-YYYYMM-0001.
   let seq = (await db.store.count({ where: { businessId } })) + 1;
-  let candidate = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`;
+  let candidate = `${businessCode}-${String(seq).padStart(3, '0')}`;
+  // Collision guard (handles concurrent store creation edge case)
   while (await db.store.findFirst({ where: { businessId, storeCode: candidate } })) {
     seq++;
-    candidate = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`;
+    candidate = `${businessCode}-${String(seq).padStart(3, '0')}`;
   }
   return candidate;
 }
