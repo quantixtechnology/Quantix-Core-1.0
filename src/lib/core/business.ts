@@ -6,6 +6,7 @@
 
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
+import { generateStoreCode } from '@/lib/core/store';
 import type {
   BusinessListFilters,
   BusinessStats,
@@ -203,13 +204,11 @@ export async function createBusiness(data: CreateBusinessRequest) {
   // 5. Create business + subscription + modules + onboarding steps + main store in a transaction
   const result = await db.$transaction(async (tx) => {
     // Generate human-readable IDs inside the transaction for sequential assignment
-    const [bizCount, storeCount] = await Promise.all([
-      tx.business.count(),
-      tx.store.count(),
-    ]);
+    const bizCount = await tx.business.count();
     const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
     const businessCode = `BUS-${yyyymm}-${String(bizCount + 1).padStart(4, '0')}`;
-    const storeCodeVal = `STR-${String(storeCount + 1).padStart(4, '0')}`;
+    // Primary store is always the first for this business → STO-YYYYMM-0001
+    const storeCodeVal = `STO-${yyyymm}-0001`;
 
     // Create business — status is ONBOARDING (will be set to ACTIVE after deployment)
     const business = await tx.business.create({

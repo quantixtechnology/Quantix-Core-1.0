@@ -32,6 +32,30 @@ export function getDefaultStoreTimings(): DefaultStoreTiming[] {
 }
 
 // ============================================================================
+// STORE CODE GENERATION
+// ============================================================================
+
+/**
+ * Generate next store code for a business: STO-YYYYMM-NNNN.
+ * Sequence is per-business and starts at 0001 (primary store is always 0001).
+ * Uses current date for YYYYMM.
+ */
+export async function generateStoreCode(businessId: string): Promise<string> {
+  const now = new Date();
+  const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  // Count existing stores to determine next sequence number.
+  // Loop to handle rare race-condition collisions via unique constraint.
+  let seq = (await db.store.count({ where: { businessId } })) + 1;
+  let candidate = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`;
+  while (await db.store.findUnique({ where: { storeCode: candidate } })) {
+    seq++;
+    candidate = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`;
+  }
+  return candidate;
+}
+
+// ============================================================================
 // CREATE STORE
 // ============================================================================
 
@@ -79,6 +103,9 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
   const isFirstStore = business._count.stores === 0;
   const isMainStore = data.isMainStore ?? isFirstStore;
 
+  // Generate store code before transaction (avoids nested async issues)
+  const storeCode = await generateStoreCode(businessId);
+
   // 4. If setting as main store, unset existing main store
   const result = await db.$transaction(async (tx) => {
     if (isMainStore) {
@@ -95,6 +122,7 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
         name: data.name,
         slug: data.slug,
         code: data.code,
+        storeCode,
         address: data.address,
         city: data.city,
         state: data.state,
