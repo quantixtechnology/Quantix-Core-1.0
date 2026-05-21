@@ -192,18 +192,22 @@ export function ProductsView() {
   const queryClient = useQueryClient()
 
   // ---- Fetch products from API ----
+  // NOTE: intentionally no storeId filter here — admin product list shows all products
+  // for the business regardless of which store has inventory. The storeId inventory
+  // filter is only for the customer-facing storefront.
   const { data: productsResponse, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useQuery({
-    queryKey: ["products", businessId, currentStoreId, "ALL"],
+    queryKey: ["products", businessId, "ALL"],
     queryFn: async () => {
       if (!businessId) return { data: [], pagination: { total: 0 } }
       const params = new URLSearchParams({
         businessId,
         status: 'ALL',
         includeAllVariants: 'true',
-        limit: '100',
+        limit: '200',
       })
-      if (currentStoreId) params.set('storeId', currentStoreId)
-      const response = await fetch(`/api/core/storefront/products?${params}`)
+      const response = await fetch(`/api/core/storefront/products?${params}`, {
+        headers: { 'x-business-id': businessId },
+      })
       const data = await response.json()
       if (!data.success) throw new Error(data.error || 'Failed to fetch products')
       return data
