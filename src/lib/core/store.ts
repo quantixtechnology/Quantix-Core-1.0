@@ -44,11 +44,12 @@ export async function generateStoreCode(businessId: string): Promise<string> {
   const now = new Date();
   const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  // Count existing stores to determine next sequence number.
-  // Loop to handle rare race-condition collisions via unique constraint.
+  // Per-business sequence: count only THIS business's stores.
+  // Collision check is also scoped to businessId so different businesses
+  // can independently both have STO-YYYYMM-0001.
   let seq = (await db.store.count({ where: { businessId } })) + 1;
   let candidate = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`;
-  while (await db.store.findUnique({ where: { storeCode: candidate } })) {
+  while (await db.store.findFirst({ where: { businessId, storeCode: candidate } })) {
     seq++;
     candidate = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`;
   }

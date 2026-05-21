@@ -318,7 +318,7 @@ model Store {
   settings            String         @default("{}")
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
-  storeCode           String?        @unique
+  storeCode           String?
   staff               BusinessUser[]
   categories          Category[]
   deliveryZones       DeliveryZone[]
@@ -334,6 +334,7 @@ model Store {
   storeTimings        StoreTiming[]
 
   @@unique([businessId, slug])
+  @@unique([businessId, storeCode])
   @@index([businessId])
   @@index([status])
 }

@@ -1,15 +1,21 @@
 // ============================================================================
-// MIGRATION: backfill-store-codes
+// MIGRATION: backfill-store-codes v2
 //
-// Assigns STO-YYYYMM-NNNN codes to stores that are missing them or have the
-// old STR-XXXXX format. Per-business sequence starting at 0001 (main store
-// always gets 0001). Uses PlatformConfig as a migration lock so it runs only
-// once automatically. Pass force=true to re-run from the admin UI.
+// Assigns STO-YYYYMM-NNNN codes per-business to stores that are missing them
+// or have the old global STR-XXXXX format. The sequence is business-scoped:
+//   BUS-202605-0001 → STO-202605-0001, STO-202605-0002
+//   BUS-202605-0002 → STO-202605-0001, STO-202605-0002   ← same codes, different business
+//
+// This is safe because storeCode is now @@unique([businessId, storeCode]),
+// not globally unique.
+//
+// Migration lock: PlatformConfig key = migration:store_code_backfill_v2
+// Runs automatically on startup. Admin can force re-run via Ops Dashboard.
 // ============================================================================
 
 import { db } from '@/lib/db'
 
-const MIGRATION_KEY = 'migration:store_code_backfill_v1'
+const MIGRATION_KEY = 'migration:store_code_backfill_v2'
 
 export interface BackfillResult {
   alreadyCompleted: boolean
@@ -21,7 +27,6 @@ export interface BackfillResult {
 }
 
 export async function runStoreCodeBackfill(force = false): Promise<BackfillResult> {
-  // Check migration lock — skip if already completed (unless forced via admin UI)
   if (!force) {
     const lock = await db.platformConfig.findUnique({ where: { key: MIGRATION_KEY } })
     if (lock) {
@@ -39,18 +44,20 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
   let storesChecked = 0
 
   for (const business of businesses) {
-    // Sort: main store first, then by createdAt — guarantees 0001 always goes to primary
+    // Main store first (isMainStore desc), then by creation order.
+    // This guarantees the primary store always receives sequence 0001.
     const stores = await db.store.findMany({
       where: { businessId: business.id },
       orderBy: [{ isMainStore: 'desc' }, { createdAt: 'asc' }],
       select: { id: true, name: true, storeCode: true, isMainStore: true, createdAt: true },
     })
 
+    // Per-business sequence: reset to 1 for every business.
     let seq = 1
     for (const store of stores) {
       storesChecked++
 
-      // Already has a valid STO- code — skip but advance sequence
+      // Already has a valid STO- code — skip and advance sequence counter.
       if (store.storeCode?.startsWith('STO-')) {
         skipped.push({
           businessCode: business.businessCode ?? business.id,
@@ -61,7 +68,7 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
         continue
       }
 
-      // Generate new code using store's creation date for YYYYMM
+      // Use store's own createdAt for YYYYMM so the code reflects when it was made.
       const d = store.createdAt
       const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`
       const newCode = `STO-${yyyymm}-${String(seq).padStart(4, '0')}`
@@ -79,13 +86,13 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
     }
   }
 
-  // Set migration lock so it never auto-runs again
+  // Set v2 lock — v1 key is irrelevant; v2 runs independently.
   await db.platformConfig.upsert({
     where: { key: MIGRATION_KEY },
     create: {
       key: MIGRATION_KEY,
       value: JSON.stringify({ completedAt: new Date().toISOString(), storesUpdated: updated.length }),
-      description: 'Store code backfill v1 — assigns STO-YYYYMM-NNNN to all stores',
+      description: 'Store code backfill v2 — per-business STO-YYYYMM-NNNN sequence',
     },
     update: {
       value: JSON.stringify({ completedAt: new Date().toISOString(), storesUpdated: updated.length }),
