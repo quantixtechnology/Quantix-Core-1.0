@@ -1,14 +1,16 @@
 'use client'
 
+import { useState } from 'react'
 import {
-  Card, CardContent, CardHeader, CardTitle,
+  Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Rocket, Clock, CheckCircle2, XCircle, Server, Database, Wifi, HardDrive,
-  Play, RefreshCw, Eye,
+  RefreshCw, Eye, Wrench, Hash, SkipForward, Loader2,
 } from 'lucide-react'
+import { getAuthHeaders } from '@/lib/admin-fetch'
 
 const stats = [
   { label: 'Apps Building', value: '2', icon: Rocket, color: 'text-amber-600 bg-amber-50' },
@@ -42,6 +44,144 @@ const healthColor: Record<string, string> = {
   healthy: 'text-emerald-600',
   degraded: 'text-amber-600',
   down: 'text-red-600',
+}
+
+// ---- Data Repair section ----
+
+interface BackfillState {
+  status: 'idle' | 'running' | 'done' | 'error'
+  result?: {
+    alreadyCompleted: boolean
+    storesChecked: number
+    storesUpdated: number
+    storesSkipped: number
+    updated: { businessCode: string; businessName: string; storeName: string; newCode: string }[]
+  }
+  error?: string
+}
+
+function DataRepairSection() {
+  const [storeCodeState, setStoreCodeState] = useState<BackfillState>({ status: 'idle' })
+
+  const runBackfill = async (force: boolean) => {
+    setStoreCodeState({ status: 'running' })
+    try {
+      const res = await fetch(
+        `/api/admin/migrate/backfill-store-codes?force=${force}`,
+        { method: 'POST', headers: getAuthHeaders() }
+      )
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Backfill failed')
+      setStoreCodeState({ status: 'done', result: json.data })
+    } catch (err) {
+      setStoreCodeState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
+    }
+  }
+
+  const s = storeCodeState
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <Wrench className="size-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">Data Repair</CardTitle>
+        </div>
+        <CardDescription className="text-xs">
+          One-time migrations and backfill operations. These run automatically on startup but can be re-triggered here.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Store Code Backfill */}
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Hash className="size-3.5 text-muted-foreground" />
+                <span className="text-sm font-medium">Backfill Store Codes</span>
+                <Badge variant="outline" className="text-[10px]">STO-YYYYMM-NNNN</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Assigns human-readable store codes to stores missing them. Primary store always gets 0001.
+                Runs automatically on each deploy — use Force Re-run only if codes need reassigning.
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs gap-1.5"
+                disabled={s.status === 'running'}
+                onClick={() => runBackfill(false)}
+              >
+                {s.status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Hash className="size-3" />}
+                Backfill Store Codes
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs gap-1.5 text-muted-foreground"
+                disabled={s.status === 'running'}
+                onClick={() => runBackfill(true)}
+                title="Force re-run even if migration already completed"
+              >
+                <SkipForward className="size-3" />
+                Force Re-run
+              </Button>
+            </div>
+          </div>
+
+          {/* Result */}
+          {s.status === 'done' && s.result && (
+            <div className="rounded-md bg-muted/40 border p-3 space-y-2">
+              {s.result.alreadyCompleted ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  Migration already completed — all store codes are up to date.
+                  Use &quot;Force Re-run&quot; to reassign codes.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center">
+                      <p className="text-lg font-bold">{s.result.storesChecked}</p>
+                      <p className="text-[10px] text-muted-foreground">Stores Checked</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-bold text-emerald-600">{s.result.storesUpdated}</p>
+                      <p className="text-[10px] text-muted-foreground">Updated</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-bold text-muted-foreground">{s.result.storesSkipped}</p>
+                      <p className="text-[10px] text-muted-foreground">Skipped</p>
+                    </div>
+                  </div>
+                  {s.result.updated.length > 0 && (
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {s.result.updated.map((u, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          <span className="font-mono text-[10px] text-muted-foreground w-28 shrink-0">{u.businessCode}</span>
+                          <span className="truncate flex-1">{u.businessName} → {u.storeName}</span>
+                          <Badge variant="outline" className="font-mono text-[10px] shrink-0">{u.newCode}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {s.status === 'error' && (
+            <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700">
+              <XCircle className="size-3.5 shrink-0" />
+              {s.error}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export function OpsDashboardView() {
@@ -119,6 +259,8 @@ export function OpsDashboardView() {
           </div>
         </CardContent>
       </Card>
+
+      <DataRepairSection />
     </div>
   )
 }
