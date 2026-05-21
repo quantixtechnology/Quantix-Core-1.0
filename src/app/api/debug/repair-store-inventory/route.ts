@@ -15,11 +15,21 @@ import { db } from '@/lib/db'
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url)
-  const businessId = searchParams.get('businessId')
+  const rawId = searchParams.get('businessId') || searchParams.get('businessCode')
 
-  if (!businessId) {
-    return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 })
+  if (!rawId) {
+    return NextResponse.json({ success: false, error: 'businessId or businessCode is required' }, { status: 400 })
   }
+
+  // Accept either UUID businessId or human-readable businessCode (e.g. BUS-202605-0001)
+  const business = await db.business.findFirst({
+    where: rawId.startsWith('BUS-') ? { businessCode: rawId } : { id: rawId },
+    select: { id: true, businessCode: true, name: true },
+  })
+  if (!business) {
+    return NextResponse.json({ success: false, error: `Business not found for: ${rawId}` }, { status: 404 })
+  }
+  const businessId = business.id
 
   // Fetch all active stores for the business
   const stores = await db.store.findMany({
@@ -116,6 +126,8 @@ export async function POST(request: Request) {
     success: true,
     summary: {
       businessId,
+      businessCode: business.businessCode,
+      businessName: business.name,
       storesChecked: stores.length,
       productsChecked: products.length,
       inventoryRowsCreated: created.length,
