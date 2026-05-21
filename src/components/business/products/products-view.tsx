@@ -202,9 +202,9 @@ export function ProductsView() {
         includeAllVariants: 'true',
         limit: '200',
       })
-      // Store-scoped: show only products with inventory at the selected store.
-      // This maintains multi-store isolation — each store sees its own product list.
-      // Products missing inventory rows at this store are fixed by the repair endpoint.
+      // Products are business-level — do NOT filter by store (no filterByStore param).
+      // Pass storeId only so inventory rows are scoped to this store for stock display.
+      // Switching stores re-queries with new storeId → stock column updates automatically.
       if (currentStoreId) params.set('storeId', currentStoreId)
       const response = await fetch(`/api/core/storefront/products?${params}`, {
         headers: { 'x-business-id': businessId },
@@ -374,6 +374,7 @@ export function ProductsView() {
   const [formIsVeg, setFormIsVeg] = useState(true)
   const [formIsFeatured, setFormIsFeatured] = useState(false)
   const [formStatus, setFormStatus] = useState<string>("ACTIVE")
+  const [formAddToAllStores, setFormAddToAllStores] = useState(true)
   const [formVariants, setFormVariants] = useState<
     { name: string; sku: string; mrp: string; price: string; stock: string }[]
   >([{ name: "", sku: "", mrp: "", price: "", stock: "" }])
@@ -467,6 +468,7 @@ export function ProductsView() {
     setFormIsVeg(true)
     setFormIsFeatured(false)
     setFormStatus("ACTIVE")
+    setFormAddToAllStores(true)
     setFormVariants([{ name: "", sku: "", mrp: "", price: "", stock: "" }])
     setFormImageUrl("")
     setEditingProduct(null)
@@ -522,6 +524,7 @@ export function ProductsView() {
       }))
 
       if (editingProduct) {
+        // Products are business-level — no storeId on updates
         await updateProductMutation.mutateAsync({
           productId: editingProduct.id,
           data: {
@@ -534,7 +537,6 @@ export function ProductsView() {
             images: imageList,
             variants: variantPayload,
             workflowType: categoryObj?.workflow || "ECOMMERCE",
-            ...(currentStoreId ? { storeId: currentStoreId } : {}),
           },
         })
       } else {
@@ -548,7 +550,9 @@ export function ProductsView() {
           images: imageList,
           variants: variantPayload,
           workflowType: categoryObj?.workflow || "ECOMMERCE",
+          // Inventory routing: primary store + addToAllStores flag
           ...(currentStoreId ? { storeId: currentStoreId } : {}),
+          addToAllStores: formAddToAllStores,
         })
       }
 
@@ -1387,6 +1391,21 @@ export function ProductsView() {
                 <Switch checked={formIsFeatured} onCheckedChange={setFormIsFeatured} />
               </div>
             </div>
+
+            {/* Add to all stores — only shown when creating a new product */}
+            {!editingProduct && (
+              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Add to all stores</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {formAddToAllStores
+                      ? "Inventory row created for every store (stock = 0 for others)"
+                      : "Inventory row created only for the currently selected store"}
+                  </p>
+                </div>
+                <Switch checked={formAddToAllStores} onCheckedChange={setFormAddToAllStores} />
+              </div>
+            )}
 
             <Separator />
 

@@ -69,10 +69,12 @@ export async function GET(request: Request) {
       ];
     }
 
-    // When storeId is provided: only return products that have inventory at that store.
-    // This is the core of store-aware product listing — customers only see what their
-    // assigned store can fulfil.
-    if (storeId) {
+    // Products are BUSINESS-level entities — never filter the product list by store.
+    // filterByStore=true: customer storefront only — only return products with inventory at this store.
+    // Admin Products module: omit filterByStore → returns ALL business products.
+    // storeId alone only scopes the inventory rows included per product (for stock display).
+    const filterByStore = searchParams.get('filterByStore') === 'true';
+    if (storeId && filterByStore) {
       where.inventory = {
         some: {
           storeId,
@@ -276,9 +278,10 @@ export const POST = withMiddleware({
       return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
-    // Fetch ALL active stores for this business so we can create inventory rows for each.
-    // This guarantees the product is visible in every store's admin product list
-    // (which filters by inventory.some({storeId})) without requiring manual backfill.
+    // addToAllStores (default true): create inventory rows for every active store at qty=0.
+    // false: create inventory only for the selected/primary store.
+    const addToAllStores = body.addToAllStores !== false;
+
     const allStores = await db.store.findMany({
       where: { businessId: body.businessId, status: 'ACTIVE' },
       select: { id: true },
@@ -358,11 +361,11 @@ export const POST = withMiddleware({
       },
     });
 
-    // Create inventory rows for EVERY active store in the business.
-    // The explicitly selected store gets the real stock quantity; all other stores get 0.
-    // This ensures the product appears in every store's admin product list
-    // (which filters via inventory.some({storeId})) from the moment it is created.
-    if (allStores.length > 0) {
+    // Create inventory rows.
+    // addToAllStores=true  → every active store gets a row (qty=0 for non-selected, real qty for selected).
+    // addToAllStores=false → only the selected/primary store gets a row with the entered stock.
+    const storesToInit = addToAllStores ? allStores : allStores.filter(s => s.id === storeId);
+    if (storesToInit.length > 0) {
       const variantStockMap: Record<number, number> = {};
       if (body.variants && body.variants.length > 0) {
         body.variants.forEach((v: Record<string, unknown>, i: number) => {
@@ -370,7 +373,7 @@ export const POST = withMiddleware({
         });
       }
       const minStock = 10;
-      for (const s of allStores) {
+      for (const s of storesToInit) {
         const isSelectedStore = s.id === storeId;
         for (let i = 0; i < product.variants.length; i++) {
           const variant = product.variants[i];
