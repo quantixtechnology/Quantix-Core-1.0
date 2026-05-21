@@ -91,6 +91,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
   const [notFound, setNotFound]     = useState(false)
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [activeImage, setActiveImage] = useState(0)
+  const [mainImgError, setMainImgError] = useState(false)
   const [qty, setQty]               = useState(1)
   const [selectedCutType, setSelectedCutType]   = useState<string | null>(null)
   const [selectedCleaning, setSelectedCleaning] = useState<string | null>(null)
@@ -159,6 +160,11 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
   const images = Array.isArray(product.images) ? product.images : []
   const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
 
+  // Log image details for debugging (browser console)
+  if (typeof window !== "undefined" && images.length > 0) {
+    console.log(`[ProductPage] ${product.name} | images=`, images, `| firstExists=${!!images[0]}`)
+  }
+
   // Meat-specific fields — only read when business type supports them
   const cutTypes        = checkout.showCutType  ? ((meta.cutTypes        as string[] | undefined) || []) : []
   const cleaningOptions = checkout.showCleaning ? ((meta.cleaningOptions as string[] | undefined) || []) : []
@@ -222,11 +228,15 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
         {/* ── Image gallery ────────────────────────────────── */}
         <div className="space-y-3">
           <div className="aspect-square rounded-2xl overflow-hidden border border-gray-100 bg-gray-50">
-            {images[activeImage] ? (
+            {images[activeImage] && !mainImgError ? (
               <img
                 src={images[activeImage]}
                 alt={product.name}
                 className="w-full h-full object-cover"
+                onError={() => {
+                  console.warn(`[ProductPage] image load failed: ${images[activeImage]}`)
+                  setMainImgError(true)
+                }}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-8xl">{defaultEmoji}</div>
@@ -237,12 +247,13 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
               {images.map((img, i) => (
                 <button
                   key={i}
-                  onClick={() => setActiveImage(i)}
+                  onClick={() => { setActiveImage(i); setMainImgError(false) }}
                   className={`shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${
                     activeImage === i ? "border-gray-800" : "border-transparent hover:border-gray-300"
                   }`}
                 >
-                  <img src={img} alt={`view ${i + 1}`} className="w-full h-full object-cover" />
+                  <img src={img} alt={`view ${i + 1}`} className="w-full h-full object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
                 </button>
               ))}
             </div>

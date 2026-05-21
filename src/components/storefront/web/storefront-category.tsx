@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"
@@ -72,10 +72,17 @@ function ProductCard({
 }) {
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const config = getBusinessTypeConfig(businessType)
+  const [imgError, setImgError] = useState(false)
+  const loggedRef = useRef(false)
 
   // images and metadata are already parsed by the API
   const images = Array.isArray(product.images) ? product.images : []
   const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
+
+  if (!loggedRef.current && images.length > 0) {
+    loggedRef.current = true
+    console.log(`[CategoryCard] ${product.name} | images[0]=${images[0]} | count=${images.length}`)
+  }
 
   const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
   const price = defaultVariant?.price ?? 0
@@ -130,11 +137,15 @@ function ProductCard({
       onClick={() => nav.go("product", { productId: product.id })}
     >
       <div className="relative overflow-hidden">
-        {images[0] ? (
+        {images[0] && !imgError ? (
           <img
             src={images[0]}
             alt={product.name}
             className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={() => {
+              console.warn(`[CategoryCard] image load failed: ${images[0]}`)
+              setImgError(true)
+            }}
           />
         ) : (
           <div className="w-full h-44 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-5xl">
