@@ -48,37 +48,69 @@ const healthColor: Record<string, string> = {
 
 // ---- Data Repair section ----
 
-interface BackfillState {
-  status: 'idle' | 'running' | 'done' | 'error'
-  result?: {
-    alreadyCompleted: boolean
-    storesChecked: number
-    storesUpdated: number
-    storesSkipped: number
-    updated: { businessCode: string; businessName: string; storeName: string; newCode: string }[]
-  }
+type RunStatus = 'idle' | 'running' | 'done' | 'error'
+
+interface StoreCodeEntry {
+  businessCode: string
+  businessName: string
+  storeName: string
+  storeId: string
+  isMainStore: boolean
+  currentStoreCode: string | null
+  expectedStoreCode: string
+  status: 'OK' | 'NEEDS_REPAIR'
+}
+
+interface VerifyState {
+  status: RunStatus
+  summary?: { total: number; ok: number; needsRepair: number; healthy: boolean }
+  data?: StoreCodeEntry[]
+  error?: string
+}
+
+interface RepairState {
+  status: RunStatus
+  storesUpdated?: number
+  updated?: { businessCode: string; businessName: string; storeName: string; oldCode: string | null; newCode: string }[]
   error?: string
 }
 
 function DataRepairSection() {
-  const [storeCodeState, setStoreCodeState] = useState<BackfillState>({ status: 'idle' })
+  const [verifyState, setVerifyState] = useState<VerifyState>({ status: 'idle' })
+  const [repairState, setRepairState] = useState<RepairState>({ status: 'idle' })
 
-  const runBackfill = async (force: boolean) => {
-    setStoreCodeState({ status: 'running' })
+  const runVerify = async () => {
+    setVerifyState({ status: 'running' })
     try {
-      const res = await fetch(
-        `/api/admin/migrate/backfill-store-codes?force=${force}`,
-        { method: 'POST', headers: getAuthHeaders() }
-      )
+      const res = await fetch('/api/debug/store-codes', { headers: getAuthHeaders() })
       const json = await res.json()
-      if (!json.success) throw new Error(json.error || 'Backfill failed')
-      setStoreCodeState({ status: 'done', result: json.data })
+      if (!json.success) throw new Error(json.error || 'Verification failed')
+      setVerifyState({ status: 'done', summary: json.summary, data: json.data })
     } catch (err) {
-      setStoreCodeState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
+      setVerifyState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
     }
   }
 
-  const s = storeCodeState
+  const runRepair = async () => {
+    setRepairState({ status: 'running' })
+    try {
+      const res = await fetch(
+        '/api/admin/migrate/backfill-store-codes?force=true',
+        { method: 'POST', headers: getAuthHeaders() }
+      )
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Repair failed')
+      setRepairState({ status: 'done', storesUpdated: json.data.storesUpdated, updated: json.data.updated })
+      // Re-verify after repair so the table refreshes
+      await runVerify()
+    } catch (err) {
+      setRepairState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
+    }
+  }
+
+  const v = verifyState
+  const r = repairState
+  const hasProblems = v.summary && v.summary.needsRepair > 0
 
   return (
     <Card>
@@ -88,22 +120,22 @@ function DataRepairSection() {
           <CardTitle className="text-sm font-semibold">Data Repair</CardTitle>
         </div>
         <CardDescription className="text-xs">
-          One-time migrations and backfill operations. These run automatically on startup but can be re-triggered here.
+          Verify and repair store code assignments. Startup self-heal runs automatically — use these buttons to inspect or force-repair.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Store Code Backfill */}
+        {/* Store Codes */}
         <div className="rounded-lg border p-4 space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <Hash className="size-3.5 text-muted-foreground" />
-                <span className="text-sm font-medium">Backfill Store Codes</span>
-                <Badge variant="outline" className="text-[10px]">{'{businessCode}'}-001</Badge>
+                <span className="text-sm font-medium">Store Codes</span>
+                <Badge variant="outline" className="font-mono text-[10px]">BUS-YYYYMM-NNNN-001</Badge>
               </div>
               <p className="text-xs text-muted-foreground">
-                Assigns globally-unique store codes in format BUS-YYYYMM-NNNN-001.
-                Primary store always gets -001. Runs automatically on deploy — use Force Re-run to reassign.
+                Globally-unique store identifiers. Primary store always gets -001.
+                Startup auto-heals any STR-* / STO-* legacy codes.
               </p>
             </div>
             <div className="flex gap-2 shrink-0">
@@ -111,71 +143,92 @@ function DataRepairSection() {
                 size="sm"
                 variant="outline"
                 className="h-8 text-xs gap-1.5"
-                disabled={s.status === 'running'}
-                onClick={() => runBackfill(false)}
+                disabled={v.status === 'running' || r.status === 'running'}
+                onClick={runVerify}
               >
-                {s.status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Hash className="size-3" />}
-                Backfill Store Codes
+                {v.status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
+                Verify Store Codes
               </Button>
               <Button
                 size="sm"
-                variant="ghost"
-                className="h-8 text-xs gap-1.5 text-muted-foreground"
-                disabled={s.status === 'running'}
-                onClick={() => runBackfill(true)}
-                title="Force re-run even if migration already completed"
+                variant={hasProblems ? 'default' : 'ghost'}
+                className={`h-8 text-xs gap-1.5 ${hasProblems ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'text-muted-foreground'}`}
+                disabled={v.status === 'running' || r.status === 'running'}
+                onClick={runRepair}
               >
-                <SkipForward className="size-3" />
-                Force Re-run
+                {r.status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <SkipForward className="size-3" />}
+                Repair Store Codes
               </Button>
             </div>
           </div>
 
-          {/* Result */}
-          {s.status === 'done' && s.result && (
-            <div className="rounded-md bg-muted/40 border p-3 space-y-2">
-              {s.result.alreadyCompleted ? (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <CheckCircle2 className="size-3.5 text-emerald-500" />
-                  Migration already completed — all store codes are up to date.
-                  Use &quot;Force Re-run&quot; to reassign codes.
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="text-center">
-                      <p className="text-lg font-bold">{s.result.storesChecked}</p>
-                      <p className="text-[10px] text-muted-foreground">Stores Checked</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-emerald-600">{s.result.storesUpdated}</p>
-                      <p className="text-[10px] text-muted-foreground">Updated</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-muted-foreground">{s.result.storesSkipped}</p>
-                      <p className="text-[10px] text-muted-foreground">Skipped</p>
-                    </div>
-                  </div>
-                  {s.result.updated.length > 0 && (
-                    <div className="space-y-1 max-h-40 overflow-y-auto">
-                      {s.result.updated.map((u, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          <span className="font-mono text-[10px] text-muted-foreground w-28 shrink-0">{u.businessCode}</span>
-                          <span className="truncate flex-1">{u.businessName} → {u.storeName}</span>
-                          <Badge variant="outline" className="font-mono text-[10px] shrink-0">{u.newCode}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
+          {/* Repair result banner */}
+          {r.status === 'done' && (
+            <div className="flex items-center gap-2 rounded-md bg-emerald-50 border border-emerald-200 p-2 text-xs text-emerald-700">
+              <CheckCircle2 className="size-3.5 shrink-0" />
+              Repair complete — {r.storesUpdated} store(s) updated.
+            </div>
+          )}
+          {r.status === 'error' && (
+            <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700">
+              <XCircle className="size-3.5 shrink-0" />
+              {r.error}
             </div>
           )}
 
-          {s.status === 'error' && (
+          {/* Verification results */}
+          {v.status === 'done' && v.summary && v.data && (
+            <div className="space-y-2">
+              {/* Summary row */}
+              <div className={`flex items-center gap-3 rounded-md p-2 text-xs border ${v.summary.healthy ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                {v.summary.healthy
+                  ? <><CheckCircle2 className="size-3.5 shrink-0" /> All {v.summary.total} store(s) have correct codes.</>
+                  : <><XCircle className="size-3.5 shrink-0" /> {v.summary.needsRepair} of {v.summary.total} store(s) need repair. Click &quot;Repair Store Codes&quot; to fix.</>
+                }
+              </div>
+
+              {/* Per-store table */}
+              <div className="rounded border overflow-hidden">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Business</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Store</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Current Code</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Expected</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {v.data.map((row) => (
+                      <tr key={row.storeId} className={row.status === 'NEEDS_REPAIR' ? 'bg-red-50/50' : ''}>
+                        <td className="px-2 py-1.5 font-mono text-muted-foreground">{row.businessCode}</td>
+                        <td className="px-2 py-1.5">
+                          {row.storeName}
+                          {row.isMainStore && <span className="ml-1 text-[10px] text-muted-foreground">(main)</span>}
+                        </td>
+                        <td className={`px-2 py-1.5 font-mono ${row.status === 'NEEDS_REPAIR' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                          {row.currentStoreCode ?? <span className="italic text-red-500">NULL</span>}
+                        </td>
+                        <td className="px-2 py-1.5 font-mono text-emerald-700">{row.expectedStoreCode}</td>
+                        <td className="px-2 py-1.5">
+                          {row.status === 'OK'
+                            ? <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 className="size-3" />OK</span>
+                            : <span className="text-red-600 flex items-center gap-1"><XCircle className="size-3" />NEEDS REPAIR</span>
+                          }
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {v.status === 'error' && (
             <div className="flex items-center gap-2 rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700">
               <XCircle className="size-3.5 shrink-0" />
-              {s.error}
+              {v.error}
             </div>
           )}
         </div>
