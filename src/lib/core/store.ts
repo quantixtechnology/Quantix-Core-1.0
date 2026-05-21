@@ -108,7 +108,10 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
   const isMainStore = data.isMainStore ?? isFirstStore;
 
   // Generate store code before transaction (avoids nested async issues)
-  const storeCode = await generateStoreCode(businessId);
+  const storeCode = await generateStoreCode(businessId)
+  if (!storeCode || storeCode.startsWith('STR-') || storeCode.startsWith('STO-')) {
+    throw new Error(`Invalid store code generated: "${storeCode}". Expected format: ${business.businessCode ?? 'BUS-XXXXXX-XXXX'}-NNN`)
+  }
 
   // 4. If setting as main store, unset existing main store
   const result = await db.$transaction(async (tx) => {

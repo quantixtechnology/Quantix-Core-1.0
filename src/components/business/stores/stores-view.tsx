@@ -543,11 +543,13 @@ export function StoresView() {
                           </Badge>
                         )}
                       </div>
-                      {store.storeCode && (
-                        <p className="text-[10px] text-muted-foreground font-mono mt-0.5 flex items-center gap-1">
-                          <Hash className="size-2.5" />{store.storeCode}
-                        </p>
-                      )}
+                      <p className="text-[10px] font-mono mt-0.5 flex items-center gap-1">
+                        <Hash className="size-2.5 shrink-0 text-muted-foreground" />
+                        {store.storeCode
+                          ? <span className="text-emerald-700 font-semibold">{store.storeCode}</span>
+                          : <span className="text-amber-600 italic">no code — deploy to repair</span>
+                        }
+                      </p>
                     </div>
                   </div>
 
@@ -681,8 +683,13 @@ export function StoresView() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{dialogMode === 'create' ? 'Add Store' : `Edit — ${editingStore?.name}`}</DialogTitle>
-            {dialogMode === 'edit' && editingStore?.storeCode && (
-              <p className="text-xs text-muted-foreground font-mono">{editingStore.storeCode}</p>
+            {dialogMode === 'edit' && (
+              <p className="text-xs font-mono">
+                {editingStore?.storeCode
+                  ? <span className="text-emerald-700 font-semibold">{editingStore.storeCode}</span>
+                  : <span className="text-amber-600 italic">no code — will be assigned on next deploy</span>
+                }
+              </p>
             )}
           </DialogHeader>
 

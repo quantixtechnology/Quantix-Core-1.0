@@ -25,6 +25,7 @@ export const GET = withMiddleware({
         businessCode: s.businessCode,
         storeName: s.storeName,
         storeCode: s.storeCode,
+        storeSequence: s.storeSequence,
         isMainStore: s.isMainStore,
         status: s.status,
       })),

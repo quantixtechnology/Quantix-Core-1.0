@@ -11,6 +11,7 @@ export interface StoreCodeStatus {
   storeId: string
   isMainStore: boolean
   storeCode: string | null
+  storeSequence: number
   status: 'OK' | 'INVALID'
 }
 
@@ -58,6 +59,7 @@ export async function verifyStoreCodes(): Promise<StoreCodeStatus[]> {
         storeId: store.id,
         isMainStore: store.isMainStore,
         storeCode: store.storeCode,
+        storeSequence: seq,
         status: store.storeCode === expected ? 'OK' : 'INVALID',
       })
       seq++
