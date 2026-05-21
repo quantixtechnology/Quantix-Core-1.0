@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { Search, SlidersHorizontal, ChevronDown, X, Plus, Minus } from "lucide-react"
+import { getBusinessTypeConfig } from "@/lib/business-type-config"
+import { Search, SlidersHorizontal, ChevronDown, X, Plus, Minus, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
 interface Category {
@@ -18,7 +19,6 @@ interface Variant {
   name: string
   price: number
   mrp: number
-  discountPercent: number | null
   isDefault: boolean
 }
 
@@ -35,6 +35,16 @@ interface Product {
 }
 
 type SortOption = "default" | "price_asc" | "price_desc" | "name_asc"
+
+function getDefaultProductEmoji(businessType: string): string {
+  switch (businessType) {
+    case "MEAT_DELIVERY":  return "🥩"
+    case "GROCERY":        return "🛒"
+    case "FOOD_DELIVERY":  return "🍽️"
+    case "PHARMACY":       return "💊"
+    default:               return "📦"
+  }
+}
 
 function SkeletonCard() {
   return (
@@ -53,23 +63,33 @@ function ProductCard({
   product,
   brandColor,
   nav,
+  businessType,
 }: {
   product: Product
   brandColor: string
   nav: WebNav
+  businessType: string
 }) {
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
+  const config = getBusinessTypeConfig(businessType)
+
   const images = (() => { try { return JSON.parse(product.images) as string[] } catch { return [] } })()
-  const meta = (() => { try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} } })()
+  const meta   = (() => { try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} } })()
+
   const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
   const price = defaultVariant?.price ?? 0
-  const mrp = defaultVariant?.mrp ?? 0
-  const hasDiscount = mrp > price && mrp > 0
-  const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
+  const mrp   = defaultVariant?.mrp   ?? 0
+  const hasDiscount  = mrp > price && mrp > 0
+  const discountPct  = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
 
   const cartItem = defaultVariant
     ? items.find((i) => i.productId === product.id && i.variantId === defaultVariant.id)
     : undefined
+
+  // Gate badges by business type config
+  const showHalal  = config.productMeta.some((m) => m.key === "isHalal"      && m.showOnCard)
+  const showFresh  = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
+  const defaultEmoji = getDefaultProductEmoji(businessType)
 
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -117,11 +137,12 @@ function ProductCard({
           />
         ) : (
           <div className="w-full h-44 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-5xl">
-            🥩
+            {defaultEmoji}
           </div>
         )}
-        <div className="absolute top-2 left-2 flex gap-1 flex-wrap">
-          {!!meta.isHalal && (
+
+        <div className="absolute top-2 left-2 flex gap-1 flex-wrap max-w-[calc(100%-0.5rem)]">
+          {showHalal && !!meta.isHalal && (
             <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[9px] font-bold rounded-full">HALAL</span>
           )}
           {hasDiscount && (
@@ -130,6 +151,12 @@ function ProductCard({
             </span>
           )}
         </div>
+
+        {showFresh && !!meta.freshnessTag && (
+          <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-white/90 backdrop-blur-sm text-[9px] font-semibold text-gray-700 rounded-full border border-gray-200">
+            {String(meta.freshnessTag)}
+          </div>
+        )}
       </div>
 
       <div className="p-3">
@@ -184,21 +211,25 @@ interface StorefrontCategoryPageProps {
 }
 
 export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPageProps) {
-  const { currentBusinessId } = useAdminStore()
+  const { currentBusinessId, currentBusinessType } = useAdminStore()
+
+  const config = getBusinessTypeConfig(currentBusinessType)
+  const labels = config.labels
 
   const [categories, setCategories] = useState<Category[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [sort, setSort] = useState<SortOption>("default")
-  const [priceMax, setPriceMax] = useState<number | null>(null)
+  const [products, setProducts]     = useState<Product[]>([])
+  const [total, setTotal]           = useState(0)
+  const [page, setPage]             = useState(1)
+  const [loading, setLoading]       = useState(true)
+  const [searchQuery, setSearchQuery]   = useState("")
+  const [sort, setSort]             = useState<SortOption>("default")
+  const [priceMax, setPriceMax]     = useState<number | null>(null)
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
-  const [sortOpen, setSortOpen] = useState(false)
+  const [sortOpen, setSortOpen]     = useState(false)
 
   const LIMIT = 12
 
+  // ── Categories ─────────────────────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/core/storefront/categories?businessId=${currentBusinessId}`)
@@ -207,9 +238,11 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
       .catch(() => {})
   }, [currentBusinessId])
 
+  // ── Products ───────────────────────────────────────────────────
   const fetchProducts = useCallback(() => {
     if (!currentBusinessId) return
     setLoading(true)
+
     const params = new URLSearchParams({
       businessId: currentBusinessId,
       page: String(page),
@@ -223,23 +256,35 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
       .then((j) => {
         if (j.success) {
           let prods: Product[] = j.data?.products || []
-          if (priceMax !== null) prods = prods.filter((p) => {
-            const v = p.variants.find((vv) => vv.isDefault) || p.variants[0]
-            return v ? v.price <= priceMax : true
-          })
-          if (sort === "price_asc") prods.sort((a, b) => {
-            const av = a.variants.find(v => v.isDefault) || a.variants[0]
-            const bv = b.variants.find(v => v.isDefault) || b.variants[0]
+
+          if (priceMax !== null) {
+            prods = prods.filter((p) => {
+              const v = p.variants.find((vv) => vv.isDefault) || p.variants[0]
+              return v ? v.price <= priceMax : true
+            })
+          }
+          if (sort === "price_asc")  prods.sort((a, b) => {
+            const av = a.variants.find((v) => v.isDefault) || a.variants[0]
+            const bv = b.variants.find((v) => v.isDefault) || b.variants[0]
             return (av?.price ?? 0) - (bv?.price ?? 0)
           })
           if (sort === "price_desc") prods.sort((a, b) => {
-            const av = a.variants.find(v => v.isDefault) || a.variants[0]
-            const bv = b.variants.find(v => v.isDefault) || b.variants[0]
+            const av = a.variants.find((v) => v.isDefault) || a.variants[0]
+            const bv = b.variants.find((v) => v.isDefault) || b.variants[0]
             return (bv?.price ?? 0) - (av?.price ?? 0)
           })
-          if (sort === "name_asc") prods.sort((a, b) => a.name.localeCompare(b.name))
+          if (sort === "name_asc")   prods.sort((a, b) => a.name.localeCompare(b.name))
+
           setProducts(prods)
           setTotal(j.data?.total ?? prods.length)
+
+          console.log("[StorefrontCategory] loaded", {
+            businessId:   currentBusinessId,
+            businessType: currentBusinessType,
+            categoryId:   nav.categoryId,
+            productCount: prods.length,
+            totalInDb:    j.data?.total,
+          })
         }
       })
       .catch(() => {})
@@ -247,21 +292,16 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBusinessId, nav.categoryId, page, searchQuery, sort, priceMax])
 
-  useEffect(() => {
-    setPage(1)
-  }, [nav.categoryId, searchQuery, sort, priceMax])
-
-  useEffect(() => {
-    fetchProducts()
-  }, [fetchProducts])
+  useEffect(() => { setPage(1) }, [nav.categoryId, searchQuery, sort, priceMax])
+  useEffect(() => { fetchProducts() }, [fetchProducts])
 
   const totalPages = Math.ceil(total / LIMIT)
 
   const SortLabel: Record<SortOption, string> = {
-    default: "Relevance",
-    price_asc: "Price: Low to High",
+    default:    "Relevance",
+    price_asc:  "Price: Low to High",
     price_desc: "Price: High to Low",
-    name_asc: "Name A–Z",
+    name_asc:   "Name A–Z",
   }
 
   const Sidebar = () => (
@@ -295,7 +335,7 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
 
       <div>
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Max Price</h3>
-        <div className="space-y-2">
+        <div className="space-y-0.5">
           {[null, 200, 500, 1000, 2000].map((val) => (
             <button
               key={val ?? "any"}
@@ -335,7 +375,7 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search products…"
+                placeholder={labels.searchPlaceholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 h-10 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:bg-white focus:border-gray-400 transition-colors"
@@ -394,22 +434,34 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
             </div>
           ) : products.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
-              <div className="text-5xl">🔍</div>
-              <p className="text-lg font-semibold text-gray-700">No products found</p>
-              <p className="text-sm text-gray-400">Try a different category or search term</p>
-              <button
-                onClick={() => { setSearchQuery(""); setPriceMax(null); nav.go("category", { categoryId: undefined, categoryName: "All Products" }) }}
-                className="mt-1 px-5 py-2 text-sm font-semibold text-white rounded-xl"
-                style={{ backgroundColor: brandColor }}
-              >
-                Clear filters
-              </button>
+              <Package className="w-14 h-14 text-gray-200" />
+              <p className="text-lg font-semibold text-gray-700">
+                {searchQuery || nav.categoryId ? "No products found" : "No products added yet"}
+              </p>
+              <p className="text-sm text-gray-400">
+                {searchQuery || nav.categoryId
+                  ? "Try a different category or search term"
+                  : "Products are being added. Check back soon."}
+              </p>
+              {(searchQuery || nav.categoryId) && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("")
+                    setPriceMax(null)
+                    nav.go("category", { categoryId: undefined, categoryName: "All Products" })
+                  }}
+                  className="mt-1 px-5 py-2 text-sm font-semibold text-white rounded-xl"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {products.map((p) => (
-                  <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} />
+                  <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
                 ))}
               </div>
 

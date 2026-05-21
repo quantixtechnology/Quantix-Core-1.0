@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { ChevronRight, ShoppingCart, Plus, Minus, Star, Check, ArrowLeft } from "lucide-react"
+import { getBusinessTypeConfig } from "@/lib/business-type-config"
+import { ChevronRight, ShoppingCart, Plus, Minus, Check, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
 interface Variant {
@@ -42,6 +43,16 @@ interface StorefrontProductPageProps {
   nav: WebNav
 }
 
+function getDefaultProductEmoji(businessType: string): string {
+  switch (businessType) {
+    case "MEAT_DELIVERY":  return "🥩"
+    case "GROCERY":        return "🛒"
+    case "FOOD_DELIVERY":  return "🍽️"
+    case "PHARMACY":       return "💊"
+    default:               return "📦"
+  }
+}
+
 function SkeletonProduct() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-pulse">
@@ -65,18 +76,23 @@ function SkeletonProduct() {
 }
 
 export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPageProps) {
-  const { currentBusinessId } = useAdminStore()
-  const { addItem, items, updateQuantity, removeItem } = useCartStore()
+  const { currentBusinessId, currentBusinessType } = useAdminStore()
+  const { addItem, items, updateQuantity } = useCartStore()
 
-  const [product, setProduct] = useState<ProductDetail | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
+  const config = getBusinessTypeConfig(currentBusinessType)
+  const checkout = config.checkoutOptions
+
+  // Badge visibility — driven by business-type productMeta config
+  const showHalal   = config.productMeta.some((m) => m.key === "isHalal"      && m.showOnDetail)
+  const showFresh   = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnDetail)
+
+  const [product, setProduct]       = useState<ProductDetail | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [notFound, setNotFound]     = useState(false)
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [activeImage, setActiveImage] = useState(0)
-  const [qty, setQty] = useState(1)
-
-  // Meat metadata selectors
-  const [selectedCutType, setSelectedCutType] = useState<string | null>(null)
+  const [qty, setQty]               = useState(1)
+  const [selectedCutType, setSelectedCutType]   = useState<string | null>(null)
   const [selectedCleaning, setSelectedCleaning] = useState<string | null>(null)
   const [selectedMarinade, setSelectedMarinade] = useState<string | null>(null)
   const [addedToCart, setAddedToCart] = useState(false)
@@ -85,12 +101,29 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     if (!nav.productId || !currentBusinessId) return
     setLoading(true)
     setNotFound(false)
-    fetch(`/api/core/storefront/products?businessId=${currentBusinessId}&limit=100`)
+    setProduct(null)
+
+    // Fetch by businessId — products are always scoped to their business
+    const params = new URLSearchParams({
+      businessId: currentBusinessId,
+      limit: "100",
+    })
+
+    fetch(`/api/core/storefront/products?${params}`)
       .then((r) => r.json())
       .then((j) => {
         if (!j.success) { setNotFound(true); return }
         const prods: ProductDetail[] = j.data?.products || []
         const found = prods.find((p) => p.id === nav.productId)
+
+        console.log("[StorefrontProduct] lookup", {
+          productId:    nav.productId,
+          businessId:   currentBusinessId,
+          businessType: currentBusinessType,
+          foundInBatch: !!found,
+          totalInBatch: prods.length,
+        })
+
         if (!found) { setNotFound(true); return }
         setProduct(found)
         const defaultVar = found.variants.find((v) => v.isDefault) || found.variants[0]
@@ -98,6 +131,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav.productId, currentBusinessId])
 
   if (loading) return <SkeletonProduct />
@@ -105,7 +139,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
   if (notFound || !product) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
-        <div className="text-5xl">🔍</div>
+        <Package className="w-14 h-14 text-gray-200" />
         <h2 className="text-xl font-bold text-gray-800">Product not found</h2>
         <p className="text-sm text-gray-500">This product may no longer be available.</p>
         <button
@@ -120,22 +154,21 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
   }
 
   const images = (() => { try { return JSON.parse(product.images) as string[] } catch { return [] } })()
-  const meta = (() => {
-    try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} }
-  })()
+  const meta   = (() => { try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} } })()
 
-  const cutTypes = (meta.cutTypes as string[] | undefined) || []
-  const cleaningOptions = (meta.cleaningOptions as string[] | undefined) || []
-  const marinades = (meta.marinade as string[] | undefined) || []
+  // Meat-specific fields — only read when business type supports them
+  const cutTypes        = checkout.showCutType  ? ((meta.cutTypes        as string[] | undefined) || []) : []
+  const cleaningOptions = checkout.showCleaning ? ((meta.cleaningOptions as string[] | undefined) || []) : []
+  const marinades       = checkout.showMarinade ? ((meta.marinade        as string[] | undefined) || []) : []
 
   const selectedVariant = product.variants.find((v) => v.id === selectedVariantId)
     || product.variants.find((v) => v.isDefault)
     || product.variants[0]
 
   const price = selectedVariant?.price ?? 0
-  const mrp = selectedVariant?.mrp ?? 0
-  const hasDiscount = mrp > price && mrp > 0
-  const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
+  const mrp   = selectedVariant?.mrp   ?? 0
+  const hasDiscount  = mrp > price && mrp > 0
+  const discountPct  = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
 
   const cartItem = selectedVariant
     ? items.find((i) => i.productId === product.id && i.variantId === selectedVariant.id)
@@ -162,19 +195,23 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     setTimeout(() => setAddedToCart(false), 2000)
   }
 
+  const defaultEmoji = getDefaultProductEmoji(currentBusinessType)
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-gray-500 mb-6">
+      <nav className="flex items-center gap-1.5 text-sm text-gray-500 mb-6 flex-wrap">
         <button onClick={() => nav.go("home")} className="hover:text-gray-900 transition-colors">Home</button>
-        <ChevronRight className="w-3 h-3" />
+        <ChevronRight className="w-3 h-3 shrink-0" />
         <button
-          onClick={() => nav.go("category", product.category ? { categoryId: product.category.id, categoryName: product.category.name } : {})}
+          onClick={() => nav.go("category", product.category
+            ? { categoryId: product.category.id, categoryName: product.category.name }
+            : { categoryId: undefined, categoryName: "All Products" })}
           className="hover:text-gray-900 transition-colors"
         >
           {product.category?.name || "Products"}
         </button>
-        <ChevronRight className="w-3 h-3" />
+        <ChevronRight className="w-3 h-3 shrink-0" />
         <span className="text-gray-900 font-medium truncate max-w-[200px]">{product.name}</span>
       </nav>
 
@@ -189,7 +226,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-8xl">🥩</div>
+              <div className="w-full h-full flex items-center justify-center text-8xl">{defaultEmoji}</div>
             )}
           </div>
           {images.length > 1 && (
@@ -211,7 +248,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
 
         {/* ── Product info ─────────────────────────────────── */}
         <div className="flex flex-col">
-          {/* Badges */}
+          {/* Badges — only show if business type supports them */}
           <div className="flex flex-wrap gap-2 mb-3">
             {product.isVeg === true && (
               <span className="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">🌿 VEG</span>
@@ -219,10 +256,10 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
             {product.isVeg === false && (
               <span className="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">🍖 NON-VEG</span>
             )}
-            {!!meta.isHalal && (
+            {showHalal && !!meta.isHalal && (
               <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">✓ HALAL</span>
             )}
-            {!!meta.freshnessTag && (
+            {showFresh && !!meta.freshnessTag && (
               <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
                 ⭐ {String(meta.freshnessTag)}
               </span>
@@ -236,7 +273,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
           )}
 
           {/* Price */}
-          <div className="flex items-baseline gap-3 mb-6">
+          <div className="flex items-baseline gap-3 mb-2">
             <span className="text-3xl font-extrabold" style={{ color: brandColor }}>
               ₹{price.toLocaleString("en-IN")}
             </span>
@@ -251,13 +288,13 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
           </div>
 
           {product.unit && (
-            <p className="text-xs text-gray-500 -mt-4 mb-5">
+            <p className="text-xs text-gray-500 mb-5">
               per {product.unitQuantity ? `${product.unitQuantity} ` : ""}{product.unit}
             </p>
           )}
 
           {/* Variants */}
-          {product.variants.length > 1 && (
+          {product.variants.filter((v) => v.isActive).length > 1 && (
             <div className="mb-5">
               <p className="text-sm font-semibold text-gray-700 mb-2">Select Size / Weight</p>
               <div className="flex flex-wrap gap-2">
@@ -266,19 +303,21 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
                     key={v.id}
                     onClick={() => setSelectedVariantId(v.id)}
                     className={`px-4 py-2 text-sm font-medium rounded-xl border-2 transition-all ${
-                      selectedVariantId === v.id ? "border-current text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
+                      selectedVariantId === v.id ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
                     }`}
                     style={selectedVariantId === v.id ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
                   >
                     {v.name}
-                    {v.price !== price && <span className="ml-1 opacity-80">₹{v.price.toLocaleString("en-IN")}</span>}
+                    {v.price !== price && (
+                      <span className="ml-1 opacity-80">· ₹{v.price.toLocaleString("en-IN")}</span>
+                    )}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Cut Types */}
+          {/* Cut Types — MEAT_DELIVERY only */}
           {cutTypes.length > 0 && (
             <div className="mb-5">
               <p className="text-sm font-semibold text-gray-700 mb-2">Cut Type</p>
@@ -288,7 +327,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
                     key={cut}
                     onClick={() => setSelectedCutType(selectedCutType === cut ? null : cut)}
                     className={`px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5 ${
-                      selectedCutType === cut ? "border-current text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
+                      selectedCutType === cut ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
                     }`}
                     style={selectedCutType === cut ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
                   >
@@ -300,7 +339,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
             </div>
           )}
 
-          {/* Cleaning Options */}
+          {/* Cleaning Options — MEAT_DELIVERY only */}
           {cleaningOptions.length > 0 && (
             <div className="mb-5">
               <p className="text-sm font-semibold text-gray-700 mb-2">Cleaning</p>
@@ -310,7 +349,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
                     key={opt}
                     onClick={() => setSelectedCleaning(selectedCleaning === opt ? null : opt)}
                     className={`px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5 ${
-                      selectedCleaning === opt ? "border-current text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
+                      selectedCleaning === opt ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
                     }`}
                     style={selectedCleaning === opt ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
                   >
@@ -322,7 +361,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
             </div>
           )}
 
-          {/* Marinade */}
+          {/* Marinade — MEAT_DELIVERY only */}
           {marinades.length > 0 && (
             <div className="mb-5">
               <p className="text-sm font-semibold text-gray-700 mb-2">Marinade</p>
@@ -332,7 +371,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
                     key={m}
                     onClick={() => setSelectedMarinade(selectedMarinade === m ? null : m)}
                     className={`px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5 ${
-                      selectedMarinade === m ? "border-current text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
+                      selectedMarinade === m ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
                     }`}
                     style={selectedMarinade === m ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
                   >
@@ -375,13 +414,13 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
               ) : (
                 <>
                   <ShoppingCart className="w-5 h-5" />
-                  Add to Cart · ₹{(price * qty).toLocaleString("en-IN")}
+                  {config.labels.addToCart} · ₹{(price * qty).toLocaleString("en-IN")}
                 </>
               )}
             </button>
           </div>
 
-          {/* Meta info */}
+          {/* Meta info grid */}
           <div className="grid grid-cols-2 gap-3 p-4 bg-gray-50 rounded-2xl text-sm">
             {product.preparationTime && (
               <div>

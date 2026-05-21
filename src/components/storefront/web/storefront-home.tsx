@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { ShoppingCart, ChevronRight, Clock, Shield, Star, Truck, Zap, Plus } from "lucide-react"
+import { getBusinessTypeConfig, getCategoryIcon } from "@/lib/business-type-config"
+import { ChevronRight, Plus, Zap, Shield, Star, Truck, Clock, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
 interface Category {
@@ -13,7 +14,6 @@ interface Category {
   image: string | null
   icon: string | null
   color: string | null
-  productCount: number
 }
 
 interface Variant {
@@ -21,7 +21,6 @@ interface Variant {
   name: string
   price: number
   mrp: number
-  discountPercent: number | null
   isDefault: boolean
 }
 
@@ -32,16 +31,105 @@ interface Product {
   images: string
   isVeg: boolean | null
   isFeatured: boolean
-  isPopular: boolean
   metadata: string
   variants: Variant[]
-  category: { id: string; name: string } | null
 }
 
 interface StorefrontHomeProps {
   brandColor: string
   nav: WebNav
 }
+
+// ── Hero content per business type ────────────────────────────────────────
+
+function getHeroContent(businessType: string) {
+  switch (businessType) {
+    case "MEAT_DELIVERY":
+      return {
+        headline: "Fresh. Halal.\nDelivered Fast.",
+        sub: "Premium quality meat & poultry, hygienically processed and delivered to your doorstep.",
+        cta: "Shop Now",
+        tagline: "Fresh Delivery",
+      }
+    case "GROCERY":
+      return {
+        headline: "Fresh Groceries,\nDelivered Daily.",
+        sub: "Everything you need — vegetables, dairy, grains, and more — delivered in minutes.",
+        cta: "Shop Now",
+        tagline: "Daily Essentials",
+      }
+    case "FOOD_DELIVERY":
+      return {
+        headline: "Delicious Food,\nDelivered Hot.",
+        sub: "Restaurant-quality meals at your door in 30–45 minutes.",
+        cta: "Order Now",
+        tagline: "Fast Delivery",
+      }
+    case "PHARMACY":
+      return {
+        headline: "Medicines\nDelivered in 30 min.",
+        sub: "Genuine medicines, vitamins, and healthcare products from licensed pharmacists.",
+        cta: "Order Now",
+        tagline: "Healthcare Delivery",
+      }
+    default:
+      return {
+        headline: "Quality Products,\nDelivered Fast.",
+        sub: "Browse our selection and get everything you need delivered to your door.",
+        cta: "Shop Now",
+        tagline: "Fast Delivery",
+      }
+  }
+}
+
+// ── Default product emoji by business type ───────────────────────────────
+
+function getDefaultProductEmoji(businessType: string): string {
+  switch (businessType) {
+    case "MEAT_DELIVERY":  return "🥩"
+    case "GROCERY":        return "🛒"
+    case "FOOD_DELIVERY":  return "🍽️"
+    case "PHARMACY":       return "💊"
+    default:               return "📦"
+  }
+}
+
+// ── Why-choose-us cards per business type ───────────────────────────────
+
+function getWhyChooseUs(businessType: string) {
+  switch (businessType) {
+    case "MEAT_DELIVERY":
+      return [
+        { emoji: "🥩", title: "Fresh Daily", desc: "Sourced and processed every morning" },
+        { emoji: "✅", title: "Halal Certified", desc: "100% halal slaughter, no compromise" },
+        { emoji: "⚡", title: "Fast Delivery", desc: "Within 2 hours of order" },
+        { emoji: "🧊", title: "Hygienic Packing", desc: "Vacuum sealed, temp maintained" },
+      ]
+    case "GROCERY":
+      return [
+        { emoji: "🌿", title: "Farm Fresh", desc: "Direct from farms to your home" },
+        { emoji: "💰", title: "Best Prices", desc: "Everyday low prices, guaranteed" },
+        { emoji: "⚡", title: "30-min Delivery", desc: "Express delivery in your area" },
+        { emoji: "🔄", title: "Easy Returns", desc: "No-questions-asked return policy" },
+      ]
+    case "FOOD_DELIVERY":
+      return [
+        { emoji: "👨‍🍳", title: "Chef Prepared", desc: "Cooked fresh for every order" },
+        { emoji: "🌡️", title: "Served Hot", desc: "Temperature-controlled delivery" },
+        { emoji: "⚡", title: "30–45 min", desc: "From kitchen to your door" },
+        { emoji: "🍽️", title: "Restaurant Quality", desc: "Same taste, delivered home" },
+      ]
+    default:
+      return [
+        { emoji: "✅", title: "Quality Products", desc: "Verified and genuine products" },
+        { emoji: "⚡", title: "Fast Delivery", desc: "Express delivery options" },
+        { emoji: "💰", title: "Best Prices", desc: "Competitive pricing daily" },
+        { emoji: "🔄", title: "Easy Returns", desc: "Hassle-free returns" },
+      ]
+  }
+}
+
+// ── Skeleton components ──────────────────────────────────────────────────
 
 function SkeletonCard() {
   return (
@@ -65,16 +153,22 @@ function SkeletonCategory() {
   )
 }
 
+// ── Product card ─────────────────────────────────────────────────────────
+
 function ProductCard({
   product,
   brandColor,
   nav,
+  businessType,
 }: {
   product: Product
   brandColor: string
   nav: WebNav
+  businessType: string
 }) {
   const { addItem } = useCartStore()
+  const config = getBusinessTypeConfig(businessType)
+
   const images = (() => { try { return JSON.parse(product.images) as string[] } catch { return [] } })()
   const meta = (() => { try { return JSON.parse(product.metadata) as Record<string, unknown> } catch { return {} } })()
   const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
@@ -82,6 +176,11 @@ function ProductCard({
   const mrp = defaultVariant?.mrp ?? 0
   const hasDiscount = mrp > price && mrp > 0
   const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
+
+  // Gate badge visibility by business type config
+  const showHalal  = config.productMeta.some((m) => m.key === "isHalal"      && m.showOnCard)
+  const showFresh  = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
+  const defaultEmoji = getDefaultProductEmoji(businessType)
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -113,17 +212,18 @@ function ProductCard({
           />
         ) : (
           <div className="w-full h-48 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-5xl">
-            🥩
+            {defaultEmoji}
           </div>
         )}
-        <div className="absolute top-2 left-2 flex gap-1.5">
+
+        <div className="absolute top-2 left-2 flex gap-1.5 flex-wrap max-w-[calc(100%-1rem)]">
           {product.isVeg === true && (
             <span className="px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full">VEG</span>
           )}
           {product.isVeg === false && (
             <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">NON-VEG</span>
           )}
-          {!!meta.isHalal && (
+          {showHalal && !!meta.isHalal && (
             <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full">HALAL</span>
           )}
           {hasDiscount && (
@@ -132,7 +232,8 @@ function ProductCard({
             </span>
           )}
         </div>
-        {!!meta.freshnessTag && (
+
+        {showFresh && !!meta.freshnessTag && (
           <div className="absolute top-2 right-2 px-2 py-0.5 bg-white/90 backdrop-blur-sm text-[10px] font-semibold text-gray-700 rounded-full border border-gray-200">
             {String(meta.freshnessTag)}
           </div>
@@ -166,18 +267,28 @@ function ProductCard({
   )
 }
 
+// ── Main component ───────────────────────────────────────────────────────
+
 export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
-  const { currentBusinessId, currentBusinessName } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentBusinessType, currentStoreId } = useAdminStore()
 
-  const [categories, setCategories] = useState<Category[]>([])
-  const [catLoading, setCatLoading] = useState(true)
-  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([])
-  const [popularProducts, setPopularProducts] = useState<Product[]>([])
+  const config        = getBusinessTypeConfig(currentBusinessType)
+  const heroContent   = getHeroContent(currentBusinessType)
+  const whyChooseUs   = getWhyChooseUs(currentBusinessType)
+  const deliveryCfg   = config.deliveryConfig
+  const labels        = config.labels
+
+  const [categories, setCategories]     = useState<Category[]>([])
+  const [catLoading, setCatLoading]     = useState(true)
+  const [products, setProducts]         = useState<Product[]>([])
   const [prodsLoading, setProdsLoading] = useState(true)
+  const [totalProducts, setTotalProducts] = useState(0)
 
+  const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
+
+  // ── Categories fetch ────────────────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
-
     setCatLoading(true)
     fetch(`/api/core/storefront/categories?businessId=${currentBusinessId}`)
       .then((r) => r.json())
@@ -186,24 +297,50 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
       .finally(() => setCatLoading(false))
   }, [currentBusinessId])
 
+  // ── Products fetch ──────────────────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
-
     setProdsLoading(true)
-    Promise.all([
-      fetch(`/api/core/storefront/products?businessId=${currentBusinessId}&limit=8`).then((r) => r.json()),
-      fetch(`/api/core/storefront/products?businessId=${currentBusinessId}&limit=8`).then((r) => r.json()),
-    ])
-      .then(([featuredJson, popularJson]) => {
-        const allProds: Product[] = featuredJson.success ? (featuredJson.data?.products || []) : []
-        setFeaturedProducts(allProds.filter((p: Product) => p.isFeatured).slice(0, 8) || allProds.slice(0, 8))
-        setPopularProducts(popularJson.success ? (popularJson.data?.products || []) : [])
+
+    const params = new URLSearchParams({
+      businessId: currentBusinessId,
+      limit: "16",
+    })
+
+    fetch(`/api/core/storefront/products?${params}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) {
+          const allProds: Product[] = j.data?.products || []
+          setProducts(allProds)
+          setTotalProducts(j.data?.total ?? allProds.length)
+
+          console.log("[StorefrontHome] loaded", {
+            slug:          currentBusinessId,
+            businessId:    currentBusinessId,
+            businessType:  currentBusinessType,
+            storeId:       currentStoreId,
+            productCount:  allProds.length,
+            categoryCount: "(fetching separately)",
+          })
+        }
       })
       .catch(() => {})
       .finally(() => setProdsLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBusinessId])
 
-  const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
+  const featured = products.filter((p) => p.isFeatured)
+  const displayProducts = featured.length > 0 ? featured.slice(0, 8) : products.slice(0, 8)
+  const popularProducts = products.slice(8, 16)
+
+  // Delivery promise bar items — use deliveryConfig from business type
+  const promiseItems = [
+    { icon: Zap,    label: deliveryCfg.promiseHeadline, sub: deliveryCfg.promiseSubtext },
+    { icon: Shield, label: "Verified Store",   sub: "Quality guaranteed" },
+    { icon: Star,   label: "Top Rated",        sub: "Trusted by customers" },
+    { icon: Truck,  label: "Free Delivery",    sub: "On qualifying orders" },
+  ]
 
   return (
     <div>
@@ -230,19 +367,17 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
                 <h1 className="text-white font-bold text-xl">{currentBusinessName || "Our Store"}</h1>
               </div>
             </div>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4">
-              Fresh. Halal.<br />Delivered Fast.
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4 whitespace-pre-line">
+              {heroContent.headline}
             </h2>
-            <p className="text-white/80 text-base sm:text-lg mb-8 max-w-lg">
-              Premium quality meat & poultry, hygienically processed and delivered to your doorstep within hours.
-            </p>
+            <p className="text-white/80 text-base sm:text-lg mb-8 max-w-lg">{heroContent.sub}</p>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
                 className="px-6 py-3 bg-white font-bold text-sm rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
                 style={{ color: brandColor }}
               >
-                Shop Now <ChevronRight className="w-4 h-4" />
+                {heroContent.cta} <ChevronRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => nav.go("auth")}
@@ -259,18 +394,13 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
       <section className="bg-gray-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { icon: Zap, label: "Express Delivery", sub: "Within 2 hours" },
-              { icon: Shield, label: "100% Halal", sub: "Certified & fresh" },
-              { icon: Star, label: "Premium Quality", sub: "Hand-selected cuts" },
-              { icon: Truck, label: "Free Delivery", sub: "On orders ₹499+" },
-            ].map(({ icon: Icon, label, sub }) => (
+            {promiseItems.map(({ icon: Icon, label, sub }) => (
               <div key={label} className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${brandColor}30` }}>
                   <Icon className="w-4 h-4" style={{ color: brandColor }} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-white">{label}</p>
+                  <p className="text-xs font-semibold text-white leading-tight">{label}</p>
                   <p className="text-[11px] text-gray-400">{sub}</p>
                 </div>
               </div>
@@ -285,8 +415,8 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
         <section className="py-10">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Shop by Category</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Browse our fresh selections</p>
+              <h2 className="text-xl font-bold text-gray-900">{labels.categoryHeading}</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Browse our selections</p>
             </div>
             <button
               onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
@@ -302,7 +432,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
               {Array.from({ length: 8 }).map((_, i) => <SkeletonCategory key={i} />)}
             </div>
           ) : categories.length === 0 ? (
-            <div className="text-center py-10 text-gray-400 text-sm">No categories yet</div>
+            <div className="text-center py-10 text-gray-400 text-sm">No categories added yet</div>
           ) : (
             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
               {categories.map((c) => (
@@ -318,7 +448,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
                     {c.image ? (
                       <img src={c.image} alt={c.name} className="w-full h-full object-cover rounded-2xl" />
                     ) : (
-                      <span className="text-2xl">{c.icon || "🥩"}</span>
+                      <span className="text-2xl">{c.icon || getCategoryIcon(currentBusinessType, c.name)}</span>
                     )}
                   </div>
                   <span className="text-xs font-medium text-gray-700 text-center leading-tight line-clamp-2">{c.name}</span>
@@ -328,12 +458,12 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
           )}
         </section>
 
-        {/* ── Featured Products ────────────────────────────────── */}
+        {/* ── Products section ─────────────────────────────────── */}
         <section className="pb-10">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Featured Products</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Our most popular picks</p>
+              <h2 className="text-xl font-bold text-gray-900">{labels.featuredHeading}</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Fresh stock, updated daily</p>
             </div>
             <button
               onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
@@ -348,24 +478,28 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
-          ) : featuredProducts.length === 0 ? (
-            <div className="text-center py-10 text-gray-400 text-sm">No products available yet</div>
+          ) : displayProducts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+              <Package className="w-14 h-14 text-gray-200" />
+              <p className="text-base font-semibold text-gray-500">No products added yet</p>
+              <p className="text-sm text-gray-400">Check back soon — products are being stocked.</p>
+            </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {featuredProducts.map((p) => (
-                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} />
+              {displayProducts.map((p) => (
+                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
               ))}
             </div>
           )}
         </section>
 
-        {/* ── Popular / All Products ───────────────────────────── */}
+        {/* ── Popular / more products ──────────────────────────── */}
         {!prodsLoading && popularProducts.length > 0 && (
           <section className="pb-12">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">All Products</h2>
-                <p className="text-sm text-gray-500 mt-0.5">Fresh stock updated daily</p>
+                <h2 className="text-xl font-bold text-gray-900">{labels.bestSellersHeading}</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Customer favourites</p>
               </div>
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
@@ -376,8 +510,8 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
               </button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {popularProducts.slice(0, 8).map((p) => (
-                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} />
+              {popularProducts.map((p) => (
+                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
               ))}
             </div>
           </section>
@@ -387,12 +521,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
         <section className="py-10 border-t border-gray-100">
           <h2 className="text-xl font-bold text-gray-900 mb-8 text-center">Why Choose Us?</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {[
-              { emoji: "🥩", title: "Fresh Daily", desc: "Sourced and processed every morning" },
-              { emoji: "✅", title: "Halal Certified", desc: "100% halal slaughter, no compromise" },
-              { emoji: "⚡", title: "Fast Delivery", desc: "Delivered within 2 hours of order" },
-              { emoji: "🧊", title: "Hygienic Packaging", desc: "Vacuum sealed, temperature maintained" },
-            ].map(({ emoji, title, desc }) => (
+            {whyChooseUs.map(({ emoji, title, desc }) => (
               <div key={title} className="text-center">
                 <div className="text-4xl mb-3">{emoji}</div>
                 <h3 className="text-sm font-bold text-gray-900 mb-1">{title}</h3>
