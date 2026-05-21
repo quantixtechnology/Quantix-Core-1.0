@@ -31,6 +31,8 @@ export default function proxy(request: NextRequest) {
   const host = request.headers.get('host') || ''
   const { pathname } = request.nextUrl
 
+  console.log(`[proxy] host=${host} pathname=${pathname} base=${STOREFRONT_BASE}`)
+
   // Storefront subdomain detection — skip for API, uploads, and Next internals
   if (!pathname.startsWith('/api') && !pathname.startsWith('/uploads')) {
     const hostWithoutPort = host.split(':')[0]
@@ -42,6 +44,7 @@ export default function proxy(request: NextRequest) {
         const url = request.nextUrl.clone()
         url.pathname = '/'
         url.searchParams.set('_storefront', slug)
+        console.log(`[proxy] REWRITE slug=${slug} → ${url.toString()}`)
         return withSecurityHeaders(NextResponse.rewrite(url))
       }
     }

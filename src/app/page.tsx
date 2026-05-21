@@ -37,9 +37,11 @@ function StorefrontContextLoader({
       !['CUSTOMER', 'DELIVERY_STAFF'].includes(currentRole)
     if (isAdminSession) return
 
+    console.log(`[StorefrontContextLoader] fetching slug=${slug}`)
     fetch(`/api/core/storefront/store-context?slug=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((json) => {
+        console.log(`[StorefrontContextLoader] result success=${json.success} business=${json.data?.business?.id}`)
         if (!json.success || !json.data?.business) { onNotFound(); return }
         const biz = json.data.business
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
@@ -53,7 +55,7 @@ function StorefrontContextLoader({
         }
         setViewMode("customer")
       })
-      .catch(() => { onNotFound() })
+      .catch((err) => { console.error("[StorefrontContextLoader] fetch error", err); onNotFound() })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, isAuthenticated, currentRole])
 
@@ -229,11 +231,36 @@ function SplashLoader() {
   )
 }
 
-// Reads the slug from the URL synchronously via useSearchParams.
-// Passes it into AppContent so the correct layout is known at render time.
+// Detect storefront slug from two sources so SSR and client always agree:
+//
+//   Server (SSR):  proxy.ts rewrites /?_storefront=slug — searchParams has the value.
+//   Client:        browser URL stays as slug.quantixtechnology.in (no query param) —
+//                  searchParams returns null after hydration.  Read hostname directly.
+//
+// Both paths return the same slug → no hydration mismatch → no admin-login flash.
+const _SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
+const _SF_RESERVED = new Set(["www", "app", "admin", "api", "mail"])
+
+function detectStorefrontSlug(searchParams: ReturnType<typeof useSearchParams>): string | null {
+  // Primary: from proxy rewrite (server-side)
+  const param = searchParams.get("_storefront")
+  if (param) return param
+
+  // Fallback: from hostname (client-side — browser URL still shows the subdomain)
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname.split(":")[0]
+    if (hostname.endsWith(`.${_SF_BASE}`)) {
+      const slug = hostname.slice(0, -(_SF_BASE.length + 1))
+      if (slug && !_SF_RESERVED.has(slug)) return slug
+    }
+  }
+  return null
+}
+
 function AppRouter() {
   const searchParams = useSearchParams()
-  const storefrontSlug = searchParams.get("_storefront")
+  const storefrontSlug = detectStorefrontSlug(searchParams)
+  console.log("[AppRouter] storefrontSlug=", storefrontSlug, "| searchParam=", searchParams.get("_storefront"))
   return <AppContent storefrontSlug={storefrontSlug} />
 }
 
@@ -408,10 +435,9 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   }
 
   // ── Storefront subdomain request ────────────────────────────────────────
-  // storefrontSlug is set synchronously via useSearchParams() in AppRouter,
-  // so this branch runs on the very first render — before any admin layout
-  // is painted. Platform/business admins (auth hydrated, non-customer role)
-  // fall through to the normal admin layout below.
+  // storefrontSlug comes from proxy rewrite (server) OR hostname detection (client).
+  // Both paths return the same value — no hydration mismatch, no admin-login flash.
+  // Platform/business admins visiting a storefront URL keep their own admin session.
   if (storefrontSlug) {
     const isAdminSession = _isHydrated && isAuthenticated && currentRole &&
       !['CUSTOMER', 'DELIVERY_STAFF'].includes(currentRole)
@@ -423,12 +449,14 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
             <div className="text-5xl">🏪</div>
             <h1 className="text-2xl font-bold text-gray-800">Store Not Found</h1>
             <p className="text-gray-500 max-w-sm">
-              <strong>{storefrontSlug}</strong> doesn&apos;t exist or is not active yet.
-              If you&apos;re the owner, log in to the admin panel to activate your storefront.
+              The store <strong>{storefrontSlug}</strong> doesn&apos;t exist or is not active.
+              Check the URL or contact the store owner.
             </p>
           </div>
         )
       }
+      // Always render CustomerLayout while loading — never fall through to admin login.
+      // SplashLoader shows until StorefrontContextLoader sets viewMode = "customer".
       return (
         <>
           <StorefrontContextLoader
