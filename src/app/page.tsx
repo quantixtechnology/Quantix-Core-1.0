@@ -23,9 +23,11 @@ import { ErrorBoundary } from "@/components/error/error-boundary"
 function StorefrontContextLoader({
   slug,
   onNotFound,
+  onLoaded,
 }: {
   slug: string
   onNotFound: () => void
+  onLoaded: () => void
 }) {
   const { setCurrentBusiness, setViewMode, setCurrentStoreId, setCurrentStoreName, setCurrentBusinessPrimaryColor } = useAdminStore()
   const { setCartStoreId, setStoreContext } = useCartStore()
@@ -35,13 +37,11 @@ function StorefrontContextLoader({
     // Platform/business admins visiting a storefront URL keep their admin session
     const isAdminSession = isAuthenticated && currentRole &&
       !['CUSTOMER', 'DELIVERY_STAFF'].includes(currentRole)
-    if (isAdminSession) return
+    if (isAdminSession) { onLoaded(); return }
 
-    console.log(`[StorefrontContextLoader] fetching slug=${slug}`)
     fetch(`/api/core/storefront/store-context?slug=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((json) => {
-        console.log(`[StorefrontContextLoader] result success=${json.success} business=${json.data?.business?.id}`)
         if (!json.success || !json.data?.business) { onNotFound(); return }
         const biz = json.data.business
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
@@ -54,6 +54,7 @@ function StorefrontContextLoader({
           setStoreContext(store.deliveryFee ?? null, store.minOrderAmount ?? null, json.data.paymentGateways || [])
         }
         setViewMode("customer")
+        onLoaded()
       })
       .catch((err) => { console.error("[StorefrontContextLoader] fetch error", err); onNotFound() })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,6 +275,10 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
+  // True only after store-context API confirms the business exists in DB.
+  // Prevents StorefrontWebsite from rendering before the check completes —
+  // eliminates the flash of customer OTP screen for deleted/invalid slugs.
+  const [storefrontContextLoaded, setStorefrontContextLoaded] = useState(false)
 
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
@@ -451,36 +456,48 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   }
 
   // ── Storefront subdomain request ────────────────────────────────────────
-  // storefrontSlug comes from proxy rewrite (server) OR hostname detection (client).
-  // Both paths return the same value — no hydration mismatch, no admin-login flash.
-  // Platform/business admins visiting a storefront URL keep their own admin session.
+  // storefrontSlug comes from middleware rewrite (?_storefront=slug) on the server
+  // or hostname detection on the client. StorefrontContextLoader validates the slug
+  // against the DB before StorefrontWebsite is allowed to render — no flash of
+  // customer UI for deleted or invalid subdomains.
   if (storefrontSlug) {
     const isAdminSession = _isHydrated && isAuthenticated && currentRole &&
       !['CUSTOMER', 'DELIVERY_STAFF'].includes(currentRole)
 
     if (!isAdminSession) {
+      // Slug was looked up in DB and business does not exist / is not active.
       if (storefrontNotFound) {
         return (
-          <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-gray-50 text-center px-4">
-            <div className="text-5xl">🏪</div>
-            <h1 className="text-2xl font-bold text-gray-800">Store Not Found</h1>
-            <p className="text-gray-500 max-w-sm">
-              The store <strong>{storefrontSlug}</strong> doesn&apos;t exist or is not active.
-              Check the URL or contact the store owner.
-            </p>
+          <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a0f] text-center px-4 gap-6">
+            <div className="text-7xl font-black text-white/10 select-none">404</div>
+            <div className="space-y-2">
+              <h1 className="text-xl font-bold text-white">Business Not Found</h1>
+              <p className="text-sm text-white/40 max-w-xs">
+                <span className="font-mono text-white/60">{storefrontSlug}.{process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN ?? 'quantixtechnology.in'}</span>
+                {' '}does not exist or has been removed.
+              </p>
+            </div>
+            <a
+              href={`https://app.${process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN ?? 'quantixtechnology.in'}`}
+              className="text-xs text-white/20 hover:text-white/50 transition-colors"
+            >
+              Quantix Technology
+            </a>
           </div>
         )
       }
-      // Render the full web storefront. StorefrontContextLoader hydrates the
-      // admin/cart stores (businessId, brandColor, storeId) before StorefrontWebsite
-      // renders its first data fetch.
+
+      // storefrontContextLoaded is false until StorefrontContextLoader confirms
+      // the business exists in DB. Always show SplashLoader until then so a
+      // deleted slug never renders the customer UI even for a millisecond.
       return (
         <>
           <StorefrontContextLoader
             slug={storefrontSlug}
             onNotFound={() => setStorefrontNotFound(true)}
+            onLoaded={() => setStorefrontContextLoaded(true)}
           />
-          {viewMode === "customer" ? <StorefrontWebsite /> : <SplashLoader />}
+          {storefrontContextLoaded ? <StorefrontWebsite /> : <SplashLoader />}
         </>
       )
     }
