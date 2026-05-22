@@ -9,6 +9,11 @@
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
+			# Stream request body immediately — required for multipart uploads
+			flush_interval -1
+			# Buffer up to 20 MB of request body (covers logo/favicon uploads up to 5 MB
+			# plus multipart overhead, with plenty of headroom)
+			request_buffers 20MB
 		}
 	}
 
@@ -18,6 +23,10 @@
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
+			# Stream request body immediately — required for multipart uploads
+			flush_interval -1
+			# Buffer up to 20 MB of request body
+			request_buffers 20MB
 		}
 	}
 }

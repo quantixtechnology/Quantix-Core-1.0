@@ -581,11 +581,17 @@ export function BusinessesView() {
       return null
     }
 
+    // 413 = proxy (nginx/Caddy) rejected the body before it reached the API
+    if (res.status === 413) {
+      toast.error("File too large — the server proxy rejected it. Run: nginx -T | grep client_max_body_size and add client_max_body_size 20m; to the server{} block, then reload nginx.")
+      return null
+    }
+
     let json: { success: boolean; url?: string; error?: string; warning?: string }
     try {
       json = await res.json()
     } catch {
-      toast.error(`Server returned non-JSON response (status ${res.status})`)
+      toast.error(`Server error (HTTP ${res.status}) — check PM2 logs: pm2 logs --lines 50`)
       return null
     }
 
