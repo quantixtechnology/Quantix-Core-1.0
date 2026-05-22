@@ -240,7 +240,7 @@ export function useSendOtp(
       const response = await fetch("/api/core/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, channel: "WHATSAPP_OTP" }),
       });
       const data = await response.json();
       if (!response.ok) throw AppError.fromApiError(data);
@@ -254,16 +254,16 @@ export function useSendOtp(
  * Verify OTP mutation
  */
 export function useVerifyOtp(
-  options?: Omit<UseMutationOptions<ApiResponse<unknown>, AppError, { phone: string; otp: string }>, "mutationFn">
+  options?: Omit<UseMutationOptions<ApiResponse<unknown>, AppError, { phone: string; otp: string; businessId?: string }>, "mutationFn">
 ) {
   const queryClient = useQueryClient();
 
-  return useMutation<ApiResponse<unknown>, AppError, { phone: string; otp: string }>({
-    mutationFn: async ({ phone, otp }) => {
+  return useMutation<ApiResponse<unknown>, AppError, { phone: string; otp: string; businessId?: string }>({
+    mutationFn: async ({ phone, otp, businessId }) => {
       const response = await fetch("/api/core/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp }),
+        body: JSON.stringify({ phone, code: otp, channel: "WHATSAPP_OTP", businessId }),
       });
       const data = await response.json();
       if (!response.ok) throw AppError.fromApiError(data);
@@ -271,8 +271,8 @@ export function useVerifyOtp(
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
-      if (data.data && typeof data.data === "object" && "token" in (data.data as Record<string, unknown>)) {
-        const token = (data.data as { token: string }).token;
+      if (data.data && typeof data.data === "object" && "accessToken" in (data.data as Record<string, unknown>)) {
+        const token = (data.data as { accessToken: string }).accessToken;
         localStorage.setItem("quantix_auth_token", token);
       }
     },

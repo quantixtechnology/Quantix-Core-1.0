@@ -15,6 +15,7 @@ export function CustomerAuth() {
     setCustomerLoggedIn, setCustomerName, setCustomerPage,
     popCustomerPage, customerNavStack,
     currentBusinessName: bizName, currentBusinessPrimaryColor,
+    currentBusinessId,
   } = useAdminStore()
   const displayName = bizName || "My Store"
   const brandColor = currentBusinessPrimaryColor || "#10B981"
@@ -66,7 +67,7 @@ export function CustomerAuth() {
 
     try {
       // Try real OTP verification first
-      const result = await verifyOtpMutation.mutateAsync({ phone: `+91${phone}`, otp })
+      const result = await verifyOtpMutation.mutateAsync({ phone: `+91${phone}`, otp, businessId: currentBusinessId || undefined })
 
       // If verification succeeded, store auth data
       const data = result.data as Record<string, unknown> | undefined

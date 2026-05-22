@@ -7,7 +7,7 @@ import { useCartStore } from "@/stores/cart-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useCreateOrder } from "@/hooks/use-api"
 import { useRazorpayCheckout } from "@/hooks/use-razorpay"
-import { setBusinessContext, customerApi } from "@/lib/api-client"
+import { setBusinessContext } from "@/lib/api-client"
 import { showSuccess, showError, showApiError } from "@/lib/toast-utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -92,33 +92,33 @@ export function CustomerCheckout() {
     if (currentBusinessId) setBusinessContext(currentBusinessId)
   }, [currentBusinessId])
 
-  // Load customer addresses from API
+  // Load customer addresses from storefront API
   useEffect(() => {
-    if (!user?.id) return
+    if (!token) { setAddrLoading(false); return }
     setAddrLoading(true)
-    customerApi.get(user.id)
-      .then((res) => {
-        const customer = res.data as unknown as Record<string, unknown>
-        const saved = Array.isArray(customer?.addresses)
-          ? (customer.addresses as Record<string, unknown>[]).map((a, i) => ({
-              id:       (a.id as string) || `addr_${i}`,
-              label:    (a.label as string) || "Home",
-              line1:    (a.line1 as string) || (a.address as string) || "",
-              line2:    (a.line2 as string) || "",
-              city:     (a.city as string) || "",
-              pincode:  (a.pincode as string) || "",
-              isDefault:(a.isDefault as boolean) || i === 0,
-            }))
-          : []
-        if (saved.length > 0) {
-          setAddresses(saved)
-          const def = saved.find((a) => a.isDefault) || saved[0]
+    fetch("/api/core/storefront/addresses", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const mapped = (json.data as Record<string, unknown>[]).map((a) => ({
+            id:       (a.id as string),
+            label:    (a.label as string) || "Home",
+            line1:    (a.addressLine1 as string) || "",
+            line2:    (a.addressLine2 as string) || "",
+            city:     (a.city as string) || "",
+            pincode:  (a.pincode as string) || "",
+            isDefault:(a.isDefault as boolean) || false,
+          }))
+          setAddresses(mapped)
+          const def = mapped.find((a) => a.isDefault) || mapped[0]
           setSelectedAddress(def.id)
         }
       })
       .catch(() => { /* use empty — customer can add via Change button */ })
       .finally(() => setAddrLoading(false))
-  }, [user?.id])
+  }, [token])
 
   // Validate delivery pincode
   useEffect(() => {
@@ -200,33 +200,63 @@ export function CustomerCheckout() {
       const orderItems = items.map((item) => ({
         productId: item.productId, variantId: item.variantId, quantity: item.quantity,
       }))
-      const apiPaymentMethod = paymentMethod === "cod" ? "COD" as const : "UPI" as const
       const scheduledAt = buildScheduledAt()
-      const orderData = {
-        storeId: cartStoreId || currentStoreId,
-        orderType: "DELIVERY" as const,
-        paymentMethod: apiPaymentMethod,
-        customerId: user?.id,
-        customerName: user?.name || undefined,
-        customerPhone: user?.email || undefined,
-        deliveryAddressId: selectedAddress || undefined,
-        deliveryInstructions: deliveryInstructions || undefined,
-        scheduledAt,                              // proper ISO datetime for the order record
-        items: orderItems,
-        promoCodeId: couponCode || undefined,
-        ...(wantGstInvoice && gstInvoiceNumber ? { notes: `GST: ${gstInvoiceNumber}` } : {}),
+      const storeId = cartStoreId || currentStoreId
+      const activeAddr = addresses.find((a) => a.id === selectedAddress)
+      const deliveryAddressText = activeAddr
+        ? [activeAddr.line1, activeAddr.line2, activeAddr.city, activeAddr.pincode].filter(Boolean).join(", ")
+        : undefined
+
+      let orderId: string
+
+      if (!user?.id || !token) {
+        // Guest checkout — COD only via unauthenticated endpoint
+        const res = await fetch("/api/core/storefront/orders/guest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeId,
+            orderType: "DELIVERY",
+            items: orderItems,
+            customerName: "Guest",
+            customerPhone: "0000000000",
+            deliveryAddress: deliveryAddressText,
+            deliveryInstructions: deliveryInstructions || undefined,
+            deliveryFee: getDeliveryFee(),
+            notes: wantGstInvoice && gstInvoiceNumber ? `GST: ${gstInvoiceNumber}` : undefined,
+          }),
+        })
+        const json = await res.json()
+        if (!json.success) throw new Error(json.error || "Failed to place order")
+        orderId = (json.data as Record<string, unknown>).id as string
+      } else {
+        // Authenticated customer order
+        const apiPaymentMethod = paymentMethod === "cod" ? "COD" as const : "UPI" as const
+        const orderData = {
+          storeId,
+          orderType: "DELIVERY" as const,
+          paymentMethod: apiPaymentMethod,
+          customerId: user.id,
+          customerName: user.name || undefined,
+          deliveryAddressId: selectedAddress || undefined,
+          deliveryInstructions: deliveryInstructions || undefined,
+          scheduledAt,
+          items: orderItems,
+          promoCodeId: couponCode || undefined,
+          ...(wantGstInvoice && gstInvoiceNumber ? { notes: `GST: ${gstInvoiceNumber}` } : {}),
+        }
+        const result = await createOrderMutation.mutateAsync(orderData)
+        orderId = (result.data as unknown as Record<string, unknown>)?.id as string || `order_${Date.now()}`
       }
 
-      const result = await createOrderMutation.mutateAsync(orderData)
-      const orderId = (result.data as unknown as Record<string, unknown>)?.id as string || `order_${Date.now()}`
       setCreatedOrderId(orderId)
 
-      if (paymentMethod === "upi" || paymentMethod === "card") {
+      if (user?.id && (paymentMethod === "upi" || paymentMethod === "card")) {
         try {
           await razorpayCheckout({
             orderId, amount: total,
-            customerName: user?.name || undefined,
-            customerEmail: user?.email || undefined,
+            customerName: user.name || undefined,
+            customerEmail: user.email || undefined,
             customerPhone: undefined,
             onSuccess: (_pid, _oid) => { showSuccess("Payment successful!", "Order placed."); setOrderPlaced(true); setPlacing(false) },
             onFailure: (error) => { showError("Payment failed", error); setOrderPlaced(true); setPlacing(false) },

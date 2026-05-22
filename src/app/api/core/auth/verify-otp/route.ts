@@ -24,11 +24,12 @@ function generateRefreshToken(): string {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, phone, code, channel } = body as {
+    const { email, phone, code, channel, businessId: reqBusinessId } = body as {
       email?: string;
       phone?: string;
       code: string;
       channel: 'EMAIL_OTP' | 'WHATSAPP_OTP';
+      businessId?: string;
     };
 
     // Validate
@@ -115,8 +116,41 @@ export async function POST(request: Request) {
       });
     }
 
-    // Get user's business associations
-    const businessUsers = await db.businessUser.findMany({
+    // If a storefront businessId is provided, ensure Customer + BusinessUser exist for that business
+    if (reqBusinessId) {
+      const business = await db.business.findUnique({
+        where: { id: reqBusinessId },
+        select: { id: true, status: true },
+      });
+      if (business && (business.status === 'ACTIVE' || business.status === 'ONBOARDING')) {
+        const existingBU = await db.businessUser.findFirst({
+          where: { userId: user.id, businessId: reqBusinessId, isActive: true },
+        });
+        if (!existingBU) {
+          await db.businessUser.create({
+            data: { userId: user.id, businessId: reqBusinessId, role: 'CUSTOMER', isActive: true },
+          });
+        }
+        const existingCustomer = await db.customer.findFirst({
+          where: { userId: user.id, businessId: reqBusinessId },
+        });
+        if (!existingCustomer) {
+          const isPlaceholderEmail = user.email.endsWith('@otp.placeholder');
+          await db.customer.create({
+            data: {
+              businessId: reqBusinessId,
+              userId: user.id,
+              name: user.name,
+              phone: user.phone || null,
+              email: isPlaceholderEmail ? null : user.email,
+            },
+          }).catch(() => {/* ignore unique constraint races */});
+        }
+      }
+    }
+
+    // Get user's business associations (after potential Customer creation above)
+    let businessUsers = await db.businessUser.findMany({
       where: { userId: user.id, isActive: true },
       include: {
         business: {
@@ -156,7 +190,10 @@ export async function POST(request: Request) {
       role = 'QUANTIX_SUPER_ADMIN';
       isPlatformAdmin = true;
     } else if (businessUsers.length > 0) {
-      const primaryBU = businessUsers[0];
+      // Prefer the storefront's businessId when provided (customer login context)
+      const primaryBU = reqBusinessId
+        ? (businessUsers.find((bu) => bu.businessId === reqBusinessId) ?? businessUsers[0])
+        : businessUsers[0];
       role = primaryBU.role as Role;
       businessId = primaryBU.business.id;
       businessName = primaryBU.business.name;
