@@ -359,7 +359,8 @@ export function OrdersView() {
       setPendingStatusUpdate(null)
       setStatusNotes("")
     } catch (error) {
-      showError("Failed to update order status")
+      const msg = error instanceof Error ? error.message : "Failed to update order status"
+      showError(msg || "Failed to update order status")
     }
   }, [pendingStatusUpdate, statusNotes, updateStatusMutation])
 

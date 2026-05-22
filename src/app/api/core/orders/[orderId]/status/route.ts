@@ -103,6 +103,7 @@ export const PUT = withMiddleware({ requireAuth: true })(
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update order status';
+      console.error('[Order Status API] Error:', message);
       return NextResponse.json(
         { success: false, error: message },
         { status: 400 }

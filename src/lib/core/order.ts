@@ -573,12 +573,11 @@ export async function updateOrderStatus(
 
         if (newStatus === 'CONFIRMED') {
           const needed = Math.ceil(item.quantity);
-          if (inv.quantity < needed) {
-            throw new Error(
-              `Insufficient stock for "${item.itemName}": available ${inv.quantity}, required ${needed}`
-            );
-          }
-          const newQty    = inv.quantity - needed;
+          // Non-blocking: the business owner's confirmation is authoritative.
+          // Deduct what's available; if stock is insufficient, mark OUT_OF_STOCK
+          // but never block the status transition — prevents workflow deadlock
+          // when stores haven't set up inventory levels (default qty = 0).
+          const newQty    = Math.max(0, inv.quantity - needed);
           const newStatus2: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK' =
             newQty <= 0 ? 'OUT_OF_STOCK' : newQty <= inv.minStock ? 'LOW_STOCK' : 'IN_STOCK';
           await tx.inventory.update({
