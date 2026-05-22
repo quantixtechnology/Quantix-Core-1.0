@@ -251,6 +251,15 @@ function SplashLoader() {
 const _SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 const _SF_RESERVED = new Set(["www", "app", "admin", "api", "mail"])
 
+// Hosts that are ALWAYS the Quantix Core admin app — never a storefront.
+// Belt-and-suspenders: _SF_RESERVED already blocks "app", but an explicit
+// allowlist is clearer and prevents future mismatches.
+const PLATFORM_HOSTS = new Set([
+  `app.${_SF_BASE}`,
+  _SF_BASE,
+  `www.${_SF_BASE}`,
+])
+
 function detectStorefrontSlug(searchParams: ReturnType<typeof useSearchParams>): string | null {
   // Support ?_storefront=slug if a server-side rewrite ever injects it
   const param = searchParams.get("_storefront")
@@ -259,6 +268,8 @@ function detectStorefrontSlug(searchParams: ReturnType<typeof useSearchParams>):
   // Primary path: client-side hostname detection
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname.split(":")[0]
+    // Explicit platform host check — always admin, never storefront
+    if (PLATFORM_HOSTS.has(hostname)) return null
     if (hostname.endsWith(`.${_SF_BASE}`)) {
       const slug = hostname.slice(0, -(_SF_BASE.length + 1))
       if (slug && !_SF_RESERVED.has(slug)) return slug
@@ -270,7 +281,15 @@ function detectStorefrontSlug(searchParams: ReturnType<typeof useSearchParams>):
 function AppRouter() {
   const searchParams = useSearchParams()
   const storefrontSlug = detectStorefrontSlug(searchParams)
-  console.log("[AppRouter] storefrontSlug=", storefrontSlug, "| searchParam=", searchParams.get("_storefront"))
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname
+    console.log(
+      "[AppRouter] host=", host,
+      "| isPlatformHost=", PLATFORM_HOSTS.has(host),
+      "| storefrontSlug=", storefrontSlug,
+      "| _storefront param=", searchParams.get("_storefront"),
+    )
+  }
   return <AppContent storefrontSlug={storefrontSlug} />
 }
 
@@ -289,18 +308,15 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
 
-  // Guard: on admin host (no storefront slug), stale persisted customer/delivery
-  // viewMode must be reset so app.quantixtechnology.in always shows admin login.
+  // Guard: on admin host (no storefront slug), ALWAYS reset stale customer/delivery
+  // viewMode — regardless of auth state. An authenticated CUSTOMER visiting
+  // app.quantixtechnology.in must see the admin login, not their storefront session.
   useEffect(() => {
     if (storefrontSlug) return // legitimate storefront — keep customer/delivery mode
     if (!_isHydrated) return
-    if (viewMode === "customer" && (!isAuthenticated || currentRole !== "CUSTOMER")) {
-      setViewMode("super_admin")
-    }
-    if (viewMode === "delivery_partner" && (!isAuthenticated || currentRole !== "DELIVERY_STAFF")) {
-      setViewMode("super_admin")
-    }
-  }, [storefrontSlug, viewMode, isAuthenticated, currentRole, _isHydrated, setViewMode])
+    if (viewMode === "customer") setViewMode("super_admin")
+    if (viewMode === "delivery_partner") setViewMode("super_admin")
+  }, [storefrontSlug, viewMode, _isHydrated, setViewMode])
 
   // Sync viewMode from auth session on mount / auth change
   useEffect(() => {
@@ -313,9 +329,11 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
         setBusinessOwnerContext(currentBusinessId, currentBusinessName || "", currentBusinessType || "")
       }
     } else if (currentRole === "CUSTOMER") {
-      if (viewMode !== "customer") setViewMode("customer")
+      // Only enter customer mode when actually on a storefront subdomain.
+      // On app.quantixtechnology.in an authenticated CUSTOMER must see admin login.
+      if (storefrontSlug && viewMode !== "customer") setViewMode("customer")
     } else if (currentRole === "DELIVERY_STAFF") {
-      if (viewMode !== "delivery_partner") setViewMode("delivery_partner")
+      if (storefrontSlug && viewMode !== "delivery_partner") setViewMode("delivery_partner")
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, currentRole, currentBusinessId])
@@ -511,11 +529,10 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
 
   // ── Standard SPA routing ─────────────────────────────────────────────────
   if (viewMode === "customer") {
-    // On admin host with stale customer state: show spinner while effect resets viewMode.
-    // storefrontSlug is null → not a real storefront visit.
-    if (!storefrontSlug && _isHydrated && (!isAuthenticated || currentRole !== "CUSTOMER")) {
-      return <SplashLoader />
-    }
+    // CustomerLayout MUST only render on a real storefront subdomain.
+    // If storefrontSlug is null we are on the admin host — show spinner while
+    // the reset effect above flips viewMode back to super_admin.
+    if (!storefrontSlug) return <SplashLoader />
     return (
       <CustomerLayout>
         {renderCustomerPage()}
@@ -524,9 +541,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   }
 
   if (viewMode === "delivery_partner") {
-    if (!storefrontSlug && _isHydrated && (!isAuthenticated || currentRole !== "DELIVERY_STAFF")) {
-      return <SplashLoader />
-    }
+    if (!storefrontSlug) return <SplashLoader />
     return (
       <DeliveryLayout>
         {renderDeliveryPage()}
