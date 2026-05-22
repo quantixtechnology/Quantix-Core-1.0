@@ -130,6 +130,7 @@ export async function GET(request: Request) {
       homepageStyle: 'grid',
       font: 'inter',
     };
+    const allowGuestCheckout = parsedSettings.allowGuestCheckout !== false; // default true
 
     // --- Resolve store ---
 
@@ -194,6 +195,7 @@ export async function GET(request: Request) {
           domain: business.domain,
         },
         ecommerceConfig,
+        allowGuestCheckout,
         store: resolvedStore
           ? {
               id: resolvedStore.id,

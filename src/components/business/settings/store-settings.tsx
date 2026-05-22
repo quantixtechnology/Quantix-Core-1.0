@@ -163,6 +163,36 @@ export function StoreSettingsView() {
   const storeEmailValue = storeData?.email ? String(storeData.email) : storeEmail
   const storeAddressValue = storeData?.address ? String(storeData.address) : storeAddress
 
+  // Checkout tab state
+  const [allowGuestCheckout, setAllowGuestCheckout] = useState(true)
+  const [checkoutSettingLoading, setCheckoutSettingLoading] = useState(false)
+
+  useEffect(() => {
+    const id = currentBusinessId || businessId
+    if (!id) return
+    fetch(`/api/core/businesses/${id}/checkout-settings`, { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(j => { if (j.success) setAllowGuestCheckout(j.data?.allowGuestCheckout !== false) })
+      .catch(() => {})
+  }, [currentBusinessId, businessId])
+
+  const handleSaveCheckoutSettings = async () => {
+    const id = currentBusinessId || businessId
+    if (!id) return
+    setCheckoutSettingLoading(true)
+    try {
+      const res = await fetch(`/api/core/businesses/${id}/checkout-settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ allowGuestCheckout }),
+      })
+      const json = await res.json()
+      if (json.success) showSuccess('Checkout settings saved')
+      else showError(json.error || 'Failed to save')
+    } catch { showError('Failed to save') }
+    finally { setCheckoutSettingLoading(false) }
+  }
+
   // Delivery tab state
   const [deliveryRadius, setDeliveryRadius] = useState("5")
   const [deliveryFee, setDeliveryFee] = useState("30")
@@ -221,6 +251,7 @@ export function StoreSettingsView() {
           <TabsTrigger value="profile">Business Profile</TabsTrigger>
           <TabsTrigger value="general">Store</TabsTrigger>
           <TabsTrigger value="delivery">Delivery</TabsTrigger>
+          <TabsTrigger value="checkout">Checkout</TabsTrigger>
           <TabsTrigger value="taxes">Taxes</TabsTrigger>
           <TabsTrigger value="printer">Printer</TabsTrigger>
         </TabsList>
@@ -591,6 +622,51 @@ export function StoreSettingsView() {
             <Button className="gap-2" onClick={() => showSuccess("Delivery settings saved successfully")}>
               <Save className="h-4 w-4" />
               Save Changes
+            </Button>
+          </div>
+        </TabsContent>
+
+        {/* ── Checkout Tab ─────────────────────────────────────────────────── */}
+        <TabsContent value="checkout" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Guest Checkout</CardTitle>
+              <CardDescription>
+                Control whether customers can place orders without creating an account.
+                When disabled, customers must log in or register before checkout.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between py-3 border border-gray-200 rounded-xl px-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Allow Guest Checkout</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {allowGuestCheckout
+                      ? "Customers can checkout without signing in. A shadow customer record is still created."
+                      : "Customers must sign in or register before placing an order."}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowGuestCheckout}
+                  onCheckedChange={setAllowGuestCheckout}
+                />
+              </div>
+              {!allowGuestCheckout && (
+                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                  <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>Guest checkout is OFF. The checkout screen will only show the Login / Register option.</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <div className="flex items-center gap-3 justify-end">
+            <Button
+              className="gap-2"
+              onClick={handleSaveCheckoutSettings}
+              disabled={checkoutSettingLoading}
+            >
+              <Save className="h-4 w-4" />
+              {checkoutSettingLoading ? "Saving…" : "Save Changes"}
             </Button>
           </div>
         </TabsContent>

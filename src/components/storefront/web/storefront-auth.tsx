@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
-import { Phone, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react"
+import { Phone, ArrowLeft, Loader2, CheckCircle2, User } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
 interface StorefrontAuthProps {
@@ -12,15 +12,17 @@ interface StorefrontAuthProps {
 }
 
 export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
-  const { currentBusinessId, currentBusinessName } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentStoreId } = useAdminStore()
   const { isAuthenticated } = useAuthStore()
 
+  const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [otp, setOtp] = useState("")
-  const [step, setStep] = useState<"phone" | "otp">("phone")
+  const [step, setStep] = useState<"details" | "otp">("details")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
+  const [isNewUser, setIsNewUser] = useState(false) // determined after OTP send
 
   useEffect(() => {
     if (isAuthenticated && !success) {
@@ -38,8 +40,13 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
         body: JSON.stringify({ phone: `+91${phone}`, channel: "WHATSAPP_OTP" }),
       })
       const data = await res.json()
-      if (data.success) setStep("otp")
-      else setError(data.error || "Failed to send OTP")
+      if (data.success) {
+        setStep("otp")
+        // Show dev OTP if returned
+        if (data.code) setOtp(data.code)
+      } else {
+        setError(data.error || "Failed to send OTP")
+      }
     } catch { setError("Network error") } finally { setLoading(false) }
   }
 
@@ -55,12 +62,13 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
           code: otp,
           channel: "WHATSAPP_OTP",
           businessId: currentBusinessId || undefined,
+          storeId: currentStoreId || undefined,
+          name: name.trim() || undefined,
         }),
       })
       const data = await res.json()
       if (data.success && data.data) {
         const { user: sessionUser, accessToken, refreshToken, businesses, permissions } = data.data
-        // Persist session to localStorage using auth-store keys
         localStorage.setItem("quantix_auth_token", accessToken)
         localStorage.setItem("quantix_auth_refresh_token", refreshToken || "")
         localStorage.setItem("quantix_auth_user", JSON.stringify(sessionUser))
@@ -70,7 +78,6 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
         if (sessionUser.businessType) localStorage.setItem("quantix_auth_business_type", sessionUser.businessType)
         if (permissions?.length) localStorage.setItem("quantix_auth_permissions", JSON.stringify(permissions))
         if (businesses?.length) localStorage.setItem("quantix_auth_businesses", JSON.stringify(businesses))
-        // Hydrate auth store from localStorage
         useAuthStore.getState().initialize()
         setSuccess(true)
         setTimeout(() => nav.go(nav.prevPage || "home"), 900)
@@ -102,10 +109,10 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
               {initial}
             </div>
             <h1 className="text-xl font-bold text-gray-900">
-              {step === "phone" ? "Sign in to continue" : "Verify your number"}
+              {step === "details" ? "Create account / Sign in" : "Verify your number"}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              {step === "phone"
+              {step === "details"
                 ? `Welcome to ${currentBusinessName || "the store"}`
                 : `Enter the OTP sent to +91 ${phone}`}
             </p>
@@ -116,8 +123,25 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
               <CheckCircle2 className="w-12 h-12 text-green-500" />
               <p className="text-sm font-medium text-gray-700">Signed in successfully!</p>
             </div>
-          ) : step === "phone" ? (
+          ) : step === "details" ? (
             <>
+              {/* Name field */}
+              <div className="mb-3">
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Your Name</label>
+                <div className="flex items-center border border-gray-200 rounded-xl px-3 h-12 focus-within:border-gray-400 transition-colors">
+                  <User className="w-4 h-4 text-gray-400 shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Full name (optional for returning users)"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && sendOtp()}
+                    className="flex-1 text-sm outline-none bg-transparent ml-3"
+                  />
+                </div>
+              </div>
+
+              {/* Phone field */}
               <div className="mb-4">
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Phone Number</label>
                 <div className="flex items-center border border-gray-200 rounded-xl px-3 h-12 focus-within:border-gray-400 transition-colors">
@@ -170,7 +194,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Sign In"}
               </button>
               <button
-                onClick={() => { setStep("phone"); setOtp(""); setError("") }}
+                onClick={() => { setStep("details"); setOtp(""); setError("") }}
                 className="w-full mt-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
               >
                 Change number
@@ -183,14 +207,16 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
           </p>
         </div>
 
-        <div className="text-center mt-6">
-          <button
-            onClick={() => nav.go("checkout")}
-            className="text-sm text-gray-500 hover:text-gray-700 transition-colors underline underline-offset-2"
-          >
-            Continue as guest instead
-          </button>
-        </div>
+        {nav.prevPage === "checkout" && (
+          <div className="text-center mt-6">
+            <button
+              onClick={() => nav.go("checkout")}
+              className="text-sm text-gray-500 hover:text-gray-700 transition-colors underline underline-offset-2"
+            >
+              Continue as guest instead
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

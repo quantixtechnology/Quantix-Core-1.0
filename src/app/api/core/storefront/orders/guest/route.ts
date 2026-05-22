@@ -2,7 +2,8 @@
 // Storefront Guest Order API
 // POST /api/core/storefront/orders/guest — Create order without auth
 //
-// Accepts COD orders from unauthenticated (guest) customers.
+// Creates (or upserts) a shadow Customer record before placing the order so
+// the Business → Customers page is always populated. No orphan orders.
 // Requires: storeId, items, customerName, customerPhone, deliveryAddress
 // ============================================================================
 
@@ -36,6 +37,20 @@ export async function POST(request: Request) {
     }
 
     const businessId = store.businessId
+
+    // Check guest checkout is allowed for this business
+    const business = await db.business.findUnique({
+      where: { id: businessId },
+      select: { settings: true },
+    })
+    let allowGuestCheckout = true
+    try {
+      const parsed = JSON.parse(business?.settings || '{}') as Record<string, unknown>
+      allowGuestCheckout = parsed.allowGuestCheckout !== false
+    } catch { /* default true */ }
+    if (!allowGuestCheckout) {
+      return NextResponse.json({ success: false, error: 'Guest checkout is not enabled for this store' }, { status: 403 })
+    }
 
     // Resolve and validate products
     const resolvedItems: {
@@ -112,6 +127,48 @@ export async function POST(request: Request) {
     const deliveryFee = body.deliveryFee ?? 0
     const totalAmount = Math.round(subtotal + deliveryFee)
 
+    // Create or upsert shadow customer so the order is always linked
+    let shadowCustomerId: string | null = null
+    try {
+      const phone = body.customerPhone as string
+      const existing = await db.customer.findFirst({
+        where: { businessId, phone },
+        select: { id: true, verified: true },
+      })
+      if (existing) {
+        // Update aggregate stats; preserve verified status if already verified
+        await db.customer.update({
+          where: { id: existing.id },
+          data: {
+            name: body.customerName,
+            email: body.customerEmail || undefined,
+            lastOrderAt: new Date(),
+            totalOrders: { increment: 1 },
+            totalSpent: { increment: totalAmount },
+          },
+        })
+        shadowCustomerId = existing.id
+      } else {
+        const created = await db.customer.create({
+          data: {
+            businessId,
+            name: body.customerName,
+            phone,
+            email: body.customerEmail || null,
+            source: 'GUEST',
+            isGuest: true,
+            verified: false,
+            createdStoreId: body.storeId,
+            preferredStoreId: body.storeId,
+            totalOrders: 1,
+            totalSpent: totalAmount,
+            lastOrderAt: new Date(),
+          },
+        })
+        shadowCustomerId = created.id
+      }
+    } catch { /* non-critical — order proceeds even if customer creation fails */ }
+
     // Generate order number
     const now = new Date()
     const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
@@ -134,6 +191,7 @@ export async function POST(request: Request) {
         status: 'PENDING',
         paymentStatus: 'PENDING',
         paymentMethod: 'COD',
+        customerId: shadowCustomerId,
         customerName: body.customerName,
         customerPhone: body.customerPhone,
         customerEmail: body.customerEmail || null,

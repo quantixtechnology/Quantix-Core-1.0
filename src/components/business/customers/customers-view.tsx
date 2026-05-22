@@ -93,6 +93,11 @@ interface Customer {
   alternatePhone?: string
   referredBy?: string
   metadata?: Record<string, unknown>
+  source?: string
+  isGuest?: boolean
+  verified?: boolean
+  createdStoreId?: string
+  preferredStoreId?: string
 }
 
 interface EditForm {
@@ -827,10 +832,18 @@ export function CustomersView() {
                             <div className="min-w-0">
                               <p className="text-sm font-medium truncate">{customer.name}</p>
                               <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                                {customer.tags.slice(0, 2).map((tag) => (
+                                {customer.isGuest && (
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-orange-300 text-orange-600">Guest</Badge>
+                                )}
+                                {!customer.isGuest && customer.verified && (
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-green-300 text-green-600">Verified</Badge>
+                                )}
+                                {customer.source === "STORE_FRONT" && !customer.isGuest && (
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-blue-300 text-blue-600">Storefront</Badge>
+                                )}
+                                {customer.tags.slice(0, 1).map((tag) => (
                                   <Badge key={tag} variant="outline" className="text-[9px] px-1 py-0 h-4 border-muted-foreground/30 text-muted-foreground">{tag}</Badge>
                                 ))}
-                                {customer.tags.length > 2 && <span className="text-[9px] text-muted-foreground">+{customer.tags.length - 2}</span>}
                               </div>
                             </div>
                           </div>
@@ -897,6 +910,15 @@ export function CustomersView() {
                         <Badge className={`text-[9px] font-semibold gap-1 ${tc.badge}`} variant="secondary">
                           <Star className="h-2.5 w-2.5" />{customer.loyaltyTier}
                         </Badge>
+                        {customer.isGuest && (
+                          <Badge variant="outline" className="text-[9px] border-orange-300 text-orange-600">Guest</Badge>
+                        )}
+                        {!customer.isGuest && customer.verified && (
+                          <Badge variant="outline" className="text-[9px] border-green-300 text-green-600">Verified</Badge>
+                        )}
+                        {customer.source && customer.source !== "MANUAL" && (
+                          <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-500">{customer.source === "STORE_FRONT" ? "Storefront" : customer.source}</Badge>
+                        )}
                         <span className="text-[11px] text-muted-foreground">{customer.loyaltyPoints.toLocaleString()} pts</span>
                         {customer.phone && (
                           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">

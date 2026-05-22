@@ -24,12 +24,14 @@ function generateRefreshToken(): string {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, phone, code, channel, businessId: reqBusinessId } = body as {
+    const { email, phone, code, channel, businessId: reqBusinessId, name: reqName, storeId: reqStoreId } = body as {
       email?: string;
       phone?: string;
       code: string;
       channel: 'EMAIL_OTP' | 'WHATSAPP_OTP';
       businessId?: string;
+      name?: string;
+      storeId?: string;
     };
 
     // Validate
@@ -93,11 +95,12 @@ export async function POST(request: Request) {
     if (!user) {
       // Auto-create user if they don't exist (for OTP-based signup flow)
       const userEmail = email || `${phone}@otp.placeholder`;
+      const derivedName = reqName?.trim() || email?.split('@')[0] || phone || 'User';
       user = await db.user.create({
         data: {
           email: userEmail,
           phone: phone || null,
-          name: email?.split('@')[0] || phone || 'User',
+          name: derivedName,
           authProvider: channel,
           emailVerified: channel === 'EMAIL_OTP' && !!email,
           phoneVerified: channel === 'WHATSAPP_OTP' && !!phone,
@@ -143,8 +146,19 @@ export async function POST(request: Request) {
               name: user.name,
               phone: user.phone || null,
               email: isPlaceholderEmail ? null : user.email,
+              source: 'STORE_FRONT',
+              isGuest: false,
+              verified: true,
+              createdStoreId: reqStoreId || null,
+              preferredStoreId: reqStoreId || null,
             },
           }).catch(() => {/* ignore unique constraint races */});
+        } else if (!existingCustomer.verified) {
+          // Upgrade guest to verified if they logged in
+          await db.customer.update({
+            where: { id: existingCustomer.id },
+            data: { verified: true, isGuest: false, source: 'STORE_FRONT' },
+          }).catch(() => {});
         }
       }
     }

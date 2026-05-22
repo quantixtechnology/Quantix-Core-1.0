@@ -1067,10 +1067,16 @@ model Customer {
   avgOrderValue Float                  @default(0)
   lastOrderAt   DateTime?
   tags          String                 @default("[]")
-  metadata      String                 @default("{}")
-  isActive      Boolean                @default(true)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  metadata         String                 @default("{}")
+  isActive         Boolean                @default(true)
+  source           String                 @default("MANUAL")
+  isGuest          Boolean                @default(false)
+  verified         Boolean                @default(false)
+  customerCode     String?
+  createdStoreId   String?
+  preferredStoreId String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
   addresses     Address[]
   user          User?                  @relation(fields: [userId], references: [id])
   business      Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)

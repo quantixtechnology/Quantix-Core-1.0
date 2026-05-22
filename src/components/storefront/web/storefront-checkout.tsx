@@ -6,7 +6,7 @@ import { useCartStore } from "@/stores/cart-store"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   ArrowLeft, MapPin, Plus, Loader2, CheckCircle2, CreditCard,
-  User, Phone as PhoneIcon, Home, Trash2, Check,
+  User, Phone as PhoneIcon, Home, Check, LogIn, UserX, Lock,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 import type { WebNav } from "./storefront-website"
@@ -27,6 +27,10 @@ interface StorefrontCheckoutProps {
   nav: WebNav
 }
 
+// Step 1: choose login/guest or forced-login
+// Step 2: actual checkout form
+type CheckoutStep = "choose" | "form"
+
 export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps) {
   const { currentBusinessId, currentStoreId } = useAdminStore()
   const { items, subtotal, storeDeliveryFee, couponDiscount, paymentGateways, clearCart } = useCartStore()
@@ -36,12 +40,17 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
   const discount = couponDiscount || 0
   const total = Math.round(subtotal() + deliveryFee - discount)
 
+  // Guest checkout setting (fetched from store-context)
+  const [allowGuest, setAllowGuest] = useState<boolean | null>(null)
+
+  // If authenticated → skip choose screen straight to form
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>(isAuthenticated ? "form" : "choose")
+  const [isGuestMode, setIsGuestMode] = useState(false)
+
   // Addresses (authenticated flow)
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
-
-  // New address form
   const [newAddr, setNewAddr] = useState({ line1: "", line2: "", city: "", pincode: "", label: "" })
 
   // Guest form
@@ -57,6 +66,26 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
   const [orderError, setOrderError] = useState("")
   const [orderId, setOrderId] = useState<string | null>(null)
   const [orderNumber, setOrderNumber] = useState("")
+
+  // Load guest checkout setting
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/core/storefront/store-context?businessId=${currentBusinessId}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) setAllowGuest(j.data?.allowGuestCheckout !== false)
+        else setAllowGuest(true)
+      })
+      .catch(() => setAllowGuest(true))
+  }, [currentBusinessId])
+
+  // If user logs in while on choose screen, advance to form
+  useEffect(() => {
+    if (isAuthenticated) {
+      setCheckoutStep("form")
+      setIsGuestMode(false)
+    }
+  }, [isAuthenticated])
 
   const fetchAddresses = useCallback(async () => {
     if (!token) return
@@ -77,6 +106,7 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
     if (isAuthenticated) fetchAddresses()
   }, [isAuthenticated, fetchAddresses])
 
+  // ── Empty cart ──────────────────────────────────────────────────────
   if (items.length === 0 && !orderId) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4">
@@ -93,6 +123,7 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
     )
   }
 
+  // ── Order placed ────────────────────────────────────────────────────
   if (orderId) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
@@ -103,13 +134,15 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Order Placed!</h2>
           <p className="text-gray-500 mb-1">Your order has been received.</p>
           <p className="text-sm font-mono font-bold text-gray-700 mb-8">{orderNumber}</p>
-          <button
-            onClick={() => nav.go("order-tracking", { orderId })}
-            className="w-full h-12 text-white font-bold text-sm rounded-xl mb-3"
-            style={{ backgroundColor: brandColor }}
-          >
-            Track Order
-          </button>
+          {isAuthenticated && (
+            <button
+              onClick={() => nav.go("order-tracking", { orderId })}
+              className="w-full h-12 text-white font-bold text-sm rounded-xl mb-3"
+              style={{ backgroundColor: brandColor }}
+            >
+              Track Order
+            </button>
+          )}
           <button
             onClick={() => nav.go("home")}
             className="w-full h-12 text-sm font-medium text-gray-600 border border-gray-200 rounded-xl"
@@ -121,6 +154,104 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
     )
   }
 
+  // ── Choice screen (unauthenticated) ─────────────────────────────────
+  if (checkoutStep === "choose") {
+    const guestAllowed = allowGuest !== false // null → still loading → assume true
+
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm">
+          <button
+            onClick={() => nav.go(nav.prevPage || "home")}
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-8 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
+
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8">
+            <div className="text-center mb-8">
+              <div className="text-3xl mb-3">🛍️</div>
+              <h1 className="text-xl font-bold text-gray-900">How would you like to continue?</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                {guestAllowed
+                  ? "Sign in for order tracking, or check out as a guest."
+                  : "Please sign in to place your order."}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {/* Login / Register option */}
+              <button
+                onClick={() => nav.go("auth", { prevPage: "checkout" })}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all hover:shadow-md"
+                style={{ borderColor: brandColor, backgroundColor: `${brandColor}08` }}
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  <LogIn className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">Login / Create Account</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Track orders, save addresses, earn rewards</p>
+                </div>
+              </button>
+
+              {/* Guest option */}
+              {guestAllowed ? (
+                <button
+                  onClick={() => { setIsGuestMode(true); setCheckoutStep("form") }}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-200 text-left transition-all hover:border-gray-300 hover:shadow-sm"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                    <UserX className="w-5 h-5 text-gray-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">Continue as Guest</p>
+                    <p className="text-xs text-gray-500 mt-0.5">No account needed — COD only</p>
+                  </div>
+                </button>
+              ) : (
+                <div className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed">
+                  <div className="w-10 h-10 rounded-xl bg-gray-200 flex items-center justify-center shrink-0">
+                    <Lock className="w-5 h-5 text-gray-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-400">Guest Checkout Disabled</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Please sign in to continue</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Cart summary beneath choice card */}
+          <div className="mt-4 bg-white border border-gray-200 rounded-2xl p-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              {items.length} item{items.length !== 1 ? "s" : ""} in cart
+            </p>
+            {items.slice(0, 3).map((item) => (
+              <div key={`${item.productId}-${item.variantId}`} className="flex justify-between text-sm text-gray-700 mb-1">
+                <span className="truncate mr-2">{item.name} × {item.quantity}</span>
+                <span className="font-semibold shrink-0">{formatINR(item.price * item.quantity)}</span>
+              </div>
+            ))}
+            {items.length > 3 && (
+              <p className="text-xs text-gray-400 mt-1">+{items.length - 3} more items</p>
+            )}
+            <div className="border-t border-gray-100 mt-3 pt-3 flex justify-between text-sm font-bold text-gray-900">
+              <span>Total</span>
+              <span>{formatINR(total)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Address helpers ────────────────────────────────────────────────
   async function addAddress() {
     if (!newAddr.line1 || !newAddr.city || !newAddr.pincode) {
       setOrderError("Address line 1, city, and pincode are required"); return
@@ -147,6 +278,7 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
     } catch { setOrderError("Network error") }
   }
 
+  // ── Place order ────────────────────────────────────────────────────
   async function placeOrder() {
     setPlacing(true); setOrderError("")
     try {
@@ -165,11 +297,8 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
           }),
         })
         const data = await res.json()
-        if (data.success) {
-          clearCart()
-          setOrderId(data.data.id)
-          setOrderNumber(data.data.orderNumber)
-        } else setOrderError(data.error || "Failed to place order")
+        if (data.success) { clearCart(); setOrderId(data.data.id); setOrderNumber(data.data.orderNumber) }
+        else setOrderError(data.error || "Failed to place order")
       } else {
         // Guest checkout
         if (!guestName || !guestPhone || !guestAddress) {
@@ -189,11 +318,8 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
           }),
         })
         const data = await res.json()
-        if (data.success) {
-          clearCart()
-          setOrderId(data.data.id)
-          setOrderNumber(data.data.orderNumber)
-        } else setOrderError(data.error || "Failed to place order")
+        if (data.success) { clearCart(); setOrderId(data.data.id); setOrderNumber(data.data.orderNumber) }
+        else setOrderError(data.error || "Failed to place order")
       }
     } catch { setOrderError("Network error") } finally { setPlacing(false) }
   }
@@ -201,29 +327,39 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
   const hasCOD = paymentGateways.length === 0 || paymentGateways.some((g) => g.gateway === "COD")
   const onlineGateways = paymentGateways.filter((g) => g.gateway !== "COD")
 
+  // ── Checkout form ──────────────────────────────────────────────────
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <button
-        onClick={() => nav.go(nav.prevPage || "home")}
-        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back
-      </button>
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => {
+            if (isGuestMode && !isAuthenticated) setCheckoutStep("choose")
+            else nav.go(nav.prevPage || "home")
+          }}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </button>
+        {isGuestMode && (
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-600">
+            Guest Checkout
+          </span>
+        )}
+      </div>
 
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Checkout</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8">
-        {/* ── Left: Delivery details ── */}
+        {/* ── Left: Delivery details ────────────────────────── */}
         <div className="space-y-6">
-          {/* Delivery address */}
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
             <h2 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
               <MapPin className="w-4 h-4" style={{ color: brandColor }} />
               Delivery Address
             </h2>
 
-            {isAuthenticated ? (
+            {isAuthenticated && !isGuestMode ? (
               <>
                 {addresses.length > 0 && (
                   <div className="space-y-3 mb-4">
@@ -231,18 +367,14 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
                       <label
                         key={addr.id}
                         className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${
-                          selectedAddressId === addr.id
-                            ? "border-current bg-opacity-5"
-                            : "border-gray-200 hover:border-gray-300"
+                          selectedAddressId === addr.id ? "" : "border-gray-200 hover:border-gray-300"
                         }`}
                         style={selectedAddressId === addr.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}
                         onClick={() => setSelectedAddressId(addr.id)}
                       >
                         <div
-                          className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                            selectedAddressId === addr.id ? "border-current" : "border-gray-300"
-                          }`}
-                          style={selectedAddressId === addr.id ? { borderColor: brandColor } : {}}
+                          className="mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
+                          style={selectedAddressId === addr.id ? { borderColor: brandColor } : { borderColor: "#d1d5db" }}
                         >
                           {selectedAddressId === addr.id && (
                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />
@@ -376,7 +508,7 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
                 </div>
                 <p className="text-xs text-gray-400">
                   <button
-                    onClick={() => nav.go("auth", { prevPage: "checkout" } as never)}
+                    onClick={() => nav.go("auth", { prevPage: "checkout" })}
                     className="underline underline-offset-2 hover:text-gray-600"
                   >
                     Sign in
@@ -387,56 +519,60 @@ export function StorefrontCheckout({ brandColor, nav }: StorefrontCheckoutProps)
             )}
           </div>
 
-          {/* Payment method */}
+          {/* Payment method — COD only for guest */}
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
             <h2 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
               <CreditCard className="w-4 h-4" style={{ color: brandColor }} />
               Payment Method
             </h2>
             <div className="space-y-2">
-              {hasCOD && (
-                <label
-                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${
-                    paymentMethod === "COD" ? "" : "border-gray-200"
-                  }`}
-                  style={paymentMethod === "COD" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}
-                  onClick={() => setPaymentMethod("COD")}
-                >
-                  <div
-                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center`}
-                    style={paymentMethod === "COD" ? { borderColor: brandColor } : { borderColor: "#d1d5db" }}
-                  >
-                    {paymentMethod === "COD" && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />}
+              {isGuestMode ? (
+                <div className="flex items-center gap-3 p-4 rounded-xl border-2" style={{ borderColor: brandColor, backgroundColor: `${brandColor}08` }}>
+                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={{ borderColor: brandColor }}>
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Cash on Delivery</p>
                     <p className="text-xs text-gray-500">Pay when your order arrives</p>
                   </div>
-                </label>
+                </div>
+              ) : (
+                <>
+                  {hasCOD && (
+                    <label
+                      className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${paymentMethod === "COD" ? "" : "border-gray-200"}`}
+                      style={paymentMethod === "COD" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}
+                      onClick={() => setPaymentMethod("COD")}
+                    >
+                      <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={paymentMethod === "COD" ? { borderColor: brandColor } : { borderColor: "#d1d5db" }}>
+                        {paymentMethod === "COD" && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Cash on Delivery</p>
+                        <p className="text-xs text-gray-500">Pay when your order arrives</p>
+                      </div>
+                    </label>
+                  )}
+                  {onlineGateways.map((gw) => (
+                    <label
+                      key={gw.id}
+                      className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${paymentMethod === gw.id ? "" : "border-gray-200"}`}
+                      style={paymentMethod === gw.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}
+                      onClick={() => setPaymentMethod(gw.id)}
+                    >
+                      <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={paymentMethod === gw.id ? { borderColor: brandColor } : { borderColor: "#d1d5db" }}>
+                        {paymentMethod === gw.id && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />}
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">{gw.name}</p>
+                    </label>
+                  ))}
+                </>
               )}
-              {onlineGateways.map((gw) => (
-                <label
-                  key={gw.id}
-                  className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${
-                    paymentMethod === gw.id ? "" : "border-gray-200"
-                  }`}
-                  style={paymentMethod === gw.id ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : {}}
-                  onClick={() => setPaymentMethod(gw.id)}
-                >
-                  <div
-                    className="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-                    style={paymentMethod === gw.id ? { borderColor: brandColor } : { borderColor: "#d1d5db" }}
-                  >
-                    {paymentMethod === gw.id && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: brandColor }} />}
-                  </div>
-                  <p className="text-sm font-semibold text-gray-900">{gw.name}</p>
-                </label>
-              ))}
             </div>
           </div>
         </div>
 
-        {/* ── Right: Order summary ── */}
+        {/* ── Right: Order summary ────────────────────────── */}
         <div className="space-y-4">
           <div className="bg-white border border-gray-200 rounded-2xl p-6 sticky top-24">
             <h2 className="text-base font-bold text-gray-900 mb-4">Order Summary</h2>
