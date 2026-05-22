@@ -81,7 +81,7 @@ export function LoginPage() {
         {/* Logo & Brand */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-5">
-            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "70px", filter: "brightness(0) invert(1)" }} className="object-contain" />
+            <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "70px", filter: "brightness(0) invert(1)" }} className="object-contain" />
           </div>
           <p className="text-xs text-[#25B8F5]/70 mt-1 font-medium tracking-widest uppercase">
             Enterprise Business Management

@@ -79,12 +79,14 @@ export function Sidebar({ activeView, onViewChange, collapsed, onToggle }: Sideb
       {/* Logo */}
       <div className="h-14 flex items-center border-b border-slate-200 px-4">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-black text-xs">QX</span>
-          </div>
+          <img
+            src="/api/assets/logo"
+            alt="Quantix"
+            className="flex-shrink-0 object-contain"
+            style={{ height: collapsed ? '28px' : '32px', width: 'auto' }}
+          />
           {!collapsed && (
             <div className="min-w-0">
-              <h1 className="text-sm font-bold text-slate-900 truncate">Quantix</h1>
               <p className="text-[9px] text-emerald-600 font-medium truncate">Run Your Business Smarter</p>
             </div>
           )}

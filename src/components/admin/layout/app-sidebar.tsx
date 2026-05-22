@@ -211,7 +211,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
                 boxShadow: "0 2px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
               }}
             >
-              <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "38px", display: "block" }} className="object-contain w-full" />
+              <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "38px", display: "block" }} className="object-contain w-full" />
             </div>
           </SheetHeader>
 
@@ -258,7 +258,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
             boxShadow: "0 2px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
           }}
         >
-          <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "38px", display: "block" }} className="object-contain w-full" />
+          <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "38px", display: "block" }} className="object-contain w-full" />
         </div>
       </SidebarHeader>
 

@@ -1,19 +1,15 @@
 // GET /api/debug/store-repair-audit?businessCode=BUS-202605-0002
 // Per-store SQL audit: actual code, expected code, sequence, mismatch flag.
-// Requires QUANTIX_SUPER_ADMIN role.
+// TEMP: no auth — production debug only. Remove once store codes are confirmed.
 
 import { NextResponse } from 'next/server'
-import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
 function expectedCode(businessCode: string, seq: number): string {
   return `STR-${businessCode}-${String(seq).padStart(3, '0')}`
 }
 
-export const GET = withMiddleware({
-  requireAuth: true,
-  requiredRoles: ['QUANTIX_SUPER_ADMIN'],
-})(async (req) => {
+export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const filterCode = searchParams.get('businessCode')
 
@@ -34,7 +30,7 @@ export const GET = withMiddleware({
       storeSequence: number
       actualStoreCode: string | null
       expectedStoreCode: string
-      status: 'OK' | 'INVALID'
+      status: 'OK' | 'INVALID' | 'MISSING'
     }[] = []
 
     for (const business of businesses) {
@@ -49,6 +45,9 @@ export const GET = withMiddleware({
       let seq = 1
       for (const store of stores) {
         const expected = expectedCode(business.businessCode, seq)
+        const status: 'OK' | 'INVALID' | 'MISSING' =
+          store.storeCode === null ? 'MISSING' :
+          store.storeCode === expected ? 'OK' : 'INVALID'
         rows.push({
           businessCode: business.businessCode,
           businessName: business.name,
@@ -59,20 +58,21 @@ export const GET = withMiddleware({
           storeSequence: seq,
           actualStoreCode: store.storeCode,
           expectedStoreCode: expected,
-          status: store.storeCode === expected ? 'OK' : 'INVALID',
+          status,
         })
         seq++
       }
     }
 
-    const invalid = rows.filter(r => r.status === 'INVALID')
+    const invalid = rows.filter(r => r.status !== 'OK')
 
     return NextResponse.json({
       success: true,
       summary: {
         total: rows.length,
-        ok: rows.length - invalid.length,
-        invalid: invalid.length,
+        ok: rows.filter(r => r.status === 'OK').length,
+        invalid: rows.filter(r => r.status === 'INVALID').length,
+        missing: rows.filter(r => r.status === 'MISSING').length,
         healthy: invalid.length === 0,
       },
       data: rows,
@@ -81,4 +81,4 @@ export const GET = withMiddleware({
     const message = error instanceof Error ? error.message : 'Audit failed'
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
-})
+}
