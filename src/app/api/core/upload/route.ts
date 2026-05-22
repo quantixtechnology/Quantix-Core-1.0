@@ -15,7 +15,11 @@ import { withMiddleware } from '@/lib/middleware';
 import { UPLOAD_ROOT, ensureDir } from '@/lib/upload-root';
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
-const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const ALLOWED_TYPES = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'image/svg+xml',                    // SVG for logos
+  'image/x-icon', 'image/vnd.microsoft.icon', // ICO for favicons
+]);
 
 export const POST = withMiddleware({ requireAuth: true })(async (req) => {
   try {
@@ -30,7 +34,7 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     }
 
     if (!ALLOWED_TYPES.has(file.type)) {
-      return NextResponse.json({ success: false, error: 'Only JPEG, PNG, WebP, and GIF are allowed' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Only JPEG, PNG, WebP, GIF, SVG, and ICO are allowed' }, { status: 400 });
     }
 
     if (file.size > MAX_SIZE) {

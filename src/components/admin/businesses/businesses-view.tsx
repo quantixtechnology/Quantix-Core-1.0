@@ -27,7 +27,9 @@ import {
   Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
   LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2, Loader2, KeyRound, Eye, EyeOff,
+  Upload, Edit, FileText, Shield,
 } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AvatarImage } from "@/components/ui/avatar"
 import { useAdminStore, BUSINESS_TYPE_WORKFLOWS } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -52,7 +54,10 @@ interface AddOnFormItem {
 interface BusinessApiData {
   id: string; businessCode: string | null; name: string; slug: string; businessType: string; status: string
   city: string | null; state: string | null; pincode: string | null; address: string | null
-  contactEmail: string | null; contactPhone: string | null; gstNumber: string | null
+  contactEmail: string | null; contactPhone: string | null
+  supportEmail: string | null; supportPhone: string | null
+  gstNumber: string | null; panNumber: string | null; cinNumber: string | null; fssaiLicense: string | null
+  favicon: string | null; secondaryColor: string | null; tagline: string | null; description: string | null
   isOnline: boolean; primaryColor: string; logo: string | null; createdAt: string; onboardedAt: string | null; activatedAt: string | null
   subscription: {
     id: string; status: string
@@ -141,13 +146,44 @@ export function BusinessesView() {
   const [newLoginIdValue, setNewLoginIdValue] = useState("")
   const [savingLoginId, setSavingLoginId] = useState(false)
 
-  // Branding & domain edit state
+  // Branding & domain edit state (inline editor)
   const [brandingOpen, setBrandingOpen] = useState(false)
   const [editLogo, setEditLogo] = useState("")
   const [editDomain, setEditDomain] = useState("")
   const [editSubdomain, setEditSubdomain] = useState("")
   const [editPrimaryColor, setEditPrimaryColor] = useState("")
   const [savingBranding, setSavingBranding] = useState(false)
+  const [uploadingInlineLogo, setUploadingInlineLogo] = useState(false)
+
+  // Comprehensive Edit Panel state
+  const [editPanelOpen, setEditPanelOpen] = useState(false)
+  const [editPanelTab, setEditPanelTab] = useState("info")
+  const [epName, setEpName] = useState("")
+  const [epSlug, setEpSlug] = useState("")
+  const [epType, setEpType] = useState("")
+  const [epDescription, setEpDescription] = useState("")
+  const [epTagline, setEpTagline] = useState("")
+  const [epPhone, setEpPhone] = useState("")
+  const [epEmail, setEpEmail] = useState("")
+  const [epSupportPhone, setEpSupportPhone] = useState("")
+  const [epSupportEmail, setEpSupportEmail] = useState("")
+  const [epAddress, setEpAddress] = useState("")
+  const [epCity, setEpCity] = useState("")
+  const [epState, setEpState] = useState("")
+  const [epPincode, setEpPincode] = useState("")
+  const [epGST, setEpGST] = useState("")
+  const [epPAN, setEpPAN] = useState("")
+  const [epCIN, setEpCIN] = useState("")
+  const [epFSSAI, setEpFSSAI] = useState("")
+  const [epLogo, setEpLogo] = useState("")
+  const [epFavicon, setEpFavicon] = useState("")
+  const [epPrimaryColor, setEpPrimaryColor] = useState("")
+  const [epSecondaryColor, setEpSecondaryColor] = useState("")
+  const [epDomain, setEpDomain] = useState("")
+  const [epSubdomain, setEpSubdomain] = useState("")
+  const [uploadingEpLogo, setUploadingEpLogo] = useState(false)
+  const [uploadingEpFavicon, setUploadingEpFavicon] = useState(false)
+  const [savingPanel, setSavingPanel] = useState(false)
 
   // Order stage config state
   const [stageLabels, setStageLabels] = useState<{ status: string; label: string; order: number }[]>([])
@@ -515,6 +551,101 @@ export function BusinessesView() {
       toast.error(err instanceof Error ? err.message : "Failed to save")
     } finally {
       setSavingBranding(false)
+    }
+  }
+
+  // Generic file upload helper (strips Content-Type so FormData boundary works)
+  const uploadFile = async (file: File, businessId: string, folder: string): Promise<string | null> => {
+    const { 'Content-Type': _ct, ...authHeadersOnly } = getAuthHeaders()
+    const fd = new FormData()
+    fd.append("file", file)
+    fd.append("businessId", businessId)
+    fd.append("folder", folder)
+    try {
+      const res = await fetch("/api/core/upload", { method: "POST", headers: authHeadersOnly, body: fd })
+      const json = await res.json()
+      if (json.success) return json.url as string
+      toast.error(json.error || "Upload failed")
+      return null
+    } catch {
+      toast.error("Upload failed")
+      return null
+    }
+  }
+
+  const openEditPanel = (biz: BusinessApiData) => {
+    setEpName(biz.name)
+    setEpSlug(biz.slug)
+    setEpType(biz.businessType)
+    setEpDescription(biz.description ?? "")
+    setEpTagline(biz.tagline ?? "")
+    setEpPhone(biz.contactPhone ?? "")
+    setEpEmail(biz.contactEmail ?? "")
+    setEpSupportPhone(biz.supportPhone ?? "")
+    setEpSupportEmail(biz.supportEmail ?? "")
+    setEpAddress(biz.address ?? "")
+    setEpCity(biz.city ?? "")
+    setEpState(biz.state ?? "")
+    setEpPincode(biz.pincode ?? "")
+    setEpGST(biz.gstNumber ?? "")
+    setEpPAN(biz.panNumber ?? "")
+    setEpCIN(biz.cinNumber ?? "")
+    setEpFSSAI(biz.fssaiLicense ?? "")
+    setEpLogo(biz.logo ?? "")
+    setEpFavicon(biz.favicon ?? "")
+    setEpPrimaryColor(biz.primaryColor ?? "#10B981")
+    setEpSecondaryColor(biz.secondaryColor ?? "")
+    setEpDomain(biz.domain?.domain ?? "")
+    setEpSubdomain("")
+    setEditPanelTab("info")
+    setEditPanelOpen(true)
+  }
+
+  const handleSaveEditPanel = async () => {
+    if (!selectedBusiness) return
+    setSavingPanel(true)
+    try {
+      const body: Record<string, unknown> = {
+        name: epName,
+        slug: epSlug,
+        businessType: epType,
+        description: epDescription || null,
+        tagline: epTagline || null,
+        contactPhone: epPhone || null,
+        contactEmail: epEmail || null,
+        supportPhone: epSupportPhone || null,
+        supportEmail: epSupportEmail || null,
+        address: epAddress || null,
+        city: epCity || null,
+        state: epState || null,
+        pincode: epPincode || null,
+        gstNumber: epGST || null,
+        panNumber: epPAN || null,
+        cinNumber: epCIN || null,
+        fssaiLicense: epFSSAI || null,
+        logo: epLogo || null,
+        favicon: epFavicon || null,
+        primaryColor: epPrimaryColor || "#10B981",
+        secondaryColor: epSecondaryColor || null,
+      }
+      if (epDomain) {
+        body.domain = epDomain
+        if (epSubdomain) body.subdomain = epSubdomain
+      }
+      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save")
+      toast.success("Business information saved")
+      setEditPanelOpen(false)
+      fetchBusinesses()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save")
+    } finally {
+      setSavingPanel(false)
     }
   }
 
@@ -1163,16 +1294,29 @@ export function BusinessesView() {
                     <div className="space-y-1 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <SheetTitle className="text-lg">{biz.name}</SheetTitle>
-                        {canImpersonate && (
-                          <Button
-                            size="sm"
-                            className="h-7 text-xs gap-1 shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
-                            onClick={() => { setDetailOpen(false); setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}
-                          >
-                            <LogIn className="size-3" />
-                            Login as Business
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {canEdit && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1"
+                              onClick={() => openEditPanel(biz)}
+                            >
+                              <Edit className="size-3" />
+                              Edit
+                            </Button>
+                          )}
+                          {canImpersonate && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs gap-1 bg-amber-600 hover:bg-amber-700 text-white"
+                              onClick={() => { setDetailOpen(false); setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}
+                            >
+                              <LogIn className="size-3" />
+                              Login as Business
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       <SheetDescription className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium" style={{ borderColor: typeConf?.color, color: typeConf?.color }}>{typeConf?.label}</Badge>
@@ -1423,21 +1567,43 @@ export function BusinessesView() {
 
                       {brandingOpen ? (
                         <div className="rounded-lg border p-4 space-y-4">
-                          {/* Logo URL */}
+                          {/* Logo Upload */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium flex items-center gap-1.5"><ImageIcon className="size-3" /> Business Logo URL</Label>
-                            <Input
-                              placeholder="https://example.com/logo.png"
-                              value={editLogo}
-                              onChange={(e) => setEditLogo(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                            {editLogo && (
-                              <div className="flex items-center gap-3 rounded-lg border border-dashed p-2 bg-muted/30">
-                                <img src={editLogo} alt="Preview" className="h-10 w-10 rounded object-contain bg-white border" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
-                                <p className="text-[10px] text-muted-foreground">Logo preview</p>
+                            <Label className="text-xs font-medium flex items-center gap-1.5"><ImageIcon className="size-3" /> Business Logo</Label>
+                            <div className="flex items-start gap-3">
+                              <div className="h-14 w-14 rounded-lg border flex items-center justify-center bg-white shrink-0 overflow-hidden">
+                                {editLogo
+                                  ? <img src={editLogo} alt="Logo" className="h-full w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                                  : <ImageIcon className="size-5 text-muted-foreground" />}
                               </div>
-                            )}
+                              <div className="flex flex-col gap-1.5 flex-1">
+                                <label className="cursor-pointer w-full">
+                                  <input
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                    className="hidden"
+                                    onChange={async (e) => {
+                                      const f = e.target.files?.[0]
+                                      if (!f) return
+                                      setUploadingInlineLogo(true)
+                                      const url = await uploadFile(f, biz.id, "logos")
+                                      if (url) setEditLogo(url)
+                                      setUploadingInlineLogo(false)
+                                    }}
+                                  />
+                                  <Button size="sm" variant="outline" className="h-7 text-xs w-full gap-1.5 pointer-events-none">
+                                    {uploadingInlineLogo ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
+                                    {editLogo ? "Replace" : "Upload"}
+                                  </Button>
+                                </label>
+                                {editLogo && (
+                                  <Button size="sm" variant="ghost" className="h-7 text-xs w-full gap-1 text-destructive" onClick={() => setEditLogo("")}>
+                                    <Trash2 className="size-3" /> Remove
+                                  </Button>
+                                )}
+                                <p className="text-[10px] text-muted-foreground">PNG, JPG, WebP, SVG · max 5MB</p>
+                              </div>
+                            </div>
                           </div>
 
                           {/* Domain */}
@@ -1784,6 +1950,303 @@ export function BusinessesView() {
           })()}
         </SheetContent>
       </Sheet>
+
+      {/* ── Comprehensive Business Edit Dialog ─────────────────────────── */}
+      {selectedBusiness && (
+        <Dialog open={editPanelOpen} onOpenChange={setEditPanelOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+            <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+              <DialogTitle className="text-base flex items-center gap-2">
+                <Edit className="size-4" />
+                Edit Business — {selectedBusiness.name}
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                System-generated fields (ID, businessCode, storeCode, deployment IDs) are read-only.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-auto">
+              <Tabs value={editPanelTab} onValueChange={setEditPanelTab} className="h-full flex flex-col">
+                <TabsList className="mx-6 mt-4 mb-0 shrink-0 justify-start">
+                  <TabsTrigger value="info" className="text-xs gap-1.5"><Building2 className="size-3" />Info</TabsTrigger>
+                  <TabsTrigger value="contact" className="text-xs gap-1.5"><Phone className="size-3" />Contact</TabsTrigger>
+                  <TabsTrigger value="legal" className="text-xs gap-1.5"><Shield className="size-3" />Legal</TabsTrigger>
+                  <TabsTrigger value="branding" className="text-xs gap-1.5"><Palette className="size-3" />Branding</TabsTrigger>
+                  <TabsTrigger value="domain" className="text-xs gap-1.5"><Globe className="size-3" />Domain</TabsTrigger>
+                </TabsList>
+
+                <ScrollArea className="flex-1 px-6 py-4">
+                  {/* ── Info ── */}
+                  <TabsContent value="info" className="mt-0 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs font-medium">Business Name *</Label>
+                        <Input value={epName} onChange={e => setEpName(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Slug (URL identifier)</Label>
+                        <Input value={epSlug} onChange={e => setEpSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} className="h-9 text-sm font-mono" placeholder="my-business" />
+                        <p className="text-[10px] text-muted-foreground">Used in subdomain: {epSlug}.quantixtechnology.in</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Business Type</Label>
+                        <Select value={epType} onValueChange={setEpType}>
+                          <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(businessTypeConfig).map(([k, v]) => (
+                              <SelectItem key={k} value={k} className="text-sm">{v.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs font-medium">Tagline</Label>
+                        <Input value={epTagline} onChange={e => setEpTagline(e.target.value)} className="h-9 text-sm" placeholder="Short one-liner about the business" />
+                      </div>
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs font-medium">Description</Label>
+                        <Textarea value={epDescription} onChange={e => setEpDescription(e.target.value)} rows={3} className="text-sm resize-none" placeholder="About the business..." />
+                      </div>
+                    </div>
+                    {/* Read-only system fields */}
+                    <div className="rounded-lg bg-muted/40 border p-3 space-y-1.5">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">System Fields (read-only)</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <span className="text-muted-foreground">Business ID</span><span className="font-mono truncate">{selectedBusiness.id}</span>
+                        <span className="text-muted-foreground">Business Code</span><span className="font-mono">{selectedBusiness.businessCode || "—"}</span>
+                        <span className="text-muted-foreground">Status</span><span>{selectedBusiness.status}</span>
+                        <span className="text-muted-foreground">Created</span><span>{new Date(selectedBusiness.createdAt).toLocaleDateString("en-IN")}</span>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* ── Contact ── */}
+                  <TabsContent value="contact" className="mt-0 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Contact Phone</Label>
+                        <Input value={epPhone} onChange={e => setEpPhone(e.target.value)} className="h-9 text-sm" placeholder="+91 98765 43210" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Contact Email</Label>
+                        <Input type="email" value={epEmail} onChange={e => setEpEmail(e.target.value)} className="h-9 text-sm" placeholder="contact@business.in" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Support Phone</Label>
+                        <Input value={epSupportPhone} onChange={e => setEpSupportPhone(e.target.value)} className="h-9 text-sm" placeholder="+91 98765 43210" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Support Email</Label>
+                        <Input type="email" value={epSupportEmail} onChange={e => setEpSupportEmail(e.target.value)} className="h-9 text-sm" placeholder="support@business.in" />
+                      </div>
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs font-medium">Street Address</Label>
+                        <Textarea value={epAddress} onChange={e => setEpAddress(e.target.value)} rows={2} className="text-sm resize-none" placeholder="Street, area, landmark" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">City</Label>
+                        <Input value={epCity} onChange={e => setEpCity(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">State</Label>
+                        <Input value={epState} onChange={e => setEpState(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Pincode</Label>
+                        <Input value={epPincode} onChange={e => setEpPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} className="h-9 text-sm font-mono" placeholder="560001" />
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* ── Legal ── */}
+                  <TabsContent value="legal" className="mt-0 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs font-medium flex items-center gap-1.5"><FileText className="size-3" />GST Number</Label>
+                        <Input value={epGST} onChange={e => setEpGST(e.target.value.toUpperCase())} className="h-9 text-sm font-mono" placeholder="22AAAAA0000A1Z5" maxLength={15} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">PAN Number</Label>
+                        <Input value={epPAN} onChange={e => setEpPAN(e.target.value.toUpperCase())} className="h-9 text-sm font-mono" placeholder="AAAAA9999A" maxLength={10} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">CIN Number</Label>
+                        <Input value={epCIN} onChange={e => setEpCIN(e.target.value.toUpperCase())} className="h-9 text-sm font-mono" placeholder="U12345MH2020PTC000000" />
+                      </div>
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs font-medium">FSSAI License Number</Label>
+                        <Input value={epFSSAI} onChange={e => setEpFSSAI(e.target.value)} className="h-9 text-sm font-mono" placeholder="12345678901234" maxLength={14} />
+                        <p className="text-[10px] text-muted-foreground">Required for food businesses (restaurants, grocery, etc.)</p>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* ── Branding ── */}
+                  <TabsContent value="branding" className="mt-0 space-y-6">
+                    {/* Logo */}
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Business Logo</Label>
+                      <div className="flex items-start gap-4 p-4 rounded-xl border bg-muted/20">
+                        <div className="h-20 w-20 rounded-xl border-2 border-dashed flex items-center justify-center bg-white shrink-0 overflow-hidden">
+                          {epLogo
+                            ? <img src={epLogo} alt="Logo" className="h-full w-full object-contain p-1" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                            : <ImageIcon className="size-7 text-muted-foreground" />}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <label className="block cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0]
+                                if (!f) return
+                                setUploadingEpLogo(true)
+                                const url = await uploadFile(f, selectedBusiness.id, "logos")
+                                if (url) setEpLogo(url)
+                                setUploadingEpLogo(false)
+                              }}
+                            />
+                            <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 pointer-events-none w-full">
+                              {uploadingEpLogo ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                              {epLogo ? "Replace Logo" : "Upload Logo"}
+                            </Button>
+                          </label>
+                          {epLogo && (
+                            <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive w-full" onClick={() => setEpLogo("")}>
+                              <Trash2 className="size-3" /> Remove Logo
+                            </Button>
+                          )}
+                          <p className="text-[10px] text-muted-foreground">PNG, JPG, WebP, SVG · Max 5MB · Recommended: 200×200px or square</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Favicon */}
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Favicon</Label>
+                      <div className="flex items-start gap-4 p-4 rounded-xl border bg-muted/20">
+                        <div className="h-12 w-12 rounded-lg border-2 border-dashed flex items-center justify-center bg-white shrink-0 overflow-hidden">
+                          {epFavicon
+                            ? <img src={epFavicon} alt="Favicon" className="h-full w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                            : <Globe className="size-5 text-muted-foreground" />}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <label className="block cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0]
+                                if (!f) return
+                                setUploadingEpFavicon(true)
+                                const url = await uploadFile(f, selectedBusiness.id, "favicons")
+                                if (url) setEpFavicon(url)
+                                setUploadingEpFavicon(false)
+                              }}
+                            />
+                            <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 pointer-events-none w-full">
+                              {uploadingEpFavicon ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                              {epFavicon ? "Replace Favicon" : "Upload Favicon"}
+                            </Button>
+                          </label>
+                          {epFavicon && (
+                            <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive w-full" onClick={() => setEpFavicon("")}>
+                              <Trash2 className="size-3" /> Remove Favicon
+                            </Button>
+                          )}
+                          <p className="text-[10px] text-muted-foreground">PNG, ICO, SVG · 16×16 or 32×32 recommended · Shown in browser tab &amp; PWA</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Colors */}
+                    <div className="space-y-3">
+                      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Brand Colors</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Primary Color</Label>
+                          <div className="flex items-center gap-2">
+                            <input type="color" value={epPrimaryColor} onChange={e => setEpPrimaryColor(e.target.value)} className="h-9 w-12 cursor-pointer rounded border p-0.5 shrink-0" />
+                            <Input value={epPrimaryColor} onChange={e => setEpPrimaryColor(e.target.value)} className="h-9 text-sm font-mono flex-1" placeholder="#10B981" />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Secondary Color</Label>
+                          <div className="flex items-center gap-2">
+                            <input type="color" value={epSecondaryColor || "#6B7280"} onChange={e => setEpSecondaryColor(e.target.value)} className="h-9 w-12 cursor-pointer rounded border p-0.5 shrink-0" />
+                            <Input value={epSecondaryColor} onChange={e => setEpSecondaryColor(e.target.value)} className="h-9 text-sm font-mono flex-1" placeholder="#6B7280" />
+                          </div>
+                        </div>
+                      </div>
+                      {epPrimaryColor && (
+                        <div className="rounded-lg border p-3 flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-lg shrink-0" style={{ backgroundColor: epPrimaryColor }} />
+                          {epSecondaryColor && <div className="h-8 w-8 rounded-lg shrink-0" style={{ backgroundColor: epSecondaryColor }} />}
+                          <div>
+                            <p className="text-xs font-medium text-gray-900">{epName || "Business Name"}</p>
+                            <p className="text-[10px] text-muted-foreground">Brand color preview</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* ── Domain ── */}
+                  <TabsContent value="domain" className="mt-0 space-y-4">
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium flex items-center gap-1.5"><Globe className="size-3" />Custom Domain</Label>
+                        <Input value={epDomain} onChange={e => setEpDomain(e.target.value.toLowerCase())} className="h-9 text-sm font-mono" placeholder="royalmart.in" />
+                        <p className="text-[10px] text-muted-foreground">Enter without https://. Point DNS A record to this server&apos;s IP.</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Subdomain Override <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                        <Input value={epSubdomain} onChange={e => setEpSubdomain(e.target.value.toLowerCase())} className="h-9 text-sm font-mono" placeholder="e.g. store or app" />
+                      </div>
+                      <div className="rounded-xl border bg-muted/20 p-4 space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Preview URLs</p>
+                        <div className="space-y-1.5 text-xs font-mono">
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground w-20 shrink-0">Default</span>
+                            <span className="text-blue-600">{epSlug || "slug"}.quantixtechnology.in</span>
+                          </div>
+                          {epDomain && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground w-20 shrink-0">Custom</span>
+                              <span className="text-emerald-600">https://{epDomain}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {selectedBusiness.domain && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs">
+                          <Globe className="size-3.5 text-muted-foreground shrink-0" />
+                          <span className="font-mono flex-1 truncate">{selectedBusiness.domain.domain}</span>
+                          <Badge variant={selectedBusiness.domain.status === "ACTIVE" ? "default" : "secondary"} className="text-[10px]">
+                            {selectedBusiness.domain.status}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </ScrollArea>
+              </Tabs>
+            </div>
+
+            <DialogFooter className="px-6 py-4 border-t shrink-0">
+              <Button variant="outline" size="sm" onClick={() => setEditPanelOpen(false)} disabled={savingPanel}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSaveEditPanel} disabled={savingPanel} className="gap-1.5">
+                {savingPanel ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                {savingPanel ? "Saving…" : "Save All Changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }
