@@ -278,6 +278,19 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
 
+  // Guard: on admin host (no storefront slug), stale persisted customer/delivery
+  // viewMode must be reset so app.quantixtechnology.in always shows admin login.
+  useEffect(() => {
+    if (storefrontSlug) return // legitimate storefront — keep customer/delivery mode
+    if (!_isHydrated) return
+    if (viewMode === "customer" && (!isAuthenticated || currentRole !== "CUSTOMER")) {
+      setViewMode("super_admin")
+    }
+    if (viewMode === "delivery_partner" && (!isAuthenticated || currentRole !== "DELIVERY_STAFF")) {
+      setViewMode("super_admin")
+    }
+  }, [storefrontSlug, viewMode, isAuthenticated, currentRole, _isHydrated, setViewMode])
+
   // Sync viewMode from auth session on mount / auth change
   useEffect(() => {
     if (!isAuthenticated) return
@@ -475,6 +488,11 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
 
   // ── Standard SPA routing ─────────────────────────────────────────────────
   if (viewMode === "customer") {
+    // On admin host with stale customer state: show spinner while effect resets viewMode.
+    // storefrontSlug is null → not a real storefront visit.
+    if (!storefrontSlug && _isHydrated && (!isAuthenticated || currentRole !== "CUSTOMER")) {
+      return <SplashLoader />
+    }
     return (
       <CustomerLayout>
         {renderCustomerPage()}
@@ -483,6 +501,9 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
   }
 
   if (viewMode === "delivery_partner") {
+    if (!storefrontSlug && _isHydrated && (!isAuthenticated || currentRole !== "DELIVERY_STAFF")) {
+      return <SplashLoader />
+    }
     return (
       <DeliveryLayout>
         {renderDeliveryPage()}
