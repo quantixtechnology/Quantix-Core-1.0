@@ -554,17 +554,29 @@ export function BusinessesView() {
     }
   }
 
-  // Generic file upload helper (strips Content-Type so FormData boundary works)
-  const uploadFile = async (file: File, businessId: string, folder: string): Promise<string | null> => {
-    const { 'Content-Type': _ct, ...authHeadersOnly } = getAuthHeaders()
+  // Upload a business logo or favicon via the dedicated route (no Content-Type header set —
+  // browser sets multipart boundary automatically when body is FormData)
+  const uploadBusinessAsset = async (
+    file: File,
+    businessId: string,
+    field: "logo" | "favicon"
+  ): Promise<string | null> => {
+    const { Authorization, "x-business-id": xbid } = getAuthHeaders() as Record<string, string>
+    const headers: Record<string, string> = {}
+    if (Authorization) headers["Authorization"] = Authorization
+    if (xbid) headers["x-business-id"] = xbid
+
     const fd = new FormData()
     fd.append("file", file)
     fd.append("businessId", businessId)
-    fd.append("folder", folder)
+    fd.append("field", field)
     try {
-      const res = await fetch("/api/core/upload", { method: "POST", headers: authHeadersOnly, body: fd })
+      const res = await fetch("/api/business/logo/upload", { method: "POST", headers, body: fd })
       const json = await res.json()
-      if (json.success) return json.url as string
+      if (json.success) {
+        if (json.warning) toast.warning(json.warning)
+        return json.url as string
+      }
       toast.error(json.error || "Upload failed")
       return null
     } catch {
@@ -1586,8 +1598,8 @@ export function BusinessesView() {
                                       const f = e.target.files?.[0]
                                       if (!f) return
                                       setUploadingInlineLogo(true)
-                                      const url = await uploadFile(f, biz.id, "logos")
-                                      if (url) setEditLogo(url)
+                                      const url = await uploadBusinessAsset(f, biz.id, "logo")
+                                      if (url) { setEditLogo(url); fetchBusinesses() }
                                       setUploadingInlineLogo(false)
                                     }}
                                   />
@@ -2102,8 +2114,8 @@ export function BusinessesView() {
                                 const f = e.target.files?.[0]
                                 if (!f) return
                                 setUploadingEpLogo(true)
-                                const url = await uploadFile(f, selectedBusiness.id, "logos")
-                                if (url) setEpLogo(url)
+                                const url = await uploadBusinessAsset(f, selectedBusiness.id, "logo")
+                                if (url) { setEpLogo(url); fetchBusinesses() }
                                 setUploadingEpLogo(false)
                               }}
                             />
@@ -2141,8 +2153,8 @@ export function BusinessesView() {
                                 const f = e.target.files?.[0]
                                 if (!f) return
                                 setUploadingEpFavicon(true)
-                                const url = await uploadFile(f, selectedBusiness.id, "favicons")
-                                if (url) setEpFavicon(url)
+                                const url = await uploadBusinessAsset(f, selectedBusiness.id, "favicon")
+                                if (url) { setEpFavicon(url); fetchBusinesses() }
                                 setUploadingEpFavicon(false)
                               }}
                             />
