@@ -554,35 +554,47 @@ export function BusinessesView() {
     }
   }
 
-  // Upload a business logo or favicon via the dedicated route (no Content-Type header set —
-  // browser sets multipart boundary automatically when body is FormData)
+  // Upload a business logo or favicon.
+  // IMPORTANT: Do NOT set Content-Type — the browser sets the multipart boundary automatically.
+  // Only pass Authorization + x-business-id headers.
   const uploadBusinessAsset = async (
     file: File,
     businessId: string,
     field: "logo" | "favicon"
   ): Promise<string | null> => {
-    const { Authorization, "x-business-id": xbid } = getAuthHeaders() as Record<string, string>
+    const allHeaders = getAuthHeaders()
     const headers: Record<string, string> = {}
-    if (Authorization) headers["Authorization"] = Authorization
-    if (xbid) headers["x-business-id"] = xbid
+    if (allHeaders["Authorization"]) headers["Authorization"] = allHeaders["Authorization"]
+    if (allHeaders["x-business-id"]) headers["x-business-id"] = allHeaders["x-business-id"]
+    // Never set Content-Type — let browser set multipart/form-data with boundary
 
     const fd = new FormData()
     fd.append("file", file)
     fd.append("businessId", businessId)
     fd.append("field", field)
+
+    let res: Response
     try {
-      const res = await fetch("/api/business/logo/upload", { method: "POST", headers, body: fd })
-      const json = await res.json()
-      if (json.success) {
-        if (json.warning) toast.warning(json.warning)
-        return json.url as string
-      }
-      toast.error(json.error || "Upload failed")
-      return null
-    } catch {
-      toast.error("Upload failed")
+      res = await fetch("/api/business/logo/upload", { method: "POST", headers, body: fd })
+    } catch (networkErr) {
+      toast.error(`Network error: ${networkErr instanceof Error ? networkErr.message : "Could not reach server"}`)
       return null
     }
+
+    let json: { success: boolean; url?: string; error?: string; warning?: string }
+    try {
+      json = await res.json()
+    } catch {
+      toast.error(`Server returned non-JSON response (status ${res.status})`)
+      return null
+    }
+
+    if (json.success) {
+      if (json.warning) toast.warning(json.warning)
+      return json.url as string
+    }
+    toast.error(json.error || `Upload failed (HTTP ${res.status})`)
+    return null
   }
 
   const openEditPanel = (biz: BusinessApiData) => {
