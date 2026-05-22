@@ -28,12 +28,15 @@ interface Product {
   id: string
   name: string
   shortDesc: string | null
-  images: string[]                    // already an array from API
+  images: string[]
   isVeg: boolean | null
   isFeatured: boolean
-  metadata: Record<string, unknown>   // already parsed from API
+  metadata: Record<string, unknown>
   variants: Variant[]
   category: { id: string; name: string } | null
+  stockStatus: string
+  availableStock: number
+  hasInventory: boolean
 }
 
 type SortOption = "default" | "price_asc" | "price_desc" | "name_asc"
@@ -95,9 +98,11 @@ function ProductCard({
   const showFresh  = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
   const defaultEmoji = getDefaultProductEmoji(businessType)
 
+  const isOutOfStock = product.hasInventory && product.stockStatus === 'OUT_OF_STOCK'
+
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!defaultVariant) return
+    if (!defaultVariant || isOutOfStock) return
     addItem({
       productId: product.id,
       variantId: defaultVariant.id,
@@ -150,13 +155,19 @@ function ProductCard({
         )}
 
         <div className="absolute top-2 left-2 flex gap-1 flex-wrap max-w-[calc(100%-0.5rem)]">
-          {showHalal && !!meta.isHalal && (
-            <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[9px] font-bold rounded-full">HALAL</span>
-          )}
-          {hasDiscount && (
-            <span className="px-1.5 py-0.5 text-white text-[9px] font-bold rounded-full" style={{ backgroundColor: brandColor }}>
-              {discountPct}% OFF
-            </span>
+          {isOutOfStock ? (
+            <span className="px-1.5 py-0.5 bg-gray-600 text-white text-[9px] font-bold rounded-full">OUT OF STOCK</span>
+          ) : (
+            <>
+              {showHalal && !!meta.isHalal && (
+                <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[9px] font-bold rounded-full">HALAL</span>
+              )}
+              {hasDiscount && (
+                <span className="px-1.5 py-0.5 text-white text-[9px] font-bold rounded-full" style={{ backgroundColor: brandColor }}>
+                  {discountPct}% OFF
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -183,7 +194,9 @@ function ProductCard({
               <span className="ml-1 text-xs text-gray-400 line-through">{formatINR(mrp)}</span>
             )}
           </div>
-          {cartItem ? (
+          {isOutOfStock ? (
+            <span className="text-[10px] font-semibold text-gray-400 shrink-0">Unavailable</span>
+          ) : cartItem ? (
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={handleDecrease}
@@ -221,7 +234,7 @@ interface StorefrontCategoryPageProps {
 }
 
 export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPageProps) {
-  const { currentBusinessId, currentBusinessType } = useAdminStore()
+  const { currentBusinessId, currentBusinessType, currentStoreId } = useAdminStore()
 
   const config = getBusinessTypeConfig(currentBusinessType)
   const labels = config.labels
@@ -258,6 +271,7 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
       page: String(page),
       limit: String(LIMIT),
     })
+    if (currentStoreId) params.set("storeId", currentStoreId)
     if (nav.categoryId) params.set("categoryId", nav.categoryId)
     if (searchQuery.trim()) params.set("search", searchQuery.trim())
 

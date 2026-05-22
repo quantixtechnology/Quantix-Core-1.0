@@ -27,7 +27,7 @@ interface ProductDetail {
   name: string
   description: string | null
   shortDesc: string | null
-  images: string[]                    // already an array from API
+  images: string[]
   isVeg: boolean | null
   isFeatured: boolean
   unit: string | null
@@ -35,9 +35,12 @@ interface ProductDetail {
   preparationTime: number | null
   minOrderQty: number
   maxOrderQty: number
-  metadata: Record<string, unknown>   // already parsed from API
+  metadata: Record<string, unknown>
   variants: Variant[]
   category: { id: string; name: string; slug: string } | null
+  stockStatus: string
+  availableStock: number
+  hasInventory: boolean
 }
 
 interface StorefrontProductPageProps {
@@ -78,7 +81,7 @@ function SkeletonProduct() {
 }
 
 export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPageProps) {
-  const { currentBusinessId, currentBusinessType } = useAdminStore()
+  const { currentBusinessId, currentBusinessType, currentStoreId } = useAdminStore()
   const { addItem, items, updateQuantity } = useCartStore()
 
   const config = getBusinessTypeConfig(currentBusinessType)
@@ -106,11 +109,11 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     setNotFound(false)
     setProduct(null)
 
-    // Fetch by businessId — products are always scoped to their business
     const params = new URLSearchParams({
       businessId: currentBusinessId,
       limit: "100",
     })
+    if (currentStoreId) params.set("storeId", currentStoreId)
 
     fetch(`/api/core/storefront/products?${params}`)
       .then((r) => r.json())
@@ -180,8 +183,10 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     ? items.find((i) => i.productId === product.id && i.variantId === selectedVariant.id)
     : undefined
 
+  const isOutOfStock = product.hasInventory && product.stockStatus === 'OUT_OF_STOCK'
+
   const handleAddToCart = () => {
-    if (!selectedVariant) return
+    if (!selectedVariant || isOutOfStock) return
     if (cartItem) {
       updateQuantity(product.id, selectedVariant.id, cartItem.quantity + qty)
     } else {
@@ -401,39 +406,46 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
 
           {/* Quantity + Add to Cart */}
           <div className="flex items-center gap-3 mt-2 mb-6">
-            <div className="flex items-center gap-2 border border-gray-200 rounded-xl p-1">
-              <button
-                onClick={() => setQty((q) => Math.max(product.minOrderQty || 1, q - 1))}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors"
-              >
-                <Minus className="w-4 h-4 text-gray-600" />
-              </button>
-              <span className="w-8 text-center text-base font-bold text-gray-900">{qty}</span>
-              <button
-                onClick={() => setQty((q) => Math.min(product.maxOrderQty || 100, q + 1))}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors"
-              >
-                <Plus className="w-4 h-4 text-gray-600" />
-              </button>
-            </div>
-
-            <button
-              onClick={handleAddToCart}
-              className="flex-1 h-12 font-bold text-sm text-white rounded-xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
-              style={{ backgroundColor: brandColor }}
-            >
-              {addedToCart ? (
-                <>
-                  <Check className="w-5 h-5" />
-                  Added to Cart!
-                </>
-              ) : (
-                <>
-                  <ShoppingCart className="w-5 h-5" />
-                  {config.labels.addToCart} · {formatINR(price * qty)}
-                </>
-              )}
-            </button>
+            {isOutOfStock ? (
+              <div className="flex-1 h-12 bg-gray-100 rounded-xl flex items-center justify-center gap-2">
+                <span className="text-sm font-bold text-gray-500">Out of Stock</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 border border-gray-200 rounded-xl p-1">
+                  <button
+                    onClick={() => setQty((q) => Math.max(product.minOrderQty || 1, q - 1))}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors"
+                  >
+                    <Minus className="w-4 h-4 text-gray-600" />
+                  </button>
+                  <span className="w-8 text-center text-base font-bold text-gray-900">{qty}</span>
+                  <button
+                    onClick={() => setQty((q) => Math.min(product.maxOrderQty || 100, q + 1))}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors"
+                  >
+                    <Plus className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+                <button
+                  onClick={handleAddToCart}
+                  className="flex-1 h-12 font-bold text-sm text-white rounded-xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {addedToCart ? (
+                    <>
+                      <Check className="w-5 h-5" />
+                      Added to Cart!
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="w-5 h-5" />
+                      {config.labels.addToCart} · {formatINR(price * qty)}
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
 
           {/* Meta info grid */}

@@ -154,6 +154,26 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           );
         }
 
+        // Inventory pre-check: only enforce when a row exists (tracked products).
+        // If no inventory row → product is untracked → allow order.
+        const inv = await db.inventory.findFirst({
+          where: { storeId: body.storeId, productId: product.id },
+          select: { quantity: true, reservedQty: true },
+        });
+        if (inv) {
+          const available = Math.max(0, inv.quantity - (inv.reservedQty || 0));
+          if (available < item.quantity) {
+            return NextResponse.json({
+              success: false,
+              error: `"${product.name}" is out of stock. Available: ${available}, requested: ${item.quantity}.`,
+              code: 'OUT_OF_STOCK',
+              productId: product.id,
+              availableQty: available,
+              requestedQty: item.quantity,
+            }, { status: 422 });
+          }
+        }
+
         resolvedItems.push({
           itemType: 'product',
           itemId: product.id,

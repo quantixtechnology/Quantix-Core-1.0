@@ -65,6 +65,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: `No variant for: ${product.name}` }, { status: 400 })
       }
 
+      // Inventory pre-check: only enforce when a row exists (tracked products).
+      const inv = await db.inventory.findFirst({
+        where: { storeId: body.storeId, productId: product.id },
+        select: { quantity: true, reservedQty: true },
+      })
+      if (inv) {
+        const available = Math.max(0, inv.quantity - (inv.reservedQty || 0))
+        if (available < item.quantity) {
+          return NextResponse.json({
+            success: false,
+            error: `"${product.name}" is out of stock. Available: ${available}, requested: ${item.quantity}.`,
+            code: 'OUT_OF_STOCK',
+            productId: product.id,
+            availableQty: available,
+            requestedQty: item.quantity,
+          }, { status: 422 })
+        }
+      }
+
       const unitPrice = variant.discountPrice != null && variant.discountPrice < variant.price
         ? variant.discountPrice : variant.price
       const lineTotal = unitPrice * item.quantity

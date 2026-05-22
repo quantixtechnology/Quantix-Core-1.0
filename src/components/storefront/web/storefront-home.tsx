@@ -35,12 +35,15 @@ interface Product {
   id: string
   name: string
   shortDesc: string | null
-  images: string[]                     // already an array from API
+  images: string[]
   isVeg: boolean | null
   isFeatured: boolean
   isPopular: boolean
-  metadata: Record<string, unknown>    // already parsed from API
+  metadata: Record<string, unknown>
   variants: Variant[]
+  stockStatus: string
+  availableStock: number
+  hasInventory: boolean
 }
 
 // ── Business-type helpers ────────────────────────────────────────────────
@@ -152,9 +155,11 @@ function ProductCard({
   const showFresh = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
   const defaultEmoji = getDefaultEmoji(businessType)
 
+  const isOutOfStock = product.hasInventory && product.stockStatus === 'OUT_OF_STOCK'
+
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!defaultVariant) return
+    if (!defaultVariant || isOutOfStock) return
     addItem({
       productId: product.id,
       variantId: defaultVariant.id,
@@ -191,15 +196,21 @@ function ProductCard({
         )}
 
         <div className="absolute top-2 left-2 flex gap-1.5 flex-wrap max-w-[calc(100%-1rem)]">
-          {product.isVeg === true  && <span className="px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full">VEG</span>}
-          {product.isVeg === false && <span className="px-2 py-0.5 bg-red-500  text-white text-[10px] font-bold rounded-full">NON-VEG</span>}
-          {showHalal && !!meta.isHalal && (
-            <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full">HALAL</span>
-          )}
-          {hasDiscount && (
-            <span className="px-2 py-0.5 text-white text-[10px] font-bold rounded-full" style={{ backgroundColor: brandColor }}>
-              {discountPct}% OFF
-            </span>
+          {isOutOfStock ? (
+            <span className="px-2 py-0.5 bg-gray-600 text-white text-[10px] font-bold rounded-full">OUT OF STOCK</span>
+          ) : (
+            <>
+              {product.isVeg === true  && <span className="px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full">VEG</span>}
+              {product.isVeg === false && <span className="px-2 py-0.5 bg-red-500  text-white text-[10px] font-bold rounded-full">NON-VEG</span>}
+              {showHalal && !!meta.isHalal && (
+                <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full">HALAL</span>
+              )}
+              {hasDiscount && (
+                <span className="px-2 py-0.5 text-white text-[10px] font-bold rounded-full" style={{ backgroundColor: brandColor }}>
+                  {discountPct}% OFF
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -221,13 +232,17 @@ function ProductCard({
             <span className="text-base font-bold" style={{ color: brandColor }}>{formatINR(price)}</span>
             {hasDiscount && <span className="ml-1.5 text-xs text-gray-400 line-through">{formatINR(mrp)}</span>}
           </div>
-          <button
-            onClick={handleAdd}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-sm hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: brandColor }}
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+          {isOutOfStock ? (
+            <span className="text-[10px] font-semibold text-gray-400">Unavailable</span>
+          ) : (
+            <button
+              onClick={handleAdd}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-sm hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: brandColor }}
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -270,9 +285,9 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
     if (!currentBusinessId) return
     setProdsLoading(true)
 
-    // No storeId param — inventory scoping is NOT applied for storefront product
-    // listing to avoid hiding products that lack inventory records.
-    fetch(`/api/core/storefront/products?businessId=${currentBusinessId}&limit=16`)
+    const productParams = new URLSearchParams({ businessId: currentBusinessId, limit: "16" })
+    if (currentStoreId) productParams.set("storeId", currentStoreId)
+    fetch(`/api/core/storefront/products?${productParams}`)
       .then((r) => r.json())
       .then((j) => {
         // The API returns { success, data: Product[], pagination: { total } }

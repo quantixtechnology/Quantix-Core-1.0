@@ -153,6 +153,10 @@ export async function GET(request: Request) {
             ? 'LOW_STOCK'
             : 'OUT_OF_STOCK';
 
+      // hasInventory: true only when storeId was passed AND rows exist for this store.
+      // false means inventory is not tracked for this product → treat as purchasable.
+      const hasInventory = !!storeId && product.inventory.length > 0;
+
       // Find the best (default or cheapest) variant
       const defaultVariant =
         product.variants.find((v) => v.isDefault) || product.variants[0];
@@ -210,6 +214,7 @@ export async function GET(request: Request) {
         defaultMrp: defaultVariant?.mrp || 0,
         stockStatus,
         availableStock,
+        hasInventory,
         metadata: JSON.parse((product as unknown as Record<string, string>).metadata || '{}') as Record<string, unknown>,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt,
