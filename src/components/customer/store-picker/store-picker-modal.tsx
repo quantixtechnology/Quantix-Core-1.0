@@ -3,7 +3,9 @@
 import React, { useEffect, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { X, MapPin, CheckCircle2, Store, Bike } from "lucide-react"
+import { X, MapPin, CheckCircle2, Store, Bike, Clock } from "lucide-react"
+
+interface StoreTiming { day: number; openTime: string; closeTime: string; isClosed: boolean }
 
 interface StoreOption {
   id: string
@@ -13,9 +15,33 @@ interface StoreOption {
   pincode?: string | null
   deliveryFee?: number | null
   minOrderAmount?: number | null
+  freeDeliveryAbove?: number | null
+  preparationTime?: number | null
   isMainStore?: boolean
   distance?: number | null
   serviceable?: boolean
+  storeTimings?: StoreTiming[]
+}
+
+// Returns { open: boolean, label: string } based on current local time and storeTimings
+function getOpenStatus(timings?: StoreTiming[]): { open: boolean; label: string } {
+  if (!timings || timings.length === 0) return { open: true, label: "Open" }
+  const now = new Date()
+  const day = now.getDay() // 0 = Sunday
+  const todayTiming = timings.find((t) => t.day === day)
+  if (!todayTiming || todayTiming.isClosed) return { open: false, label: "Closed today" }
+  const [oh, om] = todayTiming.openTime.split(":").map(Number)
+  const [ch, cm] = todayTiming.closeTime.split(":").map(Number)
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const openMin = oh * 60 + om
+  const closeMin = ch * 60 + cm
+  if (nowMin >= openMin && nowMin < closeMin) {
+    // Close within 30 min → "Closes at HH:MM"
+    if (closeMin - nowMin <= 30) return { open: true, label: `Closes at ${todayTiming.closeTime}` }
+    return { open: true, label: `Open until ${todayTiming.closeTime}` }
+  }
+  if (nowMin < openMin) return { open: false, label: `Opens at ${todayTiming.openTime}` }
+  return { open: false, label: "Closed" }
 }
 
 interface StorePickerModalProps {
@@ -119,6 +145,7 @@ export function StorePickerModal({ open, onClose }: StorePickerModalProps) {
           ) : (
             stores.map((store) => {
               const isSelected = store.id === currentStoreId
+              const openStatus = getOpenStatus(store.storeTimings)
               return (
                 <button
                   key={store.id}
@@ -145,6 +172,15 @@ export function StorePickerModal({ open, onClose }: StorePickerModalProps) {
                           Main
                         </span>
                       )}
+                      {/* Open / closed badge */}
+                      <span className={`flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                        openStatus.open
+                          ? "bg-green-50 text-green-700"
+                          : "bg-red-50 text-red-600"
+                      }`}>
+                        <Clock className="w-2.5 h-2.5" />
+                        {openStatus.label}
+                      </span>
                     </div>
 
                     {(store.address || store.city) && (
@@ -159,7 +195,9 @@ export function StorePickerModal({ open, onClose }: StorePickerModalProps) {
                           <Bike className="w-3 h-3" />
                           {store.deliveryFee === 0
                             ? "Free delivery"
-                            : `₹${store.deliveryFee} delivery`}
+                            : store.freeDeliveryAbove
+                              ? `₹${store.deliveryFee} · Free above ₹${store.freeDeliveryAbove}`
+                              : `₹${store.deliveryFee} delivery`}
                         </span>
                       )}
                       {store.minOrderAmount !== null &&
@@ -169,6 +207,11 @@ export function StorePickerModal({ open, onClose }: StorePickerModalProps) {
                             Min ₹{store.minOrderAmount}
                           </span>
                         )}
+                      {store.preparationTime != null && store.preparationTime > 0 && (
+                        <span className="text-[10px] text-gray-400">
+                          ~{store.preparationTime} min prep
+                        </span>
+                      )}
                       {store.distance !== null && store.distance !== undefined && (
                         <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
                           <MapPin className="w-3 h-3" />

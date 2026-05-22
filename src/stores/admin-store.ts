@@ -311,7 +311,12 @@ interface AdminState {
   setBusinessPage: (page: BusinessPage) => void
   // ── Customer App pages ──────────────────────────────────────────────────
   customerPage: CustomerPage
+  customerNavStack: CustomerPage[]
   setCustomerPage: (page: CustomerPage) => void
+  // Push page onto history stack (supports back navigation)
+  pushCustomerPage: (page: CustomerPage) => void
+  // Pop last page off history stack and navigate back
+  popCustomerPage: () => void
   // ── Delivery Partner pages ──────────────────────────────────────────────
   deliveryPage: DeliveryPage
   setDeliveryPage: (page: DeliveryPage) => void
@@ -397,7 +402,19 @@ export const useAdminStore = create<AdminState>((set) => ({
   businessPage: "dashboard",
   setBusinessPage: (page) => set({ businessPage: page, searchQuery: "", isCreateDialogOpen: false, isDetailSheetOpen: false }),
   customerPage: "auth",
-  setCustomerPage: (page) => set({ customerPage: page, searchQuery: "" }),
+  customerNavStack: [],
+  setCustomerPage: (page) => set({ customerPage: page, customerNavStack: [], searchQuery: "" }),
+  pushCustomerPage: (page) => set((s) => ({
+    customerNavStack: [...s.customerNavStack, s.customerPage],
+    customerPage: page,
+    searchQuery: "",
+  })),
+  popCustomerPage: () => set((s) => {
+    if (s.customerNavStack.length === 0) return {}
+    const stack = [...s.customerNavStack]
+    const prev = stack.pop()!
+    return { customerPage: prev, customerNavStack: stack, searchQuery: "" }
+  }),
   deliveryPage: "login",
   setDeliveryPage: (page) => set({ deliveryPage: page }),
 

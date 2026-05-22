@@ -35,7 +35,7 @@ interface ProductItem {
 }
 
 export function CustomerProducts() {
-  const { setCustomerPage, setSelectedProductId, currentBusinessType, currentBusinessId, currentStoreId, currentBusinessPrimaryColor } = useAdminStore()
+  const { setCustomerPage, pushCustomerPage, setSelectedProductId, currentBusinessType, currentBusinessId, currentStoreId, currentBusinessPrimaryColor } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const [searchQuery, setSearchQuery] = useState("")
@@ -232,7 +232,7 @@ export function CustomerProducts() {
 
   const handleProductClick = (productId: string) => {
     setSelectedProductId(productId)
-    setCustomerPage("product-detail")
+    pushCustomerPage("product-detail")
   }
 
 

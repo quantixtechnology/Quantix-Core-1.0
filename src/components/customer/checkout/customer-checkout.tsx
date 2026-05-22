@@ -51,7 +51,7 @@ const SLOTS: Slot[] = [
 
 export function CustomerCheckout() {
   const {
-    setCustomerPage, setSelectedOrderId,
+    setCustomerPage, pushCustomerPage, popCustomerPage, setSelectedOrderId,
     currentBusinessId, currentStoreId, currentStoreName, currentBusinessPrimaryColor,
   } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
@@ -153,6 +153,17 @@ export function CustomerCheckout() {
     return slot?.id === "now" ? "Express Delivery (45–90 min)" : `${dateLabel} · ${slot?.time}`
   }
 
+  // Build ISO scheduledAt from date + slot selection for the order API
+  const buildScheduledAt = (): string | undefined => {
+    if (selectedSlot === "now") return undefined // Express = ASAP, no scheduled time
+    const base = selectedDate === "today" ? new Date(TODAY)
+      : selectedDate === "tomorrow" ? new Date(TOMORROW) : new Date(DAY_AFTER)
+    const slotStartHour: Record<string, number> = { am: 8, noon: 11, eve: 14, night: 18 }
+    const hour = slotStartHour[selectedSlot] ?? 8
+    base.setHours(hour, 0, 0, 0)
+    return base.toISOString()
+  }
+
   const handlePlaceOrder = async () => {
     if (items.length === 0) return
     setPlacing(true)
@@ -161,7 +172,7 @@ export function CustomerCheckout() {
         productId: item.productId, variantId: item.variantId, quantity: item.quantity,
       }))
       const apiPaymentMethod = paymentMethod === "cod" ? "COD" as const : "UPI" as const
-      const slotNote = buildDeliverySlotLabel()
+      const scheduledAt = buildScheduledAt()
       const orderData = {
         storeId: cartStoreId || currentStoreId,
         orderType: "DELIVERY" as const,
@@ -170,7 +181,8 @@ export function CustomerCheckout() {
         customerName: user?.name || undefined,
         customerPhone: user?.email || undefined,
         deliveryAddressId: selectedAddress || undefined,
-        deliveryInstructions: [slotNote, deliveryInstructions].filter(Boolean).join(" | ") || undefined,
+        deliveryInstructions: deliveryInstructions || undefined,
+        scheduledAt,                              // proper ISO datetime for the order record
         items: orderItems,
         promoCodeId: couponCode || undefined,
         ...(wantGstInvoice && gstInvoiceNumber ? { notes: `GST: ${gstInvoiceNumber}` } : {}),
@@ -221,7 +233,7 @@ export function CustomerCheckout() {
     <div className="pb-4">
       {/* Header */}
       <div className="px-4 pt-3 pb-2 flex items-center gap-3">
-        <button onClick={() => setCustomerPage("cart")} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100">
+        <button onClick={() => popCustomerPage()} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100">
           <ArrowLeft className="w-5 h-5 text-gray-700" />
         </button>
         <div className="flex-1 min-w-0">

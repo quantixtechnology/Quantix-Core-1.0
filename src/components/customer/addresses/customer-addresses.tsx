@@ -44,6 +44,8 @@ export function CustomerAddresses() {
   const [error, setError] = useState<string | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [serviceabilityWarning, setServiceabilityWarning] = useState<string | null>(null)
+  const [checkingServiceability, setCheckingServiceability] = useState(false)
   const [newAddress, setNewAddress] = useState({
     label: "Home",
     line1: "",
@@ -101,6 +103,23 @@ export function CustomerAddresses() {
 
   const handleAddAddress = async () => {
     if (!newAddress.line1 || !newAddress.pincode) return
+
+    // Check serviceability via pincode before saving
+    setCheckingServiceability(true)
+    setServiceabilityWarning(null)
+    try {
+      const svcRes = await fetch(
+        `/api/core/storefront/nearest-store?businessId=${currentBusinessId}&pincode=${newAddress.pincode}`
+      )
+      const svcJson = await svcRes.json()
+      if (!svcJson.success || svcJson.serviceable === false) {
+        setServiceabilityWarning("This pincode may be outside our delivery area. You can save it, but delivery may not be available.")
+      }
+    } catch {
+      // non-blocking — proceed with save
+    } finally {
+      setCheckingServiceability(false)
+    }
 
     setSaving(true)
     try {
@@ -200,7 +219,7 @@ export function CustomerAddresses() {
           size="sm"
           className="h-8 text-xs text-white"
           style={{ backgroundColor: brandColor }}
-          onClick={() => setShowAddDialog(true)}
+          onClick={() => { setServiceabilityWarning(null); setShowAddDialog(true) }}
         >
           <Plus className="h-3 w-3 mr-1" />
           Add New
@@ -218,7 +237,7 @@ export function CustomerAddresses() {
           description="Add a delivery address to get started."
           action={{
             label: "Add Address",
-            onClick: () => setShowAddDialog(true),
+            onClick: () => { setServiceabilityWarning(null); setShowAddDialog(true) },
           }}
           className="py-12"
         />
@@ -266,7 +285,7 @@ export function CustomerAddresses() {
       )}
 
       {/* Add Address Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) setServiceabilityWarning(null); setShowAddDialog(open) }}>
         <DialogContent className="max-w-sm mx-auto rounded-2xl">
           <DialogHeader>
             <DialogTitle>Add New Address</DialogTitle>
@@ -313,9 +332,12 @@ export function CustomerAddresses() {
                 maxLength={6}
               />
             </div>
+            {serviceabilityWarning && (
+              <p className="text-[10px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2">{serviceabilityWarning}</p>
+            )}
             <Button
               onClick={handleAddAddress}
-              disabled={!newAddress.line1 || !newAddress.pincode || saving}
+              disabled={!newAddress.line1 || !newAddress.pincode || saving || checkingServiceability}
               className="w-full h-10 rounded-xl text-xs text-white"
               style={{ backgroundColor: brandColor }}
             >

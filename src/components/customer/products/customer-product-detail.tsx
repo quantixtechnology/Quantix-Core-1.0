@@ -92,7 +92,7 @@ function OptionSelector({
 
 export function CustomerProductDetail() {
   const {
-    selectedProductId, setSelectedProductId, setCustomerPage,
+    selectedProductId, setSelectedProductId, setCustomerPage, pushCustomerPage, popCustomerPage,
     currentBusinessType, currentBusinessId, currentBusinessPrimaryColor,
   } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#E53E3E"
@@ -236,7 +236,7 @@ export function CustomerProductDetail() {
   }
 
 
-  const handleBack = () => { setSelectedProductId(null); setCustomerPage("products") }
+  const handleBack = () => { setSelectedProductId(null); popCustomerPage() }
   const handleRelatedClick = (id: string) => {
     setSelectedProductId(id); setSelectedVariantId(null); setQuantity(1)
     window.scrollTo({ top: 0, behavior: "smooth" })
@@ -537,7 +537,7 @@ export function CustomerProductDetail() {
                 </button>
               </div>
               <Button
-                onClick={() => setCustomerPage("cart")}
+                onClick={() => pushCustomerPage("cart")}
                 className="h-11 px-5 text-sm font-bold rounded-xl bg-gray-900 hover:bg-gray-800 text-white"
               >
                 View Cart

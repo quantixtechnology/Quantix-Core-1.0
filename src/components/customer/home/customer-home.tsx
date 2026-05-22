@@ -62,7 +62,7 @@ interface CategoryItem {
 }
 
 export function CustomerHome() {
-  const { setCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType, currentBusinessId, currentStoreId, currentStoreName, currentBusinessPrimaryColor } = useAdminStore()
+  const { setCustomerPage, pushCustomerPage, setSelectedProductId, customerLoggedIn, currentBusinessName, currentBusinessType, currentBusinessId, currentStoreId, currentStoreName, currentBusinessPrimaryColor } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const storeId = currentStoreId || undefined
   const businessName = currentBusinessName || "My Store"
@@ -209,7 +209,7 @@ export function CustomerHome() {
 
   const handleProductClick = (productId: string) => {
     setSelectedProductId(productId)
-    setCustomerPage("product-detail")
+    pushCustomerPage("product-detail")
   }
 
 

@@ -270,9 +270,12 @@ export async function POST(request: Request) {
         phone: true,
         deliveryRadius: true,
         deliveryFee: true,
+        freeDeliveryAbove: true,
         minOrderAmount: true,
+        preparationTime: true,
         isMainStore: true,
         operatingHours: true,
+        storeTimings: { orderBy: { day: 'asc' } },
       },
       orderBy: [{ isMainStore: 'desc' }, { name: 'asc' }],
     });

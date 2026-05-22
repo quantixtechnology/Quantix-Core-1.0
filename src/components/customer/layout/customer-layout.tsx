@@ -1,15 +1,36 @@
 "use client"
 
-import React from "react"
+import React, { useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { Home, Grid3X3, ShoppingCart, ClipboardList, User, Search, Bell } from "lucide-react"
 
 export function CustomerLayout({ children }: { children: React.ReactNode }) {
-  const { customerPage, setCustomerPage, customerLoggedIn, setCustomerPage: navigate, currentBusinessName, currentBusinessPrimaryColor } = useAdminStore()
+  const {
+    customerPage, setCustomerPage, customerNavStack, pushCustomerPage, popCustomerPage,
+    customerLoggedIn, currentBusinessName, currentBusinessPrimaryColor,
+  } = useAdminStore()
+  // expose navigate as pushCustomerPage so deep links build the back stack correctly
+  const navigate = pushCustomerPage
   const businessName = currentBusinessName || "My Store"
   const businessInitials = businessName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
   const totalItems = useCartStore((s) => s.totalItems())
+
+  // Wire browser back button to the in-app navigation stack
+  useEffect(() => {
+    const onPopState = () => {
+      if (customerNavStack.length > 0) {
+        // Prevent the real URL from changing — we handle navigation ourselves
+        history.pushState(null, "", window.location.href)
+        popCustomerPage()
+      }
+    }
+    // Push a synthetic state so the back button fires popstate
+    history.pushState(null, "", window.location.href)
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerNavStack.length])
 
   // Brand color: use business primary color or fall back to emerald-500
   const brandColor = currentBusinessPrimaryColor || "#10B981"
@@ -19,9 +40,11 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
   const handleTabPress = (page: "home" | "products" | "cart" | "orders" | "profile") => {
     // Guests can browse products and cart; only orders and profile require login
     if (!customerLoggedIn && (page === "orders" || page === "profile")) {
-      setCustomerPage("auth")
+      // Push auth so user can go back after login
+      pushCustomerPage("auth")
       return
     }
+    // Tab bar always resets the stack — it's a root navigation action
     setCustomerPage(page)
   }
 
