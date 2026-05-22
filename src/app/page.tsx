@@ -241,16 +241,22 @@ function SplashLoader() {
 //   Client:        browser URL stays as slug.quantixtechnology.in (no query param) —
 //                  searchParams returns null after hydration.  Read hostname directly.
 //
-// Both paths return the same slug → no hydration mismatch → no admin-login flash.
+// page.tsx runs inside <Suspense> + useSearchParams() which makes it client-only
+// (server renders the SplashLoader fallback). All subdomain routing is therefore
+// done from window.location.hostname on the client — no server-side middleware.
+//
+// Reserved subdomains are NEVER treated as storefronts:
+//   app, www, admin, api, mail → Quantix Core admin app
+// Everything else → storefront slug (validated against DB by StorefrontContextLoader)
 const _SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 const _SF_RESERVED = new Set(["www", "app", "admin", "api", "mail"])
 
 function detectStorefrontSlug(searchParams: ReturnType<typeof useSearchParams>): string | null {
-  // Primary: from proxy rewrite (server-side)
+  // Support ?_storefront=slug if a server-side rewrite ever injects it
   const param = searchParams.get("_storefront")
-  if (param) return param
+  if (param && !_SF_RESERVED.has(param)) return param
 
-  // Fallback: from hostname (client-side — browser URL still shows the subdomain)
+  // Primary path: client-side hostname detection
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname.split(":")[0]
     if (hostname.endsWith(`.${_SF_BASE}`)) {
