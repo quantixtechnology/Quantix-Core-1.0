@@ -33,8 +33,9 @@ export default function proxy(request: NextRequest) {
 
   console.log(`[proxy] host=${host} pathname=${pathname} base=${STOREFRONT_BASE}`)
 
-  // Storefront subdomain detection — skip for API, uploads, and Next internals
-  if (!pathname.startsWith('/api') && !pathname.startsWith('/uploads')) {
+  // Storefront subdomain detection — skip for API, uploads, static assets, and Next internals
+  const SKIP_PATHS = ['/api', '/uploads', '/sw.js', '/manifest.json', '/robots.txt', '/sitemap.xml']
+  if (!SKIP_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     const hostWithoutPort = host.split(':')[0]
 
     if (hostWithoutPort.endsWith(`.${STOREFRONT_BASE}`)) {

@@ -35,9 +35,13 @@ interface ApiCoupon {
 }
 
 export function CustomerCart() {
-  const { setCustomerPage, pushCustomerPage, currentBusinessPrimaryColor, currentStoreName } = useAdminStore()
+  const {
+    setCustomerPage, pushCustomerPage,
+    currentBusinessPrimaryColor, currentStoreName, customerLoggedIn,
+  } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { token } = useAuthStore()
+  const [showLoginGate, setShowLoginGate] = useState(false)
 
   const [apiCoupons, setApiCoupons] = useState<ApiCoupon[]>([])
 
@@ -348,15 +352,48 @@ export function CustomerCart() {
       </div>
 
       {/* Proceed to Checkout */}
-      <div className="px-4">
-        <Button
-          onClick={() => pushCustomerPage("checkout")}
-          className="w-full h-12 text-sm font-bold rounded-xl text-white"
-          style={{ backgroundColor: brandColor }}
-        >
-          Proceed to Checkout
-          <ArrowRight className="w-4 h-4 ml-2" />
-        </Button>
+      <div className="px-4 space-y-2">
+        {!showLoginGate ? (
+          <Button
+            onClick={() => {
+              if (customerLoggedIn) {
+                pushCustomerPage("checkout")
+              } else {
+                setShowLoginGate(true)
+              }
+            }}
+            className="w-full h-12 text-sm font-bold rounded-xl text-white"
+            style={{ backgroundColor: brandColor }}
+          >
+            Proceed to Checkout
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        ) : (
+          <div className="border border-gray-100 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-semibold text-gray-700 text-center mb-1">How would you like to continue?</p>
+            <Button
+              onClick={() => pushCustomerPage("auth")}
+              className="w-full h-11 text-sm font-bold rounded-xl text-white"
+              style={{ backgroundColor: brandColor }}
+            >
+              Login / Sign Up
+            </Button>
+            <Button
+              onClick={() => pushCustomerPage("checkout")}
+              variant="outline"
+              className="w-full h-11 text-sm font-medium rounded-xl"
+              style={{ borderColor: `${brandColor}50`, color: brandColor }}
+            >
+              Continue as Guest
+            </Button>
+            <button
+              onClick={() => setShowLoginGate(false)}
+              className="w-full text-xs text-gray-400 py-1 hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

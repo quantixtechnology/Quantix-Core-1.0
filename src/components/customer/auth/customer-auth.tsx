@@ -11,11 +11,27 @@ import { Input } from "@/components/ui/input"
 import { Phone, ArrowLeft, Shield, Loader2 } from "lucide-react"
 
 export function CustomerAuth() {
-  const { setCustomerLoggedIn, setCustomerName, setCustomerPage, currentBusinessName: bizName, currentBusinessPrimaryColor } = useAdminStore()
+  const {
+    setCustomerLoggedIn, setCustomerName, setCustomerPage,
+    popCustomerPage, customerNavStack,
+    currentBusinessName: bizName, currentBusinessPrimaryColor,
+  } = useAdminStore()
   const displayName = bizName || "My Store"
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const displayInitials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
   const { loginWithOtp } = useAuthStore()
+
+  // After login, go back to wherever the user came from (cart, checkout, etc.)
+  // If no back-stack, go to home.
+  const handlePostLogin = (name: string) => {
+    setCustomerLoggedIn(true)
+    setCustomerName(name)
+    if (customerNavStack.length > 0) {
+      popCustomerPage()
+    } else {
+      setCustomerPage("home")
+    }
+  }
   const [step, setStep] = useState<"phone" | "otp">("phone")
   const [phone, setPhone] = useState("")
   const [otp, setOtp] = useState("")
@@ -78,17 +94,13 @@ export function CustomerAuth() {
       const userName = (result.data as Record<string, unknown>)?.user
         ? ((result.data as Record<string, unknown>).user as Record<string, unknown>).name as string
         : "User"
-      setCustomerLoggedIn(true)
-      setCustomerName(userName)
-      setCustomerPage("home")
+      handlePostLogin(userName)
       showSuccess("Welcome!", `Hi ${userName}, you're now logged in.`)
     } catch (err) {
       // On API error, try auth store's built-in loginWithOtp
       try {
         await loginWithOtp(`+91${phone}`, otp)
-        setCustomerLoggedIn(true)
-        setCustomerName("User")
-        setCustomerPage("home")
+        handlePostLogin("User")
         showSuccess("Welcome!", "You're now logged in.")
       } catch {
         // Fallback: for demo, accept any 6-digit OTP
@@ -179,7 +191,8 @@ export function CustomerAuth() {
 
             <button
               onClick={() => {
-                setCustomerPage("home")
+                if (customerNavStack.length > 0) popCustomerPage()
+                else setCustomerPage("home")
               }}
               className="w-full h-11 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
             >
