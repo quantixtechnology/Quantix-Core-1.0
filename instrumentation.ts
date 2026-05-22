@@ -1,6 +1,16 @@
+import { resolve } from 'path'
+
 // Next.js instrumentation hook — runs once on server startup (Node.js runtime only).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
+
+  // ── Log DB path so we can confirm the runtime hits the correct SQLite file ─
+  const databaseUrl = process.env.DATABASE_URL
+  const rawPath = databaseUrl?.replace(/^file:/, '') ?? ''
+  const resolvedDbPath = rawPath.startsWith('/') ? rawPath : resolve(process.cwd(), rawPath)
+  console.log(`[startup] cwd=${process.cwd()}`)
+  console.log(`[startup] DATABASE_URL=${databaseUrl ?? '(not set)'}`)
+  console.log(`[startup] resolvedDbPath=${resolvedDbPath}`)
 
   try {
     const { db } = await import('@/lib/db')

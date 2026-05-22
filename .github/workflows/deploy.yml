@@ -136,10 +136,20 @@ jobs:
             npm run build 2>&1
             echo "✅ Build complete"
 
-            # ── Update .env in standalone output to use absolute DB path ──────
-            # Next.js standalone server may chdir — ensure it always finds the DB
+            # ── Standalone post-build: assets + absolute DB path ─────────────
+            # npm run build already copies public/ and .next/static/ into standalone,
+            # but we repeat explicitly here so a partial build failure doesn't leave
+            # a broken asset tree.
             STANDALONE_DIR="$PROJECT/.next/standalone"
             if [ -d "$STANDALONE_DIR" ]; then
+              # Static bundles (CSS/JS)
+              cp -r "$PROJECT/.next/static" "$STANDALONE_DIR/.next/" 2>/dev/null || true
+              # Public assets (logo, manifest, robots, uploads placeholder)
+              cp -r "$PROJECT/public" "$STANDALONE_DIR/" 2>/dev/null || true
+              echo "✅ Static assets copied to standalone"
+              echo "   Logo: $(ls -la $STANDALONE_DIR/public/quantix-logo.png 2>/dev/null || echo NOT FOUND)"
+
+              # Absolute DB path — standalone server.js reads .env from its own dir
               echo "DATABASE_URL=file:$DB_FILE" > "$STANDALONE_DIR/.env"
               echo "PORT=3000"                  >> "$STANDALONE_DIR/.env"
               echo "HOSTNAME=0.0.0.0"           >> "$STANDALONE_DIR/.env"
@@ -148,6 +158,7 @@ jobs:
                 grep -v "^DATABASE_URL\|^PORT\|^HOSTNAME" "$PROJECT/.env" >> "$STANDALONE_DIR/.env" 2>/dev/null || true
               fi
               echo "✅ Standalone .env written (DB_URL absolute)"
+              echo "   $(cat $STANDALONE_DIR/.env | grep DATABASE_URL)"
             fi
 
             # ── PM2 restart ───────────────────────────────────────────────────
