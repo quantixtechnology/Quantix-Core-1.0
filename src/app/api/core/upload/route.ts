@@ -22,6 +22,8 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const businessId = (formData.get('businessId') as string) || req.user!.businessId || 'shared';
+    // Optional folder override — defaults to 'products' for backward compat
+    const folder = (formData.get('folder') as string)?.replace(/[^a-z0-9_-]/gi, '') || 'products';
 
     if (!file) {
       return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
@@ -38,16 +40,14 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     const ext      = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-    // ensureDir creates UPLOAD_ROOT/products/<businessId>/ if missing
-    const uploadDir = await ensureDir(join('products', businessId));
+    const uploadDir = await ensureDir(join(folder, businessId));
     const filePath  = join(uploadDir, safeName);
     const buffer    = Buffer.from(await file.arrayBuffer());
     await writeFile(filePath, buffer);
 
     console.log(`[upload] saved to ${filePath} (UPLOAD_ROOT=${UPLOAD_ROOT})`);
 
-    // URL is always /uploads/... — the files route maps it to UPLOAD_ROOT on disk
-    const url = `/uploads/products/${businessId}/${safeName}`;
+    const url = `/uploads/${folder}/${businessId}/${safeName}`;
 
     return NextResponse.json({ success: true, url, filename: safeName });
   } catch (error) {

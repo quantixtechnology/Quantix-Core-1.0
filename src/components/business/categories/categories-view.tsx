@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -20,7 +20,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import {
-  Tag, Plus, Search, Loader2, ImageIcon, Edit2, Trash2, FolderOpen,
+  Tag, Plus, Search, Loader2, ImageIcon, Edit2, Trash2, FolderOpen, UploadCloud, X,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -70,6 +70,9 @@ function slugify(text: string) {
     .slice(0, 80)
 }
 
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024 // 2 MB
+const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"]
+
 const emptyForm = {
   name: "", slug: "", description: "", image: "", icon: "📦",
   color: "#10B981", sortOrder: "0", isActive: true, workflowType: "ECOMMERCE",
@@ -91,6 +94,13 @@ export function CategoriesView() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [enabledWorkflows, setEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
   const [planTier, setPlanTier] = useState<string>("STANDARD")
+
+  // Image upload state
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string>("")
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const authHeaders = useMemo(() => ({
     ...getAuthHeaders(),
@@ -121,9 +131,16 @@ export function CategoriesView() {
 
   useEffect(() => { load() }, [load])
 
+  const resetImageState = () => {
+    setImageFile(null)
+    setImagePreview("")
+    setIsDragging(false)
+  }
+
   const openCreate = () => {
     setForm({ ...emptyForm, workflowType: enabledWorkflows[0] ?? "ECOMMERCE" })
     setEditTarget(null)
+    resetImageState()
     setCreateOpen(true)
   }
 
@@ -140,7 +157,47 @@ export function CategoriesView() {
       workflowType: cat.workflowType ?? "ECOMMERCE",
     })
     setEditTarget(cat)
+    // Show existing image in preview (no new file chosen yet)
+    setImageFile(null)
+    setImagePreview(cat.image ?? "")
+    setIsDragging(false)
     setCreateOpen(true)
+  }
+
+  const applyImageFile = (file: File) => {
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      showError("Only PNG, JPG, and WEBP images are accepted")
+      return
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      showError("Image must be under 2 MB")
+      return
+    }
+    setImageFile(file)
+    const reader = new FileReader()
+    reader.onload = e => setImagePreview(e.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) applyImageFile(file)
+    e.target.value = ""
+  }
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }
+  const handleDragLeave = () => setIsDragging(false)
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) applyImageFile(file)
+  }
+
+  const handleRemoveImage = () => {
+    setImageFile(null)
+    setImagePreview("")
+    setForm(f => ({ ...f, image: "" }))
   }
 
   const handleNameChange = (value: string) => {
@@ -155,13 +212,32 @@ export function CategoriesView() {
     if (!form.name.trim()) return
     setSaving(true)
     try {
+      // If a new file was chosen, upload it first
+      let finalImageUrl = imagePreview.startsWith("data:") ? "" : imagePreview
+      if (imageFile) {
+        setUploadingImage(true)
+        const fd = new FormData()
+        fd.append("file", imageFile)
+        fd.append("businessId", businessId)
+        fd.append("folder", "categories")
+        const upRes = await fetch("/api/core/upload", { method: "POST", headers: getAuthHeaders(), body: fd })
+        const upJson = await upRes.json()
+        setUploadingImage(false)
+        if (!upRes.ok || !upJson.success) {
+          showError(upJson.error || "Image upload failed")
+          setSaving(false)
+          return
+        }
+        finalImageUrl = upJson.url
+      }
+
       const method = editTarget ? "PATCH" : "POST"
       const payload = {
         ...(editTarget ? { id: editTarget.id } : {}),
         name: form.name.trim(),
         slug: form.slug || slugify(form.name),
         description: form.description || null,
-        image: form.image || null,
+        image: finalImageUrl || null,
         icon: form.icon || null,
         color: form.color || null,
         sortOrder: Number(form.sortOrder),
@@ -177,6 +253,7 @@ export function CategoriesView() {
       if (res.ok && json.success) {
         showSuccess(editTarget ? "Category updated" : "Category created")
         setCreateOpen(false)
+        resetImageState()
         load()
         queryClient.invalidateQueries({ queryKey: ["categories", businessId] })
       } else {
@@ -186,6 +263,7 @@ export function CategoriesView() {
       showError("Failed to save category")
     } finally {
       setSaving(false)
+      setUploadingImage(false)
     }
   }
 
@@ -329,7 +407,7 @@ export function CategoriesView() {
       )}
 
       {/* Create / Edit Dialog */}
-      <Dialog open={createOpen} onOpenChange={o => { setCreateOpen(o); if (!o) setEditTarget(null) }}>
+      <Dialog open={createOpen} onOpenChange={o => { setCreateOpen(o); if (!o) { setEditTarget(null); resetImageState() } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editTarget ? "Edit Category" : "New Category"}</DialogTitle>
@@ -449,24 +527,85 @@ export function CategoriesView() {
               </div>
             </div>
 
-            {/* Image URL + Sort Order */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Image URL</Label>
-                <Input
-                  placeholder="https://…"
-                  value={form.image}
-                  onChange={e => setForm(f => ({ ...f, image: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Sort Order</Label>
-                <Input
-                  type="number"
-                  value={form.sortOrder}
-                  onChange={e => setForm(f => ({ ...f, sortOrder: e.target.value }))}
-                />
-              </div>
+            {/* Category Image Upload */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <ImageIcon className="h-3.5 w-3.5" /> Category Image
+              </Label>
+
+              {imagePreview ? (
+                <div className="space-y-2">
+                  <div className="relative rounded-lg overflow-hidden border bg-muted/30 h-36 flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imagePreview}
+                      alt="Category preview"
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Replace
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-destructive hover:text-destructive"
+                      onClick={handleRemoveImage}
+                    >
+                      <X className="h-3 w-3 mr-1" /> Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors select-none ${
+                    isDragging
+                      ? "border-primary bg-primary/5"
+                      : "border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/20"
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={e => e.key === "Enter" && fileInputRef.current?.click()}
+                >
+                  <UploadCloud className="h-7 w-7 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">Upload Image</span>
+                    {" "}or drag &amp; drop
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">PNG, JPG, WEBP · Max 2 MB</p>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </div>
+
+            {/* Sort Order */}
+            <div className="space-y-1.5">
+              <Label>Sort Order</Label>
+              <Input
+                type="number"
+                value={form.sortOrder}
+                onChange={e => setForm(f => ({ ...f, sortOrder: e.target.value }))}
+                className="max-w-[120px]"
+              />
             </div>
 
             {/* Active toggle */}
@@ -482,8 +621,8 @@ export function CategoriesView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving || !form.name.trim()}>
-              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-              {editTarget ? "Save Changes" : "Create Category"}
+              {(saving || uploadingImage) && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {uploadingImage ? "Uploading…" : saving ? "Saving…" : editTarget ? "Save Changes" : "Create Category"}
             </Button>
           </DialogFooter>
         </DialogContent>
