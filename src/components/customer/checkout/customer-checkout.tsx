@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
@@ -60,7 +60,7 @@ export function CustomerCheckout() {
     subtotal: getSubtotal, deliveryFee: getDeliveryFee, total: getTotal,
     couponCode, couponDiscount, totalSavings: getTotalSavings, clearCart,
   } = useCartStore()
-  const { user } = useAuthStore()
+  const { user, token } = useAuthStore()
 
   const subtotal    = getSubtotal()
   const deliveryFee = getDeliveryFee()
@@ -78,7 +78,6 @@ export function CustomerCheckout() {
   const [zoneWarning, setZoneWarning]     = useState<string | null>(null)
   const [validatingZone, setValidatingZone] = useState(false)
   const [couponInput, setCouponInput]     = useState("")
-  const [couponApplying, setCouponApplying] = useState(false)
   const [wantGstInvoice, setWantGstInvoice] = useState(false)
   const [gstInvoiceNumber, setGstInvoiceNumber] = useState("")
 
@@ -138,12 +137,42 @@ export function CustomerCheckout() {
   }, [selectedAddress, currentBusinessId, addresses])
 
 
-  const handleApplyCoupon = async () => {
+  // Fetch available coupons from API (once, on mount)
+  const [apiCoupons, setApiCoupons] = useState<Array<{
+    id: string; code: string; type: "PERCENTAGE" | "FIXED_AMOUNT"
+    value: number; minOrder: number; maxDiscount: number | null; usageLeft: number | null
+  }>>([])
+
+  const fetchCoupons = useCallback(async () => {
+    if (!user?.id) return
+    try {
+      const res = await fetch("/api/core/storefront/coupons", {
+        headers: { Authorization: `Bearer ${token || ""}` },
+      })
+      const json = await res.json()
+      if (json.success) setApiCoupons(json.data || [])
+    } catch { /* silent */ }
+  }, [user?.id])
+
+  useEffect(() => { fetchCoupons() }, [fetchCoupons])
+
+  const handleApplyCoupon = () => {
     if (!couponInput.trim()) return
-    setCouponApplying(true)
-    await new Promise((r) => setTimeout(r, 600))  // placeholder until coupon API is wired
-    showError("Invalid coupon", "This coupon code is not valid or has expired.")
-    setCouponApplying(false)
+    const code = couponInput.toUpperCase().trim()
+    const coupon = apiCoupons.find((c) => c.code === code)
+    if (!coupon) { showError("Invalid coupon", "Code not found or expired."); return }
+    if (subtotal < coupon.minOrder) {
+      showError("Minimum not met", `Minimum order of ${formatINR(coupon.minOrder)} required.`); return
+    }
+    if (coupon.usageLeft !== null && coupon.usageLeft <= 0) {
+      showError("Coupon expired", "Usage limit reached."); return
+    }
+    const discount = coupon.type === "PERCENTAGE"
+      ? Math.min(Math.round((subtotal * coupon.value) / 100), coupon.maxDiscount ?? Infinity)
+      : coupon.value
+    useCartStore.getState().applyCoupon(code, discount)
+    setCouponInput("")
+    showSuccess("Coupon applied!", `Saving ${formatINR(discount)}`)
   }
 
   const buildDeliverySlotLabel = () => {
@@ -417,11 +446,11 @@ export function CustomerCheckout() {
               />
               <Button
                 onClick={handleApplyCoupon}
-                disabled={!couponInput.trim() || couponApplying}
+                disabled={!couponInput.trim()}
                 className="h-9 px-4 text-xs rounded-lg text-white"
                 style={{ backgroundColor: brandColor }}
               >
-                {couponApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+                Apply
               </Button>
             </div>
           )}

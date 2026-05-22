@@ -366,6 +366,25 @@ export function CustomerOrderTracking() {
             variant="outline"
             className="w-full h-10 rounded-xl text-xs"
             style={{ borderColor: `${brandColor}50`, color: brandColor }}
+            onClick={() => {
+              const lines = order.items.map(
+                (i) => `${i.name} × ${i.qty}  ₹${(i.price * i.qty).toLocaleString("en-IN")}`
+              ).join("\n")
+              const win = window.open("", "_blank", "width=480,height=680")
+              if (!win) return
+              win.document.write(`<html><head><title>Invoice ${order.orderNumber}</title>
+              <style>body{font-family:sans-serif;padding:24px;max-width:420px;margin:auto}
+              h2{margin:0 0 4px}pre{font-size:13px;white-space:pre-wrap}hr{border:none;border-top:1px dashed #ccc;margin:12px 0}
+              .row{display:flex;justify-content:space-between;font-size:13px;margin:4px 0}
+              .bold{font-weight:700}.total{font-size:16px;font-weight:700}</style></head><body>
+              <h2>Invoice</h2><p style="color:#666;font-size:12px">${order.orderNumber} · ${formatDate(order.createdAt)}</p>
+              <hr/><pre>${lines}</pre><hr/>
+              <div class="row"><span>Total</span><span class="total">₹${order.totalAmount.toLocaleString("en-IN")}</span></div>
+              <div class="row"><span>Payment</span><span>${order.paymentMethod || "UPI"}</span></div>
+              <hr/><p style="font-size:11px;color:#999;text-align:center">Thank you for your order!</p>
+              <script>window.onload=()=>{window.print();window.close()}</script></body></html>`)
+              win.document.close()
+            }}
           >
             <Download className="w-4 h-4 mr-2" />
             Download Invoice

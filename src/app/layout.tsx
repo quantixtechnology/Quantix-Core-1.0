@@ -26,6 +26,12 @@ export const metadata: Metadata = {
   description: "Run Your Business Smarter. Managed white-label multi-tenant SaaS platform for Grocery, Food Delivery, Laundry, Car Wash, Pharmacy, Home Services and more.",
   keywords: ["Quantix", "SaaS", "White-Label", "Multi-Tenant", "Business Platform", "India"],
   authors: [{ name: "Quantix Technology" }],
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Quantix Store",
+  },
   openGraph: {
     title: "Quantix Technology",
     description: "Run Your Business Smarter - Managed White-Label SaaS Platform",

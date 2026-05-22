@@ -35,7 +35,7 @@ interface ApiCoupon {
 }
 
 export function CustomerCart() {
-  const { setCustomerPage, currentBusinessPrimaryColor, currentStoreName } = useAdminStore()
+  const { setCustomerPage, pushCustomerPage, currentBusinessPrimaryColor, currentStoreName } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const { token } = useAuthStore()
 
@@ -350,7 +350,7 @@ export function CustomerCart() {
       {/* Proceed to Checkout */}
       <div className="px-4">
         <Button
-          onClick={() => setCustomerPage("checkout")}
+          onClick={() => pushCustomerPage("checkout")}
           className="w-full h-12 text-sm font-bold rounded-xl text-white"
           style={{ backgroundColor: brandColor }}
         >
