@@ -64,7 +64,8 @@ export async function register() {
           ` store="${u.storeName}"` +
           ` isMain=${u.isMainStore}` +
           ` seq=${u.storeSequence}` +
-          ` storeCode=${u.storeCode}`
+          ` old=${u.oldStoreCode ?? 'NULL'}` +
+          ` new=${u.storeCode}`
         )
       }
       for (const e of result.errors) {

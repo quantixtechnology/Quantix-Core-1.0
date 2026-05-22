@@ -27,6 +27,7 @@ export function BusinessContextBar() {
     setCurrentStoreId,
     setCurrentStoreName,
     setCurrentStoreCode,
+    storeRefreshKey,
   } = useAdminStore()
 
   const [businessCode, setBusinessCode] = useState<string | null>(null)
@@ -82,7 +83,7 @@ export function BusinessContextBar() {
     setStores([])
     fetchBusiness()
     fetchStores()
-  }, [fetchBusiness, fetchStores])
+  }, [fetchBusiness, fetchStores, storeRefreshKey])
 
   if (!currentBusinessId) return null
 

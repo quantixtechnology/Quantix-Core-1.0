@@ -11,6 +11,7 @@ import {
   RefreshCw, Eye, Wrench, Hash, SkipForward, Loader2,
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/admin-fetch'
+import { useAdminStore } from '@/stores/admin-store'
 
 const stats = [
   { label: 'Apps Building', value: '2', icon: Rocket, color: 'text-amber-600 bg-amber-50' },
@@ -75,6 +76,7 @@ interface RepairState {
 }
 
 function DataRepairSection() {
+  const { bumpStoreRefresh } = useAdminStore()
   const [verifyState, setVerifyState] = useState<VerifyState>({ status: 'idle' })
   const [repairState, setRepairState] = useState<RepairState>({ status: 'idle' })
 
@@ -88,6 +90,7 @@ function DataRepairSection() {
       const json = await res.json()
       if (!json.success) throw new Error(json.error || 'Repair failed')
       setRepairState({ status: 'done', storesUpdated: json.data.storesUpdated })
+      bumpStoreRefresh()
     } catch (err) {
       if (!silent) setRepairState({ status: 'error', error: err instanceof Error ? err.message : 'Unknown error' })
       else setRepairState({ status: 'idle' })

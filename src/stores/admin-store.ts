@@ -376,6 +376,11 @@ interface AdminState {
   deliveryPartnerName: string
   setDeliveryPartnerName: (name: string) => void
 
+  // ── Store list refresh signal ───────────────────────────────────────────
+  // Increment to force context bar + stores view to re-fetch from DB.
+  storeRefreshKey: number
+  bumpStoreRefresh: () => void
+
   // ── CRM state ──────────────────────────────────────────────────────────
   crmLeadTab: string
   setCrmLeadTab: (tab: string) => void
@@ -478,6 +483,10 @@ export const useAdminStore = create<AdminState>((set) => ({
   setDeliveryLoggedIn: (val) => set({ deliveryLoggedIn: val }),
   deliveryPartnerName: "",
   setDeliveryPartnerName: (name) => set({ deliveryPartnerName: name }),
+
+  // Store refresh signal
+  storeRefreshKey: 0,
+  bumpStoreRefresh: () => set(s => ({ storeRefreshKey: s.storeRefreshKey + 1 })),
 
   // CRM
   crmLeadTab: "timeline",
