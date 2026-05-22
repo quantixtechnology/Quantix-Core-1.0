@@ -20,7 +20,7 @@ interface StorefrontLayoutProps {
 }
 
 export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayoutProps) {
-  const { currentBusinessId, currentBusinessName } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentBusinessLogo } = useAdminStore()
   const { items, totalItems, subtotal, updateQuantity, removeItem } = useCartStore()
   const { isAuthenticated, user } = useAuthStore()
 
@@ -55,12 +55,21 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
           <div className="flex items-center h-16 gap-3">
             {/* Logo */}
             <button onClick={() => nav.go("home")} className="flex items-center gap-2.5 shrink-0 mr-2">
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-base"
-                style={{ backgroundColor: brandColor }}
-              >
-                {initial}
-              </div>
+              {currentBusinessLogo ? (
+                <img
+                  src={currentBusinessLogo}
+                  alt={currentBusinessName || "Store"}
+                  className="w-9 h-9 rounded-xl object-contain bg-white border border-gray-100"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                />
+              ) : (
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-base"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {initial}
+                </div>
+              )}
               <div className="hidden sm:block text-left">
                 <div className="font-bold text-gray-900 text-sm leading-tight">{currentBusinessName || "Store"}</div>
                 <div className="text-[10px] text-gray-400 leading-tight">Fresh Delivery</div>

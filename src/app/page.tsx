@@ -29,7 +29,12 @@ function StorefrontContextLoader({
   onNotFound: () => void
   onLoaded: () => void
 }) {
-  const { setCurrentBusiness, setViewMode, setCurrentStoreId, setCurrentStoreName, setCurrentBusinessPrimaryColor } = useAdminStore()
+  const {
+    setCurrentBusiness, setViewMode,
+    setCurrentStoreId, setCurrentStoreName,
+    setCurrentBusinessPrimaryColor,
+    setCurrentBusinessLogo, setCurrentBusinessFavicon,
+  } = useAdminStore()
   const { setCartStoreId, setStoreContext } = useCartStore()
   const { isAuthenticated, currentRole } = useAuthStore()
 
@@ -46,6 +51,18 @@ function StorefrontContextLoader({
         const biz = json.data.business
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
         if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
+        if (biz.logo)    setCurrentBusinessLogo(biz.logo)
+        if (biz.favicon) {
+          setCurrentBusinessFavicon(biz.favicon)
+          // Inject per-business favicon into the browser tab immediately
+          if (typeof document !== 'undefined') {
+            const existing = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null
+            const link: HTMLLinkElement = existing || document.createElement('link')
+            link.rel = 'icon'
+            link.href = biz.favicon
+            if (!existing) document.head.appendChild(link)
+          }
+        }
         const store = json.data.store
         if (store?.id) {
           setCurrentStoreId(store.id)

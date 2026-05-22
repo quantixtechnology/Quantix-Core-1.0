@@ -331,6 +331,10 @@ interface AdminState {
   currentBusinessSlug: string
   currentBusinessPrimaryColor: string  // hex, e.g. "#10B981"
   setCurrentBusinessPrimaryColor: (color: string) => void
+  currentBusinessLogo: string          // URL of the business logo image
+  currentBusinessFavicon: string       // URL of the browser-tab favicon
+  setCurrentBusinessLogo: (url: string) => void
+  setCurrentBusinessFavicon: (url: string) => void
   // Active store within the current business (set by storefront detection or store selection)
   currentStoreId: string
   setCurrentStoreId: (id: string) => void
@@ -432,6 +436,10 @@ export const useAdminStore = create<AdminState>((set) => ({
   currentBusinessSlug: "",
   currentBusinessPrimaryColor: "",
   setCurrentBusinessPrimaryColor: (color) => set({ currentBusinessPrimaryColor: color }),
+  currentBusinessLogo: "",
+  currentBusinessFavicon: "",
+  setCurrentBusinessLogo: (url) => set({ currentBusinessLogo: url }),
+  setCurrentBusinessFavicon: (url) => set({ currentBusinessFavicon: url }),
   setCurrentBusiness: (id, name, type, slug = "") => set({
     currentBusinessId: id,
     currentBusinessName: name,
@@ -458,6 +466,8 @@ export const useAdminStore = create<AdminState>((set) => ({
     currentBusinessType: "",
     currentBusinessSlug: "",
     currentBusinessPrimaryColor: "",
+    currentBusinessLogo: "",
+    currentBusinessFavicon: "",
     currentStoreId: "",
     currentStoreName: "",
     currentStoreCode: "",
