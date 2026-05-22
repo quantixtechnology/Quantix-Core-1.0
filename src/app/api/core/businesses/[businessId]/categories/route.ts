@@ -11,9 +11,63 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server'
+import { writeFile } from 'fs/promises'
+import { join } from 'path'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
+import { ensureDir } from '@/lib/upload-root'
 import type { NextRequest } from 'next/server'
+
+const CAT_IMG_MAX = 2 * 1024 * 1024
+const CAT_IMG_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+async function uploadCategoryImage(file: File, businessId: string): Promise<string> {
+  if (!CAT_IMG_TYPES.has(file.type)) throw new Error('Only JPEG, PNG, and WebP are allowed')
+  if (file.size > CAT_IMG_MAX)       throw new Error('Image must be under 2 MB')
+  const ext      = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+  const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+  const dir      = await ensureDir(join('categories', businessId))
+  await writeFile(join(dir, safeName), Buffer.from(await file.arrayBuffer()))
+  return `/uploads/categories/${businessId}/${safeName}`
+}
+
+// Parses POST/PATCH body from either multipart/form-data OR application/json.
+// Returns a plain object of category fields.
+async function parseBody(req: NextRequest) {
+  const ct = req.headers.get('content-type') || ''
+  if (ct.includes('multipart/form-data')) {
+    const fd = await req.formData()
+    const imageEntry = fd.get('image')
+    return {
+      id:           (fd.get('id')           as string) || undefined,
+      name:         (fd.get('name')         as string) || undefined,
+      slug:         (fd.get('slug')         as string) || undefined,
+      description:  (fd.get('description')  as string) || undefined,
+      icon:         (fd.get('icon')         as string) || undefined,
+      color:        (fd.get('color')        as string) || undefined,
+      sortOrder:    fd.get('sortOrder') != null ? Number(fd.get('sortOrder')) : undefined,
+      isActive:     fd.get('isActive') !== 'false',
+      workflowType: (fd.get('workflowType') as string) || undefined,
+      // imageFile: new File to upload; imageUrl: existing URL or '' to clear
+      imageFile: imageEntry instanceof File && imageEntry.size > 0 ? imageEntry : null,
+      imageUrl:  imageEntry instanceof File ? undefined : ((imageEntry as string) ?? undefined),
+    }
+  }
+  const body = await req.json()
+  return {
+    id:           body.id,
+    name:         body.name,
+    slug:         body.slug,
+    description:  body.description,
+    icon:         body.icon,
+    color:        body.color,
+    sortOrder:    body.sortOrder,
+    isActive:     body.isActive,
+    workflowType: body.workflowType,
+    imageFile:    null,
+    imageUrl:     body.image,  // may be string | null | undefined
+  }
+}
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
 
@@ -107,15 +161,21 @@ export const POST = withMiddleware({
     const businessId = ((await ctx?.params)?.businessId) as string | undefined
     if (!businessId) return createErrorResponse('Missing businessId', 400)
 
-    const body = await req.json()
-    const { name, description, image, icon, color, sortOrder, isActive } = body
+    const parsed = await parseBody(req)
+    const { name, description, icon, color, sortOrder, isActive } = parsed
 
     if (!name) return createErrorResponse('name is required', 400)
 
-    const enabledWorkflows = await getBusinessEnabledWorkflows(businessId)
-    const workflowType = resolveWorkflowType(enabledWorkflows, body.workflowType)
+    // Resolve image URL — upload file if provided, else use URL string
+    let image: string | null = parsed.imageUrl ?? null
+    if (parsed.imageFile) {
+      image = await uploadCategoryImage(parsed.imageFile, businessId)
+    }
 
-    const slug = (body.slug || name)
+    const enabledWorkflows = await getBusinessEnabledWorkflows(businessId)
+    const workflowType = resolveWorkflowType(enabledWorkflows, parsed.workflowType ?? null)
+
+    const slug = (parsed.slug || name)
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
@@ -129,10 +189,10 @@ export const POST = withMiddleware({
         businessId,
         name,
         slug:         existing ? `${slug}-${Date.now()}` : slug,
-        description:  description  ?? null,
-        image:        image        ?? null,
-        icon:         icon         ?? null,
-        color:        color        ?? null,
+        description:  description  || null,
+        image:        image        || null,
+        icon:         icon         || null,
+        color:        color        || null,
         workflowType: workflowType as import('@prisma/client').WorkflowType,
         sortOrder:    sortOrder    ?? 0,
         isActive:     isActive     !== false,
@@ -156,8 +216,9 @@ export const PATCH = withMiddleware({
     const businessId = ((await ctx?.params)?.businessId) as string | undefined
     if (!businessId) return createErrorResponse('Missing businessId', 400)
 
-    const body = await req.json()
-    const { id, name, description, image, icon, color, sortOrder, isActive } = body
+    const parsed = await parseBody(req)
+    const { name, description, icon, color, sortOrder, isActive } = parsed
+    const id = parsed.id
 
     if (!id) return createErrorResponse('id is required', 400)
 
@@ -165,9 +226,10 @@ export const PATCH = withMiddleware({
     if (!existing) return createErrorResponse('Category not found', 404)
 
     const updateData: Record<string, unknown> = {}
+
     if (name !== undefined) {
       updateData.name = name
-      if (!body.slug) {
+      if (!parsed.slug) {
         const newSlug = name
           .toLowerCase()
           .replace(/[^a-z0-9\s-]/g, '')
@@ -180,18 +242,23 @@ export const PATCH = withMiddleware({
         updateData.slug = slugConflict ? `${newSlug}-${Date.now()}` : newSlug
       }
     }
-    if (body.slug !== undefined)   updateData.slug        = body.slug
-    if (description !== undefined) updateData.description = description ?? null
-    if (image !== undefined)       updateData.image       = image       ?? null
-    if (icon !== undefined)        updateData.icon        = icon        ?? null
-    if (color !== undefined)       updateData.color       = color       ?? null
-    if (sortOrder !== undefined)   updateData.sortOrder   = sortOrder
-    if (isActive !== undefined)    updateData.isActive    = isActive
+    if (parsed.slug !== undefined)   updateData.slug        = parsed.slug
+    if (description !== undefined)   updateData.description = description || null
+    if (icon !== undefined)          updateData.icon        = icon        || null
+    if (color !== undefined)         updateData.color       = color       || null
+    if (sortOrder !== undefined)     updateData.sortOrder   = sortOrder
+    if (isActive !== undefined)      updateData.isActive    = isActive
 
-    // workflowType: validated against business allowedWorkflows
-    if (body.workflowType !== undefined) {
+    // Image: upload new file, keep existing URL, or clear
+    if (parsed.imageFile) {
+      updateData.image = await uploadCategoryImage(parsed.imageFile, businessId)
+    } else if (parsed.imageUrl !== undefined) {
+      updateData.image = parsed.imageUrl || null
+    }
+
+    if (parsed.workflowType !== undefined) {
       const enabledWorkflows = await getBusinessEnabledWorkflows(businessId)
-      updateData.workflowType = resolveWorkflowType(enabledWorkflows, body.workflowType)
+      updateData.workflowType = resolveWorkflowType(enabledWorkflows, parsed.workflowType ?? null)
     }
 
     const updated = await db.category.update({ where: { id }, data: updateData })

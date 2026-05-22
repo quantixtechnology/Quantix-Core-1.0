@@ -98,7 +98,6 @@ export function CategoriesView() {
   // Image upload state
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string>("")
-  const [uploadingImage, setUploadingImage] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -212,42 +211,36 @@ export function CategoriesView() {
     if (!form.name.trim()) return
     setSaving(true)
     try {
-      // If a new file was chosen, upload it first
-      let finalImageUrl = imagePreview.startsWith("data:") ? "" : imagePreview
+      const method = editTarget ? "PATCH" : "POST"
+
+      // Build FormData — browser sets Content-Type: multipart/form-data; boundary=...
+      // automatically. Do NOT set Content-Type manually.
+      const fd = new FormData()
+      if (editTarget) fd.append("id", editTarget.id)
+      fd.append("name",         form.name.trim())
+      fd.append("slug",         form.slug || slugify(form.name))
+      fd.append("description",  form.description)
+      fd.append("icon",         form.icon)
+      fd.append("color",        form.color)
+      fd.append("sortOrder",    form.sortOrder)
+      fd.append("isActive",     String(form.isActive))
+      fd.append("workflowType", form.workflowType || enabledWorkflows[0] || "ECOMMERCE")
+
       if (imageFile) {
-        setUploadingImage(true)
-        const fd = new FormData()
-        fd.append("file", imageFile)
-        fd.append("businessId", businessId)
-        fd.append("folder", "categories")
-        const upRes = await fetch("/api/core/upload", { method: "POST", headers: getAuthHeaders(), body: fd })
-        const upJson = await upRes.json()
-        setUploadingImage(false)
-        if (!upRes.ok || !upJson.success) {
-          showError(upJson.error || "Image upload failed")
-          setSaving(false)
-          return
-        }
-        finalImageUrl = upJson.url
+        // New file selected — API uploads it
+        fd.append("image", imageFile)
+      } else {
+        // Pass existing URL or empty string (empty → API sets null)
+        fd.append("image", imagePreview.startsWith("data:") ? "" : (imagePreview || ""))
       }
 
-      const method = editTarget ? "PATCH" : "POST"
-      const payload = {
-        ...(editTarget ? { id: editTarget.id } : {}),
-        name: form.name.trim(),
-        slug: form.slug || slugify(form.name),
-        description: form.description || null,
-        image: finalImageUrl || null,
-        icon: form.icon || null,
-        color: form.color || null,
-        sortOrder: Number(form.sortOrder),
-        isActive: form.isActive,
-        workflowType: form.workflowType || enabledWorkflows[0] || "ECOMMERCE",
-      }
+      // Strip Content-Type — browser must set it automatically for multipart boundary
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { "Content-Type": _ct, ...headersWithoutCT } = authHeaders as Record<string, string>
       const res = await fetch(`/api/core/businesses/${businessId}/categories`, {
         method,
-        headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify(payload),
+        headers: headersWithoutCT,
+        body: fd,
       })
       const json = await res.json()
       if (res.ok && json.success) {
@@ -263,7 +256,6 @@ export function CategoriesView() {
       showError("Failed to save category")
     } finally {
       setSaving(false)
-      setUploadingImage(false)
     }
   }
 
@@ -621,8 +613,8 @@ export function CategoriesView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving || !form.name.trim()}>
-              {(saving || uploadingImage) && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-              {uploadingImage ? "Uploading…" : saving ? "Saving…" : editTarget ? "Save Changes" : "Create Category"}
+              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {saving ? "Saving…" : editTarget ? "Save Changes" : "Create Category"}
             </Button>
           </DialogFooter>
         </DialogContent>
