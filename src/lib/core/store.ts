@@ -35,11 +35,13 @@ export function getDefaultStoreTimings(): DefaultStoreTiming[] {
 // STORE CODE GENERATION
 // ============================================================================
 
+// Store code format: STR-{businessCode}-{pad3(seq)} e.g. STR-BUS-202605-0002-001
+const STORE_CODE_REGEX = /^STR-BUS-\d{6}-\d{4}-\d{3}$/
+
 /**
- * Generate next store code for a business: {businessCode}-{pad3(seq)}.
- * Format: BUS-202605-0001-001, BUS-202605-0001-002, ...
- * Globally unique by construction (businessCode is unique, seq is per-business).
- * Main store of every business always gets -001.
+ * Generate next store code for a business: STR-{businessCode}-{pad3(seq)}.
+ * Format: STR-BUS-202605-0001-001, STR-BUS-202605-0001-002, ...
+ * Per-business unique. Main store of every business always gets -001.
  */
 export async function generateStoreCode(businessId: string): Promise<string> {
   const business = await db.business.findUnique({
@@ -50,11 +52,11 @@ export async function generateStoreCode(businessId: string): Promise<string> {
   if (!businessCode) throw new Error(`Business ${businessId} has no businessCode assigned yet`);
 
   let seq = (await db.store.count({ where: { businessId } })) + 1;
-  let candidate = `${businessCode}-${String(seq).padStart(3, '0')}`;
+  let candidate = `STR-${businessCode}-${String(seq).padStart(3, '0')}`;
   // Collision guard (handles concurrent store creation edge case)
   while (await db.store.findFirst({ where: { businessId, storeCode: candidate } })) {
     seq++;
-    candidate = `${businessCode}-${String(seq).padStart(3, '0')}`;
+    candidate = `STR-${businessCode}-${String(seq).padStart(3, '0')}`;
   }
   return candidate;
 }
@@ -109,8 +111,8 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
 
   // Generate store code before transaction (avoids nested async issues)
   const storeCode = await generateStoreCode(businessId)
-  if (!storeCode || storeCode.startsWith('STR-') || storeCode.startsWith('STO-')) {
-    throw new Error(`Invalid store code generated: "${storeCode}". Expected format: ${business.businessCode ?? 'BUS-XXXXXX-XXXX'}-NNN`)
+  if (!storeCode || !STORE_CODE_REGEX.test(storeCode)) {
+    throw new Error(`Invalid store code generated: "${storeCode}". Expected format: STR-BUS-YYYYMM-NNNN-NNN`)
   }
 
   // 4. If setting as main store, unset existing main store

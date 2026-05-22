@@ -127,7 +127,7 @@ interface CredPanel {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function StoresView() {
-  const { currentBusinessId } = useAdminStore()
+  const { currentBusinessId, storeRefreshKey } = useAdminStore()
   const { token } = useAuthStore()
 
   const [stores, setStores] = useState<StoreRecord[]>([])
@@ -179,7 +179,7 @@ export function StoresView() {
     }
   }, [currentBusinessId])
 
-  useEffect(() => { fetchStores() }, [fetchStores])
+  useEffect(() => { fetchStores() }, [fetchStores, storeRefreshKey])
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 

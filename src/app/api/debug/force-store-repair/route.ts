@@ -8,7 +8,7 @@ import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
 function expectedCode(businessCode: string, seq: number): string {
-  return `${businessCode}-${String(seq).padStart(3, '0')}`
+  return `STR-${businessCode}-${String(seq).padStart(3, '0')}`
 }
 
 async function auditBusiness(businessId: string, businessCode: string) {

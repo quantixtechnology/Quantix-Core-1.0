@@ -1,6 +1,13 @@
 import { db } from '@/lib/db'
 
-export const MIGRATION_KEY = 'migration:store_code_backfill_v3'
+export const MIGRATION_KEY = 'migration:store_code_backfill_v4'
+
+// Store codes must match this pattern: STR-BUS-YYYYMM-NNNN-NNN
+export const STORE_CODE_REGEX = /^STR-BUS-\d{6}-\d{4}-\d{3}$/
+
+export function isValidStoreCode(code: string | null): boolean {
+  return code !== null && STORE_CODE_REGEX.test(code)
+}
 
 // ---- Types ------------------------------------------------------------------
 
@@ -37,7 +44,7 @@ export interface BackfillResult {
 // ---- Helpers ----------------------------------------------------------------
 
 function expectedCode(businessCode: string, seq: number): string {
-  return `${businessCode}-${String(seq).padStart(3, '0')}`
+  return `STR-${businessCode}-${String(seq).padStart(3, '0')}`
 }
 
 // ---- Verify — read-only, full audit fields ----------------------------------
@@ -170,7 +177,7 @@ export async function runStoreCodeBackfill(force = false): Promise<BackfillResul
     create: {
       key: MIGRATION_KEY,
       value: JSON.stringify({ completedAt: new Date().toISOString(), storesUpdated: updated.length }),
-      description: 'Store code backfill v3 — {businessCode}-{pad3(seq)}, main store always seq=1',
+      description: 'Store code backfill v4 — STR-{businessCode}-{pad3(seq)}, main store always seq=1',
     },
     update: {
       value: JSON.stringify({ completedAt: new Date().toISOString(), storesUpdated: updated.length }),

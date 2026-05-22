@@ -1,6 +1,6 @@
 // GET /api/debug/store-live?businessCode=BUS-202605-0002
-// Returns runtime DATABASE_URL, resolved DB path, cwd, and live store state.
-// Use this to confirm the runtime is hitting the correct SQLite file.
+// Returns runtime DATABASE_URL, resolved DB path, and live per-store audit.
+// Use to confirm which SQLite file the runtime is hitting and actual store codes.
 // Requires QUANTIX_SUPER_ADMIN role.
 
 import { NextResponse } from 'next/server'
@@ -10,17 +10,13 @@ import { existsSync } from 'fs'
 import { resolve } from 'path'
 
 function expectedCode(businessCode: string, seq: number): string {
-  return `${businessCode}-${String(seq).padStart(3, '0')}`
+  return `STR-${businessCode}-${String(seq).padStart(3, '0')}`
 }
 
 function resolveDbPath(databaseUrl: string | undefined): string | null {
   if (!databaseUrl) return null
-  // Strip leading "file:" prefix
   const raw = databaseUrl.replace(/^file:/, '')
-  // Absolute path
-  if (raw.startsWith('/')) return raw
-  // Relative path — resolve from process.cwd()
-  return resolve(process.cwd(), raw)
+  return raw.startsWith('/') ? raw : resolve(process.cwd(), raw)
 }
 
 export const GET = withMiddleware({
@@ -30,16 +26,8 @@ export const GET = withMiddleware({
   const { searchParams } = new URL(req.url)
   const filterCode = searchParams.get('businessCode')
 
-  const databaseUrl = process.env.DATABASE_URL
-  const dbPath = resolveDbPath(databaseUrl)
-
-  const runtime = {
-    databaseUrl: databaseUrl ?? null,
-    resolvedDbPath: dbPath,
-    dbExistsOnDisk: dbPath ? existsSync(dbPath) : false,
-    cwd: process.cwd(),
-    nodeEnv: process.env.NODE_ENV ?? null,
-  }
+  const databaseUrl = process.env.DATABASE_URL ?? null
+  const resolvedDbPath = resolveDbPath(databaseUrl ?? undefined)
 
   try {
     const businesses = await db.business.findMany({
@@ -48,16 +36,19 @@ export const GET = withMiddleware({
       orderBy: { createdAt: 'asc' },
     })
 
-    const stores: {
+    const result: {
       businessCode: string
-      storeId: string
-      storeName: string
-      isMainStore: boolean
-      createdAt: Date
-      storeSequence: number
-      actualStoreCode: string | null
-      expectedStoreCode: string
-      status: 'OK' | 'INVALID'
+      businessName: string
+      stores: {
+        storeId: string
+        storeName: string
+        createdAt: Date
+        updatedAt: Date
+        isMainStore: boolean
+        actualStoreCode: string | null
+        expectedStoreCode: string
+        status: 'OK' | 'INVALID' | 'MISSING'
+      }[]
     }[] = []
 
     for (const business of businesses) {
@@ -66,44 +57,53 @@ export const GET = withMiddleware({
       const rows = await db.store.findMany({
         where: { businessId: business.id },
         orderBy: [{ isMainStore: 'desc' }, { createdAt: 'asc' }],
-        select: { id: true, name: true, storeCode: true, isMainStore: true, createdAt: true },
+        select: { id: true, name: true, storeCode: true, isMainStore: true, createdAt: true, updatedAt: true },
       })
 
       let seq = 1
-      for (const s of rows) {
-        const expected = expectedCode(business.businessCode, seq)
-        stores.push({
-          businessCode: business.businessCode,
+      const stores = rows.map(s => {
+        const expected = expectedCode(business.businessCode!, seq++)
+        const status: 'OK' | 'INVALID' | 'MISSING' =
+          s.storeCode === null ? 'MISSING' :
+          s.storeCode === expected ? 'OK' : 'INVALID'
+        return {
           storeId: s.id,
           storeName: s.name,
-          isMainStore: s.isMainStore,
           createdAt: s.createdAt,
-          storeSequence: seq,
+          updatedAt: s.updatedAt,
+          isMainStore: s.isMainStore,
           actualStoreCode: s.storeCode,
           expectedStoreCode: expected,
-          status: s.storeCode === expected ? 'OK' : 'INVALID',
-        })
-        seq++
-      }
+          status,
+        }
+      })
+
+      result.push({ businessCode: business.businessCode, businessName: business.name, stores })
     }
 
-    const invalid = stores.filter(s => s.status === 'INVALID')
+    const allStores = result.flatMap(b => b.stores)
+    const invalid = allStores.filter(s => s.status !== 'OK')
 
     return NextResponse.json({
       success: true,
-      runtime,
+      databaseUrl,
+      resolvedDbPath,
+      dbExistsOnDisk: resolvedDbPath ? existsSync(resolvedDbPath) : false,
+      cwd: process.cwd(),
       summary: {
-        total: stores.length,
-        ok: stores.length - invalid.length,
-        invalid: invalid.length,
+        total: allStores.length,
+        ok: allStores.filter(s => s.status === 'OK').length,
+        invalid: allStores.filter(s => s.status === 'INVALID').length,
+        missing: allStores.filter(s => s.status === 'MISSING').length,
         healthy: invalid.length === 0,
       },
-      stores,
+      businesses: result,
     })
   } catch (error) {
     return NextResponse.json({
       success: false,
-      runtime,
+      databaseUrl,
+      resolvedDbPath,
       error: error instanceof Error ? error.message : 'Query failed',
     }, { status: 500 })
   }

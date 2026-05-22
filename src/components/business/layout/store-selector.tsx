@@ -26,6 +26,7 @@ export function StoreSelector() {
     currentStoreName,
     setCurrentStoreId,
     setCurrentStoreName,
+    storeRefreshKey,
   } = useAdminStore()
   const { currentRole } = useAuthStore()
   const [stores, setStores] = useState<StoreOption[]>([])
@@ -59,7 +60,7 @@ export function StoreSelector() {
     }
   }, [currentBusinessId, currentStoreId, setCurrentStoreId, setCurrentStoreName])
 
-  useEffect(() => { fetchStores() }, [fetchStores])
+  useEffect(() => { fetchStores() }, [fetchStores, storeRefreshKey])
 
   if (!currentBusinessId || stores.length === 0) return null
 

@@ -143,7 +143,7 @@ function DataRepairSection() {
               <div className="flex items-center gap-2">
                 <Hash className="size-3.5 text-muted-foreground" />
                 <span className="text-sm font-medium">Store Codes</span>
-                <Badge variant="outline" className="font-mono text-[10px]">BUS-YYYYMM-NNNN-001</Badge>
+                <Badge variant="outline" className="font-mono text-[10px]">STR-BUS-YYYYMM-NNNN-001</Badge>
               </div>
               <p className="text-xs text-muted-foreground">
                 Globally-unique store identifiers. Primary store always gets -001.
