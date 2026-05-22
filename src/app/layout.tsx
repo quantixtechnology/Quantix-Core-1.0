@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
 import { ApiProvider } from "@/lib/api-provider";
+import { CacheBuster } from "@/components/cache-buster";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -56,6 +57,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <ApiProvider>
+          <CacheBuster />
           {children}
         </ApiProvider>
         <Toaster position="top-right" richColors closeButton />
