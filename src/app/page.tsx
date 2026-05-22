@@ -521,11 +521,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
             onNotFound={() => setStorefrontNotFound(true)}
             onLoaded={() => setStorefrontContextLoaded(true)}
           />
-          {storefrontContextLoaded ? (
-            <CustomerLayout>
-              {renderCustomerPage()}
-            </CustomerLayout>
-          ) : <SplashLoader />}
+          {storefrontContextLoaded ? <StorefrontWebsite /> : <SplashLoader />}
         </>
       )
     }

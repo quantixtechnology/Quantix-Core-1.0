@@ -498,29 +498,6 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
           </div>
         </section>
 
-        {/* ── CTA ──────────────────────────────────────────────── */}
-        <section className="mb-12">
-          <div
-            className="rounded-3xl p-8 sm:p-12 text-white relative overflow-hidden"
-            style={{ background: `linear-gradient(135deg, #1B1B1B 0%, ${brandColor} 100%)` }}
-          >
-            <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl bg-white/5" />
-            <div className="relative max-w-lg">
-              <p className="text-sm font-semibold text-white/70 mb-2">Limited time offer</p>
-              <h3 className="text-2xl sm:text-3xl font-extrabold mb-3">First Order?<br />Get 20% Off!</h3>
-              <p className="text-white/70 text-sm mb-6">
-                Sign up and use code <strong className="text-white">WELCOME20</strong> on your first order.
-              </p>
-              <button
-                onClick={() => nav.go("auth")}
-                className="px-6 py-3 bg-white font-bold text-sm rounded-xl hover:bg-gray-100 transition-colors"
-                style={{ color: brandColor }}
-              >
-                Claim Offer
-              </button>
-            </div>
-          </div>
-        </section>
       </div>
     </div>
   )

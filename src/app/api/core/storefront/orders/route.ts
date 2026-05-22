@@ -1,16 +1,48 @@
 // ============================================================================
 // QUANTIX CORE — Storefront Orders API
+// GET  /api/core/storefront/orders — List customer orders
 // POST /api/core/storefront/orders — Create order from customer app
 //
 // Auth required (CUSTOMER role)
-// Uses direct Prisma db.order.create() instead of missing createOrder
-// Broadcasts order:created via WebSocket
 // ============================================================================
 
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
+
+export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+  async (req) => {
+    try {
+      const user = req.user!
+      const businessId = user.businessId!
+
+      const customer = await db.customer.findFirst({
+        where: { userId: user.id, businessId },
+      })
+
+      if (!customer) {
+        return NextResponse.json({ success: true, data: [] })
+      }
+
+      const orders = await db.order.findMany({
+        where: { customerId: customer.id, businessId },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        include: {
+          items: {
+            select: { itemName: true, quantity: true, unitPrice: true, totalPrice: true },
+          },
+        },
+      })
+
+      return NextResponse.json({ success: true, data: orders })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to list orders'
+      return NextResponse.json({ success: false, error: message }, { status: 500 })
+    }
+  }
+);
 
 interface ResolvedOrderItem {
   itemType: string;

@@ -6,7 +6,7 @@ import { useCartStore } from "@/stores/cart-store"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   ShoppingCart, Search, Menu, X, User, ChevronRight, Trash2, Plus, Minus,
-  MapPin, Phone, Mail, Package,
+  Package,
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import { formatINR } from "@/lib/currency"
@@ -103,7 +103,7 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
 
               {/* Account */}
               <button
-                onClick={() => nav.go("auth")}
+                onClick={() => nav.go(isAuthenticated ? "profile" : "auth")}
                 className="flex items-center gap-1.5 px-3 h-9 text-sm font-medium rounded-xl border border-gray-200 hover:border-gray-300 transition-colors whitespace-nowrap"
               >
                 <User className="w-4 h-4 text-gray-600" />
@@ -192,11 +192,7 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
                 </div>
                 <span className="font-bold text-lg">{currentBusinessName}</span>
               </div>
-              <p className="text-sm text-gray-400 mb-4">Fresh. Halal. Delivered fast.</p>
-              <div className="space-y-1 text-sm text-gray-400">
-                <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" /><span>+91 98765 43210</span></div>
-                <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5" /><span>support@{currentBusinessName?.toLowerCase().replace(/\s/g, "")||"store"}.com</span></div>
-              </div>
+              <p className="text-sm text-gray-400 mb-4">Quality products, delivered to your door.</p>
             </div>
             <div>
               <h4 className="text-sm font-semibold mb-3 text-gray-200">Shop</h4>
@@ -212,7 +208,7 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
               <h4 className="text-sm font-semibold mb-3 text-gray-200">Account</h4>
               <ul className="space-y-2 text-sm text-gray-400">
                 <li><button onClick={() => nav.go("auth")} className="hover:text-white transition-colors">Login / Register</button></li>
-                <li><button onClick={() => nav.go("orders" as WebNav["current"])} className="hover:text-white transition-colors">My Orders</button></li>
+                <li><button onClick={() => nav.go("orders")} className="hover:text-white transition-colors">My Orders</button></li>
               </ul>
             </div>
             <div>
@@ -310,7 +306,7 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
                     <span className="text-base font-bold text-gray-900">{formatINR(subtotal())}</span>
                   </div>
                   <button
-                    onClick={() => { setCartOpen(false); nav.go("auth") }}
+                    onClick={() => { setCartOpen(false); nav.go("checkout") }}
                     className="w-full h-12 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2"
                     style={{ backgroundColor: brandColor }}
                   >
