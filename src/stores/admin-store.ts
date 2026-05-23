@@ -393,6 +393,10 @@ interface AdminState {
   // ── CRM state ──────────────────────────────────────────────────────────
   crmLeadTab: string
   setCrmLeadTab: (tab: string) => void
+
+  // ── Order stage labels ──────────────────────────────────────────────────
+  orderStages: import('@/lib/order-stages').OrderStage[]
+  setOrderStages: (stages: import('@/lib/order-stages').OrderStage[]) => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
@@ -474,6 +478,7 @@ export const useAdminStore = create<AdminState>((set) => ({
     isImpersonating: false,
     viewMode: "super_admin",
     searchQuery: "",
+    orderStages: [],
   }),
   isImpersonating: false,
 
@@ -518,4 +523,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   // CRM
   crmLeadTab: "timeline",
   setCrmLeadTab: (tab) => set({ crmLeadTab: tab }),
+
+  // Order stage labels
+  orderStages: [],
+  setOrderStages: (stages) => set({ orderStages: stages }),
 }))

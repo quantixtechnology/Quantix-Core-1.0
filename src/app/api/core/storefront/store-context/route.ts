@@ -17,6 +17,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { type OrderStage, getDefaultStages } from '@/lib/order-stages';
 
 export async function GET(request: Request) {
   try {
@@ -132,6 +133,11 @@ export async function GET(request: Request) {
     };
     const allowGuestCheckout = parsedSettings.allowGuestCheckout !== false; // default true
 
+    const savedStages = parsedSettings.orderStageConfig as OrderStage[] | undefined
+    const orderStages = savedStages && savedStages.length > 0
+      ? savedStages
+      : getDefaultStages(business.businessType)
+
     // --- Resolve store ---
 
     let resolvedStore;
@@ -196,6 +202,7 @@ export async function GET(request: Request) {
         },
         ecommerceConfig,
         allowGuestCheckout,
+        orderStages,
         store: resolvedStore
           ? {
               id: resolvedStore.id,

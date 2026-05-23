@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { useAdminStore } from "@/stores/admin-store"
 import { ArrowLeft, Package, ChevronRight, Clock, CheckCircle2, Truck, XCircle, Loader2 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
+import { buildLabelMap, getLabel } from "@/lib/order-stages"
 import type { WebNav } from "./storefront-website"
 
 interface OrderItem { itemName: string; quantity: number; unitPrice: number; totalPrice: number }
@@ -35,6 +37,8 @@ interface StorefrontOrdersProps {
 
 export function StorefrontOrders({ brandColor, nav }: StorefrontOrdersProps) {
   const { isAuthenticated, token } = useAuthStore()
+  const { orderStages } = useAdminStore()
+  const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -107,6 +111,7 @@ export function StorefrontOrders({ brandColor, nav }: StorefrontOrdersProps) {
           {orders.map((order) => {
             const cfg = STATUS_CONFIG[order.status] || { label: order.status, color: "#6B7280", icon: Clock }
             const Icon = cfg.icon
+            const statusLabel = getLabel(order.status, labelMap) || cfg.label
             return (
               <button
                 key={order.id}
@@ -128,7 +133,7 @@ export function StorefrontOrders({ brandColor, nav }: StorefrontOrdersProps) {
                       style={{ backgroundColor: cfg.color }}
                     >
                       <Icon className="w-3 h-3" />
-                      {cfg.label}
+                      {statusLabel}
                     </span>
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
                   </div>

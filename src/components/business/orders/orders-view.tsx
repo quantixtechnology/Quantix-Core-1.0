@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo, useEffect, useCallback } from "react"
+import { useState, useMemo, useEffect, useCallback, useRef } from "react"
+import { buildLabelMap, getLabel } from "@/lib/order-stages"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -119,13 +120,13 @@ const statusDotColor: Record<OrderStatus, string> = {
   CANCELLED: "bg-red-500",
 }
 
-function OrderStatusBadge({ status }: { status: OrderStatus }) {
+function OrderStatusBadge({ status, labelMap }: { status: OrderStatus; labelMap: Record<string, string> }) {
   return (
     <Badge
       variant="secondary"
       className={`font-medium text-xs border-0 ${statusColorMap[status] || "bg-slate-100 text-slate-700"}`}
     >
-      {status.replace(/_/g, " ")}
+      {getLabel(status, labelMap)}
     </Badge>
   )
 }
@@ -192,8 +193,10 @@ function mapApiOrder(apiOrder: Record<string, unknown>): Order {
 export function OrdersView() {
   // Get real business ID from context
   const { businessId } = useBusinessContext()
-  const { user } = useAuthStore()
-  const { currentStoreId } = useAdminStore()
+  const { user, token } = useAuthStore()
+  const { currentStoreId, setOrderStages } = useAdminStore()
+  const [labelMap, setLabelMap] = useState<Record<string, string>>({})
+  const labelFetchedFor = useRef<string | null>(null)
   // STORE_MANAGER: their assigned store always takes precedence.
   // BUSINESS_OWNER: respects context bar store selection.
   const effectiveStoreId = user?.storeId || currentStoreId || undefined
@@ -204,6 +207,23 @@ export function OrdersView() {
       setBusinessContext(businessId)
     }
   }, [businessId])
+
+  // Fetch order stage labels for this business
+  useEffect(() => {
+    if (!businessId || !token || labelFetchedFor.current === businessId) return
+    labelFetchedFor.current = businessId
+    fetch(`/api/core/businesses/${businessId}/order-stages`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data?.stages) {
+          setOrderStages(json.data.stages)
+          setLabelMap(buildLabelMap(json.data.stages))
+        }
+      })
+      .catch(() => {})
+  }, [businessId, token, setOrderStages])
 
   // ---- API hooks — scoped to effectiveStoreId when set ----
   const orderFilter = (
@@ -353,7 +373,7 @@ export function OrdersView() {
         note: statusNotes || undefined,
       })
       showSuccess(
-        `Order ${pendingStatusUpdate.order.orderNumber} updated to ${pendingStatusUpdate.newStatus.replace(/_/g, " ")}`
+        `Order ${pendingStatusUpdate.order.orderNumber} updated to ${getLabel(pendingStatusUpdate.newStatus, labelMap)}`
       )
       setStatusDialogOpen(false)
       setPendingStatusUpdate(null)
@@ -396,7 +416,7 @@ export function OrdersView() {
             disabled={isLoading}
             onClick={() => requestStatusUpdate(order, "PREPARING")}
           >
-            Start Preparing
+            Move to {getLabel("PREPARING", labelMap)}
           </Button>
         )
       case "PREPARING":
@@ -407,7 +427,7 @@ export function OrdersView() {
             disabled={isLoading}
             onClick={() => requestStatusUpdate(order, "READY_FOR_PICKUP")}
           >
-            Ready for Pickup
+            Move to {getLabel("READY_FOR_PICKUP", labelMap)}
           </Button>
         )
       case "READY_FOR_PICKUP":
@@ -418,7 +438,7 @@ export function OrdersView() {
             disabled={isLoading}
             onClick={() => requestStatusUpdate(order, "OUT_FOR_DELIVERY")}
           >
-            Send for Delivery
+            Move to {getLabel("OUT_FOR_DELIVERY", labelMap)}
           </Button>
         )
       case "OUT_FOR_DELIVERY":
@@ -429,7 +449,7 @@ export function OrdersView() {
             disabled={isLoading}
             onClick={() => requestStatusUpdate(order, "DELIVERED")}
           >
-            Mark Delivered
+            Mark as {getLabel("DELIVERED", labelMap)}
           </Button>
         )
       default:
@@ -677,7 +697,7 @@ export function OrdersView() {
                               <span className="text-xs font-medium">{order.paymentMethod}</span>
                             </TableCell>
                             <TableCell>
-                              <OrderStatusBadge status={order.status as OrderStatus} />
+                              <OrderStatusBadge status={order.status as OrderStatus} labelMap={labelMap} />
                             </TableCell>
                             <TableCell>
                               <span className="text-xs text-muted-foreground">
@@ -719,7 +739,7 @@ export function OrdersView() {
                   <SheetTitle className="text-lg font-bold">
                     {selectedOrder.orderNumber}
                   </SheetTitle>
-                  <OrderStatusBadge status={selectedOrder.status as OrderStatus} />
+                  <OrderStatusBadge status={selectedOrder.status as OrderStatus} labelMap={labelMap} />
                 </div>
                 <SheetDescription>
                   Order placed on {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString("en-IN") : "N/A"}
@@ -895,7 +915,7 @@ export function OrdersView() {
                                       : "text-muted-foreground/50"
                                   }`}
                                 >
-                                  {t.step.replace(/_/g, " ")}
+                                  {getLabel(t.step, labelMap)}
                                 </p>
                                 {t.current && (
                                   <p className="text-xs text-muted-foreground mt-0.5">Current status</p>
@@ -947,7 +967,7 @@ export function OrdersView() {
             <DialogDescription>
               {pendingStatusUpdate?.newStatus === "CANCELLED"
                 ? `Are you sure you want to reject order ${pendingStatusUpdate?.order.orderNumber}? This action cannot be undone.`
-                : `Change status of ${pendingStatusUpdate?.order.orderNumber} to ${pendingStatusUpdate?.newStatus.replace(/_/g, " ")}?`}
+                : `Change status of ${pendingStatusUpdate?.order.orderNumber} to ${getLabel(pendingStatusUpdate?.newStatus ?? "", labelMap)}?`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

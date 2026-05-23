@@ -12,86 +12,9 @@ import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 import type { NextRequest } from 'next/server'
+import { type OrderStage, getDefaultStages } from '@/lib/order-stages'
 
-export interface OrderStage {
-  status: string
-  label: string
-  order: number
-}
-
-// Default stage labels per business type
-const DEFAULT_STAGES: Record<string, OrderStage[]> = {
-  GROCERY: [
-    { status: 'PENDING',          label: 'Pending',          order: 1 },
-    { status: 'CONFIRMED',        label: 'Accepted',         order: 2 },
-    { status: 'PREPARING',        label: 'Packing',          order: 3 },
-    { status: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', order: 4 },
-    { status: 'DELIVERED',        label: 'Delivered',        order: 5 },
-    { status: 'CANCELLED',        label: 'Cancelled',        order: 6 },
-  ],
-  FOOD_DELIVERY: [
-    { status: 'PENDING',          label: 'Pending',          order: 1 },
-    { status: 'CONFIRMED',        label: 'Accepted',         order: 2 },
-    { status: 'PREPARING',        label: 'Preparing',        order: 3 },
-    { status: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', order: 4 },
-    { status: 'DELIVERED',        label: 'Delivered',        order: 5 },
-    { status: 'CANCELLED',        label: 'Cancelled',        order: 6 },
-  ],
-  MEAT_DELIVERY: [
-    { status: 'PENDING',          label: 'Pending',          order: 1 },
-    { status: 'CONFIRMED',        label: 'Accepted',         order: 2 },
-    { status: 'PREPARING',        label: 'Cleaning',         order: 3 },
-    { status: 'READY_FOR_PICKUP', label: 'Packing',          order: 4 },
-    { status: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', order: 5 },
-    { status: 'DELIVERED',        label: 'Delivered',        order: 6 },
-    { status: 'CANCELLED',        label: 'Cancelled',        order: 7 },
-  ],
-  CAR_WASH: [
-    { status: 'PENDING',   label: 'Booked',      order: 1 },
-    { status: 'CONFIRMED', label: 'Assigned',    order: 2 },
-    { status: 'PREPARING', label: 'In Progress', order: 3 },
-    { status: 'DELIVERED', label: 'Completed',   order: 4 },
-    { status: 'CANCELLED', label: 'Cancelled',   order: 5 },
-  ],
-  LAUNDRY: [
-    { status: 'PENDING',          label: 'Pending',          order: 1 },
-    { status: 'CONFIRMED',        label: 'Received',         order: 2 },
-    { status: 'PREPARING',        label: 'Washing',          order: 3 },
-    { status: 'READY_FOR_PICKUP', label: 'Ready',            order: 4 },
-    { status: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', order: 5 },
-    { status: 'DELIVERED',        label: 'Delivered',        order: 6 },
-    { status: 'CANCELLED',        label: 'Cancelled',        order: 7 },
-  ],
-  PHARMACY: [
-    { status: 'PENDING',          label: 'Pending',          order: 1 },
-    { status: 'CONFIRMED',        label: 'Accepted',         order: 2 },
-    { status: 'PREPARING',        label: 'Dispensing',       order: 3 },
-    { status: 'READY_FOR_PICKUP', label: 'Ready',            order: 4 },
-    { status: 'OUT_FOR_DELIVERY', label: 'Out for Delivery', order: 5 },
-    { status: 'DELIVERED',        label: 'Delivered',        order: 6 },
-    { status: 'CANCELLED',        label: 'Cancelled',        order: 7 },
-  ],
-  HOME_SERVICES: [
-    { status: 'PENDING',   label: 'Booked',      order: 1 },
-    { status: 'CONFIRMED', label: 'Assigned',    order: 2 },
-    { status: 'PREPARING', label: 'In Progress', order: 3 },
-    { status: 'DELIVERED', label: 'Completed',   order: 4 },
-    { status: 'CANCELLED', label: 'Cancelled',   order: 5 },
-  ],
-}
-
-const ECOMMERCE_DEFAULT: OrderStage[] = [
-  { status: 'PENDING',          label: 'Pending',    order: 1 },
-  { status: 'CONFIRMED',        label: 'Confirmed',  order: 2 },
-  { status: 'PREPARING',        label: 'Processing', order: 3 },
-  { status: 'OUT_FOR_DELIVERY', label: 'Shipped',    order: 4 },
-  { status: 'DELIVERED',        label: 'Delivered',  order: 5 },
-  { status: 'CANCELLED',        label: 'Cancelled',  order: 6 },
-]
-
-function getDefaultStages(businessType: string): OrderStage[] {
-  return DEFAULT_STAGES[businessType] ?? ECOMMERCE_DEFAULT
-}
+export type { OrderStage }
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
 

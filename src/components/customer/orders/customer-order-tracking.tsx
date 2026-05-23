@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
+import { buildLabelMap, getLabel } from "@/lib/order-stages"
 import { useOrder, useTrackOrder } from "@/hooks/use-api"
 import { useDeliveryUpdates } from "@/hooks/use-realtime"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -43,8 +44,9 @@ const statusColors: Record<string, string> = {
 }
 
 export function CustomerOrderTracking() {
-  const { selectedOrderId, setCustomerPage, currentBusinessPrimaryColor } = useAdminStore()
+  const { selectedOrderId, setCustomerPage, currentBusinessPrimaryColor, orderStages } = useAdminStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
+  const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
   const [showDetails, setShowDetails] = useState(false)
 
   // Fetch order details
@@ -193,7 +195,7 @@ export function CustomerOrderTracking() {
           className={`${statusColors[currentStatus] || "bg-gray-100 text-gray-700"} text-xs px-3 py-1 border-0`}
           style={currentStatus === "DELIVERED" ? { backgroundColor: `${brandColor}20`, color: brandColor } : undefined}
         >
-          {currentStatus.replace(/_/g, " ")}
+          {getLabel(currentStatus, labelMap)}
         </Badge>
         {order.estimatedDelivery && currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
           <p className="text-xs text-gray-500 mt-1.5">
@@ -241,7 +243,7 @@ export function CustomerOrderTracking() {
                           isCompleted ? "text-gray-900" : "text-gray-400"
                         }`}
                       >
-                        {step.label}
+                        {getLabel(step.key, labelMap)}
                       </p>
                       {isCurrent && (
                         <p className="text-[10px]" style={{ color: brandColor }}>In progress</p>

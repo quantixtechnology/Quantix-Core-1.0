@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import {
   ArrowLeft, Loader2, Package, CheckCircle2, Clock, Truck,
   XCircle, MapPin, Phone, RefreshCw,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
+import { buildLabelMap, getLabel } from "@/lib/order-stages"
+import { useAdminStore } from "@/stores/admin-store"
 import type { WebNav } from "./storefront-website"
 
 interface TrackingData {
@@ -30,15 +32,6 @@ interface TrackingData {
 
 const STATUS_STEPS = ["PENDING", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED"]
 
-const STATUS_LABELS: Record<string, string> = {
-  PENDING: "Order Placed",
-  CONFIRMED: "Confirmed",
-  PREPARING: "Being Prepared",
-  OUT_FOR_DELIVERY: "On the Way",
-  DELIVERED: "Delivered",
-  CANCELLED: "Cancelled",
-}
-
 interface StorefrontOrderTrackingProps {
   brandColor: string
   nav: WebNav
@@ -46,6 +39,8 @@ interface StorefrontOrderTrackingProps {
 
 export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrackingProps) {
   const orderId = nav.orderId
+  const { orderStages } = useAdminStore()
+  const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
 
   const [data, setData] = useState<TrackingData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -121,7 +116,7 @@ export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrac
                 className="text-sm font-bold px-3 py-1 rounded-full text-white"
                 style={{ backgroundColor: data.status === "DELIVERED" ? "#10B981" : data.status === "CANCELLED" ? "#EF4444" : brandColor }}
               >
-                {STATUS_LABELS[data.status] || data.status}
+                {getLabel(data.status, labelMap)}
               </span>
             </div>
 
@@ -153,7 +148,7 @@ export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrac
                 <div className="flex justify-between mt-2">
                   {STATUS_STEPS.map((step) => (
                     <p key={step} className="text-[10px] text-gray-400 text-center" style={{ width: "20%" }}>
-                      {STATUS_LABELS[step]}
+                      {getLabel(step, labelMap)}
                     </p>
                   ))}
                 </div>
@@ -251,7 +246,7 @@ export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrac
                       {i < data.statusHistory.length - 1 && <div className="w-px flex-1 bg-gray-200 mt-1 mb-0" />}
                     </div>
                     <div className="pb-3">
-                      <p className="text-sm font-semibold text-gray-900">{STATUS_LABELS[h.status] || h.status}</p>
+                      <p className="text-sm font-semibold text-gray-900">{getLabel(h.status, labelMap)}</p>
                       {h.note && <p className="text-xs text-gray-500">{h.note}</p>}
                       <p className="text-xs text-gray-400 mt-0.5">
                         {new Date(h.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}

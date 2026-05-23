@@ -4,6 +4,7 @@ import React, { useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useOrders } from "@/hooks/use-api"
+import { buildLabelMap, getLabel } from "@/lib/order-stages"
 import { ArrowLeft, Package, Tag, Truck, CheckCircle2, Clock, Bell, AlertCircle } from "lucide-react"
 
 interface Notification {
@@ -18,16 +19,6 @@ interface Notification {
   read: boolean
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  PENDING:          "Order Placed",
-  CONFIRMED:        "Order Confirmed",
-  PREPARING:        "Being Prepared",
-  READY_FOR_PICKUP: "Ready for Pickup",
-  OUT_FOR_DELIVERY: "Out for Delivery",
-  DELIVERED:        "Order Delivered",
-  CANCELLED:        "Order Cancelled",
-}
-
 const timeAgo = (iso: string) => {
   const diff = Date.now() - new Date(iso).getTime()
   const mins  = Math.floor(diff / 60_000)
@@ -40,9 +31,10 @@ const timeAgo = (iso: string) => {
 }
 
 export function CustomerNotifications() {
-  const { setCustomerPage, currentBusinessPrimaryColor } = useAdminStore()
+  const { setCustomerPage, currentBusinessPrimaryColor, orderStages } = useAdminStore()
   const { user } = useAuthStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
+  const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
 
   const { data: ordersData, isLoading } = useOrders({ customerId: user?.id || "", limit: 10 })
 
@@ -69,7 +61,7 @@ export function CustomerNotifications() {
       const num      = order.orderNumber as string || id?.slice(-6)
       const status   = order.status as string || "PENDING"
       const updatedAt = (order.updatedAt as string) || new Date().toISOString()
-      const label    = STATUS_LABELS[status] || status
+      const label    = getLabel(status, labelMap)
 
       let icon: React.ElementType = Package
       let iconBg = "#EFF6FF"
@@ -95,7 +87,7 @@ export function CustomerNotifications() {
 
     // Sort by time descending
     return list.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-  }, [ordersData])
+  }, [ordersData, labelMap])
 
   const unreadCount = notifications.filter((n) => !n.read).length
 
