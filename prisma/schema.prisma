@@ -1075,6 +1075,8 @@ model Customer {
   customerCode     String?
   createdStoreId   String?
   preferredStoreId String?
+  emailVerified    Boolean                @default(false)
+  lastLoginAt      DateTime?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
   addresses     Address[]
