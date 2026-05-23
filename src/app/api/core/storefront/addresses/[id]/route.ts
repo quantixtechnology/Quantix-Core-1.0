@@ -24,9 +24,10 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOM
       if (!existing) return createErrorResponse('Address not found', 404)
 
       const body = await req.json() as {
-        label?: string; line1?: string; line2?: string
-        city?: string; state?: string; pincode?: string
-        latitude?: number; longitude?: number; isDefault?: boolean
+        label?: string; area?: string; line1?: string; line2?: string
+        landmark?: string; city?: string; state?: string; pincode?: string
+        latitude?: number; longitude?: number; gpsAccuracy?: number
+        instructions?: string; isDefault?: boolean
       }
 
       if (body.isDefault) {
@@ -37,13 +38,17 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOM
         where: { id: addressId },
         data: {
           ...(body.label !== undefined ? { label: body.label } : {}),
+          ...(body.area !== undefined ? { area: body.area } : {}),
           ...(body.line1 !== undefined ? { addressLine1: body.line1 } : {}),
           ...(body.line2 !== undefined ? { addressLine2: body.line2 } : {}),
+          ...(body.landmark !== undefined ? { landmark: body.landmark } : {}),
           ...(body.city !== undefined ? { city: body.city } : {}),
           ...(body.state !== undefined ? { state: body.state } : {}),
           ...(body.pincode !== undefined ? { pincode: body.pincode } : {}),
           ...(body.latitude !== undefined ? { latitude: body.latitude } : {}),
           ...(body.longitude !== undefined ? { longitude: body.longitude } : {}),
+          ...(body.gpsAccuracy !== undefined ? { gpsAccuracy: body.gpsAccuracy } : {}),
+          ...(body.instructions !== undefined ? { instructions: body.instructions } : {}),
           ...(body.isDefault !== undefined ? { isDefault: body.isDefault } : {}),
         },
       })

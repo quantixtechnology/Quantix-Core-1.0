@@ -181,6 +181,44 @@ export async function POST(request: Request) {
     const seq = lastOrder ? parseInt(lastOrder.orderNumber.split('-').pop() || '0', 10) + 1 : 1
     const orderNumber = `${prefix}${String(seq).padStart(3, '0')}`
 
+    // Build delivery address snapshot from structured or raw fields
+    const structuredParts = [
+      body.addressLine1,
+      body.area,
+      body.landmark ? `Near ${body.landmark}` : null,
+      body.city,
+      body.state,
+      body.pincode,
+    ].filter(Boolean)
+    const resolvedDeliveryAddress = structuredParts.length > 1
+      ? structuredParts.join(', ')
+      : body.deliveryAddress || null
+
+    // Save address to CustomerAddress for the shadow customer
+    if (shadowCustomerId && body.addressLine1 && body.city && body.pincode) {
+      try {
+        const hasAddress = await db.address.count({ where: { customerId: shadowCustomerId } })
+        await db.address.create({
+          data: {
+            customerId: shadowCustomerId,
+            label: body.addressLabel || 'Home',
+            area: body.area || null,
+            addressLine1: body.addressLine1,
+            landmark: body.landmark || null,
+            city: body.city,
+            state: body.state || 'Karnataka',
+            pincode: body.pincode,
+            country: 'India',
+            latitude: body.deliveryLat || null,
+            longitude: body.deliveryLng || null,
+            gpsAccuracy: body.gpsAccuracy || null,
+            instructions: body.deliveryInstructions || null,
+            isDefault: hasAddress === 0,
+          },
+        })
+      } catch { /* non-critical — order proceeds */ }
+    }
+
     const order = await db.order.create({
       data: {
         businessId,
@@ -195,7 +233,9 @@ export async function POST(request: Request) {
         customerName: body.customerName,
         customerPhone: body.customerPhone,
         customerEmail: body.customerEmail || null,
-        deliveryAddress: body.deliveryAddress || null,
+        deliveryAddress: resolvedDeliveryAddress,
+        deliveryLat: body.deliveryLat || null,
+        deliveryLng: body.deliveryLng || null,
         deliveryInstructions: body.deliveryInstructions || null,
         notes: body.notes || null,
         subtotal: Math.round(subtotal * 100) / 100,

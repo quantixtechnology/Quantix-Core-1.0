@@ -42,13 +42,17 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
 
       const body = await req.json() as {
         label?: string
+        area?: string
         line1?: string; addressLine1?: string
         line2?: string; addressLine2?: string
+        landmark?: string
         city: string
         state?: string
         pincode: string
         latitude?: number
         longitude?: number
+        gpsAccuracy?: number
+        instructions?: string
         isDefault?: boolean
       }
 
@@ -59,13 +63,8 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
 
       let customer = await resolveCustomer(user.id, businessId)
       if (!customer) {
-        // Auto-create customer record if missing (race guard)
         customer = await db.customer.create({
-          data: {
-            businessId,
-            userId: user.id,
-            name: user.name,
-          },
+          data: { businessId, userId: user.id, name: user.name },
         })
       }
 
@@ -79,14 +78,18 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         data: {
           customerId: customer.id,
           label: body.label,
+          area: body.area,
           addressLine1,
           addressLine2: body.line2 || body.addressLine2,
+          landmark: body.landmark,
           city: body.city,
           state: body.state || 'Karnataka',
           pincode: body.pincode,
           country: 'India',
           latitude: body.latitude,
           longitude: body.longitude,
+          gpsAccuracy: body.gpsAccuracy,
+          instructions: body.instructions,
           isDefault: body.isDefault ?? isFirst,
         },
       })

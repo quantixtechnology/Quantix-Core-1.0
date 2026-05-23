@@ -21,10 +21,14 @@ import { Plus, MapPin, Home, Building2, Loader2, Navigation, Trash2, Star } from
 interface Address {
   id: string
   label: string | null
+  area: string | null
   addressLine1: string
   addressLine2: string | null
+  landmark: string | null
   city: string
+  state: string
   pincode: string
+  instructions: string | null
   isDefault: boolean
   latitude?: number | null
   longitude?: number | null
@@ -45,12 +49,16 @@ export function CustomerAddresses() {
 
   const [newAddress, setNewAddress] = useState({
     label: "Home",
+    area: "",
     line1: "",
-    line2: "",
+    landmark: "",
     city: "",
+    state: "",
     pincode: "",
+    instructions: "",
     latitude: undefined as number | undefined,
     longitude: undefined as number | undefined,
+    gpsAccuracy: undefined as number | undefined,
   })
 
   const fetchAddresses = useCallback(async () => {
@@ -76,8 +84,8 @@ export function CustomerAddresses() {
     setGpsLoading(true)
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const { latitude, longitude } = pos.coords
-        setNewAddress((prev) => ({ ...prev, latitude, longitude }))
+        const { latitude, longitude, accuracy } = pos.coords
+        setNewAddress((prev) => ({ ...prev, latitude, longitude, gpsAccuracy: accuracy }))
         // Try reverse-geocode via nearest-store to get city/pincode hint
         try {
           const res = await fetch(
@@ -107,7 +115,7 @@ export function CustomerAddresses() {
   }
 
   const handleAddAddress = async () => {
-    if (!newAddress.line1 || !newAddress.pincode || !newAddress.city) return
+    if (!newAddress.line1 || !newAddress.city || !newAddress.pincode) return
 
     // Serviceability check
     setCheckingServiceability(true)
@@ -133,12 +141,16 @@ export function CustomerAddresses() {
         },
         body: JSON.stringify({
           label: newAddress.label,
+          area: newAddress.area || undefined,
           line1: newAddress.line1,
-          line2: newAddress.line2 || undefined,
+          landmark: newAddress.landmark || undefined,
           city: newAddress.city,
+          state: newAddress.state || undefined,
           pincode: newAddress.pincode,
+          instructions: newAddress.instructions || undefined,
           latitude: newAddress.latitude,
           longitude: newAddress.longitude,
+          gpsAccuracy: newAddress.gpsAccuracy,
           isDefault: addresses.length === 0,
         }),
       })
@@ -154,7 +166,7 @@ export function CustomerAddresses() {
     } finally {
       setSaving(false)
       setShowAddDialog(false)
-      setNewAddress({ label: "Home", line1: "", line2: "", city: "", pincode: "", latitude: undefined, longitude: undefined })
+      setNewAddress({ label: "Home", area: "", line1: "", landmark: "", city: "", state: "", pincode: "", instructions: "", latitude: undefined, longitude: undefined, gpsAccuracy: undefined })
     }
   }
 
@@ -253,8 +265,11 @@ export function CustomerAddresses() {
                         <Badge className="border-0 text-[10px] h-5" style={{ backgroundColor: `${brandColor}12`, color: brandColor }}>Default</Badge>
                       )}
                     </div>
-                    <p className="text-sm text-gray-600 mt-0.5">{addr.addressLine1}{addr.addressLine2 ? `, ${addr.addressLine2}` : ""}</p>
-                    <p className="text-sm text-gray-500">{addr.city} - {addr.pincode}</p>
+                    <p className="text-sm text-gray-600 mt-0.5">{addr.addressLine1}</p>
+                    {addr.area && <p className="text-xs text-gray-500">{addr.area}</p>}
+                    {addr.landmark && <p className="text-xs text-gray-400">Near {addr.landmark}</p>}
+                    <p className="text-sm text-gray-500">{addr.city}, {addr.state} - {addr.pincode}</p>
+                    {addr.instructions && <p className="text-xs text-gray-400 italic">{addr.instructions}</p>}
                   </div>
                   <div className="flex items-center gap-1">
                     {!addr.isDefault && (
@@ -316,15 +331,21 @@ export function CustomerAddresses() {
             )}
 
             <Input
-              placeholder="Address Line 1 *"
+              placeholder="Area / Locality"
+              value={newAddress.area}
+              onChange={(e) => setNewAddress((prev) => ({ ...prev, area: e.target.value }))}
+              className="h-9 text-xs"
+            />
+            <Input
+              placeholder="House No / Street *"
               value={newAddress.line1}
               onChange={(e) => setNewAddress((prev) => ({ ...prev, line1: e.target.value }))}
               className="h-9 text-xs"
             />
             <Input
-              placeholder="Address Line 2 (optional)"
-              value={newAddress.line2}
-              onChange={(e) => setNewAddress((prev) => ({ ...prev, line2: e.target.value }))}
+              placeholder="Landmark (optional)"
+              value={newAddress.landmark}
+              onChange={(e) => setNewAddress((prev) => ({ ...prev, landmark: e.target.value }))}
               className="h-9 text-xs"
             />
             <div className="flex gap-2">
@@ -335,13 +356,25 @@ export function CustomerAddresses() {
                 className="h-9 text-xs flex-1"
               />
               <Input
-                placeholder="Pincode *"
-                value={newAddress.pincode}
-                onChange={(e) => setNewAddress((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
-                className="h-9 text-xs w-28"
-                maxLength={6}
+                placeholder="State"
+                value={newAddress.state}
+                onChange={(e) => setNewAddress((prev) => ({ ...prev, state: e.target.value }))}
+                className="h-9 text-xs flex-1"
               />
             </div>
+            <Input
+              placeholder="Pincode *"
+              value={newAddress.pincode}
+              onChange={(e) => setNewAddress((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+              className="h-9 text-xs"
+              maxLength={6}
+            />
+            <Input
+              placeholder="Delivery instructions (optional)"
+              value={newAddress.instructions}
+              onChange={(e) => setNewAddress((prev) => ({ ...prev, instructions: e.target.value }))}
+              className="h-9 text-xs"
+            />
 
             {serviceabilityWarning && (
               <p className="text-[10px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2">{serviceabilityWarning}</p>
@@ -349,7 +382,7 @@ export function CustomerAddresses() {
 
             <Button
               onClick={handleAddAddress}
-              disabled={!newAddress.line1 || !newAddress.pincode || !newAddress.city || saving || checkingServiceability}
+              disabled={!newAddress.line1 || !newAddress.city || !newAddress.pincode || saving || checkingServiceability}
               className="w-full h-10 rounded-xl text-xs text-white"
               style={{ backgroundColor: brandColor }}
             >

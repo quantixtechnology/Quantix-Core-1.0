@@ -94,14 +94,25 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
       let deliveryLat: number | undefined;
       let deliveryLng: number | undefined;
 
+      let addressInstructions: string | undefined;
       if (body.deliveryAddressId) {
         const address = await db.address.findUnique({
           where: { id: body.deliveryAddressId },
         });
         if (address) {
-          deliveryAddress = `${address.addressLine1}${address.addressLine2 ? ', ' + address.addressLine2 : ''}, ${address.city}, ${address.state} - ${address.pincode}`;
+          const parts = [
+            address.addressLine1,
+            address.addressLine2,
+            address.area,
+            address.landmark ? `Near ${address.landmark}` : null,
+            address.city,
+            address.state,
+            address.pincode,
+          ].filter(Boolean);
+          deliveryAddress = parts.join(', ');
           deliveryLat = address.latitude || undefined;
           deliveryLng = address.longitude || undefined;
+          addressInstructions = address.instructions || undefined;
         }
       }
 
@@ -264,7 +275,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           deliveryAddress: deliveryAddress || null,
           deliveryLat: deliveryLat || null,
           deliveryLng: deliveryLng || null,
-          deliveryInstructions: body.deliveryInstructions || null,
+          deliveryInstructions: body.deliveryInstructions || addressInstructions || null,
           promoCodeId: body.promoCodeId || null,
           notes: body.notes || null,
           subtotal: Math.round(subtotal * 100) / 100,

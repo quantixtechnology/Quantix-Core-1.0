@@ -123,7 +123,7 @@ export function StorefrontWebsite() {
         {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} />}
         {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
         {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}
-        {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} />}
+        {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} currentStore={currentStore} />}
         {page === "order-tracking" && <StorefrontOrderTracking brandColor={brandColor} nav={nav} />}
         {page === "orders"         && <StorefrontOrders        brandColor={brandColor} nav={nav} />}
         {page === "profile"        && <StorefrontProfile       brandColor={brandColor} nav={nav} />}
