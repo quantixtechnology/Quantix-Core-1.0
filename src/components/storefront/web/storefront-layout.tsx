@@ -6,9 +6,10 @@ import { useCartStore } from "@/stores/cart-store"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   ShoppingCart, Search, Menu, X, User, ChevronRight, Trash2, Plus, Minus,
-  Package,
+  Package, MapPin, ChevronDown,
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+import type { PickedStore } from "./storefront-store-picker"
 import { formatINR } from "@/lib/currency"
 
 interface Category { id: string; name: string; slug: string; image: string | null }
@@ -17,9 +18,11 @@ interface StorefrontLayoutProps {
   children: React.ReactNode
   brandColor: string
   nav: WebNav
+  currentStore?: PickedStore | null
+  onOpenStorePicker?: () => void
 }
 
-export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayoutProps) {
+export function StorefrontLayout({ children, brandColor, nav, currentStore, onOpenStorePicker }: StorefrontLayoutProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessLogo } = useAdminStore()
   const { items, totalItems, subtotal, updateQuantity, removeItem } = useCartStore()
   const { isAuthenticated, user } = useAuthStore()
@@ -72,7 +75,19 @@ export function StorefrontLayout({ children, brandColor, nav }: StorefrontLayout
               )}
               <div className="hidden sm:block text-left">
                 <div className="font-bold text-gray-900 text-sm leading-tight">{currentBusinessName || "Store"}</div>
-                <div className="text-[10px] text-gray-400 leading-tight">Fresh Delivery</div>
+                {currentStore ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
+                    className="flex items-center gap-0.5 text-[10px] leading-tight hover:opacity-80 transition-opacity"
+                    style={{ color: brandColor }}
+                  >
+                    <MapPin className="w-2.5 h-2.5 shrink-0" />
+                    <span className="max-w-[120px] truncate">{currentStore.name}</span>
+                    <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+                  </button>
+                ) : (
+                  <div className="text-[10px] text-gray-400 leading-tight">Select store</div>
+                )}
               </div>
             </button>
 

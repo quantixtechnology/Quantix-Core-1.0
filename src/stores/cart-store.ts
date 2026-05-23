@@ -30,6 +30,7 @@ interface CartState {
   couponDiscount: number
   setCartStoreId: (id: string) => void
   setStoreContext: (deliveryFee: number | null, minOrderAmount: number | null, paymentGateways?: StorePaymentGateway[]) => void
+  switchStore: (newStoreId: string, deliveryFee: number | null, paymentGateways: StorePaymentGateway[]) => void
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void
   removeItem: (productId: string, variantId: string) => void
   updateQuantity: (productId: string, variantId: string, quantity: number) => void
@@ -54,6 +55,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   setCartStoreId: (id) => set({ storeId: id }),
   setStoreContext: (deliveryFee, _minOrderAmount, paymentGateways) =>
     set({ storeDeliveryFee: deliveryFee, paymentGateways: paymentGateways || [] }),
+  switchStore: (newStoreId, deliveryFee, paymentGateways) =>
+    set({ storeId: newStoreId, items: [], storeDeliveryFee: deliveryFee, paymentGateways, couponCode: null, couponDiscount: 0 }),
 
   addItem: (item) => {
     set((state) => {

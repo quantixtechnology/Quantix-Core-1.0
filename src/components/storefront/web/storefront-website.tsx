@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
+import { useCartStore } from "@/stores/cart-store"
 import { StorefrontLayout } from "./storefront-layout"
 import { StorefrontHome } from "./storefront-home"
 import { StorefrontCategoryPage } from "./storefront-category"
@@ -12,6 +13,7 @@ import { StorefrontOrderTracking } from "./storefront-order-tracking"
 import { StorefrontOrders } from "./storefront-orders"
 import { StorefrontProfile } from "./storefront-profile"
 import { StorefrontAddresses } from "./storefront-addresses"
+import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
 
 export type WebPage =
   | "home"
@@ -41,7 +43,8 @@ export interface WebNav {
 }
 
 export function StorefrontWebsite() {
-  const { currentBusinessPrimaryColor } = useAdminStore()
+  const { currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
+  const { switchStore, storeId: cartStoreId } = useCartStore()
   const brandColor = currentBusinessPrimaryColor || "#C62828"
 
   const [page, setPage] = useState<WebPage>("home")
@@ -50,6 +53,53 @@ export function StorefrontWebsite() {
   const [categoryName, setCategoryName] = useState("")
   const [productId, setProductId] = useState<string | null>(null)
   const [orderId, setOrderId] = useState<string | null>(null)
+
+  // Store picker state
+  const [showStorePicker, setShowStorePicker] = useState(false)
+  const [pickerMandatory, setPickerMandatory] = useState(false)
+  const [currentStore, setCurrentStore] = useState<PickedStore | null>(null)
+
+  // On mount: check localStorage for a saved store; if none, show mandatory picker
+  useEffect(() => {
+    if (!currentBusinessId) return
+    const key = `quantix_store_${currentBusinessId}`
+    const saved = typeof window !== "undefined" ? localStorage.getItem(key) : null
+    if (saved) {
+      try {
+        const parsed: PickedStore = JSON.parse(saved)
+        setCurrentStore(parsed)
+        switchStore(parsed.id, parsed.deliveryFee, [])
+      } catch {
+        // corrupt data — show picker
+        setPickerMandatory(true)
+        setShowStorePicker(true)
+      }
+    } else {
+      setPickerMandatory(true)
+      setShowStorePicker(true)
+    }
+  }, [currentBusinessId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleStoreSelected = useCallback((store: PickedStore) => {
+    const key = `quantix_store_${currentBusinessId}`
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, JSON.stringify(store))
+    }
+    // If switching away from an existing store, clear cart
+    if (cartStoreId && cartStoreId !== store.id) {
+      switchStore(store.id, store.deliveryFee, [])
+    } else {
+      switchStore(store.id, store.deliveryFee, [])
+    }
+    setCurrentStore(store)
+    setShowStorePicker(false)
+    setPickerMandatory(false)
+  }, [currentBusinessId, cartStoreId, switchStore])
+
+  const handleOpenStorePicker = useCallback(() => {
+    setPickerMandatory(false)
+    setShowStorePicker(true)
+  }, [])
 
   const go = useCallback((
     p: WebPage,
@@ -66,20 +116,30 @@ export function StorefrontWebsite() {
 
   const nav: WebNav = { go, current: page, categoryId, categoryName, productId, orderId, prevPage }
 
-  // Pages that don't need the full layout chrome (header/footer/cart drawer)
-  const barePages: WebPage[] = []
-
   return (
-    <StorefrontLayout brandColor={brandColor} nav={nav}>
-      {page === "home"           && <StorefrontHome          brandColor={brandColor} nav={nav} />}
-      {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} />}
-      {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
-      {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}
-      {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} />}
-      {page === "order-tracking" && <StorefrontOrderTracking brandColor={brandColor} nav={nav} />}
-      {page === "orders"         && <StorefrontOrders        brandColor={brandColor} nav={nav} />}
-      {page === "profile"        && <StorefrontProfile       brandColor={brandColor} nav={nav} />}
-      {page === "addresses"      && <StorefrontAddresses     brandColor={brandColor} nav={nav} />}
-    </StorefrontLayout>
+    <>
+      <StorefrontLayout brandColor={brandColor} nav={nav} currentStore={currentStore} onOpenStorePicker={handleOpenStorePicker}>
+        {page === "home"           && <StorefrontHome          brandColor={brandColor} nav={nav} />}
+        {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} />}
+        {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
+        {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}
+        {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} />}
+        {page === "order-tracking" && <StorefrontOrderTracking brandColor={brandColor} nav={nav} />}
+        {page === "orders"         && <StorefrontOrders        brandColor={brandColor} nav={nav} />}
+        {page === "profile"        && <StorefrontProfile       brandColor={brandColor} nav={nav} />}
+        {page === "addresses"      && <StorefrontAddresses     brandColor={brandColor} nav={nav} />}
+      </StorefrontLayout>
+
+      {showStorePicker && currentBusinessId && (
+        <StorefrontStorePicker
+          businessId={currentBusinessId}
+          currentStoreId={currentStore?.id}
+          brandColor={brandColor}
+          mandatory={pickerMandatory}
+          onSelect={handleStoreSelected}
+          onClose={pickerMandatory ? undefined : () => setShowStorePicker(false)}
+        />
+      )}
+    </>
   )
 }
