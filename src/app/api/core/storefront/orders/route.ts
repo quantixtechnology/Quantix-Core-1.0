@@ -116,6 +116,15 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         }
       }
 
+      // Determine businessId from user context early (needed for customer lookup)
+      const businessId = user.businessId!;
+      if (!businessId) {
+        return NextResponse.json(
+          { success: false, error: 'Business context required' },
+          { status: 400 }
+        );
+      }
+
       // Validate each item
       for (const item of body.items) {
         if (!item.productId || !item.quantity || item.quantity <= 0) {
@@ -129,13 +138,43 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         }
       }
 
-      // Look up customer profile for the user
-      const customer = await db.customer.findFirst({
-        where: {
-          userId: user.id,
-          businessId: user.businessId || undefined,
-        },
+      // Resolve or create the Customer record for this authenticated user.
+      // Covers the edge case where OTP login was completed without a businessId context.
+      let customer = await db.customer.findFirst({
+        where: { userId: user.id, businessId },
       });
+
+      if (!customer) {
+        // Look up user's phone from DB to enable shadow customer deduplication
+        const userRecord = await db.user.findUnique({ where: { id: user.id }, select: { phone: true } });
+        const userPhone = userRecord?.phone || null;
+        if (userPhone) {
+          const shadow = await db.customer.findFirst({
+            where: { businessId, phone: userPhone, userId: null },
+          });
+          if (shadow) {
+            customer = await db.customer.update({
+              where: { id: shadow.id },
+              data: { userId: user.id, isGuest: false, verified: true, source: 'STORE_FRONT' },
+            });
+          }
+        }
+        if (!customer) {
+          const isPlaceholder = user.email?.endsWith('@otp.placeholder') ?? false;
+          customer = await db.customer.create({
+            data: {
+              businessId,
+              userId: user.id,
+              name: user.name,
+              phone: userPhone,
+              email: isPlaceholder ? null : (user.email || null),
+              source: 'STORE_FRONT',
+              isGuest: false,
+              verified: true,
+            },
+          });
+        }
+      }
 
       // Resolve product details for each item
       const resolvedItems: ResolvedOrderItem[] = [];
@@ -213,15 +252,6 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         });
       }
 
-      // Determine businessId from user context
-      const businessId = user.businessId!;
-      if (!businessId) {
-        return NextResponse.json(
-          { success: false, error: 'Business context required' },
-          { status: 400 }
-        );
-      }
-
       // Calculate subtotal from resolved items
       let subtotal = 0;
       let totalTax = 0;
@@ -267,10 +297,10 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           status: 'PENDING',
           paymentStatus: 'PENDING',
           paymentMethod: body.paymentMethod || null,
-          customerId: customer?.id || body.customerId || null,
-          customerName: customer?.name || user.name,
-          customerPhone: customer?.phone || null,
-          customerEmail: customer?.email || user.email,
+          customerId: customer.id,
+          customerName: customer.name || user.name,
+          customerPhone: customer.phone || null,
+          customerEmail: customer.email || (user.email?.endsWith('@otp.placeholder') ? null : user.email) || null,
           deliveryAddressId: body.deliveryAddressId || null,
           deliveryAddress: deliveryAddress || null,
           deliveryLat: deliveryLat || null,
@@ -322,9 +352,21 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           orderId: order.id,
           status: 'PENDING',
           note: 'Order created',
-          changedBy: customer?.id || user.id,
+          changedBy: customer.id,
         },
       });
+
+      // Update customer aggregate stats
+      try {
+        await db.customer.update({
+          where: { id: customer.id },
+          data: {
+            totalOrders: { increment: 1 },
+            totalSpent: { increment: totalAmount },
+            lastOrderAt: new Date(),
+          },
+        });
+      } catch { /* non-critical */ }
 
       // Send notification to business owner
       try {
@@ -353,7 +395,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           orderNumber: order.orderNumber,
           orderType: body.orderType,
           totalAmount: order.totalAmount,
-          customerName: customer?.name || user.name,
+          customerName: customer.name || user.name,
         });
       } catch (wsErr) {
         console.error('[Storefront Orders] WebSocket broadcast error:', wsErr);

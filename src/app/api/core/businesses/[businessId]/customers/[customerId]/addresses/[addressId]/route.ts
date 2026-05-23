@@ -52,8 +52,9 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
     if (!existing) return NextResponse.json({ success: false, error: 'Address not found' }, { status: 404 });
 
     const body = (await req.json()) as {
-      addressLine1?: string; addressLine2?: string; city?: string; state?: string;
-      pincode?: string; country?: string; latitude?: number; longitude?: number;
+      label?: string; area?: string; addressLine1?: string; addressLine2?: string;
+      city?: string; state?: string; pincode?: string; country?: string;
+      latitude?: number; longitude?: number; gpsAccuracy?: number;
       landmark?: string; instructions?: string; isDefault?: boolean;
     };
 
@@ -64,10 +65,20 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
     const address = await db.address.update({
       where: { id: addressId },
       data: {
-        addressLine1: body.addressLine1, addressLine2: body.addressLine2,
-        city: body.city, state: body.state, pincode: body.pincode, country: body.country,
-        latitude: body.latitude, longitude: body.longitude,
-        landmark: body.landmark, instructions: body.instructions, isDefault: body.isDefault,
+        ...(body.label !== undefined ? { label: body.label } : {}),
+        ...(body.area !== undefined ? { area: body.area } : {}),
+        ...(body.addressLine1 !== undefined ? { addressLine1: body.addressLine1 } : {}),
+        ...(body.addressLine2 !== undefined ? { addressLine2: body.addressLine2 } : {}),
+        ...(body.city !== undefined ? { city: body.city } : {}),
+        ...(body.state !== undefined ? { state: body.state } : {}),
+        ...(body.pincode !== undefined ? { pincode: body.pincode } : {}),
+        ...(body.country !== undefined ? { country: body.country } : {}),
+        ...(body.latitude !== undefined ? { latitude: body.latitude } : {}),
+        ...(body.longitude !== undefined ? { longitude: body.longitude } : {}),
+        ...(body.gpsAccuracy !== undefined ? { gpsAccuracy: body.gpsAccuracy } : {}),
+        ...(body.landmark !== undefined ? { landmark: body.landmark } : {}),
+        ...(body.instructions !== undefined ? { instructions: body.instructions } : {}),
+        ...(body.isDefault !== undefined ? { isDefault: body.isDefault } : {}),
       },
     });
 

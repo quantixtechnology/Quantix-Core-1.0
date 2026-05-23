@@ -46,10 +46,10 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
     }
 
     const body = (await req.json()) as {
-      label?: string; addressLine1: string; addressLine2?: string;
+      label?: string; area?: string; addressLine1: string; addressLine2?: string;
       city: string; state: string; pincode: string; country?: string;
-      latitude?: number; longitude?: number; landmark?: string;
-      instructions?: string; isDefault?: boolean;
+      latitude?: number; longitude?: number; gpsAccuracy?: number;
+      landmark?: string; instructions?: string; isDefault?: boolean;
     };
 
     if (!body.addressLine1 || !body.city || !body.state || !body.pincode) {
@@ -63,14 +63,16 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
       await db.address.updateMany({ where: { customerId }, data: { isDefault: false } });
     }
 
+    const isFirst = (await db.address.count({ where: { customerId } })) === 0;
+
     const address = await db.address.create({
       data: {
-        customerId, label: body.label, addressLine1: body.addressLine1,
-        addressLine2: body.addressLine2, city: body.city, state: body.state,
-        pincode: body.pincode, country: body.country || 'India',
-        latitude: body.latitude, longitude: body.longitude,
+        customerId, label: body.label, area: body.area,
+        addressLine1: body.addressLine1, addressLine2: body.addressLine2,
+        city: body.city, state: body.state, pincode: body.pincode, country: body.country || 'India',
+        latitude: body.latitude, longitude: body.longitude, gpsAccuracy: body.gpsAccuracy,
         landmark: body.landmark, instructions: body.instructions,
-        isDefault: body.isDefault || false,
+        isDefault: body.isDefault ?? isFirst,
       },
     });
 

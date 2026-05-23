@@ -44,6 +44,7 @@ type Tier = "PLATINUM" | "GOLD" | "SILVER" | "BRONZE"
 interface CustomerAddress {
   id: string
   label?: string
+  area?: string
   addressLine1: string
   addressLine2?: string
   landmark?: string
@@ -51,6 +52,9 @@ interface CustomerAddress {
   state: string
   pincode: string
   country: string
+  latitude?: number
+  longitude?: number
+  gpsAccuracy?: number
   instructions?: string
   isDefault: boolean
 }
@@ -116,6 +120,7 @@ interface EditForm {
 
 interface AddressForm {
   label: string
+  area: string
   addressLine1: string
   addressLine2: string
   landmark: string
@@ -152,7 +157,7 @@ const BUSINESS_PERMISSIONS = [
 ]
 
 const BLANK_ADDRESS_FORM: AddressForm = {
-  label: "", addressLine1: "", addressLine2: "", landmark: "",
+  label: "", area: "", addressLine1: "", addressLine2: "", landmark: "",
   city: "", state: "", pincode: "", country: "India", instructions: "", isDefault: false,
 }
 
@@ -450,6 +455,20 @@ export function CustomersView() {
     onError:   (e) => showError(e instanceof Error ? e.message : "Failed to remove address"),
   })
 
+  const setDefaultAddressMutation = useMutation({
+    mutationFn: async ({ customerId, addressId }: { customerId: string; addressId: string }) => {
+      if (!businessId) throw new Error("No business context")
+      const res = await fetch(`/api/core/businesses/${encodeURIComponent(businessId)}/customers/${encodeURIComponent(customerId)}/addresses/${encodeURIComponent(addressId)}`, {
+        method: "PUT", headers: getAuthHeaders(), body: JSON.stringify({ isDefault: true }),
+      })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || "Failed to set default")
+      return data
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["customers", businessId] }); showSuccess("Default address updated") },
+    onError:   (e) => showError(e instanceof Error ? e.message : "Failed to set default address"),
+  })
+
   // ── Parsed customer list ────────────────────────────────────────────────────
   const customerList: Customer[] = useMemo(() => {
     const raw = customersResponse?.data
@@ -474,6 +493,7 @@ export function CustomersView() {
         addresses:    Array.isArray(c.addresses) ? (c.addresses as Record<string, unknown>[]).map((a) => ({
           id:           String(a.id || ""),
           label:        a.label        ? String(a.label) : undefined,
+          area:         a.area         ? String(a.area) : undefined,
           addressLine1: String(a.addressLine1 || ""),
           addressLine2: a.addressLine2 ? String(a.addressLine2) : undefined,
           landmark:     a.landmark     ? String(a.landmark) : undefined,
@@ -481,6 +501,9 @@ export function CustomersView() {
           state:        String(a.state || ""),
           pincode:      String(a.pincode || ""),
           country:      String(a.country || "India"),
+          latitude:     typeof a.latitude  === 'number' ? a.latitude  : undefined,
+          longitude:    typeof a.longitude === 'number' ? a.longitude : undefined,
+          gpsAccuracy:  typeof a.gpsAccuracy === 'number' ? a.gpsAccuracy : undefined,
           instructions: a.instructions ? String(a.instructions) : undefined,
           isDefault:    Boolean(a.isDefault || false),
         })) : [],
@@ -1206,10 +1229,14 @@ export function CustomersView() {
                                   <div className="flex items-start gap-2 min-w-0">
                                     <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                                     <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5 mb-0.5">
+                                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                                         <span className="text-xs font-medium">{addr.label || (addr.isDefault ? "Default" : "Saved Address")}</span>
                                         {addr.isDefault && <Badge className="text-[9px] px-1.5 py-0 h-4" variant="secondary">Default</Badge>}
+                                        {addr.latitude != null && addr.longitude != null && (
+                                          <Badge className="text-[9px] px-1.5 py-0 h-4 bg-green-50 text-green-700 border-green-200" variant="outline">GPS</Badge>
+                                        )}
                                       </div>
+                                      {addr.area && <p className="text-[11px] text-muted-foreground">{addr.area}</p>}
                                       <p className="text-[11px] text-muted-foreground leading-snug">
                                         {addr.addressLine1}
                                         {addr.addressLine2 ? `, ${addr.addressLine2}` : ""}
@@ -1219,17 +1246,29 @@ export function CustomersView() {
                                         {addr.city}, {addr.state} — {addr.pincode}
                                       </p>
                                       {addr.instructions && (
-                                        <p className="text-[10px] text-amber-600 mt-0.5">📍 {addr.instructions}</p>
+                                        <p className="text-[10px] text-amber-600 mt-0.5 italic">{addr.instructions}</p>
                                       )}
                                     </div>
                                   </div>
-                                  <Button
-                                    variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-destructive"
-                                    disabled={deleteAddressMutation.isPending}
-                                    onClick={() => deleteAddressMutation.mutate({ customerId: customer.id, addressId: addr.id })}
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
+                                  <div className="flex items-center gap-0.5 shrink-0">
+                                    {!addr.isDefault && (
+                                      <Button
+                                        variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-emerald-600"
+                                        title="Set as default"
+                                        disabled={setDefaultAddressMutation.isPending}
+                                        onClick={() => setDefaultAddressMutation.mutate({ customerId: customer.id, addressId: addr.id })}
+                                      >
+                                        <Star className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                    <Button
+                                      variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                      disabled={deleteAddressMutation.isPending}
+                                      onClick={() => deleteAddressMutation.mutate({ customerId: customer.id, addressId: addr.id })}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -1251,7 +1290,7 @@ export function CustomersView() {
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-[11px]">Area / Locality</Label>
-                                  <Input className="h-8 text-sm" placeholder="Area" value={addressForm.addressLine2} onChange={(e) => setAddressForm((f) => ({ ...f, addressLine2: e.target.value }))} />
+                                  <Input className="h-8 text-sm" placeholder="Area" value={addressForm.area} onChange={(e) => setAddressForm((f) => ({ ...f, area: e.target.value }))} />
                                 </div>
                               </div>
                               <div className="space-y-1">
