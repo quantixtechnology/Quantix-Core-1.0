@@ -9,8 +9,14 @@ import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-async function resolveCustomer(userId: string, businessId: string) {
-  return db.customer.findFirst({ where: { userId, businessId } })
+async function resolveCustomer(userId: string, businessId: string, phone?: string | null) {
+  const byUser = await db.customer.findFirst({ where: { userId, businessId } })
+  if (byUser) return byUser
+  // Fall back to phone-matched shadow customer (guest order, not yet claimed by login)
+  if (phone) {
+    return db.customer.findFirst({ where: { businessId, phone, userId: null } })
+  }
+  return null
 }
 
 export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
@@ -19,7 +25,8 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER
       const user = req.user!
       const businessId = user.businessId!
 
-      const customer = await resolveCustomer(user.id, businessId)
+      const userRecord = await db.user.findUnique({ where: { id: user.id }, select: { phone: true } })
+      const customer = await resolveCustomer(user.id, businessId, userRecord?.phone)
       if (!customer) return NextResponse.json({ success: true, data: [] })
 
       const addresses = await db.address.findMany({
@@ -61,10 +68,11 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         return createErrorResponse('line1, city, pincode are required', 400)
       }
 
-      let customer = await resolveCustomer(user.id, businessId)
+      const userRecord2 = await db.user.findUnique({ where: { id: user.id }, select: { phone: true } })
+      let customer = await resolveCustomer(user.id, businessId, userRecord2?.phone)
       if (!customer) {
         customer = await db.customer.create({
-          data: { businessId, userId: user.id, name: user.name },
+          data: { businessId, userId: user.id, name: user.name, phone: userRecord2?.phone || null },
         })
       }
 

@@ -138,21 +138,42 @@ export async function POST(request: Request) {
           where: { userId: user.id, businessId: reqBusinessId },
         });
         if (!existingCustomer) {
-          const isPlaceholderEmail = user.email.endsWith('@otp.placeholder');
-          await db.customer.create({
-            data: {
-              businessId: reqBusinessId,
-              userId: user.id,
-              name: user.name,
-              phone: user.phone || null,
-              email: isPlaceholderEmail ? null : user.email,
-              source: 'STORE_FRONT',
-              isGuest: false,
-              verified: true,
-              createdStoreId: reqStoreId || null,
-              preferredStoreId: reqStoreId || null,
-            },
-          }).catch(() => {/* ignore unique constraint races */});
+          // Claim shadow customer by phone to avoid duplicate records.
+          // Guest orders create { userId: null, phone } — merge instead of creating a new row.
+          const shadow = phone
+            ? await db.customer.findFirst({
+                where: { businessId: reqBusinessId, phone, userId: null },
+              })
+            : null;
+          if (shadow) {
+            await db.customer.update({
+              where: { id: shadow.id },
+              data: {
+                userId: user.id,
+                isGuest: false,
+                verified: true,
+                name: user.name || shadow.name,
+                source: 'STORE_FRONT',
+                preferredStoreId: reqStoreId || shadow.preferredStoreId || null,
+              },
+            }).catch(() => {});
+          } else {
+            const isPlaceholderEmail = user.email.endsWith('@otp.placeholder');
+            await db.customer.create({
+              data: {
+                businessId: reqBusinessId,
+                userId: user.id,
+                name: user.name,
+                phone: phone || null,
+                email: isPlaceholderEmail ? null : user.email,
+                source: 'STORE_FRONT',
+                isGuest: false,
+                verified: true,
+                createdStoreId: reqStoreId || null,
+                preferredStoreId: reqStoreId || null,
+              },
+            }).catch(() => {/* ignore unique constraint races */});
+          }
         } else if (!existingCustomer.verified) {
           // Upgrade guest to verified if they logged in
           await db.customer.update({
