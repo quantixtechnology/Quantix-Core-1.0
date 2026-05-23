@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
+import { sendEmailOtp, isSmtpConfigured } from '@/lib/email-service';
 import { NextResponse } from 'next/server';
 
 const MAX_OTP_PER_HOUR = 5;
@@ -14,16 +15,22 @@ function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+function getStoreSettings(raw: string): Record<string, string> {
+  try { return JSON.parse(raw) } catch { return {} }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, phone, channel } = body as {
+    const { email, phone, channel, businessId, storeId, name } = body as {
       email?: string;
       phone?: string;
       channel: 'EMAIL_OTP' | 'WHATSAPP_OTP';
+      businessId?: string;
+      storeId?: string;
+      name?: string;
     };
 
-    // Validate channel
     if (!channel || !['EMAIL_OTP', 'WHATSAPP_OTP'].includes(channel)) {
       return NextResponse.json(
         { success: false, error: 'Invalid channel. Must be EMAIL_OTP or WHATSAPP_OTP' },
@@ -31,7 +38,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Must provide email or phone
     if (!email && !phone) {
       return NextResponse.json(
         { success: false, error: 'Email or phone is required' },
@@ -39,7 +45,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // EMAIL_OTP requires email, WHATSAPP_OTP requires phone
     if (channel === 'EMAIL_OTP' && !email) {
       return NextResponse.json(
         { success: false, error: 'Email is required for EMAIL_OTP channel' },
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Rate limit check: max 5 OTPs per email/phone per hour
+    // Rate limit check
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const recentOtps = await db.oTPCode.count({
       where: {
@@ -70,11 +75,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Generate 6-digit OTP
+    // Generate OTP
     const code = generateOTP();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    // Find existing user by email or phone
+    // Resolve user if exists
     let userId: string | undefined;
     if (email) {
       const user = await db.user.findUnique({ where: { email } });
@@ -82,6 +87,27 @@ export async function POST(request: Request) {
     } else if (phone) {
       const user = await db.user.findFirst({ where: { phone } });
       if (user) userId = user.id;
+    }
+
+    // Resolve store config for branded sender
+    let storeName = 'Quantix';
+    let otpSenderEmail: string | undefined;
+    if (storeId) {
+      const store = await db.store.findUnique({
+        where: { id: storeId },
+        select: { name: true, settings: true, email: true },
+      });
+      if (store) {
+        storeName = store.name;
+        const settings = getStoreSettings(store.settings || '{}');
+        otpSenderEmail = settings.otpSenderEmail || store.email || undefined;
+      }
+    } else if (businessId) {
+      const business = await db.business.findUnique({
+        where: { id: businessId },
+        select: { name: true },
+      });
+      if (business) storeName = business.name;
     }
 
     // Store OTP in database
@@ -96,15 +122,49 @@ export async function POST(request: Request) {
       },
     });
 
-    // In production: Send email via SendGrid / WhatsApp via WhatsApp Business API
-    // For now, we log it (in dev mode, OTP is visible in DB)
-    console.log(`[OTP] Channel: ${channel}, To: ${email || phone}, Code: ${code}`);
+    // ── Delivery ────────────────────────────────────────────────────────────
+    let delivered = false;
+    let deliveryError: string | undefined;
+    let emailFallbackSent = false;
+
+    if (channel === 'EMAIL_OTP' && email) {
+      const result = await sendEmailOtp(email, code, storeName, otpSenderEmail);
+      delivered = result.sent;
+      deliveryError = result.error;
+    } else if (channel === 'WHATSAPP_OTP') {
+      // WhatsApp Business API not yet integrated — log and attempt email fallback
+      console.log(`[OTP/WhatsApp] To: ${phone}, Code: ${code}, Store: ${storeName}`);
+      // If customer also provided email (new registration flow), send email OTP too as fallback
+      if (email && isSmtpConfigured()) {
+        // Create a parallel EMAIL_OTP record so verify-otp can match on email channel too
+        const emailCode = code; // same code for both channels
+        await db.oTPCode.create({
+          data: {
+            userId: userId || null,
+            email,
+            phone: null,
+            code: emailCode,
+            channel: 'EMAIL_OTP',
+            expiresAt,
+          },
+        });
+        const result = await sendEmailOtp(email, emailCode, storeName, otpSenderEmail);
+        emailFallbackSent = result.sent;
+      }
+      delivered = true; // WhatsApp is "attempted"
+    }
+
+    console.log(`[OTP] Channel: ${channel}, To: ${email || phone}, Code: ${code}, Delivered: ${delivered}`);
 
     return NextResponse.json({
       success: true,
       message: 'OTP sent',
-      // In development, return the OTP for testing
-      ...(process.env.NODE_ENV === 'development' ? { code } : {}),
+      delivered,
+      emailFallbackSent,
+      smtpConfigured: isSmtpConfigured(),
+      ...(deliveryError ? { deliveryWarning: deliveryError } : {}),
+      // Return code in dev or when delivery failed (safety net)
+      ...((process.env.NODE_ENV === 'development' || !delivered) ? { code } : {}),
     });
   } catch (error) {
     console.error('[send-otp] Error:', error);

@@ -57,6 +57,7 @@ interface StoreRecord {
   pincode: string | null
   phone: string | null
   email: string | null
+  settings: string | null
   status: string
   isMainStore: boolean
   deliveryRadius: number | null
@@ -79,6 +80,10 @@ interface StoreForm {
   pincode: string
   phone: string
   email: string
+  whatsappNumber: string
+  supportEmail: string
+  notificationEmail: string
+  otpSenderEmail: string
   deliveryRadius: string
   deliveryFee: string
   minOrderAmount: string
@@ -90,12 +95,19 @@ interface StoreForm {
 
 const EMPTY_FORM: StoreForm = {
   name: '', slug: '', address: '', city: '', state: '', pincode: '',
-  phone: '', email: '', deliveryRadius: '', deliveryFee: '',
+  phone: '', email: '',
+  whatsappNumber: '', supportEmail: '', notificationEmail: '', otpSenderEmail: '',
+  deliveryRadius: '', deliveryFee: '',
   minOrderAmount: '', freeDeliveryAbove: '', gstNumber: '',
   latitude: '', longitude: '',
 }
 
+function parseStoreSettings(raw: string | null | undefined): Record<string, string> {
+  try { return JSON.parse(raw || '{}') } catch { return {} }
+}
+
 function storeToForm(s: StoreRecord): StoreForm {
+  const settings = parseStoreSettings(s.settings)
   return {
     name: s.name,
     slug: s.slug,
@@ -105,6 +117,10 @@ function storeToForm(s: StoreRecord): StoreForm {
     pincode: s.pincode ?? '',
     phone: s.phone ?? '',
     email: s.email ?? '',
+    whatsappNumber: settings.whatsappNumber ?? '',
+    supportEmail: settings.supportEmail ?? '',
+    notificationEmail: settings.notificationEmail ?? '',
+    otpSenderEmail: settings.otpSenderEmail ?? '',
     deliveryRadius: s.deliveryRadius != null ? String(s.deliveryRadius) : '',
     deliveryFee: s.deliveryFee != null ? String(s.deliveryFee) : '',
     minOrderAmount: s.minOrderAmount != null ? String(s.minOrderAmount) : '',
@@ -227,6 +243,12 @@ export function StoresView() {
     setSaveError(null)
     setCredPanel(null)
     try {
+      const contactSettings: Record<string, string> = {}
+      if (form.whatsappNumber.trim()) contactSettings.whatsappNumber = form.whatsappNumber.trim()
+      if (form.supportEmail.trim()) contactSettings.supportEmail = form.supportEmail.trim()
+      if (form.notificationEmail.trim()) contactSettings.notificationEmail = form.notificationEmail.trim()
+      if (form.otpSenderEmail.trim()) contactSettings.otpSenderEmail = form.otpSenderEmail.trim()
+
       const res = await fetch('/api/core/stores', {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -248,6 +270,7 @@ export function StoresView() {
           latitude: form.latitude ? parseFloat(form.latitude) : undefined,
           longitude: form.longitude ? parseFloat(form.longitude) : undefined,
           createLoginCredentials,
+          settings: Object.keys(contactSettings).length > 0 ? JSON.stringify(contactSettings) : undefined,
         }),
       })
       const json = await res.json()
@@ -290,6 +313,20 @@ export function StoresView() {
     setSaving(true)
     setSaveError(null)
     try {
+      // Merge new contact settings with existing store settings
+      const existingSettings = parseStoreSettings(editingStore.settings)
+      const mergedSettings = {
+        ...existingSettings,
+        whatsappNumber: form.whatsappNumber.trim() || undefined,
+        supportEmail: form.supportEmail.trim() || undefined,
+        notificationEmail: form.notificationEmail.trim() || undefined,
+        otpSenderEmail: form.otpSenderEmail.trim() || undefined,
+      }
+      // Remove empty keys
+      Object.keys(mergedSettings).forEach(k => {
+        if (!mergedSettings[k as keyof typeof mergedSettings]) delete mergedSettings[k as keyof typeof mergedSettings]
+      })
+
       const res = await fetch(`/api/core/stores/${editingStore.id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
@@ -309,6 +346,7 @@ export function StoresView() {
           gstNumber: form.gstNumber.trim() || null,
           latitude: form.latitude ? parseFloat(form.latitude) : null,
           longitude: form.longitude ? parseFloat(form.longitude) : null,
+          settings: JSON.stringify(mergedSettings),
         }),
       })
       const json = await res.json()
@@ -730,14 +768,45 @@ export function StoresView() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Phone</Label>
+                <Label className="text-xs">Store Phone</Label>
                 <Input className="h-8 text-sm" type="tel"
                   value={form.phone} onChange={e => handleFieldChange('phone', e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Support Email</Label>
+                <Label className="text-xs">Store Email</Label>
                 <Input className="h-8 text-sm" type="email"
                   value={form.email} onChange={e => handleFieldChange('email', e.target.value)} />
+              </div>
+            </div>
+
+            <Separator />
+
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contact &amp; OTP Settings</p>
+            <p className="text-[11px] text-muted-foreground -mt-2">Used for WhatsApp OTP and transactional emails to customers</p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">WhatsApp Number</Label>
+                <Input className="h-8 text-sm" type="tel" placeholder="+919876543210"
+                  value={form.whatsappNumber} onChange={e => handleFieldChange('whatsappNumber', e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Support Email</Label>
+                <Input className="h-8 text-sm" type="email" placeholder="support@yourstore.in"
+                  value={form.supportEmail} onChange={e => handleFieldChange('supportEmail', e.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Notification Email</Label>
+                <Input className="h-8 text-sm" type="email" placeholder="orders@yourstore.in"
+                  value={form.notificationEmail} onChange={e => handleFieldChange('notificationEmail', e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">OTP Sender Email</Label>
+                <Input className="h-8 text-sm" type="email" placeholder="noreply@yourstore.in"
+                  value={form.otpSenderEmail} onChange={e => handleFieldChange('otpSenderEmail', e.target.value)} />
               </div>
             </div>
 

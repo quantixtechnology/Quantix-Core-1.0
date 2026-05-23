@@ -151,7 +151,7 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
         paperSize: data.paperSize ?? '80mm',
         printerType: data.printerType,
         status: 'ACTIVE',
-        settings: '{}',
+        settings: (data as unknown as Record<string, unknown>).settings as string || '{}',
         printerConfig: '{}',
         operatingHours: '{}',
       },
@@ -253,6 +253,17 @@ export async function updateStore(storeId: string, data: Partial<CreateStoreRequ
   for (const field of directFields) {
     if ((data as Record<string, unknown>)[field] !== undefined) {
       updateData[field] = (data as Record<string, unknown>)[field];
+    }
+  }
+
+  // Merge settings JSON
+  if ((data as Record<string, unknown>).settings !== undefined) {
+    try {
+      const incoming = JSON.parse((data as Record<string, unknown>).settings as string || '{}');
+      const existing = JSON.parse(store.settings || '{}');
+      updateData.settings = JSON.stringify({ ...existing, ...incoming });
+    } catch {
+      updateData.settings = (data as Record<string, unknown>).settings;
     }
   }
 
