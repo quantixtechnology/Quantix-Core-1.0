@@ -101,8 +101,6 @@ export async function POST(request: Request) {
       message: 'Verification code sent',
       sent,
       ...(sendError ? { warning: sendError } : {}),
-      // Return code in development or when delivery failed (safety net)
-      ...((process.env.NODE_ENV === 'development' || !sent) ? { code } : {}),
     });
   } catch (error) {
     console.error('[storefront/auth/send-otp]', error);
