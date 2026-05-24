@@ -362,7 +362,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
                 {heroContent.cta} <ChevronRight className="w-4 h-4" />
               </button>
               <button
-                onClick={() => nav.go("auth")}
+                onClick={() => nav.go("orders")}
                 className="px-6 py-3 bg-white/10 border border-white/30 text-white font-semibold text-sm rounded-xl hover:bg-white/20 transition-colors"
               >
                 My Orders
