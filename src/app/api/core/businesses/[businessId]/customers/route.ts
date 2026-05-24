@@ -42,7 +42,10 @@ export const GET = withMiddleware({ requireAuth: true })(async (req, context) =>
     const [customers, total] = await Promise.all([
       db.customer.findMany({
         where, skip, take: limit,
-        include: { _count: { select: { orders: true, addresses: true, subscriptions: true } } },
+        include: {
+          addresses: { orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] },
+          _count: { select: { orders: true, addresses: true, subscriptions: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       db.customer.count({ where }),

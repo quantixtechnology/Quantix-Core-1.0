@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -530,6 +530,13 @@ export function CustomersView() {
       }
     })
   }, [customersResponse])
+
+  // Keep the open customer detail sheet in sync after mutations refetch the list.
+  useEffect(() => {
+    if (!selectedCustomer) return
+    const fresh = customerList.find(c => c.id === selectedCustomer.id)
+    if (fresh) setSelectedCustomer(fresh)
+  }, [customerList]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Filtered & sorted ───────────────────────────────────────────────────────
   const filteredCustomers = useMemo(() => {
