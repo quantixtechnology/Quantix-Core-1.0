@@ -1,0 +1,1174 @@
+openapi: 3.1.0
+info:
+  title: Quantix Customer API v1
+  description: |
+    Frozen Flutter-facing API surface for the Quantix Customer App.
+    Base URL: https://{host}/api/v1
+    All authenticated endpoints require `Authorization: Bearer <jwt>`.
+    businessId is bound to the JWT — never pass it in the body for customer endpoints.
+  version: 1.0.0
+  contact:
+    name: Quantix Technology
+
+servers:
+  - url: https://app.quantixtechnology.in/api/v1
+    description: Production
+  - url: http://localhost:3000/api/v1
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ── Shared ──────────────────────────────────────────────────────────────────
+    SuccessEnvelope:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    ErrorEnvelope:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:      { type: integer }
+        limit:     { type: integer }
+        total:     { type: integer }
+        totalPages:{ type: integer }
+        hasNext:   { type: boolean }
+        hasPrev:   { type: boolean }
+
+    # ── Auth ────────────────────────────────────────────────────────────────────
+    SendOtpRequest:
+      type: object
+      required: [email, businessId]
+      properties:
+        email:      { type: string, format: email, example: customer@gmail.com }
+        businessId: { type: string, example: clxxx }
+        storeId:    { type: string, nullable: true }
+
+    SendOtpResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            message: { type: string, example: Verification code sent }
+            sent:    { type: boolean }
+
+    VerifyOtpRequest:
+      type: object
+      required: [email, code, businessId]
+      properties:
+        email:      { type: string, format: email }
+        phone:      { type: string, nullable: true, example: "+919876543210" }
+        code:       { type: string, minLength: 6, maxLength: 6, example: "123456" }
+        name:       { type: string, nullable: true }
+        businessId: { type: string }
+        storeId:    { type: string, nullable: true }
+
+    AuthSession:
+      type: object
+      properties:
+        token:        { type: string }
+        refreshToken: { type: string, nullable: true }
+        expiresAt:    { type: string, format: date-time }
+        user:
+          type: object
+          properties:
+            id:         { type: string }
+            email:      { type: string }
+            name:       { type: string, nullable: true }
+            phone:      { type: string, nullable: true }
+            role:       { type: string, example: CUSTOMER }
+            businessId: { type: string }
+
+    # ── Profile / Customer ───────────────────────────────────────────────────────
+    CustomerProfile:
+      type: object
+      properties:
+        id:            { type: string }
+        name:          { type: string, nullable: true }
+        email:         { type: string, nullable: true }
+        phone:         { type: string, nullable: true }
+        avatar:        { type: string, nullable: true }
+        gstNumber:     { type: string, nullable: true }
+        loyaltyTier:   { type: string, nullable: true }
+        loyaltyPoints: { type: integer, default: 0 }
+        totalOrders:   { type: integer, default: 0 }
+        totalSpent:    { type: number, default: 0 }
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:      { type: string }
+        email:     { type: string, format: email }
+        phone:     { type: string }
+        gstNumber: { type: string }
+
+    # ── Addresses ────────────────────────────────────────────────────────────────
+    Address:
+      type: object
+      properties:
+        id:           { type: string }
+        customerId:   { type: string }
+        label:        { type: string, nullable: true, example: Home }
+        area:         { type: string, nullable: true }
+        addressLine1: { type: string }
+        addressLine2: { type: string, nullable: true }
+        landmark:     { type: string, nullable: true }
+        city:         { type: string }
+        state:        { type: string, default: Karnataka }
+        pincode:      { type: string }
+        country:      { type: string, default: India }
+        latitude:     { type: number, nullable: true }
+        longitude:    { type: number, nullable: true }
+        gpsAccuracy:  { type: number, nullable: true }
+        instructions: { type: string, nullable: true }
+        isDefault:    { type: boolean }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: string, format: date-time }
+
+    CreateAddressRequest:
+      type: object
+      required: [line1, city, pincode]
+      properties:
+        label:        { type: string }
+        area:         { type: string }
+        line1:        { type: string }
+        line2:        { type: string }
+        landmark:     { type: string }
+        city:         { type: string }
+        state:        { type: string }
+        pincode:      { type: string }
+        latitude:     { type: number }
+        longitude:    { type: number }
+        gpsAccuracy:  { type: number }
+        instructions: { type: string }
+        isDefault:    { type: boolean }
+
+    # ── Store ────────────────────────────────────────────────────────────────────
+    StoreContext:
+      type: object
+      properties:
+        business:
+          type: object
+          properties:
+            id:             { type: string }
+            name:           { type: string }
+            slug:           { type: string }
+            businessType:   { type: string }
+            isOnline:       { type: boolean }
+            logo:           { type: string, nullable: true }
+            primaryColor:   { type: string, nullable: true }
+            secondaryColor: { type: string, nullable: true }
+            tagline:        { type: string, nullable: true }
+            contactPhone:   { type: string, nullable: true }
+            supportPhone:   { type: string, nullable: true }
+        store:
+          $ref: '#/components/schemas/StoreDetail'
+        ecommerceConfig:    { type: object }
+        allowGuestCheckout: { type: boolean }
+        orderStages:        { type: array, items: { type: object } }
+        paymentGateways:
+          type: array
+          items:
+            type: object
+            properties:
+              id:         { type: string }
+              name:       { type: string }
+              gateway:    { type: string }
+              isTestMode: { type: boolean }
+
+    StoreDetail:
+      type: object
+      properties:
+        id:               { type: string }
+        name:             { type: string }
+        slug:             { type: string }
+        address:          { type: string, nullable: true }
+        city:             { type: string, nullable: true }
+        state:            { type: string, nullable: true }
+        pincode:          { type: string, nullable: true }
+        phone:            { type: string, nullable: true }
+        latitude:         { type: number, nullable: true }
+        longitude:        { type: number, nullable: true }
+        deliveryRadius:   { type: number, nullable: true }
+        deliveryFee:      { type: number, nullable: true }
+        freeDeliveryAbove:{ type: number, nullable: true }
+        minOrderAmount:   { type: number, nullable: true }
+        preparationTime:  { type: integer, nullable: true, description: Minutes }
+        isMainStore:      { type: boolean }
+        operatingHours:   { type: object }
+        storeTimings:     { type: array, items: { type: object } }
+
+    # ── Categories ────────────────────────────────────────────────────────────────
+    Category:
+      type: object
+      properties:
+        id:           { type: string }
+        name:         { type: string }
+        slug:         { type: string }
+        description:  { type: string, nullable: true }
+        image:        { type: string, nullable: true }
+        icon:         { type: string, nullable: true }
+        color:        { type: string, default: '#10B981' }
+        sortOrder:    { type: integer }
+        isActive:     { type: boolean }
+        workflowType: { type: string, nullable: true }
+        productCount: { type: integer }
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+
+    # ── Products ─────────────────────────────────────────────────────────────────
+    ProductVariant:
+      type: object
+      properties:
+        id:              { type: string }
+        name:            { type: string }
+        sku:             { type: string, nullable: true }
+        price:           { type: number }
+        mrp:             { type: number, nullable: true }
+        discountPrice:   { type: number, nullable: true }
+        discountPercent: { type: number, nullable: true }
+        isDefault:       { type: boolean }
+        isActive:        { type: boolean }
+        attributes:      { type: object, description: Key-value size/colour etc }
+        stock:           { type: integer, nullable: true }
+
+    Product:
+      type: object
+      properties:
+        id:              { type: string }
+        businessId:      { type: string }
+        categoryId:      { type: string, nullable: true }
+        name:            { type: string }
+        slug:            { type: string }
+        description:     { type: string, nullable: true }
+        shortDesc:       { type: string, nullable: true }
+        type:            { type: string, enum: [PHYSICAL, DIGITAL, SERVICE] }
+        status:          { type: string, enum: [ACTIVE, INACTIVE, DRAFT] }
+        sku:             { type: string, nullable: true }
+        images:          { type: array, items: { type: string } }
+        unit:            { type: string, nullable: true }
+        unitQuantity:    { type: string, nullable: true }
+        isVeg:           { type: boolean, nullable: true }
+        isFeatured:      { type: boolean }
+        isPopular:       { type: boolean }
+        preparationTime: { type: integer, nullable: true }
+        minOrderQty:     { type: integer, default: 1 }
+        maxOrderQty:     { type: integer, default: 100 }
+        tags:            { type: array, items: { type: string } }
+        workflowType:    { type: string, nullable: true }
+        sortOrder:       { type: integer }
+        defaultPrice:    { type: number }
+        defaultMrp:      { type: number }
+        stockStatus:     { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
+        availableStock:  { type: integer }
+        hasInventory:    { type: boolean }
+        category:
+          nullable: true
+          $ref: '#/components/schemas/Category'
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductVariant'
+        metadata:        { type: object }
+        createdAt:       { type: string, format: date-time }
+        updatedAt:       { type: string, format: date-time }
+
+    # ── Cart ─────────────────────────────────────────────────────────────────────
+    CartItem:
+      type: object
+      properties:
+        id:               { type: string }
+        productId:        { type: string }
+        variantId:        { type: string, nullable: true }
+        storeId:          { type: string }
+        quantity:         { type: integer }
+        unitPrice:        { type: number }
+        lineTotal:        { type: number }
+        availableQty:     { type: integer, nullable: true }
+        inventoryStatus:  { type: string, nullable: true }
+        product:
+          type: object
+          properties:
+            name:   { type: string }
+            slug:   { type: string }
+            images: { type: array, items: { type: string } }
+            status: { type: string }
+        variant:
+          nullable: true
+          type: object
+          properties:
+            id:           { type: string }
+            name:         { type: string }
+            price:        { type: number }
+            mrp:          { type: number, nullable: true }
+            discountPrice:{ type: number, nullable: true }
+            sku:          { type: string, nullable: true }
+
+    CartResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:      { type: array, items: { $ref: '#/components/schemas/CartItem' } }
+            total:     { type: number }
+            itemCount: { type: integer }
+
+    AddToCartRequest:
+      type: object
+      required: [productId, storeId]
+      properties:
+        productId: { type: string }
+        variantId: { type: string, nullable: true }
+        storeId:   { type: string }
+        quantity:  { type: integer, minimum: 1, default: 1 }
+
+    UpdateCartRequest:
+      type: object
+      required: [itemId, quantity]
+      properties:
+        itemId:   { type: string }
+        quantity: { type: integer, minimum: 0, description: Set to 0 to remove }
+
+    # ── Orders ────────────────────────────────────────────────────────────────────
+    OrderItem:
+      type: object
+      properties:
+        id:                  { type: string }
+        itemType:            { type: string }
+        itemName:            { type: string }
+        variantName:         { type: string, nullable: true }
+        quantity:            { type: integer }
+        unitPrice:           { type: number }
+        totalPrice:          { type: number }
+        isVeg:               { type: boolean, nullable: true }
+        specialInstructions: { type: string, nullable: true }
+
+    Order:
+      type: object
+      properties:
+        id:               { type: string }
+        businessId:       { type: string }
+        storeId:          { type: string }
+        orderNumber:      { type: string, example: ORD-20250524-001 }
+        orderType:        { type: string, enum: [DELIVERY, PICKUP, DINE_IN] }
+        orderSource:      { type: string, example: online }
+        status:           { type: string, enum: [PENDING, CONFIRMED, PREPARING, READY, OUT_FOR_DELIVERY, DELIVERED, CANCELLED, FAILED] }
+        paymentStatus:    { type: string, enum: [PENDING, PAID, FAILED, REFUNDED, PARTIALLY_REFUNDED] }
+        paymentMethod:    { type: string, nullable: true }
+        subtotal:         { type: number }
+        totalTax:         { type: number }
+        deliveryFee:      { type: number }
+        totalDiscount:    { type: number }
+        totalAmount:      { type: number }
+        promoCodeId:      { type: string, nullable: true }
+        deliveryAddress:  { type: string, nullable: true }
+        deliveryLat:      { type: number, nullable: true }
+        deliveryLng:      { type: number, nullable: true }
+        notes:            { type: string, nullable: true }
+        createdAt:        { type: string, format: date-time }
+        confirmedAt:      { type: string, format: date-time, nullable: true }
+        deliveredAt:      { type: string, format: date-time, nullable: true }
+        items:            { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+
+    CreateOrderRequest:
+      type: object
+      required: [storeId, orderType, items]
+      properties:
+        storeId:            { type: string }
+        orderType:          { type: string, enum: [DELIVERY, PICKUP, DINE_IN] }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, quantity]
+            properties:
+              productId:           { type: string }
+              variantId:           { type: string, nullable: true }
+              quantity:            { type: integer, minimum: 1 }
+              specialInstructions: { type: string }
+              customizations:      { type: object }
+        deliveryAddressId:  { type: string, nullable: true }
+        deliveryFee:        { type: number, default: 0 }
+        paymentMethod:      { type: string, nullable: true }
+        promoCodeId:        { type: string, nullable: true }
+        deliveryInstructions:{ type: string, nullable: true }
+        notes:              { type: string, nullable: true }
+
+    # ── Tracking ─────────────────────────────────────────────────────────────────
+    LiveTrackingResponse:
+      type: object
+      properties:
+        order:
+          type: object
+          properties:
+            id:          { type: string }
+            orderNumber: { type: string }
+            status:      { type: string }
+            orderType:   { type: string }
+        partner:
+          nullable: true
+          type: object
+          properties:
+            id:          { type: string }
+            name:        { type: string }
+            phone:       { type: string, nullable: true }
+            avatar:      { type: string, nullable: true }
+            vehicleType: { type: string, nullable: true }
+            rating:      { type: number, nullable: true }
+        location:
+          nullable: true
+          type: object
+          properties:
+            lat:       { type: number }
+            lng:       { type: number }
+            timestamp: { type: string, format: date-time, nullable: true }
+        eta:              { type: string, nullable: true, example: "12 mins" }
+        etaMinutes:       { type: integer, nullable: true }
+        distanceKm:       { type: number, nullable: true }
+        estimatedArrival: { type: string, format: date-time, nullable: true }
+        deliveryStatus:   { type: string, nullable: true }
+        isLive:           { type: boolean }
+
+    OrderTrackingResponse:
+      type: object
+      properties:
+        id:            { type: string }
+        orderNumber:   { type: string }
+        status:        { type: string }
+        totalAmount:   { type: number }
+        totalDiscount: { type: number }
+        deliveryFee:   { type: number }
+        createdAt:     { type: string, format: date-time }
+        store:
+          type: object
+          properties:
+            id:      { type: string }
+            name:    { type: string }
+            address: { type: string, nullable: true }
+            city:    { type: string, nullable: true }
+            phone:   { type: string, nullable: true }
+        delivery:
+          nullable: true
+          type: object
+          properties:
+            status:                { type: string }
+            estimatedDeliveryTime: { type: string, format: date-time, nullable: true }
+            actualDeliveryTime:    { type: string, format: date-time, nullable: true }
+            distance:              { type: number, nullable: true }
+            liveTracking:          { type: array, items: { type: object } }
+            partner:               { nullable: true, type: object }
+        statusHistory:
+          type: array
+          items:
+            type: object
+            properties:
+              status:    { type: string }
+              note:      { type: string, nullable: true }
+              timestamp: { type: string, format: date-time }
+        items:    { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        payments: { type: array, items: { type: object } }
+
+    # ── Notifications ─────────────────────────────────────────────────────────────
+    Notification:
+      type: object
+      properties:
+        id:        { type: string }
+        type:      { type: string, enum: [ORDER_STATUS, PAYMENT, DELIVERY, PROMO, SYSTEM, CUSTOM] }
+        channel:   { type: string, enum: [PUSH, IN_APP, EMAIL, SMS] }
+        title:     { type: string }
+        message:   { type: string }
+        data:      { type: object, nullable: true }
+        isRead:    { type: boolean }
+        readAt:    { type: string, format: date-time, nullable: true }
+        sentAt:    { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    NotificationsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+            meta:
+              type: object
+              properties:
+                page:       { type: integer }
+                limit:      { type: integer }
+                total:      { type: integer }
+                unreadCount:{ type: integer }
+                totalPages: { type: integer }
+                hasNext:    { type: boolean }
+
+    DeviceRegisterRequest:
+      type: object
+      required: [fcmToken, platform]
+      properties:
+        fcmToken:   { type: string }
+        platform:   { type: string, enum: [ANDROID, IOS, WEB] }
+        deviceId:   { type: string, nullable: true }
+        appVersion: { type: string, nullable: true }
+
+    # ── CMS ───────────────────────────────────────────────────────────────────────
+    Banner:
+      type: object
+      properties:
+        id:        { type: string }
+        title:     { type: string }
+        imageUrl:  { type: string }
+        link:      { type: string, nullable: true }
+        sortOrder: { type: integer }
+        startDate: { type: string, format: date-time, nullable: true }
+        endDate:   { type: string, format: date-time, nullable: true }
+
+    PromoDisplay:
+      type: object
+      properties:
+        id:             { type: string }
+        code:           { type: string }
+        description:    { type: string, nullable: true }
+        type:           { type: string, enum: [PERCENTAGE, FLAT, FREE_DELIVERY, BOGO] }
+        value:          { type: number }
+        minOrderAmount: { type: number }
+        maxDiscount:    { type: number, nullable: true }
+        validUntil:     { type: string, format: date-time }
+
+    Coupon:
+      type: object
+      properties:
+        id:         { type: string }
+        code:       { type: string }
+        description:{ type: string, nullable: true }
+        type:       { type: string, enum: [PERCENTAGE, FLAT, FREE_DELIVERY, BOGO] }
+        value:      { type: number }
+        minOrder:   { type: number }
+        maxDiscount:{ type: number, nullable: true }
+        usageLeft:  { type: integer, nullable: true }
+        validUntil: { type: string, format: date-time }
+
+    AppVersion:
+      type: object
+      properties:
+        platform:     { type: string, enum: [android, ios, web] }
+        version:      { type: string, example: "2.1.0" }
+        minVersion:   { type: string, example: "1.5.0" }
+        forceUpdate:  { type: boolean }
+        changelogUrl: { type: string, nullable: true }
+        releaseNotes: { type: string, nullable: true }
+        publishedAt:  { type: string, format: date-time }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── APP BOOTSTRAP ──────────────────────────────────────────────────────────
+  /stores/context:
+    get:
+      summary: Bootstrap store context (branding, config, payment gateways)
+      tags: [Bootstrap]
+      security: []
+      parameters:
+        - { name: businessId, in: query, schema: { type: string } }
+        - { name: storeId,   in: query, schema: { type: string } }
+        - { name: slug,      in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Store context
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/StoreContext' }
+
+  /stores/nearest:
+    get:
+      summary: Find nearest serviceable store by GPS or pincode
+      tags: [Bootstrap]
+      security: []
+      parameters:
+        - { name: businessId, in: query, required: true, schema: { type: string } }
+        - { name: lat,     in: query, schema: { type: number } }
+        - { name: lng,     in: query, schema: { type: number } }
+        - { name: pincode, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Nearest store result
+    post:
+      summary: List all stores for a business with GPS distance annotation
+      tags: [Bootstrap]
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                businessId: { type: string }
+                lat: { type: number }
+                lng: { type: number }
+      responses:
+        '200':
+          description: Store list with distance
+
+  /app/version:
+    get:
+      summary: Check app version / force-update gate
+      tags: [Bootstrap]
+      security: []
+      parameters:
+        - { name: platform, in: query, required: true, schema: { type: string, enum: [android, ios, web] } }
+      responses:
+        '200':
+          description: Version info
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AppVersion' }
+
+  # ── AUTH ───────────────────────────────────────────────────────────────────
+  /auth/send-otp:
+    post:
+      summary: Send 6-digit email OTP (rate-limited 5/hr per email)
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendOtpRequest' }
+      responses:
+        '200':
+          description: OTP sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendOtpResponse' }
+        '400': { description: Email required or invalid }
+        '429': { description: Rate limit exceeded }
+
+  /auth/verify:
+    post:
+      summary: Verify OTP → returns JWT session
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyOtpRequest' }
+      responses:
+        '200':
+          description: Auth session
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AuthSession' }
+        '401': { description: Invalid or expired code }
+
+  # ── PROFILE ────────────────────────────────────────────────────────────────
+  /profile:
+    get:
+      summary: Get logged-in customer profile
+      tags: [Profile]
+      responses:
+        '200':
+          description: Customer profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CustomerProfile' }
+        '404': { description: Profile not found }
+    put:
+      summary: Update customer profile
+      tags: [Profile]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CustomerProfile' }
+        '409': { description: Phone already in use }
+
+  # ── ADDRESSES ──────────────────────────────────────────────────────────────
+  /addresses:
+    get:
+      summary: List customer's saved addresses
+      tags: [Addresses]
+      responses:
+        '200':
+          description: Address list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Address' } }
+    post:
+      summary: Add a new address
+      tags: [Addresses]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAddressRequest' }
+      responses:
+        '201':
+          description: Address created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Address' }
+
+  /addresses/{id}:
+    patch:
+      summary: Update an address (partial update or set as default)
+      tags: [Addresses]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:       { type: string }
+                line1:       { type: string }
+                city:        { type: string }
+                pincode:     { type: string }
+                latitude:    { type: number }
+                longitude:   { type: number }
+                isDefault:   { type: boolean }
+                instructions:{ type: string }
+      responses:
+        '200': { description: Updated address }
+        '404': { description: Address not found }
+    delete:
+      summary: Delete an address (promotes next to default if deleted was default)
+      tags: [Addresses]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Address deleted }
+        '404': { description: Not found }
+
+  # ── CATEGORIES ─────────────────────────────────────────────────────────────
+  /categories:
+    get:
+      summary: List active categories with subcategory tree and product counts
+      tags: [Catalog]
+      security: []
+      parameters:
+        - { name: businessId,      in: query, required: true, schema: { type: string } }
+        - { name: includeInactive, in: query, schema: { type: boolean } }
+        - { name: productStatus,   in: query, schema: { type: string, default: ACTIVE } }
+      responses:
+        '200':
+          description: Category list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Category' } }
+
+  # ── PRODUCTS ───────────────────────────────────────────────────────────────
+  /products:
+    get:
+      summary: List products (paginated, filterable)
+      tags: [Catalog]
+      security: []
+      parameters:
+        - { name: businessId,      in: query, required: true, schema: { type: string } }
+        - { name: storeId,         in: query, schema: { type: string } }
+        - { name: categoryId,      in: query, schema: { type: string } }
+        - { name: search,          in: query, schema: { type: string } }
+        - { name: filterByStore,   in: query, schema: { type: boolean }, description: Only products available at storeId }
+        - { name: page,            in: query, schema: { type: integer, default: 1 } }
+        - { name: limit,           in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200':
+          description: Product list with pagination
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:       { type: array, items: { $ref: '#/components/schemas/Product' } }
+                      storeId:    { type: string, nullable: true }
+                      pagination: { $ref: '#/components/schemas/Pagination' }
+
+  /products/{productId}:
+    get:
+      summary: Get single product detail
+      tags: [Catalog]
+      security: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Product detail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Product' }
+        '404': { description: Not found }
+
+  # ── CART ───────────────────────────────────────────────────────────────────
+  /cart:
+    get:
+      summary: Get customer cart (enriched with product/variant/stock data)
+      tags: [Cart]
+      parameters:
+        - { name: storeId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Cart contents
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CartResponse' }
+    post:
+      summary: Add item to cart (or increment quantity if already present)
+      tags: [Cart]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddToCartRequest' }
+      responses:
+        '201': { description: Item added }
+        '404': { description: Product not found or inactive }
+    patch:
+      summary: Update cart item quantity (set to 0 to remove)
+      tags: [Cart]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCartRequest' }
+      responses:
+        '200': { description: Cart updated }
+    delete:
+      summary: Remove cart item or clear entire cart
+      tags: [Cart]
+      parameters:
+        - { name: itemId,  in: query, schema: { type: string }, description: Remove single item }
+        - { name: clear,   in: query, schema: { type: boolean }, description: Clear all items }
+        - { name: storeId, in: query, schema: { type: string }, description: Scope clear to store }
+      responses:
+        '200': { description: Item removed or cart cleared }
+
+  # ── COUPONS ────────────────────────────────────────────────────────────────
+  /coupons:
+    get:
+      summary: List valid promo codes for the customer (authenticated)
+      tags: [Cart]
+      responses:
+        '200':
+          description: Coupons
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Coupon' } }
+
+  # ── ORDERS / CHECKOUT ───────────────────────────────────────────────────────
+  /orders:
+    get:
+      summary: List customer's order history (last 30)
+      tags: [Orders]
+      responses:
+        '200':
+          description: Order list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Order' } }
+    post:
+      summary: Create order (checkout) — validates stock, promo, calculates totals
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:    { $ref: '#/components/schemas/Order' }
+                      message: { type: string }
+        '400': { description: Validation error (missing fields, bad promo, etc.) }
+        '422':
+          description: Out of stock
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:      { type: boolean }
+                  error:        { type: string }
+                  code:         { type: string, example: OUT_OF_STOCK }
+                  productId:    { type: string }
+                  availableQty: { type: integer }
+                  requestedQty: { type: integer }
+
+  /orders/{orderId}/track:
+    get:
+      summary: Full order tracking (status history, partner info, delivery OTP, payments)
+      tags: [Orders]
+      security: []
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Tracking data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/OrderTrackingResponse' }
+        '404': { description: Order not found }
+
+  # ── LIVE TRACKING ─────────────────────────────────────────────────────────
+  /orders/{orderId}/live:
+    get:
+      summary: Live partner GPS location + computed ETA (poll every 5s or use WebSocket)
+      tags: [Tracking]
+      security: []
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Live tracking snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LiveTrackingResponse' }
+
+  /orders/{orderId}/eta:
+    get:
+      summary: Delivery ETA only (lighter than /live)
+      tags: [Tracking]
+      security: []
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ETA data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          etaMinutes:       { type: integer, nullable: true }
+                          distanceKm:       { type: number, nullable: true }
+                          estimatedArrival: { type: string, format: date-time, nullable: true }
+                          eta:              { type: string, nullable: true, example: "8 mins" }
+                          lastLocationUpdate:{ type: string, format: date-time, nullable: true }
+
+  # ── NOTIFICATIONS ──────────────────────────────────────────────────────────
+  /notifications:
+    get:
+      summary: List customer notifications (paginated, filterable)
+      tags: [Notifications]
+      parameters:
+        - { name: page,       in: query, schema: { type: integer, default: 1 } }
+        - { name: limit,      in: query, schema: { type: integer, default: 20, maximum: 50 } }
+        - { name: unreadOnly, in: query, schema: { type: boolean } }
+        - { name: type,       in: query, schema: { type: string, enum: [ORDER_STATUS, PAYMENT, DELIVERY, PROMO, SYSTEM, CUSTOM] } }
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationsResponse' }
+
+  /notifications/{notificationId}/read:
+    patch:
+      summary: Mark a single notification as read
+      tags: [Notifications]
+      parameters:
+        - { name: notificationId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Marked read }
+        '404': { description: Notification not found }
+
+  /notifications/read-all:
+    post:
+      summary: Mark all notifications as read
+      tags: [Notifications]
+      responses:
+        '200':
+          description: Bulk update result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          updated: { type: integer }
+
+  # ── DEVICES ────────────────────────────────────────────────────────────────
+  /devices/register:
+    post:
+      summary: Register FCM push token for this device
+      tags: [Notifications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceRegisterRequest' }
+      responses:
+        '200': { description: Device registered or updated }
+
+  /devices/unregister:
+    delete:
+      summary: Unregister FCM token (logout / token refresh)
+      tags: [Notifications]
+      parameters:
+        - { name: fcmToken, in: query, schema: { type: string } }
+        - { name: deviceId, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Device deactivated }
+
+  # ── CMS ────────────────────────────────────────────────────────────────────
+  /storefront/banners:
+    get:
+      summary: Active banners for the storefront (public)
+      tags: [CMS]
+      security: []
+      parameters:
+        - { name: businessId, in: query, required: true, schema: { type: string } }
+        - { name: storeId,    in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Banner list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Banner' } }
+
+  /storefront/promotions:
+    get:
+      summary: Active promotions for display (public, no auth needed)
+      tags: [CMS]
+      security: []
+      parameters:
+        - { name: businessId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Promotion list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/PromoDisplay' } }
+
+tags:
+  - { name: Bootstrap,      description: App launch — store context, version gate, nearest store }
+  - { name: Auth,           description: OTP email authentication }
+  - { name: Profile,        description: Customer profile management }
+  - { name: Addresses,      description: Customer address book }
+  - { name: Catalog,        description: Categories and products }
+  - { name: Cart,           description: Cart management and coupons }
+  - { name: Orders,         description: Checkout and order history }
+  - { name: Tracking,       description: Live GPS tracking and ETA }
+  - { name: Notifications,  description: In-app notifications and push device registration }
+  - { name: CMS,            description: Banners and promotions }
