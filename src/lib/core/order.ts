@@ -905,6 +905,16 @@ export async function listOrders(
             },
           },
         },
+        payments: {
+          select: { id: true, amount: true, status: true, method: true, gatewayName: true, paidAt: true },
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'asc' },
+          select: { status: true, note: true, createdAt: true },
+        },
+        promoCode: {
+          select: { code: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     }),

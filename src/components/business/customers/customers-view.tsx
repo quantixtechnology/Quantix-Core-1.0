@@ -26,6 +26,7 @@ import {
   Users, Plus, Search, Phone, Mail, MapPin, ShoppingBag, Star,
   Eye, X, Edit2, Save, Trash2, MessageSquare, Clock, Shield,
   Activity, Package, CreditCard, User, FileText, RefreshCw,
+  CheckCircle2, Truck, XCircle, ChevronDown, ChevronUp,
 } from "lucide-react"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
@@ -67,13 +68,54 @@ interface CustomerNote {
   user?: { id: string; name: string; avatar?: string }
 }
 
+interface OrderItemDetail {
+  id: string
+  itemName: string
+  variantName?: string
+  quantity: number
+  unitPrice: number
+  totalPrice: number
+  isVeg?: boolean | null
+}
+
+interface OrderPayment {
+  id: string
+  amount: number
+  status: string
+  method?: string
+  gatewayName?: string
+  paidAt?: string
+}
+
+interface OrderStatusEvent {
+  status: string
+  note?: string
+  createdAt: string
+}
+
 interface CustomerOrder {
   id: string
   orderNumber: string
   status: string
-  total: number
+  paymentStatus: string
+  paymentMethod?: string
+  totalAmount: number
+  subtotal: number
+  deliveryFee: number
+  totalTax: number
+  totalDiscount: number
   createdAt: string
-  items: unknown[]
+  storeId: string
+  storeName: string
+  orderType: string
+  deliveryAddress?: string
+  notes?: string
+  couponCode?: string
+  items: OrderItemDetail[]
+  payments: OrderPayment[]
+  statusHistory: OrderStatusEvent[]
+  deliveryPartnerName?: string
+  deliveryPartnerPhone?: string
 }
 
 interface StoreRef {
@@ -223,6 +265,26 @@ function getOrderStatusColor(status: string): string {
   return map[status] || "bg-slate-100 text-slate-700"
 }
 
+function getPaymentStatusColor(status: string): string {
+  const map: Record<string, string> = {
+    PAID:     "border-emerald-300 text-emerald-700 bg-emerald-50",
+    PENDING:  "border-amber-300 text-amber-700 bg-amber-50",
+    FAILED:   "border-red-300 text-red-700 bg-red-50",
+    REFUNDED: "border-violet-300 text-violet-700 bg-violet-50",
+    PARTIAL:  "border-orange-300 text-orange-700 bg-orange-50",
+  }
+  return map[status] || "border-gray-200 text-gray-500"
+}
+
+const ORDER_STATUS_DOT: Record<string, string> = {
+  PENDING:          "bg-amber-400",
+  CONFIRMED:        "bg-blue-500",
+  PREPARING:        "bg-purple-500",
+  OUT_FOR_DELIVERY: "bg-cyan-500",
+  DELIVERED:        "bg-emerald-500",
+  CANCELLED:        "bg-red-500",
+}
+
 function parseMeta(raw: unknown): Record<string, unknown> {
   if (!raw) return {}
   if (typeof raw === "object" && raw !== null) return raw as Record<string, unknown>
@@ -282,6 +344,15 @@ export function CustomersView() {
   const [addAddressOpen, setAddAddressOpen] = useState(false)
   const [addressForm,    setAddressForm]    = useState<AddressForm>(BLANK_ADDRESS_FORM)
 
+  // ── Expanded order cards (set of order IDs with details shown) ──────────────
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set())
+  const toggleOrderExpanded = (id: string) =>
+    setExpandedOrderIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
   // ── Add customer dialog ─────────────────────────────────────────────────────
   const [addOpen,          setAddOpen]          = useState(false)
   const [formName,         setFormName]         = useState("")
@@ -329,17 +400,61 @@ export function CustomersView() {
     queryKey: ["customer-orders", businessId, selectedCustomer?.id],
     queryFn: async () => {
       if (!businessId || !selectedCustomer?.id) return []
-      const res  = await fetch(`/api/core/orders?businessId=${encodeURIComponent(businessId)}&customerId=${encodeURIComponent(selectedCustomer.id)}&limit=50`)
+      const res = await fetch(
+        `/api/core/orders?businessId=${encodeURIComponent(businessId)}&customerId=${encodeURIComponent(selectedCustomer.id)}&limit=100`,
+        { headers: getAuthHeaders() },
+      )
       const data = await res.json()
       if (data.success && Array.isArray(data.data)) {
-        return data.data.map((o: Record<string, unknown>) => ({
-          id:          String(o.id || ""),
-          orderNumber: String(o.orderNumber || ""),
-          status:      String(o.status || "PENDING"),
-          total:       Number(o.totalAmount || 0),
-          createdAt:   String(o.createdAt || ""),
-          items:       Array.isArray(o.items) ? o.items : [],
-        }))
+        return data.data.map((o: Record<string, unknown>) => {
+          const storeRec   = o.store    as Record<string, unknown> | null | undefined
+          const delivery   = o.delivery as Record<string, unknown> | null | undefined
+          const partner    = delivery?.deliveryPartner as Record<string, unknown> | null | undefined
+          const promoCode  = o.promoCode as Record<string, unknown> | null | undefined
+          return {
+            id:            String(o.id || ""),
+            orderNumber:   String(o.orderNumber || ""),
+            status:        String(o.status || "PENDING"),
+            paymentStatus: String(o.paymentStatus || "PENDING"),
+            paymentMethod: o.paymentMethod ? String(o.paymentMethod) : undefined,
+            totalAmount:   Number(o.totalAmountAmount || 0),
+            subtotal:      Number(o.subtotal || 0),
+            deliveryFee:   Number(o.deliveryFee || 0),
+            totalTax:      Number(o.totalAmountTax || 0),
+            totalDiscount: Number(o.totalAmountDiscount || 0),
+            createdAt:     String(o.createdAt || ""),
+            storeId:       String(o.storeId || ""),
+            storeName:     storeRec?.name ? String(storeRec.name) : "—",
+            orderType:     String(o.orderType || ""),
+            deliveryAddress: o.deliveryAddress ? String(o.deliveryAddress) : undefined,
+            notes:         o.notes ? String(o.notes) : undefined,
+            couponCode:    promoCode?.code ? String(promoCode.code) : undefined,
+            items: Array.isArray(o.items) ? (o.items as Record<string, unknown>[]).map(i => ({
+              id:          String(i.id || ""),
+              itemName:    String(i.itemName || ""),
+              variantName: i.variantName ? String(i.variantName) : undefined,
+              quantity:    Number(i.quantity || 1),
+              unitPrice:   Number(i.unitPrice || 0),
+              totalPrice:  Number(i.totalPrice || 0),
+              isVeg:       i.isVeg != null ? Boolean(i.isVeg) : null,
+            })) : [],
+            payments: Array.isArray(o.payments) ? (o.payments as Record<string, unknown>[]).map(p => ({
+              id:          String(p.id || ""),
+              amount:      Number(p.amount || 0),
+              status:      String(p.status || ""),
+              method:      p.method ? String(p.method) : undefined,
+              gatewayName: p.gatewayName ? String(p.gatewayName) : undefined,
+              paidAt:      p.paidAt ? String(p.paidAt) : undefined,
+            })) : [],
+            statusHistory: Array.isArray(o.statusHistory) ? (o.statusHistory as Record<string, unknown>[]).map(h => ({
+              status:    String(h.status || ""),
+              note:      h.note ? String(h.note) : undefined,
+              createdAt: String(h.createdAt || ""),
+            })) : [],
+            deliveryPartnerName:  partner?.name  ? String(partner.name)  : undefined,
+            deliveryPartnerPhone: partner?.phone ? String(partner.phone) : undefined,
+          }
+        })
       }
       return []
     },
@@ -583,7 +698,7 @@ export function CustomersView() {
       events.push({
         id: o.id, type: isRefund ? "refund" : "order",
         label: isRefund ? `Refund — ${o.orderNumber}` : `Order ${o.orderNumber}`,
-        detail: `${o.status.replace(/_/g, " ")} · ${formatCurrencyFull(o.total)}`,
+        detail: `${o.status.replace(/_/g, " ")} · ${formatCurrencyFull(o.totalAmount)}`,
         date: o.createdAt,
         icon: isRefund ? RefreshCw : ShoppingBag,
         color: o.status === "DELIVERED" ? "text-emerald-600" : o.status === "CANCELLED" || isRefund ? "text-red-600" : "text-blue-600",
@@ -1416,25 +1531,159 @@ export function CustomersView() {
                             <p className="text-xs text-muted-foreground">No orders placed yet</p>
                           </div>
                         ) : (
-                          <div className="space-y-2">
-                            {orders.map((order) => (
-                              <div key={order.id} className="rounded-lg border p-3">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-medium">{order.orderNumber || "Order"}</p>
-                                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                                      {formatDate(order.createdAt)} · {order.items.length} item{order.items.length !== 1 ? "s" : ""}
-                                    </p>
+                          <div className="space-y-3">
+                            {orders.map((order) => {
+                              const expanded = expandedOrderIds.has(order.id)
+                              const payLabel = order.paymentMethod
+                                ? order.paymentMethod.replace(/_/g, " ")
+                                : order.paymentStatus
+                              return (
+                                <div key={order.id} className="rounded-xl border bg-white overflow-hidden">
+                                  {/* ── Card header ── */}
+                                  <div className="p-3.5">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-bold font-mono text-gray-900">{order.orderNumber}</p>
+                                        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{order.storeName}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-0.5">{formatDateTime(order.createdAt)}</p>
+                                      </div>
+                                      <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                                        <p className="text-sm font-bold text-gray-900">{formatCurrencyFull(order.totalAmount)}</p>
+                                        <Badge className={`text-[9px] px-1.5 ${getOrderStatusColor(order.status)}`} variant="secondary">
+                                          {order.status.replace(/_/g, " ")}
+                                        </Badge>
+                                        <Badge variant="outline" className={`text-[9px] px-1.5 ${getPaymentStatusColor(order.paymentStatus)}`}>
+                                          {payLabel}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                    {/* items summary + toggle */}
+                                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                                        {order.couponCode && <span className="ml-2 text-emerald-600 font-medium">🏷 {order.couponCode}</span>}
+                                      </p>
+                                      <button
+                                        onClick={() => toggleOrderExpanded(order.id)}
+                                        className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                                      >
+                                        {expanded ? <><ChevronUp className="h-3 w-3" />Less</> : <><ChevronDown className="h-3 w-3" />Details</>}
+                                      </button>
+                                    </div>
                                   </div>
-                                  <div className="text-right shrink-0">
-                                    <p className="text-sm font-semibold">{formatCurrencyFull(order.total)}</p>
-                                    <Badge className={`text-[9px] mt-0.5 ${getOrderStatusColor(order.status)}`} variant="secondary">
-                                      {order.status.replace(/_/g, " ")}
-                                    </Badge>
-                                  </div>
+
+                                  {/* ── Expanded details ── */}
+                                  {expanded && (
+                                    <div className="border-t divide-y divide-gray-100">
+
+                                      {/* Items */}
+                                      {order.items.length > 0 && (
+                                        <div className="px-3.5 py-2.5">
+                                          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Items</p>
+                                          <div className="space-y-1.5">
+                                            {order.items.map((item, idx) => (
+                                              <div key={item.id || idx} className="flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                  {item.isVeg != null && (
+                                                    <span className={`w-2.5 h-2.5 rounded-sm border shrink-0 flex items-center justify-center ${item.isVeg ? "border-green-500" : "border-red-500"}`}>
+                                                      <span className={`w-1 h-1 rounded-full ${item.isVeg ? "bg-green-500" : "bg-red-500"}`} />
+                                                    </span>
+                                                  )}
+                                                  <span className="text-xs text-gray-800 truncate">
+                                                    {item.itemName}{item.variantName ? ` (${item.variantName})` : ""}
+                                                  </span>
+                                                  <span className="text-[10px] text-muted-foreground shrink-0">×{item.quantity}</span>
+                                                </div>
+                                                <span className="text-xs font-medium shrink-0">{formatCurrencyFull(item.totalPrice)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Price breakdown */}
+                                      <div className="px-3.5 py-2.5">
+                                        <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Price Breakdown</p>
+                                        <div className="space-y-1 text-xs">
+                                          <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>{formatCurrencyFull(order.subtotal)}</span></div>
+                                          {order.deliveryFee > 0 && <div className="flex justify-between text-gray-600"><span>Delivery</span><span>{formatCurrencyFull(order.deliveryFee)}</span></div>}
+                                          {order.totalTax > 0 && <div className="flex justify-between text-gray-600"><span>Tax</span><span>{formatCurrencyFull(order.totalTax)}</span></div>}
+                                          {order.totalDiscount > 0 && <div className="flex justify-between text-emerald-600"><span>Discount</span><span>−{formatCurrencyFull(order.totalDiscount)}</span></div>}
+                                          <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-100"><span>Total</span><span>{formatCurrencyFull(order.totalAmount)}</span></div>
+                                        </div>
+                                      </div>
+
+                                      {/* Status timeline */}
+                                      {order.statusHistory.length > 0 && (
+                                        <div className="px-3.5 py-2.5">
+                                          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Timeline</p>
+                                          <div className="space-y-2">
+                                            {order.statusHistory.map((h, idx) => (
+                                              <div key={idx} className="flex items-center gap-2">
+                                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ORDER_STATUS_DOT[h.status] || "bg-gray-400"}`} />
+                                                <span className="text-xs font-medium text-gray-800 flex-1">{h.status.replace(/_/g, " ")}</span>
+                                                {h.note && <span className="text-[10px] text-muted-foreground italic truncate max-w-[80px]">{h.note}</span>}
+                                                <span className="text-[10px] text-muted-foreground shrink-0">{formatDateTime(h.createdAt)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Delivery & partner */}
+                                      {(order.deliveryAddress || order.deliveryPartnerName) && (
+                                        <div className="px-3.5 py-2.5">
+                                          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Delivery</p>
+                                          {order.deliveryAddress && (
+                                            <div className="flex items-start gap-1.5 mb-1.5">
+                                              <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
+                                              <span className="text-xs text-gray-600 leading-relaxed">{order.deliveryAddress}</span>
+                                            </div>
+                                          )}
+                                          {order.deliveryPartnerName && (
+                                            <div className="flex items-center gap-1.5">
+                                              <Truck className="h-3 w-3 text-muted-foreground shrink-0" />
+                                              <span className="text-xs text-gray-600">
+                                                {order.deliveryPartnerName}
+                                                {order.deliveryPartnerPhone && <span className="text-muted-foreground"> · {order.deliveryPartnerPhone}</span>}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Payment records */}
+                                      {order.payments.length > 0 && (
+                                        <div className="px-3.5 py-2.5">
+                                          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Payment</p>
+                                          {order.payments.map((pmt, idx) => (
+                                            <div key={pmt.id || idx} className="flex items-center justify-between text-xs gap-2">
+                                              <div className="flex items-center gap-1.5 text-gray-600">
+                                                <CreditCard className="h-3 w-3 shrink-0" />
+                                                <span>{pmt.method?.replace(/_/g, " ") || "—"}</span>
+                                                {pmt.gatewayName && <span className="text-muted-foreground">({pmt.gatewayName})</span>}
+                                              </div>
+                                              <div className="flex items-center gap-2 shrink-0">
+                                                <Badge variant="outline" className={`text-[9px] px-1.5 ${getPaymentStatusColor(pmt.status)}`}>{pmt.status}</Badge>
+                                                <span className="font-medium">{formatCurrencyFull(pmt.amount)}</span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Customer note */}
+                                      {order.notes && (
+                                        <div className="px-3.5 py-2.5">
+                                          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Customer Note</p>
+                                          <p className="text-xs text-muted-foreground italic">{order.notes}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         )}
                       </TabsContent>
