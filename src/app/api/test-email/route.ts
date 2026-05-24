@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       host: process.env.SMTP_HOST,
       port: process.env.SMTP_PORT,
       user: process.env.SMTP_USER,
-      from: process.env.MAIL_FROM || process.env.SMTP_FROM,
+      from: process.env.MAIL_FROM,
     },
   })
 }

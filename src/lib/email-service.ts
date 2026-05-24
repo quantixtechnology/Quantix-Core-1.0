@@ -1,16 +1,12 @@
 // ============================================================================
 // QUANTIX CORE — Email Service (Nodemailer / Gmail SMTP)
 //
-// Configuration (set in .env):
+// Required .env keys — NO hardcoded fallbacks:
 //   SMTP_HOST   smtp.gmail.com
-//   SMTP_PORT   587
+//   SMTP_PORT   465          (465 = SMTPS/secure, 587 = STARTTLS)
 //   SMTP_USER   otp@quantixtechnology.in
-//   SMTP_PASS   <Gmail App Password>
+//   SMTP_PASS   <Gmail App Password — 16 chars, no spaces>
 //   MAIL_FROM   "Quantix OTP <otp@quantixtechnology.in>"
-//
-// sendOTPEmail()  — structured OTP mailer (primary export)
-// sendEmailOtp()  — backward-compat alias used by legacy routes
-// sendTransactionalEmail() — generic HTML mailer
 // ============================================================================
 
 import nodemailer from 'nodemailer'
@@ -20,6 +16,8 @@ const RETRY_ATTEMPTS = 2
 const RETRY_DELAY_MS = 1500
 
 // ── SMTP transport ───────────────────────────────────────────────────────────
+// Rebuilt fresh every process start — no stale cached credentials.
+// To pick up .env changes: npm run build && pm2 restart quantix --update-env
 
 function buildTransport(): nodemailer.Transporter | null {
   const host = process.env.SMTP_HOST
@@ -27,10 +25,19 @@ function buildTransport(): nodemailer.Transporter | null {
   const pass = process.env.SMTP_PASS
   if (!host || !user || !pass) return null
 
+  const port = Number(process.env.SMTP_PORT)
+  if (!port) {
+    console.error('[email-service] SMTP_PORT is missing or invalid in .env')
+    return null
+  }
+
+  // Port 465 = implicit TLS (secure:true). Port 587/25 = STARTTLS (secure:false).
+  const secure = port === 465
+
   return nodemailer.createTransport({
     host,
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: process.env.SMTP_SECURE === 'true',
+    port,
+    secure,
     auth: { user, pass },
     connectionTimeout: 10_000,
     greetingTimeout:   8_000,
@@ -46,15 +53,14 @@ function getTransport(): nodemailer.Transporter | null {
 }
 
 export function isSmtpConfigured(): boolean {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_PORT)
 }
 
+// MAIL_FROM only — no fallback chain, no hardcoded addresses.
 function defaultFrom(): string {
-  return (
-    process.env.MAIL_FROM ||
-    process.env.SMTP_FROM ||
-    `"Quantix OTP" <${process.env.SMTP_USER ?? 'noreply@quantixtechnology.in'}>`
-  )
+  const from = process.env.MAIL_FROM
+  if (!from) console.error('[email-service] MAIL_FROM is not set in .env')
+  return from ?? ''
 }
 
 // ── OTP HTML template ────────────────────────────────────────────────────────
