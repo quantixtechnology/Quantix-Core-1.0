@@ -179,6 +179,7 @@ const StaffView = dynamic(() => import("@/components/dashboard/staff-view").then
 const TaxView = dynamic(() => import("@/components/dashboard/tax-view").then(m => ({ default: m.TaxView })), { loading: () => <PageLoader /> })
 const LoyaltyView = dynamic(() => import("@/components/dashboard/loyalty-view").then(m => ({ default: m.LoyaltyView })), { loading: () => <PageLoader /> })
 const DeliveryZonesView = dynamic(() => import("@/components/dashboard/delivery-zones-view").then(m => ({ default: m.DeliveryZonesView })), { loading: () => <PageLoader /> })
+const DeliveryPartnersView = dynamic(() => import("@/components/business/operations/delivery-partners-view").then(m => ({ default: m.DeliveryPartnersView })), { loading: () => <PageLoader /> })
 const StoresView = dynamic(() => import("@/components/business/stores/stores-view").then(m => ({ default: m.StoresView })), { loading: () => <PageLoader /> })
 const CategoriesView = dynamic(() => import("@/components/business/categories/categories-view").then(m => ({ default: m.CategoriesView })), { loading: () => <PageLoader /> })
 const BrandingView = dynamic(() => import("@/components/business/branding/branding-view").then(m => ({ default: m.BrandingView })), { loading: () => <PageLoader /> })
@@ -445,6 +446,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "user-creation": return <UserCreationView />
       case "user-management": return <UserManagementView />
       case "delivery-zones": return <DeliveryZonesView />
+      case "delivery-partners": return <DeliveryPartnersView />
       case "stores": return <StoresView />
       case "storefront": return <StorefrontShell />
       // Workflow Engine

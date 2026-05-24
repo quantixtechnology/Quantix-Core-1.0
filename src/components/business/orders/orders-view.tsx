@@ -32,6 +32,11 @@ import {
   RefreshCw,
   Workflow,
   Plus,
+  UserPlus,
+  UserMinus,
+  Wifi,
+  WifiOff,
+  Pencil,
 } from "lucide-react"
 import {
   useOrders,
@@ -39,6 +44,7 @@ import {
 } from "@/hooks/use-api"
 import { useOrderUpdates } from "@/hooks/use-realtime"
 import { setBusinessContext } from "@/lib/api-client"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 import { showSuccess, showError, showOrderUpdate } from "@/lib/toast-utils"
 import { SkeletonTable, ErrorState } from "@/components/ui/loading-states"
 import { StatusBadge } from "@/components/admin/shared/status-badge"
@@ -93,7 +99,18 @@ interface Order {
   createdAt: string
   deliveryAddress: string | null
   assignedTo: string | null
+  deliveryPartnerId: string | null
+  deliveryPartnerPhone: string | null
   workflow?: string
+}
+
+interface PartnerOption {
+  id: string
+  name: string
+  phone: string
+  availability: string
+  partnerCode: string | null
+  totalDeliveries: number
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +200,8 @@ function mapApiOrder(apiOrder: Record<string, unknown>): Order {
     createdAt: apiOrder.createdAt ? String(apiOrder.createdAt) : new Date().toISOString(),
     deliveryAddress: apiOrder.deliveryAddress ? String(apiOrder.deliveryAddress) : null,
     assignedTo: apiOrder.assignedTo ? String(apiOrder.assignedTo) : null,
+    deliveryPartnerId: apiOrder.deliveryPartnerId ? String(apiOrder.deliveryPartnerId) : null,
+    deliveryPartnerPhone: apiOrder.deliveryPartnerPhone ? String(apiOrder.deliveryPartnerPhone) : null,
   }
 }
 
@@ -269,6 +288,13 @@ export function OrdersView() {
   const [dateFilter, setDateFilter] = useState("ALL")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  // Partner assignment state
+  const [partnerDialogOpen, setPartnerDialogOpen] = useState(false)
+  const [partnerOptions, setPartnerOptions] = useState<PartnerOption[]>([])
+  const [loadingPartners, setLoadingPartners] = useState(false)
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>("")
+  const [assigningPartner, setAssigningPartner] = useState(false)
 
   // Status update dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
@@ -361,6 +387,50 @@ export function OrdersView() {
     setPendingStatusUpdate({ order, newStatus })
     setStatusNotes("")
     setStatusDialogOpen(true)
+  }
+
+  async function openAssignPartner(order: Order) {
+    setSelectedOrder(order)
+    setSelectedPartnerId(order.deliveryPartnerId || "")
+    setPartnerDialogOpen(true)
+    if (partnerOptions.length === 0) {
+      setLoadingPartners(true)
+      try {
+        const res = await fetch("/api/core/delivery/partners", { headers: getAuthHeaders() })
+        const json = await res.json()
+        if (json.success) setPartnerOptions(json.data || [])
+      } catch { /* ignore */ } finally {
+        setLoadingPartners(false)
+      }
+    }
+  }
+
+  async function handleAssignPartner() {
+    if (!selectedOrder) return
+    setAssigningPartner(true)
+    try {
+      const res = await fetch(`/api/core/orders/${selectedOrder.id}/assign-partner`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerId: selectedPartnerId || null }),
+      })
+      const json = await res.json()
+      if (!json.success) { showError(json.error || "Failed to assign partner"); return }
+      const partnerName = json.data?.partnerName ?? null
+      const partnerPhone = json.data?.partnerPhone ?? null
+      showSuccess(partnerName ? `Assigned to ${partnerName}` : "Partner unassigned")
+      setPartnerDialogOpen(false)
+      setSelectedOrder((prev) => prev ? {
+        ...prev,
+        assignedTo: partnerName,
+        deliveryPartnerId: selectedPartnerId || null,
+        deliveryPartnerPhone: partnerPhone,
+      } : null)
+    } catch {
+      showError("Failed to assign partner")
+    } finally {
+      setAssigningPartner(false)
+    }
   }
 
   const confirmStatusUpdate = useCallback(async () => {
@@ -854,26 +924,74 @@ export function OrdersView() {
                   </div>
 
                   {/* Delivery Partner */}
-                  {selectedOrder.assignedTo && (
-                    <div className="space-y-3">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                         Delivery Partner
                       </h4>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => openAssignPartner(selectedOrder)}
+                      >
+                        {selectedOrder.assignedTo ? (
+                          <><Pencil className="h-3 w-3 mr-1" />Change</>
+                        ) : (
+                          <><UserPlus className="h-3 w-3 mr-1" />Assign</>
+                        )}
+                      </Button>
+                    </div>
+                    {selectedOrder.assignedTo ? (
                       <Card>
                         <CardContent className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-100">
-                              <Truck className="h-4 w-4 text-purple-600" />
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-100">
+                                <Truck className="h-4 w-4 text-purple-600" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold">{selectedOrder.assignedTo}</p>
+                                {selectedOrder.deliveryPartnerPhone && (
+                                  <a href={`tel:${selectedOrder.deliveryPartnerPhone}`} className="text-xs text-blue-600 flex items-center gap-1">
+                                    <Phone className="h-3 w-3" />{selectedOrder.deliveryPartnerPhone}
+                                  </a>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-semibold">{selectedOrder.assignedTo}</p>
-                              <p className="text-xs text-muted-foreground">Assigned to this order</p>
-                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-red-500 hover:bg-red-50"
+                              onClick={async () => {
+                                if (!selectedOrder) return
+                                try {
+                                  const res = await fetch(`/api/core/orders/${selectedOrder.id}/assign-partner`, {
+                                    method: "POST",
+                                    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                                    body: JSON.stringify({ partnerId: null }),
+                                  })
+                                  const json = await res.json()
+                                  if (!json.success) { showError(json.error || "Failed to unassign"); return }
+                                  showSuccess("Partner unassigned")
+                                  setSelectedOrder((prev) => prev ? { ...prev, assignedTo: null, deliveryPartnerId: null, deliveryPartnerPhone: null } : null)
+                                } catch { showError("Failed to unassign partner") }
+                              }}
+                            >
+                              <UserMinus className="h-3 w-3 mr-1" />Remove
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
-                    </div>
-                  )}
+                    ) : (
+                      <Card className="border-dashed">
+                        <CardContent className="p-4 flex items-center gap-3 text-muted-foreground">
+                          <Truck className="h-4 w-4" />
+                          <span className="text-sm">No partner assigned yet</span>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
 
                   {/* Order Timeline */}
                   <div className="space-y-3">
@@ -946,6 +1064,64 @@ export function OrdersView() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* ===== Partner Assignment Dialog ===== */}
+      <Dialog open={partnerDialogOpen} onOpenChange={setPartnerDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Delivery Partner</DialogTitle>
+            <DialogDescription>
+              {selectedOrder ? `Assign a partner to order ${selectedOrder.orderNumber}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {loadingPartners ? (
+              <p className="text-sm text-muted-foreground">Loading partners…</p>
+            ) : partnerOptions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No delivery partners found. Add partners in the Delivery Partners section.</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                <button
+                  key="none"
+                  onClick={() => setSelectedPartnerId("")}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${selectedPartnerId === "" ? "border-primary bg-primary/5" : "border-muted hover:bg-muted/50"}`}
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted"><UserMinus className="h-4 w-4 text-muted-foreground" /></div>
+                  <span className="text-sm font-medium text-muted-foreground">No partner (unassign)</span>
+                </button>
+                {partnerOptions.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedPartnerId(p.id)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${selectedPartnerId === p.id ? "border-primary bg-primary/5" : "border-muted hover:bg-muted/50"}`}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-xs font-bold">
+                      {p.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">{p.phone} · {p.totalDeliveries} deliveries</p>
+                    </div>
+                    {p.availability === "ONLINE" ? (
+                      <span className="text-xs text-emerald-600 flex items-center gap-1"><Wifi className="h-3 w-3" />Online</span>
+                    ) : p.availability === "BUSY" ? (
+                      <span className="text-xs text-amber-600">Busy</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1"><WifiOff className="h-3 w-3" />Offline</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPartnerDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleAssignPartner} disabled={assigningPartner || partnerOptions.length === 0}>
+              {assigningPartner ? "Assigning…" : selectedPartnerId ? "Assign Partner" : "Unassign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ===== Create Order Dialog ===== */}
       <CreateOrderDialog

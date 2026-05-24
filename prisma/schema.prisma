@@ -241,6 +241,9 @@ model Business {
   cartItems             CartItem[]
   favorites             Favorite[]
   supportTickets        SupportTicket[]
+  workforceSettings     WorkforceSettings?
+  partnerAuditLogs      PartnerAudit[]
+  notificationSounds    NotificationSound[]
 
   @@index([businessType])
   @@index([status])
@@ -675,7 +678,7 @@ model DeliveryZone {
 }
 
 model DeliveryPartner {
-  id              String     @id @default(cuid())
+  id              String              @id @default(cuid())
   businessId      String
   userId          String?
   name            String
@@ -685,27 +688,82 @@ model DeliveryPartner {
   vehicleType     String?
   vehicleNumber   String?
   licenseNumber   String?
-  isOnline        Boolean    @default(false)
-  isActive        Boolean    @default(true)
+  isOnline        Boolean             @default(false)
+  isActive        Boolean             @default(true)
   currentLat      Float?
   currentLng      Float?
-  rating          Float      @default(0)
-  totalDeliveries Int        @default(0)
-  totalEarnings   Float      @default(0)
+  rating          Float               @default(0)
+  totalDeliveries Int                 @default(0)
+  totalEarnings   Float               @default(0)
   fcmToken        String?
   bankAccount     String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  deliveries      Delivery[]    @relation("DeliveryAssignedPartner")
-  pickupDeliveries Delivery[]   @relation("DeliveryPickupPartner")
-  deliveryOrders  Order[]       @relation("OrderDeliveryPartner")
-  pickupOrders    Order[]       @relation("OrderPickupPartner")
-  user            User?         @relation(fields: [userId], references: [id])
-  business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  partnerCode     String?
+  partnerType     PartnerType         @default(INTERNAL)
+  availability    PartnerAvailability @default(OFFLINE)
+  appEnabled      Boolean             @default(false)
+  notes           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deliveries      Delivery[]          @relation("DeliveryAssignedPartner")
+  pickupDeliveries Delivery[]         @relation("DeliveryPickupPartner")
+  deliveryOrders  Order[]             @relation("OrderDeliveryPartner")
+  pickupOrders    Order[]             @relation("OrderPickupPartner")
+  auditLogs       PartnerAudit[]
+  user            User?               @relation(fields: [userId], references: [id])
+  business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, phone])
+  @@unique([businessId, partnerCode])
   @@index([businessId])
   @@index([isOnline])
+  @@index([availability])
+}
+
+model WorkforceSettings {
+  id                 String   @id @default(cuid())
+  businessId         String   @unique
+  partnerLabel       String   @default("Delivery Partner")
+  partnerLabelPlural String   @default("Delivery Partners")
+  onlineLabel        String   @default("Online")
+  offlineLabel       String   @default("Offline")
+  busyLabel          String   @default("Busy")
+  internalLabel      String   @default("Internal")
+  externalLabel      String   @default("External")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  business           Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model PartnerAudit {
+  id          String          @id @default(cuid())
+  businessId  String
+  partnerId   String
+  action      String
+  field       String?
+  oldValue    String?
+  newValue    String?
+  performedBy String?
+  note        String?
+  createdAt   DateTime        @default(now())
+  partner     DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([partnerId])
+}
+
+model NotificationSound {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  url        String
+  eventType  String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }
 
 model POSSession {
@@ -1975,4 +2033,15 @@ enum InventoryStatus {
   LOW_STOCK
   OUT_OF_STOCK
   DISCONTINUED
+}
+
+enum PartnerType {
+  INTERNAL
+  EXTERNAL
+}
+
+enum PartnerAvailability {
+  ONLINE
+  OFFLINE
+  BUSY
 }

@@ -63,6 +63,7 @@ export type BusinessPage =
   | "loyalty"
   | "product-import"
   | "delivery-zones"
+  | "delivery-partners"
   | "stores"
   | "storefront"
   | "workflow-config"

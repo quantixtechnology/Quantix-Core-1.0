@@ -74,6 +74,10 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT
     if (body.currentLng !== undefined) updateData.currentLng = body.currentLng;
     if (body.fcmToken !== undefined) updateData.fcmToken = body.fcmToken;
     if (body.bankAccount !== undefined) updateData.bankAccount = body.bankAccount;
+    if (body.partnerType !== undefined) updateData.partnerType = body.partnerType;
+    if (body.availability !== undefined) updateData.availability = body.availability;
+    if (body.appEnabled !== undefined) updateData.appEnabled = body.appEnabled;
+    if (body.notes !== undefined) updateData.notes = body.notes;
 
     if (body.phone && body.phone !== existing.phone) {
       const phoneInUse = await db.deliveryPartner.findUnique({
@@ -95,6 +99,9 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 });
+
+// PUT is an alias for PATCH — accept both from the admin UI
+export { PATCH as PUT }
 
 export const DELETE = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_OWNER', 'QUANTIX_SUPER_ADMIN', 'QUANTIX_SALES_TEAM'] })(async (req, context) => {
   try {

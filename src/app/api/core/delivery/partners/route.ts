@@ -84,6 +84,12 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
       );
     }
 
+    // Generate partner code: DP-YYYYMM-NNNN
+    const now = new Date()
+    const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
+    const count = await db.deliveryPartner.count({ where: { businessId } })
+    const partnerCode = `DP-${ym}-${String(count + 1).padStart(4, '0')}`
+
     const partner = await db.deliveryPartner.create({
       data: {
         businessId,
@@ -95,12 +101,17 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
         vehicleType: body.vehicleType,
         vehicleNumber: body.vehicleNumber,
         licenseNumber: body.licenseNumber,
-        isOnline: body.isOnline || false,
+        isOnline: body.isOnline || body.availability === 'ONLINE' || false,
         isActive: body.isActive !== false,
         currentLat: body.currentLat,
         currentLng: body.currentLng,
         fcmToken: body.fcmToken,
         bankAccount: body.bankAccount,
+        partnerCode,
+        partnerType: body.partnerType || 'INTERNAL',
+        availability: body.availability || 'OFFLINE',
+        appEnabled: body.appEnabled || false,
+        notes: body.notes,
       },
     });
 

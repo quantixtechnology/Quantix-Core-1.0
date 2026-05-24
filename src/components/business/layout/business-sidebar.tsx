@@ -43,13 +43,15 @@ import { useResponsive } from "@/hooks/use-responsive"
 // ── Workflow → nav items (derived from business type, owned by platform admin) ──
 const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[]> = {
   ECOMMERCE: [
-    { key: "orders",    label: "Orders",    icon: ShoppingBag },
-    { key: "products",  label: "Products",  icon: Package },
-    { key: "inventory", label: "Inventory", icon: Warehouse },
+    { key: "orders",            label: "Orders",            icon: ShoppingBag },
+    { key: "products",          label: "Products",          icon: Package },
+    { key: "inventory",         label: "Inventory",         icon: Warehouse },
+    { key: "delivery-partners", label: "Delivery Partners", icon: Truck },
   ],
   PICKUP_DELIVERY: [
-    { key: "orders",         label: "Pickup Orders",  icon: Truck },
-    { key: "delivery-zones", label: "Delivery Zones", icon: MapPin },
+    { key: "orders",             label: "Pickup Orders",      icon: Truck },
+    { key: "delivery-zones",     label: "Delivery Zones",     icon: MapPin },
+    { key: "delivery-partners",  label: "Delivery Partners",  icon: Truck },
   ],
   APPOINTMENT: [
     { key: "orders", label: "Appointments", icon: Calendar },
