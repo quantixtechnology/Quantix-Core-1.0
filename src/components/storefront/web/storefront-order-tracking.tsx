@@ -72,7 +72,7 @@ export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrac
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-6">
         <button
-          onClick={() => nav.go(nav.prevPage || "orders")}
+          onClick={() => nav.goBack("orders")}
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />

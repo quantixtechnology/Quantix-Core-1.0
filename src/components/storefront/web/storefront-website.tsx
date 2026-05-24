@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { StorefrontLayout } from "./storefront-layout"
@@ -26,14 +26,23 @@ export type WebPage =
   | "profile"
   | "addresses"
 
+type NavSnapshot = {
+  page: WebPage
+  categoryId: string | null
+  categoryName: string
+  productId: string | null
+  orderId: string | null
+}
+
 export interface WebNav {
   go: (page: WebPage, opts?: {
     categoryId?: string
     categoryName?: string
     productId?: string
     orderId?: string
-    prevPage?: WebPage
   }) => void
+  goBack: (defaultPage?: WebPage) => void
+  canGoBack: boolean
   current: WebPage
   categoryId: string | null
   categoryName: string
@@ -48,11 +57,16 @@ export function StorefrontWebsite() {
   const brandColor = currentBusinessPrimaryColor || "#C62828"
 
   const [page, setPage] = useState<WebPage>("home")
-  const [prevPage, setPrevPage] = useState<WebPage | null>(null)
+  const [navStack, setNavStack] = useState<NavSnapshot[]>([])
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [categoryName, setCategoryName] = useState("")
   const [productId, setProductId] = useState<string | null>(null)
   const [orderId, setOrderId] = useState<string | null>(null)
+
+  // Ref keeps current nav state accessible inside stable callbacks without
+  // listing every field as a useCallback dependency.
+  const snapRef = useRef<NavSnapshot>({ page: "home", categoryId: null, categoryName: "", productId: null, orderId: null })
+  snapRef.current = { page, categoryId, categoryName, productId, orderId }
 
   // Store picker state
   const [showStorePicker, setShowStorePicker] = useState(false)
@@ -103,18 +117,47 @@ export function StorefrontWebsite() {
 
   const go = useCallback((
     p: WebPage,
-    opts?: { categoryId?: string; categoryName?: string; productId?: string; orderId?: string; prevPage?: WebPage },
+    opts?: { categoryId?: string; categoryName?: string; productId?: string; orderId?: string },
   ) => {
-    setPrevPage(opts?.prevPage !== undefined ? opts.prevPage : page)
+    const curr = snapRef.current
+    // Push current state onto the stack only when navigating to a different page.
+    if (p !== curr.page) {
+      setNavStack(prev => [...prev, { ...curr }])
+    }
     setPage(p)
     if (opts?.categoryId !== undefined) setCategoryId(opts.categoryId ?? null)
     if (opts?.categoryName !== undefined) setCategoryName(opts.categoryName ?? "")
     if (opts?.productId !== undefined) setProductId(opts.productId ?? null)
     if (opts?.orderId !== undefined) setOrderId(opts.orderId ?? null)
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
-  }, [page])
+  }, []) // stable — reads state via ref
 
-  const nav: WebNav = { go, current: page, categoryId, categoryName, productId, orderId, prevPage }
+  const goBack = useCallback((defaultPage: WebPage = "home") => {
+    setNavStack(prev => {
+      if (prev.length === 0) {
+        setPage(defaultPage)
+        setCategoryId(null)
+        setCategoryName("")
+        setProductId(null)
+        setOrderId(null)
+        if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
+        return prev
+      }
+      const last = prev[prev.length - 1]
+      setPage(last.page)
+      setCategoryId(last.categoryId)
+      setCategoryName(last.categoryName)
+      setProductId(last.productId)
+      setOrderId(last.orderId)
+      if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
+      return prev.slice(0, -1)
+    })
+  }, []) // stable — no external deps
+
+  const prevPage: WebPage | null = navStack.length > 0 ? navStack[navStack.length - 1].page : null
+  const canGoBack = navStack.length > 0
+
+  const nav: WebNav = { go, goBack, canGoBack, current: page, categoryId, categoryName, productId, orderId, prevPage }
 
   return (
     <>
