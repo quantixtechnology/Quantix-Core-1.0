@@ -5,7 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { sendEmailOtp } from '@/lib/email-service';
+import { sendOTPEmail } from '@/lib/email-service';
 import { normalizeEmail } from '@/lib/storefront-auth';
 
 const MAX_OTP_PER_HOUR = 5;
@@ -84,9 +84,17 @@ export async function POST(request: Request) {
       },
     });
 
-    const { sent, error: sendError } = await sendEmailOtp(email, code, storeName, otpSenderEmail);
+    const { sent, error: sendError } = await sendOTPEmail({
+      to: email,
+      otp: code,
+      businessName: storeName,
+      storeId: storeId ?? undefined,
+      tenantId: businessId ?? undefined,
+    });
 
-    console.log(`[storefront/auth/send-otp] email=${email}, sent=${sent}${sendError ? `, err=${sendError}` : ''}`);
+    if (!sent) {
+      console.warn(`[storefront/auth/send-otp] delivery failed email=${email}: ${sendError}`);
+    }
 
     return NextResponse.json({
       success: true,

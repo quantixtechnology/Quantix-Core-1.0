@@ -1,102 +1,243 @@
 // ============================================================================
-// QUANTIX CORE — Email Service (Nodemailer)
-// Reads SMTP config from environment variables.
-// Falls back gracefully when SMTP is not configured.
+// QUANTIX CORE — Email Service (Nodemailer / Gmail SMTP)
+//
+// Configuration (set in .env):
+//   SMTP_HOST   smtp.gmail.com
+//   SMTP_PORT   587
+//   SMTP_USER   otp@quantixtechnology.in
+//   SMTP_PASS   <Gmail App Password>
+//   MAIL_FROM   "Quantix OTP <otp@quantixtechnology.in>"
+//
+// sendOTPEmail()  — structured OTP mailer (primary export)
+// sendEmailOtp()  — backward-compat alias used by legacy routes
+// sendTransactionalEmail() — generic HTML mailer
 // ============================================================================
 
 import nodemailer from 'nodemailer'
 
-interface SmtpConfig {
-  host: string
-  port: number
-  secure: boolean
-  auth: { user: string; pass: string }
-}
+const OTP_VALIDITY_MINUTES = 10
+const RETRY_ATTEMPTS = 2
+const RETRY_DELAY_MS = 1500
 
-function getSmtpConfig(): SmtpConfig | null {
+// ── SMTP transport ───────────────────────────────────────────────────────────
+
+function buildTransport(): nodemailer.Transporter | null {
   const host = process.env.SMTP_HOST
   const user = process.env.SMTP_USER
   const pass = process.env.SMTP_PASS
   if (!host || !user || !pass) return null
-  return {
+
+  return nodemailer.createTransport({
     host,
-    port: parseInt(process.env.SMTP_PORT || '587'),
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
     auth: { user, pass },
-  }
+    connectionTimeout: 10_000,
+    greetingTimeout:   8_000,
+    socketTimeout:     15_000,
+  })
 }
 
-let _transporter: nodemailer.Transporter | null = null
+let _transport: nodemailer.Transporter | null = null
 
-function getTransporter(): nodemailer.Transporter | null {
-  const cfg = getSmtpConfig()
-  if (!cfg) return null
-  if (!_transporter) {
-    _transporter = nodemailer.createTransport(cfg)
-  }
-  return _transporter
+function getTransport(): nodemailer.Transporter | null {
+  if (!_transport) _transport = buildTransport()
+  return _transport
 }
 
 export function isSmtpConfigured(): boolean {
-  return getSmtpConfig() !== null
+  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
 }
+
+function defaultFrom(): string {
+  return (
+    process.env.MAIL_FROM ||
+    process.env.SMTP_FROM ||
+    `"Quantix OTP" <${process.env.SMTP_USER ?? 'noreply@quantixtechnology.in'}>`
+  )
+}
+
+// ── OTP HTML template ────────────────────────────────────────────────────────
+
+function buildOtpHtml(otp: string, businessName: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${businessName} — Login OTP</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);" cellpadding="0" cellspacing="0">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);padding:32px 40px 28px;text-align:center;">
+              <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.85);letter-spacing:1px;text-transform:uppercase;font-weight:600;">Quantix Technology</p>
+              <h1 style="margin:6px 0 0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">${businessName}</h1>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px 40px 32px;">
+              <p style="margin:0 0 8px;font-size:15px;color:#374151;font-weight:500;">Your login verification code</p>
+              <p style="margin:0 0 28px;font-size:14px;color:#6b7280;line-height:1.5;">
+                Enter the code below to sign in to your account.
+              </p>
+
+              <!-- OTP Block -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+                <tr>
+                  <td align="center" style="background:#f0fdf4;border:2px solid #bbf7d0;border-radius:12px;padding:28px 24px;">
+                    <p style="margin:0 0 8px;font-size:12px;color:#059669;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;">Verification Code</p>
+                    <p style="margin:0;font-size:48px;font-weight:800;letter-spacing:12px;color:#064e3b;font-family:'Courier New',Courier,monospace;line-height:1;">${otp}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 8px 8px 0;padding:0;">
+                <tr>
+                  <td style="padding:12px 16px;">
+                    <p style="margin:0;font-size:13px;color:#92400e;">
+                      ⏱ This code is valid for <strong>${OTP_VALIDITY_MINUTES} minutes</strong>.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.6;">
+                If you did not request this code, you can safely ignore this email.
+                Someone may have typed your email address by mistake.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 40px;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#9ca3af;">
+                Powered by <strong style="color:#10b981;">Quantix Technology</strong>
+              </p>
+              <p style="margin:6px 0 0;font-size:11px;color:#d1d5db;">
+                © ${new Date().getFullYear()} Quantix Technology. All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+function buildOtpText(otp: string, businessName: string): string {
+  return [
+    `${businessName} — Login OTP`,
+    '',
+    `Your verification code is: ${otp}`,
+    '',
+    `This code is valid for ${OTP_VALIDITY_MINUTES} minutes.`,
+    '',
+    'If you did not request this OTP, please ignore this email.',
+    '',
+    'Powered by Quantix Technology',
+  ].join('\n')
+}
+
+// ── Retry helper ─────────────────────────────────────────────────────────────
+
+async function sendWithRetry(
+  transport: nodemailer.Transporter,
+  mailOptions: nodemailer.SendMailOptions,
+): Promise<void> {
+  let lastError: Error | null = null
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS + 1; attempt++) {
+    try {
+      await transport.sendMail(mailOptions)
+      return
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      if (attempt <= RETRY_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * attempt))
+      }
+    }
+  }
+  throw lastError
+}
+
+// ── Primary export: sendOTPEmail ─────────────────────────────────────────────
+
+export interface OTPEmailOptions {
+  to: string
+  otp: string
+  businessName: string
+  storeId?: string
+  tenantId?: string
+}
+
+export async function sendOTPEmail(opts: OTPEmailOptions): Promise<{ sent: boolean; error?: string }> {
+  const { to, otp, businessName, storeId, tenantId } = opts
+
+  const transport = getTransport()
+  if (!transport) {
+    console.warn('[OTP EMAIL] SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS in .env')
+    return { sent: false, error: 'SMTP not configured' }
+  }
+
+  const subject = `${businessName} - Login OTP`
+
+  try {
+    await sendWithRetry(transport, {
+      from:    defaultFrom(),
+      to,
+      subject,
+      text:    buildOtpText(otp, businessName),
+      html:    buildOtpHtml(otp, businessName),
+    })
+
+    console.log(
+      '[OTP EMAIL SENT]',
+      `Tenant: ${tenantId ?? '—'}`,
+      `| Business: ${businessName}`,
+      `| Store: ${storeId ?? '—'}`,
+      `| Recipient: ${to}`,
+    )
+    return { sent: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'SMTP send failed'
+    console.error('[OTP EMAIL ERROR]', `Recipient: ${to}`, `| Error: ${msg}`)
+    return { sent: false, error: msg }
+  }
+}
+
+// ── Backward-compat alias (used by legacy auth routes) ───────────────────────
 
 export async function sendEmailOtp(
   to: string,
   code: string,
   storeName: string = 'Quantix',
-  fromOverride?: string
+  _fromOverride?: string,          // retained for signature compat, ignored
 ): Promise<{ sent: boolean; error?: string }> {
-  const t = getTransporter()
-  if (!t) {
-    console.warn('[email-service] SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS in .env')
-    return { sent: false, error: 'SMTP not configured' }
-  }
-
-  const cfg = getSmtpConfig()!
-  const from = fromOverride || process.env.SMTP_FROM || `"${storeName}" <${cfg.auth.user}>`
-
-  try {
-    await t.sendMail({
-      from,
-      to,
-      subject: `${code} is your ${storeName} verification code`,
-      text: `Your ${storeName} verification code is: ${code}\n\nThis code expires in 5 minutes. Do not share it with anyone.`,
-      html: `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#fff">
-          <h2 style="font-size:20px;font-weight:700;color:#111;margin:0 0 4px">${storeName}</h2>
-          <p style="color:#666;font-size:14px;margin:0 0 24px">Verification Code</p>
-          <p style="color:#444;font-size:14px;margin:0 0 12px">Use this code to verify your phone number:</p>
-          <div style="background:#f4f4f5;border-radius:12px;padding:24px;text-align:center;margin:0 0 20px">
-            <span style="font-size:40px;font-weight:700;letter-spacing:10px;color:#111;font-family:monospace">${code}</span>
-          </div>
-          <p style="color:#888;font-size:12px;margin:0">This code expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
-          <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
-          <p style="color:#bbb;font-size:11px;margin:0">Powered by Quantix — If you didn't request this, ignore this email.</p>
-        </div>
-      `,
-    })
-    console.log(`[email-service] OTP sent to ${to}`)
-    return { sent: true }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'SMTP send failed'
-    console.error(`[email-service] Send failed to ${to}:`, msg)
-    return { sent: false, error: msg }
-  }
+  return sendOTPEmail({ to, otp: code, businessName: storeName })
 }
+
+// ── Generic transactional mailer ─────────────────────────────────────────────
 
 export async function sendTransactionalEmail(
   to: string,
   subject: string,
   html: string,
-  fromOverride?: string
 ): Promise<{ sent: boolean; error?: string }> {
-  const t = getTransporter()
-  if (!t) return { sent: false, error: 'SMTP not configured' }
-  const cfg = getSmtpConfig()!
-  const from = fromOverride || process.env.SMTP_FROM || cfg.auth.user
+  const transport = getTransport()
+  if (!transport) return { sent: false, error: 'SMTP not configured' }
   try {
-    await t.sendMail({ from, to, subject, html })
+    await sendWithRetry(transport, { from: defaultFrom(), to, subject, html })
     return { sent: true }
   } catch (err) {
     return { sent: false, error: err instanceof Error ? err.message : 'SMTP send failed' }
