@@ -6,6 +6,7 @@
 import { db } from '@/lib/db';
 import { createAccessToken } from '@/lib/password-utils';
 import { getPermissionsForRole } from '@/lib/core';
+import { generateCustomerCode } from '@/lib/customer-code';
 import type { Role, BusinessType } from '@/lib/types';
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
@@ -108,6 +109,7 @@ export async function createStorefrontSession(opts: {
       : null;
 
     if (shadow) {
+      const codeForShadow = shadow.customerCode ?? await generateCustomerCode(businessId)
       customer = await db.customer.update({
         where: { id: shadow.id },
         data: {
@@ -120,9 +122,12 @@ export async function createStorefrontSession(opts: {
           lastLoginAt: new Date(),
           source: 'STORE_FRONT',
           preferredStoreId: storeId || shadow.preferredStoreId || null,
+          customerCode: codeForShadow,
+          status: 'ACTIVE',
         },
       });
     } else {
+      const newCode = await generateCustomerCode(businessId)
       customer = await db.customer.create({
         data: {
           businessId,
@@ -137,6 +142,8 @@ export async function createStorefrontSession(opts: {
           lastLoginAt: new Date(),
           createdStoreId: storeId || null,
           preferredStoreId: storeId || null,
+          customerCode: newCode,
+          status: 'ACTIVE',
         },
       });
     }

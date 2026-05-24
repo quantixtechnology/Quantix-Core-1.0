@@ -27,7 +27,7 @@ export const GET = withMiddleware({ requireAuth: true })(async (req, context) =>
         orders: {
           take: 5,
           orderBy: { createdAt: 'desc' },
-          select: { id: true, orderNumber: true, status: true, totalAmount: true, createdAt: true },
+          select: { id: true, orderNumber: true, status: true, totalAmount: true, createdAt: true, storeId: true },
         },
         subscriptions: {
           take: 5,
@@ -39,7 +39,20 @@ export const GET = withMiddleware({ requireAuth: true })(async (req, context) =>
 
     if (!customer) return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
 
-    return NextResponse.json({ success: true, data: customer });
+    // Stores visited — distinct storeIds from all orders
+    const storeIds = await db.order.findMany({
+      where: { customerId, businessId },
+      select: { storeId: true },
+      distinct: ['storeId'],
+    })
+    const stores = storeIds.length
+      ? await db.store.findMany({
+          where: { id: { in: storeIds.map(s => s.storeId) } },
+          select: { id: true, name: true },
+        })
+      : []
+
+    return NextResponse.json({ success: true, data: { ...customer, storesVisited: stores } });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get customer';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -60,8 +73,8 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
     const body = (await req.json()) as {
       name?: string; email?: string; phone?: string; avatar?: string;
       gstNumber?: string; dateOfBirth?: string; gender?: string;
-      loyaltyTier?: string; notes?: string; isActive?: boolean;
-      tags?: string[]; metadata?: Record<string, unknown>; loyaltyPoints?: number;
+      loyaltyTier?: string; notes?: string; isActive?: boolean; status?: string;
+      walletBalance?: number; tags?: string[]; metadata?: Record<string, unknown>; loyaltyPoints?: number;
     };
 
     const existing = await db.customer.findFirst({ where: { id: customerId, businessId } });
@@ -76,8 +89,12 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_O
       }
     }
 
+    if (body.status && !['ACTIVE', 'INACTIVE', 'BLOCKED'].includes(body.status)) {
+      return NextResponse.json({ success: false, error: 'status must be ACTIVE, INACTIVE, or BLOCKED' }, { status: 400 })
+    }
+
     const updateData: Record<string, unknown> = {};
-    const directFields = ['name', 'email', 'phone', 'avatar', 'gstNumber', 'gender', 'loyaltyTier', 'notes', 'isActive', 'loyaltyPoints'] as const;
+    const directFields = ['name', 'email', 'phone', 'avatar', 'gstNumber', 'gender', 'loyaltyTier', 'notes', 'isActive', 'loyaltyPoints', 'status', 'walletBalance'] as const;
     for (const field of directFields) {
       if ((body as Record<string, unknown>)[field] !== undefined) updateData[field] = (body as Record<string, unknown>)[field];
     }

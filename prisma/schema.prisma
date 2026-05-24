@@ -1069,6 +1069,7 @@ model Customer {
   tags          String                 @default("[]")
   metadata         String                 @default("{}")
   isActive         Boolean                @default(true)
+  status           String                 @default("ACTIVE")
   source           String                 @default("MANUAL")
   isGuest          Boolean                @default(false)
   verified         Boolean                @default(false)
@@ -1076,6 +1077,8 @@ model Customer {
   createdStoreId   String?
   preferredStoreId String?
   emailVerified    Boolean                @default(false)
+  phoneVerified    Boolean                @default(false)
+  walletBalance    Float                  @default(0)
   lastLoginAt      DateTime?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
@@ -1092,9 +1095,11 @@ model Customer {
   supportTickets  SupportTicket[]
 
   @@unique([businessId, phone])
+  @@unique([businessId, customerCode])
   @@index([businessId])
   @@index([userId])
   @@index([phone])
+  @@index([status])
 }
 
 model Address {

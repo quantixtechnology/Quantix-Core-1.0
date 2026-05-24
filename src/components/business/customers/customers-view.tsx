@@ -76,8 +76,14 @@ interface CustomerOrder {
   items: unknown[]
 }
 
+interface StoreRef {
+  id: string
+  name: string
+}
+
 interface Customer {
   id: string
+  customerCode?: string
   name: string
   phone?: string
   email?: string
@@ -89,10 +95,13 @@ interface Customer {
   totalOrders: number
   totalSpent: number
   loyaltyPoints: number
+  walletBalance: number
+  status: string
   lastOrderAt?: string
   tags: string[]
   addresses: CustomerAddress[]
   isActive: boolean
+  storesVisited?: StoreRef[]
   createdAt: string
   alternatePhone?: string
   referredBy?: string
@@ -508,6 +517,12 @@ export function CustomersView() {
           isDefault:    Boolean(a.isDefault || false),
         })) : [],
         isActive:      Boolean(c.isActive !== false),
+        status:        String(c.status || "ACTIVE"),
+        walletBalance: Number(c.walletBalance || 0),
+        customerCode:  c.customerCode ? String(c.customerCode) : undefined,
+        storesVisited: Array.isArray(c.storesVisited)
+          ? (c.storesVisited as Record<string, unknown>[]).map(s => ({ id: String(s.id), name: String(s.name) }))
+          : undefined,
         createdAt:     String(c.createdAt || ""),
         alternatePhone:meta.alternatePhone ? String(meta.alternatePhone) : undefined,
         referredBy:    meta.referredBy     ? String(meta.referredBy)     : undefined,
@@ -854,7 +869,16 @@ export function CustomersView() {
                             </Avatar>
                             <div className="min-w-0">
                               <p className="text-sm font-medium truncate">{customer.name}</p>
+                              {customer.customerCode && (
+                                <p className="text-[9px] font-mono text-muted-foreground/70 truncate">{customer.customerCode}</p>
+                              )}
                               <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                {customer.status === "BLOCKED" && (
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-red-300 text-red-600">Blocked</Badge>
+                                )}
+                                {customer.status === "INACTIVE" && (
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-300 text-gray-500">Inactive</Badge>
+                                )}
                                 {customer.isGuest && (
                                   <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-orange-300 text-orange-600">Guest</Badge>
                                 )}
@@ -927,8 +951,12 @@ export function CustomersView() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <SheetTitle className="text-base">{customer.name}</SheetTitle>
-                        {!customer.isActive && <Badge variant="secondary" className="text-[9px]">Inactive</Badge>}
+                        {customer.status === "BLOCKED" && <Badge variant="secondary" className="text-[9px] bg-red-100 text-red-700">Blocked</Badge>}
+                        {customer.status === "INACTIVE" && <Badge variant="secondary" className="text-[9px]">Inactive</Badge>}
                       </div>
+                      {customer.customerCode && (
+                        <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{customer.customerCode}</p>
+                      )}
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <Badge className={`text-[9px] font-semibold gap-1 ${tc.badge}`} variant="secondary">
                           <Star className="h-2.5 w-2.5" />{customer.loyaltyTier}
@@ -991,9 +1019,9 @@ export function CustomersView() {
                         {/* Stats grid */}
                         <div className="grid grid-cols-4 gap-2">
                           {[
-                            { icon: ShoppingBag, value: customer.totalOrders,              label: "Orders" },
-                            { icon: CreditCard,  value: formatCurrency(customer.totalSpent), label: "Spent" },
-                            { icon: Package,     value: formatCurrency(avgOrder),            label: "Avg Order" },
+                            { icon: ShoppingBag, value: customer.totalOrders,                  label: "Orders" },
+                            { icon: CreditCard,  value: formatCurrency(customer.totalSpent),   label: "Spent" },
+                            { icon: Package,     value: formatCurrency(avgOrder),              label: "Avg Order" },
                             { icon: Star,        value: customer.loyaltyPoints.toLocaleString(), label: "Points" },
                           ].map(({ icon: Icon, value, label }) => (
                             <Card key={label} className="shadow-none">
@@ -1004,6 +1032,28 @@ export function CustomersView() {
                               </CardContent>
                             </Card>
                           ))}
+                        </div>
+
+                        {/* Wallet + Stores visited */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg border p-3 bg-emerald-50 border-emerald-100">
+                            <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wider mb-1">Wallet Balance</p>
+                            <p className="text-lg font-bold text-emerald-700">{formatCurrencyFull(customer.walletBalance)}</p>
+                          </div>
+                          <div className="rounded-lg border p-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                              Stores Visited ({customer.storesVisited?.length ?? 0})
+                            </p>
+                            {customer.storesVisited && customer.storesVisited.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 mt-0.5">
+                                {customer.storesVisited.map(s => (
+                                  <Badge key={s.id} variant="secondary" className="text-[9px] px-1.5">{s.name}</Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No orders yet</p>
+                            )}
+                          </div>
                         </div>
 
                         {/* Tags */}
@@ -1285,8 +1335,16 @@ export function CustomersView() {
                             <div className="grid gap-2.5 py-1">
                               <div className="grid grid-cols-2 gap-2.5">
                                 <div className="space-y-1">
-                                  <Label className="text-[11px]">Label (Home / Office)</Label>
-                                  <Input className="h-8 text-sm" placeholder="Home" value={addressForm.label} onChange={(e) => setAddressForm((f) => ({ ...f, label: e.target.value }))} />
+                                  <Label className="text-[11px]">Label</Label>
+                                  <select
+                                    className="flex h-8 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                                    value={addressForm.label}
+                                    onChange={(e) => setAddressForm((f) => ({ ...f, label: e.target.value }))}>
+                                    <option value="">Select</option>
+                                    <option value="HOME">Home</option>
+                                    <option value="OFFICE">Office</option>
+                                    <option value="OTHER">Other</option>
+                                  </select>
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-[11px]">Area / Locality</Label>

@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { generateCustomerCode } from '@/lib/customer-code';
 
 export const GET = withMiddleware({ requireAuth: true })(async (req, context) => {
   try {
@@ -92,6 +93,8 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
       }
     }
 
+    const customerCode = await generateCustomerCode(businessId)
+
     const customer = await db.customer.create({
       data: {
         businessId, userId: body.userId, name: body.name, email: body.email, phone: body.phone,
@@ -100,6 +103,9 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
         gender: body.gender, loyaltyTier: body.loyaltyTier || 'BRONZE',
         notes: body.notes || '', tags: body.tags ? JSON.stringify(body.tags) : '[]',
         metadata: body.metadata ? JSON.stringify(body.metadata) : '{}',
+        customerCode,
+        status: 'ACTIVE',
+        source: 'MANUAL',
       },
     });
 
