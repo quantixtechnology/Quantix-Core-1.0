@@ -265,8 +265,72 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         cgstAmount += itemGst / 2;
         sgstAmount += itemGst / 2;
       }
-      const deliveryFee = body.deliveryFee || 0;
-      const totalAmount = Math.round(subtotal + totalTax + deliveryFee);
+      let deliveryFee = body.deliveryFee || 0;
+      let totalDiscount = 0;
+      let resolvedPromoCodeId: string | null = body.promoCodeId || null;
+
+      // ── Promo code validation + discount calculation ──────────────────────
+      if (body.promoCodeId) {
+        const promo = await db.promoCode.findFirst({
+          where: { id: body.promoCodeId, businessId },
+        });
+
+        if (!promo) {
+          return NextResponse.json({ success: false, error: 'Promo code not found' }, { status: 400 });
+        }
+        if (!promo.isActive) {
+          return NextResponse.json({ success: false, error: 'Promo code is not active' }, { status: 400 });
+        }
+
+        const nowPromo = new Date();
+        if (promo.validFrom > nowPromo) {
+          return NextResponse.json({ success: false, error: 'Promo code is not yet valid' }, { status: 400 });
+        }
+        if (promo.validUntil < nowPromo) {
+          return NextResponse.json({ success: false, error: 'Promo code has expired' }, { status: 400 });
+        }
+        if (promo.usageLimit != null && promo.usedCount >= promo.usageLimit) {
+          return NextResponse.json({ success: false, error: 'Promo code usage limit reached' }, { status: 400 });
+        }
+        if (subtotal < promo.minOrderAmount) {
+          return NextResponse.json({
+            success: false,
+            error: `Minimum order amount of ₹${promo.minOrderAmount} required for this promo`,
+          }, { status: 400 });
+        }
+
+        // Per-user limit check
+        if (promo.perUserLimit > 0) {
+          const userUsageCount = await db.order.count({
+            where: { customerId: customer.id, promoCodeId: promo.id },
+          });
+          if (userUsageCount >= promo.perUserLimit) {
+            return NextResponse.json({ success: false, error: 'You have already used this promo code' }, { status: 400 });
+          }
+        }
+
+        // Calculate discount
+        if (promo.type === 'PERCENTAGE') {
+          totalDiscount = (subtotal * promo.value) / 100;
+          if (promo.maxDiscount != null) totalDiscount = Math.min(totalDiscount, promo.maxDiscount);
+        } else if (promo.type === 'FLAT') {
+          totalDiscount = Math.min(promo.value, subtotal);
+        } else if (promo.type === 'FREE_DELIVERY') {
+          totalDiscount = deliveryFee;
+          deliveryFee = 0;
+        } else if (promo.type === 'BOGO') {
+          // Cheapest item free (half price of cheapest line)
+          const cheapestLine = resolvedItems.reduce((min, item) =>
+            item.unitPrice < min.unitPrice ? item : min, resolvedItems[0]);
+          if (cheapestLine) totalDiscount = cheapestLine.unitPrice;
+        }
+
+        totalDiscount = Math.round(totalDiscount * 100) / 100;
+        resolvedPromoCodeId = promo.id;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
+      const totalAmount = Math.round(Math.max(0, subtotal + totalTax + deliveryFee - totalDiscount));
 
       // Generate order number: ORD-YYYYMMDD-NNN
       const now = new Date();
@@ -306,12 +370,13 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           deliveryLat: deliveryLat || null,
           deliveryLng: deliveryLng || null,
           deliveryInstructions: body.deliveryInstructions || addressInstructions || null,
-          promoCodeId: body.promoCodeId || null,
+          promoCodeId: resolvedPromoCodeId,
           notes: body.notes || null,
           subtotal: Math.round(subtotal * 100) / 100,
           totalTax: Math.round(totalTax * 100) / 100,
           cgstAmount: Math.round(cgstAmount * 100) / 100,
           sgstAmount: Math.round(sgstAmount * 100) / 100,
+          totalDiscount,
           deliveryFee,
           totalAmount,
           items: {
@@ -345,6 +410,16 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         },
         include: { items: true },
       });
+
+      // Increment promo usedCount
+      if (resolvedPromoCodeId) {
+        try {
+          await db.promoCode.update({
+            where: { id: resolvedPromoCodeId },
+            data: { usedCount: { increment: 1 } },
+          });
+        } catch { /* non-critical — order already committed */ }
+      }
 
       // Create initial status history
       await db.orderStatusHistory.create({

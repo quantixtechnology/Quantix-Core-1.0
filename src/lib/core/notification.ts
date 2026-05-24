@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
+import { sendToUser as fcmSendToUser } from '@/lib/fcm';
 
 // ============================================================================
 // TYPES
@@ -528,8 +529,7 @@ export function renderTemplate(
 }
 
 // ============================================================================
-// DELIVERY PROVIDER (Stub)
-// In production, these would integrate with FCM, SendGrid, Twilio, etc.
+// DELIVERY PROVIDER — real FCM push, stubs for email/WhatsApp
 // ============================================================================
 
 async function deliverNotification(
@@ -537,24 +537,33 @@ async function deliverNotification(
   params: SendNotificationParams
 ): Promise<{ success: boolean; error?: string }> {
   switch (channel) {
-    case 'PUSH':
-      // In production: call FCM/APNs with params.userId's fcmToken
-      return { success: true };
+    case 'PUSH': {
+      if (!params.userId) return { success: false, error: 'userId required for PUSH' };
+      const result = await fcmSendToUser(params.userId, {
+        title: params.title,
+        body: params.message,
+        data: params.data
+          ? Object.fromEntries(Object.entries(params.data).map(([k, v]) => [k, String(v)]))
+          : undefined,
+      });
+      return result.sent > 0
+        ? { success: true }
+        : { success: false, error: `FCM: ${result.failed} failed, ${result.sent} sent` };
+    }
 
     case 'EMAIL':
-      // In production: call SendGrid/SES with params.userId's email
+      // TODO: integrate SendGrid / AWS SES
       return { success: true };
 
     case 'WHATSAPP':
-      // In production: call WhatsApp Business API with params.userId's phone
+      // TODO: integrate WhatsApp Business API
       return { success: true };
 
     case 'IN_APP':
-      // In-app notifications are already stored in DB — no external delivery needed
       return { success: true };
 
     default:
-      return { success: false, error: `Unknown notification channel: ${channel}` };
+      return { success: false, error: `Unknown channel: ${channel}` };
   }
 }
 

@@ -244,6 +244,9 @@ model Business {
   workforceSettings     WorkforceSettings?
   partnerAuditLogs      PartnerAudit[]
   notificationSounds    NotificationSound[]
+  notificationDevices   NotificationDevice[]
+  banners               Banner[]
+  refunds               Refund[]
 
   @@index([businessType])
   @@index([status])
@@ -335,6 +338,7 @@ model Store {
   storePaymentGateways StorePaymentGateway[]
   business            Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   storeTimings        StoreTiming[]
+  banners             Banner[]
 
   @@unique([businessId, slug])
   @@unique([businessId, storeCode])
@@ -382,6 +386,7 @@ model User {
   customerNotes       CustomerNote[]
   deliveryProfiles    DeliveryPartner[]
   notifications       Notification[]
+  notificationDevices NotificationDevice[]
   otpCodes            OTPCode[]
   posSessions         POSSession[]      @relation("POSOperator")
   refreshTokens       RefreshToken[]
@@ -562,6 +567,9 @@ model Order {
   items                OrderItem[]
   statusHistory        OrderStatusHistory[]
   payments             Payment[]
+  refunds              Refund[]
+  locationHistory      PartnerLocationHistory[]
+  liveTrackingSession  LiveTrackingSession?
 
   @@unique([businessId, orderNumber])
   @@index([businessId])
@@ -706,9 +714,11 @@ model DeliveryPartner {
   updatedAt       DateTime            @updatedAt
   deliveries      Delivery[]          @relation("DeliveryAssignedPartner")
   pickupDeliveries Delivery[]         @relation("DeliveryPickupPartner")
-  deliveryOrders  Order[]             @relation("OrderDeliveryPartner")
-  pickupOrders    Order[]             @relation("OrderPickupPartner")
-  auditLogs       PartnerAudit[]
+  deliveryOrders      Order[]               @relation("OrderDeliveryPartner")
+  pickupOrders        Order[]               @relation("OrderPickupPartner")
+  auditLogs           PartnerAudit[]
+  locationHistory     PartnerLocationHistory[]
+  liveTrackingSessions LiveTrackingSession[]
   user            User?               @relation(fields: [userId], references: [id])
   business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -764,6 +774,120 @@ model NotificationSound {
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+}
+
+model NotificationDevice {
+  id          String         @id @default(cuid())
+  userId      String
+  businessId  String
+  fcmToken    String
+  platform    DevicePlatform
+  deviceId    String?
+  appVersion  String?
+  isActive    Boolean        @default(true)
+  lastActive  DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@index([businessId])
+  @@index([fcmToken])
+}
+
+model PartnerLocationHistory {
+  id          String   @id @default(cuid())
+  partnerId   String
+  orderId     String?
+  lat         Float
+  lng         Float
+  accuracy    Float?
+  heading     Float?
+  speed       Float?
+  capturedAt  DateTime @default(now())
+  partner     DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  order       Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([partnerId])
+  @@index([orderId])
+  @@index([capturedAt])
+}
+
+model Banner {
+  id         String    @id @default(cuid())
+  businessId String
+  storeId    String?
+  title      String
+  imageUrl   String
+  link       String?
+  sortOrder  Int       @default(0)
+  startDate  DateTime?
+  endDate    DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store      Store?    @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([storeId])
+  @@index([isActive])
+}
+
+model Refund {
+  id          String       @id @default(cuid())
+  orderId     String
+  paymentId   String?
+  businessId  String
+  amount      Float
+  status      RefundStatus @default(PENDING)
+  reason      String
+  note        String?
+  processedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([businessId])
+  @@index([status])
+}
+
+model LiveTrackingSession {
+  id          String    @id @default(cuid())
+  orderId     String    @unique
+  partnerId   String
+  isActive    Boolean   @default(true)
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  lastLat     Float?
+  lastLng     Float?
+  lastUpdated DateTime?
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  partner     DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@index([isActive])
+}
+
+model AppVersion {
+  id            String   @id @default(cuid())
+  platform      String
+  version       String
+  minVersion    String
+  forceUpdate   Boolean  @default(false)
+  changelogUrl  String?
+  releaseNotes  String?
+  isActive      Boolean  @default(true)
+  publishedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([platform, version])
+  @@index([platform])
 }
 
 model POSSession {
@@ -2044,4 +2168,18 @@ enum PartnerAvailability {
   ONLINE
   OFFLINE
   BUSY
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+  FAILED
 }
