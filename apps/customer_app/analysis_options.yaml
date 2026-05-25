@@ -1,0 +1,21 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  plugins:
+    - custom_lint
+  exclude:
+    - "**/*.freezed.dart"
+    - "**/*.g.dart"
+  errors:
+    invalid_annotation_target: ignore
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_print
+    - prefer_single_quotes
+    - require_trailing_commas
+    - use_super_parameters
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - sort_pub_dependencies: false

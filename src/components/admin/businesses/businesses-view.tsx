@@ -35,6 +35,7 @@ import { useAdminStore, BUSINESS_TYPE_WORKFLOWS } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { MobileProvisionSection } from "./mobile-provision-section"
 
 // ---- Plan data type — feature access only, no pricing ----
 interface PlanApiData {
@@ -1567,13 +1568,13 @@ export function BusinessesView() {
                         </div>
                       ) : (<div className="rounded-lg border border-dashed p-4 text-center"><p className="text-sm text-muted-foreground">No active subscription</p></div>)}
                     </div>
-                    {biz.deployments.length > 0 && (
+                    {biz.deployments.filter(d => !["CUSTOMER_APP","DELIVERY_APP","ADMIN_APP"].includes(d.type)).length > 0 && (
                       <>
                         <Separator />
                         <div className="space-y-3">
                           <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deployments</h4>
                           <div className="space-y-1.5">
-                            {biz.deployments.map((dep) => (
+                            {biz.deployments.filter(d => !["CUSTOMER_APP","DELIVERY_APP","ADMIN_APP"].includes(d.type)).map((dep) => (
                               <div key={dep.id} className="rounded-lg border p-2.5 flex items-center justify-between">
                                 <div className="flex items-center gap-2"><span className="text-xs font-medium">{dep.type.replace(/_/g, " ")}</span><span className="text-[10px] text-muted-foreground">v{dep.version || "?"}</span></div>
                                 <StatusBadge status={dep.status} />
@@ -1583,6 +1584,11 @@ export function BusinessesView() {
                         </div>
                       </>
                     )}
+                    <MobileProvisionSection
+                      businessId={biz.id}
+                      slug={biz.slug}
+                      initialDeployments={biz.deployments}
+                    />
                     <Separator />
                     {/* Branding & Domain */}
                     <div className="space-y-3">

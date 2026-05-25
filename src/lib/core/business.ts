@@ -7,6 +7,7 @@
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { generateStoreCode } from '@/lib/core/store';
+import { triggerMobileProvisioning } from '@/lib/mobile-provision';
 import type {
   BusinessListFilters,
   BusinessStats,
@@ -577,6 +578,18 @@ export async function createBusiness(data: CreateBusinessRequest) {
 
   // Return the created business with relations plus owner credentials
   const business = await getBusiness(result.business.id);
+
+  // Auto-provision mobile apps (fire-and-forget — never blocks business creation)
+  void triggerMobileProvisioning({
+    businessId: result.business.id,
+    slug: data.slug,
+    name: data.name,
+    logo: data.logo,
+    primaryColor: data.primaryColor,
+    businessType: data.businessType,
+    packageBase: `com.${data.slug.replace(/-/g, '')}`,
+  });
+
   return {
     ...business,
     ownerCredentials: {
