@@ -52,21 +52,19 @@ function StorefrontContextLoader({
         const biz = json.data.business
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
         if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
-        if (biz.logo)    setCurrentBusinessLogo(biz.logo)
-        if (biz.favicon) {
-          setCurrentBusinessFavicon(biz.favicon)
-          // Inject per-business favicon into the browser tab immediately.
-          // Append ?v=timestamp to bust the browser's aggressive favicon cache so
-          // the new logo appears even if the browser has a stale cached version.
-          if (typeof document !== 'undefined') {
-            const faviconUrl = biz.favicon + '?v=' + Date.now()
-            // Remove ALL existing icon links to avoid stale tab icons
-            document.querySelectorAll("link[rel~='icon'], link[rel~='shortcut icon']").forEach(el => el.remove())
-            const link = document.createElement('link')
-            link.rel = 'icon'
-            link.href = faviconUrl
-            document.head.appendChild(link)
-          }
+        if (biz.logo) setCurrentBusinessLogo(biz.logo)
+        // Always inject a favicon — use business favicon if set, otherwise the
+        // platform logo. This ensures the browser tab always shows something.
+        if (typeof document !== 'undefined') {
+          const rawFavicon = biz.favicon || '/placeholder-logo.svg'
+          const faviconUrl = rawFavicon + '?v=' + Date.now()
+          if (biz.favicon) setCurrentBusinessFavicon(biz.favicon)
+          // Remove ALL existing icon links to guarantee a clean inject
+          document.querySelectorAll("link[rel~='icon'], link[rel~='shortcut icon']").forEach(el => el.remove())
+          const link = document.createElement('link')
+          link.rel = 'icon'
+          link.href = faviconUrl
+          document.head.appendChild(link)
         }
         const store = json.data.store
         if (store?.id) {

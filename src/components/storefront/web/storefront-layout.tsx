@@ -57,23 +57,19 @@ export function StorefrontLayout({ children, brandColor, nav, currentStore, onOp
       <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center h-16 gap-3">
-            {/* Logo */}
+            {/* Logo — always show an image; fallback to placeholder-logo.svg if null */}
             <button onClick={() => nav.go("home")} className="flex items-center gap-2.5 shrink-0 mr-2">
-              {currentBusinessLogo ? (
-                <img
-                  src={currentBusinessLogo}
-                  alt={currentBusinessName || "Store"}
-                  className="w-9 h-9 rounded-xl object-contain bg-white border border-gray-100"
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                />
-              ) : (
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-base"
-                  style={{ backgroundColor: brandColor }}
-                >
-                  {initial}
-                </div>
-              )}
+              <img
+                src={currentBusinessLogo || "/placeholder-logo.svg"}
+                alt={currentBusinessName || "Store"}
+                className="w-9 h-9 rounded-xl object-contain bg-white border border-gray-100"
+                onError={(e) => {
+                  const img = e.currentTarget as HTMLImageElement
+                  if (!img.src.endsWith('/placeholder-logo.svg')) {
+                    img.src = '/placeholder-logo.svg'
+                  }
+                }}
+              />
               <div className="hidden sm:block text-left">
                 <div className="font-bold text-gray-900 text-sm leading-tight">{currentBusinessName || "Store"}</div>
                 {currentStore ? (
