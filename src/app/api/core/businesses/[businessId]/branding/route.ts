@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
+import { resolveImageUrl } from '@/lib/image-url'
 import type { NextRequest } from 'next/server'
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
@@ -17,7 +18,17 @@ export const GET = withMiddleware({ requireAuth: true })(
       if (!businessId) return createErrorResponse('Missing businessId', 400)
 
       const branding = await db.businessBranding.findUnique({ where: { businessId } })
-      return NextResponse.json({ success: true, data: branding })
+      if (!branding) return NextResponse.json({ success: true, data: null })
+      return NextResponse.json({
+        success: true,
+        data: {
+          ...branding,
+          logo:        resolveImageUrl(branding.logo),
+          favicon:     resolveImageUrl(branding.favicon),
+          coverImage:  resolveImageUrl(branding.coverImage),
+          appIcon:     resolveImageUrl(branding.appIcon),
+        },
+      })
     } catch (error) {
       return createErrorResponse(
         error instanceof Error ? error.message : 'Failed to get branding',
@@ -68,7 +79,25 @@ export const PUT = withMiddleware({
       },
     })
 
-    return NextResponse.json({ success: true, data: branding })
+    // Keep Business.logo / Business.favicon in sync so store-context and
+    // storefront picks up the latest branding without a separate upload step.
+    const bizSync: Record<string, unknown> = {}
+    if (body.logo     !== undefined) bizSync.logo    = body.logo    || null
+    if (body.favicon  !== undefined) bizSync.favicon = body.favicon || null
+    if (Object.keys(bizSync).length > 0) {
+      await db.business.update({ where: { id: businessId }, data: bizSync })
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...branding,
+        logo:       resolveImageUrl(branding.logo),
+        favicon:    resolveImageUrl(branding.favicon),
+        coverImage: resolveImageUrl(branding.coverImage),
+        appIcon:    resolveImageUrl(branding.appIcon),
+      },
+    })
   } catch (error) {
     return createErrorResponse(
       error instanceof Error ? error.message : 'Failed to update branding',

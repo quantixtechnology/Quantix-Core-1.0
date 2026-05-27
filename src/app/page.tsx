@@ -55,13 +55,17 @@ function StorefrontContextLoader({
         if (biz.logo)    setCurrentBusinessLogo(biz.logo)
         if (biz.favicon) {
           setCurrentBusinessFavicon(biz.favicon)
-          // Inject per-business favicon into the browser tab immediately
+          // Inject per-business favicon into the browser tab immediately.
+          // Append ?v=timestamp to bust the browser's aggressive favicon cache so
+          // the new logo appears even if the browser has a stale cached version.
           if (typeof document !== 'undefined') {
-            const existing = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null
-            const link: HTMLLinkElement = existing || document.createElement('link')
+            const faviconUrl = biz.favicon + '?v=' + Date.now()
+            // Remove ALL existing icon links to avoid stale tab icons
+            document.querySelectorAll("link[rel~='icon'], link[rel~='shortcut icon']").forEach(el => el.remove())
+            const link = document.createElement('link')
             link.rel = 'icon'
-            link.href = biz.favicon
-            if (!existing) document.head.appendChild(link)
+            link.href = faviconUrl
+            document.head.appendChild(link)
           }
         }
         const store = json.data.store

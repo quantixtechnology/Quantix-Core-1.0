@@ -172,7 +172,7 @@ export function BrandingView() {
             {field("App Icon URL", "appIcon", "url", "https://...")}
             <div className="flex items-center gap-3 pt-1">
               {data.logo && <img src={resolveImageUrl(data.logo)} alt="logo" className="h-10 w-10 object-contain rounded border" />}
-              {data.appIcon && <img src={data.appIcon} alt="icon" className="h-10 w-10 object-contain rounded border" />}
+              {data.appIcon && <img src={resolveImageUrl(data.appIcon)} alt="icon" className="h-10 w-10 object-contain rounded border" />}
             </div>
           </CardContent>
         </Card>

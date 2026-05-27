@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { db } from '@/lib/db';
+import { resolveImageUrl } from '@/lib/image-url';
 
 // ============================================================================
 // Types
@@ -131,8 +132,8 @@ export async function resolveBusinessFromDomain(
     businessName: business.name,
     businessType: business.businessType,
     slug: business.slug,
-    logo: business.logo,
-    favicon: business.favicon,
+    logo: resolveImageUrl(business.logo),
+    favicon: resolveImageUrl(business.favicon),
     primaryColor: business.primaryColor,
     secondaryColor: business.secondaryColor,
     darkMode: business.darkMode,
@@ -250,8 +251,8 @@ export async function getBusinessBranding(
     businessName: business.name,
     businessType: business.businessType,
     slug: business.slug,
-    logo: business.logo,
-    favicon: business.favicon,
+    logo: resolveImageUrl(business.logo),
+    favicon: resolveImageUrl(business.favicon),
     primaryColor: business.primaryColor,
     secondaryColor: business.secondaryColor,
     darkMode: business.darkMode,
