@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveImageUrl } from '@/lib/image-url';
 
 export async function GET(req: Request) {
   try {
@@ -33,7 +34,8 @@ export async function GET(req: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, data: banners });
+    const resolved = banners.map(b => ({ ...b, imageUrl: resolveImageUrl(b.imageUrl) }));
+    return NextResponse.json({ success: true, data: resolved });
   } catch (e) {
     return NextResponse.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, { status: 500 });
   }

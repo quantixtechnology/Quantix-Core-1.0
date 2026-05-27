@@ -7,6 +7,7 @@ import { useCartStore } from "@/stores/cart-store"
 import { useProduct, useProducts } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
 import { getDemoProducts } from "@/lib/demo-data"
+import { resolveImageUrl } from "@/lib/image-url"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ErrorState } from "@/components/ui/loading-states"
 import { Badge } from "@/components/ui/badge"
@@ -299,7 +300,7 @@ export function CustomerProductDetail() {
 
       {/* Product Image */}
       <div className="relative h-64 bg-gray-50 overflow-hidden">
-        <ProductImage src={product.images[0]} alt={product.name} catColor={brandColor} />
+        <ProductImage src={resolveImageUrl(product.images[0])} alt={product.name} catColor={brandColor} />
         {/* Veg / Non-veg indicator */}
         <div className="absolute top-3 left-3">
           <div className={`w-5 h-5 border-2 flex items-center justify-center rounded-sm bg-white ${product.isVeg ? "border-green-600" : "border-red-600"}`}>
@@ -483,7 +484,7 @@ export function CustomerProductDetail() {
                   >
                     <div className="h-24 bg-gray-50 overflow-hidden">
                       {rp.image ? (
-                        <img src={rp.image} alt={rp.name} className="w-full h-full object-cover" />
+                        <img src={resolveImageUrl(rp.image)} alt={rp.name} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <Leaf className="w-8 h-8 text-gray-200" />

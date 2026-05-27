@@ -4,7 +4,7 @@
 // Returns: { success: true, url: "/uploads/products/<businessId>/<filename>" }
 //
 // Files are written to UPLOAD_ROOT (env var), which defaults to
-// <cwd>/public/uploads in dev and /root/uploads in production.
+// <cwd>/public/uploads in dev and /var/www/uploads in production.
 // UPLOAD_ROOT lives outside .next/ so it survives rebuilds.
 // ============================================================================
 

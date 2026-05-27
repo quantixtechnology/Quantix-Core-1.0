@@ -64,6 +64,7 @@ import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { resolveImageUrl } from "@/lib/image-url"
 
 // Local type definitions
 
@@ -1142,7 +1143,7 @@ export function ProductsView() {
                       {product.image ? (
                         <div className="rounded-lg overflow-hidden border bg-muted/20 h-40">
                           <img
-                            src={product.image}
+                            src={resolveImageUrl(product.image)}
                             alt={product.name}
                             className="w-full h-full object-contain"
                           />
@@ -1516,7 +1517,7 @@ export function ProductsView() {
               {formImageUrl ? (
                 <div className="relative rounded-lg overflow-hidden border bg-muted/20 h-32">
                   <img
-                    src={formImageUrl}
+                    src={resolveImageUrl(formImageUrl)}
                     alt="Product"
                     className="w-full h-full object-contain"
                   />

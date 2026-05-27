@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { resolveImageUrl, resolveImageUrls } from '@/lib/image-url';
 
 export async function GET(request: Request) {
   try {
@@ -174,7 +175,7 @@ export async function GET(request: Request) {
         status: product.status,
         sku: product.sku,
         barcode: product.barcode,
-        images: JSON.parse(product.images || '[]') as string[],
+        images: resolveImageUrls(JSON.parse(product.images || '[]') as string[]),
         unit: product.unit,
         unitQuantity: product.unitQuantity,
         isVeg: product.isVeg,
@@ -190,7 +191,7 @@ export async function GET(request: Request) {
           id: product.category.id,
           name: product.category.name,
           slug: product.category.slug,
-          image: product.category.image,
+          image: resolveImageUrl(product.category.image),
           workflowType: (product.category as Record<string, unknown>)?.workflowType || undefined,
         } : null,
         variants: product.variants.map((v) => {

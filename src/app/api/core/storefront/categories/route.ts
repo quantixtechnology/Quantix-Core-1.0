@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveImageUrl } from '@/lib/image-url';
 import type { Prisma } from '@prisma/client';
 
 export async function GET(request: Request) {
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
         name: category.name,
         slug: category.slug,
         description: category.description,
-        image: category.image,
+        image: resolveImageUrl(category.image),
         icon: category.icon,
         color: category.color ?? '#10B981',
         sortOrder: category.sortOrder,
@@ -90,7 +91,7 @@ export async function GET(request: Request) {
           id: child.id,
           name: child.name,
           slug: child.slug,
-          image: child.image,
+          image: resolveImageUrl(child.image),
           icon: child.icon,
           color: child.color ?? '#10B981',
           sortOrder: child.sortOrder,

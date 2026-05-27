@@ -17,6 +17,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveImageUrl } from '@/lib/image-url';
 import { type OrderStage, getDefaultStages } from '@/lib/order-stages';
 
 export async function GET(request: Request) {
@@ -187,8 +188,8 @@ export async function GET(request: Request) {
           slug: business.slug,
           businessType: business.businessType,
           isOnline: business.isOnline,
-          logo: business.logo,
-          favicon: business.favicon,
+          logo: resolveImageUrl(business.logo),
+          favicon: resolveImageUrl(business.favicon),
           primaryColor: business.primaryColor,
           secondaryColor: business.secondaryColor,
           darkMode: business.darkMode,

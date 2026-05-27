@@ -7,7 +7,11 @@
 // so this route is always hit directly without relying on afterFiles rewrites.
 //
 // UPLOAD_ROOT defaults to <cwd>/public/uploads in dev.
-// In production: UPLOAD_ROOT=/root/uploads (set in ecosystem.config.js).
+// In production: UPLOAD_ROOT=/var/www/uploads (set in ecosystem.config.js).
+//
+// If the requested file is missing, we redirect to a type-appropriate
+// placeholder SVG rather than returning a bare 404. This prevents broken
+// image icons across all clients (web, Flutter, mobile browser).
 // ============================================================================
 
 import { NextResponse } from 'next/server';
@@ -25,6 +29,15 @@ const MIME: Record<string, string> = {
   '.ico':  'image/x-icon',
   '.pdf':  'application/pdf',
 };
+
+// Infer which placeholder to use from the requested path segments.
+function placeholderFor(pathSegments: string[]): string {
+  const joined = pathSegments.join('/')
+  if (joined.startsWith('categories/'))              return '/placeholder-category.svg'
+  if (joined.startsWith('logos/') || joined.startsWith('business/')) return '/placeholder-logo.svg'
+  if (joined.startsWith('favicons/'))                return '/placeholder-logo.svg'
+  return '/placeholder-product.svg'
+}
 
 export async function GET(
   _req: Request,
@@ -52,6 +65,13 @@ export async function GET(
       },
     });
   } catch {
-    return new NextResponse('Not found', { status: 404 });
+    // File missing — redirect to an appropriate placeholder so clients never
+    // see a broken image icon. The placeholder is served from /public/ by Next.js.
+    const { path } = await context.params;
+    const placeholder = placeholderFor(path);
+    return NextResponse.redirect(new URL(placeholder, _req.url), {
+      status: 302,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
 }

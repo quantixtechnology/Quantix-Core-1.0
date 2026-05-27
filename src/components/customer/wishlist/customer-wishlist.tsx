@@ -8,6 +8,7 @@ import { useCartStore } from "@/stores/cart-store"
 import { ArrowLeft, Heart, ShoppingCart, Trash2, Loader2, Leaf } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { showSuccess, showError } from "@/lib/toast-utils"
+import { resolveImageUrl } from "@/lib/image-url"
 
 interface FavoriteItem {
   id: string
@@ -150,7 +151,7 @@ export function CustomerWishlist() {
                 <div className="w-20 h-20 rounded-xl bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
                   {product.images[0] ? (
                     <img
-                      src={product.images[0]}
+                      src={resolveImageUrl(product.images[0])}
                       alt={product.name}
                       className="w-full h-full object-cover"
                       onError={(e) => {

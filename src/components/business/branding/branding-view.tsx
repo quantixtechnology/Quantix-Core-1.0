@@ -10,6 +10,7 @@ import { Loader2, Palette, Save, RefreshCw } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { PageHeader } from "@/components/admin/shared/page-header"
+import { resolveImageUrl } from "@/lib/image-url"
 
 interface BrandingData {
   primaryColor: string
@@ -170,7 +171,7 @@ export function BrandingView() {
             {field("Cover Image URL", "coverImage", "url", "https://...")}
             {field("App Icon URL", "appIcon", "url", "https://...")}
             <div className="flex items-center gap-3 pt-1">
-              {data.logo && <img src={data.logo} alt="logo" className="h-10 w-10 object-contain rounded border" />}
+              {data.logo && <img src={resolveImageUrl(data.logo)} alt="logo" className="h-10 w-10 object-contain rounded border" />}
               {data.appIcon && <img src={data.appIcon} alt="icon" className="h-10 w-10 object-contain rounded border" />}
             </div>
           </CardContent>

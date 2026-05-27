@@ -20,7 +20,8 @@ module.exports = {
         HOSTNAME: '0.0.0.0',
         // Persistent upload directory — lives outside .next/ so rebuilds never delete files.
         // The upload route writes here; the files route reads from here.
-        UPLOAD_ROOT: '/root/uploads',
+        // IMPORTANT: must match the physical directory on disk. No symlink dependency.
+        UPLOAD_ROOT: '/var/www/uploads',
       },
       error_file: '/root/logs/quantix-error.log',
       out_file:   '/root/logs/quantix-out.log',

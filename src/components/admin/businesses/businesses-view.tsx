@@ -36,6 +36,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { MobileProvisionSection } from "./mobile-provision-section"
+import { resolveImageUrl } from "@/lib/image-url"
 
 // ---- Plan data type — feature access only, no pricing ----
 interface PlanApiData {
@@ -1317,7 +1318,7 @@ export function BusinessesView() {
                 <SheetHeader className="px-6 pt-6 pb-4 border-b">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-11 w-11">
-                      <AvatarImage src={biz.logo ?? undefined} alt={biz.name} className="object-contain" />
+                      <AvatarImage src={resolveImageUrl(biz.logo ?? undefined) || undefined} alt={biz.name} className="object-contain" />
                       <AvatarFallback className="text-sm font-semibold" style={{ backgroundColor: typeConf ? `${typeConf.color}18` : undefined, color: typeConf?.color }}>
                         {biz.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                       </AvatarFallback>
@@ -1697,7 +1698,7 @@ export function BusinessesView() {
                         <div className="space-y-2">
                           {biz.logo ? (
                             <div className="rounded-lg border p-3 flex items-center gap-3">
-                              <img src={biz.logo} alt="Logo" className="h-10 w-10 rounded object-contain bg-white border" />
+                              <img src={resolveImageUrl(biz.logo)} alt="Logo" className="h-10 w-10 rounded object-contain bg-white border" />
                               <div><p className="text-[10px] text-muted-foreground">Logo</p><p className="text-xs font-mono truncate max-w-[220px]">{biz.logo}</p></div>
                             </div>
                           ) : (

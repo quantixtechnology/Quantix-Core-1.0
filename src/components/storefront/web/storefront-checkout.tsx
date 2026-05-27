@@ -9,6 +9,7 @@ import {
   User, Phone as PhoneIcon, Check, LogIn, UserX, Lock, Navigation,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
+import { resolveImageUrl } from "@/lib/image-url"
 import type { WebNav } from "./storefront-website"
 import type { PickedStore } from "./storefront-store-picker"
 
@@ -575,7 +576,7 @@ export function StorefrontCheckout({ brandColor, nav, currentStore }: Storefront
               {items.map((item) => (
                 <div key={`${item.productId}-${item.variantId}`} className="flex items-center gap-3">
                   {item.image ? (
-                    <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover border border-gray-100 shrink-0" />
+                    <img src={resolveImageUrl(item.image)} alt={item.name} className="w-12 h-12 rounded-lg object-cover border border-gray-100 shrink-0" />
                   ) : (
                     <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 text-lg">🛍️</div>
                   )}

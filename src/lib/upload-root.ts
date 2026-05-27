@@ -1,6 +1,6 @@
 // Resolves the persistent upload directory for the current environment.
 //
-// In production (UPLOAD_ROOT=/root/uploads) files live outside the project
+// In production (UPLOAD_ROOT=/var/www/uploads) files live outside the project
 // entirely and survive npm run build / pm2 restart.
 //
 // In development (no env var) it falls back to <cwd>/public/uploads so local

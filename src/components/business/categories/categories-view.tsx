@@ -27,6 +27,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { showSuccess, showError } from "@/lib/toast-utils"
+import { resolveImageUrl } from "@/lib/image-url"
 
 interface Category {
   id: string
@@ -530,7 +531,7 @@ export function CategoriesView() {
                   <div className="relative rounded-lg overflow-hidden border bg-muted/30 h-36 flex items-center justify-center">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={imagePreview}
+                      src={resolveImageUrl(imagePreview)}
                       alt="Category preview"
                       className="h-full w-full object-cover"
                     />

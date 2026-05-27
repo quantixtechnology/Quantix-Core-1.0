@@ -50,6 +50,7 @@ import {
 } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
+import { resolveImageUrl } from "@/lib/image-url"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -428,7 +429,7 @@ export function DomainsView() {
                             style={{ backgroundColor: site.primaryColor || "#10B981" }}
                           >
                             {site.logo ? (
-                              <img src={site.logo} alt="" className="h-full w-full object-contain" />
+                              <img src={resolveImageUrl(site.logo)} alt="" className="h-full w-full object-contain" />
                             ) : (
                               <span className="text-white font-bold text-[11px]">{site.name.slice(0, 2).toUpperCase()}</span>
                             )}
