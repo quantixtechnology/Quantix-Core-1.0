@@ -102,8 +102,8 @@ export async function GET(request: Request) {
           select: { domain: true, subdomain: true, status: true },
         },
         // Fetch BusinessBranding as fallback for logo/favicon if Business fields are null
-        businessBranding: {
-          select: { logo: true, favicon: true, primaryColor: true, darkMode: true },
+        branding: {
+          select: { logo: true, favicon: true },
         },
       },
     });
@@ -192,8 +192,8 @@ export async function GET(request: Request) {
           slug: business.slug,
           businessType: business.businessType,
           isOnline: business.isOnline,
-          logo:    resolveImageUrl(business.logo    ?? business.businessBranding?.logo),
-          favicon: resolveImageUrl(business.favicon ?? business.businessBranding?.favicon),
+          logo:    resolveImageUrl(business.logo    ?? business.branding?.logo),
+          favicon: resolveImageUrl(business.favicon ?? business.branding?.favicon),
           primaryColor: business.primaryColor,
           secondaryColor: business.secondaryColor,
           darkMode: business.darkMode,
