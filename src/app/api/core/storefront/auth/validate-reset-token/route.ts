@@ -1,6 +1,6 @@
 // ============================================================================
 // POST /api/core/storefront/auth/validate-reset-token
-// Validate a password reset token (checks expiry and single-use).
+// Validate a password reset token stored on the Customer record.
 // Body: { token }
 // ============================================================================
 
@@ -16,12 +16,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'token is required' }, { status: 400 });
     }
 
-    const record = await db.passwordResetToken.findUnique({
-      where: { token },
-      select: { expiresAt: true, usedAt: true },
+    const customer = await db.customer.findFirst({
+      where: { passwordResetToken: token },
+      select: { passwordResetTokenExpiry: true },
     });
 
-    const isValid = !!record && record.expiresAt > new Date() && record.usedAt === null;
+    const isValid = !!customer &&
+      !!customer.passwordResetTokenExpiry &&
+      customer.passwordResetTokenExpiry > new Date();
 
     return NextResponse.json({ success: true, valid: isValid });
   } catch (error) {

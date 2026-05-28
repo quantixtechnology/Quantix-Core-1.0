@@ -1,6 +1,7 @@
 // ============================================================================
 // POST /api/core/storefront/auth/set-password
-// First-time password creation for storefront customers after OTP login.
+// First-time password creation for storefront customers (Customer-owned credentials).
+// Passwords are stored on the Customer record — isolated from Business Staff system.
 // Requires: Authorization: Bearer <refreshToken>
 // Body: { password, confirmPassword }
 // ============================================================================
@@ -8,8 +9,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
-
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&\-_#^]).{8,}$/;
 
 function validatePassword(pw: string): string | null {
   if (pw.length < 8) return 'Password must be at least 8 characters';
@@ -21,7 +20,7 @@ function validatePassword(pw: string): string | null {
 }
 
 async function resolveCustomerFromToken(authHeader: string | null): Promise<{
-  userId: string; customerId: string; email: string; businessId: string;
+  customerId: string; businessId: string; email: string; userId: string;
 } | null> {
   if (!authHeader) return null;
   const token = authHeader.replace('Bearer ', '').trim();
@@ -39,14 +38,14 @@ async function resolveCustomerFromToken(authHeader: string | null): Promise<{
   });
   if (!customer) return null;
 
-  return { userId: rt.user.id, customerId: customer.id, email: rt.user.email, businessId: customer.businessId };
+  return { customerId: customer.id, businessId: customer.businessId, email: rt.user.email, userId: rt.user.id };
 }
 
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get('authorization');
-    const session = await resolveCustomerFromToken(authHeader);
-    if (!session) {
+    const ctx = await resolveCustomerFromToken(authHeader);
+    if (!ctx) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
@@ -64,14 +63,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: pwError }, { status: 400 });
     }
 
-    const user = await db.user.findUnique({
-      where: { id: session.userId },
-      select: { id: true, hasPassword: true },
+    const customer = await db.customer.findUnique({
+      where: { id: ctx.customerId },
+      select: { id: true, isPasswordSet: true, isLoginDisabled: true },
     });
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+    if (!customer) {
+      return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
     }
-    if (user.hasPassword) {
+    if (customer.isLoginDisabled) {
+      return NextResponse.json({ success: false, error: 'Account is disabled. Contact the store.' }, { status: 403 });
+    }
+    if (customer.isPasswordSet) {
       return NextResponse.json(
         { success: false, error: 'Password already set. Use change-password to update it.' },
         { status: 400 }
@@ -81,26 +83,26 @@ export async function POST(request: Request) {
     const passwordHash = await hashPassword(password);
     const now = new Date();
 
-    await db.$transaction([
-      db.user.update({
-        where: { id: session.userId },
-        data: { passwordHash, hasPassword: true, authProvider: 'PASSWORD' },
-      }),
-      db.customer.update({
-        where: { id: session.customerId },
-        data: { isPasswordSet: true, mustChangePassword: false },
-      }),
-    ]);
+    await db.customer.update({
+      where: { id: ctx.customerId },
+      data: {
+        passwordHash,
+        isPasswordSet: true,
+        passwordCreatedAt: now,
+        passwordUpdatedAt: now,
+        mustChangePassword: false,
+      },
+    });
 
-    console.log(`[storefront/auth/set-password] password created userId=${session.userId} email=${session.email}`);
+    console.log(`[storefront/auth/set-password] ok customerId=${ctx.customerId} email=${ctx.email}`);
 
     await db.activityLog.create({
       data: {
-        userId: session.userId,
+        userId: ctx.userId,
         action: 'customer.password_created',
         entity: 'Customer',
-        entityId: session.customerId,
-        details: JSON.stringify({ email: session.email, businessId: session.businessId }),
+        entityId: ctx.customerId,
+        details: JSON.stringify({ email: ctx.email, businessId: ctx.businessId }),
       },
     }).catch(() => null);
 

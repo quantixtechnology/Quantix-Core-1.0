@@ -1,8 +1,9 @@
 // ============================================================================
 // POST /api/core/storefront/auth/login-password
-// Login using email + password (multi-tenant, storefront customers only).
-// Body: { email, password, businessId } OR { email, password, businessSlug }
+// Email + password login for storefront customers (Customer-owned credentials).
+// Multi-tenant: customer must belong to the specified business.
 // Account lockout after 5 consecutive failures (15-min window).
+// Body: { email, password, businessId } OR { email, password, businessSlug }
 // ============================================================================
 
 import { NextResponse } from 'next/server';
@@ -13,7 +14,6 @@ import { createStorefrontSession, normalizeEmail } from '@/lib/storefront-auth';
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
-// Rate limit: 10 password-login attempts per 15 min per email+business
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 function checkRateLimit(key: string): boolean {
@@ -48,42 +48,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'businessId or businessSlug is required' }, { status: 400 });
     }
 
-    // Resolve business
     const business = await db.business.findFirst({
-      where: body.businessId
-        ? { id: body.businessId }
-        : { slug: body.businessSlug },
+      where: body.businessId ? { id: body.businessId } : { slug: body.businessSlug },
       select: { id: true, name: true, slug: true, status: true },
     });
-
     if (!business || business.status !== 'ACTIVE') {
       return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
     const rlKey = `login-pw:${email}:${business.id}`;
     if (!checkRateLimit(rlKey)) {
-      return NextResponse.json(
-        { success: false, error: 'Too many attempts. Please try again later.' },
-        { status: 429 }
-      );
+      return NextResponse.json({ success: false, error: 'Too many attempts. Please try again later.' }, { status: 429 });
     }
 
-    // Find customer within this business
     const customer = await db.customer.findFirst({
       where: { businessId: business.id, email },
       select: {
         id: true, businessId: true, name: true, phone: true,
-        isPasswordSet: true, failedLoginAttempts: true,
-        accountLockedUntil: true, mustChangePassword: true, userId: true,
+        passwordHash: true, isPasswordSet: true,
+        failedLoginAttempts: true, accountLockedUntil: true,
+        mustChangePassword: true, isLoginDisabled: true,
       },
     });
 
-    if (!customer || !customer.userId) {
-      // Anti-enumeration — same response whether not found or bad password
+    // Anti-enumeration: generic error for missing customer
+    if (!customer) {
       return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
     }
 
-    // Account lockout check
+    if (customer.isLoginDisabled) {
+      return NextResponse.json(
+        { success: false, error: 'Account disabled. Contact the store.' },
+        { status: 403 }
+      );
+    }
+
     if (customer.accountLockedUntil && customer.accountLockedUntil > new Date()) {
       const minutesLeft = Math.ceil((customer.accountLockedUntil.getTime() - Date.now()) / 60000);
       return NextResponse.json(
@@ -92,43 +91,33 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!customer.isPasswordSet) {
+    if (!customer.isPasswordSet || !customer.passwordHash) {
       return NextResponse.json(
-        { success: false, error: 'No password set. Please use OTP login or reset your password.' },
+        { success: false, error: 'No password set. Please login with OTP or reset your password.' },
         { status: 400 }
       );
     }
 
-    // Verify password against User record
-    const user = await db.user.findUnique({
-      where: { id: customer.userId },
-      select: { id: true, passwordHash: true, isActive: true },
-    });
-
-    if (!user || !user.isActive || !user.passwordHash) {
-      return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
-    }
-
-    const isValid = await verifyPassword(password, user.passwordHash);
+    const isValid = await verifyPassword(password, customer.passwordHash);
 
     if (!isValid) {
-      const newFailCount = customer.failedLoginAttempts + 1;
-      const shouldLock = newFailCount >= MAX_FAILED_ATTEMPTS;
+      const newFail = customer.failedLoginAttempts + 1;
+      const shouldLock = newFail >= MAX_FAILED_ATTEMPTS;
       await db.customer.update({
         where: { id: customer.id },
         data: {
-          failedLoginAttempts: newFailCount,
+          failedLoginAttempts: newFail,
           ...(shouldLock ? { accountLockedUntil: new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000) } : {}),
         },
       });
-      const attemptsLeft = MAX_FAILED_ATTEMPTS - newFailCount;
+      const attemptsLeft = MAX_FAILED_ATTEMPTS - newFail;
       const msg = shouldLock
         ? `Account locked for ${LOCKOUT_MINUTES} minutes due to too many failed attempts.`
         : `Invalid email or password. ${attemptsLeft} attempt(s) remaining.`;
       return NextResponse.json({ success: false, error: msg }, { status: 401 });
     }
 
-    // Reset lockout on success
+    // Success — reset lockout
     await db.customer.update({
       where: { id: customer.id },
       data: { failedLoginAttempts: 0, accountLockedUntil: null },

@@ -1,6 +1,7 @@
 // ============================================================================
 // POST /api/core/storefront/auth/change-password
 // Change password for an authenticated storefront customer.
+// Credentials are stored on Customer record — isolated from staff system.
 // Requires: Authorization: Bearer <refreshToken>
 // Body: { currentPassword, newPassword, confirmPassword }
 // ============================================================================
@@ -18,8 +19,8 @@ function validatePassword(pw: string): string | null {
   return null;
 }
 
-async function resolveUserFromToken(authHeader: string | null): Promise<{
-  userId: string; customerId: string; email: string;
+async function resolveCustomerFromToken(authHeader: string | null): Promise<{
+  customerId: string; businessId: string; email: string; userId: string;
 } | null> {
   if (!authHeader) return null;
   const token = authHeader.replace('Bearer ', '').trim();
@@ -33,18 +34,18 @@ async function resolveUserFromToken(authHeader: string | null): Promise<{
 
   const customer = await db.customer.findFirst({
     where: { userId: rt.user.id },
-    select: { id: true },
+    select: { id: true, businessId: true },
   });
   if (!customer) return null;
 
-  return { userId: rt.user.id, customerId: customer.id, email: rt.user.email };
+  return { customerId: customer.id, businessId: customer.businessId, email: rt.user.email, userId: rt.user.id };
 }
 
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get('authorization');
-    const session = await resolveUserFromToken(authHeader);
-    if (!session) {
+    const ctx = await resolveCustomerFromToken(authHeader);
+    if (!ctx) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
@@ -76,47 +77,51 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: pwError }, { status: 400 });
     }
 
-    const user = await db.user.findUnique({
-      where: { id: session.userId },
-      select: { id: true, passwordHash: true, hasPassword: true },
+    const customer = await db.customer.findUnique({
+      where: { id: ctx.customerId },
+      select: { id: true, passwordHash: true, isPasswordSet: true, isLoginDisabled: true },
     });
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+    if (!customer) {
+      return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
     }
-    if (!user.hasPassword || !user.passwordHash) {
+    if (customer.isLoginDisabled) {
+      return NextResponse.json({ success: false, error: 'Account is disabled. Contact the store.' }, { status: 403 });
+    }
+    if (!customer.isPasswordSet || !customer.passwordHash) {
       return NextResponse.json(
         { success: false, error: 'No password set. Use set-password first.' },
         { status: 400 }
       );
     }
 
-    const isCurrentValid = await verifyPassword(currentPassword, user.passwordHash);
+    const isCurrentValid = await verifyPassword(currentPassword, customer.passwordHash);
     if (!isCurrentValid) {
       return NextResponse.json({ success: false, error: 'Current password is incorrect' }, { status: 401 });
     }
 
     const newHash = await hashPassword(newPassword);
+    const now = new Date();
 
-    await db.$transaction([
-      db.user.update({
-        where: { id: session.userId },
-        data: { passwordHash: newHash },
-      }),
-      db.customer.update({
-        where: { id: session.customerId },
-        data: { mustChangePassword: false, failedLoginAttempts: 0, accountLockedUntil: null },
-      }),
-    ]);
+    await db.customer.update({
+      where: { id: ctx.customerId },
+      data: {
+        passwordHash: newHash,
+        passwordUpdatedAt: now,
+        mustChangePassword: false,
+        failedLoginAttempts: 0,
+        accountLockedUntil: null,
+      },
+    });
 
-    console.log(`[storefront/auth/change-password] ok userId=${session.userId} email=${session.email}`);
+    console.log(`[storefront/auth/change-password] ok customerId=${ctx.customerId} email=${ctx.email}`);
 
     await db.activityLog.create({
       data: {
-        userId: session.userId,
+        userId: ctx.userId,
         action: 'customer.password_changed',
         entity: 'Customer',
-        entityId: session.customerId,
-        details: JSON.stringify({ email: session.email }),
+        entityId: ctx.customerId,
+        details: JSON.stringify({ email: ctx.email, businessId: ctx.businessId }),
       },
     }).catch(() => null);
 

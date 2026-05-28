@@ -55,6 +55,20 @@ export async function POST(request: Request) {
       data: { isVerified: true, verifiedAt: new Date() },
     });
 
+    // Check if customer login is disabled for this business
+    if (businessId) {
+      const existingCustomer = await db.customer.findFirst({
+        where: { businessId, email },
+        select: { isLoginDisabled: true },
+      });
+      if (existingCustomer?.isLoginDisabled) {
+        return NextResponse.json(
+          { success: false, error: 'Account disabled. Contact the store.' },
+          { status: 403 }
+        );
+      }
+    }
+
     // Create session
     const session = await createStorefrontSession({
       email,

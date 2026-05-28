@@ -1277,10 +1277,18 @@ model Customer {
   phoneVerified    Boolean                @default(false)
   walletBalance    Float                  @default(0)
   lastLoginAt      DateTime?
-  isPasswordSet       Boolean   @default(false)
-  failedLoginAttempts Int       @default(0)
-  accountLockedUntil  DateTime?
-  mustChangePassword  Boolean   @default(false)
+  // ── Customer-owned credentials (isolated from BusinessUser/Staff system) ──
+  passwordHash           String?
+  isPasswordSet          Boolean   @default(false)
+  passwordCreatedAt      DateTime?
+  passwordUpdatedAt      DateTime?
+  passwordResetToken     String?   @unique
+  passwordResetTokenExpiry DateTime?
+  lastPasswordResetAt    DateTime?
+  mustChangePassword     Boolean   @default(false)
+  failedLoginAttempts    Int       @default(0)
+  accountLockedUntil     DateTime?
+  isLoginDisabled        Boolean   @default(false)
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
   addresses     Address[]
@@ -1302,6 +1310,7 @@ model Customer {
   @@index([phone])
   @@index([status])
   @@index([businessId, email])
+  @@index([passwordResetToken])
 }
 
 model Address {

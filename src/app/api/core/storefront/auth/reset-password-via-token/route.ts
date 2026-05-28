@@ -1,7 +1,7 @@
 // ============================================================================
 // POST /api/core/storefront/auth/reset-password-via-token
-// Reset password using a token from the forgot-password email link.
-// Token is single-use and expires in 15 minutes.
+// Reset customer password using the token from forgot-password email link.
+// Token is stored on Customer record, single-use (cleared after use).
 // Body: { token, password, confirmPassword }
 // Returns: session (auto-login after reset)
 // ============================================================================
@@ -44,70 +44,68 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: pwError }, { status: 400 });
     }
 
-    const now = new Date();
-    const tokenRecord = await db.passwordResetToken.findUnique({
-      where: { token },
-      include: {
-        user: {
-          select: { id: true, email: true, phone: true, isActive: true },
-        },
+    const customer = await db.customer.findFirst({
+      where: { passwordResetToken: token },
+      select: {
+        id: true, businessId: true, name: true, email: true, phone: true,
+        passwordResetTokenExpiry: true, isLoginDisabled: true, userId: true,
       },
     });
 
-    if (!tokenRecord || tokenRecord.expiresAt < now || tokenRecord.usedAt !== null) {
+    if (
+      !customer ||
+      !customer.passwordResetTokenExpiry ||
+      customer.passwordResetTokenExpiry < new Date()
+    ) {
       return NextResponse.json(
         { success: false, error: 'Invalid or expired reset token' },
         { status: 401 }
       );
     }
-    if (!tokenRecord.user.isActive) {
-      return NextResponse.json({ success: false, error: 'Account is deactivated' }, { status: 403 });
+
+    if (customer.isLoginDisabled) {
+      return NextResponse.json({ success: false, error: 'Account is disabled.' }, { status: 403 });
+    }
+
+    if (!customer.email) {
+      return NextResponse.json({ success: false, error: 'Customer email not found' }, { status: 400 });
     }
 
     const passwordHash = await hashPassword(password);
+    const now = new Date();
 
-    // Resolve the customer to find businessId for session creation
-    const customer = await db.customer.findFirst({
-      where: { userId: tokenRecord.userId },
-      select: { id: true, businessId: true, name: true, phone: true, isPasswordSet: true },
+    await db.customer.update({
+      where: { id: customer.id },
+      data: {
+        passwordHash,
+        isPasswordSet: true,
+        passwordUpdatedAt: now,
+        lastPasswordResetAt: now,
+        mustChangePassword: false,
+        failedLoginAttempts: 0,
+        accountLockedUntil: null,
+        passwordResetToken: null,
+        passwordResetTokenExpiry: null,
+      },
     });
 
-    if (!customer) {
-      return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
+    console.log(`[storefront/auth/reset-password-via-token] ok customerId=${customer.id} email=${customer.email}`);
+
+    if (customer.userId) {
+      await db.activityLog.create({
+        data: {
+          userId: customer.userId,
+          action: 'customer.password_reset',
+          entity: 'Customer',
+          entityId: customer.id,
+          details: JSON.stringify({ email: customer.email, businessId: customer.businessId }),
+        },
+      }).catch(() => null);
     }
 
-    // Mark token used + update password + update customer atomically
-    await db.$transaction([
-      db.passwordResetToken.update({
-        where: { id: tokenRecord.id },
-        data: { usedAt: new Date() },
-      }),
-      db.user.update({
-        where: { id: tokenRecord.userId },
-        data: { passwordHash, hasPassword: true, authProvider: 'PASSWORD' },
-      }),
-      db.customer.update({
-        where: { id: customer.id },
-        data: { isPasswordSet: true, mustChangePassword: false, failedLoginAttempts: 0, accountLockedUntil: null },
-      }),
-    ]);
-
-    console.log(`[storefront/auth/reset-password-via-token] ok userId=${tokenRecord.userId} email=${tokenRecord.user.email}`);
-
-    await db.activityLog.create({
-      data: {
-        userId: tokenRecord.userId,
-        action: 'customer.password_reset',
-        entity: 'Customer',
-        entityId: customer.id,
-        details: JSON.stringify({ email: tokenRecord.user.email, businessId: customer.businessId }),
-      },
-    }).catch(() => null);
-
-    // Auto-login: create a fresh session
     const session = await createStorefrontSession({
-      email: tokenRecord.user.email,
-      phone: tokenRecord.user.phone || customer.phone || '',
+      email: customer.email,
+      phone: customer.phone || '',
       name: customer.name,
       businessId: customer.businessId,
       emailVerified: true,

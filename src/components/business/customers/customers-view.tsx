@@ -140,6 +140,7 @@ interface Customer {
   walletBalance: number
   status: string
   lastOrderAt?: string
+  lastLoginAt?: string
   tags: string[]
   addresses: CustomerAddress[]
   isActive: boolean
@@ -153,6 +154,15 @@ interface Customer {
   verified?: boolean
   createdStoreId?: string
   preferredStoreId?: string
+  // Security / auth fields (Customer-owned credentials)
+  isPasswordSet?: boolean
+  mustChangePassword?: boolean
+  isLoginDisabled?: boolean
+  failedLoginAttempts?: number
+  accountLockedUntil?: string
+  passwordCreatedAt?: string
+  passwordUpdatedAt?: string
+  lastPasswordResetAt?: string
 }
 
 interface EditForm {
@@ -369,6 +379,11 @@ export function CustomersView() {
     "customer.read": true, "customer.write": true, "customer.delete": false,
     "order.read":    true, "order.refund":   false, "customer.export": false,
   })
+
+  // ── Security tab state ──────────────────────────────────────────────────────
+  const [tempPasswordOpen,  setTempPasswordOpen]  = useState(false)
+  const [tempPassword,      setTempPassword]      = useState("")
+  const [tempPasswordConfirm, setTempPasswordConfirm] = useState("")
 
   // ── Filter / sort ───────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("")
@@ -593,6 +608,33 @@ export function CustomersView() {
     onError:   (e) => showError(e instanceof Error ? e.message : "Failed to set default address"),
   })
 
+  // ── Security mutations ──────────────────────────────────────────────────────
+  const securityActionMutation = useMutation({
+    mutationFn: async ({ action, payload }: { action: string; payload?: Record<string, unknown> }) => {
+      if (!businessId || !selectedCustomer) throw new Error("No context")
+      const res = await fetch(
+        `/api/core/businesses/${encodeURIComponent(businessId)}/customers/${encodeURIComponent(selectedCustomer.id)}/${action}`,
+        { method: "POST", headers: getAuthHeaders(), body: payload ? JSON.stringify(payload) : undefined },
+      )
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || "Action failed")
+      return data
+    },
+    onSuccess: (_, { action }) => {
+      queryClient.invalidateQueries({ queryKey: ["customers", businessId] })
+      const messages: Record<string, string> = {
+        "send-password-reset": "Reset link sent",
+        "reset-password":      "Temporary password set",
+        "force-password-change":"Force password change set",
+        "disable-login":       "Login disabled",
+        "enable-login":        "Login enabled",
+      }
+      showSuccess(messages[action] || "Done")
+      if (action === "reset-password") { setTempPasswordOpen(false); setTempPassword(""); setTempPasswordConfirm("") }
+    },
+    onError: (e) => showError(e instanceof Error ? e.message : "Action failed"),
+  })
+
   // ── Parsed customer list ────────────────────────────────────────────────────
   const customerList: Customer[] = useMemo(() => {
     const raw = customersResponse?.data
@@ -639,9 +681,19 @@ export function CustomersView() {
           ? (c.storesVisited as Record<string, unknown>[]).map(s => ({ id: String(s.id), name: String(s.name) }))
           : undefined,
         createdAt:     String(c.createdAt || ""),
+        lastLoginAt:   c.lastLoginAt  ? String(c.lastLoginAt)  : undefined,
         alternatePhone:meta.alternatePhone ? String(meta.alternatePhone) : undefined,
         referredBy:    meta.referredBy     ? String(meta.referredBy)     : undefined,
         metadata:      meta,
+        // Security fields
+        isPasswordSet:       Boolean(c.isPasswordSet),
+        mustChangePassword:  Boolean(c.mustChangePassword),
+        isLoginDisabled:     Boolean(c.isLoginDisabled),
+        failedLoginAttempts: Number(c.failedLoginAttempts ?? 0),
+        accountLockedUntil:  c.accountLockedUntil ? String(c.accountLockedUntil) : undefined,
+        passwordCreatedAt:   c.passwordCreatedAt  ? String(c.passwordCreatedAt)  : undefined,
+        passwordUpdatedAt:   c.passwordUpdatedAt  ? String(c.passwordUpdatedAt)  : undefined,
+        lastPasswordResetAt: c.lastPasswordResetAt ? String(c.lastPasswordResetAt) : undefined,
       }
     })
   }, [customersResponse])
@@ -1121,13 +1173,14 @@ export function CustomersView() {
                 {/* ── Tabs ────────────────────────────────────────────────── */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
                   <div className="px-4 pt-3 shrink-0">
-                    <TabsList className="grid grid-cols-6 h-8 w-full">
+                    <TabsList className="grid grid-cols-7 h-8 w-full">
                       <TabsTrigger value="overview"   className="text-[10px] px-1">Overview</TabsTrigger>
                       <TabsTrigger value="details"    className="text-[10px] px-1">Details</TabsTrigger>
                       <TabsTrigger value="addresses"  className="text-[10px] px-1">Address</TabsTrigger>
                       <TabsTrigger value="orders"     className="text-[10px] px-1">Orders</TabsTrigger>
                       <TabsTrigger value="notes"      className="text-[10px] px-1">Notes</TabsTrigger>
                       <TabsTrigger value="activity"   className="text-[10px] px-1">Activity</TabsTrigger>
+                      <TabsTrigger value="security"   className="text-[10px] px-1">Security</TabsTrigger>
                     </TabsList>
                   </div>
 
@@ -1779,6 +1832,235 @@ export function CustomersView() {
                             </div>
                           </div>
                         )}
+                      </TabsContent>
+
+                      {/* ──────────────────────────────────────────────────── */}
+                      {/* SECURITY TAB                                        */}
+                      {/* ──────────────────────────────────────────────────── */}
+                      <TabsContent value="security" className="mt-0 space-y-5">
+
+                        {/* Section 1 — Authentication Status */}
+                        <div>
+                          <SectionLabel>Authentication</SectionLabel>
+                          <div className="rounded-lg border divide-y">
+                            {/* Login Method */}
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs font-medium">OTP Login</span>
+                              </div>
+                              <Badge variant="outline" className="text-[9px] border-green-300 text-green-700 bg-green-50">Enabled</Badge>
+                            </div>
+                            {/* Password Status */}
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs font-medium">Password Login</span>
+                              </div>
+                              {customer.isPasswordSet ? (
+                                <Badge variant="outline" className="text-[9px] border-emerald-300 text-emerald-700 bg-emerald-50">Set</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[9px] border-slate-300 text-slate-500">Not Set</Badge>
+                              )}
+                            </div>
+                            {/* Account Status */}
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs font-medium">Account Status</span>
+                              </div>
+                              {customer.isLoginDisabled ? (
+                                <Badge variant="outline" className="text-[9px] border-red-300 text-red-700 bg-red-50">Disabled</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[9px] border-green-300 text-green-700 bg-green-50">Active</Badge>
+                              )}
+                            </div>
+                            {/* Must Change Password */}
+                            {customer.mustChangePassword && (
+                              <div className="flex items-center justify-between px-3 py-2.5">
+                                <div className="flex items-center gap-2">
+                                  <RefreshCw className="h-3.5 w-3.5 text-amber-500" />
+                                  <span className="text-xs font-medium text-amber-700">Password Change Required</span>
+                                </div>
+                                <Badge variant="outline" className="text-[9px] border-amber-300 text-amber-700 bg-amber-50">Pending</Badge>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Section 2 — Login Activity */}
+                        <div>
+                          <SectionLabel>Login Activity</SectionLabel>
+                          <div className="rounded-lg border divide-y">
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <span className="text-[11px] text-muted-foreground">Last Login</span>
+                              <span className="text-xs font-medium">{formatDateTime(customer.lastLoginAt)}</span>
+                            </div>
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <span className="text-[11px] text-muted-foreground">Failed Attempts</span>
+                              <span className={`text-xs font-medium ${(customer.failedLoginAttempts ?? 0) > 0 ? "text-red-600" : ""}`}>
+                                {customer.failedLoginAttempts ?? 0}
+                              </span>
+                            </div>
+                            {customer.accountLockedUntil && new Date(customer.accountLockedUntil) > new Date() && (
+                              <div className="flex items-center justify-between px-3 py-2.5">
+                                <span className="text-[11px] text-muted-foreground">Locked Until</span>
+                                <span className="text-xs font-medium text-red-600">{formatDateTime(customer.accountLockedUntil)}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <span className="text-[11px] text-muted-foreground">Password Created</span>
+                              <span className="text-xs font-medium">{formatDateTime(customer.passwordCreatedAt)}</span>
+                            </div>
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <span className="text-[11px] text-muted-foreground">Password Updated</span>
+                              <span className="text-xs font-medium">{formatDateTime(customer.passwordUpdatedAt)}</span>
+                            </div>
+                            <div className="flex items-center justify-between px-3 py-2.5">
+                              <span className="text-[11px] text-muted-foreground">Last Reset</span>
+                              <span className="text-xs font-medium">{formatDateTime(customer.lastPasswordResetAt)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Section 3 — Password Controls */}
+                        <div>
+                          <SectionLabel>Password Controls</SectionLabel>
+                          <div className="space-y-2">
+
+                            {/* Send Reset Link */}
+                            <div className="rounded-lg border p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium">Send Password Reset Link</p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                                    Emails a secure reset link to {customer.email || "customer"}. Link expires in 15 minutes.
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1.5"
+                                  disabled={!customer.email || securityActionMutation.isPending}
+                                  onClick={() => securityActionMutation.mutate({ action: "send-password-reset" })}
+                                >
+                                  <Mail className="h-3 w-3" />Send Link
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Generate Temp Password */}
+                            <div className="rounded-lg border p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium">Generate Temporary Password</p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                                    Set a temporary password. Customer must change it on next login.
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1.5"
+                                  onClick={() => setTempPasswordOpen(true)}
+                                >
+                                  <Shield className="h-3 w-3" />Set Temp
+                                </Button>
+                              </div>
+                              {tempPasswordOpen && (
+                                <div className="mt-3 pt-3 border-t space-y-2">
+                                  <Input
+                                    type="password" placeholder="Temporary password"
+                                    className="h-7 text-xs"
+                                    value={tempPassword}
+                                    onChange={(e) => setTempPassword(e.target.value)}
+                                  />
+                                  <Input
+                                    type="password" placeholder="Confirm password"
+                                    className="h-7 text-xs"
+                                    value={tempPasswordConfirm}
+                                    onChange={(e) => setTempPasswordConfirm(e.target.value)}
+                                  />
+                                  <div className="flex gap-1.5">
+                                    <Button
+                                      size="sm" variant="ghost" className="h-7 text-xs"
+                                      onClick={() => { setTempPasswordOpen(false); setTempPassword(""); setTempPasswordConfirm("") }}
+                                    >Cancel</Button>
+                                    <Button
+                                      size="sm" className="h-7 text-xs"
+                                      disabled={!tempPassword || tempPassword !== tempPasswordConfirm || securityActionMutation.isPending}
+                                      onClick={() => securityActionMutation.mutate({
+                                        action: "reset-password",
+                                        payload: { temporaryPassword: tempPassword },
+                                      })}
+                                    >
+                                      {securityActionMutation.isPending ? "Setting…" : "Confirm"}
+                                    </Button>
+                                  </div>
+                                  {tempPassword && tempPasswordConfirm && tempPassword !== tempPasswordConfirm && (
+                                    <p className="text-[10px] text-red-500">Passwords do not match</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Force Password Change */}
+                            {customer.isPasswordSet && (
+                              <div className="rounded-lg border p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-medium">Force Password Change</p>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                                      Customer will be required to change their password on next login.
+                                    </p>
+                                  </div>
+                                  <Button
+                                    size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1.5"
+                                    disabled={customer.mustChangePassword || securityActionMutation.isPending}
+                                    onClick={() => securityActionMutation.mutate({ action: "force-password-change" })}
+                                  >
+                                    <RefreshCw className="h-3 w-3" />Force
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Section 4 — Account Access */}
+                        <div>
+                          <SectionLabel>Account Access</SectionLabel>
+                          <div className="rounded-lg border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium">
+                                  {customer.isLoginDisabled ? "Re-enable Login" : "Disable Login"}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  {customer.isLoginDisabled
+                                    ? "Allow this customer to login again via OTP or password."
+                                    : "Block this customer from logging in. They will see a clear error message."}
+                                </p>
+                              </div>
+                              {customer.isLoginDisabled ? (
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-7 text-xs shrink-0 gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+                                  disabled={securityActionMutation.isPending}
+                                  onClick={() => securityActionMutation.mutate({ action: "enable-login" })}
+                                >
+                                  <CheckCircle2 className="h-3 w-3" />Enable
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-7 text-xs shrink-0 gap-1.5 border-red-300 text-red-600 hover:bg-red-50"
+                                  disabled={securityActionMutation.isPending}
+                                  onClick={() => securityActionMutation.mutate({ action: "disable-login" })}
+                                >
+                                  <XCircle className="h-3 w-3" />Disable
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
                       </TabsContent>
 
                     </div>
