@@ -34,15 +34,19 @@ export async function POST(request: Request) {
       storeId?: string;
     };
 
+    // Normalize identifiers — SQLite text comparison is binary (case-sensitive)
+    const normalizedEmail = email?.trim().toLowerCase() || undefined;
+    const normalizedCode  = code?.trim();
+
     // Validate
-    if (!code || !channel) {
+    if (!normalizedCode || !channel) {
       return NextResponse.json(
         { success: false, error: 'Code and channel are required' },
         { status: 400 }
       );
     }
 
-    if (!email && !phone) {
+    if (!normalizedEmail && !phone) {
       return NextResponse.json(
         { success: false, error: 'Email or phone is required' },
         { status: 400 }
@@ -56,24 +60,36 @@ export async function POST(request: Request) {
       );
     }
 
-    // Find the OTP record
+    const now = new Date();
+    console.log(`[OTP VERIFY] email=${normalizedEmail ?? phone} code=${normalizedCode} channel=${channel} businessId=${reqBusinessId ?? 'none'} now=${now.toISOString()}`);
+
+    // Find the OTP record (most-recent first so retries don't hit used records)
     const otpRecord = await db.oTPCode.findFirst({
       where: {
-        ...(email ? { email } : { phone }),
+        ...(normalizedEmail ? { email: normalizedEmail } : { phone }),
         channel,
-        code,
+        code: normalizedCode,
         isVerified: false,
-        expiresAt: { gte: new Date() }, // Not expired
+        expiresAt: { gte: now },
       },
       orderBy: { createdAt: 'desc' },
     });
 
     if (!otpRecord) {
+      // Diagnostic: find any record for this email to explain why it failed
+      const anyRecord = await db.oTPCode.findFirst({
+        where: { ...(normalizedEmail ? { email: normalizedEmail } : { phone }), channel },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, code: true, isVerified: true, expiresAt: true, createdAt: true },
+      });
+      console.log(`[OTP VERIFY] FAILED — lastRecord=${JSON.stringify(anyRecord)} submittedCode=${normalizedCode}`);
       return NextResponse.json(
         { success: false, error: 'Invalid or expired OTP' },
         { status: 401 }
       );
     }
+
+    console.log(`[OTP VERIFY] MATCHED record=${otpRecord.id} expiresAt=${otpRecord.expiresAt.toISOString()}`);
 
     // Mark OTP as verified
     await db.oTPCode.update({
@@ -284,11 +300,14 @@ export async function POST(request: Request) {
       },
     });
 
+    console.log(`[OTP VERIFY] SUCCESS userId=${user.id} role=${role} businessId=${businessId ?? 'none'}`);
+
     return NextResponse.json({
       success: true,
       data: {
         user: sessionUser,
-        accessToken,
+        token: accessToken,        // Flutter client reads data['token']
+        accessToken,               // web/admin clients
         refreshToken: refreshTokenValue,
         businesses: userWithRoles,
         permissions,

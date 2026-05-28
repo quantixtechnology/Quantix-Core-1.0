@@ -18,9 +18,7 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
         HOSTNAME: '0.0.0.0',
-        // Persistent upload directory — lives outside .next/ so rebuilds never delete files.
-        // The upload route writes here; the files route reads from here.
-        // IMPORTANT: must match the physical directory on disk. No symlink dependency.
+        OTP_MODE: 'EMAIL',         // force full DB OTP validation (not dev bypass)
         UPLOAD_ROOT: '/var/www/uploads',
       },
       error_file: '/root/logs/quantix-error.log',

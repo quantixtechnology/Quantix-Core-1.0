@@ -9,7 +9,7 @@ import { sendEmailOtp, isSmtpConfigured } from '@/lib/email-service';
 import { NextResponse } from 'next/server';
 
 const MAX_OTP_PER_HOUR = 5;
-const OTP_EXPIRY_MINUTES = 5;
+const OTP_EXPIRY_MINUTES = 10;
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -22,14 +22,16 @@ function getStoreSettings(raw: string): Record<string, string> {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, phone, channel, businessId, storeId, name } = body as {
+    const { email, phone, channel, businessId, storeId } = body as {
       email?: string;
       phone?: string;
       channel: 'EMAIL_OTP' | 'WHATSAPP_OTP';
       businessId?: string;
       storeId?: string;
-      name?: string;
     };
+
+    // Normalize — SQLite text comparison is binary (case-sensitive)
+    const normalizedEmail = email?.trim().toLowerCase() || undefined;
 
     if (!channel || !['EMAIL_OTP', 'WHATSAPP_OTP'].includes(channel)) {
       return NextResponse.json(
@@ -38,14 +40,14 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!email && !phone) {
+    if (!normalizedEmail && !phone) {
       return NextResponse.json(
         { success: false, error: 'Email or phone is required' },
         { status: 400 }
       );
     }
 
-    if (channel === 'EMAIL_OTP' && !email) {
+    if (channel === 'EMAIL_OTP' && !normalizedEmail) {
       return NextResponse.json(
         { success: false, error: 'Email is required for EMAIL_OTP channel' },
         { status: 400 }
@@ -62,7 +64,7 @@ export async function POST(request: Request) {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const recentOtps = await db.oTPCode.count({
       where: {
-        ...(email ? { email } : { phone }),
+        ...(normalizedEmail ? { email: normalizedEmail } : { phone }),
         channel,
         createdAt: { gte: oneHourAgo },
       },
@@ -79,10 +81,10 @@ export async function POST(request: Request) {
     const code = generateOTP();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    // Resolve user if exists
+    // Resolve user if exists (use normalized email for lookup)
     let userId: string | undefined;
-    if (email) {
-      const user = await db.user.findUnique({ where: { email } });
+    if (normalizedEmail) {
+      const user = await db.user.findUnique({ where: { email: normalizedEmail } });
       if (user) userId = user.id;
     } else if (phone) {
       const user = await db.user.findFirst({ where: { phone } });
@@ -110,11 +112,11 @@ export async function POST(request: Request) {
       if (business) storeName = business.name;
     }
 
-    // Store OTP in database
+    // Store OTP — always use normalized email so verify lookup always matches
     await db.oTPCode.create({
       data: {
         userId: userId || null,
-        email: email || null,
+        email: normalizedEmail || null,
         phone: phone || null,
         code,
         channel,
@@ -122,39 +124,36 @@ export async function POST(request: Request) {
       },
     });
 
+    console.log(`[OTP SEND] channel=${channel} to=${normalizedEmail ?? phone} businessId=${businessId ?? 'none'} expiresAt=${expiresAt.toISOString()}`);
+
     // ── Delivery ────────────────────────────────────────────────────────────
     let delivered = false;
     let deliveryError: string | undefined;
     let emailFallbackSent = false;
 
-    if (channel === 'EMAIL_OTP' && email) {
-      const result = await sendEmailOtp(email, code, storeName, otpSenderEmail);
+    if (channel === 'EMAIL_OTP' && normalizedEmail) {
+      const result = await sendEmailOtp(normalizedEmail, code, storeName, otpSenderEmail);
       delivered = result.sent;
       deliveryError = result.error;
+      console.log(`[OTP SEND] email delivered=${delivered} error=${deliveryError ?? 'none'}`);
     } else if (channel === 'WHATSAPP_OTP') {
-      // WhatsApp Business API not yet integrated — log and attempt email fallback
       console.log(`[OTP/WhatsApp] To: ${phone}, Code: ${code}, Store: ${storeName}`);
-      // If customer also provided email (new registration flow), send email OTP too as fallback
-      if (email && isSmtpConfigured()) {
-        // Create a parallel EMAIL_OTP record so verify-otp can match on email channel too
-        const emailCode = code; // same code for both channels
+      if (normalizedEmail && isSmtpConfigured()) {
         await db.oTPCode.create({
           data: {
             userId: userId || null,
-            email,
+            email: normalizedEmail,
             phone: null,
-            code: emailCode,
+            code,
             channel: 'EMAIL_OTP',
             expiresAt,
           },
         });
-        const result = await sendEmailOtp(email, emailCode, storeName, otpSenderEmail);
+        const result = await sendEmailOtp(normalizedEmail, code, storeName, otpSenderEmail);
         emailFallbackSent = result.sent;
       }
-      delivered = true; // WhatsApp is "attempted"
+      delivered = true;
     }
-
-    console.log(`[OTP] Channel: ${channel}, To: ${email || phone}, Code: ${code}, Delivered: ${delivered}`);
 
     return NextResponse.json({
       success: true,
@@ -163,8 +162,7 @@ export async function POST(request: Request) {
       emailFallbackSent,
       smtpConfigured: isSmtpConfigured(),
       ...(deliveryError ? { deliveryWarning: deliveryError } : {}),
-      // Return code in dev or when delivery failed (safety net)
-      ...((process.env.NODE_ENV === 'development' || !delivered) ? { code } : {}),
+      ...((process.env.NODE_ENV === 'development' || !delivered) ? { devOtp: code } : {}),
     });
   } catch (error) {
     console.error('[send-otp] Error:', error);
