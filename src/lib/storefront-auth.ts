@@ -43,11 +43,14 @@ export interface CustomerSession {
     role: string; businessId: string | undefined; businessName: string | undefined;
     businessType: string | undefined; businessSlug: string | undefined;
     storeId: string | undefined; permissions: string[]; isPlatformAdmin: boolean;
+    hasPassword: boolean;
   };
   accessToken: string;
   refreshToken: string;
   businesses: unknown[];
   customerId: string;
+  isPasswordSet: boolean;
+  mustChangePassword: boolean;
 }
 
 /**
@@ -65,7 +68,7 @@ export async function createStorefrontSession(opts: {
   const { email, phone, name, businessId, storeId, emailVerified = false } = opts;
 
   // ── 1. Find or create User ──────────────────────────────────────────────────
-  let user = await db.user.findUnique({ where: { email } });
+  let user = await db.user.findUnique({ where: { email }, select: { id: true, email: true, phone: true, name: true, avatar: true, isActive: true, hasPassword: true } });
 
   if (!user) {
     user = await db.user.create({
@@ -77,9 +80,10 @@ export async function createStorefrontSession(opts: {
         emailVerified,
         lastLoginAt: new Date(),
       },
+      select: { id: true, email: true, phone: true, name: true, avatar: true, isActive: true, hasPassword: true },
     });
   } else {
-    await db.user.update({
+    const updated = await db.user.update({
       where: { id: user.id },
       data: {
         ...(emailVerified ? { emailVerified: true } : {}),
@@ -87,7 +91,9 @@ export async function createStorefrontSession(opts: {
         ...(name && !user.name ? { name } : {}),
         lastLoginAt: new Date(),
       },
+      select: { id: true, email: true, phone: true, name: true, avatar: true, isActive: true, hasPassword: true },
     });
+    user = updated;
   }
 
   // ── 2. BusinessUser link ────────────────────────────────────────────────────
@@ -195,6 +201,7 @@ export async function createStorefrontSession(opts: {
     storeId: primaryBU?.storeId ?? undefined,
     permissions,
     isPlatformAdmin: false,
+    hasPassword: user.hasPassword,
   };
 
   const businesses = businessUsers.map(bu => ({
@@ -215,5 +222,7 @@ export async function createStorefrontSession(opts: {
     refreshToken: refreshTokenValue,
     businesses,
     customerId: customer.id,
+    isPasswordSet: customer.isPasswordSet,
+    mustChangePassword: customer.mustChangePassword,
   };
 }
