@@ -17,7 +17,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       if (!businessId) return createErrorResponse('Missing businessId', 400)
 
       const businessUsers = await db.businessUser.findMany({
-        where: { businessId },
+        where: { businessId, role: { not: 'CUSTOMER' } },
         include: {
           user: {
             select: {

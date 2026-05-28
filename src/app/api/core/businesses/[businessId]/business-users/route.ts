@@ -23,7 +23,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       }
 
       const users = await db.businessUser.findMany({
-        where: { businessId },
+        where: { businessId, role: { not: 'CUSTOMER' } },
         include: {
           user: {
             select: {
