@@ -369,6 +369,7 @@ model User {
   name                String
   avatar              String?
   passwordHash        String?
+  hasPassword         Boolean           @default(false)
   authProvider        AuthProvider      @default(EMAIL_OTP)
   emailVerified       Boolean           @default(false)
   phoneVerified       Boolean           @default(false)
@@ -390,6 +391,7 @@ model User {
   otpCodes            OTPCode[]
   posSessions         POSSession[]      @relation("POSOperator")
   refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
   salesProfile        SalesTeamMember?
 }
 
@@ -419,6 +421,19 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([token])

@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
 
 const RATE_LIMIT_CONFIG = { windowMs: 15 * 60 * 1000, maxRequests: 20 };
-const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+const REFRESH_TOKEN_EXPIRY_DAYS = 60;
 
 const PLATFORM_ROLES = [
   'QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM',
@@ -152,6 +152,7 @@ export async function POST(request: Request) {
     const sessionUser = {
       id: user.id, name: user.name, email: user.email, avatar: user.avatar,
       role, businessId, businessName, businessType, businessSlug, storeId, permissions, isPlatformAdmin,
+      hasPassword: !!user.passwordHash,
     };
 
     const businesses = await Promise.all(user.businessUsers.map(async (bu) => ({

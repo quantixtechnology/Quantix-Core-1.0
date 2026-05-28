@@ -8,8 +8,8 @@ import { db } from '@/lib/db';
 import { createAccessToken } from '@/lib/password-utils';
 import { NextResponse } from 'next/server';
 
-// New refresh token expiry: 7 days
-const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+// New refresh token expiry: 60 days
+const REFRESH_TOKEN_EXPIRY_DAYS = 60;
 
 function generateRefreshToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';

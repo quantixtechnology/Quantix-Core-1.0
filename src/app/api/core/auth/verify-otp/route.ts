@@ -9,8 +9,8 @@ import { createAccessToken } from '@/lib/password-utils';
 import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
 
-// Refresh token expiry: 7 days
-const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+// Refresh token expiry: 60 days
+const REFRESH_TOKEN_EXPIRY_DAYS = 60;
 
 function generateRefreshToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -269,6 +269,7 @@ export async function POST(request: Request) {
       storeId,
       permissions,
       isPlatformAdmin,
+      hasPassword: user.passwordHash !== null,
     };
 
     // Build businesses array
