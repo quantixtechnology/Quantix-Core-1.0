@@ -3,9 +3,9 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "in.quantixtechnology.app",
+      "package_name": "com.arbazfreshmeat.customer",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_YOUR_SHA256_CERT_FINGERPRINT"
+        "76:E3:C6:7D:F0:9C:8A:B1:8B:4E:16:22:D8:00:50:2D:D5:D1:D2:D6:1A:95:BF:58:47:B7:14:C2:E7:EA:A1:EB"
       ]
     }
   }
