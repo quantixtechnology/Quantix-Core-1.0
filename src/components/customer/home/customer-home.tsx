@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { useProducts, useCategories } from "@/hooks/use-api"
+import { useProducts, useCategories, useBanners } from "@/hooks/use-api"
 import { useNearestStore } from "@/hooks/use-nearest-store"
 import { setBusinessContext } from "@/lib/api-client"
 import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
@@ -89,6 +89,7 @@ export function CustomerHome() {
   // Live API data
   const { data: productsData } = useProducts(bizId, { status: "ACTIVE", limit: 50, storeId })
   const { data: categoriesData } = useCategories(bizId)
+  const { data: bannersData } = useBanners(bizId, storeId)
 
   // Demo fallback data (business-type-aware)
   const demoCategories: CategoryItem[] = useMemo(() => {
@@ -167,8 +168,23 @@ export function CustomerHome() {
     return demoProducts
   }, [productsData, demoProducts])
 
-  // Context-aware banners and offers
-  const banners = useMemo(() => getBanners(currentBusinessType), [currentBusinessType])
+  // Banners: live from DB first, fall back to business-type demo banners only if none configured
+  const banners = useMemo(() => {
+    const live = bannersData?.data
+    if (Array.isArray(live) && live.length > 0) {
+      return (live as unknown as Record<string, unknown>[]).map((b) => ({
+        id: b.id as string,
+        title: b.title as string,
+        subtitle: "",
+        color: brandColor,
+        link: (b.link as string | undefined) || "",
+        imageUrl: b.imageUrl as string | undefined,
+      }))
+    }
+    return getBanners(currentBusinessType)
+  }, [bannersData, currentBusinessType, brandColor])
+
+  // Offers: always from business-type config (real promos managed in admin panel / promo codes)
   const offers = useMemo(() => getOffers(currentBusinessType), [currentBusinessType])
   const deliveryPromise = useMemo(() => getDeliveryPromise(currentBusinessType), [currentBusinessType])
   const labels = useMemo(() => getLabels(currentBusinessType), [currentBusinessType])

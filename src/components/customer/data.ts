@@ -31,6 +31,17 @@ const carwashBanners = [
   { id: "ban_4", title: "Detailing Service", subtitle: "Full interior & exterior detailing", color: "#EF4444", link: "ccat_5" },
 ]
 
+const meatBanners = [
+  { id: "ban_1", title: "Fresh Daily Cut", subtitle: "Sourced fresh every morning", color: "#d72d58", link: "" },
+  { id: "ban_2", title: "Order by 10 AM", subtitle: "Get delivery the same day", color: "#991b1b", link: "" },
+  { id: "ban_3", title: "Seafood Special", subtitle: "Prawns, Pomfret & more", color: "#1d4ed8", link: "" },
+]
+
+const meatOffers = [
+  { id: "off_1", title: "FREE DELIVERY", description: "On all orders today", code: "" },
+  { id: "off_2", title: "FRESH DAILY", description: "Sourced fresh every morning", code: "" },
+]
+
 // Context-aware offers per business type
 const groceryOffers = [
   { id: "off_1", title: "₹100 OFF", description: "On orders above ₹500", code: "FRESH100" },
@@ -62,6 +73,11 @@ export function getBanners(demoBusinessId: string) {
       return proLaundryBanners
     case "pro_carwash":
       return carwashBanners
+    case "MEAT_DELIVERY":
+    case "SEAFOOD":
+    case "meat_delivery":
+    case "seafood":
+      return meatBanners
     case "standard_grocery":
     default:
       return groceryBanners
@@ -76,6 +92,11 @@ export function getOffers(demoBusinessId: string) {
       return laundryOffers
     case "pro_carwash":
       return carwashOffers
+    case "MEAT_DELIVERY":
+    case "SEAFOOD":
+    case "meat_delivery":
+    case "seafood":
+      return meatOffers
     case "standard_grocery":
     default:
       return groceryOffers
@@ -98,139 +119,3 @@ export const products = getDemoProducts("standard_grocery").map((p) => ({
 export const banners = groceryBanners
 export const offers = groceryOffers
 
-// Customer addresses
-export const customerAddresses = [
-  {
-    id: "addr_1",
-    label: "Home",
-    line1: "402, Lotus Apartments, Andheri West",
-    line2: "Near Metro Station",
-    city: "Mumbai",
-    pincode: "400053",
-    isDefault: true,
-    lat: 19.1364,
-    lng: 72.8296,
-  },
-  {
-    id: "addr_2",
-    label: "Office",
-    line1: "512, Business Tower, BKC",
-    line2: "13th Floor",
-    city: "Mumbai",
-    pincode: "400051",
-    isDefault: false,
-    lat: 19.0708,
-    lng: 72.8713,
-  },
-]
-
-// Customer orders
-export const customerOrders = [
-  {
-    id: "cord_1",
-    orderNumber: "FM-20250115-001",
-    status: "DELIVERED" as const,
-    items: [
-      { name: "Amul Toned Milk 1L", qty: 2, price: 54 },
-      { name: "Fresh Tomatoes 1kg", qty: 1, price: 48 },
-      { name: "Onion 1kg", qty: 2, price: 38 },
-      { name: "Maggi Noodles Pack of 4", qty: 3, price: 52 },
-    ],
-    total: 396.64,
-    paymentMethod: "UPI",
-    createdAt: "2025-01-15 10:30",
-    deliveryAddress: "402, Lotus Apartments, Andheri West, Mumbai 400053",
-    deliveryPartner: { name: "Ramesh K.", phone: "+91 91111 11111", vehicle: "Honda Activa - MH 02 AB 1234" },
-    estimatedDelivery: "2025-01-15 11:30",
-  },
-  {
-    id: "cord_2",
-    orderNumber: "FM-20250115-005",
-    status: "OUT_FOR_DELIVERY" as const,
-    items: [
-      { name: "Green Capsicum 500g", qty: 2, price: 45 },
-      { name: "Frozen Peas 500g", qty: 1, price: 118 },
-      { name: "Dove Shampoo 180ml", qty: 1, price: 130 },
-      { name: "Amul Toned Milk 500ml", qty: 3, price: 27 },
-    ],
-    total: 454.48,
-    paymentMethod: "UPI",
-    createdAt: "2025-01-15 12:00",
-    deliveryAddress: "402, Lotus Apartments, Andheri West, Mumbai 400053",
-    deliveryPartner: { name: "Ramesh K.", phone: "+91 91111 11111", vehicle: "Honda Activa - MH 02 AB 1234" },
-    estimatedDelivery: "2025-01-15 13:00",
-  },
-  {
-    id: "cord_3",
-    orderNumber: "FM-20250114-009",
-    status: "PREPARING" as const,
-    items: [
-      { name: "Basmati Rice Premium 5kg", qty: 1, price: 949 },
-      { name: "MDH Garam Masala 100g", qty: 2, price: 108 },
-    ],
-    total: 1227.40,
-    paymentMethod: "CARD",
-    createdAt: "2025-01-15 13:15",
-    deliveryAddress: "402, Lotus Apartments, Andheri West, Mumbai 400053",
-    deliveryPartner: null,
-    estimatedDelivery: "2025-01-15 14:30",
-  },
-  {
-    id: "cord_4",
-    orderNumber: "FM-20250113-010",
-    status: "CANCELLED" as const,
-    items: [
-      { name: "Coca Cola 750ml", qty: 6, price: 38 },
-      { name: "Lays Classic Chips 52g", qty: 10, price: 20 },
-    ],
-    total: 491.12,
-    paymentMethod: "UPI",
-    createdAt: "2025-01-13 16:30",
-    deliveryAddress: "402, Lotus Apartments, Andheri West, Mumbai 400053",
-    deliveryPartner: null,
-    estimatedDelivery: null,
-  },
-  {
-    id: "cord_5",
-    orderNumber: "FM-20250112-011",
-    status: "DELIVERED" as const,
-    items: [
-      { name: "Amul Butter 100g", qty: 2, price: 54 },
-      { name: "Britannia Bread 400g", qty: 1, price: 42 },
-      { name: "Parle-G Biscuit 800g", qty: 1, price: 68 },
-    ],
-    total: 252.80,
-    paymentMethod: "COD",
-    createdAt: "2025-01-12 09:20",
-    deliveryAddress: "402, Lotus Apartments, Andheri West, Mumbai 400053",
-    deliveryPartner: { name: "Suresh M.", phone: "+91 92222 22222", vehicle: "TVS Jupiter - MH 02 CD 5678" },
-    estimatedDelivery: "2025-01-12 10:15",
-  },
-  {
-    id: "cord_6",
-    orderNumber: "FM-20250110-012",
-    status: "DELIVERED" as const,
-    items: [
-      { name: "Basmati Rice Premium 1kg", qty: 2, price: 195 },
-      { name: "Surf Excel Matic 1kg", qty: 1, price: 160 },
-      { name: "Frozen Peas 500g", qty: 2, price: 118 },
-    ],
-    total: 802.00,
-    paymentMethod: "UPI",
-    createdAt: "2025-01-10 18:45",
-    deliveryAddress: "402, Lotus Apartments, Andheri West, Mumbai 400053",
-    deliveryPartner: { name: "Amit T.", phone: "+91 93333 33333", vehicle: "Hero Splendor - MH 02 EF 9012" },
-    estimatedDelivery: "2025-01-10 19:45",
-  },
-]
-
-// Recently ordered product IDs
-export const recentlyOrdered = ["prod_1", "prod_5", "prod_13", "prod_10", "prod_11"]
-
-// Coupon validation
-export const validCoupons: Record<string, { discount: number; minOrder: number }> = {
-  FRESH100: { discount: 100, minOrder: 500 },
-  FREEDEL: { discount: 30, minOrder: 0 },
-  WELCOME50: { discount: 50, minOrder: 200 },
-  VEG20: { discount: 0, minOrder: 0 },
-}

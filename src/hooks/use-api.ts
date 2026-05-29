@@ -341,6 +341,32 @@ export function useCategories(
   });
 }
 
+/**
+ * List active banners for a business/store (reads from DB via /api/v1/storefront/banners)
+ */
+export function useBanners(
+  businessId: string,
+  storeId?: string,
+  options?: Omit<UseQueryOptions<ApiResponse<unknown[]>, AppError>, "queryKey" | "queryFn">
+) {
+  return useQuery<ApiResponse<unknown[]>, AppError>({
+    queryKey: ["banners", businessId, storeId],
+    queryFn: async () => {
+      const params = new URLSearchParams({ businessId });
+      if (storeId) params.set("storeId", storeId);
+      const response = await fetch(`/api/v1/storefront/banners?${params}`, {
+        headers: { "Content-Type": "application/json", "x-business-id": businessId },
+      });
+      const data = await response.json();
+      if (!response.ok) throw AppError.fromApiError(data);
+      return data as ApiResponse<unknown[]>;
+    },
+    enabled: !!businessId,
+    staleTime: 5 * 60 * 1000, // banners change infrequently
+    ...options,
+  });
+}
+
 // ============================================================================
 // ORDER HOOKS
 // ============================================================================
