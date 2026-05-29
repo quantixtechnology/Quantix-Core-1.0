@@ -896,6 +896,9 @@ export async function listOrders(
         customer: {
           select: { id: true, name: true, phone: true },
         },
+        deliveryPartner: {
+          select: { id: true, name: true, phone: true },
+        },
         delivery: {
           select: {
             id: true,

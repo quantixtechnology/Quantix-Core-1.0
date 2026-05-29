@@ -177,6 +177,13 @@ function getTimelineSteps(status: OrderStatus): { step: OrderStatus; completed: 
 // Map API order data to local Order interface
 // ---------------------------------------------------------------------------
 function mapApiOrder(apiOrder: Record<string, unknown>): Order {
+  // Resolve delivery partner: prefer direct relation, fall back to delivery sub-record
+  type PartnerShape = { id: string; name: string; phone: string }
+  const dp = (
+    (apiOrder.deliveryPartner as PartnerShape | null | undefined)
+    ?? ((apiOrder.delivery as Record<string, unknown> | null | undefined)?.deliveryPartner as PartnerShape | null | undefined)
+  ) ?? null
+
   return {
     id: String(apiOrder.id || ""),
     orderNumber: String(apiOrder.orderNumber || apiOrder.id || ""),
@@ -199,9 +206,9 @@ function mapApiOrder(apiOrder: Record<string, unknown>): Order {
     paymentStatus: String(apiOrder.paymentStatus || "PENDING"),
     createdAt: apiOrder.createdAt ? String(apiOrder.createdAt) : new Date().toISOString(),
     deliveryAddress: apiOrder.deliveryAddress ? String(apiOrder.deliveryAddress) : null,
-    assignedTo: apiOrder.assignedTo ? String(apiOrder.assignedTo) : null,
-    deliveryPartnerId: apiOrder.deliveryPartnerId ? String(apiOrder.deliveryPartnerId) : null,
-    deliveryPartnerPhone: apiOrder.deliveryPartnerPhone ? String(apiOrder.deliveryPartnerPhone) : null,
+    assignedTo: dp?.name ? String(dp.name) : null,
+    deliveryPartnerId: apiOrder.deliveryPartnerId ? String(apiOrder.deliveryPartnerId) : (dp?.id ? String(dp.id) : null),
+    deliveryPartnerPhone: dp?.phone ? String(dp.phone) : null,
   }
 }
 
@@ -393,15 +400,20 @@ export function OrdersView() {
     setSelectedOrder(order)
     setSelectedPartnerId(order.deliveryPartnerId || "")
     setPartnerDialogOpen(true)
-    if (partnerOptions.length === 0) {
-      setLoadingPartners(true)
-      try {
-        const res = await fetch("/api/core/delivery/partners", { headers: getAuthHeaders() })
-        const json = await res.json()
-        if (json.success) setPartnerOptions(json.data || [])
-      } catch { /* ignore */ } finally {
-        setLoadingPartners(false)
-      }
+    // Always re-fetch so the list stays current and businessId is always sent
+    setLoadingPartners(true)
+    try {
+      const params = new URLSearchParams()
+      if (businessId) params.set("businessId", businessId)
+      params.set("isActive", "true")
+      const res = await fetch(`/api/core/delivery/partners?${params}`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) setPartnerOptions(json.data || [])
+      else showError(json.error || "Failed to load partners")
+    } catch {
+      showError("Failed to load delivery partners")
+    } finally {
+      setLoadingPartners(false)
     }
   }
 
@@ -420,12 +432,15 @@ export function OrdersView() {
       const partnerPhone = json.data?.partnerPhone ?? null
       showSuccess(partnerName ? `Assigned to ${partnerName}` : "Partner unassigned")
       setPartnerDialogOpen(false)
+      // Update the selected order inline so the detail panel reflects immediately
       setSelectedOrder((prev) => prev ? {
         ...prev,
         assignedTo: partnerName,
         deliveryPartnerId: selectedPartnerId || null,
         deliveryPartnerPhone: partnerPhone,
       } : null)
+      // Refresh the orders list so the assignment persists across navigation
+      refetchOrders()
     } catch {
       showError("Failed to assign partner")
     } finally {
@@ -975,6 +990,7 @@ export function OrdersView() {
                                   if (!json.success) { showError(json.error || "Failed to unassign"); return }
                                   showSuccess("Partner unassigned")
                                   setSelectedOrder((prev) => prev ? { ...prev, assignedTo: null, deliveryPartnerId: null, deliveryPartnerPhone: null } : null)
+                                  refetchOrders()
                                 } catch { showError("Failed to unassign partner") }
                               }}
                             >

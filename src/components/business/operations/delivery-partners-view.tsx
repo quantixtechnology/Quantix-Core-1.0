@@ -21,6 +21,7 @@ import {
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { setBusinessContext } from "@/lib/api-client"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -105,7 +106,8 @@ export function DeliveryPartnersView() {
   const businessId = currentBusinessId || authBizId || ""
 
   const [partners, setPartners] = useState<DeliveryPartner[]>([])
-  const [loading, setLoading] = useState(true)
+  // Start as false — only show spinner when we actually have a businessId to query
+  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState("")
   const [filterAvailability, setFilterAvailability] = useState<string>("all")
   const [filterType, setFilterType] = useState<string>("all")
@@ -128,19 +130,26 @@ export function DeliveryPartnersView() {
   const [showResetPw, setShowResetPw] = useState(false)
   const [resetting, setResetting] = useState(false)
 
+  // Keep localStorage in sync so getAuthHeaders() sends the correct x-business-id header.
+  // This is critical when a platform admin manages a business via the admin panel —
+  // setCurrentBusiness() updates Zustand but not localStorage.
+  useEffect(() => {
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
   const fetchPartners = useCallback(async () => {
     if (!businessId) return
     setLoading(true)
     try {
-      // Always pass businessId as query param — required when logged in as platform admin
+      // Always pass businessId as query param — required for platform admins
       const params = new URLSearchParams({ businessId })
       if (filterAvailability !== "all") params.set("isOnline", filterAvailability === "ONLINE" ? "true" : "false")
       const res = await fetch(`/api/core/delivery/partners?${params}`, { headers: getAuthHeaders() })
       const json = await res.json()
       if (json.success) setPartners(json.data || [])
-      else showError(json.error || "Failed to load partners")
+      else showError(json.error || "Failed to load delivery partners")
     } catch {
       showError("Failed to load delivery partners")
     } finally {
