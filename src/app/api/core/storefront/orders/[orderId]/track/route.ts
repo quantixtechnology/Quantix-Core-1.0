@@ -2,13 +2,27 @@
 // QUANTIX CORE — Order Tracking API
 // GET /api/core/storefront/orders/[orderId]/track — Order tracking for customer
 //
-// Auth optional (customer can track their order)
-// Returns order with status history, delivery info, partner info
+// Auth optional. Returns order with status timeline, delivery info, and
+// delivery partner details.
+//
+// Partner resolution priority:
+//   1. order.delivery.deliveryPartner  (set when using /delivery/assign)
+//   2. order.deliveryPartner           (set when using /orders/[id]/assign-partner)
+// This two-source approach means either assignment path shows partner info.
 // ============================================================================
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getOrder } from '@/lib/core/order';
+
+const partnerSelect = {
+  id: true,
+  name: true,
+  phone: true,
+  avatar: true,
+  vehicleType: true,
+  vehicleNumber: true,
+  rating: true,
+} as const;
 
 export async function GET(
   request: Request,
@@ -24,7 +38,6 @@ export async function GET(
       );
     }
 
-    // Get order with full details
     const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
@@ -50,6 +63,9 @@ export async function GET(
             createdAt: true,
           },
         },
+        // Direct FK on Order — always updated by assign-partner admin action
+        deliveryPartner: { select: partnerSelect },
+        // Through Delivery sub-record — updated by /delivery/assign workflow
         delivery: {
           select: {
             id: true,
@@ -60,17 +76,7 @@ export async function GET(
             distance: true,
             deliveryOtp: true,
             liveTracking: true,
-            deliveryPartner: {
-              select: {
-                id: true,
-                name: true,
-                phone: true,
-                avatar: true,
-                vehicleType: true,
-                vehicleNumber: true,
-                rating: true,
-              },
-            },
+            deliveryPartner: { select: partnerSelect },
           },
         },
         store: {
@@ -84,12 +90,7 @@ export async function GET(
           },
         },
         customer: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-          },
+          select: { id: true, name: true, email: true, phone: true },
         },
         payments: {
           select: {
@@ -111,7 +112,48 @@ export async function GET(
       );
     }
 
-    // Build tracking response
+    // Resolve partner from either source
+    const resolvedPartner = order.delivery?.deliveryPartner ?? order.deliveryPartner ?? null;
+
+    const partnerPayload = resolvedPartner
+      ? {
+          name: resolvedPartner.name,
+          phone: resolvedPartner.phone,
+          avatar: resolvedPartner.avatar,
+          vehicleType: resolvedPartner.vehicleType,
+          vehicleNumber: resolvedPartner.vehicleNumber,
+          rating: resolvedPartner.rating,
+        }
+      : null;
+
+    // Build delivery block — present even when there is no Delivery sub-record if
+    // a partner is directly assigned on the order (e.g. manual admin assignment).
+    const deliveryBlock = order.delivery
+      ? {
+          status: order.delivery.status,
+          estimatedDeliveryTime: order.delivery.estimatedDeliveryTime,
+          actualPickupTime: order.delivery.actualPickupTime,
+          actualDeliveryTime: order.delivery.actualDeliveryTime,
+          distance: order.delivery.distance,
+          liveTracking: (() => {
+            try { return JSON.parse(order.delivery!.liveTracking || '[]'); }
+            catch { return []; }
+          })(),
+          partner: partnerPayload,
+        }
+      : partnerPayload
+        ? {
+            // No Delivery record but partner IS assigned — surface the info
+            status: null,
+            estimatedDeliveryTime: null,
+            actualPickupTime: null,
+            actualDeliveryTime: null,
+            distance: null,
+            liveTracking: [],
+            partner: partnerPayload,
+          }
+        : null;
+
     const trackingData = {
       id: order.id,
       orderNumber: order.orderNumber,
@@ -123,59 +165,25 @@ export async function GET(
       deliveryFee: order.deliveryFee,
       totalTax: order.totalTax,
       totalDiscount: order.totalDiscount,
+      deliveryAddress: order.deliveryAddress,
       createdAt: order.createdAt,
       confirmedAt: order.confirmedAt,
       deliveredAt: order.deliveredAt,
-      // Store info
       store: order.store,
-      // Customer info
-      customer: order.customer
-        ? {
-            name: order.customer.name,
-          }
-        : null,
-      // Delivery info
-      delivery: order.delivery
-        ? {
-            status: order.delivery.status,
-            estimatedDeliveryTime: order.delivery.estimatedDeliveryTime,
-            actualPickupTime: order.delivery.actualPickupTime,
-            actualDeliveryTime: order.delivery.actualDeliveryTime,
-            distance: order.delivery.distance,
-            liveTracking: JSON.parse(order.delivery.liveTracking || '[]'),
-            partner: order.delivery.deliveryPartner
-              ? {
-                  name: order.delivery.deliveryPartner.name,
-                  phone: order.delivery.deliveryPartner.phone,
-                  avatar: order.delivery.deliveryPartner.avatar,
-                  vehicleType: order.delivery.deliveryPartner.vehicleType,
-                  vehicleNumber: order.delivery.deliveryPartner.vehicleNumber,
-                  rating: order.delivery.deliveryPartner.rating,
-                }
-              : null,
-          }
-        : null,
-      // Status timeline
+      customer: order.customer ? { name: order.customer.name } : null,
+      delivery: deliveryBlock,
       statusHistory: order.statusHistory.map((h) => ({
         status: h.status,
         note: h.note,
         timestamp: h.createdAt,
       })),
-      // Items summary
       items: order.items,
-      // Payment info
       payments: order.payments,
     };
 
-    return NextResponse.json({
-      success: true,
-      data: trackingData,
-    });
+    return NextResponse.json({ success: true, data: trackingData });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to track order';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

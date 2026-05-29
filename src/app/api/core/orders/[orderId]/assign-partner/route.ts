@@ -44,6 +44,19 @@ export const POST = withMiddleware({
       data: { deliveryPartnerId: body.partnerId || null },
     });
 
+    // Sync the Delivery sub-record so the customer tracking API can read the partner
+    if (body.partnerId) {
+      await db.delivery.updateMany({
+        where: { orderId },
+        data: { deliveryPartnerId: body.partnerId, status: 'ASSIGNED' },
+      });
+    } else {
+      await db.delivery.updateMany({
+        where: { orderId },
+        data: { deliveryPartnerId: null },
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: { partnerId: body.partnerId, partnerName, partnerPhone },

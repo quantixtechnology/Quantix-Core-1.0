@@ -417,7 +417,7 @@ export const deliveryApi = {
   listZones: (params?: Record<string, unknown>) =>
     getList<unknown>('/core/delivery/zones', params as Record<string, string | string[] | number | boolean | undefined>),
   trackOrder: (orderId: string) =>
-    apiFetch<unknown>(`/core/delivery/track/${orderId}`),
+    apiFetch<unknown>(`/core/storefront/orders/${orderId}/track`),
 };
 
 // ============================================================================

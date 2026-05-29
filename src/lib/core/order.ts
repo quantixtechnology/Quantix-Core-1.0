@@ -748,7 +748,24 @@ export async function getOrder(orderId: string) {
     where: { id: orderId },
     include: {
       items: true,
-      delivery: true,
+      // Direct FK relation — set by the admin assign-partner action
+      deliveryPartner: {
+        select: {
+          id: true, name: true, phone: true,
+          vehicleType: true, vehicleNumber: true, avatar: true, rating: true,
+        },
+      },
+      // Delivery sub-record with nested partner — set by /delivery/assign workflow
+      delivery: {
+        include: {
+          deliveryPartner: {
+            select: {
+              id: true, name: true, phone: true,
+              vehicleType: true, vehicleNumber: true, avatar: true, rating: true,
+            },
+          },
+        },
+      },
       payments: true,
       statusHistory: {
         orderBy: { createdAt: 'asc' },

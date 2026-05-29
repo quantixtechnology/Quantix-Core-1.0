@@ -62,25 +62,39 @@ export function CustomerOrderTracking() {
   const order = useMemo(() => {
     if (!orderData?.data) return null
     const o = orderData.data as unknown as Record<string, unknown>
+    // Resolve delivery partner from either source in the order response
+    type PartnerShape = { id: string; name: string; phone: string; vehicleType?: string | null; vehicleNumber?: string | null; avatar?: string | null; rating?: number | null }
+    const directPartner = o.deliveryPartner as PartnerShape | null | undefined
+    const deliveryPartner = directPartner
+      ?? ((o.delivery as Record<string, unknown> | null | undefined)?.deliveryPartner as PartnerShape | null | undefined)
+      ?? null
     return {
       id: o.id as string,
       orderNumber: o.orderNumber as string,
       status: o.status as string,
       totalAmount: o.totalAmount as number,
       createdAt: o.createdAt as string,
-      paymentMethod: (o as Record<string, unknown>).paymentMethod as string | undefined,
+      paymentMethod: o.paymentMethod as string | undefined,
       items: Array.isArray(o.items)
         ? (o.items as Array<Record<string, unknown>>).map((i) => ({
-            name: (i as Record<string, unknown>).productName as string || "Item",
-            qty: (i as Record<string, unknown>).quantity as number || 1,
-            price: (i as Record<string, unknown>).unitPrice as number || 0,
+            name: (i.itemName ?? i.productName ?? "Item") as string,
+            qty: i.quantity as number || 1,
+            price: i.unitPrice as number || 0,
           }))
         : [],
-      deliveryAddress: (o as Record<string, unknown>).deliveryAddress as string | undefined,
-      estimatedDelivery: (o as Record<string, unknown>).estimatedDelivery as string | undefined,
-      deliveryPartner: (o as Record<string, unknown>).deliveryPartner as { name: string; phone: string; vehicle?: string } | undefined,
+      deliveryAddress: o.deliveryAddress as string | undefined,
+      estimatedDelivery: o.estimatedDelivery as string | undefined,
+      deliveryPartner,
     }
   }, [orderData])
+
+  // Resolve partner — prefer live tracking data (refreshes every 15s) over order snapshot
+  const resolvedPartner = useMemo(() => {
+    type PartnerShape = { name: string; phone: string; vehicleType?: string | null; vehicleNumber?: string | null }
+    const td = trackingData?.data as Record<string, unknown> | null | undefined
+    const trackPartner = (td?.delivery as Record<string, unknown> | null | undefined)?.partner as PartnerShape | null | undefined
+    return trackPartner ?? order?.deliveryPartner ?? null
+  }, [trackingData, order])
 
   // Merge real-time updates into tracking
   const currentStatus = latestUpdate?.status || order?.status || "PENDING"
@@ -257,38 +271,45 @@ export function CustomerOrderTracking() {
         </div>
       )}
 
-      {/* Delivery Partner */}
-      {(order.deliveryPartner || latestUpdate?.partnerName) && (currentStatus === "OUT_FOR_DELIVERY" || currentStatus === "PREPARING") && (
+      {/* Delivery Partner — show whenever a partner is assigned and order is active */}
+      {(resolvedPartner || latestUpdate?.partnerName) &&
+        currentStatus !== "DELIVERED" && currentStatus !== "CANCELLED" && (
         <div className="px-4 mb-4">
           <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Delivery Partner</h3>
+            <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <Truck className="w-4 h-4" style={{ color: brandColor }} />
+              Delivery Partner
+            </h3>
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}20` }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${brandColor}20` }}>
                 <User className="w-5 h-5" style={{ color: brandColor }} />
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-800">
-                  {order.deliveryPartner?.name || latestUpdate?.partnerName || "Assigned Partner"}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">
+                  {resolvedPartner?.name || latestUpdate?.partnerName || "Assigned Partner"}
                 </p>
-                <p className="text-[10px] text-gray-400">
-                  {order.deliveryPartner?.vehicle || "On the way"}
-                </p>
+                {(resolvedPartner?.vehicleType || resolvedPartner?.vehicleNumber) && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {[resolvedPartner.vehicleType, resolvedPartner.vehicleNumber].filter(Boolean).join(" · ")}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                {(order.deliveryPartner?.phone || latestUpdate?.partnerPhone) && (
+              <div className="flex items-center gap-2 shrink-0">
+                {(resolvedPartner?.phone || latestUpdate?.partnerPhone) && (
                   <a
-                    href={`tel:${order.deliveryPartner?.phone || latestUpdate?.partnerPhone}`}
-                    className="w-9 h-9 rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: `${brandColor}10` }}
+                    href={`tel:${resolvedPartner?.phone || latestUpdate?.partnerPhone}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                    style={{ backgroundColor: brandColor }}
                   >
-                    <Phone className="w-4 h-4" style={{ color: brandColor }} />
+                    <Phone className="w-3.5 h-3.5" />
+                    Call
                   </a>
                 )}
-                {(order.deliveryPartner?.phone || latestUpdate?.partnerPhone) && (
+                {(resolvedPartner?.phone || latestUpdate?.partnerPhone) && (
                   <a
-                    href={`sms:${order.deliveryPartner?.phone || latestUpdate?.partnerPhone}`}
-                    className="w-9 h-9 rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: `${brandColor}10` }}
+                    href={`sms:${resolvedPartner?.phone || latestUpdate?.partnerPhone}`}
+                    className="w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: `${brandColor}15` }}
                   >
                     <MessageCircle className="w-4 h-4" style={{ color: brandColor }} />
                   </a>
