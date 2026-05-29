@@ -4,10 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # Allow manual trigger from GitHub UI
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -15,11 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      # ── Step 1: Checkout ─────────────────────────────────────────────────────
+      # ── Step 1: Checkout ──────────────────────────────────────────────────────
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      # ── Step 2: Validate required secrets ────────────────────────────────────
+      # ── Step 2: Validate secrets ──────────────────────────────────────────────
       - name: Validate secrets
         run: |
           MISSING=""
@@ -28,169 +25,141 @@ jobs:
           [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
           if [ -n "$MISSING" ]; then
             echo "❌ Missing required secrets:$MISSING"
-            echo "   Go to: Repository → Settings → Secrets and Variables → Actions"
             exit 1
           fi
-          VPS_PORT="${{ secrets.VPS_PORT }}"
-          echo "✅ All required secrets are present"
-          echo "   Host : ${{ secrets.VPS_HOST }}"
-          echo "   User : ${{ secrets.VPS_USER }}"
-          echo "   Port : ${VPS_PORT:-22}"
+          echo "✅ Secrets present — host=${{ secrets.VPS_HOST }} user=${{ secrets.VPS_USER }}"
 
-      # ── Step 3: Test TCP reachability (fail-fast, clear error message) ────────
-      - name: Test VPS TCP connectivity
+      # ── Step 3: Setup SSH (no third-party action needed) ──────────────────────
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Add VPS to known_hosts to avoid interactive prompt
+          PORT="${{ secrets.VPS_PORT }}"
+          PORT="${PORT:-22}"
+          ssh-keyscan -p "$PORT" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "✅ SSH key written and VPS added to known_hosts"
+
+      # ── Step 4: Test TCP connectivity ─────────────────────────────────────────
+      - name: Test VPS connectivity
         run: |
           PORT="${{ secrets.VPS_PORT }}"
           PORT="${PORT:-22}"
           HOST="${{ secrets.VPS_HOST }}"
-          echo "🔌 Testing TCP connection to $HOST:$PORT ..."
           for i in 1 2 3; do
-            if timeout 15 bash -c "echo >/dev/tcp/$HOST/$PORT" 2>/dev/null; then
+            if timeout 10 bash -c "echo >/dev/tcp/$HOST/$PORT" 2>/dev/null; then
               echo "✅ TCP reachable (attempt $i)"
               exit 0
             fi
-            echo "⚠️  Attempt $i/3 failed — retrying in 15s..."
-            [ $i -lt 3 ] && sleep 15
+            echo "⚠️  Attempt $i/3 failed — retrying in 10s..."
+            [ $i -lt 3 ] && sleep 10
           done
-          echo "❌ CANNOT REACH $HOST:$PORT AFTER 3 ATTEMPTS"
+          echo "❌ Cannot reach $HOST:$PORT"
           exit 1
 
-      # ── Step 4: Deploy via SSH ────────────────────────────────────────────────
+      # ── Step 5: Deploy via native SSH ─────────────────────────────────────────
+      # No third-party action — avoids all command_timeout parsing bugs.
+      # Script is piped via stdin; ServerAliveInterval keeps the connection alive
+      # during the long npm run build step.
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          timeout: 60s
-          command_timeout: 30m
-          script_stop: true
-          script: |
-            set -eo pipefail
+        run: |
+          PORT="${{ secrets.VPS_PORT }}"
+          PORT="${PORT:-22}"
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$PORT" \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=20 \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            'bash -e -o pipefail' << 'DEPLOY'
 
-            # ── Diagnostics ───────────────────────────────────────────────────
-            echo "============================================================"
-            echo " QUANTIX DEPLOY — $(date)"
-            echo "============================================================"
-            echo "User   : $(whoami)"
-            echo "Node   : $(node --version 2>/dev/null || echo NOT FOUND)"
-            echo "NPM    : $(npm --version  2>/dev/null || echo NOT FOUND)"
-            echo "PM2    : $(pm2 --version  2>/dev/null || echo NOT FOUND)"
-            echo "Disk   : $(df -h / | tail -1 | awk '{print $4" free of "$2}')"
-            echo "Mem    : $(free -m | awk '/Mem:/{print $7"MB free of "$2"MB"}')"
-            echo ""
+          echo "============================================================"
+          echo " QUANTIX DEPLOY — $(date)"
+          echo "============================================================"
+          echo "User : $(whoami)"
+          echo "Node : $(node --version 2>/dev/null || echo NOT FOUND)"
+          echo "NPM  : $(npm --version  2>/dev/null || echo NOT FOUND)"
+          echo "PM2  : $(pm2 --version  2>/dev/null || echo NOT FOUND)"
+          echo "Disk : $(df -h / | tail -1 | awk '{print $4" free of "$2}')"
+          echo ""
 
-            # ── Project directory ─────────────────────────────────────────────
-            PROJECT="${{ secrets.PROJECT_PATH }}"
-            PROJECT="${PROJECT:-/root/Quantix-Core-1.0}"
-            echo "Path   : $PROJECT"
+          PROJECT="/root/Quantix-Core-1.0"
+          DB_FILE="$PROJECT/prisma/db/custom.db"
+          export DATABASE_URL="file:$DB_FILE"
+          echo "Path : $PROJECT"
+          echo "DB   : $DB_FILE"
 
-            if [ ! -d "$PROJECT" ]; then
-              echo "❌ Directory not found: $PROJECT"
-              exit 1
-            fi
-            cd "$PROJECT"
+          [ ! -d "$PROJECT" ] && echo "❌ Project directory not found" && exit 1
+          cd "$PROJECT"
 
-            # ── Pin DATABASE_URL to an absolute path for this entire deploy ───
-            # This eliminates any ambiguity about which SQLite file is used
-            # regardless of working directory changes by Node/Next.js standalone.
-            DB_FILE="$PROJECT/prisma/db/custom.db"
-            export DATABASE_URL="file:$DB_FILE"
-            echo "DB     : $DB_FILE"
-            echo "DB URL : $DATABASE_URL"
+          echo ""
+          echo "── Git ──────────────────────────────────────────────────────"
+          git fetch --quiet origin main
+          git reset --hard origin/main
+          echo "Commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty='%s')"
 
-            # ── Git pull ──────────────────────────────────────────────────────
-            echo ""
-            echo "── Git ──────────────────────────────────────────────────────"
-            echo "Branch : $(git branch --show-current)"
-            echo "Before : $(git rev-parse --short HEAD)"
-            git fetch --quiet origin main
-            git reset --hard origin/main
-            echo "After  : $(git rev-parse --short HEAD)"
-            echo "Commit : $(git log -1 --pretty='%s')"
+          echo ""
+          echo "── npm install ──────────────────────────────────────────────"
+          npm install --legacy-peer-deps 2>&1 | tail -5
+          echo "✅ Dependencies ready"
 
-            # ── Dependencies ──────────────────────────────────────────────────
-            echo ""
-            echo "── npm install ──────────────────────────────────────────────"
-            npm install --legacy-peer-deps 2>&1 | tail -8
-            echo "✅ Dependencies installed"
+          echo ""
+          echo "── Prisma ───────────────────────────────────────────────────"
+          npx prisma generate 2>&1 | tail -2
+          npx prisma db push --accept-data-loss 2>&1 | tail -2
+          echo "✅ Schema synced"
 
-            # ── Prisma ────────────────────────────────────────────────────────
-            echo ""
-            echo "── Prisma ───────────────────────────────────────────────────"
-            npx prisma generate
-            npx prisma db push --accept-data-loss
-            echo "✅ Prisma schema synced"
+          echo ""
+          echo "── Super Admin ──────────────────────────────────────────────"
+          node scripts/ensure-super-admin.js
+          echo "✅ Super admin verified"
 
-            # ── Ensure super admin exists (create if missing, never wipes password) ──
-            echo ""
-            echo "── Super Admin ──────────────────────────────────────────────"
-            node scripts/ensure-super-admin.js
-            echo "✅ Super admin verified"
+          echo ""
+          echo "── next build ───────────────────────────────────────────────"
+          npm run build 2>&1
+          echo "✅ Build complete"
 
-            # ── Next.js build ─────────────────────────────────────────────────
-            echo ""
-            echo "── next build ───────────────────────────────────────────────"
-            npm run build 2>&1
-            echo "✅ Build complete"
+          echo ""
+          echo "── Standalone assets ────────────────────────────────────────"
+          STANDALONE="$PROJECT/.next/standalone"
+          if [ -d "$STANDALONE" ]; then
+            cp -r "$PROJECT/.next/static" "$STANDALONE/.next/" 2>/dev/null || true
+            cp -r "$PROJECT/public"        "$STANDALONE/"       2>/dev/null || true
+            {
+              echo "DATABASE_URL=file:$DB_FILE"
+              echo "PORT=3000"
+              echo "HOSTNAME=0.0.0.0"
+              grep -v "^DATABASE_URL\|^PORT\|^HOSTNAME" "$PROJECT/.env" 2>/dev/null || true
+            } > "$STANDALONE/.env"
+            echo "✅ Assets + .env written to standalone"
+          fi
 
-            # ── Standalone post-build: assets + absolute DB path ─────────────
-            # npm run build already copies public/ and .next/static/ into standalone,
-            # but we repeat explicitly here so a partial build failure doesn't leave
-            # a broken asset tree.
-            STANDALONE_DIR="$PROJECT/.next/standalone"
-            if [ -d "$STANDALONE_DIR" ]; then
-              # Static bundles (CSS/JS)
-              cp -r "$PROJECT/.next/static" "$STANDALONE_DIR/.next/" 2>/dev/null || true
-              # Public assets (logo, manifest, robots, uploads placeholder)
-              cp -r "$PROJECT/public" "$STANDALONE_DIR/" 2>/dev/null || true
-              echo "✅ Static assets copied to standalone"
-              echo "   Logo: $(ls -la $STANDALONE_DIR/public/quantix-logo.png 2>/dev/null || echo NOT FOUND)"
+          echo ""
+          echo "── PM2 ──────────────────────────────────────────────────────"
+          if pm2 list 2>/dev/null | grep -q "quantix"; then
+            pm2 restart quantix --update-env
+          else
+            pm2 start npm --name quantix -- start
+          fi
+          pm2 save
+          pm2 list
 
-              # Absolute DB path — standalone server.js reads .env from its own dir
-              echo "DATABASE_URL=file:$DB_FILE" > "$STANDALONE_DIR/.env"
-              echo "PORT=3000"                  >> "$STANDALONE_DIR/.env"
-              echo "HOSTNAME=0.0.0.0"           >> "$STANDALONE_DIR/.env"
-              # Carry over any other env vars the app needs
-              if [ -f "$PROJECT/.env" ]; then
-                grep -v "^DATABASE_URL\|^PORT\|^HOSTNAME" "$PROJECT/.env" >> "$STANDALONE_DIR/.env" 2>/dev/null || true
-              fi
-              echo "✅ Standalone .env written (DB_URL absolute)"
-              echo "   $(cat $STANDALONE_DIR/.env | grep DATABASE_URL)"
-            fi
+          echo ""
+          echo "── Health check ─────────────────────────────────────────────"
+          sleep 12
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 http://localhost:3000 2>/dev/null || echo "000")
+          if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
+            echo "✅ App healthy (HTTP $HTTP)"
+          else
+            echo "⚠️  Health check HTTP $HTTP — showing last PM2 logs:"
+            pm2 logs quantix --lines 30 --nostream 2>/dev/null || true
+          fi
 
-            # ── PM2 restart ───────────────────────────────────────────────────
-            echo ""
-            echo "── PM2 ──────────────────────────────────────────────────────"
-            if pm2 list 2>/dev/null | grep -q "quantix"; then
-              pm2 restart quantix --update-env
-              echo "✅ Process restarted"
-            elif [ -f "$PROJECT/ecosystem.config.js" ]; then
-              pm2 start "$PROJECT/ecosystem.config.js"
-              echo "✅ Process started via ecosystem.config.js"
-            else
-              pm2 start npm --name quantix -- start
-              echo "✅ Process started via npm start"
-            fi
-            pm2 save
-            echo ""
-            pm2 list
-
-            # ── Health check ──────────────────────────────────────────────────
-            echo ""
-            echo "── Health check ─────────────────────────────────────────────"
-            echo "Waiting 15s for app to boot..."
-            sleep 15
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 http://localhost:3000 2>/dev/null || echo "000")
-            if [[ "$HTTP" =~ ^(200|301|302|307|308)$ ]]; then
-              echo "✅ App is healthy (HTTP $HTTP)"
-            else
-              echo "⚠️  Health check returned HTTP $HTTP"
-              pm2 logs quantix --lines 40 --nostream 2>/dev/null || true
-            fi
-
-            echo ""
-            echo "============================================================"
-            echo " DEPLOY COMPLETE — $(date)"
-            echo "============================================================"
+          echo ""
+          echo "============================================================"
+          echo " DEPLOY COMPLETE — $(date)"
+          echo "============================================================"
+          DEPLOY
