@@ -2,8 +2,46 @@
 
 import { useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
-import { ArrowLeft, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react"
+import { ArrowLeft, Eye, EyeOff, CheckCircle2 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+
+// ── Defined at module level so React never remounts it on re-render ───────────
+const INPUT_CLS = "w-full h-11 px-3 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 bg-white"
+
+interface PasswordFieldProps {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  show: boolean
+  onToggle: () => void
+  placeholder?: string
+}
+
+function PasswordField({ label, value, onChange, show, onToggle, placeholder }: PasswordFieldProps) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-700 mb-1.5">{label}</label>
+      <div className="relative">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder || label}
+          className={INPUT_CLS}
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+        >
+          {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 interface StorefrontPasswordProps {
   brandColor: string
@@ -13,7 +51,7 @@ interface StorefrontPasswordProps {
 export function StorefrontPassword({ brandColor, nav }: StorefrontPasswordProps) {
   const { user, token } = useAuthStore()
 
-  const hasPassword = user?.hasPassword
+  const hasPassword  = user?.hasPassword
   const isSettingNew = !hasPassword
 
   const [currentPassword, setCurrentPassword] = useState("")
@@ -28,10 +66,10 @@ export function StorefrontPassword({ brandColor, nav }: StorefrontPasswordProps)
 
   async function handleSubmit() {
     setError(""); setSuccess("")
-    if (!newPassword || !confirmPassword) { setError("All fields are required"); return }
-    if (newPassword !== confirmPassword)  { setError("Passwords do not match"); return }
-    if (newPassword.length < 8)           { setError("Password must be at least 8 characters"); return }
-    if (!isSettingNew && !currentPassword) { setError("Current password is required"); return }
+    if (!newPassword || !confirmPassword)       { setError("All fields are required"); return }
+    if (newPassword !== confirmPassword)         { setError("Passwords do not match"); return }
+    if (newPassword.length < 8)                  { setError("Password must be at least 8 characters"); return }
+    if (!isSettingNew && !currentPassword)       { setError("Current password is required"); return }
 
     setSaving(true)
     try {
@@ -43,7 +81,7 @@ export function StorefrontPassword({ brandColor, nav }: StorefrontPasswordProps)
         ? { password: newPassword, confirmPassword }
         : { currentPassword, newPassword, confirmPassword }
 
-      const res = await fetch(endpoint, {
+      const res  = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -51,9 +89,10 @@ export function StorefrontPassword({ brandColor, nav }: StorefrontPasswordProps)
       const data = await res.json()
 
       if (data.success) {
-        setSuccess(isSettingNew ? "Password created! You can now login with your password." : "Password changed successfully.")
+        setSuccess(isSettingNew
+          ? "Password created! You can now login with your password."
+          : "Password changed successfully.")
         setCurrentPassword(""); setNewPassword(""); setConfirmPassword("")
-        // Refresh the page after 2s so hasPassword updates
         setTimeout(() => nav.go("profile"), 2000)
       } else {
         setError(data.error || "Failed to save password")
@@ -63,34 +102,6 @@ export function StorefrontPassword({ brandColor, nav }: StorefrontPasswordProps)
     } finally {
       setSaving(false)
     }
-  }
-
-  const inputCls = "w-full h-11 px-3 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 bg-white"
-
-  function PasswordField({
-    label, value, onChange, show, onToggle, placeholder,
-  }: { label: string; value: string; onChange: (v: string) => void; show: boolean; onToggle: () => void; placeholder?: string }) {
-    return (
-      <div>
-        <label className="block text-xs font-semibold text-gray-700 mb-1.5">{label}</label>
-        <div className="relative">
-          <input
-            type={show ? "text" : "password"}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder || label}
-            className={inputCls}
-          />
-          <button
-            type="button"
-            onClick={onToggle}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-          >
-            {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-    )
   }
 
   return (
