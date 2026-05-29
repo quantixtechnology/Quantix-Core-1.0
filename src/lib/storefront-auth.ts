@@ -112,9 +112,14 @@ export async function createStorefrontSession(opts: {
   let customer = await db.customer.findFirst({ where: { userId: user.id, businessId } });
 
   if (!customer) {
-    const shadow = phone
+    const shadowByPhone = phone
       ? await db.customer.findFirst({ where: { businessId, phone, userId: null } })
       : null;
+    // OTP login provides only email — also try claiming a shadow customer by email
+    const shadowByEmail = !shadowByPhone && email
+      ? await db.customer.findFirst({ where: { businessId, email, userId: null } })
+      : null;
+    const shadow = shadowByPhone || shadowByEmail;
 
     if (shadow) {
       const codeForShadow = shadow.customerCode ?? await generateCustomerCode(businessId)
