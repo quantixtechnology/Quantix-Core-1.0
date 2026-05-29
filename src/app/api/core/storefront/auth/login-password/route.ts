@@ -52,7 +52,7 @@ export async function POST(request: Request) {
       where: body.businessId ? { id: body.businessId } : { slug: body.businessSlug },
       select: { id: true, name: true, slug: true, status: true },
     });
-    if (!business || business.status !== 'ACTIVE') {
+    if (!business) {
       return NextResponse.json({ success: false, error: 'Business not found' }, { status: 404 });
     }
 
