@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const POST = withMiddleware({ requireAuth: true })(
   async (req, context) => {
     try {
       const params = await context?.params

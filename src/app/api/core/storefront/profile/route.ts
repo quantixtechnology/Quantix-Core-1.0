@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const GET = withMiddleware({ requireAuth: true })(
   async (req) => {
     try {
       const user = req.user!
@@ -28,7 +28,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER
   },
 )
 
-export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const PUT = withMiddleware({ requireAuth: true })(
   async (req) => {
     try {
       const user = req.user!

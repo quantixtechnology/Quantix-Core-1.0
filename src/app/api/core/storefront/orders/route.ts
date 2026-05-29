@@ -11,7 +11,7 @@ import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
 
-export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const GET = withMiddleware({ requireAuth: true })(
   async (req) => {
     try {
       const user = req.user!
@@ -63,7 +63,7 @@ interface ResolvedOrderItem {
   customizations: string | undefined;
 }
 
-export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const POST = withMiddleware({ requireAuth: true })(
   async (req) => {
     try {
       const body = await req.json();

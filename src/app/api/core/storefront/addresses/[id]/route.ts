@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const PATCH = withMiddleware({ requireAuth: true })(
   async (req, context) => {
     try {
       const user = req.user!
@@ -60,7 +60,7 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOM
   },
 )
 
-export const DELETE = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const DELETE = withMiddleware({ requireAuth: true })(
   async (req, context) => {
     try {
       const user = req.user!

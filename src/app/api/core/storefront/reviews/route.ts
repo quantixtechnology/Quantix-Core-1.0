@@ -49,7 +49,7 @@ export const GET = withMiddleware({ requireAuth: false })(
   },
 )
 
-export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER'] })(
+export const POST = withMiddleware({ requireAuth: true })(
   async (req) => {
     try {
       const user = req.user!
