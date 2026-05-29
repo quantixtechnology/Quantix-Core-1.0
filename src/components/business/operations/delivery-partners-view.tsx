@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -14,26 +14,9 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import {
-  Truck,
-  Plus,
-  Search,
-  Phone,
-  Mail,
-  Star,
-  Package,
-  IndianRupee,
-  Pencil,
-  Trash2,
-  RefreshCw,
-  Wifi,
-  WifiOff,
-  Clock,
-  Car,
-  Shield,
-  Smartphone,
-  ChevronDown,
-  ChevronUp,
-  User,
+  Truck, Plus, Search, Phone, Mail, Star, Package, IndianRupee,
+  Pencil, Trash2, RefreshCw, Wifi, WifiOff, Clock, Car, Shield,
+  Smartphone, ChevronDown, ChevronUp, User, KeyRound, Eye, EyeOff,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -49,6 +32,7 @@ type PartnerAvailability = "ONLINE" | "OFFLINE" | "BUSY"
 interface DeliveryPartner {
   id: string
   businessId: string
+  userId: string | null
   name: string
   phone: string
   email: string | null
@@ -74,6 +58,7 @@ interface PartnerFormData {
   name: string
   phone: string
   email: string
+  password: string
   vehicleType: string
   vehicleNumber: string
   licenseNumber: string
@@ -88,6 +73,7 @@ const EMPTY_FORM: PartnerFormData = {
   name: "",
   phone: "",
   email: "",
+  password: "",
   vehicleType: "",
   vehicleNumber: "",
   licenseNumber: "",
@@ -129,11 +115,18 @@ export function DeliveryPartnersView() {
   const [editingPartner, setEditingPartner] = useState<DeliveryPartner | null>(null)
   const [formData, setFormData] = useState<PartnerFormData>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<DeliveryPartner | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  // Reset password dialog
+  const [resetTarget, setResetTarget] = useState<DeliveryPartner | null>(null)
+  const [resetPassword, setResetPassword] = useState("")
+  const [showResetPw, setShowResetPw] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -141,10 +134,10 @@ export function DeliveryPartnersView() {
     if (!businessId) return
     setLoading(true)
     try {
-      const params = new URLSearchParams()
+      // Always pass businessId as query param — required when logged in as platform admin
+      const params = new URLSearchParams({ businessId })
       if (filterAvailability !== "all") params.set("isOnline", filterAvailability === "ONLINE" ? "true" : "false")
-      const url = `/api/core/delivery/partners?${params.toString()}`
-      const res = await fetch(url, { headers: getAuthHeaders() })
+      const res = await fetch(`/api/core/delivery/partners?${params}`, { headers: getAuthHeaders() })
       const json = await res.json()
       if (json.success) setPartners(json.data || [])
       else showError(json.error || "Failed to load partners")
@@ -180,6 +173,7 @@ export function DeliveryPartnersView() {
   function openCreate() {
     setEditingPartner(null)
     setFormData(EMPTY_FORM)
+    setShowPassword(false)
     setSheetOpen(true)
   }
 
@@ -189,6 +183,7 @@ export function DeliveryPartnersView() {
       name: p.name,
       phone: p.phone,
       email: p.email || "",
+      password: "",
       vehicleType: p.vehicleType || "",
       vehicleNumber: p.vehicleNumber || "",
       licenseNumber: p.licenseNumber || "",
@@ -198,6 +193,7 @@ export function DeliveryPartnersView() {
       notes: p.notes || "",
       bankAccount: "",
     })
+    setShowPassword(false)
     setSheetOpen(true)
   }
 
@@ -208,13 +204,21 @@ export function DeliveryPartnersView() {
   async function handleSave() {
     if (!formData.name.trim()) { showError("Name is required"); return }
     if (!formData.phone.trim()) { showError("Phone is required"); return }
+    if (!editingPartner && formData.appEnabled && !formData.email.trim()) {
+      showError("Email is required when App Access is enabled"); return
+    }
     setSaving(true)
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...formData,
         businessId,
         isOnline: formData.availability === "ONLINE",
       }
+      // Only send password on create, or when explicitly updating
+      if (editingPartner && !formData.password) {
+        delete payload.password
+      }
+
       let res: Response
       if (editingPartner) {
         res = await fetch(`/api/core/delivery/partners/${editingPartner.id}`, {
@@ -232,6 +236,9 @@ export function DeliveryPartnersView() {
       const json = await res.json()
       if (!json.success) { showError(json.error || "Failed to save"); return }
       showSuccess(editingPartner ? "Partner updated" : "Partner created")
+      if (!editingPartner && json.data?.appEnabled && json.data?.email) {
+        showSuccess(`App login: ${json.data.email}`)
+      }
       setSheetOpen(false)
       fetchPartners()
     } catch {
@@ -244,10 +251,12 @@ export function DeliveryPartnersView() {
   async function toggleAvailability(p: DeliveryPartner) {
     const next: PartnerAvailability = p.availability === "ONLINE" ? "OFFLINE" : "ONLINE"
     try {
-      const res = await fetch(`/api/core/delivery/partners/${p.id}`, {
-        method: "PUT",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ availability: next, isOnline: next === "ONLINE" }),
+      const endpoint = next === "ONLINE"
+        ? `/api/core/delivery/partners/${p.id}/online`
+        : `/api/core/delivery/partners/${p.id}/offline`
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
       })
       const json = await res.json()
       if (!json.success) { showError(json.error || "Failed to update"); return }
@@ -274,6 +283,29 @@ export function DeliveryPartnersView() {
       showError("Failed to delete partner")
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!resetTarget || !resetPassword.trim()) return
+    if (resetPassword.length < 6) { showError("Password must be at least 6 characters"); return }
+    setResetting(true)
+    try {
+      const res = await fetch("/api/core/delivery/auth/reset-password", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerId: resetTarget.id, newPassword: resetPassword }),
+      })
+      const json = await res.json()
+      if (!json.success) { showError(json.error || "Failed to reset password"); return }
+      showSuccess("Password reset successfully")
+      setResetTarget(null)
+      setResetPassword("")
+      fetchPartners()
+    } catch {
+      showError("Failed to reset password")
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -435,6 +467,9 @@ export function DeliveryPartnersView() {
                     >
                       {p.availability === "ONLINE" ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
                     </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setResetTarget(p); setResetPassword(""); setShowResetPw(false) }}>
+                      <KeyRound className="h-3.5 w-3.5" />
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => openEdit(p)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
@@ -471,6 +506,14 @@ export function DeliveryPartnersView() {
                       <div>
                         <p className="text-xs text-muted-foreground mb-0.5">Joined</p>
                         <p className="font-medium">{new Date(p.createdAt).toLocaleDateString("en-IN")}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">User ID</p>
+                        <p className="font-mono text-xs">{p.userId || <span className="text-muted-foreground">No account linked</span>}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Login Email</p>
+                        <p className="text-xs">{p.email || <span className="text-muted-foreground">—</span>}</p>
                       </div>
                       {p.notes && (
                         <div className="col-span-2 md:col-span-4">
@@ -519,9 +562,36 @@ export function DeliveryPartnersView() {
                   <Input value={formData.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+91 98765 43210" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Email</Label>
+                  <Label>Email {formData.appEnabled && !editingPartner && <span className="text-red-500">*</span>}</Label>
                   <Input value={formData.email} onChange={(e) => set("email", e.target.value)} placeholder="rahul@example.com" type="email" />
                 </div>
+              </div>
+
+              {/* Password field — always shown on create; shown on edit as optional reset */}
+              <div className="space-y-1.5">
+                <Label>
+                  {editingPartner ? "New Password (leave blank to keep current)" : "App Password"}
+                  {!editingPartner && formData.appEnabled && <span className="text-red-500"> *</span>}
+                </Label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => set("password", e.target.value)}
+                    placeholder={editingPartner ? "Leave blank to keep current" : "Min 6 characters"}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {!editingPartner && (
+                  <p className="text-xs text-muted-foreground">Set a password to allow delivery app login</p>
+                )}
               </div>
 
               <Separator />
@@ -607,6 +677,50 @@ export function DeliveryPartnersView() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Set a new password for <strong>{resetTarget?.name}</strong>.
+              {resetTarget && !resetTarget.email && (
+                <span className="block mt-1 text-amber-600 text-xs">
+                  This partner has no email set. Add an email first to enable app login.
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>New Password</Label>
+              <div className="relative">
+                <Input
+                  type={showResetPw ? "text" : "password"}
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  placeholder="Min 6 characters"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowResetPw((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                >
+                  {showResetPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetTarget(null)}>Cancel</Button>
+            <Button onClick={handleResetPassword} disabled={resetting || !resetPassword.trim()}>
+              {resetting ? "Resetting…" : "Reset Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirm */}
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
