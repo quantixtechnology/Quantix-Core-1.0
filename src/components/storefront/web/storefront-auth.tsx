@@ -5,7 +5,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   Phone, ArrowLeft, Loader2, CheckCircle2, User, Mail,
-  AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, LogIn,
+  AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, LogIn, Lock,
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -182,9 +182,13 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
 
   // ── Login flow ─────────────────────────────────────────────────────────────
 
+  const [loginMode, setLoginMode] = useState<"otp" | "password">("otp")
   const [loginPhone, setLoginPhone] = useState("")
   const [loginEmail, setLoginEmail] = useState("")
+  const [loginPassword, setLoginPassword] = useState("")
+  const [showLoginPw, setShowLoginPw] = useState(false)
   const isLoginValid = loginPhone.length === 10 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.trim())
+  const isPasswordLoginValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.trim()) && loginPassword.length >= 1
 
   async function handleLogin() {
     if (!isLoginValid || loading) return
@@ -206,6 +210,29 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
       await goToOtp({ email: normEmail, phone: fullPhone, name: "", maskedEmail: check.maskedEmail || maskEmail(normEmail), purpose: "login", dc })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
+    } finally { setLoading(false) }
+  }
+
+  async function handlePasswordLogin() {
+    if (!isPasswordLoginValid || loading) return
+    setLoading(true); setError("")
+    try {
+      const res = await fetch("/api/customer/auth/login-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizeEmail(loginEmail), password: loginPassword, businessId }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Login failed")
+      // Password login returns flat: { token, refreshToken, user, ... }
+      storeSession({
+        accessToken: json.token,
+        refreshToken: json.refreshToken,
+        user: json.user,
+        businesses: json.businesses,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed")
     } finally { setLoading(false) }
   }
 
@@ -413,11 +440,56 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
               {view === "login" && (
                 <>
                   <Back to="register" label="Back to register" />
+
+                  {/* Mode tabs: OTP | Password */}
+                  <div className="flex rounded-xl border border-gray-200 p-1 mb-4">
+                    <button
+                      onClick={() => { setLoginMode("otp"); setError("") }}
+                      className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === "otp" ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
+                      style={loginMode === "otp" ? { backgroundColor: brandColor } : {}}
+                    >
+                      OTP Login
+                    </button>
+                    <button
+                      onClick={() => { setLoginMode("password"); setError("") }}
+                      className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === "password" ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
+                      style={loginMode === "password" ? { backgroundColor: brandColor } : {}}
+                    >
+                      Password Login
+                    </button>
+                  </div>
+
                   <Err msg={error} />
-                  <PhoneField value={loginPhone} onChange={v => { setLoginPhone(v); setError("") }} />
-                  <Field icon={<Mail className="w-4 h-4 text-gray-400" />} placeholder="Email Address *" type="email"
-                    value={loginEmail} onChange={v => { setLoginEmail(v); setError("") }} />
-                  <PrimaryBtn label="Send Verification Code" loading={loading} disabled={!isLoginValid} onClick={handleLogin} color={brandColor} />
+
+                  {loginMode === "otp" ? (
+                    <>
+                      <PhoneField value={loginPhone} onChange={v => { setLoginPhone(v); setError("") }} />
+                      <Field icon={<Mail className="w-4 h-4 text-gray-400" />} placeholder="Email Address *" type="email"
+                        value={loginEmail} onChange={v => { setLoginEmail(v); setError("") }} />
+                      <PrimaryBtn label="Send Verification Code" loading={loading} disabled={!isLoginValid} onClick={handleLogin} color={brandColor} />
+                    </>
+                  ) : (
+                    <>
+                      <Field icon={<Mail className="w-4 h-4 text-gray-400" />} placeholder="Email Address *" type="email"
+                        value={loginEmail} onChange={v => { setLoginEmail(v); setError("") }} />
+                      <div className="flex items-center border border-gray-200 rounded-xl px-3 h-11 focus-within:border-gray-400 transition-colors mb-3">
+                        <Lock className="w-4 h-4 text-gray-400 shrink-0" />
+                        <input
+                          type={showLoginPw ? "text" : "password"}
+                          placeholder="Password *"
+                          value={loginPassword}
+                          onChange={e => { setLoginPassword(e.target.value); setError("") }}
+                          onKeyDown={e => e.key === "Enter" && handlePasswordLogin()}
+                          className="flex-1 text-sm outline-none bg-transparent ml-2.5"
+                        />
+                        <button type="button" onClick={() => setShowLoginPw(v => !v)} className="text-gray-400 hover:text-gray-600 ml-1">
+                          {showLoginPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <PrimaryBtn label="Login" loading={loading} disabled={!isPasswordLoginValid} onClick={handlePasswordLogin} color={brandColor} />
+                    </>
+                  )}
+
                   <button onClick={() => setView("forgot")}
                     className="flex items-center justify-center gap-1.5 w-full mt-3 text-xs font-medium transition-colors"
                     style={{ color: brandColor }}>
