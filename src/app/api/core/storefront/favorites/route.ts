@@ -12,7 +12,7 @@ async function resolveCustomer(userId: string, businessId: string) {
   return db.customer.findFirst({ where: { userId, businessId } })
 }
 
-export const GET = withMiddleware({ requireAuth: true })(
+export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER', 'CLIENT_OWNER', 'STORE_MANAGER', 'STORE_OPERATOR', 'BILLING_STAFF', 'INVENTORY_STAFF', 'SUPPORT_STAFF', 'DELIVERY_STAFF'] })(
   async (req) => {
     try {
       const user = req.user!
@@ -66,7 +66,7 @@ export const GET = withMiddleware({ requireAuth: true })(
   },
 )
 
-export const POST = withMiddleware({ requireAuth: true })(
+export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER', 'CLIENT_OWNER', 'STORE_MANAGER', 'STORE_OPERATOR', 'BILLING_STAFF', 'INVENTORY_STAFF', 'SUPPORT_STAFF', 'DELIVERY_STAFF'] })(
   async (req) => {
     try {
       const user = req.user!
@@ -96,7 +96,7 @@ export const POST = withMiddleware({ requireAuth: true })(
   },
 )
 
-export const DELETE = withMiddleware({ requireAuth: true })(
+export const DELETE = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER', 'CLIENT_OWNER', 'STORE_MANAGER', 'STORE_OPERATOR', 'BILLING_STAFF', 'INVENTORY_STAFF', 'SUPPORT_STAFF', 'DELIVERY_STAFF'] })(
   async (req) => {
     try {
       const user = req.user!
