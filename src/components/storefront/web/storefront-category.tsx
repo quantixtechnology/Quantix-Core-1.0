@@ -53,12 +53,12 @@ function getDefaultProductEmoji(businessType: string): string {
 
 function SkeletonCard() {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden animate-pulse">
-      <div className="h-44 bg-gray-100" />
-      <div className="p-3 space-y-2">
-        <div className="h-4 bg-gray-100 rounded w-3/4" />
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden animate-pulse">
+      <div className="h-28 bg-gray-100" />
+      <div className="p-2 space-y-1.5">
+        <div className="h-3 bg-gray-100 rounded w-3/4" />
         <div className="h-3 bg-gray-100 rounded w-1/2" />
-        <div className="h-5 bg-gray-100 rounded w-1/3 mt-2" />
+        <div className="h-4 bg-gray-100 rounded w-1/3 mt-2" />
       </div>
     </div>
   )
@@ -134,7 +134,7 @@ function ProductCard({
 
   return (
     <div
-      className="bg-white rounded-2xl border border-gray-100 overflow-hidden cursor-pointer group hover:shadow-md hover:border-gray-200 transition-all duration-200"
+      className="bg-white rounded-xl border border-gray-100 overflow-hidden cursor-pointer group hover:shadow-md hover:border-gray-200 transition-all duration-200"
       onClick={() => nav.go("product", { productId: product.id })}
     >
       <div className="relative overflow-hidden">
@@ -142,14 +142,14 @@ function ProductCard({
           <img
             src={imgSrc}
             alt={product.name}
-            className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300"
+            className="w-full h-28 object-cover group-hover:scale-105 transition-transform duration-300"
             onError={() => {
               console.warn(`[CategoryCard] image load failed: ${imgSrc}`)
               setImgError(true)
             }}
           />
         ) : (
-          <div className="w-full h-44 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-5xl">
+          <div className="w-full h-28 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-3xl">
             {defaultEmoji}
           </div>
         )}
@@ -178,14 +178,14 @@ function ProductCard({
         )}
       </div>
 
-      <div className="p-3">
-        <p className="text-sm font-semibold text-gray-900 truncate">{product.name}</p>
+      <div className="p-2">
+        <p className="text-xs font-semibold text-gray-900 truncate">{product.name}</p>
         {defaultVariant && defaultVariant.name !== "Default" ? (
           <p className="text-xs text-gray-400 mt-0.5 truncate">{defaultVariant.name}</p>
         ) : product.shortDesc ? (
           <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{product.shortDesc}</p>
         ) : null}
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-1 flex items-center justify-between">
           <div>
             <span className="text-sm font-bold" style={{ color: brandColor }}>
               {formatINR(price)}
@@ -216,10 +216,10 @@ function ProductCard({
           ) : (
             <button
               onClick={handleAdd}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-sm hover:opacity-90 transition-opacity"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-sm hover:opacity-90 transition-opacity"
               style={{ backgroundColor: brandColor }}
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -455,7 +455,7 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
 
           {/* Product grid */}
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
               {Array.from({ length: LIMIT }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
           ) : products.length === 0 ? (
@@ -485,7 +485,7 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                 {products.map((p) => (
                   <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
                 ))}
