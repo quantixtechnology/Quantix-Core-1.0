@@ -168,13 +168,23 @@ export async function createStorefrontSession(opts: {
   }
 
   // ── 4. Session tokens ───────────────────────────────────────────────────────
+  // Both accessToken and refreshToken are stored so the middleware can validate
+  // either one. Components using useAuthStore().token get accessToken;
+  // components using refreshToken get refreshTokenValue — both must be in DB.
   const accessToken = createAccessToken();
   const refreshTokenValue = generateRefreshToken();
+
+  const accessExpiresAt = new Date();
+  accessExpiresAt.setHours(accessExpiresAt.getHours() + 24); // access: 24h
+
   const refreshExpiresAt = new Date();
   refreshExpiresAt.setDate(refreshExpiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
 
-  await db.refreshToken.create({
-    data: { userId: user.id, token: refreshTokenValue, expiresAt: refreshExpiresAt },
+  await db.refreshToken.createMany({
+    data: [
+      { userId: user.id, token: accessToken,       expiresAt: accessExpiresAt  },
+      { userId: user.id, token: refreshTokenValue,  expiresAt: refreshExpiresAt },
+    ],
   });
 
   // ── 5. Business context ─────────────────────────────────────────────────────
