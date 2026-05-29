@@ -29,7 +29,9 @@ export function normalizeEmail(email: string): string {
 }
 
 export function normalizePhone(phone: string): string {
+  if (!phone || !phone.trim()) return '';
   const digits = phone.replace(/\D/g, '');
+  if (!digits) return ''; // no digits = no valid phone
   // Ensure +91 prefix for Indian numbers
   if (digits.length === 10) return `+91${digits}`;
   if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
