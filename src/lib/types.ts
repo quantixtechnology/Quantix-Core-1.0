@@ -607,6 +607,7 @@ export interface SessionUser {
   storeId?: string;
   permissions: Permission[];
   isPlatformAdmin: boolean;
+  hasPassword?: boolean;
 }
 
 // ============================================================================

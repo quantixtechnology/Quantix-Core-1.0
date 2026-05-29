@@ -13,6 +13,7 @@ import { StorefrontOrderTracking } from "./storefront-order-tracking"
 import { StorefrontOrders } from "./storefront-orders"
 import { StorefrontProfile } from "./storefront-profile"
 import { StorefrontAddresses } from "./storefront-addresses"
+import { StorefrontPassword } from "./storefront-password"
 import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
 
 export type WebPage =
@@ -25,6 +26,7 @@ export type WebPage =
   | "orders"
   | "profile"
   | "addresses"
+  | "password"
 
 type NavSnapshot = {
   page: WebPage
@@ -171,6 +173,7 @@ export function StorefrontWebsite() {
         {page === "orders"         && <StorefrontOrders        brandColor={brandColor} nav={nav} />}
         {page === "profile"        && <StorefrontProfile       brandColor={brandColor} nav={nav} />}
         {page === "addresses"      && <StorefrontAddresses     brandColor={brandColor} nav={nav} />}
+        {page === "password"       && <StorefrontPassword      brandColor={brandColor} nav={nav} />}
       </StorefrontLayout>
 
       {showStorePicker && currentBusinessId && (

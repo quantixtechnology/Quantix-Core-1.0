@@ -1,7 +1,7 @@
 "use client"
 
 import { useAuthStore } from "@/stores/auth-store"
-import { User, Package, MapPin, LogOut, ArrowLeft, Phone } from "lucide-react"
+import { Package, MapPin, LogOut, ArrowLeft, Phone, Lock } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
 interface StorefrontProfileProps {
@@ -11,6 +11,7 @@ interface StorefrontProfileProps {
 
 export function StorefrontProfile({ brandColor, nav }: StorefrontProfileProps) {
   const { isAuthenticated, user, logout } = useAuthStore()
+  const hasPassword = user?.hasPassword
 
   if (!isAuthenticated || !user) {
     nav.go("auth")
@@ -89,6 +90,24 @@ export function StorefrontProfile({ brandColor, nav }: StorefrontProfileProps) {
           <div className="flex-1">
             <p className="text-sm font-semibold text-gray-900">Saved Addresses</p>
             <p className="text-xs text-gray-500">Manage your delivery addresses</p>
+          </div>
+          <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
+        </button>
+
+        <button
+          onClick={() => nav.go("password")}
+          className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${brandColor}15` }}>
+            <Lock className="w-4 h-4" style={{ color: brandColor }} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-gray-900">
+              {hasPassword ? "Change Password" : "Create Password"}
+            </p>
+            <p className="text-xs text-gray-500">
+              {hasPassword ? "Update your login password" : "Set a password for quick login"}
+            </p>
           </div>
           <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
         </button>
