@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig, getCategoryIcon } from "@/lib/business-type-config"
@@ -8,6 +8,7 @@ import { resolveImageUrl } from "@/lib/image-url"
 import { formatINR } from "@/lib/currency"
 import { ChevronRight, Plus, Zap, Shield, Star, Truck, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+import { ProductImage } from "./product-image"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 // These mirror what the products API actually returns (images/metadata are
@@ -140,8 +141,6 @@ function ProductCard({
 }) {
   const { addItem } = useCartStore()
   const config = getBusinessTypeConfig(businessType)
-  const [imgError, setImgError] = useState(false)
-  const loggedRef = useRef(false)
 
   const images = Array.isArray(product.images) ? product.images : []
   const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
@@ -181,21 +180,12 @@ function ProductCard({
       onClick={() => nav.go("product", { productId: product.id })}
     >
       <div className="relative overflow-hidden">
-        {imgSrc && !imgError ? (
-          <img
-            src={imgSrc}
-            alt={product.name}
-            className="w-full h-28 object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={() => {
-              console.warn(`[ProductCard] image load failed: ${imgSrc}`)
-              setImgError(true)
-            }}
-          />
-        ) : (
-          <div className="w-full h-28 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-3xl">
-            {defaultEmoji}
-          </div>
-        )}
+        <ProductImage
+          src={imgSrc}
+          alt={product.name}
+          fallbackEmoji={defaultEmoji}
+          className="w-full h-28"
+        />
 
         <div className="absolute top-2 left-2 flex gap-1.5 flex-wrap max-w-[calc(100%-1rem)]">
           {isOutOfStock ? (

@@ -8,6 +8,7 @@ import { resolveImageUrl } from "@/lib/image-url"
 import { formatINR } from "@/lib/currency"
 import { Search, SlidersHorizontal, ChevronDown, X, Plus, Minus, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+import { ProductImage } from "./product-image"
 
 interface Category {
   id: string
@@ -79,7 +80,6 @@ function ProductCard({
 }) {
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const config = getBusinessTypeConfig(businessType)
-  const [imgError, setImgError] = useState(false)
 
   const images = Array.isArray(product.images) ? product.images : []
   const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
@@ -140,21 +140,12 @@ function ProductCard({
       onClick={() => nav.go("product", { productId: product.id })}
     >
       <div className="relative overflow-hidden">
-        {imgSrc && !imgError ? (
-          <img
-            src={imgSrc}
-            alt={product.name}
-            className="w-full h-28 object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={() => {
-              console.warn(`[CategoryCard] image load failed: ${imgSrc}`)
-              setImgError(true)
-            }}
-          />
-        ) : (
-          <div className="w-full h-28 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center text-3xl">
-            {defaultEmoji}
-          </div>
-        )}
+        <ProductImage
+          src={imgSrc}
+          alt={product.name}
+          fallbackEmoji={defaultEmoji}
+          className="w-full h-28"
+        />
 
         <div className="absolute top-2 left-2 flex gap-1 flex-wrap max-w-[calc(100%-0.5rem)]">
           {isOutOfStock ? (

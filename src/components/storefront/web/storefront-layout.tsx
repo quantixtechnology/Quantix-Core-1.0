@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import type { PickedStore } from "./storefront-store-picker"
+import { ProductImage } from "./product-image"
 import { formatINR } from "@/lib/currency"
 import { resolveImageUrl } from "@/lib/image-url"
 
@@ -285,11 +286,11 @@ export function StorefrontLayout({ children, brandColor, nav, currentStore, onOp
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
                   {items.map((item) => (
                     <div key={`${item.productId}-${item.variantId}`} className="flex items-start gap-3">
-                      {item.image ? (
-                        <img src={resolveImageUrl(item.image)} alt={item.name} className="w-16 h-16 rounded-xl object-cover border border-gray-100 shrink-0" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl bg-gray-100 flex items-center justify-center shrink-0 text-2xl">🥩</div>
-                      )}
+                      <ProductImage
+                        src={resolveImageUrl(item.image)}
+                        alt={item.name}
+                        className="w-16 h-16 rounded-xl shrink-0 border border-gray-100"
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 leading-tight truncate">{item.name}</p>
                         {item.variantName && <p className="text-xs text-gray-500">{item.variantName}</p>}

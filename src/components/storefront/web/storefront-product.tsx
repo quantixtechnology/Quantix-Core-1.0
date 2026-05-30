@@ -8,6 +8,7 @@ import { resolveImageUrl } from "@/lib/image-url"
 import { formatINR } from "@/lib/currency"
 import { ChevronRight, ShoppingCart, Plus, Minus, Check, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+import { ProductImage } from "./product-image"
 
 interface Variant {
   id: string
@@ -96,7 +97,6 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
   const [notFound, setNotFound]     = useState(false)
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [activeImage, setActiveImage] = useState(0)
-  const [mainImgError, setMainImgError] = useState(false)
   const [qty, setQty]               = useState(1)
   const [selectedCutType, setSelectedCutType]   = useState<string | null>(null)
   const [selectedCleaning, setSelectedCleaning] = useState<string | null>(null)
@@ -229,33 +229,25 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* ── Image gallery ────────────────────────────────── */}
         <div className="space-y-3">
-          <div className="aspect-square rounded-2xl overflow-hidden border border-gray-100 bg-gray-50">
-            {resolvedImages[activeImage] && !mainImgError ? (
-              <img
-                src={resolvedImages[activeImage]}
-                alt={product.name}
-                className="w-full h-full object-cover"
-                onError={() => {
-                  console.warn(`[ProductPage] image load failed: ${resolvedImages[activeImage]}`)
-                  setMainImgError(true)
-                }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-8xl">{defaultEmoji}</div>
-            )}
+          <div className="aspect-square rounded-2xl overflow-hidden border border-gray-100">
+            <ProductImage
+              src={resolvedImages[activeImage]}
+              alt={product.name}
+              fallbackEmoji={defaultEmoji}
+              className="w-full h-full"
+            />
           </div>
           {resolvedImages.length > 1 && (
             <div className="flex gap-2 overflow-x-auto scrollbar-none">
               {resolvedImages.map((img, i) => (
                 <button
                   key={i}
-                  onClick={() => { setActiveImage(i); setMainImgError(false) }}
+                  onClick={() => { setActiveImage(i) }}
                   className={`shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${
                     activeImage === i ? "border-gray-800" : "border-transparent hover:border-gray-300"
                   }`}
                 >
-                  <img src={img} alt={`view ${i + 1}`} className="w-full h-full object-cover"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
+                  <ProductImage src={img} alt={`view ${i + 1}`} className="w-full h-full" />
                 </button>
               ))}
             </div>
