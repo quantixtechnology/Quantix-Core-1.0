@@ -443,3 +443,117 @@ export async function updateStoreTimings(
 
   return results;
 }
+
+// ============================================================================
+// STORE OPEN/CLOSE ENFORCEMENT
+// ============================================================================
+
+interface StoreOpenResult {
+  isOpen: boolean;
+  reason?: string;
+  opensAt?: string;
+}
+
+/**
+ * Check whether a store is currently accepting orders.
+ * Checks (in order):
+ *   1. business.isOnline — platform-level online/offline toggle
+ *   2. store.status      — must be ACTIVE
+ *   3. store timings     — current IST time must be within open window
+ *
+ * Returns { isOpen: true } when all checks pass.
+ * Returns { isOpen: false, reason: "..." } with a customer-friendly message.
+ */
+export async function checkStoreOpen(storeId: string): Promise<StoreOpenResult> {
+  const store = await db.store.findUnique({
+    where: { id: storeId },
+    select: {
+      id: true,
+      status: true,
+      businessId: true,
+      storeTimings: { orderBy: { day: 'asc' } },
+    },
+  });
+
+  if (!store) {
+    return { isOpen: false, reason: 'Store not found' };
+  }
+
+  if (store.status !== 'ACTIVE') {
+    return { isOpen: false, reason: 'Store is currently offline' };
+  }
+
+  // Check business online flag
+  const business = await db.business.findUnique({
+    where: { id: store.businessId },
+    select: { isOnline: true },
+  });
+
+  if (!business || !business.isOnline) {
+    return { isOpen: false, reason: 'Store is currently offline' };
+  }
+
+  // Check store timings (use IST — UTC+5:30)
+  if (store.storeTimings.length > 0) {
+    const now = new Date();
+    // Convert to IST
+    const istOffset = 5.5 * 60 * 60 * 1000; // 5h30m in ms
+    const istNow = new Date(now.getTime() + istOffset);
+    // getUTCDay() on the shifted date gives the IST day-of-week (0=Sun … 6=Sat)
+    const todayDay = istNow.getUTCDay();
+    const currentMinutes = istNow.getUTCHours() * 60 + istNow.getUTCMinutes();
+
+    const todayTiming = store.storeTimings.find((t) => t.day === todayDay);
+
+    if (todayTiming) {
+      if (todayTiming.isClosed) {
+        // Find next open day
+        const nextOpen = _findNextOpenDay(store.storeTimings, todayDay);
+        return {
+          isOpen: false,
+          reason: 'Store is closed today',
+          opensAt: nextOpen,
+        };
+      }
+
+      const [openH, openM] = todayTiming.openTime.split(':').map(Number);
+      const [closeH, closeM] = todayTiming.closeTime.split(':').map(Number);
+      const openMinutes  = openH  * 60 + openM;
+      const closeMinutes = closeH * 60 + closeM;
+
+      if (currentMinutes < openMinutes) {
+        return {
+          isOpen: false,
+          reason: `Store is not open yet. Opens at ${todayTiming.openTime}`,
+          opensAt: todayTiming.openTime,
+        };
+      }
+      if (currentMinutes >= closeMinutes) {
+        const nextOpen = _findNextOpenDay(store.storeTimings, todayDay);
+        return {
+          isOpen: false,
+          reason: `Store is closed. ${nextOpen ? `Opens ${nextOpen}` : 'Check timings for next opening'}`,
+          opensAt: nextOpen,
+        };
+      }
+    }
+  }
+
+  return { isOpen: true };
+}
+
+function _findNextOpenDay(
+  timings: Array<{ day: number; isClosed: boolean; openTime: string }>,
+  fromDay: number,
+): string | undefined {
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  for (let i = 1; i <= 7; i++) {
+    const nextDay = (fromDay + i) % 7;
+    const timing = timings.find((t) => t.day === nextDay);
+    if (timing && !timing.isClosed) {
+      const label = i === 1 ? 'Tomorrow' : dayNames[nextDay];
+      return `${label} at ${timing.openTime}`;
+    }
+  }
+  return undefined;
+}

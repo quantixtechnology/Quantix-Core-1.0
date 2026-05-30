@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter'
+import { checkStoreOpen } from '@/lib/core/store'
 
 export async function POST(request: Request) {
   try {
@@ -34,6 +35,15 @@ export async function POST(request: Request) {
     })
     if (!store || store.status !== 'ACTIVE') {
       return NextResponse.json({ success: false, error: 'Store not found or inactive' }, { status: 404 })
+    }
+
+    // ── Store availability + hours check ─────────────────────────────────
+    const storeCheck = await checkStoreOpen(body.storeId as string)
+    if (!storeCheck.isOpen) {
+      return NextResponse.json(
+        { success: false, error: storeCheck.reason || 'Store is currently closed', opensAt: storeCheck.opensAt ?? null },
+        { status: 422 }
+      )
     }
 
     const businessId = store.businessId
@@ -124,7 +134,26 @@ export async function POST(request: Request) {
       })
     }
 
-    const deliveryFee = body.deliveryFee ?? 0
+    // ── Minimum order amount enforcement ────────────────────────────────
+    const storeConfig = await db.store.findUnique({
+      where: { id: body.storeId as string },
+      select: { minOrderAmount: true, freeDeliveryAbove: true },
+    })
+    if (storeConfig?.minOrderAmount && subtotal < storeConfig.minOrderAmount) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Minimum order amount is ₹${storeConfig.minOrderAmount}. Your cart is ₹${Math.round(subtotal)}.`,
+          minOrderAmount: storeConfig.minOrderAmount,
+        },
+        { status: 422 }
+      )
+    }
+    // Apply free delivery above threshold
+    let deliveryFee = body.deliveryFee ?? 0
+    if (storeConfig?.freeDeliveryAbove && subtotal >= storeConfig.freeDeliveryAbove) {
+      deliveryFee = 0
+    }
     const totalAmount = Math.round(subtotal + deliveryFee)
 
     // Create or upsert shadow customer so the order is always linked

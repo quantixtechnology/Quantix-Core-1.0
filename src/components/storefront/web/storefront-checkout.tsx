@@ -33,6 +33,8 @@ interface StorefrontCheckoutProps {
   brandColor: string
   nav: WebNav
   currentStore?: PickedStore | null
+  storeClosed?: boolean
+  storeClosedMessage?: string
 }
 
 type CheckoutStep = "choose" | "form"
@@ -57,14 +59,23 @@ const emptyGuest = () => ({
   lat: undefined as number | undefined, lng: undefined as number | undefined, gpsAccuracy: undefined as number | undefined,
 })
 
-export function StorefrontCheckout({ brandColor, nav, currentStore }: StorefrontCheckoutProps) {
+export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed = false, storeClosedMessage }: StorefrontCheckoutProps) {
   const { currentBusinessId, currentStoreId } = useAdminStore()
   const { items, subtotal, storeDeliveryFee, couponDiscount, paymentGateways, clearCart } = useCartStore()
   const { isAuthenticated, user, token } = useAuthStore()
 
-  const deliveryFee = storeDeliveryFee ?? 0
+  const rawSubtotal = subtotal()
+  // Apply free delivery above threshold from store config
+  const effectiveDeliveryFee = (currentStore?.freeDeliveryAbove && rawSubtotal >= currentStore.freeDeliveryAbove)
+    ? 0
+    : (storeDeliveryFee ?? 0)
+  const deliveryFee = effectiveDeliveryFee
   const discount = couponDiscount || 0
-  const total = Math.round(subtotal() + deliveryFee - discount)
+  const total = Math.round(rawSubtotal + deliveryFee - discount)
+
+  // Minimum order check (client-side pre-validation)
+  const minOrderAmount = currentStore?.minOrderAmount ?? 0
+  const belowMinOrder  = minOrderAmount > 0 && rawSubtotal < minOrderAmount
 
   const [allowGuest, setAllowGuest] = useState<boolean | null>(null)
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>(isAuthenticated ? "form" : "choose")
@@ -302,6 +313,15 @@ export function StorefrontCheckout({ brandColor, nav, currentStore }: Storefront
 
   // ── Place order ────────────────────────────────────────────────────
   async function placeOrder() {
+    // Client-side guards — backend will also enforce these
+    if (storeClosed) {
+      setOrderError(storeClosedMessage || "Store is currently closed. Please try again later.")
+      return
+    }
+    if (belowMinOrder) {
+      setOrderError(`Minimum order amount is ₹${minOrderAmount}. Add more items to proceed.`)
+      return
+    }
     setPlacing(true); setOrderError("")
     try {
       if (isAuthenticated && token) {
@@ -590,21 +610,44 @@ export function StorefrontCheckout({ brandColor, nav, currentStore }: Storefront
               ))}
             </div>
             <div className="border-t border-gray-100 pt-4 space-y-2">
-              <div className="flex justify-between text-sm text-gray-600"><span>Subtotal</span><span>{formatINR(subtotal())}</span></div>
+              <div className="flex justify-between text-sm text-gray-600"><span>Subtotal</span><span>{formatINR(rawSubtotal)}</span></div>
               {deliveryFee > 0 && <div className="flex justify-between text-sm text-gray-600"><span>Delivery fee</span><span>{formatINR(deliveryFee)}</span></div>}
               {discount > 0 && <div className="flex justify-between text-sm text-green-600"><span>Discount</span><span>−{formatINR(discount)}</span></div>}
               <div className="flex justify-between text-base font-bold text-gray-900 pt-2 border-t border-gray-100"><span>Total</span><span>{formatINR(total)}</span></div>
             </div>
 
+            {/* Store closed warning */}
+            {storeClosed && (
+              <div className="mt-3 rounded-lg bg-gray-900 text-white px-4 py-3 text-xs font-medium">
+                🔴 {storeClosedMessage || "Store is currently closed"} — orders are not being accepted
+              </div>
+            )}
+
+            {/* Minimum order warning */}
+            {!storeClosed && belowMinOrder && (
+              <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 text-xs font-medium">
+                Minimum order is {formatINR(minOrderAmount)}. Add {formatINR(minOrderAmount - rawSubtotal)} more to proceed.
+              </div>
+            )}
+
+            {/* Free delivery badge */}
+            {!storeClosed && currentStore?.freeDeliveryAbove && rawSubtotal >= currentStore.freeDeliveryAbove && deliveryFee === 0 && (
+              <div className="mt-3 rounded-lg bg-green-50 border border-green-200 text-green-700 px-4 py-3 text-xs font-medium">
+                ✓ Free delivery applied
+              </div>
+            )}
+
             {orderError && <p className="mt-3 text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{orderError}</p>}
 
             <button
               onClick={placeOrder}
-              disabled={placing}
-              className="w-full h-12 text-white font-bold text-sm rounded-xl mt-4 flex items-center justify-center gap-2 disabled:opacity-60"
+              disabled={placing || storeClosed || belowMinOrder}
+              className="w-full h-12 text-white font-bold text-sm rounded-xl mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: brandColor }}
             >
-              {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+              {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : storeClosed ? (
+                <>🔴 Store Closed</>
+              ) : (
                 <><Check className="w-4 h-4" /> Place Order · {formatINR(total)}</>
               )}
             </button>

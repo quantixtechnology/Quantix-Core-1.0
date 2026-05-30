@@ -130,11 +130,13 @@ function ProductCard({
   brandColor,
   nav,
   businessType,
+  storeClosed,
 }: {
   product: Product
   brandColor: string
   nav: WebNav
   businessType: string
+  storeClosed?: boolean
 }) {
   const { addItem } = useCartStore()
   const config = getBusinessTypeConfig(businessType)
@@ -234,6 +236,8 @@ function ProductCard({
           </div>
           {isOutOfStock ? (
             <span className="text-[10px] font-semibold text-gray-400">Unavailable</span>
+          ) : storeClosed ? (
+            <span className="text-[10px] font-semibold text-gray-400">Closed</span>
           ) : (
             <button
               onClick={handleAdd}
@@ -251,9 +255,9 @@ function ProductCard({
 
 // ── Main component ───────────────────────────────────────────────────────
 
-interface StorefrontHomeProps { brandColor: string; nav: WebNav }
+interface StorefrontHomeProps { brandColor: string; nav: WebNav; storeClosed?: boolean }
 
-export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
+export function StorefrontHome({ brandColor, nav, storeClosed = false }: StorefrontHomeProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessType, currentStoreId } = useAdminStore()
 
   const config      = getBusinessTypeConfig(currentBusinessType)
@@ -469,7 +473,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
               {displayProducts.map((p) => (
-                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
+                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
               ))}
             </div>
           )}
@@ -493,7 +497,7 @@ export function StorefrontHome({ brandColor, nav }: StorefrontHomeProps) {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
               {moreProducts.map((p) => (
-                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
+                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
               ))}
             </div>
           </section>

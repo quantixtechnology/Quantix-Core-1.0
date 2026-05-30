@@ -53,6 +53,76 @@ export interface WebNav {
   prevPage: WebPage | null
 }
 
+// ── Store status check ──────────────────────────────────────────────────────
+// Called periodically to re-check isOnline + current timings
+async function fetchStoreStatus(businessId: string, storeId: string | null): Promise<{
+  isOnline: boolean
+  isOpen: boolean
+  message: string
+  opensAt: string | null
+}> {
+  try {
+    const params = new URLSearchParams({ businessId })
+    if (storeId) params.set("storeId", storeId)
+    const res = await fetch(`/api/core/storefront/store-context?${params}`)
+    const json = await res.json()
+    if (!json.success) return { isOnline: false, isOpen: false, message: "Store unavailable", opensAt: null }
+
+    const biz   = json.data?.business ?? {}
+    const store = json.data?.store ?? {}
+
+    const isOnline = biz.isOnline !== false
+
+    // Client-side hours check (mirrors backend logic)
+    let isOpen = isOnline
+    let message = isOnline ? "" : "Store is currently offline"
+    let opensAt: string | null = null
+
+    if (isOnline && store.storeTimings && store.storeTimings.length > 0) {
+      const istOffset = 5.5 * 60 * 60 * 1000
+      const istNow    = new Date(Date.now() + istOffset)
+      const todayDay  = istNow.getUTCDay()
+      const nowMin    = istNow.getUTCHours() * 60 + istNow.getUTCMinutes()
+      const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]
+      const todayRow  = store.storeTimings.find((t: { day: number }) => t.day === todayDay)
+
+      if (todayRow?.isClosed) {
+        isOpen  = false
+        message = "Store is closed today"
+        // Find next open day
+        for (let i = 1; i <= 7; i++) {
+          const d = (todayDay + i) % 7
+          const row = store.storeTimings.find((t: { day: number }) => t.day === d)
+          if (row && !row.isClosed) { opensAt = `${i === 1 ? "Tomorrow" : DAY_NAMES[d]} at ${row.openTime}`; break }
+        }
+      } else if (todayRow) {
+        const [oh, om]  = todayRow.openTime.split(":").map(Number)
+        const [ch, cm]  = todayRow.closeTime.split(":").map(Number)
+        const openMin   = oh * 60 + om
+        const closeMin  = ch * 60 + cm
+
+        if (nowMin < openMin) {
+          isOpen  = false
+          message = `Store opens at ${todayRow.openTime}`
+          opensAt = todayRow.openTime
+        } else if (nowMin >= closeMin) {
+          isOpen  = false
+          for (let i = 1; i <= 7; i++) {
+            const d = (todayDay + i) % 7
+            const row = store.storeTimings.find((t: { day: number }) => t.day === d)
+            if (row && !row.isClosed) { opensAt = `${i === 1 ? "Tomorrow" : DAY_NAMES[d]} at ${row.openTime}`; break }
+          }
+          message = `Store is closed. ${opensAt ? `Opens ${opensAt}` : ""}`
+        }
+      }
+    }
+
+    return { isOnline, isOpen, message, opensAt }
+  } catch {
+    return { isOnline: true, isOpen: true, message: "", opensAt: null }
+  }
+}
+
 export function StorefrontWebsite() {
   const { currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
   const { switchStore, storeId: cartStoreId } = useCartStore()
@@ -74,6 +144,11 @@ export function StorefrontWebsite() {
   const [showStorePicker, setShowStorePicker] = useState(false)
   const [pickerMandatory, setPickerMandatory] = useState(false)
   const [currentStore, setCurrentStore] = useState<PickedStore | null>(null)
+
+  // Store status — polled every 60 seconds so the UI reacts to open/close windows
+  const [storeStatus, setStoreStatus] = useState<{
+    isOnline: boolean; isOpen: boolean; message: string; opensAt: string | null
+  }>({ isOnline: true, isOpen: true, message: "", opensAt: null })
 
   // On mount: check localStorage for a saved store; if none, show mandatory picker
   useEffect(() => {
@@ -116,6 +191,16 @@ export function StorefrontWebsite() {
     setPickerMandatory(false)
     setShowStorePicker(true)
   }, [])
+
+  // Poll store status once on mount and whenever the store changes, then every 60s
+  useEffect(() => {
+    if (!currentBusinessId) return
+    const storeId = currentStore?.id ?? null
+    const check = () => fetchStoreStatus(currentBusinessId, storeId).then(setStoreStatus)
+    check()
+    const id = setInterval(check, 60_000)
+    return () => clearInterval(id)
+  }, [currentBusinessId, currentStore?.id])
 
   const go = useCallback((
     p: WebPage,
@@ -161,14 +246,30 @@ export function StorefrontWebsite() {
 
   const nav: WebNav = { go, goBack, canGoBack, current: page, categoryId, categoryName, productId, orderId, prevPage }
 
+  const storeClosed = !storeStatus.isOpen
+
   return (
     <>
       <StorefrontLayout brandColor={brandColor} nav={nav} currentStore={currentStore} onOpenStorePicker={handleOpenStorePicker}>
-        {page === "home"           && <StorefrontHome          brandColor={brandColor} nav={nav} />}
-        {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} />}
+        {/* ── Store Offline / Closed Banner ──────────────────────── */}
+        {storeClosed && (
+          <div className="sticky top-0 z-40 w-full bg-gray-900 text-white text-center py-3 px-4">
+            <p className="text-sm font-semibold">
+              🔴 {storeStatus.message || "Store is currently closed"}
+              {storeStatus.opensAt && (
+                <span className="ml-2 font-normal text-gray-300">
+                  · Opens {storeStatus.opensAt}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+
+        {page === "home"           && <StorefrontHome          brandColor={brandColor} nav={nav} storeClosed={storeClosed} />}
+        {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} storeClosed={storeClosed} />}
         {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
         {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}
-        {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} currentStore={currentStore} />}
+        {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} currentStore={currentStore} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />}
         {page === "order-tracking" && <StorefrontOrderTracking brandColor={brandColor} nav={nav} />}
         {page === "orders"         && <StorefrontOrders        brandColor={brandColor} nav={nav} />}
         {page === "profile"        && <StorefrontProfile       brandColor={brandColor} nav={nav} />}

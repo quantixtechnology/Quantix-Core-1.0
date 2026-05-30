@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
+import { checkStoreOpen } from '@/lib/core/store';
 
 export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER', 'CLIENT_OWNER', 'STORE_MANAGER', 'STORE_OPERATOR', 'BILLING_STAFF', 'INVENTORY_STAFF', 'SUPPORT_STAFF', 'DELIVERY_STAFF'] })(
   async (req) => {
@@ -86,6 +87,15 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         return NextResponse.json(
           { success: false, error: 'At least one order item is required' },
           { status: 400 }
+        );
+      }
+
+      // ── Store availability + hours check ──────────────────────────────────
+      const storeCheck = await checkStoreOpen(body.storeId as string);
+      if (!storeCheck.isOpen) {
+        return NextResponse.json(
+          { success: false, error: storeCheck.reason || 'Store is currently closed', opensAt: storeCheck.opensAt ?? null },
+          { status: 422 }
         );
       }
 
@@ -268,6 +278,26 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
       let deliveryFee = body.deliveryFee || 0;
       let totalDiscount = 0;
       let resolvedPromoCodeId: string | null = body.promoCodeId || null;
+
+      // ── Minimum order amount enforcement ─────────────────────────────────
+      const storeForMinOrder = await db.store.findUnique({
+        where: { id: body.storeId as string },
+        select: { minOrderAmount: true, freeDeliveryAbove: true },
+      });
+      if (storeForMinOrder?.minOrderAmount && subtotal < storeForMinOrder.minOrderAmount) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Minimum order amount is ₹${storeForMinOrder.minOrderAmount}. Your cart is ₹${Math.round(subtotal)}.`,
+            minOrderAmount: storeForMinOrder.minOrderAmount,
+          },
+          { status: 422 }
+        );
+      }
+      // Apply free delivery above threshold
+      if (storeForMinOrder?.freeDeliveryAbove && subtotal >= storeForMinOrder.freeDeliveryAbove) {
+        deliveryFee = 0;
+      }
 
       // ── Promo code validation + discount calculation ──────────────────────
       if (body.promoCodeId) {

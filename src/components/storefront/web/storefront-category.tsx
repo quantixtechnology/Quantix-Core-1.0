@@ -69,11 +69,13 @@ function ProductCard({
   brandColor,
   nav,
   businessType,
+  storeClosed,
 }: {
   product: Product
   brandColor: string
   nav: WebNav
   businessType: string
+  storeClosed?: boolean
 }) {
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const config = getBusinessTypeConfig(businessType)
@@ -196,6 +198,8 @@ function ProductCard({
           </div>
           {isOutOfStock ? (
             <span className="text-[10px] font-semibold text-gray-400 shrink-0">Unavailable</span>
+          ) : storeClosed ? (
+            <span className="text-[10px] font-semibold text-gray-400 shrink-0">Closed</span>
           ) : cartItem ? (
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <button
@@ -231,9 +235,10 @@ function ProductCard({
 interface StorefrontCategoryPageProps {
   brandColor: string
   nav: WebNav
+  storeClosed?: boolean
 }
 
-export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPageProps) {
+export function StorefrontCategoryPage({ brandColor, nav, storeClosed = false }: StorefrontCategoryPageProps) {
   const { currentBusinessId, currentBusinessType, currentStoreId } = useAdminStore()
 
   const config = getBusinessTypeConfig(currentBusinessType)
@@ -487,7 +492,7 @@ export function StorefrontCategoryPage({ brandColor, nav }: StorefrontCategoryPa
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                 {products.map((p) => (
-                  <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} />
+                  <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
                 ))}
               </div>
 
