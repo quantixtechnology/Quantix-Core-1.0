@@ -2,17 +2,15 @@
 
 import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig, getCategoryIcon } from "@/lib/business-type-config"
 import { resolveImageUrl } from "@/lib/image-url"
-import { formatINR } from "@/lib/currency"
-import { ChevronRight, Plus, Zap, Shield, Star, Truck, Package } from "lucide-react"
+import { ChevronRight, Zap, Shield, Star, Truck, Package } from "lucide-react"
 import type { WebNav } from "./storefront-website"
-import { ProductImage } from "./product-image"
+import { StorefrontProductCard, ProductCardSkeleton } from "./storefront-product-card"
+import type { StorefrontProduct } from "./storefront-product-card"
 
-// ── Types ─────────────────────────────────────────────────────────────────
-// These mirror what the products API actually returns (images/metadata are
-// already parsed — the API does JSON.parse before sending the response).
+// ── Local types ───────────────────────────────────────────────────────────
+// Product is aliased from the shared card type; Category is page-local.
 
 interface Category {
   id: string
@@ -23,29 +21,7 @@ interface Category {
   color: string | null
 }
 
-interface Variant {
-  id: string
-  name: string
-  price: number
-  mrp: number
-  isDefault: boolean
-  isActive: boolean
-}
-
-interface Product {
-  id: string
-  name: string
-  shortDesc: string | null
-  images: string[]
-  isVeg: boolean | null
-  isFeatured: boolean
-  isPopular: boolean
-  metadata: Record<string, unknown>
-  variants: Variant[]
-  stockStatus: string
-  availableStock: number
-  hasInventory: boolean
-}
+type Product = StorefrontProduct
 
 // ── Business-type helpers ────────────────────────────────────────────────
 
@@ -61,16 +37,6 @@ function getHeroContent(businessType: string) {
       return { headline: "Medicines\nDelivered in 30 min.", sub: "Genuine medicines and vitamins from licensed pharmacists.", cta: "Order Now" }
     default:
       return { headline: "Quality Products,\nDelivered Fast.", sub: "Browse our selection and get everything you need delivered to your door.", cta: "Shop Now" }
-  }
-}
-
-function getDefaultEmoji(businessType: string) {
-  switch (businessType) {
-    case "MEAT_DELIVERY":  return "🥩"
-    case "GROCERY":        return "🛒"
-    case "FOOD_DELIVERY":  return "🍽️"
-    case "PHARMACY":       return "💊"
-    default:               return "📦"
   }
 }
 
@@ -100,145 +66,13 @@ function getWhyChooseUs(businessType: string) {
   }
 }
 
-// ── Skeleton components ──────────────────────────────────────────────────
-
-function SkeletonCard() {
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden animate-pulse">
-      <div className="h-28 bg-gray-100" />
-      <div className="p-2 space-y-1.5">
-        <div className="h-3 bg-gray-100 rounded w-3/4" />
-        <div className="h-3 bg-gray-100 rounded w-1/2" />
-        <div className="h-4 bg-gray-100 rounded w-1/3 mt-2" />
-      </div>
-    </div>
-  )
-}
+// ── Category skeleton (page-local, no product image needed) ──────────────
 
 function SkeletonCategory() {
   return (
     <div className="flex flex-col items-center gap-2 animate-pulse">
       <div className="w-16 h-16 rounded-2xl bg-gray-100" />
       <div className="h-3 bg-gray-100 rounded w-14" />
-    </div>
-  )
-}
-
-// ── Product card ─────────────────────────────────────────────────────────
-
-function ProductCard({
-  product,
-  brandColor,
-  nav,
-  businessType,
-  storeClosed,
-}: {
-  product: Product
-  brandColor: string
-  nav: WebNav
-  businessType: string
-  storeClosed?: boolean
-}) {
-  const { addItem } = useCartStore()
-  const config = getBusinessTypeConfig(businessType)
-
-  const images = Array.isArray(product.images) ? product.images : []
-  const meta   = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
-  const imgSrc = resolveImageUrl(images[0])
-
-  const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
-  const price = defaultVariant?.price ?? 0
-  const mrp   = defaultVariant?.mrp   ?? 0
-  const hasDiscount = mrp > price && mrp > 0
-  const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
-
-  const showHalal = config.productMeta.some((m) => m.key === "isHalal"      && m.showOnCard)
-  const showFresh = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
-  const defaultEmoji = getDefaultEmoji(businessType)
-
-  const isOutOfStock = product.hasInventory && product.stockStatus === 'OUT_OF_STOCK'
-
-  const handleAdd = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!defaultVariant || isOutOfStock) return
-    addItem({
-      productId: product.id,
-      variantId: defaultVariant.id,
-      name: product.name,
-      variantName: defaultVariant.name !== "Default" ? defaultVariant.name : "",
-      price: defaultVariant.price,
-      mrp: defaultVariant.mrp,
-      quantity: 1,
-      image: imgSrc || "",
-      isVeg: product.isVeg ?? false,
-    })
-  }
-
-  return (
-    <div
-      className="bg-white rounded-xl border border-gray-100 overflow-hidden cursor-pointer group hover:shadow-md hover:border-gray-200 transition-all duration-200"
-      onClick={() => nav.go("product", { productId: product.id })}
-    >
-      <div className="relative overflow-hidden">
-        <ProductImage
-          src={imgSrc}
-          alt={product.name}
-          fallbackEmoji={defaultEmoji}
-          className="w-full h-28"
-        />
-
-        <div className="absolute top-2 left-2 flex gap-1.5 flex-wrap max-w-[calc(100%-1rem)]">
-          {isOutOfStock ? (
-            <span className="px-2 py-0.5 bg-gray-600 text-white text-[10px] font-bold rounded-full">OUT OF STOCK</span>
-          ) : (
-            <>
-              {product.isVeg === true  && <span className="px-2 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full">VEG</span>}
-              {product.isVeg === false && <span className="px-2 py-0.5 bg-red-500  text-white text-[10px] font-bold rounded-full">NON-VEG</span>}
-              {showHalal && !!meta.isHalal && (
-                <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full">HALAL</span>
-              )}
-              {hasDiscount && (
-                <span className="px-2 py-0.5 text-white text-[10px] font-bold rounded-full" style={{ backgroundColor: brandColor }}>
-                  {discountPct}% OFF
-                </span>
-              )}
-            </>
-          )}
-        </div>
-
-        {showFresh && !!meta.freshnessTag && (
-          <div className="absolute top-2 right-2 px-2 py-0.5 bg-white/90 backdrop-blur-sm text-[10px] font-semibold text-gray-700 rounded-full border border-gray-200">
-            {String(meta.freshnessTag)}
-          </div>
-        )}
-      </div>
-
-      <div className="p-2">
-        <p className="text-xs font-semibold text-gray-900 truncate">{product.name}</p>
-        {defaultVariant && defaultVariant.name !== "Default" && (
-          <p className="text-xs text-gray-400 mt-0.5 truncate">{defaultVariant.name}</p>
-        )}
-        {!defaultVariant && product.shortDesc && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{product.shortDesc}</p>}
-        <div className="mt-1 flex items-center justify-between">
-          <div>
-            <span className="text-sm font-bold" style={{ color: brandColor }}>{formatINR(price)}</span>
-            {hasDiscount && <span className="ml-1.5 text-xs text-gray-400 line-through">{formatINR(mrp)}</span>}
-          </div>
-          {isOutOfStock ? (
-            <span className="text-[10px] font-semibold text-gray-400">Unavailable</span>
-          ) : storeClosed ? (
-            <span className="text-[10px] font-semibold text-gray-400">Closed</span>
-          ) : (
-            <button
-              onClick={handleAdd}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-sm hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: brandColor }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   )
 }
@@ -452,7 +286,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
 
           {prodsLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-              {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+              {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
             </div>
           ) : displayProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
@@ -463,7 +297,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
               {displayProducts.map((p) => (
-                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
+                <StorefrontProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
               ))}
             </div>
           )}
@@ -487,7 +321,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
               {moreProducts.map((p) => (
-                <ProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
+                <StorefrontProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
               ))}
             </div>
           </section>

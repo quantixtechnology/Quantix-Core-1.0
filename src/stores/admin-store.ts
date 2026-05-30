@@ -1,6 +1,7 @@
 "use client"
 
 import { create } from "zustand"
+import { PLATFORM_IMAGE_DEFAULTS } from "@/config/product-image-config"
 
 // ============================================================================
 // VIEW / ROUTING TYPES
@@ -398,6 +399,10 @@ interface AdminState {
   // ── Order stage labels ──────────────────────────────────────────────────
   orderStages: import('@/lib/order-stages').OrderStage[]
   setOrderStages: (stages: import('@/lib/order-stages').OrderStage[]) => void
+
+  // ── Storefront product image config (hydrated from ecommerceConfig) ──────
+  currentImageConfig: import('@/config/product-image-config').ProductImageConfig
+  setImageConfig: (cfg: Partial<import('@/config/product-image-config').ProductImageConfig>) => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
@@ -528,4 +533,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   // Order stage labels
   orderStages: [],
   setOrderStages: (stages) => set({ orderStages: stages }),
+
+  // Storefront product image config
+  currentImageConfig: PLATFORM_IMAGE_DEFAULTS,
+  setImageConfig: (cfg) => set((s) => ({ currentImageConfig: { ...s.currentImageConfig, ...cfg } })),
 }))

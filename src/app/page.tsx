@@ -34,7 +34,7 @@ function StorefrontContextLoader({
     setCurrentStoreId, setCurrentStoreName,
     setCurrentBusinessPrimaryColor,
     setCurrentBusinessLogo, setCurrentBusinessFavicon,
-    setOrderStages,
+    setOrderStages, setImageConfig,
   } = useAdminStore()
   const { setCartStoreId, setStoreContext } = useCartStore()
   const { isAuthenticated, currentRole } = useAuthStore()
@@ -74,6 +74,7 @@ function StorefrontContextLoader({
           setStoreContext(store.deliveryFee ?? null, store.minOrderAmount ?? null, json.data.paymentGateways || [])
         }
         if (json.data.orderStages?.length) setOrderStages(json.data.orderStages)
+        if (json.data.ecommerceConfig?.imageConfig) setImageConfig(json.data.ecommerceConfig.imageConfig)
         setViewMode("customer")
         onLoaded()
       })
