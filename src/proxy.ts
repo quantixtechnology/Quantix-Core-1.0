@@ -43,7 +43,11 @@ export default function proxy(request: NextRequest) {
 
       if (slug && !['www', 'app', 'admin', 'api', 'mail'].includes(slug)) {
         const url = request.nextUrl.clone()
-        url.pathname = '/'
+        // Public pages keep their path; all other storefront paths rewrite to /
+        const PUBLIC_PATHS = ['/delete-account']
+        if (!PUBLIC_PATHS.includes(pathname)) {
+          url.pathname = '/'
+        }
         url.searchParams.set('_storefront', slug)
         console.log(`[proxy] REWRITE slug=${slug} → ${url.toString()}`)
         return withSecurityHeaders(NextResponse.rewrite(url))
