@@ -107,42 +107,76 @@ export async function POST(request: Request) {
       });
     }
 
-    // Fallback: check via User → BusinessUser link, but ONLY for the CUSTOMER
-    // role.  Staff roles (CLIENT_OWNER, STORE_MANAGER, etc.) must NOT be
-    // treated as storefront customers — doing so would falsely return
-    // exists:true for staff emails and trigger an unwanted OTP send.
+    // ── Fallback: look up via User → customerProfiles ────────────────────
+    //
+    // WHY THIS EXISTS:
+    // The primary lookup (Customer.email + businessId) misses customers whose
+    // Customer.email is NULL — this happens when a customer registered before
+    // the email-first flow was introduced (phone-only registration) or when the
+    // Customer record was created by admin without an email address.
+    //
+    // We find the User by email and check whether they have a Customer record
+    // (customerProfile) for this specific business, regardless of whether
+    // Customer.email is set or a BusinessUser row exists.
+    //
+    // Staff guard: if the User only has non-CUSTOMER BusinessUser rows and no
+    // Customer profile at all, we do NOT treat them as a storefront customer.
     const user = await db.user.findUnique({
       where: { email },
       select: {
         id: true,
-        hasPassword: true,
-        businessUsers: {
-          where: { businessId, isActive: true, role: 'CUSTOMER' },
-          select: { id: true },
-        },
+        passwordHash: true,
+        // All Customer records for this user in this business
         customerProfiles: {
           where: { businessId },
-          select: { isPasswordSet: true, isLoginDisabled: true },
+          select: { id: true, isPasswordSet: true, isLoginDisabled: true, email: true },
+        },
+        // Keep BusinessUser for the staff-role guard below
+        businessUsers: {
+          where: { businessId, isActive: true },
+          select: { id: true, role: true },
         },
       },
     });
 
-    if (user && user.businessUsers.length > 0) {
+    if (user) {
       const profile = user.customerProfiles[0];
-      if (profile?.isLoginDisabled) {
-        return NextResponse.json(
-          { success: false, error: 'Account disabled. Please contact the store.' },
-          { status: 403 }
-        );
+
+      if (profile) {
+        // User has a Customer record for this business → existing customer
+        if (profile.isLoginDisabled) {
+          return NextResponse.json(
+            { success: false, error: 'Account disabled. Please contact the store.' },
+            { status: 403 }
+          );
+        }
+
+        // Self-heal: write email back to Customer record so the fast primary
+        // path works on all future requests without hitting this fallback.
+        if (!profile.email) {
+          await db.customer.update({
+            where: { id: profile.id },
+            data:  { email },
+          }).catch(() => { /* non-fatal */ });
+        }
+
+        const hasPassword = profile.isPasswordSet || !!user.passwordHash;
+        return NextResponse.json({ success: true, exists: true, hasPassword });
       }
-      return NextResponse.json({
-        success: true,
-        exists: true,
-        hasPassword: profile?.isPasswordSet ?? user.hasPassword,
-      });
+
+      // No Customer profile — only allow if they have a CUSTOMER-role BusinessUser.
+      // Pure staff users (no Customer record) must NOT be treated as customers.
+      const hasCustomerBU = user.businessUsers.some((bu) => bu.role === 'CUSTOMER');
+      if (hasCustomerBU) {
+        return NextResponse.json({
+          success: true,
+          exists: true,
+          hasPassword: !!user.passwordHash,
+        });
+      }
     }
 
-    // New customer
+    // Genuinely new customer for this business
     return NextResponse.json({ success: true, exists: false, hasPassword: false });
   } catch (error) {
     console.error('[storefront/auth/check-customer]', error);
