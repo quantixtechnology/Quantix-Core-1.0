@@ -41,22 +41,28 @@ jobs:
           ssh-keyscan -p "$PORT" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
           echo "✅ SSH key written and VPS added to known_hosts"
 
-      # ── Step 4: Test TCP connectivity ─────────────────────────────────────────
+      # ── Step 4: Test TCP connectivity (informational only) ───────────────────
+      # Non-fatal — if TCP pre-check fails the SSH step will surface the real error.
+      # Common cause: Hostinger firewall blocks GitHub Actions IP ranges on port 22;
+      # try a custom SSH port (e.g. 2222) set via VPS_PORT secret.
       - name: Test VPS connectivity
+        continue-on-error: true
         run: |
           PORT="${{ secrets.VPS_PORT }}"
           PORT="${PORT:-22}"
           HOST="${{ secrets.VPS_HOST }}"
+          echo "ℹ️  Checking TCP $HOST:$PORT …"
           for i in 1 2 3; do
             if timeout 10 bash -c "echo >/dev/tcp/$HOST/$PORT" 2>/dev/null; then
               echo "✅ TCP reachable (attempt $i)"
               exit 0
             fi
-            echo "⚠️  Attempt $i/3 failed — retrying in 10s..."
+            echo "⚠️  Attempt $i/3 failed — retrying in 10s…"
             [ $i -lt 3 ] && sleep 10
           done
-          echo "❌ Cannot reach $HOST:$PORT"
-          exit 1
+          echo "⚠️  TCP pre-check could not reach $HOST:$PORT — proceeding to SSH step anyway."
+          echo "   If SSH also fails, verify: (1) VPS is running, (2) VPS_PORT secret matches"
+          echo "   the SSH port on the server, (3) Hostinger firewall allows GitHub Actions IPs."
 
       # ── Step 5: Deploy via native SSH ─────────────────────────────────────────
       # No third-party action — avoids all command_timeout parsing bugs.
