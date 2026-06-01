@@ -1,15 +1,17 @@
 "use client"
 
 // ============================================================================
-// StorefrontProductCard — single shared product card for all listing surfaces.
+// StorefrontProductCard — rigid 3-zone layout, platform-wide.
 //
-// Replaces the duplicate ProductCard components that existed separately in
-// storefront-home.tsx and storefront-category.tsx.
+// Zone 1 — IMAGE   shrink-0  fixed height (config.cardHeight)
+// Zone 2 — INFO    flex-1    product name (2 lines max) · variant · price
+// Zone 3 — ACTION  shrink-0  52 px  always visible, never pushed off-screen
 //
-// Image zone height:  driven by useAdminStore().currentImageConfig — no h-28.
-// Qty controls:       shows stepper when item is already in cart, + otherwise.
-// Badges:             VEG / NON-VEG / HALAL / freshnessTag / discount — all
-//                     gated by businessType config (no hard-coded business logic).
+// The card itself is flex-col so CSS grid stretches it to the tallest sibling,
+// giving every row perfectly equal heights.
+//
+// Business theme colors flow in via brandColor — zero hardcoded values.
+// All listing surfaces (home, category, search) inherit automatically.
 // ============================================================================
 
 import { useCartStore } from "@/stores/cart-store"
@@ -20,11 +22,9 @@ import { formatINR } from "@/lib/currency"
 import { Plus, Minus } from "lucide-react"
 import { ProductImage } from "./product-image"
 import type { WebNav } from "./storefront-website"
-import { getCardClasses, TYPE, BTN_ICON, iconBtnStyle } from "@/design-system"
+import { getCardClasses, TYPE } from "@/design-system"
 
-// ── Shared product type ───────────────────────────────────────────────────────
-// This mirrors the storefront API shape and replaces the local interface that
-// was duplicated in both home and category files.
+// ── Shared product types ───────────────────────────────────────────────────────
 
 export interface StorefrontVariant {
   id: string
@@ -54,24 +54,31 @@ export interface StorefrontProduct {
   metadata?: Record<string, unknown> | null
 }
 
-// ── Shared skeleton ───────────────────────────────────────────────────────────
-// Exported so callers can render shimmer grids while data loads.
+// ── Skeleton ───────────────────────────────────────────────────────────────────
 
 export function ProductCardSkeleton() {
   const { currentImageConfig, currentBusinessTheme } = useAdminStore()
   return (
-    <div className={`${getCardClasses(currentBusinessTheme.cardStyle)} animate-pulse`}>
-      <div className="bg-gray-100" style={{ height: currentImageConfig.cardHeight }} />
-      <div className="p-2 space-y-1.5">
-        <div className="h-3 bg-gray-100 rounded w-3/4" />
-        <div className="h-3 bg-gray-100 rounded w-1/2" />
+    <div className={`${getCardClasses(currentBusinessTheme.cardStyle)} flex flex-col animate-pulse`}>
+      {/* Zone 1 — image placeholder */}
+      <div className="shrink-0 bg-gray-100" style={{ height: currentImageConfig.cardHeight }} />
+
+      {/* Zone 2 — info placeholder */}
+      <div className="flex-1 px-2.5 pt-2 pb-0 space-y-1.5">
+        <div className="h-3 bg-gray-100 rounded w-5/6" />
+        <div className="h-3 bg-gray-100 rounded w-2/3" />
         <div className="h-4 bg-gray-100 rounded w-1/3 mt-2" />
+      </div>
+
+      {/* Zone 3 — action placeholder */}
+      <div className="shrink-0 px-2.5 pb-2.5 pt-1.5">
+        <div className="h-9 bg-gray-100 rounded-xl" />
       </div>
     </div>
   )
 }
 
-// ── Business-type emoji helper ────────────────────────────────────────────────
+// ── Business-type fallback emoji ───────────────────────────────────────────────
 
 function defaultEmojiFor(businessType: string): string {
   switch (businessType) {
@@ -83,7 +90,7 @@ function defaultEmojiFor(businessType: string): string {
   }
 }
 
-// ── Shared product card ───────────────────────────────────────────────────────
+// ── Card ───────────────────────────────────────────────────────────────────────
 
 interface StorefrontProductCardProps {
   product: StorefrontProduct
@@ -105,14 +112,13 @@ export function StorefrontProductCard({
   const btConfig = getBusinessTypeConfig(businessType)
 
   const images = Array.isArray(product.images) ? product.images : []
-  const meta   = product.metadata && typeof product.metadata === "object"
-    ? product.metadata
-    : {}
+  const meta   = product.metadata && typeof product.metadata === "object" ? product.metadata : {}
   const imgSrc = resolveImageUrl(images[0])
+  const emoji  = defaultEmojiFor(businessType)
 
   const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
-  const price = defaultVariant?.price ?? 0
-  const mrp   = defaultVariant?.mrp   ?? 0
+  const price       = defaultVariant?.price ?? 0
+  const mrp         = defaultVariant?.mrp   ?? 0
   const hasDiscount = mrp > price && mrp > 0
   const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
 
@@ -120,48 +126,56 @@ export function StorefrontProductCard({
     ? items.find((i) => i.productId === product.id && i.variantId === defaultVariant.id)
     : undefined
 
-  const showHalal = btConfig.productMeta.some((m) => m.key === "isHalal"      && m.showOnCard)
-  const showFresh = btConfig.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
-  const emoji     = defaultEmojiFor(businessType)
+  const showHalal    = btConfig.productMeta.some((m) => m.key === "isHalal"      && m.showOnCard)
+  const showFresh    = btConfig.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
   const isOutOfStock = product.hasInventory && product.stockStatus === "OUT_OF_STOCK"
 
-  const handleAdd = (e: React.MouseEvent) => {
+  // ── Cart handlers ──────────────────────────────────────────────────────────
+
+  function handleAdd(e: React.MouseEvent) {
     e.stopPropagation()
-    if (!defaultVariant || isOutOfStock) return
+    if (!defaultVariant || isOutOfStock || storeClosed) return
     addItem({
-      productId: product.id,
-      variantId: defaultVariant.id,
-      name: product.name,
+      productId:   product.id,
+      variantId:   defaultVariant.id,
+      name:        product.name,
       variantName: defaultVariant.name !== "Default" ? defaultVariant.name : "",
-      price: defaultVariant.price,
-      mrp: defaultVariant.mrp,
-      quantity: 1,
-      image: imgSrc || "",
-      isVeg: product.isVeg ?? false,
+      price:       defaultVariant.price,
+      mrp:         defaultVariant.mrp,
+      quantity:    1,
+      image:       imgSrc || "",
+      isVeg:       product.isVeg ?? false,
     })
   }
 
-  const handleIncrease = (e: React.MouseEvent) => {
+  function handleIncrease(e: React.MouseEvent) {
     e.stopPropagation()
     if (!cartItem || !defaultVariant) return
     updateQuantity(product.id, defaultVariant.id, cartItem.quantity + 1)
   }
 
-  const handleDecrease = (e: React.MouseEvent) => {
+  function handleDecrease(e: React.MouseEvent) {
     e.stopPropagation()
     if (!cartItem || !defaultVariant) return
     if (cartItem.quantity <= 1) removeItem(product.id, defaultVariant.id)
     else updateQuantity(product.id, defaultVariant.id, cartItem.quantity - 1)
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div
-      className={getCardClasses(currentBusinessTheme.cardStyle)}
+      className={`${getCardClasses(currentBusinessTheme.cardStyle)} flex flex-col`}
       onClick={() => nav.go("product", { productId: product.id })}
     >
-      {/* ── Fixed image zone — height driven by config, not a Tailwind class ── */}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          Zone 1 — IMAGE
+          shrink-0 · height driven by imageConfig.cardHeight
+          Image never compressed, always object-contain on white bg.
+      ══════════════════════════════════════════════════════════════════ */}
       <div
-        className="relative overflow-hidden"
+        className="relative shrink-0 overflow-hidden"
         style={{ height: currentImageConfig.cardHeight }}
       >
         <ProductImage
@@ -172,15 +186,15 @@ export function StorefrontProductCard({
           config={currentImageConfig}
         />
 
-        {/* ── Overlay badges ───────────────────────────────────────── */}
-        <div className="absolute top-2 left-2 flex gap-1 flex-wrap max-w-[calc(100%-0.5rem)]">
+        {/* Overlay badges — top-left */}
+        <div className="absolute top-1.5 left-1.5 flex gap-1 flex-wrap max-w-[calc(100%-0.75rem)]">
           {isOutOfStock ? (
-            <span className="px-1.5 py-0.5 bg-gray-600 text-white text-[9px] font-bold rounded-full">
+            <span className="px-1.5 py-0.5 bg-gray-600/90 text-white text-[9px] font-bold rounded-full">
               OUT OF STOCK
             </span>
           ) : (
             <>
-              {product.isVeg === true  && (
+              {product.isVeg === true && (
                 <span className="px-1.5 py-0.5 bg-green-500 text-white text-[9px] font-bold rounded-full">VEG</span>
               )}
               {product.isVeg === false && (
@@ -201,54 +215,99 @@ export function StorefrontProductCard({
           )}
         </div>
 
+        {/* Freshness tag — top-right */}
         {showFresh && !!meta.freshnessTag && (
-          <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-white/90 backdrop-blur-sm text-[9px] font-semibold text-gray-700 rounded-full border border-gray-200">
+          <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-white/90 backdrop-blur-sm text-[9px] font-semibold text-gray-700 rounded-full border border-gray-200">
             {String(meta.freshnessTag)}
           </div>
         )}
       </div>
 
-      {/* ── Fixed info + action zone ──────────────────────────────── */}
-      <div className="p-2">
+      {/* ══════════════════════════════════════════════════════════════════
+          Zone 2 — INFO
+          flex-1 · absorbs all remaining vertical space.
+          Price is pushed to the bottom with mt-auto so it's always
+          adjacent to the action zone regardless of name length.
+      ══════════════════════════════════════════════════════════════════ */}
+      <div className="flex-1 flex flex-col px-2.5 pt-2 pb-0 min-h-0">
+        {/* Product name — 2 lines max, never pushes action zone */}
         <p className={TYPE.CARD_NAME}>{product.name}</p>
+
+        {/* Variant / short description */}
         {defaultVariant && defaultVariant.name !== "Default" ? (
           <p className={TYPE.CARD_VARIANT}>{defaultVariant.name}</p>
         ) : product.shortDesc ? (
           <p className={TYPE.CARD_DESC}>{product.shortDesc}</p>
         ) : null}
 
-        <div className="mt-1 flex items-center justify-between">
-          {/* ── Price zone ─── */}
-          <div>
-            <span className={TYPE.PRICE_MAIN} style={{ color: brandColor }}>
-              {formatINR(price)}
-            </span>
-            {hasDiscount && (
-              <span className={TYPE.PRICE_STRIKE}>{formatINR(mrp)}</span>
-            )}
-          </div>
-
-          {/* ── Action zone ── */}
-          {isOutOfStock ? (
-            <span className="text-[10px] font-semibold text-gray-400 shrink-0">Unavailable</span>
-          ) : storeClosed ? (
-            <span className="text-[10px] font-semibold text-gray-400 shrink-0">Closed</span>
-          ) : cartItem ? (
-            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={handleDecrease} className={`${BTN_ICON} border border-gray-200 hover:bg-gray-100`}>
-                <Minus className="w-3 h-3" />
-              </button>
-              <span className="w-5 text-center text-sm font-bold">{cartItem.quantity}</span>
-              <button onClick={handleIncrease} className={BTN_ICON} style={iconBtnStyle(brandColor)}>
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
-          ) : (
-            <button onClick={handleAdd} className={`${BTN_ICON} shadow-sm`} style={iconBtnStyle(brandColor)}>
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+        {/* Price — mt-auto anchors it directly above the action zone */}
+        <div className="mt-auto pt-1.5 flex items-baseline gap-1 flex-wrap">
+          <span className={TYPE.PRICE_MAIN} style={{ color: brandColor }}>
+            {formatINR(price)}
+          </span>
+          {hasDiscount && (
+            <span className={TYPE.PRICE_STRIKE}>{formatINR(mrp)}</span>
           )}
         </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          Zone 3 — ACTION
+          shrink-0 · 52 px total (6 top + 36 button + 10 bottom).
+          Physically impossible to push down — it is always the last
+          flex item and the card is fixed to the grid row height.
+      ══════════════════════════════════════════════════════════════════ */}
+      <div className="shrink-0 px-2.5 pb-2.5 pt-1.5">
+
+        {/* ── State: out of stock or store closed ── */}
+        {(isOutOfStock || storeClosed) && (
+          <div className="h-9 flex items-center justify-center rounded-xl bg-gray-100">
+            <span className="text-[11px] font-semibold text-gray-400 select-none">
+              {isOutOfStock ? "Out of Stock" : "Store Closed"}
+            </span>
+          </div>
+        )}
+
+        {/* ── State: item in cart — full-width stepper ── */}
+        {!isOutOfStock && !storeClosed && cartItem && (
+          <div
+            className="h-9 flex items-stretch rounded-xl overflow-hidden select-none"
+            style={{ backgroundColor: brandColor }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={handleDecrease}
+              className="w-10 flex items-center justify-center shrink-0 text-white transition-opacity active:opacity-70 hover:opacity-90"
+              aria-label="Decrease quantity"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+
+            <span className="flex-1 flex items-center justify-center text-sm font-bold text-white">
+              {cartItem.quantity}
+            </span>
+
+            <button
+              onClick={handleIncrease}
+              className="w-10 flex items-center justify-center shrink-0 text-white transition-opacity active:opacity-70 hover:opacity-90"
+              aria-label="Increase quantity"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* ── State: not in cart — Add button ── */}
+        {!isOutOfStock && !storeClosed && !cartItem && (
+          <button
+            onClick={handleAdd}
+            className="w-full h-9 flex items-center justify-center gap-1.5 rounded-xl border-2 font-bold text-xs transition-all duration-150 active:scale-[0.97] hover:opacity-90 select-none"
+            style={{ borderColor: brandColor, color: brandColor, backgroundColor: "white" }}
+          >
+            <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
+            <span>Add</span>
+          </button>
+        )}
       </div>
     </div>
   )

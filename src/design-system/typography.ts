@@ -11,7 +11,8 @@ export const TYPE = {
   SECTION_SUB:   "text-sm text-gray-500 mt-0.5",
 
   // ── Card text ─────────────────────────────────────────────────────────
-  CARD_NAME:     "text-xs font-semibold text-gray-900 truncate",
+  // line-clamp-2: product names get 2 lines max — prevents pushing action zone
+  CARD_NAME:     "text-xs font-semibold text-gray-900 leading-tight line-clamp-2",
   CARD_VARIANT:  "text-xs text-gray-400 mt-0.5 truncate",
   CARD_DESC:     "text-xs text-gray-500 mt-0.5 line-clamp-1",
   PRICE_MAIN:    "text-sm font-bold",

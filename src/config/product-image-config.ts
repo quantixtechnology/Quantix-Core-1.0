@@ -10,7 +10,7 @@
 // ============================================================================
 
 export interface ProductImageConfig {
-  /** Product card image zone height in pixels (default: 112 = Tailwind h-28) */
+  /** Product card image zone height in pixels (default: 130) */
   cardHeight: number
   /** Inner padding around the image in pixels (default: 8 = Tailwind p-2) */
   padding: number
@@ -26,7 +26,7 @@ export interface ProductImageConfig {
 // Applied to every business unless a business-specific override is set.
 
 export const PLATFORM_IMAGE_DEFAULTS: ProductImageConfig = {
-  cardHeight: 112,         // h-28 equivalent
+  cardHeight: 130,         // meets 130–150px spec; overridable per business
   padding: 8,              // p-2 equivalent
   borderRadius: 0,
   backgroundColor: "#ffffff",
