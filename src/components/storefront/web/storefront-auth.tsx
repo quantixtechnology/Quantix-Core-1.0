@@ -104,11 +104,13 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())
   )
 
-  // ── Login (existing users with password) ────────────────────────────────
-  const [loginEmail,    setLoginEmail]    = useState("")
-  const [loginPassword, setLoginPassword] = useState("")
-  const [showLoginPw,   setShowLoginPw]   = useState(false)
-  const [loginMode,     setLoginMode]     = useState<"otp" | "password">("otp")
+  // ── Login (existing users) ──────────────────────────────────────────────
+  const [loginEmail,       setLoginEmail]       = useState("")
+  const [loginPassword,    setLoginPassword]    = useState("")
+  const [showLoginPw,      setShowLoginPw]      = useState(false)
+  const [loginMode,        setLoginMode]        = useState<"otp" | "password">("otp")
+  // True only when the customer has previously set a password — controls tab visibility
+  const [loginHasPassword, setLoginHasPassword] = useState(false)
   const isPasswordLoginValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.trim()) && loginPassword.length >= 1
 
   // ── OTP screen ──────────────────────────────────────────────────────────
@@ -203,15 +205,15 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
         setRegEmail(normEmail)
         setRegName(""); setRegPhone("")
         setView("register")
-      } else if (json.hasPassword) {
-        // Existing user with password — show login with both tabs
+      } else {
+        // Existing user — always show the login view so the user can choose.
+        // If they have a password, both OTP and Password tabs appear.
+        // If they don't, only the OTP tab appears (but OTP is not auto-sent —
+        // the user must press "Send Verification Code" explicitly).
         setLoginEmail(normEmail)
         setLoginMode("otp")
+        setLoginHasPassword(json.hasPassword)
         setView("login")
-      } else {
-        // Existing user without password — send OTP directly
-        const dc = await sendOtpEmail(normEmail)
-        goToOtp({ email: normEmail, phone: "", name: "", maskedEmail: maskEmail(normEmail), purpose: "login", dc })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
@@ -492,22 +494,24 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                 </>
               )}
 
-              {/* ── STEP 2: LOGIN (existing users with password) ──────── */}
+              {/* ── STEP 2: LOGIN (all existing users) ───────────────── */}
               {view === "login" && (
                 <>
                   <Back to="email" label="Use a different email" />
 
-                  {/* Mode tabs */}
-                  <div className="flex rounded-xl border border-gray-200 p-1 mb-4">
-                    {(["otp", "password"] as const).map(mode => (
-                      <button key={mode}
-                        onClick={() => { setLoginMode(mode); setError("") }}
-                        className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === mode ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
-                        style={loginMode === mode ? { backgroundColor: brandColor } : {}}>
-                        {mode === "otp" ? "Email OTP" : "Password"}
-                      </button>
-                    ))}
-                  </div>
+                  {/* Mode tabs — only rendered when the customer has a password set */}
+                  {loginHasPassword && (
+                    <div className="flex rounded-xl border border-gray-200 p-1 mb-4">
+                      {(["otp", "password"] as const).map(mode => (
+                        <button key={mode}
+                          onClick={() => { setLoginMode(mode); setError("") }}
+                          className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === mode ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
+                          style={loginMode === mode ? { backgroundColor: brandColor } : {}}>
+                          {mode === "otp" ? "Email OTP" : "Password"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   <Err msg={error} />
 
