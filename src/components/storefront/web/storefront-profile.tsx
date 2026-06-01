@@ -1,8 +1,10 @@
 "use client"
 
 import { useAuthStore } from "@/stores/auth-store"
-import { Package, MapPin, LogOut, ArrowLeft, Phone, Lock } from "lucide-react"
+import { Package, MapPin, LogOut, ArrowLeft, Phone, Lock, Download, Share2 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
+import { usePwaInstall } from "@/hooks/use-pwa-install"
+import { useState } from "react"
 
 interface StorefrontProfileProps {
   brandColor: string
@@ -11,6 +13,8 @@ interface StorefrontProfileProps {
 
 export function StorefrontProfile({ brandColor, nav }: StorefrontProfileProps) {
   const { isAuthenticated, user, logout } = useAuthStore()
+  const { canInstall, isIos, install, isInstalled } = usePwaInstall()
+  const [installing, setInstalling] = useState(false)
   const hasPassword = user?.hasPassword
 
   if (!isAuthenticated || !user) {
@@ -18,7 +22,7 @@ export function StorefrontProfile({ brandColor, nav }: StorefrontProfileProps) {
     return null
   }
 
-  const initial = (user.name || "U").charAt(0).toUpperCase()
+  const initial      = (user.name || "U").charAt(0).toUpperCase()
   const displayPhone = user.email?.endsWith("@otp.placeholder")
     ? user.email.replace("@otp.placeholder", "")
     : null
@@ -26,6 +30,12 @@ export function StorefrontProfile({ brandColor, nav }: StorefrontProfileProps) {
   function handleLogout() {
     logout()
     nav.go("home")
+  }
+
+  async function handleInstall() {
+    if (isIos) return
+    setInstalling(true)
+    try { await install() } finally { setInstalling(false) }
   }
 
   return (
@@ -111,6 +121,39 @@ export function StorefrontProfile({ brandColor, nav }: StorefrontProfileProps) {
           </div>
           <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
         </button>
+
+        {/* ── Install App row — shown when installable or already installed ── */}
+        {(canInstall || isInstalled) && (
+          <div className="w-full flex items-center gap-4 px-6 py-4 text-left">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${brandColor}15` }}>
+              {isIos
+                ? <Share2   className="w-4 h-4" style={{ color: brandColor }} />
+                : <Download className="w-4 h-4" style={{ color: brandColor }} />}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900">
+                {isInstalled ? "App Installed ✓" : "Install App"}
+              </p>
+              <p className="text-xs text-gray-500">
+                {isInstalled
+                  ? "You're using the installed version"
+                  : isIos
+                    ? "Tap Share → Add to Home Screen in Safari"
+                    : "Add to home screen for the best experience"}
+              </p>
+            </div>
+            {!isInstalled && !isIos && (
+              <button
+                onClick={handleInstall}
+                disabled={installing}
+                className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-60"
+                style={{ backgroundColor: brandColor }}
+              >
+                {installing ? "…" : "Install"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Logout */}

@@ -4,91 +4,56 @@
 // Next.js standalone mode does not reliably serve files from public/ with the
 // correct Content-Type. When the browser requests /sw.js and gets text/html
 // (the SPA shell), the SW registration fails. This App Router route handler
-// guarantees the correct Content-Type: application/javascript regardless of
-// how the static file layer behaves.
+// guarantees Content-Type: application/javascript regardless of the static
+// file serving layer.
 //
-// App Router route handlers always take precedence over public/ files.
+// The canonical SW is in public/sw.js — this handler reads it at runtime.
+// The inline SW_FALLBACK is only used if public/sw.js is somehow missing
+// (should never happen in a proper deployment).
 
 import { readFileSync } from 'fs'
-import { join } from 'path'
+import { join }         from 'path'
 
 export const dynamic = 'force-dynamic'
 
-const SW_CONTENT = `
-// Quantix Service Worker — served via App Router route handler
-// Cache name includes build ID injected from CacheBuster via postMessage.
-
+// Minimal fallback — same logic as public/sw.js but trimmed.
+// Replaced at runtime by the full public/sw.js content.
+const SW_FALLBACK = `
 let CACHE_NAME = 'quantix-sw-pending'
-
-const STATIC_RE = [
-  /\\/_next\\/static\\//,
-  /\\/quantix-logo\\.png$/,
-  /\\/logo\\.svg$/,
-]
-
-self.addEventListener('install', () => { self.skipWaiting() })
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((k) => k.startsWith('quantix-sw-') && k !== CACHE_NAME)
-          .map((k) => { console.log('[SW] Deleting stale cache:', k); return caches.delete(k) })
-      )
-    ).then(() => self.clients.claim())
-  )
-})
-
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'SET_BUILD_ID') {
-    CACHE_NAME = 'quantix-sw-' + event.data.buildId
-    console.log('[SW] Cache name set to:', CACHE_NAME)
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k.startsWith('quantix-sw-') && k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+let IMAGE_CACHE = 'quantix-img-pending'
+const BYPASS_RE = [/\\/api\\/core\\/storefront\\/auth\\//, /\\/api\\/v1\\/auth\\//]
+const STATIC_RE = [/\\/_next\\/static\\//]
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()) })
+self.addEventListener('message', (e) => {
+  if (e.data?.type === 'SET_BUILD_ID') {
+    CACHE_NAME  = 'quantix-sw-' + e.data.buildId
+    IMAGE_CACHE = 'quantix-img-' + e.data.buildId
   }
 })
-
-self.addEventListener('fetch', (event) => {
-  const { request } = event
+self.addEventListener('fetch', (e) => {
+  const { request } = e
   const url = new URL(request.url)
-  if (request.method !== 'GET' || url.pathname.startsWith('/api/') || url.origin !== location.origin) return
-  if (STATIC_RE.some((re) => re.test(url.pathname))) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached
-        return fetch(request).then((response) => {
-          if (response.ok && CACHE_NAME !== 'quantix-sw-pending') {
-            caches.open(CACHE_NAME).then((c) => c.put(request, response.clone()))
-          }
-          return response
-        })
-      })
-    )
-    return
-  }
-  if (request.headers.get('accept')?.includes('text/html')) {
-    event.respondWith(fetch(request).catch(() => caches.match(request)))
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return
+  if (BYPASS_RE.some((r) => r.test(url.pathname))) return
+  if (STATIC_RE.some((r) => r.test(url.pathname))) {
+    e.respondWith(caches.match(request).then((c) => c || fetch(request)))
   }
 })
 `.trim()
 
 export async function GET() {
-  // Try to read from public/sw.js first (has the canonical content)
-  let content = SW_CONTENT
+  let content = SW_FALLBACK
   try {
     content = readFileSync(join(process.cwd(), 'public', 'sw.js'), 'utf8')
-  } catch {
-    // Fall back to inline content above
-  }
+  } catch { /* use fallback */ }
 
   return new Response(content, {
     status: 200,
     headers: {
-      'Content-Type': 'application/javascript; charset=utf-8',
+      'Content-Type':          'application/javascript; charset=utf-8',
       'Service-Worker-Allowed': '/',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Cache-Control':         'no-cache, no-store, must-revalidate',
       'X-Content-Type-Options': 'nosniff',
     },
   })

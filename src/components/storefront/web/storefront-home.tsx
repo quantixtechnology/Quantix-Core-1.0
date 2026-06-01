@@ -11,6 +11,7 @@ import { StorefrontCategoryCard, StorefrontCategoryCardSkeleton } from "./storef
 import type { StorefrontCategory } from "./storefront-category-card"
 import { StorefrontBanner } from "./storefront-banner"
 import { StorefrontEmptyState } from "./storefront-empty-state"
+import { PwaInstallBanner } from "./pwa-install-banner"
 import { TYPE, PRODUCT_GRID, GRID_GAP, CATEGORY_GRID, CAT_GAP, PAGE_X, SECTION_Y, BTN_LG, BTN_GHOST, primaryBtnStyle } from "@/design-system"
 
 // ── Local type aliases ────────────────────────────────────────────────────
@@ -202,6 +203,9 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
       </section>
 
       <div className={`max-w-7xl mx-auto ${PAGE_X}`}>
+
+        {/* ── PWA install prompt ───────────────────────────────── */}
+        <PwaInstallBanner brandColor={brandColor} />
 
         {/* ── Banner carousel ──────────────────────────────────── */}
         {currentBusinessId && (

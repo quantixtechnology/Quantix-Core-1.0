@@ -19,7 +19,14 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
-  themeColor: "#10B981",
+  // Default theme color — PwaMetaUpdater overwrites this at runtime per business
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#10B981" },
+    { media: "(prefers-color-scheme: dark)",  color: "#10B981" },
+  ],
+  // viewport-fit=cover: lets content extend under the iPhone notch/home bar.
+  // The storefront layout applies safe-area-inset padding so nothing is hidden.
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {
@@ -30,8 +37,14 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    // black-translucent lets the app extend behind the iOS status bar in
+    // standalone mode; PwaMetaUpdater sets the actual background colour.
+    statusBarStyle: "black-translucent",
     title: "Quantix Store",
+  },
+  // Default apple-touch-icon — overwritten per-business by PwaMetaUpdater
+  icons: {
+    apple: [{ url: "/quantix-logo.png", sizes: "180x180" }],
   },
   openGraph: {
     title: "Quantix Technology",

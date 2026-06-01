@@ -15,6 +15,7 @@ import { StorefrontProfile } from "./storefront-profile"
 import { StorefrontAddresses } from "./storefront-addresses"
 import { StorefrontPassword } from "./storefront-password"
 import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
+import { PwaMetaUpdater } from "@/components/storefront/pwa-meta-updater"
 
 export type WebPage =
   | "home"
@@ -250,6 +251,9 @@ export function StorefrontWebsite() {
 
   return (
     <>
+      {/* Updates <meta name="theme-color">, apple-touch-icon, and title per business */}
+      <PwaMetaUpdater />
+
       <StorefrontLayout brandColor={brandColor} nav={nav} currentStore={currentStore} onOpenStorePicker={handleOpenStorePicker}>
         {/* ── Store Offline / Closed Banner ──────────────────────── */}
         {storeClosed && (
