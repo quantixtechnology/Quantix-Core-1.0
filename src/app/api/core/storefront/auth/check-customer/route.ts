@@ -93,15 +93,17 @@ export async function POST(request: Request) {
       });
     }
 
-    // Also check via User → BusinessUser link (in case Customer record
-    // has no email but the User is linked to this business)
+    // Fallback: check via User → BusinessUser link, but ONLY for the CUSTOMER
+    // role.  Staff roles (CLIENT_OWNER, STORE_MANAGER, etc.) must NOT be
+    // treated as storefront customers — doing so would falsely return
+    // exists:true for staff emails and trigger an unwanted OTP send.
     const user = await db.user.findUnique({
       where: { email },
       select: {
         id: true,
         hasPassword: true,
         businessUsers: {
-          where: { businessId, isActive: true },
+          where: { businessId, isActive: true, role: 'CUSTOMER' },
           select: { id: true },
         },
         customerProfiles: {
