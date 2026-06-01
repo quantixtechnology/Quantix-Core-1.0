@@ -86,10 +86,24 @@ export async function POST(request: Request) {
           { status: 403 }
         );
       }
+
+      // Customer.isPasswordSet covers the set-password flow.
+      // But reset-password writes to User.passwordHash without updating
+      // Customer.isPasswordSet, so we must also check User.passwordHash —
+      // a non-null hash means the user has a working password on any storefront.
+      let hasPassword = customer.isPasswordSet;
+      if (!hasPassword) {
+        const userRow = await db.user.findUnique({
+          where:  { email },
+          select: { passwordHash: true },
+        });
+        hasPassword = !!userRow?.passwordHash;
+      }
+
       return NextResponse.json({
         success: true,
         exists: true,
-        hasPassword: customer.isPasswordSet,
+        hasPassword,
       });
     }
 

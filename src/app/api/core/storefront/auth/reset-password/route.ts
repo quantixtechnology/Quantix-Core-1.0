@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       data: { isVerified: true, verifiedAt: new Date() },
     });
 
-    // Set password on User
+    // Set password on User (shared across all storefronts for this email)
     const passwordHash = await hashPassword(password);
     const user = await db.user.findUnique({ where: { email } });
     if (user) {
@@ -78,11 +78,19 @@ export async function POST(request: Request) {
       });
     }
 
-    // Look up customer to get their name + phone
+    // Sync the new hash to this business's Customer record so login-password
+    // can verify it directly without a User table lookup, and so check-customer
+    // immediately returns hasPassword: true for this storefront.
     const customer = await db.customer.findFirst({
       where: { businessId, email },
-      select: { name: true, phone: true },
+      select: { id: true, name: true, phone: true },
     });
+    if (customer?.id) {
+      await db.customer.update({
+        where: { id: customer.id },
+        data:  { passwordHash, isPasswordSet: true },
+      });
+    }
 
     const name = customer?.name || email.split('@')[0];
     const resolvedPhone = phone || customer?.phone || '';

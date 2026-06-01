@@ -91,14 +91,35 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!customer.isPasswordSet || !customer.passwordHash) {
+    // Resolve the hash to verify against.
+    // Customer.passwordHash is set by the set-password flow.
+    // User.passwordHash is set by the reset-password (OTP) flow.
+    // We check both so that a password set on ANY storefront works everywhere.
+    let hashToVerify = customer.passwordHash;
+    if (!hashToVerify) {
+      const userRow = await db.user.findUnique({
+        where:  { email },
+        select: { passwordHash: true },
+      });
+      hashToVerify = userRow?.passwordHash ?? null;
+
+      // Sync back to Customer record so future checks are instant
+      if (hashToVerify) {
+        await db.customer.update({
+          where: { id: customer.id },
+          data:  { passwordHash: hashToVerify, isPasswordSet: true },
+        });
+      }
+    }
+
+    if (!hashToVerify) {
       return NextResponse.json(
         { success: false, error: 'No password set. Please login with OTP or reset your password.' },
         { status: 400 }
       );
     }
 
-    const isValid = await verifyPassword(password, customer.passwordHash);
+    const isValid = await verifyPassword(password, hashToVerify);
 
     if (!isValid) {
       const newFail = customer.failedLoginAttempts + 1;
