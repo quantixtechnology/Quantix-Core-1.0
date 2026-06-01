@@ -16,7 +16,7 @@ class OrderService {
 
   Future<List<OrderDTO>> getOrders() async {
     final data = await _dio.get<List<dynamic>>(ApiEndpoints.orders);
-    return (data as List)
+    return (data)
         .map((e) => OrderDTO.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -54,7 +54,7 @@ class OrderService {
 
   Future<List<AddressDTO>> getAddresses() async {
     final data = await _dio.get<List<dynamic>>(ApiEndpoints.addresses);
-    return (data as List)
+    return (data)
         .map((e) => AddressDTO.fromJson(e as Map<String, dynamic>))
         .toList();
   }

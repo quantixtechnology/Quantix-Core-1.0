@@ -58,6 +58,9 @@ export interface CustomerSession {
 /**
  * Find or create a user + customer record and return a session.
  * Used by both verify and reset-password endpoints.
+ *
+ * name MUST be a real customer name — never an email address or email
+ * username.  Callers are responsible for enforcing this before calling.
  */
 export async function createStorefrontSession(opts: {
   email: string;
@@ -66,6 +69,7 @@ export async function createStorefrontSession(opts: {
   businessId: string;
   storeId?: string;
   emailVerified?: boolean;
+  otpPurpose?: 'register' | 'login' | 'forgot';
 }): Promise<CustomerSession> {
   const { email, phone, name, businessId, storeId, emailVerified = false } = opts;
 

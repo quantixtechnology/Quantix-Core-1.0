@@ -24,6 +24,8 @@ class VerifyOtpRequest with _$VerifyOtpRequest {
     String? phone,
     String? name,
     String? storeId,
+    /// 'register' | 'login' | 'forgot' — tells the server which rules to apply
+    @Default('login') String otpPurpose,
   }) = _VerifyOtpRequest;
 
   factory VerifyOtpRequest.fromJson(Map<String, dynamic> json) =>

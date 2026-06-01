@@ -1,11 +1,31 @@
 "use client"
 
+// ============================================================================
+// StorefrontAuth — Email-first authentication flow
+//
+// Flow:
+//   1. "email"    → user enters email; check-customer API determines next step
+//   2. "register" → new users fill Name + Phone (email pre-filled)
+//                   → phone uniqueness validated → OTP sent
+//   3. "login"    → existing users with password get OTP | Password tabs
+//                   → existing users without password go straight to OTP
+//   4. "otp"      → 6-digit verification code
+//   5. "forgot"   → email input → OTP → new password
+//   6. "reset"    → code + new password form
+//
+// Rules enforced:
+//   • Customer records are NEVER created before OTP verification.
+//   • Name is NEVER derived from the email address.
+//   • Phone is required for new registrations, not for login.
+//   • Email OTP is the only OTP mechanism (no SMS).
+// ============================================================================
+
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   Phone, ArrowLeft, Loader2, CheckCircle2, User, Mail,
-  AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, LogIn, Lock,
+  AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, Lock,
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -14,10 +34,10 @@ interface StorefrontAuthProps {
   nav: WebNav
 }
 
-type AuthView = "register" | "login" | "otp" | "forgot" | "reset"
+type AuthView = "email" | "register" | "login" | "otp" | "forgot" | "reset"
 type OtpPurpose = "register" | "login" | "forgot"
 
-const MAX_ATTEMPTS = 5
+const MAX_ATTEMPTS     = 5
 const COOLDOWN_SECONDS = 30
 
 function maskEmail(email: string): string {
@@ -30,14 +50,15 @@ function normalizeEmail(e: string): string { return e.trim().toLowerCase() }
 function normalizePhone(p: string): string {
   const d = p.replace(/\D/g, "")
   if (d.length === 10) return `+91${d}`
+  if (d.startsWith("91") && d.length === 12) return `+${d}`
   return p.startsWith("+") ? p : `+${d}`
 }
 
 const PASSWORD_RULES = [
   { label: "8+ characters", test: (p: string) => p.length >= 8 },
-  { label: "Uppercase", test: (p: string) => /[A-Z]/.test(p) },
-  { label: "Lowercase", test: (p: string) => /[a-z]/.test(p) },
-  { label: "Number", test: (p: string) => /[0-9]/.test(p) },
+  { label: "Uppercase",    test: (p: string) => /[A-Z]/.test(p) },
+  { label: "Lowercase",    test: (p: string) => /[a-z]/.test(p) },
+  { label: "Number",       test: (p: string) => /[0-9]/.test(p) },
   { label: "Special char", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ]
 
@@ -62,50 +83,74 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
   const { currentBusinessId, currentBusinessName, currentStoreId } = useAdminStore()
   const { isAuthenticated } = useAuthStore()
   const businessId = currentBusinessId || ""
-  const storeId = currentStoreId || undefined
+  const storeId    = currentStoreId || undefined
 
-  const [view, setView] = useState<AuthView>("register")
+  const [view,    setView]    = useState<AuthView>("email")
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [error,   setError]   = useState("")
   const [success, setSuccess] = useState(false)
 
-  // Register
-  const [name, setName] = useState("")
-  const [phone, setPhone] = useState("")
-  const [email, setEmail] = useState("")
-  const [conflictMasked, setConflictMasked] = useState("")
+  // ── Email entry (step 1) ────────────────────────────────────────────────
+  const [entryEmail, setEntryEmail] = useState("")
+  const isEntryEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entryEmail.trim())
 
-  // OTP screen
-  const [otpCode, setOtpCode] = useState("")
-  const [otpEmail, setOtpEmail] = useState("")
-  const [otpMasked, setOtpMasked] = useState("")
+  // ── Registration form (step 2 — new users only) ─────────────────────────
+  const [regName,  setRegName]  = useState("")
+  const [regPhone, setRegPhone] = useState("")
+  const [regEmail, setRegEmail] = useState("")
+  const isRegValid = (
+    regName.trim().length >= 2 &&
+    regPhone.length === 10 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())
+  )
+
+  // ── Login (existing users with password) ────────────────────────────────
+  const [loginEmail,    setLoginEmail]    = useState("")
+  const [loginPassword, setLoginPassword] = useState("")
+  const [showLoginPw,   setShowLoginPw]   = useState(false)
+  const [loginMode,     setLoginMode]     = useState<"otp" | "password">("otp")
+  const isPasswordLoginValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.trim()) && loginPassword.length >= 1
+
+  // ── OTP screen ──────────────────────────────────────────────────────────
+  const [otpCode,    setOtpCode]    = useState("")
+  const [otpEmail,   setOtpEmail]   = useState("")
+  const [otpMasked,  setOtpMasked]  = useState("")
   const [otpPurpose, setOtpPurpose] = useState<OtpPurpose>("register")
-  const [otpPhone, setOtpPhone] = useState("")
-  const [otpName, setOtpName] = useState("")
-  const [devCode, setDevCode] = useState("")
-  const [attempts, setAttempts] = useState(0)
+  const [otpPhone,   setOtpPhone]   = useState("")
+  const [otpName,    setOtpName]    = useState("")
+  const [devCode,    setDevCode]    = useState("")
+  const [attempts,   setAttempts]   = useState(0)
   const cooldown = useCooldown()
 
-  // Forgot
-  const [forgotPhone, setForgotPhone] = useState("")
-  const [forgotEmail, setForgotEmail] = useState("")
-  const [forgotMasked, setForgotMasked] = useState("")
+  // ── Forgot / Reset ──────────────────────────────────────────────────────
+  const [forgotEmail,   setForgotEmail]   = useState("")
   const [forgotDevCode, setForgotDevCode] = useState("")
-
-  // Reset password
-  const [resetCode, setResetCode] = useState("")
-  const [resetPw, setResetPw] = useState("")
-  const [resetConfirm, setResetConfirm] = useState("")
-  const [showPw, setShowPw] = useState(false)
+  const [forgotResolved, setForgotResolved] = useState("")   // actual email after lookup
+  const [forgotMasked,  setForgotMasked]  = useState("")
+  const [resetCode,     setResetCode]     = useState("")
+  const [resetPw,       setResetPw]       = useState("")
+  const [resetConfirm,  setResetConfirm]  = useState("")
+  const [showPw,        setShowPw]        = useState(false)
   const resetCooldown = useCooldown()
 
   useEffect(() => {
     if (isAuthenticated && !success) nav.goBack("home")
   }, [isAuthenticated, success, nav])
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────────
 
-  async function goToOtp(opts: { email: string; phone: string; name: string; maskedEmail: string; purpose: OtpPurpose; dc?: string }) {
+  async function sendOtpEmail(emailAddr: string): Promise<string | undefined> {
+    const res = await fetch("/api/core/storefront/auth/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: emailAddr, businessId, storeId }),
+    })
+    const json = await res.json()
+    if (!json.success) throw new Error(json.error || "Failed to send code")
+    return json.code
+  }
+
+  function goToOtp(opts: { email: string; phone: string; name: string; maskedEmail: string; purpose: OtpPurpose; dc?: string }) {
     setOtpEmail(opts.email)
     setOtpPhone(opts.phone)
     setOtpName(opts.name)
@@ -119,19 +164,8 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     cooldown.start()
   }
 
-  async function sendOtpEmail(emailAddr: string): Promise<string | undefined> {
-    const res = await fetch("/api/core/storefront/auth/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: emailAddr, businessId, storeId }),
-    })
-    const json = await res.json()
-    if (!json.success) throw new Error(json.error || "Failed to send code")
-    return json.code
-  }
-
   function storeSession(session: Record<string, unknown>) {
-    const u = session.user as Record<string, unknown>
+    const u  = session.user as Record<string, unknown>
     const at = session.accessToken as string
     const rt = session.refreshToken as string
     if (at) {
@@ -149,16 +183,50 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     setTimeout(() => nav.goBack("home"), 900)
   }
 
-  // ── Register flow ──────────────────────────────────────────────────────────
+  // ── Step 1: email check ─────────────────────────────────────────────────
 
-  const isRegValid = name.trim().length >= 2 && phone.length === 10 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  async function handleEmailCheck() {
+    if (!isEntryEmailValid || loading) return
+    setLoading(true); setError("")
+    const normEmail = normalizeEmail(entryEmail)
+    try {
+      const res  = await fetch("/api/core/storefront/auth/check-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normEmail, businessId }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Check failed")
+
+      if (!json.exists) {
+        // New user — show registration form with email pre-filled
+        setRegEmail(normEmail)
+        setRegName(""); setRegPhone("")
+        setView("register")
+      } else if (json.hasPassword) {
+        // Existing user with password — show login with both tabs
+        setLoginEmail(normEmail)
+        setLoginMode("otp")
+        setView("login")
+      } else {
+        // Existing user without password — send OTP directly
+        const dc = await sendOtpEmail(normEmail)
+        goToOtp({ email: normEmail, phone: "", name: "", maskedEmail: maskEmail(normEmail), purpose: "login", dc })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong")
+    } finally { setLoading(false) }
+  }
+
+  // ── Step 2a: register (new user) ────────────────────────────────────────
 
   async function handleRegister() {
     if (!isRegValid || loading) return
-    setLoading(true); setError(""); setConflictMasked("")
-    const fullPhone = normalizePhone(phone)
-    const normEmail = normalizeEmail(email)
+    setLoading(true); setError("")
+    const fullPhone = normalizePhone(regPhone)
+    const normEmail = normalizeEmail(regEmail)
     try {
+      // Validate phone uniqueness for this business
       const checkRes = await fetch("/api/core/storefront/auth/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,76 +235,57 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
       const check = await checkRes.json()
       if (!check.success) throw new Error(check.error || "Check failed")
 
-      if (check.status === "CONFLICT") { setConflictMasked(check.maskedEmail || ""); setLoading(false); return }
-      if (check.status === "EMAIL_TAKEN") { setError("This email is registered with a different phone number."); setLoading(false); return }
+      if (check.status === "CONFLICT") {
+        setError(`This mobile number is already registered with a different email (${check.maskedEmail}). Please use that email to login.`)
+        setLoading(false); return
+      }
+      if (check.status === "EMAIL_TAKEN") {
+        setError("This email is already linked to a different phone number. Please login instead.")
+        setLoading(false); return
+      }
 
+      // Send OTP and proceed to verification
       const dc = await sendOtpEmail(normEmail)
-      const masked = check.maskedEmail || maskEmail(normEmail)
-      if (check.status === "LOGIN") setError("") // clear any stale
-
-      await goToOtp({ email: normEmail, phone: fullPhone, name: name.trim(), maskedEmail: masked, purpose: check.status === "LOGIN" ? "login" : "register", dc })
+      goToOtp({ email: normEmail, phone: fullPhone, name: regName.trim(), maskedEmail: maskEmail(normEmail), purpose: "register", dc })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally { setLoading(false) }
   }
 
-  // ── Login flow ─────────────────────────────────────────────────────────────
+  // ── Step 2b: login — send OTP for existing user ─────────────────────────
 
-  const [loginMode, setLoginMode] = useState<"otp" | "password">("otp")
-  const [loginPhone, setLoginPhone] = useState("")
-  const [loginEmail, setLoginEmail] = useState("")
-  const [loginPassword, setLoginPassword] = useState("")
-  const [showLoginPw, setShowLoginPw] = useState(false)
-  const isLoginValid = loginPhone.length === 10 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.trim())
-  const isPasswordLoginValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.trim()) && loginPassword.length >= 1
-
-  async function handleLogin() {
-    if (!isLoginValid || loading) return
+  async function handleLoginOtp() {
+    if (loading) return
     setLoading(true); setError("")
-    const fullPhone = normalizePhone(loginPhone)
     const normEmail = normalizeEmail(loginEmail)
     try {
-      const checkRes = await fetch("/api/core/storefront/auth/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: fullPhone, email: normEmail, businessId }),
-      })
-      const check = await checkRes.json()
-      if (!check.success) throw new Error(check.error || "Check failed")
-      if (check.status === "NEW") { setError("No account found with this phone. Please register."); setLoading(false); return }
-      if (check.status === "CONFLICT") { setError(`Phone is linked to a different email: ${check.maskedEmail}`); setLoading(false); return }
-
       const dc = await sendOtpEmail(normEmail)
-      await goToOtp({ email: normEmail, phone: fullPhone, name: "", maskedEmail: check.maskedEmail || maskEmail(normEmail), purpose: "login", dc })
+      goToOtp({ email: normEmail, phone: "", name: "", maskedEmail: maskEmail(normEmail), purpose: "login", dc })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally { setLoading(false) }
   }
+
+  // ── Step 2b: login — password ────────────────────────────────────────────
 
   async function handlePasswordLogin() {
     if (!isPasswordLoginValid || loading) return
     setLoading(true); setError("")
     try {
-      const res = await fetch("/api/customer/auth/login-password", {
+      const res  = await fetch("/api/customer/auth/login-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: normalizeEmail(loginEmail), password: loginPassword, businessId }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error || "Login failed")
-      // Password login returns flat: { token, refreshToken, user, ... }
-      storeSession({
-        accessToken: json.token,
-        refreshToken: json.refreshToken,
-        user: json.user,
-        businesses: json.businesses,
-      })
+      storeSession({ accessToken: json.token, refreshToken: json.refreshToken, user: json.user, businesses: json.businesses })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed")
     } finally { setLoading(false) }
   }
 
-  // ── OTP verify ─────────────────────────────────────────────────────────────
+  // ── OTP verify ──────────────────────────────────────────────────────────
 
   const isLocked = attempts >= MAX_ATTEMPTS
 
@@ -244,10 +293,18 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     if (otpCode.length < 6 || loading || isLocked) return
     setLoading(true); setError("")
     try {
-      const res = await fetch("/api/core/storefront/auth/verify", {
+      const res  = await fetch("/api/core/storefront/auth/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, phone: otpPhone, code: otpCode, name: otpName, businessId, storeId }),
+        body: JSON.stringify({
+          email:      otpEmail,
+          phone:      otpPhone,
+          code:       otpCode,
+          name:       otpName,
+          businessId,
+          storeId,
+          otpPurpose,
+        }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error || "Invalid code")
@@ -272,26 +329,27 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     finally { setLoading(false) }
   }
 
-  // ── Forgot flow ────────────────────────────────────────────────────────────
+  // ── Forgot password ─────────────────────────────────────────────────────
 
-  const isForgotValid = forgotPhone.length === 10
+  const isForgotEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail.trim())
 
   async function handleForgotLookup() {
-    if (!isForgotValid || loading) return
+    if (!isForgotEmailValid || loading) return
     setLoading(true); setError("")
     try {
-      const res = await fetch("/api/core/storefront/auth/forgot", {
+      const res  = await fetch("/api/core/storefront/auth/forgot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: normalizePhone(forgotPhone), businessId, storeId }),
+        body: JSON.stringify({ email: normalizeEmail(forgotEmail), businessId, storeId }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error || "Lookup failed")
       if (json.status === "NOT_FOUND") {
-        setError("If an account exists, a recovery code has been sent to the registered email.")
-        return
+        // Generic message — don't reveal whether account exists
+        setError("If an account with this email exists, a recovery code has been sent.")
+        setLoading(false); return
       }
-      setForgotEmail(json.email)
+      setForgotResolved(json.email)
       setForgotMasked(json.maskedEmail)
       setForgotDevCode(json.code || "")
       setResetCode(""); setResetPw(""); setResetConfirm("")
@@ -301,21 +359,21 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     finally { setLoading(false) }
   }
 
-  // ── Reset password ─────────────────────────────────────────────────────────
+  // ── Reset password ──────────────────────────────────────────────────────
 
-  const pwRules = PASSWORD_RULES.map(r => ({ ...r, passed: r.test(resetPw) }))
+  const pwRules       = PASSWORD_RULES.map(r => ({ ...r, passed: r.test(resetPw) }))
   const allRulesPassed = pwRules.every(r => r.passed)
-  const pwMatch = resetPw === resetConfirm && resetConfirm.length > 0
-  const isResetValid = resetCode.length === 6 && allRulesPassed && pwMatch
+  const pwMatch        = resetPw === resetConfirm && resetConfirm.length > 0
+  const isResetValid   = resetCode.length === 6 && allRulesPassed && pwMatch
 
   async function handleReset() {
     if (!isResetValid || loading) return
     setLoading(true); setError("")
     try {
-      const res = await fetch("/api/core/storefront/auth/reset-password", {
+      const res  = await fetch("/api/core/storefront/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotEmail, code: resetCode, password: resetPw, businessId, storeId }),
+        body: JSON.stringify({ email: forgotResolved, code: resetCode, password: resetPw, businessId, storeId }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error || "Reset failed")
@@ -328,10 +386,10 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     if (resetCooldown.active || loading) return
     setLoading(true)
     try {
-      const res = await fetch("/api/core/storefront/auth/forgot", {
+      const res  = await fetch("/api/core/storefront/auth/forgot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: normalizePhone(forgotPhone), businessId, storeId }),
+        body: JSON.stringify({ email: forgotResolved, businessId, storeId }),
       })
       const json = await res.json()
       if (json.code) setForgotDevCode(json.code)
@@ -341,10 +399,18 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     finally { setLoading(false) }
   }
 
-  // ── Shared UI pieces ───────────────────────────────────────────────────────
+  // ── Title map ───────────────────────────────────────────────────────────
+
+  const TITLES: Record<AuthView, string> = {
+    email:    "Sign In or Register",
+    register: "Create Account",
+    login:    "Welcome Back",
+    otp:      "Enter Code",
+    forgot:   "Reset Password",
+    reset:    "Set New Password",
+  }
 
   const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
-
   const Err = ({ msg }: { msg: string }) => msg ? (
     <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">
       <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
@@ -363,10 +429,9 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
 
-        {/* Page-level back (to storefront) */}
         <button onClick={() => nav.goBack("home")}
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors">
-          <ArrowLeft className="w-4 h-4" />Back
+          <ArrowLeft className="w-4 h-4" />Back to store
         </button>
 
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8">
@@ -376,13 +441,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
               style={{ backgroundColor: brandColor }}>
               {initial}
             </div>
-            <h1 className="text-lg font-bold text-gray-900">
-              {view === "register" && "Create Account"}
-              {view === "login" && "Welcome Back"}
-              {view === "otp" && "Enter Code"}
-              {view === "forgot" && "Forgot Account?"}
-              {view === "reset" && "Set New Password"}
-            </h1>
+            <h1 className="text-lg font-bold text-gray-900">{TITLES[view]}</h1>
           </div>
 
           {success ? (
@@ -391,120 +450,105 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
               <p className="text-sm font-medium text-gray-700">Signed in successfully!</p>
             </div>
           ) : (
-
             <>
-              {/* ── REGISTER ─────────────────────────────────────────── */}
-              {view === "register" && (
+              {/* ── STEP 1: EMAIL ENTRY ───────────────────────────────── */}
+              {view === "email" && (
                 <>
-                  {conflictMasked ? (
-                    <div>
-                      <div className="p-4 rounded-xl border border-red-100 bg-red-50 mb-4">
-                        <div className="flex items-start gap-2 mb-2">
-                          <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                          <p className="text-xs font-semibold text-red-800">Account already exists</p>
-                        </div>
-                        <div className="space-y-1 text-xs">
-                          <div className="flex justify-between"><span className="text-gray-500">Phone</span><span className="font-medium">+91 {phone}</span></div>
-                          <div className="flex justify-between"><span className="text-gray-500">Registered email</span><span className="font-medium">{conflictMasked}</span></div>
-                        </div>
-                        <p className="text-[10px] text-gray-500 mt-2">Please login with your registered email.</p>
-                      </div>
-                      <button onClick={() => setView("login")}
-                        className="w-full h-10 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 mb-2"
-                        style={{ backgroundColor: brandColor }}>
-                        <LogIn className="w-4 h-4" />Login with Registered Email
-                      </button>
-                      <button onClick={() => setConflictMasked("")} className="w-full text-xs text-gray-400 hover:text-gray-600">Use a different number</button>
-                    </div>
-                  ) : (
-                    <>
-                      <Err msg={error} />
-                      <Field icon={<User className="w-4 h-4 text-gray-400" />} placeholder="Full Name *" type="text"
-                        value={name} onChange={v => { setName(v); setError("") }} />
-                      <PhoneField value={phone} onChange={v => { setPhone(v); setError("") }} />
-                      <Field icon={<Mail className="w-4 h-4 text-gray-400" />} placeholder="Email Address *" type="email"
-                        value={email} onChange={v => { setEmail(v); setError("") }} />
-                      <PrimaryBtn label="Continue" loading={loading} disabled={!isRegValid} onClick={handleRegister} color={brandColor} />
-                      <div className="flex items-center gap-2 my-3">
-                        <div className="flex-1 h-px bg-gray-100" />
-                        <span className="text-[10px] text-gray-400">have an account?</span>
-                        <div className="flex-1 h-px bg-gray-100" />
-                      </div>
-                      <SecondaryBtn label="Login" onClick={() => setView("login")} />
-                    </>
-                  )}
+                  <p className="text-xs text-gray-500 mb-4 text-center">
+                    Enter your email address to continue.
+                  </p>
+                  <Err msg={error} />
+                  <Field icon={<Mail className="w-4 h-4 text-gray-400" />}
+                    placeholder="Email Address *" type="email"
+                    value={entryEmail}
+                    onChange={v => { setEntryEmail(v); setError("") }}
+                    onEnter={handleEmailCheck}
+                  />
+                  <PrimaryBtn label="Continue" loading={loading} disabled={!isEntryEmailValid} onClick={handleEmailCheck} color={brandColor} />
+                  <button onClick={() => { setForgotEmail(""); setView("forgot"); setError("") }}
+                    className="flex items-center justify-center gap-1.5 w-full mt-3 text-xs font-medium transition-colors"
+                    style={{ color: brandColor }}>
+                    <HelpCircle className="w-3.5 h-3.5" />Forgot password?
+                  </button>
                 </>
               )}
 
-              {/* ── LOGIN ────────────────────────────────────────────── */}
+              {/* ── STEP 2: REGISTRATION (new users) ─────────────────── */}
+              {view === "register" && (
+                <>
+                  <Back to="email" label="Use a different email" />
+                  <p className="text-xs text-gray-500 mb-4">
+                    No account found for this email. Please create one.
+                  </p>
+                  <Err msg={error} />
+                  <Field icon={<User className="w-4 h-4 text-gray-400" />}
+                    placeholder="Full Name *" type="text"
+                    value={regName} onChange={v => { setRegName(v); setError("") }} />
+                  <PhoneField value={regPhone} onChange={v => { setRegPhone(v); setError("") }} />
+                  <Field icon={<Mail className="w-4 h-4 text-gray-400" />}
+                    placeholder="Email Address *" type="email"
+                    value={regEmail} onChange={v => { setRegEmail(v); setError("") }} />
+                  <PrimaryBtn label="Send Verification Code" loading={loading} disabled={!isRegValid} onClick={handleRegister} color={brandColor} />
+                </>
+              )}
+
+              {/* ── STEP 2: LOGIN (existing users with password) ──────── */}
               {view === "login" && (
                 <>
-                  <Back to="register" label="Back to register" />
+                  <Back to="email" label="Use a different email" />
 
-                  {/* Mode tabs: OTP | Password */}
+                  {/* Mode tabs */}
                   <div className="flex rounded-xl border border-gray-200 p-1 mb-4">
-                    <button
-                      onClick={() => { setLoginMode("otp"); setError("") }}
-                      className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === "otp" ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
-                      style={loginMode === "otp" ? { backgroundColor: brandColor } : {}}
-                    >
-                      OTP Login
-                    </button>
-                    <button
-                      onClick={() => { setLoginMode("password"); setError("") }}
-                      className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === "password" ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
-                      style={loginMode === "password" ? { backgroundColor: brandColor } : {}}
-                    >
-                      Password Login
-                    </button>
+                    {(["otp", "password"] as const).map(mode => (
+                      <button key={mode}
+                        onClick={() => { setLoginMode(mode); setError("") }}
+                        className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === mode ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
+                        style={loginMode === mode ? { backgroundColor: brandColor } : {}}>
+                        {mode === "otp" ? "Email OTP" : "Password"}
+                      </button>
+                    ))}
                   </div>
 
                   <Err msg={error} />
 
                   {loginMode === "otp" ? (
                     <>
-                      <PhoneField value={loginPhone} onChange={v => { setLoginPhone(v); setError("") }} />
-                      <Field icon={<Mail className="w-4 h-4 text-gray-400" />} placeholder="Email Address *" type="email"
-                        value={loginEmail} onChange={v => { setLoginEmail(v); setError("") }} />
-                      <PrimaryBtn label="Send Verification Code" loading={loading} disabled={!isLoginValid} onClick={handleLogin} color={brandColor} />
+                      <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 mb-4">
+                        <Mail className="w-4 h-4 text-blue-500 shrink-0" />
+                        <p className="text-xs text-blue-800">
+                          A code will be sent to <span className="font-semibold">{maskEmail(loginEmail)}</span>
+                        </p>
+                      </div>
+                      <PrimaryBtn label="Send Verification Code" loading={loading} disabled={false} onClick={handleLoginOtp} color={brandColor} />
                     </>
                   ) : (
                     <>
-                      <Field icon={<Mail className="w-4 h-4 text-gray-400" />} placeholder="Email Address *" type="email"
-                        value={loginEmail} onChange={v => { setLoginEmail(v); setError("") }} />
-                      <div className="flex items-center border border-gray-200 rounded-xl px-3 h-11 focus-within:border-gray-400 transition-colors mb-3">
-                        <Lock className="w-4 h-4 text-gray-400 shrink-0" />
-                        <input
-                          type={showLoginPw ? "text" : "password"}
-                          placeholder="Password *"
-                          value={loginPassword}
-                          onChange={e => { setLoginPassword(e.target.value); setError("") }}
-                          onKeyDown={e => e.key === "Enter" && handlePasswordLogin()}
-                          className="flex-1 text-sm outline-none bg-transparent ml-2.5"
-                        />
-                        <button type="button" onClick={() => setShowLoginPw(v => !v)} className="text-gray-400 hover:text-gray-600 ml-1">
-                          {showLoginPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
+                      <PasswordField value={loginPassword} show={showLoginPw}
+                        onChange={v => { setLoginPassword(v); setError("") }}
+                        onToggle={() => setShowLoginPw(v => !v)}
+                        onEnter={handlePasswordLogin}
+                        placeholder="Password *" />
                       <PrimaryBtn label="Login" loading={loading} disabled={!isPasswordLoginValid} onClick={handlePasswordLogin} color={brandColor} />
                     </>
                   )}
 
-                  <button onClick={() => setView("forgot")}
+                  <button onClick={() => { setForgotEmail(loginEmail); setView("forgot"); setError("") }}
                     className="flex items-center justify-center gap-1.5 w-full mt-3 text-xs font-medium transition-colors"
                     style={{ color: brandColor }}>
-                    <HelpCircle className="w-3.5 h-3.5" />Forgot account / email?
+                    <HelpCircle className="w-3.5 h-3.5" />Forgot password?
                   </button>
                 </>
               )}
 
-              {/* ── OTP ──────────────────────────────────────────────── */}
+              {/* ── OTP VERIFICATION ──────────────────────────────────── */}
               {view === "otp" && (
                 <>
-                  <Back to={otpPurpose === "login" ? "login" : "register"} />
+                  <Back to={otpPurpose === "register" ? "register" : "email"} />
                   <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 mb-4">
                     <Mail className="w-4 h-4 text-blue-500 shrink-0" />
-                    <p className="text-xs text-blue-800">Code sent to <span className="font-semibold">{otpMasked}</span></p>
+                    <p className="text-xs text-blue-800">
+                      Code sent to <span className="font-semibold">{otpMasked}</span>
+                    </p>
                   </div>
                   {devCode && (
                     <div className="mb-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-1.5">
@@ -523,9 +567,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                   />
                   <PrimaryBtn label="Verify & Continue" loading={loading} disabled={otpCode.length < 6 || isLocked} onClick={handleVerify} color={brandColor} />
                   <div className="flex items-center justify-center mt-3">
-                    <button
-                      onClick={handleResendOtp}
-                      disabled={cooldown.active || loading}
+                    <button onClick={handleResendOtp} disabled={cooldown.active || loading}
                       className="flex items-center gap-1.5 text-xs font-medium disabled:opacity-40 transition-opacity"
                       style={{ color: cooldown.active ? "#9ca3af" : brandColor }}>
                       <RefreshCw className="w-3 h-3" />
@@ -533,19 +575,28 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                     </button>
                   </div>
                   {attempts > 0 && !isLocked && (
-                    <p className="text-center text-[10px] text-gray-400 mt-2">{MAX_ATTEMPTS - attempts} attempt{MAX_ATTEMPTS - attempts !== 1 ? "s" : ""} remaining</p>
+                    <p className="text-center text-[10px] text-gray-400 mt-2">
+                      {MAX_ATTEMPTS - attempts} attempt{MAX_ATTEMPTS - attempts !== 1 ? "s" : ""} remaining
+                    </p>
                   )}
                 </>
               )}
 
-              {/* ── FORGOT ───────────────────────────────────────────── */}
+              {/* ── FORGOT PASSWORD ───────────────────────────────────── */}
               {view === "forgot" && (
                 <>
-                  <Back to="login" label="Back to login" />
-                  <p className="text-xs text-gray-500 mb-4">Enter your phone number and we&apos;ll send a recovery code to your registered email.</p>
+                  <Back to="email" />
+                  <p className="text-xs text-gray-500 mb-4">
+                    Enter your registered email and we&apos;ll send a recovery code.
+                  </p>
                   <Err msg={error} />
-                  <PhoneField value={forgotPhone} onChange={v => { setForgotPhone(v); setError("") }} />
-                  <PrimaryBtn label="Send Recovery Code" loading={loading} disabled={!isForgotValid} onClick={handleForgotLookup} color={brandColor} />
+                  <Field icon={<Mail className="w-4 h-4 text-gray-400" />}
+                    placeholder="Email Address *" type="email"
+                    value={forgotEmail}
+                    onChange={v => { setForgotEmail(v); setError("") }}
+                    onEnter={handleForgotLookup}
+                  />
+                  <PrimaryBtn label="Send Recovery Code" loading={loading} disabled={!isForgotEmailValid} onClick={handleForgotLookup} color={brandColor} />
                 </>
               )}
 
@@ -555,7 +606,9 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                   <Back to="forgot" />
                   <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mb-3">
                     <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <p className="text-xs text-blue-800">Recovery code sent to <span className="font-semibold">{forgotMasked}</span></p>
+                    <p className="text-xs text-blue-800">
+                      Recovery code sent to <span className="font-semibold">{forgotMasked}</span>
+                    </p>
                   </div>
                   {forgotDevCode && (
                     <div className="mb-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-1.5">
@@ -571,9 +624,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                     className="w-full h-11 px-4 text-center text-xl font-bold tracking-[0.4em] border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 mb-3"
                   />
                   <div className="flex justify-center mb-4">
-                    <button
-                      onClick={handleResendResetOtp}
-                      disabled={resetCooldown.active || loading}
+                    <button onClick={handleResendResetOtp} disabled={resetCooldown.active || loading}
                       className="flex items-center gap-1.5 text-xs font-medium disabled:opacity-40"
                       style={{ color: resetCooldown.active ? "#9ca3af" : brandColor }}>
                       <RefreshCw className="w-3 h-3" />
@@ -581,16 +632,9 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                     </button>
                   </div>
                   <label className="text-[10px] font-semibold text-gray-600 block mb-1">New Password</label>
-                  <div className="relative mb-2">
-                    <input
-                      type={showPw ? "text" : "password"} placeholder="New password"
-                      value={resetPw} onChange={e => setResetPw(e.target.value)}
-                      className="w-full h-11 px-4 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 text-sm pr-10"
-                    />
-                    <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <PasswordField value={resetPw} show={showPw}
+                    onChange={v => setResetPw(v)} onToggle={() => setShowPw(v => !v)}
+                    placeholder="New password" />
                   {resetPw.length > 0 && (
                     <div className="grid grid-cols-2 gap-1 mb-2">
                       {pwRules.map(r => (
@@ -601,12 +645,13 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                       ))}
                     </div>
                   )}
-                  <input
-                    type="password" placeholder="Confirm password"
+                  <input type="password" placeholder="Confirm password"
                     value={resetConfirm} onChange={e => setResetConfirm(e.target.value)}
                     className={`w-full h-11 px-4 border rounded-xl focus:outline-none text-sm mb-1 ${resetConfirm.length > 0 && !pwMatch ? "border-red-300" : "border-gray-200 focus:border-gray-400"}`}
                   />
-                  {resetConfirm.length > 0 && !pwMatch && <p className="text-[10px] text-red-500 mb-2">Passwords do not match</p>}
+                  {resetConfirm.length > 0 && !pwMatch && (
+                    <p className="text-[10px] text-red-500 mb-2">Passwords do not match</p>
+                  )}
                   <div className="mt-3">
                     <PrimaryBtn label="Set Password & Login" loading={loading} disabled={!isResetValid} onClick={handleReset} color={brandColor} />
                   </div>
@@ -632,16 +677,18 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
   )
 }
 
-// ── Small UI helpers ───────────────────────────────────────────────────────────
+// ── Small UI helpers ──────────────────────────────────────────────────────────
 
-function Field({ icon, placeholder, type, value, onChange }: {
-  icon: React.ReactNode; placeholder: string; type: string; value: string; onChange: (v: string) => void
+function Field({ icon, placeholder, type, value, onChange, onEnter }: {
+  icon: React.ReactNode; placeholder: string; type: string
+  value: string; onChange: (v: string) => void; onEnter?: () => void
 }) {
   return (
     <div className="flex items-center border border-gray-200 rounded-xl px-3 h-11 focus-within:border-gray-400 transition-colors mb-3">
       <span className="shrink-0">{icon}</span>
       <input type={type} placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && onEnter?.()}
         className="flex-1 text-sm outline-none bg-transparent ml-2.5" />
     </div>
   )
@@ -653,9 +700,28 @@ function PhoneField({ value, onChange }: { value: string; onChange: (v: string) 
       <div className="flex items-center gap-1.5 text-sm text-gray-600 shrink-0 border-r border-gray-200 pr-3">
         <Phone className="w-3.5 h-3.5" /><span>+91</span>
       </div>
-      <input type="tel" placeholder="Phone Number *" value={value}
+      <input type="tel" placeholder="Mobile Number *" value={value}
         onChange={e => onChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
         className="flex-1 text-sm outline-none bg-transparent ml-3" maxLength={10} />
+    </div>
+  )
+}
+
+function PasswordField({ value, show, onChange, onToggle, onEnter, placeholder }: {
+  value: string; show: boolean
+  onChange: (v: string) => void; onToggle: () => void
+  onEnter?: () => void; placeholder: string
+}) {
+  return (
+    <div className="flex items-center border border-gray-200 rounded-xl px-3 h-11 focus-within:border-gray-400 transition-colors mb-3">
+      <Lock className="w-4 h-4 text-gray-400 shrink-0" />
+      <input type={show ? "text" : "password"} placeholder={placeholder} value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && onEnter?.()}
+        className="flex-1 text-sm outline-none bg-transparent ml-2.5" />
+      <button type="button" onClick={onToggle} className="text-gray-400 hover:text-gray-600 ml-1">
+        {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
     </div>
   )
 }
@@ -668,15 +734,6 @@ function PrimaryBtn({ label, loading, disabled, onClick, color }: {
       className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-opacity"
       style={{ backgroundColor: color }}>
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : label}
-    </button>
-  )
-}
-
-function SecondaryBtn({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button onClick={onClick}
-      className="w-full h-10 border border-gray-200 text-sm text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition-colors">
-      {label}
     </button>
   )
 }

@@ -47,7 +47,7 @@ class CatalogService {
       queryParameters: {'businessId': AppConfig.businessId},
     );
 
-    final cats = (data as List)
+    final cats = (data)
         .map((e) => CategoryDTO.fromJson(e as Map<String, dynamic>))
         .toList();
     await HiveStorage.put(StorageKeys.boxCategories, 'categories', data);

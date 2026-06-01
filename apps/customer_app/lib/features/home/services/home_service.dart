@@ -59,7 +59,7 @@ class HomeService {
       },
     );
 
-    final banners = (data as List)
+    final banners = (data)
         .map((e) => BannerDTO.fromJson(e as Map<String, dynamic>))
         .toList();
     await HiveStorage.put(StorageKeys.boxBanners, 'banners', data);
@@ -71,7 +71,7 @@ class HomeService {
       ApiEndpoints.promotions,
       queryParameters: {'businessId': AppConfig.businessId},
     );
-    return (data as List)
+    return (data)
         .map((e) => PromoDisplayDTO.fromJson(e as Map<String, dynamic>))
         .toList();
   }

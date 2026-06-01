@@ -55,6 +55,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
     );
   }
 
+  /// Called by LoginPage after any successful auth API call to mark the
+  /// user as authenticated without repeating session storage logic here.
+  void setAuthenticated(AuthSession session) {
+    state = state.copyWith(
+      status:  AuthStatus.authenticated,
+      session: session,
+      error:   null,
+    );
+  }
+
   Future<bool> sendOtp(String email) async {
     state = state.copyWith(status: AuthStatus.loading, email: email);
     try {
@@ -75,6 +85,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<bool> verifyOtp({
     required String code,
+    required String otpPurpose,
     String? phone,
     String? name,
   }) async {
@@ -82,10 +93,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(status: AuthStatus.loading);
     try {
       final session = await _service.verifyOtp(
-        email: state.email!,
-        code: code,
-        phone: phone,
-        name: name,
+        email:      state.email!,
+        code:       code,
+        otpPurpose: otpPurpose,
+        phone:      phone,
+        name:       name,
       );
       state = state.copyWith(
         status: AuthStatus.authenticated,

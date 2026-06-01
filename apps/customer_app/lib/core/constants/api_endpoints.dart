@@ -12,8 +12,13 @@ class ApiEndpoints {
   static const String appVersion     = '/app/version';
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  static const String sendOtp  = '/auth/send-otp';
-  static const String verifyOtp = '/auth/verify';
+  /// Email-only customer existence check (step 1 of registration/login flow)
+  static const String checkCustomer  = '/auth/check-customer';
+  static const String sendOtp        = '/auth/send-otp';
+  static const String verifyOtp      = '/auth/verify';
+  static const String loginPassword  = '/auth/login-password';
+  static const String forgotPassword = '/auth/forgot';
+  static const String resetPassword  = '/auth/reset-password';
 
   // ── Profile ───────────────────────────────────────────────────────────────
   static const String profile = '/profile';

@@ -51,7 +51,7 @@ class CartService {
 
   Future<List<CouponDTO>> getCoupons() async {
     final data = await _dio.get<List<dynamic>>(ApiEndpoints.coupons);
-    return (data as List)
+    return (data)
         .map((e) => CouponDTO.fromJson(e as Map<String, dynamic>))
         .toList();
   }
