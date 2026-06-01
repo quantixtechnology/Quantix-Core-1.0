@@ -20,6 +20,7 @@ import { formatINR } from "@/lib/currency"
 import { Plus, Minus } from "lucide-react"
 import { ProductImage } from "./product-image"
 import type { WebNav } from "./storefront-website"
+import { getCardClasses, TYPE, BTN_ICON, iconBtnStyle } from "@/design-system"
 
 // ── Shared product type ───────────────────────────────────────────────────────
 // This mirrors the storefront API shape and replaces the local interface that
@@ -57,9 +58,9 @@ export interface StorefrontProduct {
 // Exported so callers can render shimmer grids while data loads.
 
 export function ProductCardSkeleton() {
-  const { currentImageConfig } = useAdminStore()
+  const { currentImageConfig, currentBusinessTheme } = useAdminStore()
   return (
-    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden animate-pulse">
+    <div className={`${getCardClasses(currentBusinessTheme.cardStyle)} animate-pulse`}>
       <div className="bg-gray-100" style={{ height: currentImageConfig.cardHeight }} />
       <div className="p-2 space-y-1.5">
         <div className="h-3 bg-gray-100 rounded w-3/4" />
@@ -100,7 +101,7 @@ export function StorefrontProductCard({
   storeClosed = false,
 }: StorefrontProductCardProps) {
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
-  const { currentImageConfig } = useAdminStore()
+  const { currentImageConfig, currentBusinessTheme } = useAdminStore()
   const btConfig = getBusinessTypeConfig(businessType)
 
   const images = Array.isArray(product.images) ? product.images : []
@@ -155,7 +156,7 @@ export function StorefrontProductCard({
 
   return (
     <div
-      className="bg-white rounded-xl border border-gray-100 overflow-hidden cursor-pointer group hover:shadow-md hover:border-gray-200 transition-all duration-200"
+      className={getCardClasses(currentBusinessTheme.cardStyle)}
       onClick={() => nav.go("product", { productId: product.id })}
     >
       {/* ── Fixed image zone — height driven by config, not a Tailwind class ── */}
@@ -209,21 +210,21 @@ export function StorefrontProductCard({
 
       {/* ── Fixed info + action zone ──────────────────────────────── */}
       <div className="p-2">
-        <p className="text-xs font-semibold text-gray-900 truncate">{product.name}</p>
+        <p className={TYPE.CARD_NAME}>{product.name}</p>
         {defaultVariant && defaultVariant.name !== "Default" ? (
-          <p className="text-xs text-gray-400 mt-0.5 truncate">{defaultVariant.name}</p>
+          <p className={TYPE.CARD_VARIANT}>{defaultVariant.name}</p>
         ) : product.shortDesc ? (
-          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{product.shortDesc}</p>
+          <p className={TYPE.CARD_DESC}>{product.shortDesc}</p>
         ) : null}
 
         <div className="mt-1 flex items-center justify-between">
           {/* ── Price zone ─── */}
           <div>
-            <span className="text-sm font-bold" style={{ color: brandColor }}>
+            <span className={TYPE.PRICE_MAIN} style={{ color: brandColor }}>
               {formatINR(price)}
             </span>
             {hasDiscount && (
-              <span className="ml-1 text-xs text-gray-400 line-through">{formatINR(mrp)}</span>
+              <span className={TYPE.PRICE_STRIKE}>{formatINR(mrp)}</span>
             )}
           </div>
 
@@ -234,27 +235,16 @@ export function StorefrontProductCard({
             <span className="text-[10px] font-semibold text-gray-400 shrink-0">Closed</span>
           ) : cartItem ? (
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={handleDecrease}
-                className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100"
-              >
+              <button onClick={handleDecrease} className={`${BTN_ICON} border border-gray-200 hover:bg-gray-100`}>
                 <Minus className="w-3 h-3" />
               </button>
               <span className="w-5 text-center text-sm font-bold">{cartItem.quantity}</span>
-              <button
-                onClick={handleIncrease}
-                className="w-7 h-7 rounded-xl flex items-center justify-center text-white"
-                style={{ backgroundColor: brandColor }}
-              >
+              <button onClick={handleIncrease} className={BTN_ICON} style={iconBtnStyle(brandColor)}>
                 <Plus className="w-3 h-3" />
               </button>
             </div>
           ) : (
-            <button
-              onClick={handleAdd}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-sm hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: brandColor }}
-            >
+            <button onClick={handleAdd} className={`${BTN_ICON} shadow-sm`} style={iconBtnStyle(brandColor)}>
               <Plus className="w-3.5 h-3.5" />
             </button>
           )}

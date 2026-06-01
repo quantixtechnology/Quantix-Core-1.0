@@ -2,26 +2,20 @@
 
 import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { getBusinessTypeConfig, getCategoryIcon } from "@/lib/business-type-config"
-import { resolveImageUrl } from "@/lib/image-url"
-import { ChevronRight, Zap, Shield, Star, Truck, Package } from "lucide-react"
+import { getBusinessTypeConfig } from "@/lib/business-type-config"
+import { ChevronRight, Zap, Shield, Star, Truck } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import { StorefrontProductCard, ProductCardSkeleton } from "./storefront-product-card"
 import type { StorefrontProduct } from "./storefront-product-card"
+import { StorefrontCategoryCard, StorefrontCategoryCardSkeleton } from "./storefront-category-card"
+import type { StorefrontCategory } from "./storefront-category-card"
+import { StorefrontBanner } from "./storefront-banner"
+import { StorefrontEmptyState } from "./storefront-empty-state"
+import { TYPE, PRODUCT_GRID, GRID_GAP, CATEGORY_GRID, CAT_GAP, PAGE_X, SECTION_Y, BTN_LG, BTN_GHOST, primaryBtnStyle } from "@/design-system"
 
-// ── Local types ───────────────────────────────────────────────────────────
-// Product is aliased from the shared card type; Category is page-local.
-
-interface Category {
-  id: string
-  name: string
-  slug: string
-  image: string | null
-  icon: string | null
-  color: string | null
-}
-
-type Product = StorefrontProduct
+// ── Local type aliases ────────────────────────────────────────────────────
+type Category = StorefrontCategory
+type Product  = StorefrontProduct
 
 // ── Business-type helpers ────────────────────────────────────────────────
 
@@ -66,23 +60,13 @@ function getWhyChooseUs(businessType: string) {
   }
 }
 
-// ── Category skeleton (page-local, no product image needed) ──────────────
-
-function SkeletonCategory() {
-  return (
-    <div className="flex flex-col items-center gap-2 animate-pulse">
-      <div className="w-16 h-16 rounded-2xl bg-gray-100" />
-      <div className="h-3 bg-gray-100 rounded w-14" />
-    </div>
-  )
-}
-
 // ── Main component ───────────────────────────────────────────────────────
 
 interface StorefrontHomeProps { brandColor: string; nav: WebNav; storeClosed?: boolean }
 
 export function StorefrontHome({ brandColor, nav, storeClosed = false }: StorefrontHomeProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessType, currentStoreId } = useAdminStore()
+  const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
 
   const config      = getBusinessTypeConfig(currentBusinessType)
   const heroContent = getHeroContent(currentBusinessType)
@@ -94,8 +78,6 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
   const [catLoading, setCatLoading]       = useState(true)
   const [products, setProducts]           = useState<Product[]>([])
   const [prodsLoading, setProdsLoading]   = useState(true)
-
-  const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
 
   // ── Categories ─────────────────────────────────────────────────
   useEffect(() => {
@@ -163,7 +145,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
           <div className="absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl bg-white" />
           <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full blur-3xl bg-white" />
         </div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+        <div className={`relative max-w-7xl mx-auto ${PAGE_X} py-16 sm:py-24`}>
           <div className="max-w-2xl">
             <div className="flex items-center gap-3 mb-6">
               <div
@@ -184,14 +166,14 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                className="px-6 py-3 bg-white font-bold text-sm rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+                className={`${BTN_LG} bg-white hover:bg-gray-50 gap-2`}
                 style={{ color: brandColor }}
               >
                 {heroContent.cta} <ChevronRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => nav.go("orders")}
-                className="px-6 py-3 bg-white/10 border border-white/30 text-white font-semibold text-sm rounded-xl hover:bg-white/20 transition-colors"
+                className={BTN_GHOST}
               >
                 My Orders
               </button>
@@ -202,7 +184,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
 
       {/* ── Delivery promise bar ─────────────────────────────── */}
       <section className="bg-gray-900 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className={`max-w-7xl mx-auto ${PAGE_X} py-4`}>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {promiseItems.map(({ icon: Icon, label, sub }) => (
               <div key={label} className="flex items-center gap-3">
@@ -219,18 +201,30 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
         </div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className={`max-w-7xl mx-auto ${PAGE_X}`}>
+
+        {/* ── Banner carousel ──────────────────────────────────── */}
+        {currentBusinessId && (
+          <section className={SECTION_Y}>
+            <StorefrontBanner
+              businessId={currentBusinessId}
+              storeId={currentStoreId || null}
+              brandColor={brandColor}
+              variant="carousel"
+            />
+          </section>
+        )}
 
         {/* ── Categories ──────────────────────────────────────── */}
-        <section className="py-10">
+        <section className={SECTION_Y}>
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">{labels.categoryHeading}</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Browse our selections</p>
+              <h2 className={TYPE.SECTION_TITLE}>{labels.categoryHeading}</h2>
+              <p className={TYPE.SECTION_SUB}>Browse our selections</p>
             </div>
             <button
               onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-              className="text-sm font-semibold flex items-center gap-1 hover:opacity-80 transition-opacity"
+              className={TYPE.VIEW_ALL}
               style={{ color: brandColor }}
             >
               View all <ChevronRight className="w-4 h-4" />
@@ -238,46 +232,36 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
           </div>
 
           {catLoading ? (
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
-              {Array.from({ length: 8 }).map((_, i) => <SkeletonCategory key={i} />)}
+            <div className={`${CATEGORY_GRID} ${CAT_GAP}`}>
+              {Array.from({ length: 8 }).map((_, i) => <StorefrontCategoryCardSkeleton key={i} />)}
             </div>
           ) : categories.length === 0 ? (
-            <div className="text-center py-10 text-gray-400 text-sm">No categories added yet</div>
+            <p className="text-center py-8 text-sm text-gray-400">No categories added yet</p>
           ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
+            <div className={`${CATEGORY_GRID} ${CAT_GAP}`}>
               {categories.map((c) => (
-                <button
+                <StorefrontCategoryCard
                   key={c.id}
+                  category={c}
+                  brandColor={brandColor}
+                  businessType={currentBusinessType}
                   onClick={() => nav.go("category", { categoryId: c.id, categoryName: c.name })}
-                  className="flex flex-col items-center gap-2 group"
-                >
-                  <div
-                    className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-gray-200 transition-all"
-                    style={{ backgroundColor: c.color ? `${c.color}20` : `${brandColor}15` }}
-                  >
-                    {c.image ? (
-                      <img src={resolveImageUrl(c.image)} alt={c.name} className="w-full h-full object-cover rounded-2xl" />
-                    ) : (
-                      <span className="text-2xl">{c.icon || getCategoryIcon(currentBusinessType, c.name)}</span>
-                    )}
-                  </div>
-                  <span className="text-xs font-medium text-gray-700 text-center leading-tight line-clamp-2">{c.name}</span>
-                </button>
+                />
               ))}
             </div>
           )}
         </section>
 
-        {/* ── Primary products section ─────────────────────────── */}
+        {/* ── Featured / primary products ──────────────────────── */}
         <section className="pb-10">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">{labels.featuredHeading}</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Fresh stock, updated daily</p>
+              <h2 className={TYPE.SECTION_TITLE}>{labels.featuredHeading}</h2>
+              <p className={TYPE.SECTION_SUB}>Fresh stock, updated daily</p>
             </div>
             <button
               onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-              className="text-sm font-semibold flex items-center gap-1 hover:opacity-80 transition-opacity"
+              className={TYPE.VIEW_ALL}
               style={{ color: brandColor }}
             >
               View all <ChevronRight className="w-4 h-4" />
@@ -285,17 +269,17 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
           </div>
 
           {prodsLoading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+            <div className={`${PRODUCT_GRID} ${GRID_GAP}`}>
               {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
             </div>
           ) : displayProducts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-              <Package className="w-14 h-14 text-gray-200" />
-              <p className="text-base font-semibold text-gray-500">No products added yet</p>
-              <p className="text-sm text-gray-400">Products are being stocked. Check back soon.</p>
-            </div>
+            <StorefrontEmptyState
+              variant="no-products"
+              brandColor={brandColor}
+              onAction={() => nav.go("category")}
+            />
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+            <div className={`${PRODUCT_GRID} ${GRID_GAP}`}>
               {displayProducts.map((p) => (
                 <StorefrontProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
               ))}
@@ -303,23 +287,23 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
           )}
         </section>
 
-        {/* ── More products ────────────────────────────────────── */}
+        {/* ── More / best sellers ───────────────────────────────── */}
         {!prodsLoading && moreProducts.length > 0 && (
           <section className="pb-12">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{labels.bestSellersHeading}</h2>
-                <p className="text-sm text-gray-500 mt-0.5">Customer favourites</p>
+                <h2 className={TYPE.SECTION_TITLE}>{labels.bestSellersHeading}</h2>
+                <p className={TYPE.SECTION_SUB}>Customer favourites</p>
               </div>
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                className="text-sm font-semibold flex items-center gap-1 hover:opacity-80 transition-opacity"
+                className={TYPE.VIEW_ALL}
                 style={{ color: brandColor }}
               >
                 View all <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+            <div className={`${PRODUCT_GRID} ${GRID_GAP}`}>
               {moreProducts.map((p) => (
                 <StorefrontProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
               ))}
@@ -329,7 +313,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
 
         {/* ── Why choose us ────────────────────────────────────── */}
         <section className="py-10 border-t border-gray-100">
-          <h2 className="text-xl font-bold text-gray-900 mb-8 text-center">Why Choose Us?</h2>
+          <h2 className={`${TYPE.SECTION_TITLE} mb-8 text-center`}>Why Choose Us?</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {whyChoose.map(({ emoji, title, desc }) => (
               <div key={title} className="text-center">

@@ -2,6 +2,23 @@
 
 import { create } from "zustand"
 import { PLATFORM_IMAGE_DEFAULTS } from "@/config/product-image-config"
+import type { CardStyle } from "@/design-system"
+
+// ── Business theme (overrides from ecommerceConfig.theme) ──────────────────
+export interface BusinessTheme {
+  /** Extra brand tint color (lighter accent, e.g. for hover states) */
+  accentColor: string
+  /** Card corner style preset — "modern" | "minimal" | "bold" */
+  cardStyle: CardStyle
+  /** Card border-radius override in pixels (0 = use cardStyle default) */
+  cardBorderRadius: number
+}
+
+export const DEFAULT_BUSINESS_THEME: BusinessTheme = {
+  accentColor:      "",        // empty = derive from primaryColor in components
+  cardStyle:        "modern",
+  cardBorderRadius: 0,
+}
 
 // ============================================================================
 // VIEW / ROUTING TYPES
@@ -403,6 +420,10 @@ interface AdminState {
   // ── Storefront product image config (hydrated from ecommerceConfig) ──────
   currentImageConfig: import('@/config/product-image-config').ProductImageConfig
   setImageConfig: (cfg: Partial<import('@/config/product-image-config').ProductImageConfig>) => void
+
+  // ── Business theme (card style, accent color — from ecommerceConfig.theme)
+  currentBusinessTheme: BusinessTheme
+  setBusinessTheme: (theme: Partial<BusinessTheme>) => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
@@ -537,4 +558,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   // Storefront product image config
   currentImageConfig: PLATFORM_IMAGE_DEFAULTS,
   setImageConfig: (cfg) => set((s) => ({ currentImageConfig: { ...s.currentImageConfig, ...cfg } })),
+
+  // Business theme
+  currentBusinessTheme: DEFAULT_BUSINESS_THEME,
+  setBusinessTheme: (theme) => set((s) => ({ currentBusinessTheme: { ...s.currentBusinessTheme, ...theme } })),
 }))
