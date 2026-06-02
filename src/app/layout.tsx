@@ -59,6 +59,24 @@ export const metadata: Metadata = {
   },
 };
 
+// ── Early-capture script for beforeinstallprompt ──────────────────────────────
+// Chrome can fire `beforeinstallprompt` within milliseconds of HTML parsing —
+// before React hydrates and before any useEffect can register a listener.
+// This inline script runs synchronously before React touches the DOM, stores
+// the event on window.__bip, and records the capture timestamp.
+// usePwaInstall reads window.__bip on mount so the missed event is recovered.
+const EARLY_CAPTURE_SCRIPT = `
+(function(){
+  window.__bip = null;
+  window.__bipCapturedAt = null;
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    window.__bip = e;
+    window.__bipCapturedAt = Date.now();
+  }, { once: true });
+})();
+`.trim()
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -66,6 +84,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Early-capture: must execute before React hydrates */}
+        <script dangerouslySetInnerHTML={{ __html: EARLY_CAPTURE_SCRIPT }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
