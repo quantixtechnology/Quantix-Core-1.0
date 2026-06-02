@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart' show Options;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/constants/api_endpoints.dart';
@@ -22,6 +23,21 @@ class CustomerCheckResult {
 
   final bool exists;
   final bool hasPassword;
+}
+
+// ── OTP verify result ─────────────────────────────────────────────────────────
+// When requirePasswordSetup is true, the caller must show the set-initial-
+// password screen.  The session is already created but should not be stored
+// until the password is successfully set.
+
+class VerifyOtpResult {
+  const VerifyOtpResult({
+    required this.session,
+    required this.requirePasswordSetup,
+  });
+
+  final AuthSession session;
+  final bool requirePasswordSetup;
 }
 
 // ── Auth service ──────────────────────────────────────────────────────────────
@@ -72,14 +88,16 @@ class AuthService {
     return response.data?['success'] == true;
   }
 
-  /// Verify OTP and create a customer session.
+  /// Verify OTP.  Returns [VerifyOtpResult] which carries both the session
+  /// and a [requirePasswordSetup] flag.
   ///
-  /// [otpPurpose] must be passed so the server can enforce the correct
-  /// validation rules (e.g. name + phone required for 'register').
-  Future<AuthSession> verifyOtp({
+  /// When [requirePasswordSetup] is true the caller MUST show the
+  /// set-initial-password screen and MUST NOT store the session until the
+  /// password has been successfully set via [setInitialPassword].
+  Future<VerifyOtpResult> verifyOtp({
     required String email,
     required String code,
-    required String otpPurpose,   // 'register' | 'login' | 'forgot'
+    required String otpPurpose,   // 'register' | 'login'
     String? phone,
     String? name,
   }) async {
@@ -96,10 +114,55 @@ class AuthService {
       ).toJson(),
     );
 
-    final session = AuthSession.fromJson(
-      response.data!['data'] as Map<String, dynamic>,
-    );
+    final body    = response.data!;
+    final session = AuthSession.fromJson(body['data'] as Map<String, dynamic>);
+    final requireSetup = body['requirePasswordSetup'] as bool? ?? false;
 
+    // Only persist the session when no password setup is pending.
+    // If setup is required the caller saves the session after set-password.
+    if (!requireSetup) {
+      await _storage.saveSession(
+        token:      session.token,
+        expiresAt:  session.expiresAt,
+        userId:     session.user.id,
+        email:      session.user.email,
+        businessId: session.user.businessId,
+        storeId:    AppConfig.storeId,
+        name:       session.user.name,
+        phone:      session.user.phone,
+      );
+    }
+
+    return VerifyOtpResult(session: session, requirePasswordSetup: requireSetup);
+  }
+
+  /// Set a password for the first time.
+  ///
+  /// [refreshToken] is from the [VerifyOtpResult.session] returned by
+  /// [verifyOtp] when [requirePasswordSetup] was true.
+  Future<void> setInitialPassword({
+    required String refreshToken,
+    required String password,
+    required String confirmPassword,
+  }) async {
+    final response = await _dio.dio.post<Map<String, dynamic>>(
+      ApiEndpoints.setPassword,
+      data: {
+        'password':        password,
+        'confirmPassword': confirmPassword,
+        'businessId':      AppConfig.businessId,
+      },
+      options: dio.Options(headers: {'Authorization': 'Bearer $refreshToken'}),
+    );
+    final data = response.data!;
+    if (data['success'] != true) {
+      throw Exception(data['error'] ?? 'Failed to set password');
+    }
+  }
+
+  /// Persist a session that was obtained during [verifyOtp] but held back
+  /// because [requirePasswordSetup] was true.
+  Future<void> saveSession(AuthSession session) async {
     await _storage.saveSession(
       token:      session.token,
       expiresAt:  session.expiresAt,
@@ -110,8 +173,6 @@ class AuthService {
       name:       session.user.name,
       phone:      session.user.phone,
     );
-
-    return session;
   }
 
   /// Password-based login for existing customers.

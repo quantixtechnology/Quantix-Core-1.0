@@ -17,8 +17,12 @@ class ApiEndpoints {
   static const String sendOtp        = '/auth/send-otp';
   static const String verifyOtp      = '/auth/verify';
   static const String loginPassword  = '/auth/login-password';
-  static const String forgotPassword = '/auth/forgot';
-  static const String resetPassword  = '/auth/reset-password';
+  // Token-based forgot-password (sends a link, not a 6-digit OTP code)
+  static const String forgotPassword    = '/auth/forgot-password';
+  // Set password for the first time (Bearer refresh token required)
+  static const String setPassword       = '/auth/set-password';
+  // Legacy OTP reset — kept for backward compat but no longer used in UI
+  static const String resetPasswordOtp  = '/auth/reset-password';
 
   // ── Profile ───────────────────────────────────────────────────────────────
   static const String profile = '/profile';
