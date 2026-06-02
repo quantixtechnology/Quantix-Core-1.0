@@ -13,6 +13,7 @@ import type { PickedStore } from "./storefront-store-picker"
 import { ProductImage } from "./product-image"
 import { formatINR } from "@/lib/currency"
 import { resolveImageUrl } from "@/lib/image-url"
+import { InstallAppButton } from "@/components/storefront/install-app-button"
 
 interface Category { id: string; name: string; slug: string; image: string | null }
 
@@ -106,6 +107,9 @@ export function StorefrontLayout({ children, brandColor, nav, currentStore, onOp
 
             {/* Actions */}
             <div className="flex items-center gap-2 ml-auto">
+              {/* Install App — between search and cart; auto-hides when unsupported/installed */}
+              <InstallAppButton mode="pwa" brandColor={brandColor} />
+
               {/* Cart */}
               <button
                 onClick={() => setCartOpen(true)}
