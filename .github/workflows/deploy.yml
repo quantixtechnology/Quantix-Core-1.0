@@ -1,5 +1,18 @@
 name: Deploy to Hostinger VPS
 
+# ─── Why webhook instead of SSH? ──────────────────────────────────────────────
+# Hostinger's firewall silently drops inbound TCP from GitHub Actions runner
+# IPs. Instead of the runner SSHing IN to the VPS, the runner POSTs an HTTPS
+# webhook to the running app (port 443 is always open). The app spawns
+# deploy-local.sh as a DETACHED process that survives the PM2 restart which
+# happens mid-build. GitHub Actions then polls /api/deploy/status until the
+# script reports "success" or "failed".
+#
+# Required GitHub Secrets:
+#   DEPLOY_WEBHOOK_SECRET  — random string ≥32 chars; also in VPS .env
+#   DEPLOY_APP_URL         — e.g. https://app.quantixtechnology.in  (no trailing slash)
+# ──────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
     branches:
@@ -8,204 +21,104 @@ on:
 
 jobs:
   deploy:
-    name: Build & Deploy
+    name: Trigger & Monitor Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      # ── Step 1: Checkout ──────────────────────────────────────────────────────
-      - name: Checkout repository
-        uses: actions/checkout@v5
+    timeout-minutes: 25
 
-      # ── Step 2: Validate secrets ──────────────────────────────────────────────
+    steps:
+      # ── Step 1: Validate secrets ───────────────────────────────────────────
       - name: Validate secrets
         run: |
           MISSING=""
-          [ -z "${{ secrets.VPS_HOST }}"    ] && MISSING="$MISSING VPS_HOST"
-          [ -z "${{ secrets.VPS_USER }}"    ] && MISSING="$MISSING VPS_USER"
-          [ -z "${{ secrets.VPS_SSH_KEY }}" ] && MISSING="$MISSING VPS_SSH_KEY"
+          [ -z "${{ secrets.DEPLOY_WEBHOOK_SECRET }}" ] && MISSING="$MISSING DEPLOY_WEBHOOK_SECRET"
+          [ -z "${{ secrets.DEPLOY_APP_URL }}"        ] && MISSING="$MISSING DEPLOY_APP_URL"
           if [ -n "$MISSING" ]; then
             echo "❌ Missing required secrets:$MISSING"
+            echo ""
+            echo "Add these in: GitHub repo → Settings → Secrets → Actions"
+            echo "  DEPLOY_WEBHOOK_SECRET  random 32-char string (same value in VPS .env)"
+            echo "  DEPLOY_APP_URL         e.g. https://app.quantixtechnology.in"
             exit 1
           fi
-          echo "✅ Secrets present — host=${{ secrets.VPS_HOST }} user=${{ secrets.VPS_USER }}"
+          echo "✅ Secrets present"
 
-      # ── Step 3: Setup SSH (no third-party action needed) ──────────────────────
-      - name: Setup SSH key
+      # ── Step 2: Trigger deploy webhook ────────────────────────────────────
+      - name: Trigger deploy webhook
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          # Add VPS to known_hosts to avoid interactive prompt
-          PORT="${{ secrets.VPS_PORT }}"
-          PORT="${PORT:-22}"
-          ssh-keyscan -p "$PORT" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
-          echo "✅ SSH key written and VPS added to known_hosts"
+          APP_URL="${{ secrets.DEPLOY_APP_URL }}"
+          SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
 
-      # ── Step 4: Test TCP connectivity (informational only) ───────────────────
-      # Non-fatal — if TCP pre-check fails the SSH step will surface the real error.
-      # Common cause: Hostinger firewall blocks GitHub Actions IP ranges on port 22;
-      # try a custom SSH port (e.g. 2222) set via VPS_PORT secret.
-      - name: Test VPS connectivity
-        continue-on-error: true
+          echo "POST ${APP_URL}/api/deploy"
+
+          HTTP_CODE=$(curl -s -o /tmp/trigger_body.json -w "%{http_code}" \
+            --max-time 30 \
+            -X POST \
+            -H "x-deploy-secret: ${SECRET}" \
+            -H "Content-Type: application/json" \
+            "${APP_URL}/api/deploy")
+
+          BODY=$(cat /tmp/trigger_body.json 2>/dev/null || echo "{}")
+          echo "HTTP ${HTTP_CODE} — ${BODY}"
+
+          if [ "$HTTP_CODE" = "409" ]; then
+            echo "⚠️  Deploy already in progress — polling status without re-triggering"
+          elif [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Webhook trigger failed (HTTP ${HTTP_CODE})"
+            echo "   Is the app up? curl ${APP_URL}"
+            echo "   Is DEPLOY_WEBHOOK_SECRET set in both GitHub Secrets and VPS .env?"
+            exit 1
+          else
+            echo "✅ Deploy triggered"
+          fi
+
+      # ── Step 3: Poll status until done ────────────────────────────────────
+      # Polls every 30 s for up to 20 min. deploy-local.sh writes
+      # /tmp/quantix-deploy-status.json at each step.
+      - name: Wait for deploy to complete
         run: |
-          PORT="${{ secrets.VPS_PORT }}"
-          PORT="${PORT:-22}"
-          HOST="${{ secrets.VPS_HOST }}"
-          echo "ℹ️  Checking TCP $HOST:$PORT …"
-          for i in 1 2 3; do
-            if timeout 10 bash -c "echo >/dev/tcp/$HOST/$PORT" 2>/dev/null; then
-              echo "✅ TCP reachable (attempt $i)"
+          APP_URL="${{ secrets.DEPLOY_APP_URL }}"
+          SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+          MAX_POLLS=40
+          POLL=0
+
+          echo "Polling ${APP_URL}/api/deploy/status …"
+
+          while [ "$POLL" -lt "$MAX_POLLS" ]; do
+            sleep 30
+            POLL=$((POLL + 1))
+
+            RESPONSE=$(curl -s --max-time 20 \
+              -H "x-deploy-secret: ${SECRET}" \
+              "${APP_URL}/api/deploy/status" 2>/dev/null || echo '{"status":"unreachable"}')
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.status  // "unknown"')
+            STEP=$(echo "$RESPONSE"   | jq -r '.step    // ""')
+            MSG=$(echo "$RESPONSE"    | jq -r '.message // ""')
+            COMMIT=$(echo "$RESPONSE" | jq -r '.commit  // ""')
+
+            echo "[$POLL/$MAX_POLLS] status=${STATUS} step=${STEP} — ${MSG}"
+
+            if [ "$STATUS" = "success" ]; then
+              echo ""
+              echo "✅ Deploy complete${COMMIT:+ — commit ${COMMIT}}"
+              echo "─── Last log lines ───────────────────────────────────────"
+              echo "$RESPONSE" | jq -r '.tail[-20:][]? // empty' 2>/dev/null || true
               exit 0
             fi
-            echo "⚠️  Attempt $i/3 failed — retrying in 10s…"
-            [ $i -lt 3 ] && sleep 10
+
+            if [ "$STATUS" = "failed" ]; then
+              echo ""
+              echo "❌ Deploy failed at step: ${STEP}"
+              echo "   ${MSG}"
+              echo "─── Deploy log (last 30 lines) ───────────────────────────"
+              echo "$RESPONSE" | jq -r '.tail[-30:][]? // empty' 2>/dev/null || true
+              exit 1
+            fi
+
+            # "unreachable" / "unknown" are transient (app restarting mid-build)
           done
-          echo "⚠️  TCP pre-check could not reach $HOST:$PORT — proceeding to SSH step anyway."
-          echo "   If SSH also fails, verify: (1) VPS is running, (2) VPS_PORT secret matches"
-          echo "   the SSH port on the server, (3) Hostinger firewall allows GitHub Actions IPs."
 
-      # ── Step 5: Deploy via native SSH ─────────────────────────────────────────
-      # No third-party action — avoids all command_timeout parsing bugs.
-      # Script is piped via stdin; ServerAliveInterval keeps the connection alive
-      # during the long npm run build step.
-      - name: Deploy via SSH
-        run: |
-          PORT="${{ secrets.VPS_PORT }}"
-          PORT="${PORT:-22}"
-          ssh \
-            -i ~/.ssh/deploy_key \
-            -p "$PORT" \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=30 \
-            -o ServerAliveInterval=60 \
-            -o ServerAliveCountMax=20 \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            'bash -e -o pipefail' << 'DEPLOY'
-
-          echo "============================================================"
-          echo " QUANTIX DEPLOY — $(date)"
-          echo "============================================================"
-          echo "User : $(whoami)"
-          echo "Node : $(node --version 2>/dev/null || echo NOT FOUND)"
-          echo "NPM  : $(npm --version  2>/dev/null || echo NOT FOUND)"
-          echo "PM2  : $(pm2 --version  2>/dev/null || echo NOT FOUND)"
-          echo "Disk : $(df -h / | tail -1 | awk '{print $4" free of "$2}')"
-          echo ""
-
-          PROJECT="/root/Quantix-Core-1.0"
-          # DB lives OUTSIDE the git repo so no git command can ever touch it.
-          DB_FILE="/root/quantix-data/custom.db"
-          export DATABASE_URL="file:$DB_FILE"
-          echo "Path : $PROJECT"
-          echo "DB   : $DB_FILE"
-
-          [ ! -d "$PROJECT" ] && echo "❌ Project directory not found" && exit 1
-          cd "$PROJECT"
-
-          echo ""
-          echo "── DB backup ────────────────────────────────────────────────"
-          # Back up the production database BEFORE git reset so that
-          # git reset --hard cannot overwrite live data.
-          mkdir -p /root/backups
-          if [ -f "$DB_FILE" ]; then
-            BACKUP="/root/backups/custom.db.$(date +%Y%m%d-%H%M%S).bak"
-            cp "$DB_FILE" "$BACKUP"
-            echo "✅ DB backed up → $BACKUP"
-            # Keep only the 10 most recent backups
-            ls -t /root/backups/custom.db.*.bak 2>/dev/null | tail -n +11 | xargs rm -f || true
-          else
-            echo "ℹ️  No existing DB to back up (first deploy)"
-          fi
-
-          echo ""
-          echo "── Git ──────────────────────────────────────────────────────"
-          git fetch --quiet origin main
-          # DB is outside the repo (/root/quantix-data/) so git reset --hard
-          # and git clean can never touch it. mkdir -p is a safety net for the
-          # very first deploy on a fresh VPS.
-          mkdir -p "$(dirname "$DB_FILE")"
-          git reset --hard origin/main
-          echo "Commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty='%s')"
-
-          echo ""
-          echo "── DATABASE_URL in project .env ─────────────────────────────"
-          # Ensure DATABASE_URL is present in the project root .env so that
-          # Next.js loadEnvConfig (called from standalone/server.js with CWD as
-          # project root) always finds it — belt AND suspenders alongside the
-          # ecosystem.config.js env block and the standalone/.env written below.
-          touch "$PROJECT/.env"
-          # Remove any old DATABASE_URL line then prepend the correct one
-          grep -v "^DATABASE_URL=" "$PROJECT/.env" > /tmp/env_tmp || true
-          { echo "DATABASE_URL=file:$DB_FILE"; cat /tmp/env_tmp; } > "$PROJECT/.env"
-          echo "✅ DATABASE_URL written to $PROJECT/.env"
-
-          echo ""
-          echo "── npm install ──────────────────────────────────────────────"
-          npm install --legacy-peer-deps 2>&1 | tail -5
-          echo "✅ Dependencies ready"
-
-          echo ""
-          echo "── Prisma ───────────────────────────────────────────────────"
-          npx prisma generate 2>&1 | tail -2
-          npx prisma db push --accept-data-loss 2>&1 | tail -2
-          echo "✅ Schema synced"
-
-          echo ""
-          echo "── Super Admin ──────────────────────────────────────────────"
-          node scripts/ensure-super-admin.js
-          echo "✅ Super admin verified"
-
-          echo ""
-          echo "── next build ───────────────────────────────────────────────"
-          npm run build 2>&1
-          echo "✅ Build complete"
-
-          echo ""
-          echo "── Standalone assets ────────────────────────────────────────"
-          STANDALONE="$PROJECT/.next/standalone"
-          if [ -d "$STANDALONE" ]; then
-            cp -r "$PROJECT/.next/static" "$STANDALONE/.next/" 2>/dev/null || true
-            cp -r "$PROJECT/public"        "$STANDALONE/"       2>/dev/null || true
-            # Write the standalone .env — Next.js standalone server.js may load
-            # env from __dirname (the standalone dir) on some Next.js versions.
-            {
-              echo "DATABASE_URL=file:$DB_FILE"
-              echo "PORT=3000"
-              echo "HOSTNAME=0.0.0.0"
-              grep -v "^DATABASE_URL\|^PORT\|^HOSTNAME" "$PROJECT/.env" 2>/dev/null || true
-            } > "$STANDALONE/.env"
-            echo "✅ Assets + .env written to standalone"
-          else
-            echo "❌ Standalone directory not found — build may have failed"
-            exit 1
-          fi
-
-          echo ""
-          echo "── PM2 ──────────────────────────────────────────────────────"
-          if pm2 list 2>/dev/null | grep -q "quantix"; then
-            # --update-env picks up the new DATABASE_URL from ecosystem.config.js
-            pm2 restart quantix --update-env
-          else
-            # Use ecosystem.config.js so the env block (including DATABASE_URL)
-            # is always applied — never use 'pm2 start npm' which bypasses it.
-            pm2 start ecosystem.config.js
-          fi
-          pm2 save
-          pm2 list
-
-          echo ""
-          echo "── Health check ─────────────────────────────────────────────"
-          sleep 12
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 http://localhost:3000 2>/dev/null || echo "000")
-          if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
-            echo "✅ App healthy (HTTP $HTTP)"
-          else
-            echo "⚠️  Health check HTTP $HTTP — showing last PM2 logs:"
-            pm2 logs quantix --lines 30 --nostream 2>/dev/null || true
-          fi
-
-          echo ""
-          echo "============================================================"
-          echo " DEPLOY COMPLETE — $(date)"
-          echo "============================================================"
-          DEPLOY
+          echo "⏱  Timed out after $((MAX_POLLS * 30))s"
+          echo "   Check VPS: pm2 logs quantix --lines 50"
+          echo "   Status:    cat /tmp/quantix-deploy-status.json"
+          exit 1
