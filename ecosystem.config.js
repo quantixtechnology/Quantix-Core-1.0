@@ -22,7 +22,7 @@ module.exports = {
         UPLOAD_ROOT: '/var/www/uploads',
         // Absolute path so the value is stable regardless of CWD.
         // Must match DB_FILE in .github/workflows/deploy.yml.
-        DATABASE_URL: 'file:/root/Quantix-Core-1.0/prisma/db/custom.db',
+        DATABASE_URL: 'file:/root/quantix-data/custom.db',
       },
       error_file: '/root/logs/quantix-error.log',
       out_file:   '/root/logs/quantix-out.log',

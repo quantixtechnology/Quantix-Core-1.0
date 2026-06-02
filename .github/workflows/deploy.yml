@@ -93,7 +93,8 @@ jobs:
           echo ""
 
           PROJECT="/root/Quantix-Core-1.0"
-          DB_FILE="$PROJECT/prisma/db/custom.db"
+          # DB lives OUTSIDE the git repo so no git command can ever touch it.
+          DB_FILE="/root/quantix-data/custom.db"
           export DATABASE_URL="file:$DB_FILE"
           echo "Path : $PROJECT"
           echo "DB   : $DB_FILE"
@@ -119,13 +120,11 @@ jobs:
           echo ""
           echo "── Git ──────────────────────────────────────────────────────"
           git fetch --quiet origin main
-          # Stash the live DB so git reset --hard cannot overwrite it.
-          # We restore it immediately after, keeping the schema-sync step
-          # (prisma db push) in charge of any structural migrations.
+          # DB is outside the repo (/root/quantix-data/) so git reset --hard
+          # and git clean can never touch it. mkdir -p is a safety net for the
+          # very first deploy on a fresh VPS.
           mkdir -p "$(dirname "$DB_FILE")"
-          [ -f "$DB_FILE" ] && cp "$DB_FILE" /tmp/quantix_db_preserve.db
           git reset --hard origin/main
-          [ -f /tmp/quantix_db_preserve.db ] && cp /tmp/quantix_db_preserve.db "$DB_FILE" && rm /tmp/quantix_db_preserve.db
           echo "Commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty='%s')"
 
           echo ""
@@ -147,7 +146,6 @@ jobs:
 
           echo ""
           echo "── Prisma ───────────────────────────────────────────────────"
-          mkdir -p "$(dirname "$DB_FILE")"
           npx prisma generate 2>&1 | tail -2
           npx prisma db push --accept-data-loss 2>&1 | tail -2
           echo "✅ Schema synced"
