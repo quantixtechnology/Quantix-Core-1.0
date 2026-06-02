@@ -424,6 +424,12 @@ interface AdminState {
   // ── Business theme (card style, accent color — from ecommerceConfig.theme)
   currentBusinessTheme: BusinessTheme
   setBusinessTheme: (theme: Partial<BusinessTheme>) => void
+
+  // ── Storefront homepage content (business-controlled, from settings JSON)
+  storefrontWhyChooseUs: Array<{ emoji: string; title: string; desc: string }>
+  setStorefrontWhyChooseUs: (items: Array<{ emoji: string; title: string; desc: string }>) => void
+  storefrontPromiseBar: Array<{ emoji: string; label: string; sub: string }>
+  setStorefrontPromiseBar: (items: Array<{ emoji: string; label: string; sub: string }>) => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
@@ -562,4 +568,9 @@ export const useAdminStore = create<AdminState>((set) => ({
   // Business theme
   currentBusinessTheme: DEFAULT_BUSINESS_THEME,
   setBusinessTheme: (theme) => set((s) => ({ currentBusinessTheme: { ...s.currentBusinessTheme, ...theme } })),
+
+  storefrontWhyChooseUs: [],
+  setStorefrontWhyChooseUs: (items) => set({ storefrontWhyChooseUs: items }),
+  storefrontPromiseBar: [],
+  setStorefrontPromiseBar: (items) => set({ storefrontPromiseBar: items }),
 }))

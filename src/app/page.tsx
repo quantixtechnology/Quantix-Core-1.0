@@ -35,6 +35,7 @@ function StorefrontContextLoader({
     setCurrentBusinessPrimaryColor,
     setCurrentBusinessLogo, setCurrentBusinessFavicon,
     setOrderStages, setImageConfig, setBusinessTheme,
+    setStorefrontWhyChooseUs, setStorefrontPromiseBar,
   } = useAdminStore()
   const { setCartStoreId, setStoreContext } = useCartStore()
   const { isAuthenticated, currentRole } = useAuthStore()
@@ -76,6 +77,9 @@ function StorefrontContextLoader({
         if (json.data.orderStages?.length) setOrderStages(json.data.orderStages)
         if (json.data.ecommerceConfig?.imageConfig) setImageConfig(json.data.ecommerceConfig.imageConfig)
         if (json.data.ecommerceConfig?.theme) setBusinessTheme(json.data.ecommerceConfig.theme)
+        // Business-controlled homepage content — always set (empty = hide section)
+        setStorefrontWhyChooseUs(json.data.whyChooseUs || [])
+        setStorefrontPromiseBar(json.data.promiseBar || [])
         setViewMode("customer")
         onLoaded()
       })

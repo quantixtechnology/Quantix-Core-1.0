@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"
-import { ChevronRight, Zap, Shield, Star, Truck } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import { StorefrontProductCard, ProductCardSkeleton } from "./storefront-product-card"
 import type { StorefrontProduct } from "./storefront-product-card"
@@ -18,7 +18,7 @@ import { TYPE, PRODUCT_GRID, GRID_GAP, CATEGORY_GRID, CAT_GAP, PAGE_X, SECTION_Y
 type Category = StorefrontCategory
 type Product  = StorefrontProduct
 
-// ── Business-type helpers ────────────────────────────────────────────────
+// ── Business-type hero content (generic, brand-neutral) ──────────────────
 
 function getHeroContent(businessType: string) {
   switch (businessType) {
@@ -35,43 +35,19 @@ function getHeroContent(businessType: string) {
   }
 }
 
-function getWhyChooseUs(businessType: string) {
-  switch (businessType) {
-    case "MEAT_DELIVERY":
-      return [
-        { emoji: "🥩", title: "Fresh Daily",       desc: "Sourced and processed every morning" },
-        { emoji: "✅", title: "Halal Certified",  desc: "100% halal, no compromise" },
-        { emoji: "⚡", title: "Fast Delivery",    desc: "Within 2 hours of order" },
-        { emoji: "🧊", title: "Hygienic Packing", desc: "Vacuum sealed, temp maintained" },
-      ]
-    case "GROCERY":
-      return [
-        { emoji: "🌿", title: "Farm Fresh",   desc: "Direct from farms to your home" },
-        { emoji: "💰", title: "Best Prices",  desc: "Everyday low prices, guaranteed" },
-        { emoji: "⚡", title: "30-min",        desc: "Express delivery in your area" },
-        { emoji: "🔄", title: "Easy Returns", desc: "No-questions-asked returns" },
-      ]
-    default:
-      return [
-        { emoji: "✅", title: "Quality",      desc: "Verified and genuine products" },
-        { emoji: "⚡", title: "Fast",         desc: "Express delivery options" },
-        { emoji: "💰", title: "Best Prices",  desc: "Competitive pricing daily" },
-        { emoji: "🔄", title: "Easy Returns", desc: "Hassle-free returns" },
-      ]
-  }
-}
-
 // ── Main component ───────────────────────────────────────────────────────
 
 interface StorefrontHomeProps { brandColor: string; nav: WebNav; storeClosed?: boolean }
 
 export function StorefrontHome({ brandColor, nav, storeClosed = false }: StorefrontHomeProps) {
-  const { currentBusinessId, currentBusinessName, currentBusinessType, currentStoreId } = useAdminStore()
+  const {
+    currentBusinessId, currentBusinessName, currentBusinessType, currentStoreId,
+    storefrontWhyChooseUs, storefrontPromiseBar,
+  } = useAdminStore()
   const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
 
   const config      = getBusinessTypeConfig(currentBusinessType)
   const heroContent = getHeroContent(currentBusinessType)
-  const whyChoose   = getWhyChooseUs(currentBusinessType)
   const deliveryCfg = config.deliveryConfig
   const labels      = config.labels
 
@@ -128,12 +104,12 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
   const displayProducts = featured.length > 0 ? featured.slice(0, 8) : products.slice(0, 8)
   const moreProducts    = featured.length > 0 ? products.filter((p) => !p.isFeatured).slice(0, 8) : products.slice(8, 16)
 
-  const promiseItems = [
-    { icon: Zap,    label: deliveryCfg.promiseHeadline, sub: deliveryCfg.promiseSubtext },
-    { icon: Shield, label: "Verified Store",  sub: "Quality guaranteed" },
-    { icon: Star,   label: "Top Rated",       sub: "Trusted by customers" },
-    { icon: Truck,  label: "Free Delivery",   sub: "On qualifying orders" },
-  ]
+  // Promise bar: business-configured items only.
+  // If the admin hasn't set custom items, show only the delivery promise from
+  // the business-type config — never show unverified generic claims.
+  const promiseItems = storefrontPromiseBar.length > 0
+    ? storefrontPromiseBar.map(({ emoji, label, sub }) => ({ emoji, label, sub }))
+    : [{ emoji: "⚡", label: deliveryCfg.promiseHeadline, sub: deliveryCfg.promiseSubtext }]
 
   return (
     <div>
@@ -186,11 +162,11 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
       {/* ── Delivery promise bar ─────────────────────────────── */}
       <section className="bg-gray-900 text-white">
         <div className={`max-w-7xl mx-auto ${PAGE_X} py-4`}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {promiseItems.map(({ icon: Icon, label, sub }) => (
+          <div className={`grid gap-4 ${promiseItems.length === 1 ? "grid-cols-1 max-w-xs" : promiseItems.length === 2 ? "grid-cols-2" : promiseItems.length === 3 ? "grid-cols-3" : "grid-cols-2 md:grid-cols-4"}`}>
+            {promiseItems.map(({ emoji, label, sub }) => (
               <div key={label} className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${brandColor}30` }}>
-                  <Icon className="w-4 h-4" style={{ color: brandColor }} />
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg" style={{ backgroundColor: `${brandColor}30` }}>
+                  {emoji}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-white leading-tight">{label}</p>
@@ -316,18 +292,21 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
         )}
 
         {/* ── Why choose us ────────────────────────────────────── */}
-        <section className="py-10 border-t border-gray-100">
-          <h2 className={`${TYPE.SECTION_TITLE} mb-8 text-center`}>Why Choose Us?</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {whyChoose.map(({ emoji, title, desc }) => (
-              <div key={title} className="text-center">
-                <div className="text-4xl mb-3">{emoji}</div>
-                <h3 className="text-sm font-bold text-gray-900 mb-1">{title}</h3>
-                <p className="text-xs text-gray-500">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Only shown when the admin has configured items — no generic placeholders */}
+        {storefrontWhyChooseUs.length > 0 && (
+          <section className="py-10 border-t border-gray-100">
+            <h2 className={`${TYPE.SECTION_TITLE} mb-8 text-center`}>Why Choose Us?</h2>
+            <div className={`grid gap-6 ${storefrontWhyChooseUs.length <= 3 ? `grid-cols-${storefrontWhyChooseUs.length}` : "grid-cols-2 md:grid-cols-4"}`}>
+              {storefrontWhyChooseUs.map(({ emoji, title, desc }) => (
+                <div key={title} className="text-center">
+                  <div className="text-4xl mb-3">{emoji}</div>
+                  <h3 className="text-sm font-bold text-gray-900 mb-1">{title}</h3>
+                  <p className="text-xs text-gray-500">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
       </div>
     </div>

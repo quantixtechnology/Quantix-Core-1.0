@@ -138,6 +138,11 @@ export async function GET(request: Request) {
     };
     const allowGuestCheckout = parsedSettings.allowGuestCheckout !== false; // default true
 
+    // Business-controlled storefront content — empty arrays mean "hide section".
+    // Admins set these via the Store Settings panel.
+    const whyChooseUs = (parsedSettings.whyChooseUs as Array<{ emoji: string; title: string; desc: string }>) || [];
+    const promiseBar  = (parsedSettings.promiseBar  as Array<{ emoji: string; label: string; sub: string }>)  || [];
+
     const savedStages = parsedSettings.orderStageConfig as OrderStage[] | undefined
     const orderStages = savedStages && savedStages.length > 0
       ? savedStages
@@ -208,6 +213,8 @@ export async function GET(request: Request) {
         ecommerceConfig,
         allowGuestCheckout,
         orderStages,
+        whyChooseUs,
+        promiseBar,
         store: resolvedStore
           ? {
               id: resolvedStore.id,

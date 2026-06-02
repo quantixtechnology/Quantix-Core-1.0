@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Settings, Save, RotateCcw, MapPin, Clock, Printer, Building2, Lock,
+  Plus, Trash2, GripVertical,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -271,6 +272,61 @@ export function StoreSettingsView() {
     finally { setDeliverySaving(false) }
   }
 
+  // ── Storefront content tab ────────────────────────────────────────────────
+  // whyChooseUs + promiseBar are stored in Business.settings JSON.
+
+  type WhyItem     = { emoji: string; title: string; desc: string }
+  type PromiseItem = { emoji: string; label: string; sub: string }
+
+  const [whyItems,          setWhyItems]          = useState<WhyItem[]>([])
+  const [promiseItems,      setPromiseItems]       = useState<PromiseItem[]>([])
+  const [contentSaving,     setContentSaving]      = useState(false)
+
+  useEffect(() => {
+    if (!effectiveBizId) return
+    fetch(`/api/core/businesses/${effectiveBizId}`, { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(j => {
+        if (!j.success) return
+        try {
+          const s = JSON.parse(j.data?.settings || '{}')
+          setWhyItems(s.whyChooseUs || [])
+          setPromiseItems(s.promiseBar || [])
+        } catch { /* ignore */ }
+      })
+      .catch(() => {})
+  }, [effectiveBizId])
+
+  const handleSaveStorefrontContent = async () => {
+    if (!effectiveBizId) return
+    setContentSaving(true)
+    try {
+      // Read current settings then patch whyChooseUs + promiseBar
+      const bizRes  = await fetch(`/api/core/businesses/${effectiveBizId}`, { headers: getAuthHeaders() })
+      const bizJson = await bizRes.json()
+      let settings: Record<string, unknown> = {}
+      try { settings = JSON.parse(bizJson.data?.settings || '{}') } catch { /* ignore */ }
+
+      settings.whyChooseUs = whyItems.filter(i => i.title.trim())
+      settings.promiseBar  = promiseItems.filter(i => i.label.trim())
+
+      const res = await fetch(`/api/core/businesses/${effectiveBizId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ settings }),
+      })
+      const json = await res.json()
+      if (json.success) showSuccess("Storefront content saved")
+      else showError(json.error || "Failed to save")
+    } catch { showError("Failed to save") }
+    finally { setContentSaving(false) }
+  }
+
+  function addWhyItem()     { setWhyItems(p => [...p, { emoji: "✅", title: "", desc: "" }]) }
+  function removeWhyItem(i: number) { setWhyItems(p => p.filter((_, x) => x !== i)) }
+  function addPromiseItem() { setPromiseItems(p => [...p, { emoji: "⚡", label: "", sub: "" }]) }
+  function removePromiseItem(i: number) { setPromiseItems(p => p.filter((_, x) => x !== i)) }
+
   // ── Checkout tab ──────────────────────────────────────────────────────────
   const [allowGuestCheckout,      setAllowGuestCheckout]      = useState(true)
   const [checkoutSettingLoading,  setCheckoutSettingLoading]  = useState(false)
@@ -392,6 +448,7 @@ export function StoreSettingsView() {
           <TabsTrigger value="general">Store</TabsTrigger>
           <TabsTrigger value="delivery">Delivery</TabsTrigger>
           <TabsTrigger value="checkout">Checkout</TabsTrigger>
+          <TabsTrigger value="storefront">Storefront</TabsTrigger>
           <TabsTrigger value="taxes">Taxes</TabsTrigger>
           <TabsTrigger value="printer">Printer</TabsTrigger>
         </TabsList>
@@ -682,6 +739,108 @@ export function StoreSettingsView() {
             <Button className="gap-2" onClick={handleSaveCheckoutSettings} disabled={checkoutSettingLoading}>
               <Save className="h-4 w-4" />
               {checkoutSettingLoading ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
+        </TabsContent>
+
+        {/* ── Storefront Content Tab ───────────────────────────────────── */}
+        <TabsContent value="storefront" className="space-y-6">
+
+          {/* Why Choose Us */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Why Choose Us</CardTitle>
+              <CardDescription>
+                Up to 4 items shown on your storefront homepage. Leave empty to hide the section entirely.
+                Never add claims your business cannot deliver.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {whyItems.map((item, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <GripVertical className="w-4 h-4 mt-2.5 text-muted-foreground shrink-0" />
+                  <input
+                    className="w-14 border rounded-md px-2 py-1.5 text-base text-center"
+                    placeholder="🥩"
+                    value={item.emoji}
+                    onChange={e => setWhyItems(p => p.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x))}
+                  />
+                  <div className="flex-1 grid grid-cols-2 gap-2">
+                    <input
+                      className="border rounded-md px-3 py-1.5 text-sm"
+                      placeholder="Title (e.g. Fresh Daily)"
+                      value={item.title}
+                      onChange={e => setWhyItems(p => p.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
+                    />
+                    <input
+                      className="border rounded-md px-3 py-1.5 text-sm"
+                      placeholder="Description"
+                      value={item.desc}
+                      onChange={e => setWhyItems(p => p.map((x, j) => j === i ? { ...x, desc: e.target.value } : x))}
+                    />
+                  </div>
+                  <button type="button" onClick={() => removeWhyItem(i)} className="mt-1.5 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {whyItems.length < 4 && (
+                <Button type="button" variant="outline" size="sm" onClick={addWhyItem} className="gap-1.5">
+                  <Plus className="w-3.5 h-3.5" />Add item
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Promise Bar */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Promise Bar</CardTitle>
+              <CardDescription>
+                Items shown in the dark bar below the hero. Leave empty to show only the delivery promise from your business type.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {promiseItems.map((item, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <GripVertical className="w-4 h-4 mt-2.5 text-muted-foreground shrink-0" />
+                  <input
+                    className="w-14 border rounded-md px-2 py-1.5 text-base text-center"
+                    placeholder="⚡"
+                    value={item.emoji}
+                    onChange={e => setPromiseItems(p => p.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x))}
+                  />
+                  <div className="flex-1 grid grid-cols-2 gap-2">
+                    <input
+                      className="border rounded-md px-3 py-1.5 text-sm"
+                      placeholder="Label (e.g. 2-Hour Delivery)"
+                      value={item.label}
+                      onChange={e => setPromiseItems(p => p.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                    />
+                    <input
+                      className="border rounded-md px-3 py-1.5 text-sm"
+                      placeholder="Sub-label"
+                      value={item.sub}
+                      onChange={e => setPromiseItems(p => p.map((x, j) => j === i ? { ...x, sub: e.target.value } : x))}
+                    />
+                  </div>
+                  <button type="button" onClick={() => removePromiseItem(i)} className="mt-1.5 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {promiseItems.length < 4 && (
+                <Button type="button" variant="outline" size="sm" onClick={addPromiseItem} className="gap-1.5">
+                  <Plus className="w-3.5 h-3.5" />Add item
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end">
+            <Button onClick={handleSaveStorefrontContent} disabled={contentSaving} className="gap-2">
+              <Save className="w-4 h-4" />
+              {contentSaving ? "Saving…" : "Save Storefront Content"}
             </Button>
           </div>
         </TabsContent>

@@ -57,4 +57,4 @@ prompt
 
 server.log
 # Skills directory
-/skills/
+/skills/public/manifest.json
