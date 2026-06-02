@@ -11,6 +11,7 @@ import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
 import { checkStoreOpen } from '@/lib/core/store';
+import { sendNewOrderEmail } from '@/lib/email-service';
 
 export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER', 'CLIENT_OWNER', 'STORE_MANAGER', 'STORE_OPERATOR', 'BILLING_STAFF', 'INVENTORY_STAFF', 'SUPPORT_STAFF', 'DELIVERY_STAFF'] })(
   async (req) => {
@@ -499,11 +500,70 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           orderId: order.id,
           orderNumber: order.orderNumber,
           orderType: body.orderType,
+          orderSource: 'online',
           totalAmount: order.totalAmount,
+          subtotal: order.subtotal,
+          totalTax: order.totalTax,
+          totalDiscount: order.totalDiscount,
+          deliveryFee: order.deliveryFee,
           customerName: customer.name || user.name,
+          customerPhone: customer.phone || null,
+          deliveryAddress: order.deliveryAddress || null,
+          storeId: body.storeId,
+          items: order.items.map((i) => ({
+            name: i.itemName,
+            variant: i.variantName || null,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            totalPrice: i.totalPrice,
+            isVeg: i.isVeg ?? null,
+          })),
         });
       } catch (wsErr) {
         console.error('[Storefront Orders] WebSocket broadcast error:', wsErr);
+      }
+
+      // Send email notification to business owner (fire-and-forget)
+      try {
+        const business = await db.business.findUnique({
+          where: { id: businessId },
+          select: { name: true, contactEmail: true, slug: true },
+        });
+        const ownerEmail = business?.contactEmail;
+        if (ownerEmail) {
+          const domain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'app.quantixtechnology.in';
+          const dashboardUrl = `https://${domain}/business/${businessId}?page=orders`;
+          sendNewOrderEmail({
+            to: ownerEmail,
+            businessName: business?.name || 'Your Store',
+            orderNumber: order.orderNumber,
+            orderType: body.orderType,
+            customerName: customer.name || user.name,
+            customerPhone: customer.phone || null,
+            customerEmail: customer.email || (user.email?.endsWith('@otp.placeholder') ? null : user.email) || null,
+            items: order.items.map((i) => ({
+              name: i.itemName,
+              variant: i.variantName || null,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              totalPrice: i.totalPrice,
+              isVeg: i.isVeg ?? null,
+            })),
+            subtotal: order.subtotal,
+            totalTax: order.totalTax,
+            totalDiscount: order.totalDiscount,
+            deliveryFee: order.deliveryFee,
+            totalAmount: order.totalAmount,
+            paymentMethod: order.paymentMethod || null,
+            paymentStatus: order.paymentStatus,
+            deliveryAddress: order.deliveryAddress || null,
+            notes: order.notes || null,
+            dashboardUrl,
+            createdAt: order.createdAt,
+          }).catch((e) => console.error('[Storefront Orders] Owner email error:', e));
+        }
+      } catch (emailErr) {
+        console.error('[Storefront Orders] Owner email lookup error:', emailErr);
       }
 
       return NextResponse.json(

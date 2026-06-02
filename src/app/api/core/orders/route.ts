@@ -13,6 +13,8 @@ import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { createOrder, listOrders } from '@/lib/core/order';
 import { emitStoreOrderEvent } from '@/lib/realtime-emitter';
+import { db } from '@/lib/db';
+import { sendNewOrderEmail } from '@/lib/email-service';
 
 // ============================================================================
 // GET — List orders with store isolation
@@ -206,17 +208,78 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     });
 
     // Emit real-time event — scoped to business and store
+    const typedOrder = order as Record<string, unknown>;
+    const orderItems = (typedOrder.items as Array<Record<string, unknown>>) || [];
     try {
       await emitStoreOrderEvent(businessId, body.storeId, 'order:created', {
         orderId: order.id,
-        orderNumber: (order as Record<string, unknown>).orderNumber,
+        orderNumber: typedOrder.orderNumber,
         orderType: body.orderType,
         orderSource: body.orderSource || 'admin',
-        totalAmount: (order as Record<string, unknown>).totalAmount,
-        status: (order as Record<string, unknown>).status,
+        totalAmount: typedOrder.totalAmount,
+        subtotal: typedOrder.subtotal,
+        totalTax: typedOrder.totalTax,
+        totalDiscount: typedOrder.totalDiscount,
+        deliveryFee: typedOrder.deliveryFee,
+        customerName: typedOrder.customerName,
+        customerPhone: typedOrder.customerPhone,
+        deliveryAddress: typedOrder.deliveryAddress,
+        storeId: body.storeId,
+        items: orderItems.map((i) => ({
+          name: i.itemName,
+          variant: i.variantName || null,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          totalPrice: i.totalPrice,
+          isVeg: i.isVeg ?? null,
+        })),
+        status: typedOrder.status,
       });
     } catch (emitErr) {
       console.error('[Orders API] Failed to emit order:created event:', emitErr);
+    }
+
+    // Send email to business owner for online/storefront orders only (not admin/POS manual entries)
+    if (body.orderSource !== 'admin' && body.orderType !== 'POS') {
+      try {
+        const business = await db.business.findUnique({
+          where: { id: businessId },
+          select: { name: true, contactEmail: true },
+        });
+        if (business?.contactEmail) {
+          const domain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'app.quantixtechnology.in';
+          sendNewOrderEmail({
+            to: business.contactEmail,
+            businessName: business.name,
+            orderNumber: String(typedOrder.orderNumber),
+            orderType: body.orderType,
+            customerName: String(typedOrder.customerName || ''),
+            customerPhone: (typedOrder.customerPhone as string) || null,
+            customerEmail: (typedOrder.customerEmail as string) || null,
+            items: orderItems.map((i) => ({
+              name: String(i.itemName),
+              variant: (i.variantName as string) || null,
+              quantity: Number(i.quantity),
+              unitPrice: Number(i.unitPrice),
+              totalPrice: Number(i.totalPrice),
+              isVeg: (i.isVeg as boolean) ?? null,
+            })),
+            subtotal: Number(typedOrder.subtotal) || 0,
+            totalTax: Number(typedOrder.totalTax) || 0,
+            totalDiscount: Number(typedOrder.totalDiscount) || 0,
+            deliveryFee: Number(typedOrder.deliveryFee) || 0,
+            totalAmount: Number(typedOrder.totalAmount) || 0,
+            paymentMethod: (typedOrder.paymentMethod as string) || null,
+            paymentStatus: String(typedOrder.paymentStatus || 'PENDING'),
+            deliveryAddress: (typedOrder.deliveryAddress as string) || null,
+            notes: (typedOrder.notes as string) || null,
+            dashboardUrl: `https://${domain}/business/${businessId}?page=orders`,
+            createdAt: new Date(),
+          }).catch((e) => console.error('[Orders API] Owner email error:', e));
+        }
+      } catch (emailErr) {
+        console.error('[Orders API] Owner email lookup error:', emailErr);
+      }
     }
 
     return NextResponse.json(
