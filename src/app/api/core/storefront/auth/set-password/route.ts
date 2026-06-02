@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
+import { sendWelcomeEmail } from '@/lib/email-service';
 
 function validatePassword(pw: string): string | null {
   if (pw.length < 8) return 'Password must be at least 8 characters';
@@ -19,8 +20,8 @@ function validatePassword(pw: string): string | null {
   return null;
 }
 
-async function resolveCustomerFromToken(authHeader: string | null): Promise<{
-  customerId: string; businessId: string; email: string; userId: string;
+async function resolveCustomerFromToken(authHeader: string | null, requestedBusinessId?: string): Promise<{
+  customerId: string; businessId: string; email: string; userId: string; customerName: string;
 } | null> {
   if (!authHeader) return null;
   const token = authHeader.replace('Bearer ', '').trim();
@@ -32,25 +33,35 @@ async function resolveCustomerFromToken(authHeader: string | null): Promise<{
   });
   if (!rt || rt.expiresAt < new Date() || !rt.user.isActive) return null;
 
+  // Scope by businessId when provided to handle users with multiple tenants.
+  const customerWhere = requestedBusinessId
+    ? { userId: rt.user.id, businessId: requestedBusinessId }
+    : { userId: rt.user.id };
+
   const customer = await db.customer.findFirst({
-    where: { userId: rt.user.id },
-    select: { id: true, businessId: true },
+    where: customerWhere,
+    select: { id: true, businessId: true, name: true },
   });
   if (!customer) return null;
 
-  return { customerId: customer.id, businessId: customer.businessId, email: rt.user.email, userId: rt.user.id };
+  return {
+    customerId: customer.id,
+    businessId: customer.businessId,
+    email: rt.user.email,
+    userId: rt.user.id,
+    customerName: customer.name,
+  };
 }
 
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get('authorization');
-    const ctx = await resolveCustomerFromToken(authHeader);
+    const body = await request.json() as { password: string; confirmPassword: string; businessId?: string };
+    const ctx = await resolveCustomerFromToken(authHeader, body.businessId);
     if (!ctx) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
-
-    const body = await request.json() as { password: string; confirmPassword: string };
-    const { password, confirmPassword } = body;
+    const { password, confirmPassword } = body as { password: string; confirmPassword: string; businessId?: string };
 
     if (!password || !confirmPassword) {
       return NextResponse.json({ success: false, error: 'password and confirmPassword are required' }, { status: 400 });
@@ -101,6 +112,22 @@ export async function POST(request: Request) {
     }).catch(() => null);
 
     console.log(`[storefront/auth/set-password] ok customerId=${ctx.customerId} email=${ctx.email}`);
+
+    // Send welcome email on first-time password setup
+    const business = await db.business.findUnique({
+      where: { id: ctx.businessId },
+      select: { name: true, slug: true },
+    }).catch(() => null);
+
+    if (business) {
+      const storefrontDomain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN ?? 'quantixtechnology.in';
+      sendWelcomeEmail({
+        to: ctx.email,
+        customerName: ctx.customerName,
+        businessName: business.name,
+        storefrontUrl: `https://${business.slug}.${storefrontDomain}`,
+      }).catch(() => null); // non-blocking, non-fatal
+    }
 
     await db.activityLog.create({
       data: {

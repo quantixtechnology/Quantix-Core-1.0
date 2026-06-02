@@ -3,21 +3,26 @@
 // ============================================================================
 // StorefrontAuth — Email-first authentication flow
 //
-// Flow:
-//   1. "email"    → user enters email; check-customer API determines next step
-//   2. "register" → new users fill Name + Phone (email pre-filled)
-//                   → phone uniqueness validated → OTP sent
-//   3. "login"    → existing users with password get OTP | Password tabs
-//                   → existing users without password go straight to OTP
-//   4. "otp"      → 6-digit verification code
-//   5. "forgot"   → email input → OTP → new password
-//   6. "reset"    → code + new password form
+// Flows:
+//   NEW CUSTOMER:
+//     email → register (name+phone) → otp → set-initial-password → storefront
 //
-// Rules enforced:
-//   • Customer records are NEVER created before OTP verification.
+//   EXISTING CUSTOMER (password set):
+//     email → login (password only) → storefront
+//
+//   EXISTING CUSTOMER (no password yet):
+//     email → otp-setup (send code) → otp → set-initial-password → storefront
+//
+//   FORGOT PASSWORD:
+//     email → forgot (enter email) → forgot-sent (check email) →
+//     /reset-password?token=xxx (separate page) → storefront
+//
+// Rules:
+//   • OTP is ONLY used for first-time email verification.
+//   • Existing customers with a password NEVER see an OTP option.
+//   • Passwords are MANDATORY — no account is active without one.
+//   • Forgot password uses a tokenised email link, NOT a 6-digit OTP.
 //   • Name is NEVER derived from the email address.
-//   • Phone is required for new registrations, not for login.
-//   • Email OTP is the only OTP mechanism (no SMS).
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from "react"
@@ -25,7 +30,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   Phone, ArrowLeft, Loader2, CheckCircle2, User, Mail,
-  AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, Lock,
+  AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, Lock, KeyRound,
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -34,8 +39,17 @@ interface StorefrontAuthProps {
   nav: WebNav
 }
 
-type AuthView = "email" | "register" | "login" | "otp" | "forgot" | "reset"
-type OtpPurpose = "register" | "login" | "forgot"
+type AuthView =
+  | "email"           // step 1: enter email
+  | "register"        // new user: enter name + phone
+  | "otp-setup"       // existing user with no password: prompt to send OTP
+  | "otp"             // 6-digit OTP entry
+  | "set-initial-password" // new or no-password user: set password after OTP
+  | "login"           // existing user with password: enter password
+  | "forgot"          // forgot password: enter email
+  | "forgot-sent"     // forgot password: "check your email" confirmation
+
+type OtpPurpose = "register" | "login"
 
 const MAX_ATTEMPTS     = 5
 const COOLDOWN_SECONDS = 30
@@ -56,10 +70,10 @@ function normalizePhone(p: string): string {
 
 const PASSWORD_RULES = [
   { label: "8+ characters", test: (p: string) => p.length >= 8 },
-  { label: "Uppercase",    test: (p: string) => /[A-Z]/.test(p) },
-  { label: "Lowercase",    test: (p: string) => /[a-z]/.test(p) },
-  { label: "Number",       test: (p: string) => /[0-9]/.test(p) },
-  { label: "Special char", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+  { label: "Uppercase",     test: (p: string) => /[A-Z]/.test(p) },
+  { label: "Lowercase",     test: (p: string) => /[a-z]/.test(p) },
+  { label: "Number",        test: (p: string) => /[0-9]/.test(p) },
+  { label: "Special char",  test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ]
 
 function useCooldown(seconds = COOLDOWN_SECONDS) {
@@ -90,11 +104,11 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
   const [error,   setError]   = useState("")
   const [success, setSuccess] = useState(false)
 
-  // ── Email entry (step 1) ────────────────────────────────────────────────
+  // ── Email entry ──────────────────────────────────────────────────────────
   const [entryEmail, setEntryEmail] = useState("")
   const isEntryEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entryEmail.trim())
 
-  // ── Registration form (step 2 — new users only) ─────────────────────────
+  // ── Registration form ────────────────────────────────────────────────────
   const [regName,  setRegName]  = useState("")
   const [regPhone, setRegPhone] = useState("")
   const [regEmail, setRegEmail] = useState("")
@@ -104,16 +118,13 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())
   )
 
-  // ── Login (existing users) ──────────────────────────────────────────────
-  const [loginEmail,       setLoginEmail]       = useState("")
-  const [loginPassword,    setLoginPassword]    = useState("")
-  const [showLoginPw,      setShowLoginPw]      = useState(false)
-  const [loginMode,        setLoginMode]        = useState<"otp" | "password">("otp")
-  // True only when the customer has previously set a password — controls tab visibility
-  const [loginHasPassword, setLoginHasPassword] = useState(false)
+  // ── Password login ───────────────────────────────────────────────────────
+  const [loginEmail,    setLoginEmail]    = useState("")
+  const [loginPassword, setLoginPassword] = useState("")
+  const [showLoginPw,   setShowLoginPw]   = useState(false)
   const isPasswordLoginValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.trim()) && loginPassword.length >= 1
 
-  // ── OTP screen ──────────────────────────────────────────────────────────
+  // ── OTP screen ───────────────────────────────────────────────────────────
   const [otpCode,    setOtpCode]    = useState("")
   const [otpEmail,   setOtpEmail]   = useState("")
   const [otpMasked,  setOtpMasked]  = useState("")
@@ -124,22 +135,31 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
   const [attempts,   setAttempts]   = useState(0)
   const cooldown = useCooldown()
 
-  // ── Forgot / Reset ──────────────────────────────────────────────────────
-  const [forgotEmail,   setForgotEmail]   = useState("")
-  const [forgotDevCode, setForgotDevCode] = useState("")
-  const [forgotResolved, setForgotResolved] = useState("")   // actual email after lookup
-  const [forgotMasked,  setForgotMasked]  = useState("")
-  const [resetCode,     setResetCode]     = useState("")
-  const [resetPw,       setResetPw]       = useState("")
-  const [resetConfirm,  setResetConfirm]  = useState("")
-  const [showPw,        setShowPw]        = useState(false)
-  const resetCooldown = useCooldown()
+  // ── OTP setup (no-password existing user) ───────────────────────────────
+  const [otpSetupEmail, setOtpSetupEmail] = useState("")
+
+  // ── Set-initial-password screen (after OTP for new/no-password users) ───
+  // pendingSessionData holds the session returned by verify; used as Bearer
+  // token for set-password and as the final session after password is set.
+  const [pendingSessionData, setPendingSessionData] = useState<Record<string, unknown> | null>(null)
+  const [initPw,       setInitPw]       = useState("")
+  const [initPwConf,   setInitPwConf]   = useState("")
+  const [showInitPw,   setShowInitPw]   = useState(false)
+  const [showInitConf, setShowInitConf] = useState(false)
+  const initPwRules   = PASSWORD_RULES.map(r => ({ ...r, passed: r.test(initPw) }))
+  const initAllPassed = initPwRules.every(r => r.passed)
+  const initPwMatch   = initPw === initPwConf && initPwConf.length > 0
+  const isInitPwValid = initAllPassed && initPwMatch
+
+  // ── Forgot password ──────────────────────────────────────────────────────
+  const [forgotEmail, setForgotEmail] = useState("")
+  const isForgotEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail.trim())
 
   useEffect(() => {
     if (isAuthenticated && !success) nav.goBack("home")
   }, [isAuthenticated, success, nav])
 
-  // ── Helpers ─────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   async function sendOtpEmail(emailAddr: string): Promise<string | undefined> {
     const res = await fetch("/api/core/storefront/auth/send-otp", {
@@ -152,7 +172,10 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     return json.code
   }
 
-  function goToOtp(opts: { email: string; phone: string; name: string; maskedEmail: string; purpose: OtpPurpose; dc?: string }) {
+  function goToOtp(opts: {
+    email: string; phone: string; name: string
+    maskedEmail: string; purpose: OtpPurpose; dc?: string
+  }) {
     setOtpEmail(opts.email)
     setOtpPhone(opts.phone)
     setOtpName(opts.name)
@@ -185,7 +208,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     setTimeout(() => nav.goBack("home"), 900)
   }
 
-  // ── Step 1: email check ─────────────────────────────────────────────────
+  // ── Step 1: email check ──────────────────────────────────────────────────
 
   async function handleEmailCheck() {
     if (!isEntryEmailValid || loading) return
@@ -201,26 +224,26 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
       if (!json.success) throw new Error(json.error || "Check failed")
 
       if (!json.exists) {
-        // New user — show registration form with email pre-filled
+        // New customer — show registration form
         setRegEmail(normEmail)
         setRegName(""); setRegPhone("")
         setView("register")
-      } else {
-        // Existing user — always show the login view so the user can choose.
-        // If they have a password, both OTP and Password tabs appear.
-        // If they don't, only the OTP tab appears (but OTP is not auto-sent —
-        // the user must press "Send Verification Code" explicitly).
+      } else if (json.hasPassword) {
+        // Existing customer with password — show password login only
         setLoginEmail(normEmail)
-        setLoginMode("otp")
-        setLoginHasPassword(json.hasPassword)
+        setLoginPassword("")
         setView("login")
+      } else {
+        // Existing customer without password — OTP to verify, then set password
+        setOtpSetupEmail(normEmail)
+        setView("otp-setup")
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally { setLoading(false) }
   }
 
-  // ── Step 2a: register (new user) ────────────────────────────────────────
+  // ── Step 2a: register (new user) ─────────────────────────────────────────
 
   async function handleRegister() {
     if (!isRegValid || loading) return
@@ -228,7 +251,6 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     const fullPhone = normalizePhone(regPhone)
     const normEmail = normalizeEmail(regEmail)
     try {
-      // Validate phone uniqueness for this business
       const checkRes = await fetch("/api/core/storefront/auth/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -238,15 +260,14 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
       if (!check.success) throw new Error(check.error || "Check failed")
 
       if (check.status === "CONFLICT") {
-        setError(`This mobile number is already registered with a different email (${check.maskedEmail}). Please use that email to login.`)
+        setError(`This mobile number is already registered with a different email (${check.maskedEmail}). Please use that email to sign in.`)
         setLoading(false); return
       }
       if (check.status === "EMAIL_TAKEN") {
-        setError("This email is already linked to a different phone number. Please login instead.")
+        setError("This email is already linked to a different phone number. Please sign in instead.")
         setLoading(false); return
       }
 
-      // Send OTP and proceed to verification
       const dc = await sendOtpEmail(normEmail)
       goToOtp({ email: normEmail, phone: fullPhone, name: regName.trim(), maskedEmail: maskEmail(normEmail), purpose: "register", dc })
     } catch (err) {
@@ -254,21 +275,20 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     } finally { setLoading(false) }
   }
 
-  // ── Step 2b: login — send OTP for existing user ─────────────────────────
+  // ── Step 2b: existing customer with no password — send OTP ───────────────
 
-  async function handleLoginOtp() {
+  async function handleSendSetupOtp() {
     if (loading) return
     setLoading(true); setError("")
-    const normEmail = normalizeEmail(loginEmail)
     try {
-      const dc = await sendOtpEmail(normEmail)
-      goToOtp({ email: normEmail, phone: "", name: "", maskedEmail: maskEmail(normEmail), purpose: "login", dc })
+      const dc = await sendOtpEmail(otpSetupEmail)
+      goToOtp({ email: otpSetupEmail, phone: "", name: "", maskedEmail: maskEmail(otpSetupEmail), purpose: "login", dc })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally { setLoading(false) }
   }
 
-  // ── Step 2b: login — password ────────────────────────────────────────────
+  // ── Step 2c: password login (existing user with password) ────────────────
 
   async function handlePasswordLogin() {
     if (!isPasswordLoginValid || loading) return
@@ -287,7 +307,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     } finally { setLoading(false) }
   }
 
-  // ── OTP verify ──────────────────────────────────────────────────────────
+  // ── Step 3: OTP verify ───────────────────────────────────────────────────
 
   const isLocked = attempts >= MAX_ATTEMPTS
 
@@ -310,7 +330,17 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error || "Invalid code")
-      storeSession(json.data as Record<string, unknown>)
+
+      if (json.requirePasswordSetup) {
+        // OTP verified — customer exists (or is newly created) but has no
+        // password yet.  Store the session tokens and show the Set Password
+        // screen.  storeSession is called AFTER the password is created.
+        setPendingSessionData(json.data as Record<string, unknown>)
+        setInitPw(""); setInitPwConf(""); setError("")
+        setView("set-initial-password")
+      } else {
+        storeSession(json.data as Record<string, unknown>)
+      }
     } catch (err) {
       const next = attempts + 1
       setAttempts(next)
@@ -331,88 +361,66 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     finally { setLoading(false) }
   }
 
-  // ── Forgot password ─────────────────────────────────────────────────────
+  // ── Step 4: set initial password (after OTP) ─────────────────────────────
 
-  const isForgotEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail.trim())
+  async function handleSetInitialPassword() {
+    if (!isInitPwValid || loading || !pendingSessionData) return
+    setLoading(true); setError("")
+    const refreshToken = (pendingSessionData as Record<string, unknown>).refreshToken as string
+    try {
+      const res  = await fetch("/api/core/storefront/auth/set-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${refreshToken}`,
+        },
+        body: JSON.stringify({ password: initPw, confirmPassword: initPwConf, businessId }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Failed to set password")
+      // Password is set — complete the login with the session from verify
+      storeSession(pendingSessionData)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set password")
+    } finally { setLoading(false) }
+  }
 
-  async function handleForgotLookup() {
+  // ── Forgot password ──────────────────────────────────────────────────────
+
+  async function handleForgotSubmit() {
     if (!isForgotEmailValid || loading) return
     setLoading(true); setError("")
     try {
-      const res  = await fetch("/api/core/storefront/auth/forgot", {
+      const res  = await fetch("/api/core/storefront/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizeEmail(forgotEmail), businessId, storeId }),
+        body: JSON.stringify({ email: normalizeEmail(forgotEmail), businessId }),
       })
       const json = await res.json()
-      if (!json.success) throw new Error(json.error || "Lookup failed")
-      if (json.status === "NOT_FOUND") {
-        // Generic message — don't reveal whether account exists
-        setError("If an account with this email exists, a recovery code has been sent.")
-        setLoading(false); return
-      }
-      setForgotResolved(json.email)
-      setForgotMasked(json.maskedEmail)
-      setForgotDevCode(json.code || "")
-      setResetCode(""); setResetPw(""); setResetConfirm("")
-      setView("reset")
-      resetCooldown.start()
-    } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong") }
-    finally { setLoading(false) }
+      if (!json.success) throw new Error(json.error || "Request failed")
+      // Generic success — always show "check your email" (anti-enumeration)
+      setView("forgot-sent")
+    } catch (err) {
+      // Even on error show the same view to avoid leaking email existence
+      setView("forgot-sent")
+    } finally { setLoading(false) }
   }
 
-  // ── Reset password ──────────────────────────────────────────────────────
-
-  const pwRules       = PASSWORD_RULES.map(r => ({ ...r, passed: r.test(resetPw) }))
-  const allRulesPassed = pwRules.every(r => r.passed)
-  const pwMatch        = resetPw === resetConfirm && resetConfirm.length > 0
-  const isResetValid   = resetCode.length === 6 && allRulesPassed && pwMatch
-
-  async function handleReset() {
-    if (!isResetValid || loading) return
-    setLoading(true); setError("")
-    try {
-      const res  = await fetch("/api/core/storefront/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotResolved, code: resetCode, password: resetPw, businessId, storeId }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error || "Reset failed")
-      storeSession(json.data as Record<string, unknown>)
-    } catch (err) { setError(err instanceof Error ? err.message : "Reset failed") }
-    finally { setLoading(false) }
-  }
-
-  async function handleResendResetOtp() {
-    if (resetCooldown.active || loading) return
-    setLoading(true)
-    try {
-      const res  = await fetch("/api/core/storefront/auth/forgot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotResolved, businessId, storeId }),
-      })
-      const json = await res.json()
-      if (json.code) setForgotDevCode(json.code)
-      setResetCode("")
-      resetCooldown.start()
-    } catch { /* ignore */ }
-    finally { setLoading(false) }
-  }
-
-  // ── Title map ───────────────────────────────────────────────────────────
+  // ── Titles ───────────────────────────────────────────────────────────────
 
   const TITLES: Record<AuthView, string> = {
-    email:    "Sign In or Register",
-    register: "Create Account",
-    login:    "Welcome Back",
-    otp:      "Enter Code",
-    forgot:   "Reset Password",
-    reset:    "Set New Password",
+    email:                "Sign In or Register",
+    register:             "Create Account",
+    "otp-setup":          "Verify Your Email",
+    otp:                  "Enter Code",
+    "set-initial-password": "Set Your Password",
+    login:                "Welcome Back",
+    forgot:               "Reset Password",
+    "forgot-sent":        "Check Your Email",
   }
 
   const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
+
   const Err = ({ msg }: { msg: string }) => msg ? (
     <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">
       <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
@@ -453,11 +461,11 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
             </div>
           ) : (
             <>
-              {/* ── STEP 1: EMAIL ENTRY ───────────────────────────────── */}
+              {/* ── STEP 1: EMAIL ENTRY ─────────────────────────────── */}
               {view === "email" && (
                 <>
                   <p className="text-xs text-gray-500 mb-4 text-center">
-                    Enter your email address to continue.
+                    Enter your email to sign in or create an account.
                   </p>
                   <Err msg={error} />
                   <Field icon={<Mail className="w-4 h-4 text-gray-400" />}
@@ -475,12 +483,12 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                 </>
               )}
 
-              {/* ── STEP 2: REGISTRATION (new users) ─────────────────── */}
+              {/* ── STEP 2A: REGISTRATION ──────────────────────────── */}
               {view === "register" && (
                 <>
                   <Back to="email" label="Use a different email" />
                   <p className="text-xs text-gray-500 mb-4">
-                    No account found for this email. Please create one.
+                    No account found. Fill in your details to get started.
                   </p>
                   <Err msg={error} />
                   <Field icon={<User className="w-4 h-4 text-gray-400" />}
@@ -494,48 +502,36 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                 </>
               )}
 
-              {/* ── STEP 2: LOGIN (all existing users) ───────────────── */}
+              {/* ── STEP 2B: EXISTING CUSTOMER — NO PASSWORD (OTP SETUP) */}
+              {view === "otp-setup" && (
+                <>
+                  <Back to="email" label="Use a different email" />
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 mb-4">
+                    <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+                    <p className="text-xs text-amber-800">
+                      This account doesn&apos;t have a password yet. We&apos;ll send a verification code to{" "}
+                      <span className="font-semibold">{maskEmail(otpSetupEmail)}</span> so you can set one.
+                    </p>
+                  </div>
+                  <Err msg={error} />
+                  <PrimaryBtn label="Send Verification Code" loading={loading} disabled={false} onClick={handleSendSetupOtp} color={brandColor} />
+                </>
+              )}
+
+              {/* ── STEP 2C: PASSWORD LOGIN ─────────────────────────── */}
               {view === "login" && (
                 <>
                   <Back to="email" label="Use a different email" />
-
-                  {/* Mode tabs — only rendered when the customer has a password set */}
-                  {loginHasPassword && (
-                    <div className="flex rounded-xl border border-gray-200 p-1 mb-4">
-                      {(["otp", "password"] as const).map(mode => (
-                        <button key={mode}
-                          onClick={() => { setLoginMode(mode); setError("") }}
-                          className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-colors ${loginMode === mode ? "text-white" : "text-gray-500 hover:text-gray-700"}`}
-                          style={loginMode === mode ? { backgroundColor: brandColor } : {}}>
-                          {mode === "otp" ? "Email OTP" : "Password"}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
+                  <p className="text-xs text-gray-500 mb-4">
+                    Enter your password for <span className="font-semibold">{maskEmail(loginEmail)}</span>.
+                  </p>
                   <Err msg={error} />
-
-                  {loginMode === "otp" ? (
-                    <>
-                      <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 mb-4">
-                        <Mail className="w-4 h-4 text-blue-500 shrink-0" />
-                        <p className="text-xs text-blue-800">
-                          A code will be sent to <span className="font-semibold">{maskEmail(loginEmail)}</span>
-                        </p>
-                      </div>
-                      <PrimaryBtn label="Send Verification Code" loading={loading} disabled={false} onClick={handleLoginOtp} color={brandColor} />
-                    </>
-                  ) : (
-                    <>
-                      <PasswordField value={loginPassword} show={showLoginPw}
-                        onChange={v => { setLoginPassword(v); setError("") }}
-                        onToggle={() => setShowLoginPw(v => !v)}
-                        onEnter={handlePasswordLogin}
-                        placeholder="Password *" />
-                      <PrimaryBtn label="Login" loading={loading} disabled={!isPasswordLoginValid} onClick={handlePasswordLogin} color={brandColor} />
-                    </>
-                  )}
-
+                  <PasswordField value={loginPassword} show={showLoginPw}
+                    onChange={v => { setLoginPassword(v); setError("") }}
+                    onToggle={() => setShowLoginPw(v => !v)}
+                    onEnter={handlePasswordLogin}
+                    placeholder="Password *" />
+                  <PrimaryBtn label="Sign In" loading={loading} disabled={!isPasswordLoginValid} onClick={handlePasswordLogin} color={brandColor} />
                   <button onClick={() => { setForgotEmail(loginEmail); setView("forgot"); setError("") }}
                     className="flex items-center justify-center gap-1.5 w-full mt-3 text-xs font-medium transition-colors"
                     style={{ color: brandColor }}>
@@ -544,7 +540,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                 </>
               )}
 
-              {/* ── OTP VERIFICATION ──────────────────────────────────── */}
+              {/* ── STEP 3: OTP VERIFICATION ───────────────────────── */}
               {view === "otp" && (
                 <>
                   <Back to={otpPurpose === "register" ? "register" : "email"} />
@@ -569,7 +565,7 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                     className="w-full h-12 px-4 text-center text-2xl font-bold tracking-[0.5em] border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-colors mb-3"
                     autoFocus
                   />
-                  <PrimaryBtn label="Verify & Continue" loading={loading} disabled={otpCode.length < 6 || isLocked} onClick={handleVerify} color={brandColor} />
+                  <PrimaryBtn label="Verify" loading={loading} disabled={otpCode.length < 6 || isLocked} onClick={handleVerify} color={brandColor} />
                   <div className="flex items-center justify-center mt-3">
                     <button onClick={handleResendOtp} disabled={cooldown.active || loading}
                       className="flex items-center gap-1.5 text-xs font-medium disabled:opacity-40 transition-opacity"
@@ -586,62 +582,20 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                 </>
               )}
 
-              {/* ── FORGOT PASSWORD ───────────────────────────────────── */}
-              {view === "forgot" && (
+              {/* ── STEP 4: SET INITIAL PASSWORD ────────────────────── */}
+              {view === "set-initial-password" && (
                 <>
-                  <Back to="email" />
                   <p className="text-xs text-gray-500 mb-4">
-                    Enter your registered email and we&apos;ll send a recovery code.
+                    Email verified. Create a password for your account.
                   </p>
                   <Err msg={error} />
-                  <Field icon={<Mail className="w-4 h-4 text-gray-400" />}
-                    placeholder="Email Address *" type="email"
-                    value={forgotEmail}
-                    onChange={v => { setForgotEmail(v); setError("") }}
-                    onEnter={handleForgotLookup}
-                  />
-                  <PrimaryBtn label="Send Recovery Code" loading={loading} disabled={!isForgotEmailValid} onClick={handleForgotLookup} color={brandColor} />
-                </>
-              )}
-
-              {/* ── RESET PASSWORD ────────────────────────────────────── */}
-              {view === "reset" && (
-                <>
-                  <Back to="forgot" />
-                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 mb-3">
-                    <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <p className="text-xs text-blue-800">
-                      Recovery code sent to <span className="font-semibold">{forgotMasked}</span>
-                    </p>
-                  </div>
-                  {forgotDevCode && (
-                    <div className="mb-3 bg-amber-50 border border-amber-100 rounded-xl px-3 py-1.5">
-                      <p className="text-xs text-amber-700">Dev: <span className="font-mono font-bold">{forgotDevCode}</span></p>
-                    </div>
-                  )}
-                  <Err msg={error} />
-                  <label className="text-[10px] font-semibold text-gray-600 block mb-1">Verification Code</label>
-                  <input
-                    type="text" inputMode="numeric" placeholder="• • • • • •"
-                    value={resetCode}
-                    onChange={e => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    className="w-full h-11 px-4 text-center text-xl font-bold tracking-[0.4em] border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 mb-3"
-                  />
-                  <div className="flex justify-center mb-4">
-                    <button onClick={handleResendResetOtp} disabled={resetCooldown.active || loading}
-                      className="flex items-center gap-1.5 text-xs font-medium disabled:opacity-40"
-                      style={{ color: resetCooldown.active ? "#9ca3af" : brandColor }}>
-                      <RefreshCw className="w-3 h-3" />
-                      {resetCooldown.active ? `Resend in ${resetCooldown.remaining}s` : "Resend code"}
-                    </button>
-                  </div>
-                  <label className="text-[10px] font-semibold text-gray-600 block mb-1">New Password</label>
-                  <PasswordField value={resetPw} show={showPw}
-                    onChange={v => setResetPw(v)} onToggle={() => setShowPw(v => !v)}
-                    placeholder="New password" />
-                  {resetPw.length > 0 && (
-                    <div className="grid grid-cols-2 gap-1 mb-2">
-                      {pwRules.map(r => (
+                  <PasswordField value={initPw} show={showInitPw}
+                    onChange={v => { setInitPw(v); setError("") }}
+                    onToggle={() => setShowInitPw(v => !v)}
+                    placeholder="New Password *" />
+                  {initPw.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1 mb-3">
+                      {initPwRules.map(r => (
                         <div key={r.label} className="flex items-center gap-1">
                           <CheckCircle2 className={`w-2.5 h-2.5 shrink-0 ${r.passed ? "text-emerald-500" : "text-gray-300"}`} />
                           <span className={`text-[9px] ${r.passed ? "text-emerald-700" : "text-gray-400"}`}>{r.label}</span>
@@ -649,17 +603,59 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
                       ))}
                     </div>
                   )}
-                  <input type="password" placeholder="Confirm password"
-                    value={resetConfirm} onChange={e => setResetConfirm(e.target.value)}
-                    className={`w-full h-11 px-4 border rounded-xl focus:outline-none text-sm mb-1 ${resetConfirm.length > 0 && !pwMatch ? "border-red-300" : "border-gray-200 focus:border-gray-400"}`}
-                  />
-                  {resetConfirm.length > 0 && !pwMatch && (
+                  <PasswordField value={initPwConf} show={showInitConf}
+                    onChange={v => { setInitPwConf(v); setError("") }}
+                    onToggle={() => setShowInitConf(v => !v)}
+                    placeholder="Confirm Password *" />
+                  {initPwConf.length > 0 && !initPwMatch && (
                     <p className="text-[10px] text-red-500 mb-2">Passwords do not match</p>
                   )}
-                  <div className="mt-3">
-                    <PrimaryBtn label="Set Password & Login" loading={loading} disabled={!isResetValid} onClick={handleReset} color={brandColor} />
+                  <div className="mt-1">
+                    <PrimaryBtn label="Set Password & Sign In" loading={loading} disabled={!isInitPwValid} onClick={handleSetInitialPassword} color={brandColor} />
                   </div>
                 </>
+              )}
+
+              {/* ── FORGOT PASSWORD — EMAIL ENTRY ───────────────────── */}
+              {view === "forgot" && (
+                <>
+                  <Back to="email" />
+                  <p className="text-xs text-gray-500 mb-4">
+                    Enter your registered email and we&apos;ll send you a password reset link.
+                  </p>
+                  <Err msg={error} />
+                  <Field icon={<Mail className="w-4 h-4 text-gray-400" />}
+                    placeholder="Email Address *" type="email"
+                    value={forgotEmail}
+                    onChange={v => { setForgotEmail(v); setError("") }}
+                    onEnter={handleForgotSubmit}
+                  />
+                  <PrimaryBtn label="Send Reset Link" loading={loading} disabled={!isForgotEmailValid} onClick={handleForgotSubmit} color={brandColor} />
+                </>
+              )}
+
+              {/* ── FORGOT PASSWORD — SENT CONFIRMATION ─────────────── */}
+              {view === "forgot-sent" && (
+                <div className="flex flex-col items-center gap-4 py-2">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ backgroundColor: `${brandColor}15` }}>
+                    <Mail className="w-7 h-7" style={{ color: brandColor }} />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-gray-900 mb-1">Check your inbox</p>
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      If <span className="font-medium text-gray-700">{forgotEmail}</span> is registered,
+                      you&apos;ll receive a password reset link within a minute.
+                    </p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      The link expires in 15 minutes.
+                    </p>
+                  </div>
+                  <button onClick={() => { setView("email"); setForgotEmail(""); setError("") }}
+                    className="text-xs font-medium transition-colors mt-1"
+                    style={{ color: brandColor }}>
+                    Back to sign in
+                  </button>
+                </div>
               )}
             </>
           )}

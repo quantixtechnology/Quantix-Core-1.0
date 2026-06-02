@@ -136,7 +136,24 @@ export async function POST(request: Request) {
       otpPurpose: purpose,
     });
 
-    return NextResponse.json({ success: true, data: session });
+    // Signal to the frontend that the customer must set a password before
+    // the session is considered active.
+    //
+    // "register" — brand-new customer, never had a password.
+    // "login"    — existing customer whose password was never set (e.g.
+    //              accounts created before the mandatory-password requirement).
+    let requirePasswordSetup = false;
+    if (purpose === 'register') {
+      requirePasswordSetup = true;
+    } else if (purpose === 'login') {
+      const cust = await db.customer.findFirst({
+        where: { businessId, email },
+        select: { isPasswordSet: true, passwordHash: true },
+      });
+      requirePasswordSetup = !cust?.isPasswordSet && !cust?.passwordHash;
+    }
+
+    return NextResponse.json({ success: true, data: session, requirePasswordSetup });
   } catch (error) {
     console.error('[storefront/auth/verify]', error);
     return NextResponse.json({ success: false, error: 'Verification failed' }, { status: 500 });

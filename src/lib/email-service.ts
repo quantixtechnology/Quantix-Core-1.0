@@ -333,6 +333,93 @@ export async function sendPasswordResetEmail(opts: PasswordResetEmailOptions): P
   }
 }
 
+// ── Welcome email template ───────────────────────────────────────────────────
+
+function buildWelcomeHtml(customerName: string, businessName: string, storefrontUrl: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Welcome to ${businessName}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);padding:32px 40px 28px;text-align:center;">
+              <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.85);letter-spacing:1px;text-transform:uppercase;font-weight:600;">Welcome to</p>
+              <h1 style="margin:6px 0 0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">${businessName}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:40px 40px 32px;">
+              <p style="margin:0 0 16px;font-size:16px;color:#111827;font-weight:600;">Hi ${customerName},</p>
+              <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+                Your account has been created and your password is set. You're all ready to shop at <strong>${businessName}</strong>.
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+                <tr>
+                  <td align="center">
+                    <a href="${storefrontUrl}" style="display:inline-block;background:linear-gradient(135deg,#10b981 0%,#059669 100%);color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:8px;">Start Shopping</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.6;">
+                If you have any questions, reply to this email or contact us through the store.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 40px;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#9ca3af;">
+                Powered by <strong style="color:#10b981;">Quantix Technology</strong>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+export interface WelcomeEmailOptions {
+  to: string
+  customerName: string
+  businessName: string
+  storefrontUrl: string
+}
+
+export async function sendWelcomeEmail(opts: WelcomeEmailOptions): Promise<{ sent: boolean; error?: string }> {
+  const { to, customerName, businessName, storefrontUrl } = opts
+
+  const transport = getTransport()
+  if (!transport) {
+    console.warn('[WELCOME EMAIL] SMTP not configured')
+    return { sent: false, error: 'SMTP not configured' }
+  }
+
+  try {
+    await sendWithRetry(transport, {
+      from:    defaultFrom(),
+      to,
+      subject: `Welcome to ${businessName}!`,
+      html:    buildWelcomeHtml(customerName, businessName, storefrontUrl),
+      text:    `Welcome to ${businessName}, ${customerName}!\n\nYour account is ready. Shop now: ${storefrontUrl}\n\nPowered by Quantix Technology`,
+    })
+    console.log('[WELCOME EMAIL SENT]', `Business: ${businessName}`, `| Recipient: ${to}`)
+    return { sent: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'SMTP send failed'
+    console.error('[WELCOME EMAIL ERROR]', `Recipient: ${to}`, `| Error: ${msg}`)
+    return { sent: false, error: msg }
+  }
+}
+
 // ── Generic transactional mailer ─────────────────────────────────────────────
 
 export async function sendTransactionalEmail(

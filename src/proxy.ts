@@ -44,7 +44,7 @@ export default function proxy(request: NextRequest) {
       if (slug && !['www', 'app', 'admin', 'api', 'mail'].includes(slug)) {
         const url = request.nextUrl.clone()
         // Public pages keep their path; all other storefront paths rewrite to /
-        const PUBLIC_PATHS = ['/delete-account']
+        const PUBLIC_PATHS = ['/delete-account', '/reset-password']
         if (!PUBLIC_PATHS.includes(pathname)) {
           url.pathname = '/'
         }
