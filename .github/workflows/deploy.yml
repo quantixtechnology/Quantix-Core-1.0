@@ -102,10 +102,43 @@ jobs:
           cd "$PROJECT"
 
           echo ""
+          echo "── DB backup ────────────────────────────────────────────────"
+          # Back up the production database BEFORE git reset so that
+          # git reset --hard cannot overwrite live data.
+          mkdir -p /root/backups
+          if [ -f "$DB_FILE" ]; then
+            BACKUP="/root/backups/custom.db.$(date +%Y%m%d-%H%M%S).bak"
+            cp "$DB_FILE" "$BACKUP"
+            echo "✅ DB backed up → $BACKUP"
+            # Keep only the 10 most recent backups
+            ls -t /root/backups/custom.db.*.bak 2>/dev/null | tail -n +11 | xargs rm -f || true
+          else
+            echo "ℹ️  No existing DB to back up (first deploy)"
+          fi
+
+          echo ""
           echo "── Git ──────────────────────────────────────────────────────"
           git fetch --quiet origin main
+          # Stash the live DB so git reset --hard cannot overwrite it.
+          # We restore it immediately after, keeping the schema-sync step
+          # (prisma db push) in charge of any structural migrations.
+          mkdir -p "$(dirname "$DB_FILE")"
+          [ -f "$DB_FILE" ] && cp "$DB_FILE" /tmp/quantix_db_preserve.db
           git reset --hard origin/main
+          [ -f /tmp/quantix_db_preserve.db ] && cp /tmp/quantix_db_preserve.db "$DB_FILE" && rm /tmp/quantix_db_preserve.db
           echo "Commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty='%s')"
+
+          echo ""
+          echo "── DATABASE_URL in project .env ─────────────────────────────"
+          # Ensure DATABASE_URL is present in the project root .env so that
+          # Next.js loadEnvConfig (called from standalone/server.js with CWD as
+          # project root) always finds it — belt AND suspenders alongside the
+          # ecosystem.config.js env block and the standalone/.env written below.
+          touch "$PROJECT/.env"
+          # Remove any old DATABASE_URL line then prepend the correct one
+          grep -v "^DATABASE_URL=" "$PROJECT/.env" > /tmp/env_tmp || true
+          { echo "DATABASE_URL=file:$DB_FILE"; cat /tmp/env_tmp; } > "$PROJECT/.env"
+          echo "✅ DATABASE_URL written to $PROJECT/.env"
 
           echo ""
           echo "── npm install ──────────────────────────────────────────────"
@@ -114,6 +147,7 @@ jobs:
 
           echo ""
           echo "── Prisma ───────────────────────────────────────────────────"
+          mkdir -p "$(dirname "$DB_FILE")"
           npx prisma generate 2>&1 | tail -2
           npx prisma db push --accept-data-loss 2>&1 | tail -2
           echo "✅ Schema synced"
@@ -134,6 +168,8 @@ jobs:
           if [ -d "$STANDALONE" ]; then
             cp -r "$PROJECT/.next/static" "$STANDALONE/.next/" 2>/dev/null || true
             cp -r "$PROJECT/public"        "$STANDALONE/"       2>/dev/null || true
+            # Write the standalone .env — Next.js standalone server.js may load
+            # env from __dirname (the standalone dir) on some Next.js versions.
             {
               echo "DATABASE_URL=file:$DB_FILE"
               echo "PORT=3000"
@@ -141,14 +177,20 @@ jobs:
               grep -v "^DATABASE_URL\|^PORT\|^HOSTNAME" "$PROJECT/.env" 2>/dev/null || true
             } > "$STANDALONE/.env"
             echo "✅ Assets + .env written to standalone"
+          else
+            echo "❌ Standalone directory not found — build may have failed"
+            exit 1
           fi
 
           echo ""
           echo "── PM2 ──────────────────────────────────────────────────────"
           if pm2 list 2>/dev/null | grep -q "quantix"; then
+            # --update-env picks up the new DATABASE_URL from ecosystem.config.js
             pm2 restart quantix --update-env
           else
-            pm2 start npm --name quantix -- start
+            # Use ecosystem.config.js so the env block (including DATABASE_URL)
+            # is always applied — never use 'pm2 start npm' which bypasses it.
+            pm2 start ecosystem.config.js
           fi
           pm2 save
           pm2 list
