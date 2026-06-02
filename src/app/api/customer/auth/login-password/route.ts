@@ -72,14 +72,26 @@ export async function POST(request: Request) {
       const min = Math.ceil((customer.accountLockedUntil.getTime() - Date.now()) / 60000);
       return NextResponse.json({ success: false, error: `Account locked. Try again in ${min} minute(s).` }, { status: 423 });
     }
-    if (!customer.isPasswordSet || !customer.passwordHash) {
+    // Fall back to User.passwordHash for accounts where password was set on a
+    // different storefront (set-password only wrote to that Customer record;
+    // User.passwordHash is the shared cross-storefront credential).
+    let effectiveHash = customer.passwordHash;
+    if (!effectiveHash) {
+      const userRow = await db.user.findUnique({
+        where: { email },
+        select: { passwordHash: true },
+      });
+      effectiveHash = userRow?.passwordHash ?? null;
+    }
+
+    if (!effectiveHash) {
       return NextResponse.json(
         { success: false, error: 'No password set. Login with OTP or reset your password.' },
         { status: 400 }
       );
     }
 
-    const isValid = await verifyPassword(password, customer.passwordHash);
+    const isValid = await verifyPassword(password, effectiveHash);
     if (!isValid) {
       const fails = customer.failedLoginAttempts + 1;
       const lock = fails >= MAX_FAILED_ATTEMPTS;

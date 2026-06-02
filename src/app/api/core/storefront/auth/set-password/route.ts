@@ -94,6 +94,12 @@ export async function POST(request: Request) {
       },
     });
 
+    // Sync to User so check-customer returns hasPassword:true on all storefronts
+    await db.user.update({
+      where: { id: ctx.userId },
+      data: { passwordHash },
+    }).catch(() => null);
+
     console.log(`[storefront/auth/set-password] ok customerId=${ctx.customerId} email=${ctx.email}`);
 
     await db.activityLog.create({
