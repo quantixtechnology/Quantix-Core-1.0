@@ -47,13 +47,17 @@ jobs:
         run: |
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
           SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+          # Unix timestamp sent as x-deploy-timestamp so the server can reject
+          # replayed/recorded requests older than 5 minutes.
+          TIMESTAMP=$(date +%s)
 
-          echo "POST ${APP_URL}/api/deploy"
+          echo "POST ${APP_URL}/api/deploy (timestamp=${TIMESTAMP})"
 
           HTTP_CODE=$(curl -s -o /tmp/trigger_body.json -w "%{http_code}" \
             --max-time 30 \
             -X POST \
             -H "x-deploy-secret: ${SECRET}" \
+            -H "x-deploy-timestamp: ${TIMESTAMP}" \
             -H "Content-Type: application/json" \
             "${APP_URL}/api/deploy")
 
