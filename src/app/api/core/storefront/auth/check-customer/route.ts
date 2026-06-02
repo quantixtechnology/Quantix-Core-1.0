@@ -76,8 +76,10 @@ export async function POST(request: Request) {
     // Check Customer table first (by email + businessId)
     const customer = await db.customer.findFirst({
       where: { businessId, email },
-      select: { isPasswordSet: true, isLoginDisabled: true },
+      select: { id: true, isPasswordSet: true, isLoginDisabled: true, passwordHash: true },
     });
+
+    console.log(`[check-customer] email=${email} businessId=${businessId} customer=${JSON.stringify(customer ? { id: customer.id, isPasswordSet: customer.isPasswordSet, hasHash: !!customer.passwordHash } : null)}`);
 
     if (customer) {
       if (customer.isLoginDisabled) {
@@ -91,15 +93,17 @@ export async function POST(request: Request) {
       // But reset-password writes to User.passwordHash without updating
       // Customer.isPasswordSet, so we must also check User.passwordHash —
       // a non-null hash means the user has a working password on any storefront.
-      let hasPassword = customer.isPasswordSet;
+      let hasPassword = customer.isPasswordSet || !!customer.passwordHash;
       if (!hasPassword) {
         const userRow = await db.user.findUnique({
           where:  { email },
-          select: { passwordHash: true },
+          select: { id: true, passwordHash: true },
         });
+        console.log(`[check-customer] User lookup email=${email} found=${!!userRow} userHasHash=${!!userRow?.passwordHash}`);
         hasPassword = !!userRow?.passwordHash;
       }
 
+      console.log(`[check-customer] RESULT path=primary exists=true hasPassword=${hasPassword}`);
       return NextResponse.json({
         success: true,
         exists: true,
@@ -129,7 +133,7 @@ export async function POST(request: Request) {
         // All Customer records for this user in this business
         customerProfiles: {
           where: { businessId },
-          select: { id: true, isPasswordSet: true, isLoginDisabled: true, email: true },
+          select: { id: true, isPasswordSet: true, isLoginDisabled: true, email: true, passwordHash: true },
         },
         // Keep BusinessUser for the staff-role guard below
         businessUsers: {
@@ -138,6 +142,8 @@ export async function POST(request: Request) {
         },
       },
     });
+
+    console.log(`[check-customer] fallback path email=${email} businessId=${businessId} userFound=${!!user} profiles=${user?.customerProfiles?.length ?? 0} userHasHash=${!!user?.passwordHash}`);
 
     if (user) {
       const profile = user.customerProfiles[0];
@@ -160,7 +166,8 @@ export async function POST(request: Request) {
           }).catch(() => { /* non-fatal */ });
         }
 
-        const hasPassword = profile.isPasswordSet || !!user.passwordHash;
+        const hasPassword = profile.isPasswordSet || !!profile.passwordHash || !!user.passwordHash;
+        console.log(`[check-customer] RESULT path=fallback exists=true hasPassword=${hasPassword} profile.isPasswordSet=${profile.isPasswordSet} profile.hasHash=${!!profile.passwordHash} user.hasHash=${!!user.passwordHash}`);
         return NextResponse.json({ success: true, exists: true, hasPassword });
       }
 
@@ -177,6 +184,7 @@ export async function POST(request: Request) {
     }
 
     // Genuinely new customer for this business
+    console.log(`[check-customer] RESULT path=not-found exists=false`);
     return NextResponse.json({ success: true, exists: false, hasPassword: false });
   } catch (error) {
     console.error('[storefront/auth/check-customer]', error);
