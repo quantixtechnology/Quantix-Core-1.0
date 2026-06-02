@@ -107,8 +107,8 @@ export function StorefrontLayout({ children, brandColor, nav, currentStore, onOp
 
             {/* Actions */}
             <div className="flex items-center gap-2 ml-auto">
-              {/* Install App — between search and cart; auto-hides when unsupported/installed */}
-              <InstallAppButton mode="pwa" brandColor={brandColor} />
+              {/* Install App — always visible between search and cart */}
+              <InstallAppButton brandColor={brandColor} />
 
               {/* Cart */}
               <button
