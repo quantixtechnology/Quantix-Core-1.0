@@ -1,22 +1,16 @@
 name: Deploy to Hostinger VPS
 
-# ─── Deployment architecture ───────────────────────────────────────────────────
-# A GitHub Actions self-hosted runner is installed ON the VPS
-# (/root/actions-runner). The runner maintains an outbound HTTPS connection
-# to GitHub — no inbound SSH, no firewall changes needed.
+# ─── Why webhook instead of SSH? ──────────────────────────────────────────────
+# Hostinger's firewall silently drops inbound TCP from GitHub Actions runner
+# IPs. Instead of the runner SSHing IN to the VPS, the runner POSTs an HTTPS
+# webhook to the running app (port 443 is always open). The app spawns
+# deploy-local.sh as a DETACHED process that survives the PM2 restart which
+# happens mid-build. GitHub Actions then polls /api/deploy/status until the
+# script reports "success" or "failed".
 #
-# On push to main the runner receives the job and executes
-# scripts/deploy-local.sh directly on the VPS. This is simpler than the
-# webhook approach: no GitHub Secrets, no HTTP polling, no timing issues.
-#
-# One-time setup (run once on the VPS):
-#   1. Get a registration token:
-#        github.com → quantixtechnology/Quantix-Core-1.0 →
-#        Settings → Actions → Runners → New self-hosted runner → copy token
-#   2. Run: bash /root/Quantix-Core-1.0/scripts/install-runner.sh <TOKEN>
-#   3. The runner service starts automatically and persists across reboots.
-#
-# After that, every push to main deploys automatically.
+# Required GitHub Secrets:
+#   DEPLOY_WEBHOOK_SECRET  — random string ≥32 chars; also in VPS .env
+#   DEPLOY_APP_URL         — e.g. https://app.quantixtechnology.in  (no trailing slash)
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -27,14 +21,102 @@ on:
 
 jobs:
   deploy:
-    name: Deploy
-    runs-on: self-hosted
-    timeout-minutes: 30
+    name: Trigger & Monitor Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
-      # deploy-local.sh handles everything: DB backup → git pull → npm install
-      # → prisma → next build → standalone assets → pm2 restart → health check.
-      # It writes progress to /tmp/quantix-deploy-status.json; the exit code
-      # (0 = success, 1 = failed) drives the workflow pass/fail status.
-      - name: Run deploy script
-        run: bash /root/Quantix-Core-1.0/scripts/deploy-local.sh
+      # ── Step 1: Validate secrets ───────────────────────────────────────────
+      - name: Validate secrets
+        run: |
+          MISSING=""
+          [ -z "${{ secrets.DEPLOY_WEBHOOK_SECRET }}" ] && MISSING="$MISSING DEPLOY_WEBHOOK_SECRET"
+          [ -z "${{ secrets.DEPLOY_APP_URL }}"        ] && MISSING="$MISSING DEPLOY_APP_URL"
+          if [ -n "$MISSING" ]; then
+            echo "❌ Missing required secrets:$MISSING"
+            echo ""
+            echo "Add these in: GitHub repo → Settings → Secrets → Actions"
+            echo "  DEPLOY_WEBHOOK_SECRET  random 32-char string (same value in VPS .env)"
+            echo "  DEPLOY_APP_URL         e.g. https://app.quantixtechnology.in"
+            exit 1
+          fi
+          echo "✅ Secrets present"
+
+      # ── Step 2: Trigger deploy webhook ────────────────────────────────────
+      - name: Trigger deploy webhook
+        run: |
+          APP_URL="${{ secrets.DEPLOY_APP_URL }}"
+          SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+          TIMESTAMP=$(date +%s)
+
+          echo "POST ${APP_URL}/api/deploy (timestamp=${TIMESTAMP})"
+
+          HTTP_CODE=$(curl -s -o /tmp/trigger_body.json -w "%{http_code}" \
+            --max-time 30 \
+            -X POST \
+            -H "x-deploy-secret: ${SECRET}" \
+            -H "x-deploy-timestamp: ${TIMESTAMP}" \
+            -H "Content-Type: application/json" \
+            "${APP_URL}/api/deploy")
+
+          BODY=$(cat /tmp/trigger_body.json 2>/dev/null || echo "{}")
+          echo "HTTP ${HTTP_CODE} — ${BODY}"
+
+          if [ "$HTTP_CODE" = "409" ]; then
+            echo "⚠️  Deploy already in progress — polling status without re-triggering"
+          elif [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Webhook trigger failed (HTTP ${HTTP_CODE})"
+            echo "   Is the app up? curl ${APP_URL}"
+            echo "   Is DEPLOY_WEBHOOK_SECRET set in both GitHub Secrets and VPS .env?"
+            exit 1
+          else
+            echo "✅ Deploy triggered"
+          fi
+
+      # ── Step 3: Poll status until done ────────────────────────────────────
+      - name: Wait for deploy to complete
+        run: |
+          APP_URL="${{ secrets.DEPLOY_APP_URL }}"
+          SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+          MAX_POLLS=40
+          POLL=0
+
+          echo "Polling ${APP_URL}/api/deploy/status …"
+
+          while [ "$POLL" -lt "$MAX_POLLS" ]; do
+            sleep 30
+            POLL=$((POLL + 1))
+
+            RESPONSE=$(curl -s --max-time 20 \
+              -H "x-deploy-secret: ${SECRET}" \
+              "${APP_URL}/api/deploy/status" 2>/dev/null || echo '{"status":"unreachable"}')
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.status  // "unknown"')
+            STEP=$(echo "$RESPONSE"   | jq -r '.step    // ""')
+            MSG=$(echo "$RESPONSE"    | jq -r '.message // ""')
+            COMMIT=$(echo "$RESPONSE" | jq -r '.commit  // ""')
+
+            echo "[$POLL/$MAX_POLLS] status=${STATUS} step=${STEP} — ${MSG}"
+
+            if [ "$STATUS" = "success" ]; then
+              echo ""
+              echo "✅ Deploy complete${COMMIT:+ — commit ${COMMIT}}"
+              echo "─── Last log lines ───────────────────────────────────────"
+              echo "$RESPONSE" | jq -r '.tail[-20:][]? // empty' 2>/dev/null || true
+              exit 0
+            fi
+
+            if [ "$STATUS" = "failed" ]; then
+              echo ""
+              echo "❌ Deploy failed at step: ${STEP}"
+              echo "   ${MSG}"
+              echo "─── Deploy log (last 30 lines) ───────────────────────────"
+              echo "$RESPONSE" | jq -r '.tail[-30:][]? // empty' 2>/dev/null || true
+              exit 1
+            fi
+          done
+
+          echo "⏱  Timed out after $((MAX_POLLS * 30))s"
+          echo "   Check VPS: pm2 logs quantix --lines 50"
+          echo "   Status:    cat /tmp/quantix-deploy-status.json"
+          exit 1
