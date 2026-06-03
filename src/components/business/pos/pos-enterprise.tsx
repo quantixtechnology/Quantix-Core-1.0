@@ -915,6 +915,27 @@ export function POSEnterprise() {
   const [customerName, setCustomerName] = useState("")
   const [orderContext, setOrderContext] = useState<Record<string, unknown>>({})
 
+  // ── Customer search (real DB customers) ──────────────────────────────────
+  const [realCustomers, setRealCustomers] = useState<{ id: string; name: string; phone: string | null }[]>([])
+  const [customerSearch, setCustomerSearch] = useState("")
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false)
+
+  useEffect(() => {
+    if (!businessId) return
+    fetch(`/api/core/businesses/${businessId}/customers?limit=200`, { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setRealCustomers(d.data || []) })
+      .catch(() => {})
+  }, [businessId])
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase()
+    if (!q) return realCustomers.slice(0, 20)
+    return realCustomers.filter(
+      (c) => c.name.toLowerCase().includes(q) || (c.phone ?? "").includes(q)
+    ).slice(0, 20)
+  }, [realCustomers, customerSearch])
+
   useEffect(() => { setCart([]); setOrderContext({}); setSearch("") }, [plugin.id])
 
   const addToCart = useCallback((product: Product, variant: ProductVariant, meta?: Record<string, unknown>) => {
@@ -928,7 +949,7 @@ export function POSEnterprise() {
   const addCustomItem = useCallback((item: Omit<CartItem, "quantity">) => setCart((p) => [...p, { ...item, quantity: 1 }]), [])
   const updateQty = useCallback((idx: number, delta: number) => setCart((p) => p.map((item, i) => i === idx ? { ...item, quantity: item.quantity + delta } : item).filter((item) => item.quantity > 0)), [])
   const removeItem = useCallback((idx: number) => setCart((p) => p.filter((_, i) => i !== idx)), [])
-  const clearCart = () => { setCart([]); setCustomerPhone(""); setCustomerName(""); setOrderContext({}) }
+  const clearCart = () => { setCart([]); setCustomerPhone(""); setCustomerName(""); setCustomerSearch(""); setOrderContext({}) }
 
   // Keyboard navigation (search input)
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1173,9 +1194,47 @@ export function POSEnterprise() {
         {/* Customer */}
         <div className="flex gap-1.5 px-2 py-1.5 border-b shrink-0">
           <User className="size-3.5 text-muted-foreground shrink-0 mt-2" />
-          <div className="flex-1 flex gap-1">
-            <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Phone" className="h-7 text-xs flex-1" />
-            <Input value={customerName}  onChange={(e) => setCustomerName(e.target.value)}  placeholder="Name"  className="h-7 text-xs w-20" />
+          <div className="flex-1 relative">
+            <Input
+              value={customerSearch}
+              onChange={(e) => {
+                setCustomerSearch(e.target.value)
+                setCustomerDropdownOpen(true)
+                if (!e.target.value) { setCustomerPhone(""); setCustomerName("") }
+              }}
+              onFocus={() => setCustomerDropdownOpen(true)}
+              onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 150)}
+              placeholder={customerPhone
+                ? [customerName, customerPhone].filter(Boolean).join(" · ")
+                : "Search customer…"}
+              className="h-7 text-xs w-full"
+            />
+            {customerDropdownOpen && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-popover border rounded shadow-md max-h-40 overflow-y-auto text-xs">
+                {filteredCustomers.length === 0 ? (
+                  <p className="px-2 py-1.5 text-muted-foreground">
+                    {realCustomers.length === 0 ? "No customers found" : "No matches"}
+                  </p>
+                ) : (
+                  filteredCustomers.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="w-full text-left px-2 py-1.5 hover:bg-accent flex items-center justify-between gap-1"
+                      onMouseDown={() => {
+                        setCustomerPhone(c.phone ?? "")
+                        setCustomerName(c.name)
+                        setCustomerSearch("")
+                        setCustomerDropdownOpen(false)
+                      }}
+                    >
+                      <span className="font-medium truncate">{c.name}</span>
+                      {c.phone && <span className="text-muted-foreground shrink-0">{c.phone}</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
 
