@@ -173,8 +173,12 @@ fi
 # Clear Turbopack cache — stale cache causes "TypeError: generate is not a function".
 rm -rf .next/cache
 
-# Give Node.js up to 1.5 GB heap for the Turbopack build workers.
-NODE_OPTIONS="--max-old-space-size=1536" npm run build 2>&1 | tee -a "$LOG_FILE" || {
+# Run the build with a clean environment. PM2 injects HOSTNAME=0.0.0.0 and PORT=3000
+# into the process tree so the running app binds correctly. These must NOT be
+# present during the build: Turbopack uses HOSTNAME for worker IPC and treats
+# 0.0.0.0 as a connect target (invalid), causing "TypeError: generate is not
+# a function" when the worker binding fails to initialise.
+(unset HOSTNAME PORT; NODE_OPTIONS="--max-old-space-size=1536" npm run build 2>&1 | tee -a "$LOG_FILE") || {
   # Restore the previous standalone so PM2 keeps serving the old version
   if [ -d "/tmp/quantix-standalone-prev" ]; then
     rm -rf .next/standalone
