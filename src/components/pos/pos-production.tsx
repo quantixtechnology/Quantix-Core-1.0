@@ -55,7 +55,8 @@ import { ThermalPrintDialog } from "./thermal-print-dialog";
 import { PrintStyles } from "./print-styles";
 import { getDemoProducts, getDemoCategories, getDemoBusinessOrders, getDemoOrderPrefix, getDemoStoreInfo } from "@/lib/demo-data";
 import { useAdminStore } from "@/stores/admin-store";
-import { getAuthHeaders } from "@/lib/admin-fetch";
+import { authFetch } from "@/lib/admin-fetch";
+import { useBusinessContext } from "@/hooks/use-business-context";
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { formatCurrency, formatIndianDateTime } from "@/lib/utils";
 import { calculatePOSCart, numberToWords } from "@/lib/core/pos";
@@ -107,8 +108,9 @@ function generateBillNumber(prefix: string): string {
 // ============================================================================
 
 export function POSProduction() {
-  // Get business context
-  const { currentBusinessType, currentBusinessId } = useAdminStore()
+  // Get business context — same hook used by Orders view, has adminStore+authStore fallback
+  const { currentBusinessType } = useAdminStore()
+  const { businessId: currentBusinessId } = useBusinessContext()
 
   // ---- Real customers from DB ----
   const [realCustomers, setRealCustomers] = useState<{
@@ -120,12 +122,16 @@ export function POSProduction() {
 
   useEffect(() => {
     if (!currentBusinessId) return
-    fetch(`/api/core/businesses/${currentBusinessId}/customers?limit=200`, {
-      headers: getAuthHeaders(),
-    })
+    authFetch(`/api/core/businesses/${currentBusinessId}/customers?limit=200`)
       .then((r) => r.json())
-      .then((d) => { if (d.success) setRealCustomers(d.data || []) })
-      .catch(() => {})
+      .then((d) => {
+        if (d.success) {
+          setRealCustomers(d.data || [])
+        } else {
+          console.error('[POS] Customer fetch failed:', d.error)
+        }
+      })
+      .catch((err) => console.error('[POS] Customer fetch error:', err))
   }, [currentBusinessId])
 
   const filteredCustomers = useMemo(() => {
