@@ -8,7 +8,9 @@ module.exports = {
     {
       name: 'quantix',
       script: 'node',
-      args: '.next/standalone/server.js',
+      // Next.js 16 standalone nests server.js under the project directory name.
+      // Path: .next/standalone/<dir-name>/server.js
+      args: '.next/standalone/Quantix-Core-1.0/server.js',
       cwd: '/root/Quantix-Core-1.0',
       instances: 1,
       autorestart: true,

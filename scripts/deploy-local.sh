@@ -187,14 +187,22 @@ rm -rf /tmp/quantix-standalone-prev
 log "✅ Build complete"
 
 # ─── Standalone assets ─────────────────────────────────────────────────────────
+# Next.js 16 nests server.js under the project directory name inside standalone:
+#   .next/standalone/<project-dir>/server.js
+# Use find so this works regardless of what name Next.js chooses.
 CURRENT_STEP="assets"
 status "assets" "Copying standalone assets"
 log ""
 log "── Standalone assets ────────────────────────────────────────"
-STANDALONE="$PROJECT/.next/standalone"
-[ -d "$STANDALONE" ] || fail "Standalone directory not found — build may have failed"
-cp -r "$PROJECT/.next/static" "$STANDALONE/.next/" 2>/dev/null || true
-cp -r "$PROJECT/public"       "$STANDALONE/"        2>/dev/null || true
+SERVER_JS=$(find "$PROJECT/.next/standalone" -name "server.js" \
+  -not -path "*/node_modules/*" 2>/dev/null | head -1)
+[ -n "$SERVER_JS" ] || fail "Standalone server.js not found — build may have failed"
+STANDALONE="$(dirname "$SERVER_JS")"
+log "Standalone dir: $STANDALONE"
+# Static assets at the standalone root (where Next.js expects them)
+cp -r "$PROJECT/.next/static" "$PROJECT/.next/standalone/.next/" 2>/dev/null || true
+cp -r "$PROJECT/public"       "$PROJECT/.next/standalone/"        2>/dev/null || true
+# .env written next to server.js so the runtime picks it up regardless of cwd
 {
   echo "DATABASE_URL=file:$DB_FILE"
   echo "PORT=3000"
@@ -204,20 +212,15 @@ cp -r "$PROJECT/public"       "$STANDALONE/"        2>/dev/null || true
 log "✅ Assets + .env written to standalone"
 
 # ─── PM2 restart ───────────────────────────────────────────────────────────────
-# No || true — a PM2 failure means the app is down and must be reported.
-# If pm2 restart fails after a successful build, the old process may already
-# be stopped. pm2 logs will contain the reason.
+# Use startOrRestart so ecosystem.config.js is always the source of truth for
+# the script path. plain `pm2 restart` keeps the old path; `startOrRestart`
+# re-reads the config file, which is what we want after a path change.
 CURRENT_STEP="restart"
 status "restart" "Restarting app via PM2"
 log ""
 log "── PM2 ──────────────────────────────────────────────────────"
-if pm2 list 2>/dev/null | grep -q "quantix"; then
-  pm2 restart quantix --update-env 2>&1 | tee -a "$LOG_FILE" \
-    || fail "pm2 restart failed — check: pm2 logs quantix"
-else
-  pm2 start ecosystem.config.js 2>&1 | tee -a "$LOG_FILE" \
-    || fail "pm2 start failed — check: pm2 logs quantix"
-fi
+pm2 startOrRestart "$PROJECT/ecosystem.config.js" --update-env 2>&1 | tee -a "$LOG_FILE" \
+  || fail "pm2 restart failed — check: pm2 logs quantix"
 pm2 save 2>/dev/null || true
 pm2 list 2>&1 | tee -a "$LOG_FILE"
 
