@@ -25,6 +25,12 @@ module.exports = {
         // Absolute path so the value is stable regardless of CWD.
         // Must match DB_FILE in .github/workflows/deploy.yml.
         DATABASE_URL: 'file:/root/quantix-data/custom.db',
+        // Explicit project root used by /api/deploy to locate deploy-local.sh.
+        // WHY: standalone/server.js calls process.chdir(__dirname), shifting
+        // process.cwd() to .next/standalone/.  Without this, /api/deploy
+        // resolves to the stale standalone copy of deploy-local.sh (frozen at
+        // build time) instead of the live git working-tree script.
+        QUANTIX_PROJECT_DIR: '/root/Quantix-Core-1.0',
       },
       error_file: '/root/logs/quantix-error.log',
       out_file:   '/root/logs/quantix-out.log',
