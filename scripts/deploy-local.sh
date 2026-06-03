@@ -161,12 +161,29 @@ CURRENT_STEP="build"
 status "build" "Running next build (~3-5 min)"
 log ""
 log "── next build ───────────────────────────────────────────────"
-# Clear Turbopack cache — stale cache from a previous build causes
-# "TypeError: generate is not a function" on the next run.
+# Back up the running standalone so PM2 can still start if this build fails.
+# next build clears .next/ before compiling; without this, a failed build
+# leaves server.js missing and the app down until the next successful deploy.
+if [ -d ".next/standalone" ]; then
+  rm -rf /tmp/quantix-standalone-prev
+  cp -r .next/standalone /tmp/quantix-standalone-prev
+  log "Standalone backed up to /tmp/quantix-standalone-prev"
+fi
+
+# Clear Turbopack cache — stale cache causes "TypeError: generate is not a function".
 rm -rf .next/cache
+
 # Give Node.js up to 1.5 GB heap for the Turbopack build workers.
-NODE_OPTIONS="--max-old-space-size=1536" npm run build 2>&1 | tee -a "$LOG_FILE" \
-  || fail "next build failed — production is still running the previous version"
+NODE_OPTIONS="--max-old-space-size=1536" npm run build 2>&1 | tee -a "$LOG_FILE" || {
+  # Restore the previous standalone so PM2 keeps serving the old version
+  if [ -d "/tmp/quantix-standalone-prev" ]; then
+    rm -rf .next/standalone
+    cp -r /tmp/quantix-standalone-prev .next/standalone
+    log "⚠️  Build failed — previous standalone restored, PM2 continues on old version"
+  fi
+  fail "next build failed — previous version restored and still running"
+}
+rm -rf /tmp/quantix-standalone-prev
 log "✅ Build complete"
 
 # ─── Standalone assets ─────────────────────────────────────────────────────────
