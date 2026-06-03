@@ -276,9 +276,11 @@ export async function POST(req: Request) {
   // Timing proof: the intermediate exits in microseconds.  The
   // `pm2 startOrRestart` call in deploy-local.sh happens minutes later
   // (after git pull, npm install, prisma, build).  There is no race.
+  // disown ensures bash does not send SIGHUP to the deploy script when the
+  // intermediate exits, even on systems where huponexit is enabled.
   const intermediate = spawn(
     '/bin/bash',
-    ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 &'],
+    ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown'],
     {
       detached: true,
       stdio:    'ignore',

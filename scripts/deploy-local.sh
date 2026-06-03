@@ -36,6 +36,7 @@ COMMIT=""
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
 # Write status JSON. Never includes env var values — only step names/messages.
+# Atomic: write to a tmp file then rename so readers never see a partial file.
 status() {
   local step="$1" msg="$2" state="${3:-running}"
   local now duration_sec=0
@@ -43,7 +44,7 @@ status() {
   duration_sec=$(( $(date +%s) - START_EPOCH ))
   printf '{"status":"%s","step":"%s","message":"%s","startedAt":"%s","updatedAt":"%s","commit":"%s","durationSeconds":%d}\n' \
     "$state" "$step" "$msg" "$STARTED_AT" "$now" "$COMMIT" "$duration_sec" \
-    > "$STATUS_FILE"
+    > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
 }
 
 fail() {
@@ -54,7 +55,7 @@ fail() {
   duration_sec=$(( $(date +%s) - START_EPOCH ))
   printf '{"status":"failed","step":"%s","message":"%s","startedAt":"%s","updatedAt":"%s","commit":"%s","durationSeconds":%d}\n' \
     "$CURRENT_STEP" "$msg" "$STARTED_AT" "$now" "$COMMIT" "$duration_sec" \
-    > "$STATUS_FILE"
+    > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
   exit 1
 }
 
@@ -270,23 +271,36 @@ log "── PM2 ─────────────────────�
 pm2 startOrRestart "$PROJECT/ecosystem.config.js" --update-env 2>&1 | tee -a "$LOG_FILE" \
   || fail "pm2 restart failed — check: pm2 logs quantix"
 pm2 save 2>/dev/null || true
-pm2 list 2>&1 | tee -a "$LOG_FILE"
+# || true: pm2 list failure must not abort the deploy — the restart already succeeded.
+pm2 list 2>&1 | tee -a "$LOG_FILE" || true
 
 # ─── Health check ──────────────────────────────────────────────────────────────
-# A non-2xx response fails the deploy. The app may have started but be crashing
-# immediately; the old standalone is gone at this point, so we must fail loudly.
+# Retry up to 8 times with 5 s gaps (40 s total window).
+# WHY retry: pm2 startOrRestart returns as soon as the process is "online" at
+# the PM2 level, but the Next.js standalone may still be binding its port and
+# loading modules. A single 15 s sleep was sometimes not enough on a loaded VPS.
+# A non-2xx on every attempt fails the deploy. The old standalone is gone at
+# this point so we must fail loudly — autorestart will keep trying to serve,
+# but CI must know it failed.
 CURRENT_STEP="health"
 status "health" "Checking app health"
 log ""
 log "── Health check ─────────────────────────────────────────────"
-sleep 15
-HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
-  http://localhost:3000 2>/dev/null || echo "000")
+HTTP="000"
+for attempt in 1 2 3 4 5 6 7 8; do
+  sleep 5
+  HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+    http://localhost:3000 2>/dev/null || echo "000")
+  if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
+    log "✅ App healthy (HTTP $HTTP, attempt $attempt)"
+    break
+  fi
+  log "⏳ Attempt $attempt/8 — HTTP $HTTP, retrying…"
+  HTTP="000"
+done
 
-if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
-  log "✅ App healthy (HTTP $HTTP)"
-else
-  log "❌ Health check HTTP $HTTP — PM2 logs:"
+if [ "$HTTP" = "000" ] || ! echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
+  log "❌ Health check failed after 8 attempts (last HTTP $HTTP) — PM2 logs:"
   pm2 logs quantix --lines 30 --nostream 2>/dev/null | tee -a "$LOG_FILE" || true
   fail "App unhealthy after restart (HTTP $HTTP) — check pm2 logs"
 fi
@@ -300,7 +314,7 @@ log "============================================================"
 
 printf '{"status":"success","step":"done","message":"Deploy complete","startedAt":"%s","updatedAt":"%s","commit":"%s","http":"%s","durationSeconds":%d}\n' \
   "$STARTED_AT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$COMMIT" "$HTTP" "$DURATION_SEC" \
-  > "$STATUS_FILE"
+  > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
 
 # ─── Deferred cleanup ──────────────────────────────────────────────────────────
 # Give the CI poller 10 minutes to read the success status and logs, then
