@@ -173,12 +173,32 @@ fi
 # Clear Turbopack cache — stale cache causes "TypeError: generate is not a function".
 rm -rf .next/cache
 
-# Run the build with a clean environment. PM2 injects HOSTNAME=0.0.0.0 and PORT=3000
-# into the process tree so the running app binds correctly. These must NOT be
-# present during the build: Turbopack uses HOSTNAME for worker IPC and treats
-# 0.0.0.0 as a connect target (invalid), causing "TypeError: generate is not
-# a function" when the worker binding fails to initialise.
-(unset HOSTNAME PORT; NODE_OPTIONS="--max-old-space-size=1536" npm run build 2>&1 | tee -a "$LOG_FILE") || {
+# Log the build environment for diagnostics
+log "Node $(node --version) | NPM $(npm --version) | ulimit nofile=$(ulimit -n)"
+
+# Run the build inside a completely clean environment.
+#
+# WHY: PM2 injects variables into the process tree (HOSTNAME=0.0.0.0, PORT,
+# PM2_HOME, pm_id, PM2_USAGE, OTP_MODE, pm2_env.* etc.) that survive even a
+# targeted `unset`. Any of these can confuse Turbopack's native @next/swc
+# binding — HOSTNAME=0.0.0.0 is especially harmful because Turbopack uses
+# HOSTNAME for worker-to-main IPC and 0.0.0.0 is a valid bind address but an
+# invalid connect target, causing "TypeError: generate is not a function" when
+# the worker binding fails to initialise.
+#
+# `env -i` starts with a completely empty environment; we add back only what
+# next build actually requires. Manual builds succeed because the user shell
+# never has PM2's variables set.
+( env -i \
+    HOME="/root" \
+    USER="root" \
+    PATH="$PATH" \
+    LANG="en_US.UTF-8" \
+    NODE_ENV="production" \
+    DATABASE_URL="file:$DB_FILE" \
+    NEXT_TELEMETRY_DISABLED="1" \
+    NODE_OPTIONS="--max-old-space-size=1536" \
+    npm run build 2>&1 | tee -a "$LOG_FILE" ) || {
   # Restore the previous standalone so PM2 keeps serving the old version
   if [ -d "/tmp/quantix-standalone-prev" ]; then
     rm -rf .next/standalone
