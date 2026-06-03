@@ -35,8 +35,9 @@ DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PROJECT="/root/Quantix-Core-1.0"
 DB_FILE="/root/quantix-data/custom.db"
 BACKUP_BASE="/root/backups"
-EXPECTED_GITHUB_HEAD="44375b7"   # Update if HEAD moves forward
+EXPECTED_GITHUB_HEAD="62f5e1d"
 GITHUB_REPO="quantixtechnology/Quantix-Core-1.0"
+BACKUP_FILE=""   # set inside DB backup block; initialised here to avoid unbound-var under set -u
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
@@ -246,7 +247,7 @@ echo -e "  ${BOLD}New commit${RESET}       $NEW_COMMIT_SHORT — $NEW_COMMIT_MSG
 echo -e "  ${BOLD}Commits deployed${RESET} $COMMITS_BEHIND"
 echo -e "  ${BOLD}Full commit hash${RESET} $NEW_COMMIT"
 echo ""
-echo -e "  ${BOLD}DB backup${RESET}        $BACKUP_FILE"
+echo -e "  ${BOLD}DB backup${RESET}        ${BACKUP_FILE:-"(skipped — DB file not at $DB_FILE)"}"
 echo -e "  ${BOLD}App backup${RESET}       $APP_BACKUP ($BACKUP_SIZE)"
 echo ""
 echo -e "  ${BOLD}PM2 status${RESET}"
