@@ -161,17 +161,30 @@ CURRENT_STEP="build"
 status "build" "Running next build (~3-5 min)"
 log ""
 log "── next build ───────────────────────────────────────────────"
-# Back up the running standalone so PM2 can still start if this build fails.
-# next build clears .next/ before compiling; without this, a failed build
-# leaves server.js missing and the app down until the next successful deploy.
+# ── Backup running standalone ────────────────────────────────────────────────
+# If this build fails, the restore block below puts this copy back so PM2
+# keeps serving the previous version.
 if [ -d ".next/standalone" ]; then
   rm -rf /tmp/quantix-standalone-prev
   cp -r .next/standalone /tmp/quantix-standalone-prev
   log "Standalone backed up to /tmp/quantix-standalone-prev"
 fi
 
-# Clear the Next.js build cache — stale Turbopack cache can corrupt module state.
-rm -rf .next/cache
+# ── Wipe .next entirely before building ──────────────────────────────────────
+# WHY: Next.js file-tracing (outputFileTracingRoot = project root) includes
+# every file under the root that isn't explicitly excluded.  A previous
+# .next/standalone/ build is itself a full project-tree copy.  If .next/
+# is still present when 'next build' runs, the tracer absorbs the old
+# standalone into the new one, producing recursive nesting such as:
+#   .next/standalone/Quantix-Core-1.0/.next/standalone/Quantix-Core-1.0/…
+# That shifts the server.js depth on every deploy, breaks the PM2 args path,
+# and causes 'pm2 startOrRestart' to hang because it can't find server.js.
+#
+# The standalone was backed up above; if the build fails it is restored.
+# outputFileTracingExcludes: { '*': ['.next/**', …] } in next.config.js is
+# belt-and-braces for direct 'next build' runs that bypass this script.
+rm -rf .next
+log "Removed previous .next for clean build (standalone backed up)"
 
 # Log the build environment for diagnostics
 log "Node $(node --version) | NPM $(npm --version) | ulimit nofile=$(ulimit -n)"
@@ -222,15 +235,15 @@ rm -rf /tmp/quantix-standalone-prev
 log "✅ Build complete"
 
 # ─── Standalone assets ─────────────────────────────────────────────────────────
-# Next.js 16 nests server.js under the project directory name inside standalone:
-#   .next/standalone/<project-dir>/server.js
-# Use find so this works regardless of what name Next.js chooses.
+# outputFileTracingRoot is set to __dirname (project root) in next.config.js,
+# so server.js lands at .next/standalone/server.js with no subdirectory nesting.
+# The find is kept dynamic so the deploy survives any future path change.
 CURRENT_STEP="assets"
 status "assets" "Copying standalone assets"
 log ""
 log "── Standalone assets ────────────────────────────────────────"
-SERVER_JS=$(find "$PROJECT/.next/standalone" -name "server.js" \
-  -not -path "*/node_modules/*" 2>/dev/null | head -1)
+SERVER_JS=$(find "$PROJECT/.next/standalone" -maxdepth 2 -name "server.js" \
+  -not -path "*/node_modules/*" -not -path "*/.next/*" 2>/dev/null | head -1)
 [ -n "$SERVER_JS" ] || fail "Standalone server.js not found — build may have failed"
 STANDALONE="$(dirname "$SERVER_JS")"
 log "Standalone dir: $STANDALONE"

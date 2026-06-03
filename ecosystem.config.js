@@ -8,9 +8,12 @@ module.exports = {
     {
       name: 'quantix',
       script: 'node',
-      // Next.js 16 standalone nests server.js under the project directory name.
-      // Path: .next/standalone/<dir-name>/server.js
-      args: '.next/standalone/Quantix-Core-1.0/server.js',
+      // server.js sits at the root of .next/standalone/ because next.config.js
+      // sets outputFileTracingRoot: __dirname (the project directory itself).
+      // When the tracing root equals the project root, Next.js places all files
+      // directly under standalone/ with no extra subdirectory nesting.
+      // Path: .next/standalone/server.js
+      args: '.next/standalone/server.js',
       cwd: '/root/Quantix-Core-1.0',
       instances: 1,
       autorestart: true,
