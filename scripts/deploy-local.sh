@@ -170,7 +170,7 @@ if [ -d ".next/standalone" ]; then
   log "Standalone backed up to /tmp/quantix-standalone-prev"
 fi
 
-# Clear Turbopack cache — stale cache causes "TypeError: generate is not a function".
+# Clear the Next.js build cache — stale Turbopack cache can corrupt module state.
 rm -rf .next/cache
 
 # Log the build environment for diagnostics
@@ -178,17 +178,27 @@ log "Node $(node --version) | NPM $(npm --version) | ulimit nofile=$(ulimit -n)"
 
 # Run the build inside a completely clean environment.
 #
-# WHY: PM2 injects variables into the process tree (HOSTNAME=0.0.0.0, PORT,
-# PM2_HOME, pm_id, PM2_USAGE, OTP_MODE, pm2_env.* etc.) that survive even a
-# targeted `unset`. Any of these can confuse Turbopack's native @next/swc
-# binding — HOSTNAME=0.0.0.0 is especially harmful because Turbopack uses
-# HOSTNAME for worker-to-main IPC and 0.0.0.0 is a valid bind address but an
-# invalid connect target, causing "TypeError: generate is not a function" when
-# the worker binding fails to initialise.
+# ROOT CAUSE: Next.js 16 uses Turbopack as the default production bundler.
+# Turbopack spawns a build worker (turbopack-build/index.js) that inherits
+# the full process.env via worker.js:81 `...process.env`. PM2 injects
+# HOSTNAME=0.0.0.0 into the entire process tree. Turbopack's native Rust
+# binding uses HOSTNAME for worker-to-main IPC: it binds its server to
+# 0.0.0.0 (valid) but then hands that address to sub-workers as the connect
+# target (invalid — 0.0.0.0 cannot be used as a connection destination).
+# Workers fail to initialise, the native `generate()` callback is never
+# registered, and the build throws "TypeError: generate is not a function"
+# before any route compilation begins.
 #
-# `env -i` starts with a completely empty environment; we add back only what
-# next build actually requires. Manual builds succeed because the user shell
-# never has PM2's variables set.
+# THREE-LAYER DEFENCE:
+#  1. env -i  — strips HOSTNAME=0.0.0.0 (and all other PM2 vars) so the
+#               Turbopack worker never sees the bad address.
+#  2. NEXT_TURBOPACK_USE_WORKER=0 — forces Turbopack to run in-process
+#               (no worker spawn), bypassing IPC entirely as belt-and-braces.
+#  3. next.config.js (CJS) instead of next.config.ts — eliminates the
+#               SWC transpilation step at config-load time, removing a second
+#               native-binary dependency before Turbopack even starts.
+#
+# Manual builds succeed because a developer shell never has HOSTNAME=0.0.0.0.
 ( env -i \
     HOME="/root" \
     USER="root" \
@@ -198,6 +208,7 @@ log "Node $(node --version) | NPM $(npm --version) | ulimit nofile=$(ulimit -n)"
     DATABASE_URL="file:$DB_FILE" \
     NEXT_TELEMETRY_DISABLED="1" \
     NODE_OPTIONS="--max-old-space-size=1536" \
+    NEXT_TURBOPACK_USE_WORKER="0" \
     npm run build 2>&1 | tee -a "$LOG_FILE" ) || {
   # Restore the previous standalone so PM2 keeps serving the old version
   if [ -d "/tmp/quantix-standalone-prev" ]; then
