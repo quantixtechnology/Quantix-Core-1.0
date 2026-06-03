@@ -53,8 +53,9 @@ import {
 } from "@/components/ui/table";
 import { ThermalPrintDialog } from "./thermal-print-dialog";
 import { PrintStyles } from "./print-styles";
-import { getDemoProducts, getDemoCategories, getDemoCustomers, getDemoBusinessOrders, getDemoOrderPrefix, getDemoStoreInfo } from "@/lib/demo-data";
+import { getDemoProducts, getDemoCategories, getDemoBusinessOrders, getDemoOrderPrefix, getDemoStoreInfo } from "@/lib/demo-data";
 import { useAdminStore } from "@/stores/admin-store";
+import { getAuthHeaders } from "@/lib/admin-fetch";
 import { PageHeader } from "@/components/admin/shared/page-header";
 import { formatCurrency, formatIndianDateTime } from "@/lib/utils";
 import { calculatePOSCart, numberToWords } from "@/lib/core/pos";
@@ -106,8 +107,37 @@ function generateBillNumber(prefix: string): string {
 // ============================================================================
 
 export function POSProduction() {
-  // Get demo business context
-  const { currentBusinessType } = useAdminStore()
+  // Get business context
+  const { currentBusinessType, currentBusinessId } = useAdminStore()
+
+  // ---- Real customers from DB ----
+  const [realCustomers, setRealCustomers] = useState<{
+    id: string; name: string; phone: string | null; email: string | null;
+    loyaltyPoints: number; loyaltyTier: string;
+  }[]>([])
+  const [customerSearch, setCustomerSearch] = useState("")
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false)
+
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/core/businesses/${currentBusinessId}/customers?limit=200`, {
+      headers: getAuthHeaders(),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setRealCustomers(d.data || []) })
+      .catch(() => {})
+  }, [currentBusinessId])
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase()
+    if (!q) return realCustomers
+    return realCustomers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.phone ?? "").toLowerCase().includes(q) ||
+        (c.email ?? "").toLowerCase().includes(q)
+    )
+  }, [realCustomers, customerSearch])
 
   // Demo data — context-aware
   const products = useMemo(() => getDemoProducts(currentBusinessType).map((p) => ({
@@ -122,9 +152,7 @@ export function POSProduction() {
     return cats.map((c) => ({ id: c.id, name: c.name, slug: c.slug, productCount: prods.filter((p) => p.categoryId === c.id).length, icon: c.icon, color: c.color, sortOrder: c.sortOrder }))
   }, [currentBusinessType])
 
-  const businessCustomers = useMemo(() => getDemoCustomers(currentBusinessType).map((c) => ({
-    id: c.id, name: c.name, phone: c.phone, email: c.email, totalOrders: c.totalOrders, totalSpent: c.totalSpent, loyaltyPoints: c.loyaltyPoints, tier: c.tier, lastOrder: c.lastOrder,
-  })), [currentBusinessType])
+  // businessCustomers now comes from realCustomers (DB) above
 
   const businessOrders = useMemo(() => getDemoBusinessOrders(currentBusinessType), [currentBusinessType])
 
@@ -214,8 +242,8 @@ export function POSProduction() {
   // ---- Selected customer data ----
   const selectedCustomerData = useMemo(() => {
     if (selectedCustomer === "walk-in") return null;
-    return businessCustomers.find((c) => c.id === selectedCustomer) || null;
-  }, [selectedCustomer]);
+    return realCustomers.find((c) => c.id === selectedCustomer) || null;
+  }, [selectedCustomer, realCustomers]);
 
   // ---- Session duration ----
   const sessionDuration = useMemo(() => {
@@ -407,31 +435,65 @@ export function POSProduction() {
           </div>
           {selectedCustomerData && (
             <Badge variant="outline" className="text-[10px]">
-              {selectedCustomerData.loyaltyPoints} pts · {selectedCustomerData.tier}
+              {selectedCustomerData.loyaltyPoints ?? 0} pts · {selectedCustomerData.loyaltyTier ?? "BRONZE"}
             </Badge>
           )}
         </div>
-        <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
-          <SelectTrigger className="w-full h-9">
-            <SelectValue placeholder="Select customer" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="walk-in">
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="w-3.5 h-3.5" />
+
+        {/* Searchable customer picker */}
+        <div className="relative">
+          <Input
+            placeholder={selectedCustomer !== "walk-in" && selectedCustomerData
+              ? `${selectedCustomerData.name}${selectedCustomerData.phone ? ` · ${selectedCustomerData.phone}` : ""}`
+              : "Search by name or phone…"
+            }
+            value={customerSearch}
+            onChange={(e) => { setCustomerSearch(e.target.value); setCustomerDropdownOpen(true) }}
+            onFocus={() => setCustomerDropdownOpen(true)}
+            onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 150)}
+            className="h-9 text-sm"
+          />
+
+          {/* Clear selection */}
+          {selectedCustomer !== "walk-in" && !customerSearch && (
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onMouseDown={(e) => { e.preventDefault(); setSelectedCustomer("walk-in") }}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Dropdown */}
+          {customerDropdownOpen && (
+            <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-lg max-h-52 overflow-y-auto">
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2 border-b"
+                onMouseDown={() => { setSelectedCustomer("walk-in"); setCustomerSearch(""); setCustomerDropdownOpen(false) }}
+              >
+                <ShoppingCart className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                 <span>Walk-in Customer</span>
-              </div>
-            </SelectItem>
-            {businessCustomers.map((customer) => (
-              <SelectItem key={customer.id} value={customer.id}>
-                <div className="flex items-center gap-2">
-                  <span>{customer.name}</span>
-                  <span className="text-xs text-muted-foreground">{customer.phone}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              </button>
+              {filteredCustomers.length === 0 ? (
+                <p className="px-3 py-2 text-sm text-muted-foreground">No customers found</p>
+              ) : (
+                filteredCustomers.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center justify-between gap-2"
+                    onMouseDown={() => { setSelectedCustomer(c.id); setCustomerSearch(""); setCustomerDropdownOpen(false) }}
+                  >
+                    <span className="font-medium truncate">{c.name}</span>
+                    {c.phone && <span className="text-xs text-muted-foreground shrink-0">{c.phone}</span>}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Cart Items */}

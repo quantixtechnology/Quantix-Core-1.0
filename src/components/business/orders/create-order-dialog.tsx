@@ -209,7 +209,8 @@ export function CreateOrderDialog({
     setLoadingCustomers(true)
     try {
       const res = await fetch(
-        `/api/core/businesses/${businessId}/customers?limit=100`
+        `/api/core/businesses/${businessId}/customers?limit=200`,
+        { headers: getAuthHeaders() }
       )
       const data = await res.json()
       if (data.success) {
