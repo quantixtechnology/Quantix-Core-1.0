@@ -68,7 +68,12 @@ jobs:
           RESOLVE_FLAG=""
           if [ -n "$VPS_IP" ]; then
             HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
-            RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+            # IPv6 addresses must be wrapped in square brackets for curl --resolve
+            if echo "$VPS_IP" | grep -q ':'; then
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:[${VPS_IP}]"
+            else
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+            fi
           fi
 
           echo "POST ${APP_URL}/api/deploy (timestamp=${TIMESTAMP})"
@@ -139,7 +144,11 @@ jobs:
           RESOLVE_FLAG=""
           if [ -n "$VPS_IP" ]; then
             HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
-            RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+            if echo "$VPS_IP" | grep -q ':'; then
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:[${VPS_IP}]"
+            else
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+            fi
           fi
 
           echo "Polling ${APP_URL}/api/deploy/status …"
