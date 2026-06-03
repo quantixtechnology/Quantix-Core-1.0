@@ -1,8 +1,10 @@
-import { resolve } from 'path'
-
 // Next.js instrumentation hook — runs once on server startup (Node.js runtime only).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
+
+  // Dynamic import keeps Node.js-only modules out of the Edge Runtime bundle,
+  // preventing Turbopack from failing when it analyses this file for Edge context.
+  const { resolve } = await import('path')
 
   // ── Log DB path so we can confirm the runtime hits the correct SQLite file ─
   const databaseUrl = process.env.DATABASE_URL
