@@ -11,6 +11,12 @@ name: Deploy to Hostinger VPS
 # Required GitHub Secrets:
 #   DEPLOY_WEBHOOK_SECRET  — random string ≥32 chars; also in VPS .env
 #   DEPLOY_APP_URL         — e.g. https://app.quantixtechnology.in  (no trailing slash)
+#
+# Optional GitHub Secrets:
+#   DEPLOY_VPS_IP          — VPS direct IP (bypasses Cloudflare bot challenge)
+#                            Get it: ssh vps "curl -s ifconfig.me"
+#                            This is needed when Cloudflare returns HTTP 403
+#                            for the /api/deploy webhook call.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -41,18 +47,35 @@ jobs:
             exit 1
           fi
           echo "✅ Secrets present"
+          if [ -n "${{ secrets.DEPLOY_VPS_IP }}" ]; then
+            echo "✅ DEPLOY_VPS_IP set — will bypass Cloudflare via direct VPS IP"
+          else
+            echo "ℹ️  DEPLOY_VPS_IP not set — routing through Cloudflare"
+          fi
 
       # ── Step 2: Trigger deploy webhook ────────────────────────────────────
       - name: Trigger deploy webhook
         run: |
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
           SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+          VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
           TIMESTAMP=$(date +%s)
+
+          # When DEPLOY_VPS_IP is set, use --resolve to connect directly to the VPS
+          # IP while still sending the correct Host header and TLS SNI. This bypasses
+          # Cloudflare's bot-protection challenge (HTTP 403) without changing any
+          # server-side config or touching the Cloudflare dashboard.
+          RESOLVE_FLAG=""
+          if [ -n "$VPS_IP" ]; then
+            HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
+            RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+          fi
 
           echo "POST ${APP_URL}/api/deploy (timestamp=${TIMESTAMP})"
 
           HTTP_CODE=$(curl -s -o /tmp/trigger_body.json -w "%{http_code}" \
             --max-time 30 \
+            $RESOLVE_FLAG \
             -X POST \
             -H "x-deploy-secret: ${SECRET}" \
             -H "x-deploy-timestamp: ${TIMESTAMP}" \
@@ -64,11 +87,42 @@ jobs:
 
           if [ "$HTTP_CODE" = "409" ]; then
             echo "⚠️  Deploy already in progress — polling status without re-triggering"
+
+          elif [ "$HTTP_CODE" = "403" ]; then
+            # Check if this looks like a Cloudflare challenge page
+            if echo "$BODY" | grep -qi "cloudflare\|just a moment\|challenge-platform\|enable javascript"; then
+              echo ""
+              echo "❌ Cloudflare is blocking the webhook (HTTP 403 managed challenge)"
+              echo "   The bot-protection challenge cannot be solved by curl."
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "  Fix option A — Direct VPS IP (recommended, no Cloudflare change)"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "  1. Get your VPS IP:  ssh user@vps 'curl -s ifconfig.me'"
+              echo "  2. GitHub repo → Settings → Secrets and variables → Actions"
+              echo "  3. Add secret:  Name=DEPLOY_VPS_IP  Value=<your VPS IP>"
+              echo "  That's it — next push will route curl directly to the VPS,"
+              echo "  bypassing Cloudflare while keeping TLS valid."
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "  Fix option B — Cloudflare WAF bypass rule"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "  Cloudflare dashboard → Security → WAF → Custom Rules → Create"
+              echo "  Name: Allow deploy webhook"
+              echo "  Expression: (http.request.uri.path eq \"/api/deploy\")"
+              echo "  Action: Skip → Skip all remaining custom rules"
+              echo "  (The x-deploy-secret header still protects the endpoint.)"
+            else
+              echo "❌ Webhook returned 403 — check DEPLOY_WEBHOOK_SECRET matches VPS .env"
+            fi
+            exit 1
+
           elif [ "$HTTP_CODE" != "200" ]; then
             echo "❌ Webhook trigger failed (HTTP ${HTTP_CODE})"
             echo "   Is the app up? curl ${APP_URL}"
             echo "   Is DEPLOY_WEBHOOK_SECRET set in both GitHub Secrets and VPS .env?"
             exit 1
+
           else
             echo "✅ Deploy triggered"
           fi
@@ -78,8 +132,15 @@ jobs:
         run: |
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
           SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
+          VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
           MAX_POLLS=40
           POLL=0
+
+          RESOLVE_FLAG=""
+          if [ -n "$VPS_IP" ]; then
+            HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
+            RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+          fi
 
           echo "Polling ${APP_URL}/api/deploy/status …"
 
@@ -88,6 +149,7 @@ jobs:
             POLL=$((POLL + 1))
 
             RESPONSE=$(curl -s --max-time 20 \
+              $RESOLVE_FLAG \
               -H "x-deploy-secret: ${SECRET}" \
               "${APP_URL}/api/deploy/status" 2>/dev/null || echo '{"status":"unreachable"}')
 
