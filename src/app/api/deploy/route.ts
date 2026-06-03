@@ -150,7 +150,7 @@ export async function POST(req: Request) {
     resolvedScriptPath: scriptPath,
     resolvedVia,
     standaloneConfigSet: !!process.env.__NEXT_PRIVATE_STANDALONE_CONFIG,
-    command:            `bash ${scriptPath}`,
+    command:            `/bin/bash -c '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 &'`,
   })
 
   // ── 1. Secret configured? ─────────────────────────────────────────────────
@@ -250,23 +250,50 @@ export async function POST(req: Request) {
     ...spawnEnv
   } = process.env
 
-  // ── 9. Spawn detached ────────────────────────────────────────────────────
-  // detached:true + unref() = child becomes its own process group and
-  // survives the PM2 restart that occurs during the build step.
-  const child = spawn('bash', [scriptPath], {
-    detached: true,
-    stdio:    'ignore',
-    env:      spawnEnv,
-  })
+  // ── 9. Spawn — double-fork to escape PM2 TreeKill ───────────────────────
+  //
+  // ROOT CAUSE (why single detached spawn was not enough):
+  //   PM2 uses lib/TreeKill.js when restarting the quantix app.  TreeKill
+  //   runs `ps -e -o pid=,ppid=`, builds childrenMap[ppid → [childPids]],
+  //   then recursively collects and kills every descendant of quantix's PID.
+  //   `detached:true` calls setsid() which gives bash its own session and
+  //   process group — but it does NOT change bash's PPID.  At the moment
+  //   TreeKill's `ps` snapshot is taken, bash still has PPID = quantix PID,
+  //   so collect(quantix_pid) reaches bash and killPid(bash_pid, SIGTERM)
+  //   is called.  Bash dies after "[PM2] Applying action restartProcessId",
+  //   the EXIT trap fires (removing the lock), and status stays frozen at
+  //   {status:"running", step:"restart"} forever.
+  //
+  // FIX — double-fork:
+  //   1. Spawn a short-lived intermediate shell (PPID = quantix PID).
+  //   2. Intermediate forks deploy-local.sh as a background job (&),
+  //      then exits immediately (< 1 ms).
+  //   3. Linux reparents the deploy script to init (PPID = 1).
+  //   4. Minutes later, `pm2 startOrRestart` triggers TreeKill.
+  //      `ps` now shows deploy script with PPID = 1 — it is never in
+  //      quantix's descendant chain, so it is never killed.
+  //
+  // Timing proof: the intermediate exits in microseconds.  The
+  // `pm2 startOrRestart` call in deploy-local.sh happens minutes later
+  // (after git pull, npm install, prisma, build).  There is no race.
+  const intermediate = spawn(
+    '/bin/bash',
+    ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 &'],
+    {
+      detached: true,
+      stdio:    'ignore',
+      env:      { ...spawnEnv, DEPLOY_SCRIPT: scriptPath },
+    }
+  )
 
-  child.on('error', (err) => {
-    console.error('[Deploy] Spawn error:', err.message)
+  intermediate.on('error', (err) => {
+    console.error('[Deploy] Failed to launch deploy process:', err.message)
     try { const { unlinkSync } = require('fs'); unlinkSync(LOCK_FILE) } catch { /* ignore */ }
   })
 
-  child.unref()
+  intermediate.unref()
 
-  log('triggered', { pid: child.pid, scriptPath, resolvedVia })
+  log('triggered', { scriptPath, resolvedVia })
 
   return NextResponse.json({
     ok:      true,
