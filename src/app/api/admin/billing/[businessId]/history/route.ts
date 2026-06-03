@@ -44,6 +44,13 @@ export const GET = withMiddleware({
         dueDate: true,
         paidDate: true,
         description: true,
+        gstRate: true,
+        cgstAmount: true,
+        sgstAmount: true,
+        igstAmount: true,
+        totalWithGst: true,
+        extraStores: true,
+        extraStoreAmount: true,
         createdAt: true,
       },
     });

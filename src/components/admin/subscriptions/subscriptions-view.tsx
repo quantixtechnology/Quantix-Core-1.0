@@ -26,7 +26,7 @@ import {
   CreditCard, Search, X, IndianRupee, AlertTriangle, CheckCircle2,
   ArrowUpRight, RefreshCw, Shield, Pencil, PauseCircle,
   CalendarDays, History, Phone, Mail, CheckCheck, Clock,
-  BanknoteIcon, TrendingUp,
+  BanknoteIcon, TrendingUp, Bell, Store,
 } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -64,7 +64,8 @@ interface RenewalRow {
   contactPhone: string | null; contactEmail: string | null
   planTier: string; planName: string
   billingCycle: string; subscriptionStatus: string; renewalStatus: string
-  daysUntilDue: number; amountDue: number
+  daysUntilDue: number; amountDue: number; baseAmountDue: number
+  extraStores: number; extraStoreAmount: number
   currentPeriodStart: string; currentPeriodEnd: string
   nextBillingDate: string; lastPaymentDate: string | null; lastPaymentAmount: number | null
   reminderSentAt: string | null
@@ -183,6 +184,9 @@ export function SubscriptionsView() {
   const [historyBusiness, setHistoryBusiness] = useState<{ id: string; name: string } | null>(null)
   const [historyData, setHistoryData] = useState<BillingHistoryYear[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+
+  // ── Reminder state ──────────────────────────────────────────────────────────
+  const [reminderSending, setReminderSending] = useState<string | null>(null)
 
   // ── Manage plans dialog ─────────────────────────────────────────────────────
   const [managePlansOpen, setManagePlansOpen] = useState(false)
@@ -309,6 +313,24 @@ export function SubscriptionsView() {
       if (json.success) setHistoryData(json.data)
     } catch { toast.error("Failed to load history") }
     finally { setLoadingHistory(false) }
+  }
+
+  // ── Send Reminder handler ───────────────────────────────────────────────────
+  const handleSendReminder = async (businessId: string, businessName: string) => {
+    setReminderSending(businessId)
+    try {
+      const res = await fetch(`/api/admin/billing/${businessId}/send-reminder`, {
+        method: "POST", headers: getAuthHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success(json.warned ? `Reminder logged (email failed: ${json.message})` : `Reminder sent to ${businessName}`)
+        fetchRenewals()
+      } else {
+        toast.error(json.error || "Failed to send reminder")
+      }
+    } catch { toast.error("Failed to send reminder") }
+    finally { setReminderSending(null) }
   }
 
   // ── Edit subscription drawer ────────────────────────────────────────────────
@@ -523,7 +545,14 @@ export function SubscriptionsView() {
                               </TableCell>
                               <TableCell><Badge variant="outline" className="text-[10px]">{row.planTier}</Badge></TableCell>
                               <TableCell><span className="text-[10px]">{row.billingCycle}</span></TableCell>
-                              <TableCell className="text-right font-semibold">{formatCurrency(row.amountDue)}</TableCell>
+                              <TableCell className="text-right">
+                                <div className="font-semibold">{formatCurrency(row.amountDue)}</div>
+                                {row.extraStores > 0 && (
+                                  <div className="flex items-center justify-end gap-0.5 text-[9px] text-amber-600 mt-0.5">
+                                    <Store className="h-2.5 w-2.5" />+{row.extraStores} stores ({formatCurrency(row.extraStoreAmount)})
+                                  </div>
+                                )}
+                              </TableCell>
                               <TableCell>
                                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${cfg.cls}`}>{cfg.label}</span>
                               </TableCell>
@@ -569,6 +598,16 @@ export function SubscriptionsView() {
                                     title="View payment history"
                                   >
                                     <History className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px] gap-1 text-violet-700 hover:bg-violet-50"
+                                    onClick={() => handleSendReminder(row.businessId, row.businessName)}
+                                    disabled={reminderSending === row.businessId}
+                                    title="Send renewal reminder email"
+                                  >
+                                    <Bell className="h-3 w-3" />{reminderSending === row.businessId ? "…" : ""}
                                   </Button>
                                 </div>
                               </TableCell>
@@ -631,6 +670,8 @@ export function SubscriptionsView() {
                   <SelectContent>
                     <SelectItem value="all">All Cycles</SelectItem>
                     <SelectItem value="MONTHLY">Monthly</SelectItem>
+                    <SelectItem value="QUARTERLY">Quarterly</SelectItem>
+                    <SelectItem value="HALF_YEARLY">Half-Yearly</SelectItem>
                     <SelectItem value="YEARLY">Yearly</SelectItem>
                   </SelectContent>
                 </Select>
@@ -666,7 +707,7 @@ export function SubscriptionsView() {
                                 <div className="text-xs text-muted-foreground">{sub.business?.businessType || ""}</div>
                               </TableCell>
                               <TableCell><Badge variant="outline" className="text-xs">{sub.plan?.name || sub.plan?.tier || "Unknown"}</Badge></TableCell>
-                              <TableCell><span className="text-sm">{sub.billingCycle?.toUpperCase() === "YEARLY" ? "Yearly" : "Monthly"}</span></TableCell>
+                              <TableCell><span className="text-sm">{{ MONTHLY: "Monthly", QUARTERLY: "Quarterly", HALF_YEARLY: "Half-Yearly", YEARLY: "Yearly" }[sub.billingCycle?.toUpperCase()] ?? sub.billingCycle}</span></TableCell>
                               <TableCell className="text-right font-medium text-sm">{formatCurrency(effectiveAmount(sub))}</TableCell>
                               <TableCell><StatusBadge status={getSubscriptionDisplayStatus(sub)} /></TableCell>
                               <TableCell><span className="text-sm">{formatDate(sub.nextBillingDate)}</span></TableCell>

@@ -56,7 +56,8 @@ export const GET = withMiddleware({
         lastPaymentAmount: true,
         reminderSentAt: true,
         notes: true,
-        plan: { select: { tier: true, name: true } },
+        allowedStores: true,
+        plan: { select: { tier: true, name: true, maxStores: true } },
         business: {
           select: {
             id: true,
@@ -97,8 +98,11 @@ export const GET = withMiddleware({
         (sub.nextBillingDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
       );
 
-      const amountDue =
+      const baseAmountDue =
         sub.finalAmount ?? sub.subscriptionAmount ?? sub.customPrice ?? sub.planPrice ?? 0;
+      const extraStores = Math.max(0, (sub.allowedStores ?? 1) - (sub.plan.maxStores ?? 1));
+      const extraStoreAmount = extraStores > 0 ? extraStores * 1999 : 0;
+      const amountDue = baseAmountDue + extraStoreAmount;
 
       return {
         subscriptionId: sub.id,
@@ -114,6 +118,9 @@ export const GET = withMiddleware({
         subscriptionStatus: sub.status,
         renewalStatus,
         daysUntilDue,
+        baseAmountDue,
+        extraStores,
+        extraStoreAmount,
         amountDue,
         currentPeriodStart: sub.currentPeriodStart,
         currentPeriodEnd: sub.currentPeriodEnd,

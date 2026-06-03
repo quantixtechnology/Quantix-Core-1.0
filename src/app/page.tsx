@@ -127,6 +127,7 @@ const DashboardView = dynamic(() => import("@/components/admin/dashboard/dashboa
 const LeadsView = dynamic(() => import("@/components/admin/leads/leads-view").then(m => ({ default: m.LeadsView })), { loading: () => <PageLoader /> })
 const BusinessesView = dynamic(() => import("@/components/admin/businesses/businesses-view").then(m => ({ default: m.BusinessesView })), { loading: () => <PageLoader /> })
 const SubscriptionsView = dynamic(() => import("@/components/admin/subscriptions/subscriptions-view").then(m => ({ default: m.SubscriptionsView })), { loading: () => <PageLoader /> })
+const PlatformInvoicesView = dynamic(() => import("@/components/admin/invoices/platform-invoices-view").then(m => ({ default: m.PlatformInvoicesView })), { loading: () => <PageLoader /> })
 const OnboardingView = dynamic(() => import("@/components/admin/onboarding/onboarding-view").then(m => ({ default: m.OnboardingView })), { loading: () => <PageLoader /> })
 const DomainsView = dynamic(() => import("@/components/admin/domains/domains-view").then(m => ({ default: m.DomainsView })), { loading: () => <PageLoader /> })
 const SalesView = dynamic(() => import("@/components/admin/sales/sales-view").then(m => ({ default: m.SalesView })), { loading: () => <PageLoader /> })
@@ -396,6 +397,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
       case "subscriptions": return <SubscriptionsView />
+      case "platform-invoices": return <PlatformInvoicesView />
       case "onboarding": return <OnboardingView />
       case "domains": return <DomainsView />
       case "sales": return <SalesView />

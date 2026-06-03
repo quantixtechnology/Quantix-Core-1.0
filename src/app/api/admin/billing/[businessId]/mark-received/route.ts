@@ -1,19 +1,36 @@
 // ============================================================================
 // Route: POST /api/admin/billing/[businessId]/mark-received
 // Manually records a subscription payment received for a business.
-// Does NOT auto-activate business or stores — purely a manual record.
+// Generates a sequential QTX/YYYY-YY/0001 GST invoice number.
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 
-function generateInvoiceNumber(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const rand = Math.floor(1000 + Math.random() * 9000);
-  return `QTX-${year}${month}-${rand}`;
+const EXTRA_STORE_RATE = 1999;
+const GST_RATE = 18;
+
+function getFinancialYear(date: Date): string {
+  const m = date.getMonth(); // 0-indexed
+  const y = date.getFullYear();
+  const startYear = m >= 3 ? y : y - 1; // April (3) = new FY
+  const endYear = (startYear + 1) % 100;
+  return `${startYear}-${String(endYear).padStart(2, '0')}`;
+}
+
+async function generateInvoiceNumber(date: Date): Promise<string> {
+  const financialYear = getFinancialYear(date);
+  const seq = await db.invoiceSequence.upsert({
+    where: { financialYear },
+    update: { nextVal: { increment: 1 } },
+    create: { financialYear, nextVal: 2 },
+  });
+  const serial = seq.nextVal - 1; // post-update value minus 1 gives us the one we just used
+  // Actually upsert returns the record after update, nextVal is already incremented.
+  // We want the value that was just assigned, which is nextVal - 1 after increment.
+  // For create case: nextVal = 2, so assigned = 1. For update: assigned = old value.
+  return `QTX/${financialYear}/${String(serial).padStart(4, '0')}`;
 }
 
 function addPeriod(date: Date, cycle: string): Date {
@@ -47,6 +64,8 @@ export const POST = withMiddleware({
       periodYear?: number;
       periodLabel?: string;
       paidDate?: string;
+      includeGst?: boolean;
+      isInterState?: boolean;
     };
 
     if (!body.amount || body.amount <= 0) {
@@ -58,19 +77,41 @@ export const POST = withMiddleware({
 
     const sub = await db.businessSubscription.findUnique({
       where: { businessId },
-      select: {
-        id: true,
-        status: true,
-        billingCycle: true,
-        currentPeriodEnd: true,
-        nextBillingDate: true,
-      },
+      include: { plan: true },
     });
     if (!sub) {
       return NextResponse.json({ success: false, error: 'No subscription found for this business' }, { status: 404 });
     }
 
     const paidDate = body.paidDate ? new Date(body.paidDate) : new Date();
+    const includeGst = body.includeGst !== false; // default true
+
+    // Compute extra store charges
+    const extraStores = Math.max(0, (sub.allowedStores ?? 1) - (sub.plan.maxStores ?? 1));
+    const extraStoreAmount = extraStores > 0 ? extraStores * EXTRA_STORE_RATE : 0;
+
+    // GST computation
+    let cgstAmount: number | null = null;
+    let sgstAmount: number | null = null;
+    let igstAmount: number | null = null;
+    let totalWithGst: number | null = null;
+
+    if (includeGst) {
+      const isInterState = body.isInterState ?? false;
+      const gstAmount = Math.round(body.amount * (GST_RATE / 100) * 100) / 100;
+      if (isInterState) {
+        igstAmount = gstAmount;
+        cgstAmount = 0;
+        sgstAmount = 0;
+      } else {
+        cgstAmount = Math.round(gstAmount / 2 * 100) / 100;
+        sgstAmount = Math.round(gstAmount / 2 * 100) / 100;
+        igstAmount = 0;
+      }
+      totalWithGst = Math.round((body.amount + gstAmount + extraStoreAmount) * 100) / 100;
+    }
+
+    const invoiceNumber = await generateInvoiceNumber(paidDate);
 
     // Create BillingRecord
     await db.billingRecord.create({
@@ -79,7 +120,7 @@ export const POST = withMiddleware({
         amount: body.amount,
         currency: 'INR',
         status: 'paid',
-        invoiceNumber: generateInvoiceNumber(),
+        invoiceNumber,
         dueDate: sub.nextBillingDate,
         paidDate,
         paymentMode: body.paymentMode,
@@ -88,14 +129,20 @@ export const POST = withMiddleware({
         remarks: body.remarks ?? null,
         periodYear: body.periodYear ?? paidDate.getFullYear(),
         periodLabel: body.periodLabel ?? null,
-        description: `Manual payment received — ${body.paymentMode}`,
+        description: `Platform subscription — ${sub.plan.name} — ${body.paymentMode}`,
+        gstRate: includeGst ? GST_RATE : null,
+        cgstAmount: cgstAmount ?? null,
+        sgstAmount: sgstAmount ?? null,
+        igstAmount: igstAmount ?? null,
+        totalWithGst: totalWithGst ?? null,
+        extraStores: extraStores > 0 ? extraStores : null,
+        extraStoreAmount: extraStoreAmount > 0 ? extraStoreAmount : null,
       },
     });
 
     // Advance subscription period
     const newPeriodStart = sub.nextBillingDate;
     const newPeriodEnd = addPeriod(newPeriodStart, sub.billingCycle);
-    const newNextBilling = new Date(newPeriodEnd);
 
     await db.businessSubscription.update({
       where: { id: sub.id },
@@ -106,8 +153,7 @@ export const POST = withMiddleware({
         paymentVerifiedAt: paidDate,
         currentPeriodStart: newPeriodStart,
         currentPeriodEnd: newPeriodEnd,
-        nextBillingDate: newNextBilling,
-        // Only auto-restore PAST_DUE → ACTIVE, not SUSPENDED (requires manual decision)
+        nextBillingDate: newPeriodEnd,
         status: sub.status === 'PAST_DUE' ? 'ACTIVE' : undefined,
       },
     });
@@ -124,11 +170,17 @@ export const POST = withMiddleware({
           paymentMode: body.paymentMode,
           receiptReference: body.receiptReference,
           periodLabel: body.periodLabel,
+          invoiceNumber,
+          totalWithGst,
         }),
       },
     });
 
-    return NextResponse.json({ success: true, message: 'Payment recorded successfully' });
+    return NextResponse.json({
+      success: true,
+      message: 'Payment recorded successfully',
+      invoiceNumber,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to record payment';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

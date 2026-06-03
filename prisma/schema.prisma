@@ -1141,6 +1141,13 @@ model BillingRecord {
   remarks                String?
   periodYear             Int?
   periodLabel            String?
+  gstRate                Float?
+  cgstAmount             Float?
+  sgstAmount             Float?
+  igstAmount             Float?
+  totalWithGst           Float?
+  extraStores            Int?
+  extraStoreAmount       Float?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
   subscription           BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
@@ -1149,6 +1156,13 @@ model BillingRecord {
   @@index([status])
   @@index([dueDate])
   @@index([periodYear])
+  @@index([invoiceNumber])
+}
+
+model InvoiceSequence {
+  financialYear String   @id
+  nextVal       Int      @default(1)
+  updatedAt     DateTime @updatedAt
 }
 
 model SubscriptionPlan {

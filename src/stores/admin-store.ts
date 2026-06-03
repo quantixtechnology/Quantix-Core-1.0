@@ -63,6 +63,7 @@ export type AdminPage =
   | "proposals"
   | "proposal-documents"
   | "payment-config"
+  | "platform-invoices"
 
 export type BusinessPage =
   | "dashboard"
