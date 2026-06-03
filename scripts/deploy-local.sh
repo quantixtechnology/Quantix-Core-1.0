@@ -69,18 +69,6 @@ trap 'fail "Unexpected error at step: $CURRENT_STEP (exit $?)"' ERR
 # Runs AFTER the ERR trap so fail() writes the status before the lock is freed.
 trap 'rm -f "$LOCK_FILE"' EXIT
 
-# ─── Concurrent deploy guard ──────────────────────────────────────────────────
-# Secondary check — the API already holds the lock via atomic openSync('wx'),
-# but a manual invocation could race. Check and exit cleanly if locked.
-if [ -f "$LOCK_FILE" ]; then
-  echo "[$(date '+%H:%M:%S')] Deploy already running (lock file exists) — exiting." \
-    >> "$LOG_FILE"
-  # Skip EXIT trap's rm since we don't own the lock
-  trap - EXIT
-  exit 0
-fi
-touch "$LOCK_FILE"
-
 # ─── Rotate log ────────────────────────────────────────────────────────────────
 if [ -f "$LOG_FILE" ]; then
   tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
