@@ -164,7 +164,8 @@ log "── next build ───────────────────
 # Clear Turbopack cache — stale cache from a previous build causes
 # "TypeError: generate is not a function" on the next run.
 rm -rf .next/cache
-npm run build 2>&1 | tee -a "$LOG_FILE" \
+# Give Node.js up to 1.5 GB heap for the Turbopack build workers.
+NODE_OPTIONS="--max-old-space-size=1536" npm run build 2>&1 | tee -a "$LOG_FILE" \
   || fail "next build failed — production is still running the previous version"
 log "✅ Build complete"
 

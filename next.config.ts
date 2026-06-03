@@ -7,12 +7,6 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: false,
 
-  // Explicitly set turbopack root to prevent workspace misdetection
-  // when multiple package-lock.json files exist in parent directories on the VPS.
-  turbopack: {
-    root: process.cwd(),
-  },
-
   experimental: {
     // Raise body size limit for Server Actions to 20 MB.
     // Route Handlers (our upload routes) are NOT affected by this — they read
