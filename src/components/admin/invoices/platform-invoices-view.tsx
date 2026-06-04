@@ -130,8 +130,30 @@ export function PlatformInvoicesView() {
     )
   }, [invoices, searchQuery])
 
-  const handleDownload = (inv: PlatformInvoice) => {
-    window.open(`/api/admin/billing/invoices/${inv.id}/download`, "_blank")
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const handleDownload = async (inv: PlatformInvoice) => {
+    setDownloadingId(inv.id)
+    try {
+      const res = await fetch(`/api/admin/billing/invoices/${inv.id}/download`, {
+        headers: getAuthHeaders(),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string }
+        toast.error(err.error ?? "Failed to generate invoice")
+        return
+      }
+      const html = await res.text()
+      const blob = new Blob([html], { type: "text/html" })
+      const url = URL.createObjectURL(blob)
+      const win = window.open(url, "_blank")
+      if (!win) toast.error("Pop-up blocked — allow pop-ups for this site")
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      toast.error("Failed to generate invoice")
+    } finally {
+      setDownloadingId(null)
+    }
   }
 
   const handleEmail = async (inv: PlatformInvoice) => {
@@ -309,9 +331,12 @@ export function PlatformInvoicesView() {
                             size="sm"
                             className="h-6 w-6 p-0 text-sky-700 hover:bg-sky-50"
                             title="Download / Print Invoice"
+                            disabled={downloadingId === inv.id}
                             onClick={() => handleDownload(inv)}
                           >
-                            <Download className="h-3 w-3" />
+                            {downloadingId === inv.id
+                              ? <RefreshCw className="h-3 w-3 animate-spin" />
+                              : <Download className="h-3 w-3" />}
                           </Button>
                           <Button
                             variant="ghost"
