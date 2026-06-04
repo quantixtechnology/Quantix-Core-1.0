@@ -11,6 +11,7 @@ import { getDemoCategories, getDemoProducts } from "@/lib/demo-data"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Search,
   ChevronDown,
@@ -31,6 +32,7 @@ import {
   Snowflake,
   Leaf,
   MapPin,
+  ShoppingBag,
 } from "lucide-react"
 
 import { getBanners, getOffers } from "@/components/customer/data"
@@ -169,19 +171,19 @@ export function CustomerHome() {
   }, [productsData, demoProducts])
 
   // Banners: live from DB first, fall back to business-type demo banners only if none configured
-  const banners = useMemo(() => {
+  const banners = useMemo<Array<{ id: string; title: string; subtitle: string; color: string; link: string; imageUrl?: string }>>(() => {
     const live = bannersData?.data
     if (Array.isArray(live) && live.length > 0) {
       return (live as unknown as Record<string, unknown>[]).map((b) => ({
-        id: b.id as string,
-        title: b.title as string,
+        id:       b.id as string,
+        title:    b.title as string,
         subtitle: "",
-        color: brandColor,
-        link: (b.link as string | undefined) || "",
+        color:    brandColor,
+        link:     (b.link as string | undefined) || "",
         imageUrl: b.imageUrl as string | undefined,
       }))
     }
-    return getBanners(currentBusinessType)
+    return getBanners(currentBusinessType).map((b) => ({ ...b, imageUrl: undefined }))
   }, [bannersData, currentBusinessType, brandColor])
 
   // Offers: always from business-type config (real promos managed in admin panel / promo codes)
@@ -268,40 +270,61 @@ export function CustomerHome() {
 
       {/* Banner Carousel */}
       <div className="px-4 mb-4">
-        <div className="relative overflow-hidden rounded-2xl h-36">
+        <div className="relative overflow-hidden rounded-2xl h-44 shadow-sm">
           {banners.map((banner, idx) => (
             <div
               key={banner.id}
-              className={`absolute inset-0 transition-all duration-500 ease-in-out flex items-center px-5 ${
-                idx === currentBanner ? "opacity-100 translate-x-0" : "opacity-0 translate-x-full"
+              className={`absolute inset-0 transition-all duration-500 ease-in-out ${
+                idx === currentBanner ? "opacity-100 translate-x-0" : idx < currentBanner ? "opacity-0 -translate-x-full" : "opacity-0 translate-x-full"
               }`}
-              style={{ backgroundColor: banner.color }}
             >
-              <div className="flex-1">
-                <h3 className="text-white font-bold text-lg leading-tight">{banner.title}</h3>
-                <p className="text-white/80 text-sm mt-1">{banner.subtitle}</p>
-                {banner.link && (
-                  <button
-                    onClick={() => setCustomerPage("products")}
-                    className="mt-2 bg-white/20 text-white text-xs font-medium px-3 py-1 rounded-full"
+              {banner.imageUrl ? (
+                <button onClick={() => setCustomerPage("products")} className="w-full h-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={banner.imageUrl}
+                    alt={banner.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.backgroundColor = banner.color }}
+                  />
+                </button>
+              ) : (
+                <div
+                  className="w-full h-full flex items-center px-5"
+                  style={{ backgroundColor: banner.color }}
+                >
+                  <div className="flex-1 min-w-0 pr-4">
+                    <p className="text-white/80 text-xs font-semibold uppercase tracking-widest mb-1">
+                      {businessName}
+                    </p>
+                    <h3 className="text-white font-extrabold text-xl leading-tight">{banner.title}</h3>
+                    <p className="text-white/75 text-[13px] mt-1.5 leading-snug">{banner.subtitle}</p>
+                    <button
+                      onClick={() => setCustomerPage("products")}
+                      className="mt-3 bg-white text-[11px] font-bold px-4 py-1.5 rounded-full shadow-sm transition-opacity active:opacity-80"
+                      style={{ color: banner.color }}
+                    >
+                      Shop Now →
+                    </button>
+                  </div>
+                  <div
+                    className="w-20 h-20 rounded-2xl flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
                   >
-                    Shop Now →
-                  </button>
-                )}
-              </div>
-              <div className="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center">
-                <Leaf className="w-10 h-10 text-white/60" />
-              </div>
+                    <Sparkles className="w-9 h-9 text-white/70" />
+                  </div>
+                </div>
+              )}
             </div>
           ))}
-          {/* Dots */}
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+          {/* Progress dots */}
+          <div className="absolute bottom-2.5 left-5 flex gap-1.5">
             {banners.map((_, idx) => (
               <button
                 key={idx}
                 onClick={() => setCurrentBanner(idx)}
-                className={`w-1.5 h-1.5 rounded-full transition-all ${
-                  idx === currentBanner ? "bg-white w-4" : "bg-white/40"
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  idx === currentBanner ? "w-5 bg-white" : "w-1.5 bg-white/40"
                 }`}
               />
             ))}
@@ -334,10 +357,10 @@ export function CustomerHome() {
       </div>
 
       {/* Offers Row */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between px-4 mb-2">
-          <h2 className="text-sm font-bold text-gray-900">Offers & Deals</h2>
-          <button className="text-xs font-medium" style={{ color: brandColor }}>View All</button>
+      <div className="mb-5">
+        <div className="flex items-center justify-between px-4 mb-3">
+          <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">Offers & Deals</h2>
+          <button className="text-xs font-semibold" style={{ color: brandColor }}>View All</button>
         </div>
         <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
           {offers.map((offer) => (
@@ -360,34 +383,29 @@ export function CustomerHome() {
       </div>
 
       {/* Category Grid */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between px-4 mb-2">
-          <h2 className="text-sm font-bold text-gray-900">Shop by Category</h2>
-          <button
-            onClick={() => setCustomerPage("products")}
-            className="text-xs font-medium" style={{ color: brandColor }}
-          >
+      <div className="mb-5">
+        <div className="flex items-center justify-between px-4 mb-3">
+          <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">Shop by Category</h2>
+          <button onClick={() => setCustomerPage("products")} className="text-xs font-semibold" style={{ color: brandColor }}>
             See All
           </button>
         </div>
-        <div className="grid grid-cols-4 gap-2 px-4">
+        <div className="grid grid-cols-4 gap-3 px-4">
           {categories.slice(0, 8).map((cat) => (
             <button
               key={cat.id}
-              onClick={() => {
-                setCustomerPage("products")
-              }}
-              className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-gray-50 transition-colors"
+              onClick={() => setCustomerPage("products")}
+              className="flex flex-col items-center gap-1.5 p-2 rounded-2xl active:scale-95 transition-transform"
             >
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${cat.color || "#10B981"}15` }}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm"
+                style={{ backgroundColor: `${cat.color || "#10B981"}18` }}
               >
                 <span style={{ color: cat.color || "#10B981" }}>
-                  {categoryIcons[cat.icon || ""] || <Sparkles className="w-6 h-6" />}
+                  {categoryIcons[cat.icon || ""] || <Sparkles className="w-7 h-7" />}
                 </span>
               </div>
-              <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2">
+              <span className="text-[10.5px] font-semibold text-gray-700 text-center leading-tight line-clamp-2 w-full">
                 {cat.name}
               </span>
             </button>
@@ -396,16 +414,13 @@ export function CustomerHome() {
       </div>
 
       {/* Featured Products */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between px-4 mb-2">
+      <div className="mb-5">
+        <div className="flex items-center justify-between px-4 mb-3">
           <div className="flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-amber-500" />
-            <h2 className="text-sm font-bold text-gray-900">Featured Products</h2>
+            <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">Featured Products</h2>
           </div>
-          <button
-            onClick={() => setCustomerPage("products")}
-            className="text-xs font-medium" style={{ color: brandColor }}
-          >
+          <button onClick={() => setCustomerPage("products")} className="text-xs font-semibold" style={{ color: brandColor }}>
             View All
           </button>
         </div>
@@ -415,7 +430,7 @@ export function CustomerHome() {
             No featured products available right now.
           </div>
         ) : (
-          <div className="flex gap-3 px-4 overflow-x-auto pb-1 scrollbar-hide">
+          <div className="flex gap-3 px-4 overflow-x-auto pb-2 scrollbar-hide">
             {featuredProducts.map((product) => {
               const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
               if (!defaultVariant) return null
@@ -425,65 +440,77 @@ export function CustomerHome() {
               return (
                 <div
                   key={product.id}
-                  className="flex-shrink-0 w-36 bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm"
+                  className="flex-shrink-0 w-38 bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm"
+                  style={{ width: "150px" }}
                 >
-                  <button
-                    onClick={() => handleProductClick(product.id)}
-                    className="w-full"
-                  >
+                  <button onClick={() => handleProductClick(product.id)} className="w-full">
                     <div
-                      className="h-28 flex items-center justify-center relative"
-                      style={{ backgroundColor: `${getCatColor(product.categoryId)}10` }}
+                      className="h-32 flex items-center justify-center relative overflow-hidden"
+                      style={{ backgroundColor: `${getCatColor(product.categoryId)}12` }}
                     >
-                      <Leaf className="w-10 h-10 text-gray-300" />
+                      {product.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const t = e.target as HTMLImageElement
+                            t.style.display = "none"
+                            t.nextElementSibling?.classList.remove("hidden")
+                          }}
+                        />
+                      ) : null}
+                      <div className={`${product.image ? "hidden" : ""} flex items-center justify-center absolute inset-0`}>
+                        <ShoppingBag className="w-10 h-10" style={{ color: `${getCatColor(product.categoryId)}50` }} />
+                      </div>
                       {product.isVeg && (
-                        <div className="absolute top-1.5 left-1.5 w-3.5 h-3.5 border border-green-600 flex items-center justify-center rounded-sm">
+                        <div className="absolute top-2 left-2 w-4 h-4 bg-white border-2 border-green-600 flex items-center justify-center rounded-sm shadow-sm">
                           <div className="w-2 h-2 bg-green-600 rounded-full" />
                         </div>
                       )}
                       {savings > 0 && (
-                        <Badge className="absolute top-1.5 right-1.5 text-white text-[9px] px-1 py-0 h-4" style={{ backgroundColor: brandColor }}>
+                        <Badge
+                          className="absolute top-2 right-2 text-white text-[9px] px-1.5 py-0 h-4 font-bold shadow-sm"
+                          style={{ backgroundColor: brandColor }}
+                        >
                           {Math.round((savings / defaultVariant.mrp) * 100)}% OFF
                         </Badge>
                       )}
                     </div>
                   </button>
-                  <div className="p-2">
-                    <p className="text-xs font-medium text-gray-800 line-clamp-1">{product.name}</p>
-                    <p className="text-[10px] text-gray-400">{defaultVariant.name}</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-sm font-bold text-gray-900">{formatINR(defaultVariant.price)}</span>
+                  <div className="p-2.5">
+                    <p className="text-xs font-semibold text-gray-800 line-clamp-1">{product.name}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{defaultVariant.name}</p>
+                    <div className="flex items-baseline gap-1.5 mt-1">
+                      <span className="text-sm font-extrabold text-gray-900">{formatINR(defaultVariant.price)}</span>
                       {savings > 0 && (
                         <span className="text-[10px] text-gray-400 line-through">{formatINR(defaultVariant.mrp)}</span>
                       )}
                     </div>
-                    <div className="mt-1.5">
+                    <div className="mt-2">
                       {cartQty === 0 ? (
                         <Button
                           onClick={() => handleAddToCart(product)}
-                          className="w-full h-7 text-xs font-semibold border rounded-lg"
-                          style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderColor: `${brandColor}40` }}
+                          className="w-full h-7 text-xs font-bold border rounded-xl"
+                          style={{ backgroundColor: `${brandColor}12`, color: brandColor, borderColor: `${brandColor}35` }}
                           variant="ghost"
                           size="sm"
                         >
                           ADD
                         </Button>
                       ) : (
-                        <div className="flex items-center justify-between rounded-lg h-7 px-1" style={{ backgroundColor: brandColor }}>
+                        <div className="flex items-center justify-between rounded-xl h-7 px-1.5" style={{ backgroundColor: brandColor }}>
                           <button
-                            onClick={() =>
-                              cartQty === 1
-                                ? removeItem(product.id, defaultVariant.id)
-                                : updateQuantity(product.id, defaultVariant.id, cartQty - 1)
-                            }
-                            className="w-6 h-6 flex items-center justify-center text-white"
+                            onClick={() => cartQty === 1 ? removeItem(product.id, defaultVariant.id) : updateQuantity(product.id, defaultVariant.id, cartQty - 1)}
+                            className="w-5 h-5 flex items-center justify-center text-white"
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="text-xs font-bold text-white">{cartQty}</span>
+                          <span className="text-xs font-bold text-white w-4 text-center">{cartQty}</span>
                           <button
                             onClick={() => updateQuantity(product.id, defaultVariant.id, cartQty + 1)}
-                            className="w-6 h-6 flex items-center justify-center text-white"
+                            className="w-5 h-5 flex items-center justify-center text-white"
                           >
                             <Plus className="w-3 h-3" />
                           </button>
@@ -523,10 +550,20 @@ export function CustomerHome() {
                     className="flex items-center gap-3 flex-1 min-w-0"
                   >
                     <div
-                      className="w-14 h-14 rounded-lg flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${getCatColor(product.categoryId)}10` }}
+                      className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden"
+                      style={{ backgroundColor: `${getCatColor(product.categoryId)}12` }}
                     >
-                      <Leaf className="w-6 h-6 text-gray-300" />
+                      {product.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                        />
+                      ) : (
+                        <ShoppingBag className="w-6 h-6" style={{ color: `${getCatColor(product.categoryId)}50` }} />
+                      )}
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-gray-800 truncate">{product.name}</p>

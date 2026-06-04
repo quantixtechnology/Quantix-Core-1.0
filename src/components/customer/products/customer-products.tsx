@@ -13,7 +13,7 @@ import { ErrorState } from "@/components/ui/loading-states"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Search, Plus, Minus, Leaf, X, SlidersHorizontal, ChevronDown } from "lucide-react"
+import { Search, Plus, Minus, ShoppingBag, X, SlidersHorizontal, ChevronDown } from "lucide-react"
 
 interface ProductItem {
   id: string
@@ -390,12 +390,13 @@ export function CustomerProducts() {
       {productsLoading ? (
         <div className="grid grid-cols-2 gap-2.5 px-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-              <Skeleton className="h-32 w-full" />
+            <div key={i} className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+              <Skeleton className="h-36 w-full" />
               <div className="p-2.5 space-y-2">
-                <Skeleton className="h-3 w-3/4" />
-                <Skeleton className="h-2 w-1/2" />
-                <Skeleton className="h-6 w-full rounded-lg" />
+                <Skeleton className="h-3 w-4/5 rounded-lg" />
+                <Skeleton className="h-2 w-2/5 rounded-lg" />
+                <Skeleton className="h-4 w-1/3 rounded-lg" />
+                <Skeleton className="h-8 w-full rounded-xl" />
               </div>
             </div>
           ))}
@@ -428,7 +429,7 @@ export function CustomerProducts() {
             return (
               <div
                 key={product.id}
-                className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm"
+                className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm"
               >
                 <button
                   onClick={() => handleProductClick(product.id)}
@@ -436,66 +437,82 @@ export function CustomerProducts() {
                   disabled={isOutOfStock}
                 >
                   <div
-                    className="h-32 flex items-center justify-center relative"
-                    style={{ backgroundColor: `${catColor}10` }}
+                    className="h-36 flex items-center justify-center relative overflow-hidden"
+                    style={{ backgroundColor: `${catColor}12` }}
                   >
-                    <Leaf className="w-10 h-10 text-gray-300" />
+                    {product.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const t = e.target as HTMLImageElement
+                          t.style.display = "none"
+                          t.nextElementSibling?.classList.remove("hidden")
+                        }}
+                      />
+                    ) : null}
+                    <div className={`${product.image ? "hidden" : ""} absolute inset-0 flex items-center justify-center`}>
+                      <ShoppingBag className="w-10 h-10" style={{ color: `${catColor}40` }} />
+                    </div>
                     {product.isVeg && (
-                      <div className="absolute top-1.5 left-1.5 w-3.5 h-3.5 border border-green-600 flex items-center justify-center rounded-sm">
+                      <div className="absolute top-2 left-2 w-4 h-4 bg-white border-2 border-green-600 flex items-center justify-center rounded-sm shadow-sm">
                         <div className="w-2 h-2 bg-green-600 rounded-full" />
                       </div>
                     )}
                     {savings > 0 && !isOutOfStock && (
-                      <Badge className="absolute top-1.5 right-1.5 text-white text-[9px] px-1 py-0 h-4" style={{ backgroundColor: brandColor }}>
+                      <Badge
+                        className="absolute top-2 right-2 text-white text-[9px] px-1.5 py-0 h-4 font-bold shadow-sm"
+                        style={{ backgroundColor: brandColor }}
+                      >
                         {Math.round((savings / defaultVariant.mrp) * 100)}% OFF
                       </Badge>
                     )}
                     {isOutOfStock && (
-                      <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-                        <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-1 rounded">Out of Stock</span>
+                      <div className="absolute inset-0 bg-white/75 flex items-center justify-center">
+                        <span className="text-[11px] font-bold text-gray-500 bg-white px-3 py-1.5 rounded-xl shadow-sm">
+                          Out of Stock
+                        </span>
                       </div>
                     )}
                   </div>
                 </button>
                 <div className="p-2.5">
-                  <button onClick={() => handleProductClick(product.id)} disabled={isOutOfStock}>
-                    <p className="text-xs font-medium text-gray-800 line-clamp-1">{product.name}</p>
-                    <p className="text-[10px] text-gray-400">{defaultVariant.name}</p>
+                  <button onClick={() => handleProductClick(product.id)} disabled={isOutOfStock} className="w-full text-left">
+                    <p className="text-xs font-semibold text-gray-800 line-clamp-2 leading-snug">{product.name}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{defaultVariant.name}</p>
                   </button>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-sm font-bold text-gray-900">{formatINR(defaultVariant.price)}</span>
+                  <div className="flex items-baseline gap-1.5 mt-1.5">
+                    <span className="text-sm font-extrabold text-gray-900">{formatINR(defaultVariant.price)}</span>
                     {savings > 0 && (
                       <span className="text-[10px] text-gray-400 line-through">{formatINR(defaultVariant.mrp)}</span>
                     )}
                   </div>
                   {!isOutOfStock && (
-                    <div className="mt-1.5">
+                    <div className="mt-2">
                       {cartQty === 0 ? (
                         <Button
                           onClick={() => handleAddToCart(product)}
-                          className="w-full h-7 text-xs font-semibold border rounded-lg"
-                          style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderColor: `${brandColor}40` }}
+                          className="w-full h-8 text-xs font-bold border rounded-xl"
+                          style={{ backgroundColor: `${brandColor}12`, color: brandColor, borderColor: `${brandColor}35` }}
                           variant="ghost"
                           size="sm"
                         >
                           ADD
                         </Button>
                       ) : (
-                        <div className="flex items-center justify-between rounded-lg h-7 px-1" style={{ backgroundColor: brandColor }}>
+                        <div className="flex items-center justify-between rounded-xl h-8 px-2" style={{ backgroundColor: brandColor }}>
                           <button
-                            onClick={() =>
-                              cartQty === 1
-                                ? removeItem(product.id, defaultVariant.id)
-                                : updateQuantity(product.id, defaultVariant.id, cartQty - 1)
-                            }
-                            className="w-6 h-6 flex items-center justify-center text-white"
+                            onClick={() => cartQty === 1 ? removeItem(product.id, defaultVariant.id) : updateQuantity(product.id, defaultVariant.id, cartQty - 1)}
+                            className="w-5 h-5 flex items-center justify-center text-white"
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="text-xs font-bold text-white">{cartQty}</span>
+                          <span className="text-xs font-bold text-white w-4 text-center">{cartQty}</span>
                           <button
                             onClick={() => updateQuantity(product.id, defaultVariant.id, cartQty + 1)}
-                            className="w-6 h-6 flex items-center justify-center text-white"
+                            className="w-5 h-5 flex items-center justify-center text-white"
                           >
                             <Plus className="w-3 h-3" />
                           </button>
