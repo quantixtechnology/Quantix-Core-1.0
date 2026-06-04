@@ -126,15 +126,20 @@ function buildInvoiceHtml(opts: {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #111827; background: #fff; }
-  .page { max-width: 800px; margin: 0 auto; padding: 40px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #10B981; padding-bottom: 20px; margin-bottom: 24px; }
-  .brand .logo-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:8px 16px; box-shadow:0 2px 8px rgba(0,0,0,0.08); display:inline-block; margin-bottom:12px; }
-  .brand h1 { font-size: 22px; color: #10B981; font-weight: 800; letter-spacing: -0.5px; }
-  .brand p { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .page { max-width: 800px; margin: 0 auto; padding: 28px 40px 40px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 16px; margin-bottom: 0; }
+  .brand { display: flex; align-items: flex-start; gap: 18px; }
+  .brand img { height: 64px; display: block; object-fit: contain; flex-shrink: 0; }
+  .brand-text h1 { font-size: 20px; color: #111827; font-weight: 800; letter-spacing: -0.3px; line-height: 1.1; }
+  .brand-text .doc-type { font-size: 10px; font-weight: 700; color: #10B981; text-transform: uppercase; letter-spacing: 0.12em; margin-top: 4px; }
+  .brand-text .addr { font-size: 10.5px; color: #6b7280; margin-top: 6px; line-height: 1.55; }
+  .brand-text .gst-num { font-size: 10.5px; color: #374151; font-family: monospace; margin-top: 2px; }
+  .divider { height: 2px; background: linear-gradient(90deg, #10B981, #06b6d4); border-radius: 2px; margin-bottom: 20px; }
   .inv-meta { text-align: right; }
-  .inv-meta .inv-no { font-size: 18px; font-weight: 700; color: #111827; }
-  .inv-meta .inv-label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-top: 8px; }
+  .inv-meta .inv-label { font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+  .inv-meta .inv-no { font-size: 17px; font-weight: 800; color: #111827; letter-spacing: -0.3px; font-family: monospace; }
+  .inv-meta .inv-dates { font-size: 10.5px; color: #6b7280; margin-top: 6px; line-height: 1.7; }
+  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; margin-top: 8px; }
   .status-paid { background: #d1fae5; color: #065f46; }
   .status-pending { background: #fef3c7; color: #92400e; }
   .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
@@ -163,7 +168,7 @@ function buildInvoiceHtml(opts: {
   .footer { border-top: 1px solid #e5e7eb; padding-top: 16px; font-size: 10px; color: #9ca3af; text-align: center; line-height: 1.6; }
   @media print {
     body { background: #fff; }
-    .page { padding: 20px; max-width: 100%; }
+    .page { padding: 16px 20px 20px; max-width: 100%; }
     .no-print { display: none !important; }
   }
 </style>
@@ -172,20 +177,22 @@ function buildInvoiceHtml(opts: {
 <div class="page">
   <div class="header">
     <div class="brand">
-      <div class="logo-card"><img src="${opts.logoUrl}" alt="${opts.sellerName}" style="height:32px;display:block;" /></div>
-      <h1>${opts.sellerName}</h1>
-      <p>Platform Invoice</p>
-      <p style="margin-top:4px;font-size:10px;color:#9ca3af;">${opts.sellerAddress}</p>
-      <p style="font-size:10px;color:#9ca3af;">GSTIN: ${opts.sellerGst}</p>
+      <img src="${opts.logoUrl}" alt="${opts.sellerName}" />
+      <div class="brand-text">
+        <h1>${opts.sellerName}</h1>
+        <div class="doc-type">Tax Invoice</div>
+        <div class="addr">${opts.sellerAddress}</div>
+        <div class="gst-num">GSTIN: ${opts.sellerGst}</div>
+      </div>
     </div>
     <div class="inv-meta">
-      <div class="inv-label">Tax Invoice</div>
+      <div class="inv-label">Invoice Number</div>
       <div class="inv-no">${opts.invoiceNumber}</div>
-      <div style="font-size:11px;color:#6b7280;margin-top:6px;">Date: ${formatDate(opts.invoiceDate)}</div>
-      <div style="font-size:11px;color:#6b7280;">Due: ${formatDate(opts.dueDate)}</div>
+      <div class="inv-dates">Date: ${formatDate(opts.invoiceDate)}<br/>Due: &nbsp;${formatDate(opts.dueDate)}</div>
       <span class="status-badge ${opts.status === 'paid' ? 'status-paid' : 'status-pending'}">${opts.status.toUpperCase()}</span>
     </div>
   </div>
+  <div class="divider"></div>
 
   <div class="parties">
     <div class="party-box">
