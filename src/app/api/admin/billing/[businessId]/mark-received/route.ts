@@ -1,7 +1,7 @@
 // ============================================================================
 // Route: POST /api/admin/billing/[businessId]/mark-received
-// Manually records a subscription payment received for a business.
-// Generates a sequential QTX/YYYY-YY/0001 GST invoice number.
+// Records a subscription payment. Includes all ACTIVE RECURRING add-ons
+// in the invoice line items. Generates sequential QTX/YYYY-YY/0001 invoice.
 // ============================================================================
 
 import { db } from '@/lib/db';
@@ -12,9 +12,9 @@ const EXTRA_STORE_RATE = 1999;
 const GST_RATE = 18;
 
 function getFinancialYear(date: Date): string {
-  const m = date.getMonth(); // 0-indexed
+  const m = date.getMonth();
   const y = date.getFullYear();
-  const startYear = m >= 3 ? y : y - 1; // April (3) = new FY
+  const startYear = m >= 3 ? y : y - 1;
   const endYear = (startYear + 1) % 100;
   return `${startYear}-${String(endYear).padStart(2, '0')}`;
 }
@@ -26,10 +26,7 @@ async function generateInvoiceNumber(date: Date): Promise<string> {
     update: { nextVal: { increment: 1 } },
     create: { financialYear, nextVal: 2 },
   });
-  const serial = seq.nextVal - 1; // post-update value minus 1 gives us the one we just used
-  // Actually upsert returns the record after update, nextVal is already incremented.
-  // We want the value that was just assigned, which is nextVal - 1 after increment.
-  // For create case: nextVal = 2, so assigned = 1. For update: assigned = old value.
+  const serial = seq.nextVal - 1;
   return `QTX/${financialYear}/${String(serial).padStart(4, '0')}`;
 }
 
@@ -83,14 +80,38 @@ export const POST = withMiddleware({
       return NextResponse.json({ success: false, error: 'No subscription found for this business' }, { status: 404 });
     }
 
-    const paidDate = body.paidDate ? new Date(body.paidDate) : new Date();
-    const includeGst = body.includeGst !== false; // default true
+    // Fetch all ACTIVE RECURRING add-ons for this business
+    const activeAddons = await db.addon.findMany({
+      where: { businessId, status: 'ACTIVE', billingType: 'RECURRING' },
+      orderBy: { createdAt: 'asc' },
+    });
 
-    // Compute extra store charges
+    const paidDate = body.paidDate ? new Date(body.paidDate) : new Date();
+    const includeGst = body.includeGst !== false;
+
+    // Extra store charges (legacy system)
     const extraStores = Math.max(0, (sub.allowedStores ?? 1) - (sub.plan.maxStores ?? 1));
     const extraStoreAmount = extraStores > 0 ? extraStores * EXTRA_STORE_RATE : 0;
 
-    // GST computation
+    // Add-on total
+    const addonTotal = activeAddons.reduce((sum, a) => sum + a.amount, 0);
+
+    // Line items array
+    type LineItem = { name: string; description?: string; amount: number; type: string };
+    const lineItems: LineItem[] = [
+      { name: `${sub.plan.name} — Platform Subscription`, amount: body.amount, type: 'SUBSCRIPTION' },
+    ];
+    if (extraStores > 0) {
+      lineItems.push({ name: `Additional Stores (${extraStores} × ₹${EXTRA_STORE_RATE.toLocaleString('en-IN')})`, amount: extraStoreAmount, type: 'EXTRA_STORE' });
+    }
+    for (const addon of activeAddons) {
+      lineItems.push({ name: addon.name, description: addon.description || undefined, amount: addon.amount, type: 'ADDON' });
+    }
+
+    // Base = subscription + extra stores + addons (pre-GST)
+    const baseTotal = body.amount + extraStoreAmount + addonTotal;
+
+    // GST computation on full base
     let cgstAmount: number | null = null;
     let sgstAmount: number | null = null;
     let igstAmount: number | null = null;
@@ -98,7 +119,7 @@ export const POST = withMiddleware({
 
     if (includeGst) {
       const isInterState = body.isInterState ?? false;
-      const gstAmount = Math.round(body.amount * (GST_RATE / 100) * 100) / 100;
+      const gstAmount = Math.round(baseTotal * (GST_RATE / 100) * 100) / 100;
       if (isInterState) {
         igstAmount = gstAmount;
         cgstAmount = 0;
@@ -108,12 +129,11 @@ export const POST = withMiddleware({
         sgstAmount = Math.round(gstAmount / 2 * 100) / 100;
         igstAmount = 0;
       }
-      totalWithGst = Math.round((body.amount + gstAmount + extraStoreAmount) * 100) / 100;
+      totalWithGst = Math.round((baseTotal + gstAmount) * 100) / 100;
     }
 
     const invoiceNumber = await generateInvoiceNumber(paidDate);
 
-    // Create BillingRecord
     await db.billingRecord.create({
       data: {
         businessSubscriptionId: sub.id,
@@ -137,6 +157,8 @@ export const POST = withMiddleware({
         totalWithGst: totalWithGst ?? null,
         extraStores: extraStores > 0 ? extraStores : null,
         extraStoreAmount: extraStoreAmount > 0 ? extraStoreAmount : null,
+        lineItems: lineItems.length > 1 ? JSON.stringify(lineItems) : null,
+        addonTotal: addonTotal > 0 ? addonTotal : null,
       },
     });
 
@@ -158,7 +180,6 @@ export const POST = withMiddleware({
       },
     });
 
-    // Audit log
     await db.activityLog.create({
       data: {
         businessId,
@@ -172,6 +193,8 @@ export const POST = withMiddleware({
           periodLabel: body.periodLabel,
           invoiceNumber,
           totalWithGst,
+          activeAddonCount: activeAddons.length,
+          addonTotal,
         }),
       },
     });
@@ -180,6 +203,8 @@ export const POST = withMiddleware({
       success: true,
       message: 'Payment recorded successfully',
       invoiceNumber,
+      addonCount: activeAddons.length,
+      addonTotal,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to record payment';

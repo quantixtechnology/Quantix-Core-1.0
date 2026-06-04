@@ -1,12 +1,15 @@
 // ============================================================================
 // Route: GET /api/admin/billing/invoices/[invoiceId]/download
-// Returns a print-ready HTML GST invoice for a platform billing record.
-// The browser can print / save-as-PDF this page.
+// Returns a print-ready HTML GST invoice.
+// Renders individual line items when present (add-ons, extra stores, plan).
+// Falls back to single-item display for older records without lineItems.
 // ============================================================================
 
 import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
+import { NextResponse } from 'next/server';
+
+interface LineItem { name: string; description?: string; amount: number; type: string }
 
 function formatINR(amount: number): string {
   return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -23,26 +26,26 @@ function buildInvoiceHtml(opts: {
   dueDate: Date;
   paidDate: Date | null;
   status: string;
-  // Seller (Quantix)
   sellerName: string;
   sellerAddress: string;
   sellerGst: string;
-  // Buyer (business)
   buyerName: string;
   buyerAddress: string;
   buyerGst: string | null;
   buyerEmail: string | null;
   buyerPhone: string | null;
-  // Line item
-  description: string;
   planName: string;
   periodLabel: string | null;
-  amount: number;
+  description: string;
+  // Core amounts
+  baseAmount: number;
+  lineItems: LineItem[] | null;
   gstRate: number | null;
   cgstAmount: number | null;
   sgstAmount: number | null;
   igstAmount: number | null;
   totalWithGst: number | null;
+  // Legacy single-line fields (used when lineItems is null)
   extraStores: number | null;
   extraStoreAmount: number | null;
   paymentMode: string | null;
@@ -54,22 +57,55 @@ function buildInvoiceHtml(opts: {
   const cgst = opts.cgstAmount ?? 0;
   const sgst = opts.sgstAmount ?? 0;
   const igst = opts.igstAmount ?? 0;
-  const totalGst = cgst + sgst + igst;
-  const extraStoreAmt = opts.extraStoreAmount ?? 0;
-  const subtotal = opts.amount + extraStoreAmt;
-  const grandTotal = opts.totalWithGst ?? (subtotal + totalGst);
-  const isInterState = (igst) > 0;
+  const isInterState = igst > 0;
   const hasGst = opts.gstRate != null;
 
-  const extraStoreRow = (opts.extraStores ?? 0) > 0
-    ? `<tr>
+  // Build line item rows
+  let itemRows = '';
+  let subtotal = 0;
+
+  if (opts.lineItems && opts.lineItems.length > 0) {
+    // Multi-line invoice
+    for (const item of opts.lineItems) {
+      subtotal += item.amount;
+      itemRows += `<tr>
+        <td class="desc">
+          <strong>${item.name}</strong>
+          ${item.description ? `<br/><span style="color:#6b7280;font-size:10px;">${item.description}</span>` : ''}
+        </td>
+        <td class="num">998314</td>
+        <td class="num">${formatINR(item.amount)}</td>
+        <td class="num">${hasGst ? `${gstRate}%` : '—'}</td>
+        <td class="num">${formatINR(item.amount)}</td>
+      </tr>`;
+    }
+  } else {
+    // Legacy single-line: plan + optional extra stores
+    const extraStoreAmt = opts.extraStoreAmount ?? 0;
+    subtotal = opts.baseAmount + extraStoreAmt;
+    itemRows = `<tr>
+      <td class="desc">
+        <strong>${opts.planName} — Platform Subscription</strong>
+        ${opts.periodLabel ? `<br/><span style="color:#6b7280;font-size:10px;">Period: ${opts.periodLabel}</span>` : ''}
+        ${opts.description ? `<br/><span style="color:#6b7280;font-size:10px;">${opts.description}</span>` : ''}
+      </td>
+      <td class="num">998314</td>
+      <td class="num">${formatINR(opts.baseAmount)}</td>
+      <td class="num">${hasGst ? `${gstRate}%` : '—'}</td>
+      <td class="num">${formatINR(opts.baseAmount)}</td>
+    </tr>`;
+    if ((opts.extraStores ?? 0) > 0) {
+      itemRows += `<tr>
         <td class="desc">Additional Stores (${opts.extraStores} × ₹1,999/month)</td>
         <td class="num">—</td>
         <td class="num">${formatINR(extraStoreAmt)}</td>
         <td class="num">—</td>
         <td class="num">${formatINR(extraStoreAmt)}</td>
-       </tr>`
-    : '';
+      </tr>`;
+    }
+  }
+
+  const grandTotal = opts.totalWithGst ?? subtotal;
 
   const gstRows = hasGst
     ? isInterState
@@ -132,8 +168,8 @@ function buildInvoiceHtml(opts: {
 <div class="page">
   <div class="header">
     <div class="brand">
-      <h1>Quantix Technology</h1>
-      <p>Platform Subscription Invoice</p>
+      <h1>${opts.sellerName}</h1>
+      <p>Platform Invoice</p>
       <p style="margin-top:4px;font-size:10px;color:#9ca3af;">${opts.sellerAddress}</p>
       <p style="font-size:10px;color:#9ca3af;">GSTIN: ${opts.sellerGst}</p>
     </div>
@@ -166,27 +202,14 @@ function buildInvoiceHtml(opts: {
   <table class="items">
     <thead>
       <tr>
-        <th style="width:40%">Description</th>
+        <th style="width:44%">Description</th>
         <th class="num">HSN/SAC</th>
-        <th class="num">Base Amount</th>
+        <th class="num">Amount</th>
         <th class="num">GST Rate</th>
         <th class="num">Total</th>
       </tr>
     </thead>
-    <tbody>
-      <tr>
-        <td class="desc">
-          <strong>${opts.planName} — Platform Subscription</strong>
-          ${opts.periodLabel ? `<br/><span style="color:#6b7280;font-size:10px;">Period: ${opts.periodLabel}</span>` : ''}
-          ${opts.description ? `<br/><span style="color:#6b7280;font-size:10px;">${opts.description}</span>` : ''}
-        </td>
-        <td class="num">998314</td>
-        <td class="num">${formatINR(opts.amount)}</td>
-        <td class="num">${hasGst ? `${gstRate}%` : '—'}</td>
-        <td class="num">${formatINR(opts.amount)}</td>
-      </tr>
-      ${extraStoreRow}
-    </tbody>
+    <tbody>${itemRows}</tbody>
   </table>
 
   <div class="totals">
@@ -267,6 +290,12 @@ export const GET = withMiddleware({
     const sellerAddress = process.env.PLATFORM_SELLER_ADDRESS ?? 'India';
     const sellerGst = process.env.PLATFORM_SELLER_GST ?? 'APPLIED FOR';
 
+    // Parse lineItems if present
+    let parsedLineItems: LineItem[] | null = null;
+    if (record.lineItems) {
+      try { parsedLineItems = JSON.parse(record.lineItems) as LineItem[]; } catch { /* fall back to legacy */ }
+    }
+
     const html = buildInvoiceHtml({
       invoiceNumber: record.invoiceNumber ?? `INV-${record.id.slice(0, 8).toUpperCase()}`,
       invoiceDate: record.createdAt,
@@ -281,10 +310,11 @@ export const GET = withMiddleware({
       buyerGst: biz.gstNumber,
       buyerEmail: biz.contactEmail,
       buyerPhone: biz.contactPhone,
-      description: record.description ?? '',
       planName: record.subscription.plan.name,
       periodLabel: record.periodLabel,
-      amount: record.amount,
+      description: record.description ?? '',
+      baseAmount: record.amount,
+      lineItems: parsedLineItems,
       gstRate: record.gstRate,
       cgstAmount: record.cgstAmount,
       sgstAmount: record.sgstAmount,

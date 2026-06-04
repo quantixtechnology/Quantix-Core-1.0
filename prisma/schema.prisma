@@ -234,6 +234,7 @@ model Business {
   reviews               Review[]
   stores                Store[]
   subscriptionPlans     SubscriptionPlan[]
+  addons                Addon[]
   taxConfigs            TaxConfig[]
   workflowRules         WorkflowRule[]
   branding              BusinessBranding?
@@ -1148,6 +1149,8 @@ model BillingRecord {
   totalWithGst           Float?
   extraStores            Int?
   extraStoreAmount       Float?
+  lineItems              String?
+  addonTotal             Float?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
   subscription           BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
@@ -1157,6 +1160,27 @@ model BillingRecord {
   @@index([dueDate])
   @@index([periodYear])
   @@index([invoiceNumber])
+}
+
+model Addon {
+  id          String          @id @default(cuid())
+  businessId  String
+  name        String
+  description String?
+  amount      Float
+  billingType AddonBillingType
+  cycle       AddonCycle?
+  status      AddonStatus     @default(ACTIVE)
+  startDate   DateTime        @default(now())
+  endDate     DateTime?
+  invoicedAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([status])
+  @@index([billingType])
 }
 
 model InvoiceSequence {
@@ -2225,4 +2249,22 @@ enum RefundStatus {
   REJECTED
   PROCESSED
   FAILED
+}
+
+enum AddonBillingType {
+  ONE_TIME
+  RECURRING
+}
+
+enum AddonCycle {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+}
+
+enum AddonStatus {
+  ACTIVE
+  INACTIVE
+  COMPLETED
 }

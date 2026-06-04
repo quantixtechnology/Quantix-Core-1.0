@@ -66,6 +66,10 @@ export const GET = withMiddleware({
             status: true,
             contactPhone: true,
             contactEmail: true,
+            addons: {
+              where: { status: 'ACTIVE', billingType: 'RECURRING' },
+              select: { id: true, name: true, amount: true, cycle: true },
+            },
           },
         },
         billingHistory: {
@@ -102,7 +106,9 @@ export const GET = withMiddleware({
         sub.finalAmount ?? sub.subscriptionAmount ?? sub.customPrice ?? sub.planPrice ?? 0;
       const extraStores = Math.max(0, (sub.allowedStores ?? 1) - (sub.plan.maxStores ?? 1));
       const extraStoreAmount = extraStores > 0 ? extraStores * 1999 : 0;
-      const amountDue = baseAmountDue + extraStoreAmount;
+      const activeAddons = sub.business.addons ?? [];
+      const addonTotal = activeAddons.reduce((sum, a) => sum + a.amount, 0);
+      const amountDue = baseAmountDue + extraStoreAmount + addonTotal;
 
       return {
         subscriptionId: sub.id,
@@ -121,6 +127,8 @@ export const GET = withMiddleware({
         baseAmountDue,
         extraStores,
         extraStoreAmount,
+        activeAddons,
+        addonTotal,
         amountDue,
         currentPeriodStart: sub.currentPeriodStart,
         currentPeriodEnd: sub.currentPeriodEnd,

@@ -27,7 +27,7 @@ import {
   Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
   ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
   LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2, Loader2, KeyRound, Eye, EyeOff,
-  Upload, Edit, FileText, Shield,
+  Upload, Edit, FileText, Shield, Package, PlusCircle, ChevronDown, ChevronUp,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AvatarImage } from "@/components/ui/avatar"
@@ -198,6 +198,83 @@ export function BusinessesView() {
   const [editDiscountPct, setEditDiscountPct] = useState("")
   const [editPricingNote, setEditPricingNote] = useState("")
   const [savingPricing, setSavingPricing] = useState(false)
+
+  // ── Add-ons state ────────────────────────────────────────────────────────────
+  const [addonsOpen, setAddonsOpen] = useState(false)
+  const [addons, setAddons] = useState<Array<{
+    id: string; name: string; description: string | null; amount: number
+    billingType: "ONE_TIME" | "RECURRING"; cycle: string | null
+    status: "ACTIVE" | "INACTIVE" | "COMPLETED"; invoicedAt: string | null
+  }>>([])
+  const [addonsLoading, setAddonsLoading] = useState(false)
+  const [showAddAddon, setShowAddAddon] = useState(false)
+  const [newAddonName, setNewAddonName] = useState("")
+  const [newAddonDesc, setNewAddonDesc] = useState("")
+  const [newAddonAmount, setNewAddonAmount] = useState("")
+  const [newAddonType, setNewAddonType] = useState<"ONE_TIME" | "RECURRING">("ONE_TIME")
+  const [newAddonCycle, setNewAddonCycle] = useState("MONTHLY")
+  const [savingAddon, setSavingAddon] = useState(false)
+  const [generatingAddonInvoiceId, setGeneratingAddonInvoiceId] = useState<string | null>(null)
+
+  const loadAddons = useCallback(async (bizId: string) => {
+    setAddonsLoading(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${bizId}/addons`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) setAddons(json.data)
+    } catch { /* silent */ }
+    finally { setAddonsLoading(false) }
+  }, [])
+
+  const handleSaveAddon = async (bizId: string) => {
+    if (!newAddonName.trim() || !newAddonAmount) return
+    setSavingAddon(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${bizId}/addons`, {
+        method: "POST", headers: getAuthHeaders(),
+        body: JSON.stringify({
+          name: newAddonName.trim(),
+          description: newAddonDesc.trim() || undefined,
+          amount: Number(newAddonAmount),
+          billingType: newAddonType,
+          cycle: newAddonType === "RECURRING" ? newAddonCycle : undefined,
+        }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        toast.success("Add-on created")
+        setShowAddAddon(false)
+        setNewAddonName(""); setNewAddonDesc(""); setNewAddonAmount(""); setNewAddonType("ONE_TIME"); setNewAddonCycle("MONTHLY")
+        loadAddons(bizId)
+      } else toast.error(json.error || "Failed to create add-on")
+    } catch { toast.error("Failed to create add-on") }
+    finally { setSavingAddon(false) }
+  }
+
+  const handleGenerateAddonInvoice = async (bizId: string, addonId: string) => {
+    setGeneratingAddonInvoiceId(addonId)
+    try {
+      const res = await fetch(`/api/admin/businesses/${bizId}/addons/${addonId}/invoice`, {
+        method: "POST", headers: getAuthHeaders(), body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (json.success) { toast.success(`Invoice ${json.invoiceNumber} generated`); loadAddons(bizId) }
+      else toast.error(json.error || "Failed to generate invoice")
+    } catch { toast.error("Failed to generate invoice") }
+    finally { setGeneratingAddonInvoiceId(null) }
+  }
+
+  const handleDeactivateAddon = async (bizId: string, addonId: string) => {
+    try {
+      const res = await fetch(`/api/admin/businesses/${bizId}/addons/${addonId}`, {
+        method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify({ status: "INACTIVE" }),
+      })
+      const json = await res.json()
+      if (json.success) { toast.success("Add-on deactivated"); loadAddons(bizId) }
+      else toast.error(json.error || "Failed to deactivate")
+    } catch { toast.error("Failed to deactivate add-on") }
+  }
+
   const [createdResult, setCreatedResult] = useState<{
     businessCode: string | null; businessId: string
     mainStoreCode: string | null; registrationDate: string
@@ -1231,7 +1308,7 @@ export function BusinessesView() {
                     const typeConf = businessTypeConfig[biz.businessType as BusinessType]
                     const sub = biz.subscription
                     return (
-                      <TableRow key={biz.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>
+                      <TableRow key={biz.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true); loadAddons(biz.id) }}>
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
@@ -1280,7 +1357,7 @@ export function BusinessesView() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true); loadAddons(biz.id) }}>View</Button>
                             {canImpersonate && (
                               <>
                                 <Button
@@ -1306,7 +1383,7 @@ export function BusinessesView() {
       )}
 
       {/* Business Detail Sheet */}
-      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false); setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false) } }}>
+      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false); setAddonsOpen(false); setShowAddAddon(false); setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false) } }}>
         <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
           {selectedBusiness && (() => {
             const biz = selectedBusiness
@@ -1569,6 +1646,138 @@ export function BusinessesView() {
                         </div>
                       ) : (<div className="rounded-lg border border-dashed p-4 text-center"><p className="text-sm text-muted-foreground">No active subscription</p></div>)}
                     </div>
+                    {/* ── Add-Ons ──────────────────────────────────────────── */}
+                    <Separator />
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Add-Ons</h4>
+                          {addons.filter(a => a.status === "ACTIVE").length > 0 && (
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{addons.filter(a => a.status === "ACTIVE").length} active</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {canEdit && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setShowAddAddon(!showAddAddon); if (!addonsOpen) setAddonsOpen(true) }}>
+                              <PlusCircle className="size-3" /> Add
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setAddonsOpen(!addonsOpen)}>
+                            {addonsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Add addon form */}
+                      {showAddAddon && (
+                        <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">New Add-On</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="col-span-2 space-y-1">
+                              <Label className="text-xs">Name *</Label>
+                              <Input value={newAddonName} onChange={(e) => setNewAddonName(e.target.value)} placeholder="e.g. Android App, iOS App…" className="h-7 text-xs" />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Amount (₹) *</Label>
+                              <Input type="number" value={newAddonAmount} onChange={(e) => setNewAddonAmount(e.target.value)} placeholder="0" className="h-7 text-xs" />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Billing Type</Label>
+                              <Select value={newAddonType} onValueChange={(v) => setNewAddonType(v as "ONE_TIME" | "RECURRING")}>
+                                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="ONE_TIME">One-Time</SelectItem>
+                                  <SelectItem value="RECURRING">Recurring</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {newAddonType === "RECURRING" && (
+                              <div className="space-y-1">
+                                <Label className="text-xs">Cycle</Label>
+                                <Select value={newAddonCycle} onValueChange={setNewAddonCycle}>
+                                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="MONTHLY">Monthly</SelectItem>
+                                    <SelectItem value="QUARTERLY">Quarterly</SelectItem>
+                                    <SelectItem value="HALF_YEARLY">Half-Yearly</SelectItem>
+                                    <SelectItem value="YEARLY">Yearly</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                            <div className={`space-y-1 ${newAddonType === "RECURRING" ? "" : "col-span-2"}`}>
+                              <Label className="text-xs">Description</Label>
+                              <Input value={newAddonDesc} onChange={(e) => setNewAddonDesc(e.target.value)} placeholder="Optional note" className="h-7 text-xs" />
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" className="h-7 text-xs flex-1" onClick={() => handleSaveAddon(biz.id)} disabled={savingAddon || !newAddonName.trim() || !newAddonAmount}>
+                              {savingAddon ? "Saving…" : "Save Add-On"}
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAddAddon(false)}>Cancel</Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Add-on list */}
+                      {addonsOpen && (
+                        addonsLoading ? (
+                          <div className="space-y-1.5">
+                            {[...Array(2)].map((_, i) => <div key={i} className="rounded-lg border p-3 h-12 animate-pulse bg-muted/30" />)}
+                          </div>
+                        ) : addons.length === 0 ? (
+                          <div className="rounded-lg border border-dashed p-3 text-center">
+                            <p className="text-[11px] text-muted-foreground">No add-ons configured</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Use the Add button to create one-time or recurring add-ons</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y rounded-md border">
+                            {addons.map((addon) => (
+                              <div key={addon.id} className="px-3 py-2.5 flex items-center gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-xs font-medium truncate">{addon.name}</span>
+                                    <Badge variant="outline" className={`text-[9px] h-3.5 px-1 shrink-0 ${addon.billingType === "ONE_TIME" ? "border-amber-300 text-amber-700" : "border-sky-300 text-sky-700"}`}>
+                                      {addon.billingType === "ONE_TIME" ? "One-Time" : addon.cycle ?? "Recurring"}
+                                    </Badge>
+                                    <Badge variant="outline" className={`text-[9px] h-3.5 px-1 shrink-0 ${addon.status === "ACTIVE" ? "border-emerald-300 text-emerald-700" : addon.status === "COMPLETED" ? "border-sky-300 text-sky-700" : "border-gray-300 text-gray-600"}`}>
+                                      {addon.status}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">₹{addon.amount.toLocaleString("en-IN")}</p>
+                                </div>
+                                {canEdit && addon.status === "ACTIVE" && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {addon.billingType === "ONE_TIME" && (
+                                      <Button
+                                        size="sm" variant="ghost"
+                                        className="h-6 px-2 text-[10px] gap-1 text-emerald-700 hover:bg-emerald-50"
+                                        disabled={generatingAddonInvoiceId === addon.id}
+                                        onClick={() => handleGenerateAddonInvoice(biz.id, addon.id)}
+                                        title="Generate invoice"
+                                      >
+                                        <PlusCircle className="h-3 w-3" />
+                                        {generatingAddonInvoiceId === addon.id ? "…" : "Invoice"}
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm" variant="ghost"
+                                      className="h-6 w-6 p-0 text-gray-500 hover:bg-gray-100"
+                                      onClick={() => handleDeactivateAddon(biz.id, addon.id)}
+                                      title="Deactivate"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      )}
+                    </div>
+
                     {biz.deployments.filter(d => !["CUSTOMER_APP","DELIVERY_APP","ADMIN_APP"].includes(d.type)).length > 0 && (
                       <>
                         <Separator />

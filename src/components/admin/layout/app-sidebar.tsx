@@ -6,7 +6,7 @@ import {
   Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
-  DatabaseZap, FileText, Archive,
+  DatabaseZap, FileText, Archive, Package,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -56,6 +56,7 @@ const platformNavItems: NavItem[] = [
   { key: "proposal-documents",  label: "Proposal Documents", icon: Archive  },
   { key: "subscriptions",      label: "Subscriptions",      icon: CreditCard  },
   { key: "platform-invoices", label: "Platform Invoices",  icon: FileText    },
+  { key: "addons",            label: "Add-On Billing",     icon: Package     },
   { key: "plan-management",   label: "Plan Management",    icon: Receipt     },
   { key: "payment-plugins",   label: "Payment Plugins",    icon: CreditCard  },
   { key: "domains",           label: "Website Management", icon: Globe       },
