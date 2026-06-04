@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { createStorefrontSession } from '@/lib/storefront-auth';
+import { resolveBusinessIdFromRequest } from '@/lib/tenant-resolver';
 
 function validatePassword(pw: string): string | null {
   if (pw.length < 8) return 'Password must be at least 8 characters';
@@ -41,8 +42,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: pwError }, { status: 400 });
     }
 
+    const hostnameBusinessId = await resolveBusinessIdFromRequest(request);
+
     const customer = await db.customer.findFirst({
-      where: { passwordResetToken: token },
+      where: {
+        passwordResetToken: token,
+        ...(hostnameBusinessId ? { businessId: hostnameBusinessId } : {}),
+      },
       select: {
         id: true, businessId: true, name: true, email: true, phone: true,
         passwordResetTokenExpiry: true, isLoginDisabled: true, userId: true,

@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword, verifyPassword } from '@/lib/password-utils';
+import { resolveBusinessIdFromRequest } from '@/lib/tenant-resolver';
 
 function validatePassword(pw: string): string | null {
   if (pw.length < 8) return 'Password must be at least 8 characters';
@@ -19,7 +20,10 @@ function validatePassword(pw: string): string | null {
   return null;
 }
 
-async function resolveCustomerFromToken(authHeader: string | null): Promise<{
+async function resolveCustomerFromToken(
+  authHeader: string | null,
+  businessId: string | null,
+): Promise<{
   customerId: string; businessId: string; email: string; userId: string;
 } | null> {
   if (!authHeader) return null;
@@ -32,8 +36,14 @@ async function resolveCustomerFromToken(authHeader: string | null): Promise<{
   });
   if (!rt || rt.expiresAt < new Date() || !rt.user.isActive) return null;
 
+  // Scope the customer lookup to the specific business when a businessId is known.
+  // This prevents a multi-tenant user's change-password from affecting the wrong
+  // business's customer record.
   const customer = await db.customer.findFirst({
-    where: { userId: rt.user.id },
+    where: {
+      userId: rt.user.id,
+      ...(businessId ? { businessId } : {}),
+    },
     select: { id: true, businessId: true },
   });
   if (!customer) return null;
@@ -44,7 +54,10 @@ async function resolveCustomerFromToken(authHeader: string | null): Promise<{
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get('authorization');
-    const ctx = await resolveCustomerFromToken(authHeader);
+    // Hostname is the authoritative tenant source; x-business-id is the fallback
+    const hostnameBusinessId = await resolveBusinessIdFromRequest(request);
+    const businessId = hostnameBusinessId || request.headers.get('x-business-id') || null;
+    const ctx = await resolveCustomerFromToken(authHeader, businessId);
     if (!ctx) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }

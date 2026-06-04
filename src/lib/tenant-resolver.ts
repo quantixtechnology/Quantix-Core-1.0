@@ -276,6 +276,58 @@ export async function getBusinessBranding(
 // Check if Domain is Mapped
 // ============================================================================
 
+// ============================================================================
+// Server-Side Hostname Resolution
+// ============================================================================
+
+/**
+ * Resolve the businessId directly from the incoming request's Host header.
+ *
+ * This is the authoritative server-side resolution path for storefront routes.
+ * It extracts the subdomain from the Host header and looks it up in the
+ * DomainMapping table — exactly the same logic as store-context uses.
+ *
+ * Returns null when:
+ *   - The request is from the platform domain (quantixtechnology.in, localhost)
+ *   - The subdomain/domain is not in DomainMapping (business not provisioned)
+ *
+ * Use this in any storefront route that needs to know which business it is
+ * serving WITHOUT trusting a client-supplied businessId.
+ *
+ * @param request - The incoming Request or NextRequest
+ */
+export async function resolveBusinessIdFromRequest(
+  request: Request | { headers: { get(name: string): string | null } }
+): Promise<string | null> {
+  const host = request.headers.get('host') || '';
+  if (!host) return null;
+
+  const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
+
+  // Strip port for local dev (host may be "localhost:3000")
+  const cleanHost = host.replace(/:\d+$/, '').toLowerCase();
+
+  // Skip platform-level domains — these are admin/dashboard requests, not storefronts
+  const platformDomains = ['localhost', '127.0.0.1', storefrontBase, `www.${storefrontBase}`, `app.${storefrontBase}`, `admin.${storefrontBase}`];
+  if (platformDomains.some(d => cleanHost === d || cleanHost.startsWith(`${d}:`))) return null;
+
+  const subdomain = cleanHost.endsWith(`.${storefrontBase}`)
+    ? cleanHost.slice(0, -(`.${storefrontBase}`.length))
+    : null;
+
+  const mapping = await db.domainMapping.findFirst({
+    where: {
+      OR: [
+        { domain: cleanHost },
+        ...(subdomain ? [{ subdomain }] : []),
+      ],
+    },
+    select: { businessId: true },
+  });
+
+  return mapping?.businessId ?? null;
+}
+
 /**
  * Check if a domain is mapped to a business.
  *

@@ -10,6 +10,7 @@ import type { NextRequest } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { logActivity } from '@/lib/core/audit';
+import { resolveBusinessIdFromRequest } from '@/lib/tenant-resolver';
 
 export async function GET(
   request: Request,
@@ -18,8 +19,22 @@ export async function GET(
   try {
     const { productId } = await params;
 
-    const product = await db.product.findUnique({
-      where: { id: productId },
+    // Resolve tenant from hostname (primary) or query/header (fallback).
+    // Without this guard, any caller who knows a product's ID can read it
+    // even if it belongs to a different business.
+    const hostnameBusinessId = await resolveBusinessIdFromRequest(request);
+    const { searchParams } = new URL(request.url);
+    const businessId =
+      hostnameBusinessId ||
+      searchParams.get('businessId') ||
+      request.headers.get('x-business-id') ||
+      null;
+
+    const product = await db.product.findFirst({
+      where: {
+        id: productId,
+        ...(businessId ? { businessId } : {}),
+      },
       include: {
         category: {
           select: { id: true, name: true, slug: true, image: true, workflowType: true },

@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sendPasswordResetEmail } from '@/lib/email-service';
 import { normalizeEmail } from '@/lib/storefront-auth';
+import { resolveBusinessIdFromRequest } from '@/lib/tenant-resolver';
 import crypto from 'crypto';
 
 const RESET_TOKEN_EXPIRY_MINUTES = 15;
@@ -36,12 +37,20 @@ export async function POST(request: Request) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ success: false, error: 'Invalid email format' }, { status: 400 });
     }
-    if (!body.businessId && !body.businessSlug) {
+
+    // Hostname is the authoritative tenant source — prevents a request on
+    // ohhhmomos.quantixtechnology.in from triggering a reset for arbazfreshmeat.
+    // Falls back to body businessId/businessSlug when hostname can't resolve
+    // (local dev, admin panel, or direct API calls without a subdomain).
+    const hostnameBusinessId = await resolveBusinessIdFromRequest(request);
+    if (!hostnameBusinessId && !body.businessId && !body.businessSlug) {
       return NextResponse.json({ success: false, error: 'businessId or businessSlug is required' }, { status: 400 });
     }
 
     const business = await db.business.findFirst({
-      where: body.businessId ? { id: body.businessId } : { slug: body.businessSlug },
+      where: hostnameBusinessId
+        ? { id: hostnameBusinessId }
+        : body.businessId ? { id: body.businessId } : { slug: body.businessSlug },
       select: { id: true, name: true, slug: true },
     });
     if (!business) return NextResponse.json(GENERIC_RESPONSE);

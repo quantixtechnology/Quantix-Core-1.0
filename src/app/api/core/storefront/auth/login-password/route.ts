@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyPassword } from '@/lib/password-utils';
 import { createStorefrontSession, normalizeEmail } from '@/lib/storefront-auth';
+import { resolveBusinessIdFromRequest } from '@/lib/tenant-resolver';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -44,12 +45,18 @@ export async function POST(request: Request) {
     if (!email || !password) {
       return NextResponse.json({ success: false, error: 'email and password are required' }, { status: 400 });
     }
-    if (!body.businessId && !body.businessSlug) {
+
+    // Hostname is the authoritative tenant source — prevents logging into
+    // a different business's account by swapping the body businessId.
+    const hostnameBusinessId = await resolveBusinessIdFromRequest(request);
+    if (!hostnameBusinessId && !body.businessId && !body.businessSlug) {
       return NextResponse.json({ success: false, error: 'businessId or businessSlug is required' }, { status: 400 });
     }
 
     const business = await db.business.findFirst({
-      where: body.businessId ? { id: body.businessId } : { slug: body.businessSlug },
+      where: hostnameBusinessId
+        ? { id: hostnameBusinessId }
+        : body.businessId ? { id: body.businessId } : { slug: body.businessSlug },
       select: { id: true, name: true, slug: true, status: true },
     });
     if (!business) {
