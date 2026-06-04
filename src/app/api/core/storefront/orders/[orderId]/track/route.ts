@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveTenantFromHostname } from '@/lib/tenant-resolver';
 
 const partnerSelect = {
   id: true,
@@ -41,7 +42,8 @@ export async function GET(
 
     // Resolve caller identity (optional auth — token via Authorization header)
     const authHeader = request.headers.get('authorization');
-    const businessIdHeader = request.headers.get('x-business-id') || undefined;
+    // Hostname is the authoritative tenant source — never the x-business-id header
+    const tenantBusinessId = await resolveTenantFromHostname(request);
     let authenticatedCustomerId: string | null = null;
 
     if (authHeader?.startsWith('Bearer ')) {
@@ -51,11 +53,10 @@ export async function GET(
         select: { userId: true, expiresAt: true, user: { select: { isActive: true } } },
       });
       if (rt && rt.expiresAt >= new Date() && rt.user.isActive) {
-        // Find customer record for this user in the relevant business
         const customer = await db.customer.findFirst({
           where: {
             userId: rt.userId,
-            ...(businessIdHeader ? { businessId: businessIdHeader } : {}),
+            ...(tenantBusinessId ? { businessId: tenantBusinessId } : {}),
           },
           select: { id: true },
         });

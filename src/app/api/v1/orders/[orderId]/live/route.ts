@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveTenantFromHostname } from '@/lib/tenant-resolver';
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
@@ -30,7 +31,7 @@ export async function GET(
 
     // Require authentication — live tracking exposes partner GPS and phone
     const authHeader = req.headers.get('authorization');
-    const businessIdHeader = req.headers.get('x-business-id') || undefined;
+    const tenantBusinessId = await resolveTenantFromHostname(req);
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
@@ -73,7 +74,7 @@ export async function GET(
     const customer = await db.customer.findFirst({
       where: {
         userId: rt.userId,
-        ...(businessIdHeader ? { businessId: businessIdHeader } : {}),
+        ...(tenantBusinessId ? { businessId: tenantBusinessId } : {}),
       },
       select: { id: true },
     });

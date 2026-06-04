@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveTenantFromHostname } from '@/lib/tenant-resolver';
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
@@ -27,7 +28,7 @@ export async function GET(
 
     // Require auth to prevent order enumeration
     const authHeader = req.headers.get('authorization');
-    const businessIdHeader = req.headers.get('x-business-id') || undefined;
+    const tenantBusinessId = await resolveTenantFromHostname(req);
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
@@ -55,7 +56,7 @@ export async function GET(
 
     // Verify ownership
     const customer = await db.customer.findFirst({
-      where: { userId: rt.userId, ...(businessIdHeader ? { businessId: businessIdHeader } : {}) },
+      where: { userId: rt.userId, ...(tenantBusinessId ? { businessId: tenantBusinessId } : {}) },
       select: { id: true },
     });
     if (!customer || order.customerId !== customer.id) {

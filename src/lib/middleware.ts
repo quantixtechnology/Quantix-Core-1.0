@@ -8,6 +8,7 @@ import type { ZodSchema } from 'zod';
 import type { Role, Permission, BusinessContext } from './types';
 import { db } from './db';
 import { getDbPermissionsForRole } from './db-permissions';
+import { resolveTenantFromHostname } from './tenant-resolver';
 
 // ============================================================================
 // TYPES
@@ -139,17 +140,31 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
     let businessId: string | undefined;
     let storeId: string | undefined;
 
-    // Use platformRole when set (authoritative — same logic as login route)
     const platRoles = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
     if (user.platformRole && platRoles.includes(user.platformRole)) {
+      // Platform staff have no businessUser records; they target businesses via header.
       role = user.platformRole as Role;
     } else if (user.businessUsers.length > 0) {
-      const targetBU = businessIdHeader
-        ? user.businessUsers.find(bu => bu.business.id === businessIdHeader)
-        : user.businessUsers[0];
-      // Never trust a raw header value — fall back to the user's first verified business
-      // rather than using the attacker-supplied header when no match is found.
-      const effectiveBU = targetBU ?? user.businessUsers[0];
+      // ── Hostname-first tenant resolution ─────────────────────────────────
+      // The subdomain is the authoritative tenant identifier for ALL customer
+      // storefront requests.  A customer registered at multiple businesses gets
+      // the correct scoped context regardless of any client-supplied header.
+      const hostnameBusinessId = await resolveTenantFromHostname(req as unknown as Request);
+
+      let effectiveBU;
+      if (hostnameBusinessId) {
+        // On a tenant subdomain: require the user to have a BusinessUser record
+        // for that specific tenant.  No fallback to other businesses.
+        effectiveBU = user.businessUsers.find(bu => bu.business.id === hostnameBusinessId);
+      } else {
+        // Not on a tenant subdomain (admin panel, local dev).
+        // Fall back to the header-matched BU, then the first BU so admin flows
+        // and the test harness continue to work.
+        effectiveBU = businessIdHeader
+          ? (user.businessUsers.find(bu => bu.business.id === businessIdHeader) ?? user.businessUsers[0])
+          : user.businessUsers[0];
+      }
+
       if (effectiveBU) {
         role = effectiveBU.role;
         businessId = effectiveBU.business.id;
@@ -157,12 +172,7 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
       }
     }
 
-    // Only true platform admins get isPlatformAdmin=true — SALES_TEAM is a platform user
-    // but does NOT inherit blanket admin access to all platform endpoints.
     const platAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'PLATFORM_ADMIN';
-
-    // Platform roles have no businessUser records so they legitimately use the header
-    // to target a specific business. Regular users must have a verified businessUser link.
     const isPlatformRole = user.platformRole != null && platRoles.includes(user.platformRole);
 
     return {
@@ -170,6 +180,8 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
       email: user.email,
       name: user.name,
       role,
+      // Platform roles may target any business via the header.
+      // Regular users get businessId exclusively from their verified BusinessUser record.
       businessId: businessId || (isPlatformRole ? businessIdHeader : undefined) || undefined,
       storeId,
       permissions: await getDbPermissionsForRole(role) as Permission[],

@@ -8,11 +8,15 @@ import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { resolveImageUrl, resolveImageUrls } from '@/lib/image-url';
+import { resolveTenantFromHostname } from '@/lib/tenant-resolver';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('businessId') || request.headers.get('x-business-id');
+    // Hostname is the authoritative tenant source for all customer-facing requests.
+    // Query param businessId is accepted only as a fallback for admin-panel previews
+    // that call this endpoint from the platform domain (where hostname returns null).
+    const businessId = await resolveTenantFromHostname(request) || searchParams.get('businessId');
     const storeId = searchParams.get('storeId') || undefined;
     const categoryId = searchParams.get('categoryId');
     const search = searchParams.get('search');

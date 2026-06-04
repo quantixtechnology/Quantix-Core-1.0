@@ -281,34 +281,33 @@ export async function getBusinessBranding(
 // ============================================================================
 
 /**
- * Resolve the businessId directly from the incoming request's Host header.
+ * THE single authoritative tenant-resolution function for all storefront routes.
  *
- * This is the authoritative server-side resolution path for storefront routes.
- * It extracts the subdomain from the Host header and looks it up in the
- * DomainMapping table — exactly the same logic as store-context uses.
+ * Reads the Host header, strips the platform base domain to get the subdomain,
+ * and looks up the matching DomainMapping row.  This is the ONLY permitted way
+ * for customer-facing routes to determine which business they are serving.
  *
- * Returns null when:
- *   - The request is from the platform domain (quantixtechnology.in, localhost)
- *   - The subdomain/domain is not in DomainMapping (business not provisioned)
+ * Returns null when the request comes from a platform-level domain
+ * (localhost, quantixtechnology.in, app.*, admin.*) so that admin-panel and
+ * dev-server callers can fall back to their own resolution strategies without
+ * breaking.  Tenant subdomains always get a non-null result.
  *
- * Use this in any storefront route that needs to know which business it is
- * serving WITHOUT trusting a client-supplied businessId.
- *
- * @param request - The incoming Request or NextRequest
+ * @param request - Any object with a `headers.get()` method (Request, NextRequest)
  */
-export async function resolveBusinessIdFromRequest(
+export async function resolveTenantFromHostname(
   request: Request | { headers: { get(name: string): string | null } }
 ): Promise<string | null> {
   const host = request.headers.get('host') || '';
   if (!host) return null;
 
   const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
-
-  // Strip port for local dev (host may be "localhost:3000")
   const cleanHost = host.replace(/:\d+$/, '').toLowerCase();
 
-  // Skip platform-level domains — these are admin/dashboard requests, not storefronts
-  const platformDomains = ['localhost', '127.0.0.1', storefrontBase, `www.${storefrontBase}`, `app.${storefrontBase}`, `admin.${storefrontBase}`];
+  const platformDomains = [
+    'localhost', '127.0.0.1',
+    storefrontBase, `www.${storefrontBase}`,
+    `app.${storefrontBase}`, `admin.${storefrontBase}`,
+  ];
   if (platformDomains.some(d => cleanHost === d || cleanHost.startsWith(`${d}:`))) return null;
 
   const subdomain = cleanHost.endsWith(`.${storefrontBase}`)
@@ -327,6 +326,9 @@ export async function resolveBusinessIdFromRequest(
 
   return mapping?.businessId ?? null;
 }
+
+/** @deprecated Use resolveTenantFromHostname */
+export const resolveBusinessIdFromRequest = resolveTenantFromHostname;
 
 /**
  * Check if a domain is mapped to a business.

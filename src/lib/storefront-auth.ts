@@ -205,7 +205,11 @@ export async function createStorefrontSession(opts: {
     },
   });
 
-  const primaryBU = businessUsers.find(bu => bu.businessId === businessId) ?? businessUsers[0];
+  // The businessId passed in is always the hostname-resolved tenant.  The BU
+  // for that tenant was created in step 2 above, so this find should always
+  // succeed.  No fallback to businessUsers[0] — that would silently scope the
+  // session to the wrong tenant for a customer registered at multiple businesses.
+  const primaryBU = businessUsers.find(bu => bu.businessId === businessId) ?? null;
   const role: Role = (primaryBU?.role as Role) ?? 'CUSTOMER';
   const permissions = getPermissionsForRole(role);
 

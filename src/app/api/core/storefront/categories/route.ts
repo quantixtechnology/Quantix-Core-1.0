@@ -10,11 +10,12 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { resolveImageUrl } from '@/lib/image-url';
 import type { Prisma } from '@prisma/client';
+import { resolveTenantFromHostname } from '@/lib/tenant-resolver';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('businessId') || request.headers.get('x-business-id');
+    const businessId = await resolveTenantFromHostname(request) || searchParams.get('businessId');
     const includeInactive = searchParams.get('includeInactive') === 'true';
     const productStatus = searchParams.get('productStatus') || 'ACTIVE';
 

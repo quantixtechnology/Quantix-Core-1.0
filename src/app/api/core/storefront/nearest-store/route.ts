@@ -12,24 +12,30 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { checkServiceability, haversineDistance } from '@/lib/core/delivery';
+import { resolveTenantFromHostname } from '@/lib/tenant-resolver';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // Accept businessId directly OR resolve from slug/domain
-    const businessId = searchParams.get('businessId');
+    // Hostname is the authoritative tenant source.
+    // slug / businessId query params are retained as fallback for admin-panel
+    // and SDK callers that cannot set a subdomain Host header.
     const slug = searchParams.get('slug');
+    const hostnameBusinessId = await resolveTenantFromHostname(request);
+    const queryBusinessId = searchParams.get('businessId');
 
-    if (!businessId && !slug) {
+    if (!hostnameBusinessId && !queryBusinessId && !slug) {
       return NextResponse.json(
-        { success: false, error: 'businessId or slug is required' },
+        { success: false, error: 'Cannot determine business context from hostname. Provide businessId or slug.' },
         { status: 400 }
       );
     }
 
-    // Resolve business
-    let resolvedBusinessId = businessId;
+    let resolvedBusinessId: string | null = hostnameBusinessId;
+    if (!resolvedBusinessId && queryBusinessId) {
+      resolvedBusinessId = queryBusinessId;
+    }
     if (!resolvedBusinessId && slug) {
       const business = await db.business.findUnique({
         where: { slug },
@@ -230,16 +236,19 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { businessId, slug, lat, lng } = body;
+    const { slug, lat, lng } = body;
 
-    if (!businessId && !slug) {
+    const hostnameBusinessId = await resolveTenantFromHostname(request);
+    const bodyBusinessId: string | undefined = body.businessId;
+
+    if (!hostnameBusinessId && !bodyBusinessId && !slug) {
       return NextResponse.json(
-        { success: false, error: 'businessId or slug is required' },
+        { success: false, error: 'Cannot determine business context from hostname. Provide businessId or slug.' },
         { status: 400 }
       );
     }
 
-    let resolvedBusinessId = businessId;
+    let resolvedBusinessId: string | null = hostnameBusinessId ?? bodyBusinessId ?? null;
     if (!resolvedBusinessId && slug) {
       const business = await db.business.findUnique({
         where: { slug },
@@ -252,6 +261,10 @@ export async function POST(request: Request) {
         );
       }
       resolvedBusinessId = business.id;
+    }
+
+    if (!resolvedBusinessId) {
+      return NextResponse.json({ success: false, error: 'Cannot determine business context' }, { status: 400 });
     }
 
     // Get all active stores
