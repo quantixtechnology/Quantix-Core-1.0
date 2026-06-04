@@ -47,6 +47,9 @@ export type Permission =
   | "proposals:export"
   | "payment_config:view"
   | "payment_config:edit"
+  // ── Commission Calculator ─────────────────────────────────────────────────
+  | "commission:view"
+  | "commission:edit"
 
 // All roles supported by the platform
 export type PlatformRole =
@@ -135,6 +138,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "import:leads", "import:business", "export:leads",
     "proposals:view", "proposals:create", "proposals:delete", "proposals:export",
     "payment_config:view", "payment_config:edit",
+    "commission:view", "commission:edit",
   ],
   PLATFORM_ADMIN: [
     // Navigation — near-full admin, no destructive system access
@@ -160,9 +164,10 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "settings:view", "settings:edit",
     "import:leads", "import:business", "export:leads",
     "proposals:view", "proposals:create", "proposals:export",
+    "commission:view", "commission:edit",
   ],
   QUANTIX_SALES_TEAM: [
-    // Navigation — Sales Team sees only Sales & Leads
+    // Navigation — Sales Team sees only Sales & Leads + Commission Calculator
     "leads:view", "leads:create", "leads:edit", "leads:export",
     "businesses:view",
     "sales:view", "sales:create", "sales:edit", "sales:export",
@@ -170,6 +175,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "notifications:view",
     "import:leads", "export:leads",
     "proposals:view", "proposals:create", "proposals:export",
+    "commission:view", "commission:edit",
   ],
   SUPPORT_TEAM: [
     // Navigation — Support Team sees only Support & Tickets
@@ -429,6 +435,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "proposals:export":             "Export Proposal Documents (PDF)",
   "payment_config:view":          "View Payment Configuration",
   "payment_config:edit":          "Edit Payment Configuration",
+  "commission:view":              "View Commission Calculator",
+  "commission:edit":              "Save & Manage Commission Calculations",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {
@@ -522,4 +530,5 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "audit-logs":             "platform:audit_logs",
   "platform-settings":      "settings:view",
   "settings":               "settings:view",
+  "commission-calculator":  "commission:view",
 }

@@ -6,7 +6,7 @@ import {
   Rocket, Hammer, GitBranch, PlayCircle, Smartphone, Activity,
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
-  DatabaseZap, FileText, Archive, Package,
+  DatabaseZap, FileText, Archive, Package, Calculator,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -60,8 +60,9 @@ const platformNavItems: NavItem[] = [
   { key: "plan-management",   label: "Plan Management",    icon: Receipt     },
   { key: "payment-plugins",   label: "Payment Plugins",    icon: CreditCard  },
   { key: "domains",           label: "Website Management", icon: Globe       },
-  { key: "sales",             label: "Sales Team",         icon: Users       },
-  { key: "platform-users",    label: "User Management",    icon: ShieldCheck },
+  { key: "sales",                label: "Sales Team",          icon: Users       },
+  { key: "commission-calculator",label: "Commission Calculator",icon: Calculator  },
+  { key: "platform-users",       label: "User Management",     icon: ShieldCheck },
 ]
 
 const mobileNavItems: NavItem[] = [

@@ -1954,6 +1954,33 @@ model SupportTicket {
   @@index([customerId])
 }
 
+// Internal commission tracking for Quantix sales team.
+// One record per saved calculation session.
+model CommissionCalculation {
+  id              String   @id @default(cuid())
+
+  salesPersonId   String
+  salesPersonName String
+  month           Int      // 1–12
+  year            Int
+
+  // JSON: Array<{ type, qty, totalValue, commPct, perSaleCommission, totalCommission }>
+  lineItems       String
+
+  totalQty        Int
+  totalValue      Float
+  qualifiedSlab   Float    // 25 | 35 | 45
+  totalCommission Float
+
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([salesPersonId])
+  @@index([year, month])
+}
+
 enum LeadSource {
   META_ADS
   GOOGLE_ADS
