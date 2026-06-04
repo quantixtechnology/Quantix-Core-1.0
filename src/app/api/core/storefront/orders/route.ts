@@ -195,7 +195,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
           include: { variants: { where: { isActive: true } } },
         });
 
-        if (!product || product.status !== 'ACTIVE') {
+        if (!product || product.status !== 'ACTIVE' || product.businessId !== businessId) {
           return NextResponse.json(
             { success: false, error: `Product not found or inactive: ${item.productId}` },
             { status: 400 }

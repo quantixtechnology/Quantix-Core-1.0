@@ -118,7 +118,7 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
   const fetchAddresses = useCallback(async () => {
     if (!token) return
     try {
-      const res = await fetch("/api/core/storefront/addresses", { headers: { Authorization: `Bearer ${token}` } })
+      const res = await fetch("/api/core/storefront/addresses", { headers: { Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" } })
       const data = await res.json()
       if (data.success && data.data?.length) {
         setAddresses(data.data)
@@ -287,7 +287,7 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
     try {
       const res = await fetch("/api/core/storefront/addresses", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" },
         body: JSON.stringify({
           label: newAddr.label,
           area: newAddr.area || undefined,
@@ -330,7 +330,7 @@ export function StorefrontCheckout({ brandColor, nav, currentStore, storeClosed 
         const selAddr = addresses.find((a) => a.id === selectedAddressId)
         const res = await fetch("/api/core/storefront/orders", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" },
           body: JSON.stringify({
             storeId: currentStoreId,
             orderType: "DELIVERY",

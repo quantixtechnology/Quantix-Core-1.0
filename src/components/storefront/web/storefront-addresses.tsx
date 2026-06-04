@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
+import { useAdminStore } from "@/stores/admin-store"
 import { ArrowLeft, MapPin, Plus, Trash2, Check, Loader2, Navigation } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 
@@ -33,6 +34,7 @@ const emptyForm = () => ({
 
 export function StorefrontAddresses({ brandColor, nav }: StorefrontAddressesProps) {
   const { isAuthenticated, token } = useAuthStore()
+  const { currentBusinessId } = useAdminStore()
   const [addresses, setAddresses] = useState<Address[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -44,11 +46,11 @@ export function StorefrontAddresses({ brandColor, nav }: StorefrontAddressesProp
   const fetchAddresses = useCallback(async () => {
     if (!token) return
     try {
-      const res = await fetch("/api/core/storefront/addresses", { headers: { Authorization: `Bearer ${token}` } })
+      const res = await fetch("/api/core/storefront/addresses", { headers: { Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" } })
       const data = await res.json()
       if (data.success) setAddresses(data.data || [])
     } catch { /* non-critical */ } finally { setLoading(false) }
-  }, [token])
+  }, [token, currentBusinessId])
 
   useEffect(() => {
     if (isAuthenticated) fetchAddresses()
@@ -86,7 +88,7 @@ export function StorefrontAddresses({ brandColor, nav }: StorefrontAddressesProp
     try {
       const res = await fetch("/api/core/storefront/addresses", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" },
         body: JSON.stringify({
           label: form.label,
           area: form.area || undefined,
@@ -111,7 +113,7 @@ export function StorefrontAddresses({ brandColor, nav }: StorefrontAddressesProp
   async function deleteAddress(id: string) {
     if (!confirm("Delete this address?")) return
     try {
-      await fetch(`/api/core/storefront/addresses/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
+      await fetch(`/api/core/storefront/addresses/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" } })
       await fetchAddresses()
     } catch { /* non-critical */ }
   }
@@ -120,7 +122,7 @@ export function StorefrontAddresses({ brandColor, nav }: StorefrontAddressesProp
     try {
       await fetch(`/api/core/storefront/addresses/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" },
         body: JSON.stringify({ isDefault: true }),
       })
       await fetchAddresses()

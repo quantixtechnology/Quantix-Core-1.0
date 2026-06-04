@@ -37,7 +37,7 @@ interface StorefrontOrdersProps {
 
 export function StorefrontOrders({ brandColor, nav }: StorefrontOrdersProps) {
   const { isAuthenticated, token } = useAuthStore()
-  const { orderStages } = useAdminStore()
+  const { orderStages, currentBusinessId } = useAdminStore()
   const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,7 +46,7 @@ export function StorefrontOrders({ brandColor, nav }: StorefrontOrdersProps) {
   useEffect(() => {
     if (!isAuthenticated || !token) { setLoading(false); return }
     fetch("/api/core/storefront/orders", {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, "x-business-id": currentBusinessId || "" },
     })
       .then((r) => r.json())
       .then((data) => {
