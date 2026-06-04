@@ -20,7 +20,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ orderId: string }> },
 ) {
   try {
@@ -28,10 +28,26 @@ export async function GET(
     const orderId = params.orderId;
     if (!orderId) return NextResponse.json({ success: false, error: 'orderId required' }, { status: 400 });
 
+    // Require authentication — live tracking exposes partner GPS and phone
+    const authHeader = req.headers.get('authorization');
+    const businessIdHeader = req.headers.get('x-business-id') || undefined;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+    const token = authHeader.slice(7).trim();
+    const rt = await db.refreshToken.findUnique({
+      where: { token },
+      select: { userId: true, expiresAt: true, user: { select: { isActive: true } } },
+    });
+    if (!rt || rt.expiresAt < new Date() || !rt.user.isActive) {
+      return NextResponse.json({ success: false, error: 'Invalid or expired token' }, { status: 401 });
+    }
+
     const order = await db.order.findUnique({
       where: { id: orderId },
       select: {
         id: true, orderNumber: true, status: true, orderType: true,
+        customerId: true,
         deliveryLat: true, deliveryLng: true,
         deliveryPartner: {
           select: {
@@ -52,6 +68,18 @@ export async function GET(
     });
 
     if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+
+    // Verify ownership: the authenticated customer must own this order
+    const customer = await db.customer.findFirst({
+      where: {
+        userId: rt.userId,
+        ...(businessIdHeader ? { businessId: businessIdHeader } : {}),
+      },
+      select: { id: true },
+    });
+    if (!customer || order.customerId !== customer.id) {
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    }
 
     const partner = order.deliveryPartner;
     const session = order.liveTrackingSession;

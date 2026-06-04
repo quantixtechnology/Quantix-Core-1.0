@@ -2,8 +2,9 @@
 // QUANTIX CORE — Order Tracking API
 // GET /api/core/storefront/orders/[orderId]/track — Order tracking for customer
 //
-// Auth optional. Returns order with status timeline, delivery info, and
-// delivery partner details.
+// Auth optional.
+//   - Authenticated: full tracking data, ownership verified (customer must own the order).
+//   - Unauthenticated: delivery/status timeline only; customer PII and address stripped.
 //
 // Partner resolution priority:
 //   1. order.delivery.deliveryPartner  (set when using /delivery/assign)
@@ -36,6 +37,30 @@ export async function GET(
         { success: false, error: 'orderId is required' },
         { status: 400 }
       );
+    }
+
+    // Resolve caller identity (optional auth — token via Authorization header)
+    const authHeader = request.headers.get('authorization');
+    const businessIdHeader = request.headers.get('x-business-id') || undefined;
+    let authenticatedCustomerId: string | null = null;
+
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7).trim();
+      const rt = await db.refreshToken.findUnique({
+        where: { token },
+        select: { userId: true, expiresAt: true, user: { select: { isActive: true } } },
+      });
+      if (rt && rt.expiresAt >= new Date() && rt.user.isActive) {
+        // Find customer record for this user in the relevant business
+        const customer = await db.customer.findFirst({
+          where: {
+            userId: rt.userId,
+            ...(businessIdHeader ? { businessId: businessIdHeader } : {}),
+          },
+          select: { id: true },
+        });
+        if (customer) authenticatedCustomerId = customer.id;
+      }
     }
 
     const order = await db.order.findUnique({
@@ -112,6 +137,14 @@ export async function GET(
       );
     }
 
+    // Ownership enforcement:
+    // - Authenticated callers must own the order (customerId must match).
+    // - Unauthenticated callers get a minimal response with PII stripped.
+    const isOwner = authenticatedCustomerId !== null && order.customer?.id === authenticatedCustomerId;
+    if (authenticatedCustomerId !== null && !isOwner) {
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    }
+
     // Resolve partner from either source
     const resolvedPartner = order.delivery?.deliveryPartner ?? order.deliveryPartner ?? null;
 
@@ -165,12 +198,13 @@ export async function GET(
       deliveryFee: order.deliveryFee,
       totalTax: order.totalTax,
       totalDiscount: order.totalDiscount,
-      deliveryAddress: order.deliveryAddress,
+      // Delivery address and customer info only visible to the authenticated owner
+      deliveryAddress: isOwner ? order.deliveryAddress : null,
       createdAt: order.createdAt,
       confirmedAt: order.confirmedAt,
       deliveredAt: order.deliveredAt,
       store: order.store,
-      customer: order.customer ? { name: order.customer.name } : null,
+      customer: isOwner && order.customer ? { name: order.customer.name } : null,
       delivery: deliveryBlock,
       statusHistory: order.statusHistory.map((h) => ({
         status: h.status,
@@ -178,7 +212,7 @@ export async function GET(
         timestamp: h.createdAt,
       })),
       items: order.items,
-      payments: order.payments,
+      payments: isOwner ? order.payments : [],
     };
 
     return NextResponse.json({ success: true, data: trackingData });

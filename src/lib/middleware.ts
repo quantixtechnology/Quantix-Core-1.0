@@ -147,10 +147,13 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
       const targetBU = businessIdHeader
         ? user.businessUsers.find(bu => bu.business.id === businessIdHeader)
         : user.businessUsers[0];
-      if (targetBU) {
-        role = targetBU.role;
-        businessId = targetBU.business.id;
-        storeId = targetBU.storeId || undefined;
+      // Never trust a raw header value — fall back to the user's first verified business
+      // rather than using the attacker-supplied header when no match is found.
+      const effectiveBU = targetBU ?? user.businessUsers[0];
+      if (effectiveBU) {
+        role = effectiveBU.role;
+        businessId = effectiveBU.business.id;
+        storeId = effectiveBU.storeId || undefined;
       }
     }
 
@@ -158,12 +161,16 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
     // but does NOT inherit blanket admin access to all platform endpoints.
     const platAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'PLATFORM_ADMIN';
 
+    // Platform roles have no businessUser records so they legitimately use the header
+    // to target a specific business. Regular users must have a verified businessUser link.
+    const isPlatformRole = user.platformRole != null && platRoles.includes(user.platformRole);
+
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       role,
-      businessId: businessId || businessIdHeader || undefined,
+      businessId: businessId || (isPlatformRole ? businessIdHeader : undefined) || undefined,
       storeId,
       permissions: await getDbPermissionsForRole(role) as Permission[],
       isPlatformAdmin: platAdmin,

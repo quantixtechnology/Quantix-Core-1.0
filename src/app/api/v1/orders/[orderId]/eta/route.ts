@@ -17,7 +17,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ orderId: string }> },
 ) {
   try {
@@ -25,9 +25,25 @@ export async function GET(
     const orderId = params.orderId;
     if (!orderId) return NextResponse.json({ success: false, error: 'orderId required' }, { status: 400 });
 
+    // Require auth to prevent order enumeration
+    const authHeader = req.headers.get('authorization');
+    const businessIdHeader = req.headers.get('x-business-id') || undefined;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+    const token = authHeader.slice(7).trim();
+    const rt = await db.refreshToken.findUnique({
+      where: { token },
+      select: { userId: true, expiresAt: true, user: { select: { isActive: true } } },
+    });
+    if (!rt || rt.expiresAt < new Date() || !rt.user.isActive) {
+      return NextResponse.json({ success: false, error: 'Invalid or expired token' }, { status: 401 });
+    }
+
     const order = await db.order.findUnique({
       where: { id: orderId },
       select: {
+        customerId: true,
         deliveryLat: true, deliveryLng: true,
         liveTrackingSession: { select: { lastLat: true, lastLng: true, lastUpdated: true } },
         deliveryPartner: { select: { currentLat: true, currentLng: true } },
@@ -36,6 +52,15 @@ export async function GET(
     });
 
     if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+
+    // Verify ownership
+    const customer = await db.customer.findFirst({
+      where: { userId: rt.userId, ...(businessIdHeader ? { businessId: businessIdHeader } : {}) },
+      select: { id: true },
+    });
+    if (!customer || order.customerId !== customer.id) {
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    }
 
     const partnerLat = order.liveTrackingSession?.lastLat ?? order.deliveryPartner?.currentLat ?? null;
     const partnerLng = order.liveTrackingSession?.lastLng ?? order.deliveryPartner?.currentLng ?? null;

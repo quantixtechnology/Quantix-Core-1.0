@@ -35,14 +35,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'Invalid or expired token' }, { status: 401 });
     }
 
-    // Resolve business from x-business-id header or first customer record
-    const businessIdHeader = request.headers.get('x-business-id') || undefined;
+    // x-business-id header is required to scope the profile to the correct tenant.
+    // Omitting it would return the first customer record found across any business.
+    const businessIdHeader = request.headers.get('x-business-id');
+    if (!businessIdHeader) {
+      return NextResponse.json({ success: false, error: 'x-business-id header is required' }, { status: 400 });
+    }
 
     const customer = await db.customer.findFirst({
-      where: {
-        userId: rt.user.id,
-        ...(businessIdHeader ? { businessId: businessIdHeader } : {}),
-      },
+      where: { userId: rt.user.id, businessId: businessIdHeader },
       select: {
         id: true, businessId: true, name: true, email: true, phone: true,
         avatar: true, loyaltyTier: true, loyaltyPoints: true,
