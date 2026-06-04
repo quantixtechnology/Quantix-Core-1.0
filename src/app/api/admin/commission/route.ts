@@ -1,6 +1,9 @@
 // ============================================================================
 // GET  /api/admin/commission          — paginated list of saved calculations
 // POST /api/admin/commission          — save a new commission calculation
+//
+// Both signup and renewal calculations are stored in the same table.
+// Use ?calcType=signup or ?calcType=renewal to filter.
 // ============================================================================
 
 import { NextResponse } from 'next/server'
@@ -19,9 +22,13 @@ export const GET = withMiddleware({
     const limit = Math.min(50, parseInt(searchParams.get('limit') ?? '20'))
     const skip  = (page - 1) * limit
 
-    // Sales team sees only their own records; admins see all
     const salesPersonId = searchParams.get('salesPersonId')
-    const where = salesPersonId ? { salesPersonId } : {}
+    const calcType      = searchParams.get('calcType')   // "signup" | "renewal" | null (all)
+
+    const where = {
+      ...(salesPersonId ? { salesPersonId } : {}),
+      ...(calcType      ? { calcType }      : {}),
+    }
 
     const [rows, total] = await Promise.all([
       db.commissionCalculation.findMany({
@@ -51,16 +58,18 @@ export const POST = withMiddleware({
 })(async (req: NextRequest) => {
   try {
     const body = await req.json() as {
-      salesPersonId:   string
-      salesPersonName: string
-      month:           number
-      year:            number
-      lineItems:       string  // JSON array
-      totalQty:        number
-      totalValue:      number
-      qualifiedSlab:   number
-      totalCommission: number
-      notes?:          string
+      salesPersonId:     string
+      salesPersonName:   string
+      month:             number
+      year:              number
+      lineItems:         string
+      totalQty:          number
+      totalValue:        number
+      qualifiedSlab:     number
+      totalCommission:   number
+      notes?:            string
+      calcType?:         string   // "signup" (default) | "renewal"
+      eligibilityStatus?: string  // "RELEASE" | "HOLD" (renewal only)
     }
 
     if (!body.salesPersonId || !body.salesPersonName)
@@ -74,16 +83,18 @@ export const POST = withMiddleware({
 
     const row = await db.commissionCalculation.create({
       data: {
-        salesPersonId:   body.salesPersonId,
-        salesPersonName: body.salesPersonName,
-        month:           body.month,
-        year:            body.year,
-        lineItems:       body.lineItems,
-        totalQty:        body.totalQty,
-        totalValue:      body.totalValue,
-        qualifiedSlab:   body.qualifiedSlab,
-        totalCommission: body.totalCommission,
-        notes:           body.notes ?? null,
+        salesPersonId:     body.salesPersonId,
+        salesPersonName:   body.salesPersonName,
+        month:             body.month,
+        year:              body.year,
+        lineItems:         body.lineItems,
+        totalQty:          body.totalQty,
+        totalValue:        body.totalValue,
+        qualifiedSlab:     body.qualifiedSlab,
+        totalCommission:   body.totalCommission,
+        notes:             body.notes             ?? null,
+        calcType:          body.calcType          ?? 'signup',
+        eligibilityStatus: body.eligibilityStatus ?? null,
       },
     })
 

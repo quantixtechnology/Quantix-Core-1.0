@@ -1972,13 +1972,19 @@ model CommissionCalculation {
   qualifiedSlab   Float    // 25 | 35 | 45
   totalCommission Float
 
-  notes           String?
+  notes             String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  // "signup" | "renewal" — separates the two calculator types in history
+  calcType          String   @default("signup")
+  // "RELEASE" | "HOLD" — renewal eligibility at save time (null for signup records)
+  eligibilityStatus String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([salesPersonId])
   @@index([year, month])
+  @@index([calcType])
 }
 
 enum LeadSource {
