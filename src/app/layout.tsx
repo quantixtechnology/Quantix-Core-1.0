@@ -87,6 +87,8 @@ export default function RootLayout({
       <head>
         {/* Early-capture: must execute before React hydrates */}
         <script dangerouslySetInnerHTML={{ __html: EARLY_CAPTURE_SCRIPT }} />
+        {/* Dynamic favicon — served from PlatformSettings or falls back gracefully */}
+        <link rel="icon" href="/api/assets/favicon" type="image/png" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}

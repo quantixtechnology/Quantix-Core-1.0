@@ -16,6 +16,43 @@ model PlatformConfig {
   updatedAt   DateTime @updatedAt
 }
 
+// Singleton settings record for the entire platform.
+// Use getPlatformSettings() to read — never query this model directly.
+model PlatformSettings {
+  id             String  @id @default("singleton")
+
+  // Company identity
+  companyName    String?
+  companyAddress String?
+  companyEmail   String?
+  companyPhone   String?
+  companyWebsite String?
+  companyGst     String?
+
+  // Branding assets (stored as /uploads/platform/shared/<filename> URLs)
+  logoUrl        String?
+  darkLogoUrl    String?
+  faviconUrl     String?
+  emailLogoUrl   String?
+
+  // Brand colors
+  primaryColor   String?
+  secondaryColor String?
+  accentColor    String?
+
+  // Billing / invoice configuration
+  invoicePrefix  String? @default("QTX")
+  sacCode        String? @default("998314")
+
+  // GST rates (percentages, e.g. 18 / 9 / 9)
+  gstRate        Float?  @default(18)
+  cgstRate       Float?  @default(9)
+  sgstRate       Float?  @default(9)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model Lead {
   id                     String           @id @default(cuid())
   salesRepId             String?

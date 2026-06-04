@@ -65,6 +65,7 @@ export type AdminPage =
   | "payment-config"
   | "platform-invoices"
   | "addons"
+  | "platform-settings"
 
 export type BusinessPage =
   | "dashboard"

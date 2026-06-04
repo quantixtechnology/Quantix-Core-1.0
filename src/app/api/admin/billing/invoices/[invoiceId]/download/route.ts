@@ -8,6 +8,7 @@
 import { db } from '@/lib/db';
 import { withMiddleware } from '@/lib/middleware';
 import { NextResponse } from 'next/server';
+import { getPlatformSettings, browserLogoUrl } from '@/lib/platform-settings';
 
 interface LineItem { name: string; description?: string; amount: number; type: string }
 
@@ -29,6 +30,8 @@ function buildInvoiceHtml(opts: {
   sellerName: string;
   sellerAddress: string;
   sellerGst: string;
+  logoUrl: string;
+  sacCode: string;
   buyerName: string;
   buyerAddress: string;
   buyerGst: string | null;
@@ -73,7 +76,7 @@ function buildInvoiceHtml(opts: {
           <strong>${item.name}</strong>
           ${item.description ? `<br/><span style="color:#6b7280;font-size:10px;">${item.description}</span>` : ''}
         </td>
-        <td class="num">998314</td>
+        <td class="num">${opts.sacCode}</td>
         <td class="num">${formatINR(item.amount)}</td>
         <td class="num">${hasGst ? `${gstRate}%` : '—'}</td>
         <td class="num">${formatINR(item.amount)}</td>
@@ -169,7 +172,7 @@ function buildInvoiceHtml(opts: {
 <div class="page">
   <div class="header">
     <div class="brand">
-      <div class="logo-card"><img src="/quantix-logo.png" alt="Quantix Technology" style="height:32px;display:block;" /></div>
+      <div class="logo-card"><img src="${opts.logoUrl}" alt="${opts.sellerName}" style="height:32px;display:block;" /></div>
       <h1>${opts.sellerName}</h1>
       <p>Platform Invoice</p>
       <p style="margin-top:4px;font-size:10px;color:#9ca3af;">${opts.sellerAddress}</p>
@@ -238,7 +241,7 @@ function buildInvoiceHtml(opts: {
 
   <div class="footer">
     <p>This is a computer-generated invoice. No signature required.</p>
-    <p>SAC Code 998314 — Information Technology (IT) Consulting and Support Services</p>
+    <p>SAC Code ${opts.sacCode} — Information Technology (IT) Consulting and Support Services</p>
     <p style="margin-top:4px;">For billing queries: billing@quantixtechnology.in</p>
   </div>
 </div>
@@ -288,9 +291,10 @@ export const GET = withMiddleware({
     const biz = record.subscription.business;
     const buyerAddress = [biz.address, biz.city, biz.state, biz.pincode].filter(Boolean).join(', ');
 
-    const sellerName = process.env.PLATFORM_SELLER_NAME ?? 'Quantix Technology';
-    const sellerAddress = process.env.PLATFORM_SELLER_ADDRESS ?? 'India';
-    const sellerGst = process.env.PLATFORM_SELLER_GST ?? 'APPLIED FOR';
+    const ps = await getPlatformSettings();
+    const sellerName    = ps.companyName;
+    const sellerAddress = ps.companyAddress;
+    const sellerGst     = ps.companyGst;
 
     // Parse lineItems if present
     let parsedLineItems: LineItem[] | null = null;
@@ -307,6 +311,8 @@ export const GET = withMiddleware({
       sellerName,
       sellerAddress,
       sellerGst,
+      logoUrl: browserLogoUrl(ps),
+      sacCode: ps.sacCode,
       buyerName: biz.name,
       buyerAddress,
       buyerGst: biz.gstNumber,

@@ -134,6 +134,7 @@ const DomainsView = dynamic(() => import("@/components/admin/domains/domains-vie
 const SalesView = dynamic(() => import("@/components/admin/sales/sales-view").then(m => ({ default: m.SalesView })), { loading: () => <PageLoader /> })
 const NotificationsView = dynamic(() => import("@/components/admin/notifications/notifications-view").then(m => ({ default: m.NotificationsView })), { loading: () => <PageLoader /> })
 const SettingsView = dynamic(() => import("@/components/admin/settings/settings-view").then(m => ({ default: m.SettingsView })), { loading: () => <PageLoader /> })
+const PlatformSettingsView = dynamic(() => import("@/components/admin/settings/platform-settings-view").then(m => ({ default: m.PlatformSettingsView })), { loading: () => <PageLoader /> })
 const PlatformUsersView = dynamic(() => import("@/components/admin/users/platform-users-view").then(m => ({ default: m.PlatformUsersView })), { loading: () => <PageLoader /> })
 const PermissionMatrixView = dynamic(() => import("@/components/admin/rbac/permission-matrix-view").then(m => ({ default: m.PermissionMatrixView })), { loading: () => <PageLoader /> })
 
@@ -407,6 +408,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "roles-permissions": return <PermissionMatrixView />
       case "notifications": return <NotificationsView />
       case "settings": return <SettingsView />
+      case "platform-settings": return <PlatformSettingsView />
       // Mobile & Apps
       case "mobile-apps": return <MobileAppsView />
       // Deployment & Operations

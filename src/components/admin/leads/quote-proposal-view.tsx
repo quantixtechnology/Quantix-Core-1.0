@@ -158,7 +158,7 @@ export function ProposalDocument({
             borderRadius: "10px", padding: "8px 16px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           }}>
-            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "32px", display: "block" }} />
+            <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "32px", display: "block" }} />
           </div>
           <div style={{ textAlign: "right" as const }}>
             <div style={{ fontSize: "22px", fontWeight: 800, color: headerBg, letterSpacing: "-0.5px", lineHeight: 1 }}>
@@ -357,7 +357,7 @@ export function ProposalDocument({
             borderRadius: "10px", padding: "5px 12px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           }}>
-            <img src="/quantix-logo.png" alt="Quantix Technology" style={{ height: "22px", display: "block" }} />
+            <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "22px", display: "block" }} />
           </div>
           <div style={{ fontSize: "11px", color: "#6b7280" }}>
             <span style={{ fontWeight: 600, color: "#374151" }}>Proposal No:</span> {proposalId || "QX-000000-000"}

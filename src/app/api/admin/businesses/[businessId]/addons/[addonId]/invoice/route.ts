@@ -8,8 +8,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
-
-const GST_RATE = 18;
+import { getPlatformSettings } from '@/lib/platform-settings';
 
 function getFinancialYear(date: Date): string {
   const m = date.getMonth();
@@ -19,7 +18,7 @@ function getFinancialYear(date: Date): string {
   return `${startYear}-${String(endYear).padStart(2, '0')}`;
 }
 
-async function generateInvoiceNumber(date: Date): Promise<string> {
+async function generateInvoiceNumber(date: Date, prefix: string): Promise<string> {
   const financialYear = getFinancialYear(date);
   const seq = await db.invoiceSequence.upsert({
     where: { financialYear },
@@ -27,7 +26,7 @@ async function generateInvoiceNumber(date: Date): Promise<string> {
     create: { financialYear, nextVal: 2 },
   });
   const serial = seq.nextVal - 1;
-  return `QTX/${financialYear}/${String(serial).padStart(4, '0')}`;
+  return `${prefix}/${financialYear}/${String(serial).padStart(4, '0')}`;
 }
 
 export const POST = withMiddleware({
@@ -68,9 +67,10 @@ export const POST = withMiddleware({
     const isInterState = body.isInterState ?? false;
     const paidDate = body.paidDate ? new Date(body.paidDate) : new Date();
 
-    const gstAmount = Math.round(addon.amount * (GST_RATE / 100) * 100) / 100;
-    const cgstAmount = isInterState ? 0 : Math.round(gstAmount / 2 * 100) / 100;
-    const sgstAmount = isInterState ? 0 : Math.round(gstAmount / 2 * 100) / 100;
+    const ps = await getPlatformSettings();
+    const gstAmount = Math.round(addon.amount * (ps.gstRate / 100) * 100) / 100;
+    const cgstAmount = isInterState ? 0 : Math.round(addon.amount * (ps.cgstRate / 100) * 100) / 100;
+    const sgstAmount = isInterState ? 0 : Math.round(addon.amount * (ps.sgstRate / 100) * 100) / 100;
     const igstAmount = isInterState ? gstAmount : 0;
     const totalWithGst = Math.round((addon.amount + gstAmount) * 100) / 100;
 
@@ -78,7 +78,7 @@ export const POST = withMiddleware({
       { name: addon.name, description: addon.description || undefined, amount: addon.amount, type: 'ADDON' },
     ]);
 
-    const invoiceNumber = await generateInvoiceNumber(paidDate);
+    const invoiceNumber = await generateInvoiceNumber(paidDate, ps.invoicePrefix);
 
     const record = await db.billingRecord.create({
       data: {
@@ -90,7 +90,7 @@ export const POST = withMiddleware({
         dueDate: paidDate,
         paidDate,
         description: `${addon.name} — One-time add-on`,
-        gstRate: GST_RATE,
+        gstRate: ps.gstRate,
         cgstAmount,
         sgstAmount,
         igstAmount,

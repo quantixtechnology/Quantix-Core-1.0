@@ -1,32 +1,49 @@
 // GET /api/assets/logo
-// Serves quantix-logo.png from process.cwd()/public/ — works in standalone mode
-// regardless of whether .next/standalone/public/ was populated by the build.
-// PM2 sets cwd=/root/Quantix-Core-1.0 so the file is always at a known path.
+// Serves the platform logo.
+// Priority:
+//   1. PlatformSettings.logoUrl (uploaded file in UPLOAD_ROOT)
+//   2. Static quantix-logo.png candidates (original behaviour — works in standalone)
+//
+// All consumers (sidebar, login, invoices, proposals) use this single endpoint
+// so a logo change in Platform Settings propagates everywhere immediately.
 
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+import { getPlatformSettings } from '@/lib/platform-settings'
+import { UPLOAD_ROOT } from '@/lib/upload-root'
 
-const CANDIDATES = [
+const STATIC_CANDIDATES = [
   join(process.cwd(), 'public', 'quantix-logo.png'),
   join(process.cwd(), '.next', 'standalone', 'public', 'quantix-logo.png'),
   '/root/Quantix-Core-1.0/public/quantix-logo.png',
 ]
 
+function serveFile(path: string, mime: string): Response {
+  return new Response(readFileSync(path), {
+    headers: { 'Content-Type': mime, 'Cache-Control': 'public, max-age=3600' },
+  })
+}
+
 export async function GET() {
-  for (const candidate of CANDIDATES) {
-    if (existsSync(candidate)) {
+  const settings = await getPlatformSettings()
+
+  // 1. Uploaded logo
+  if (settings.logoUrl && settings.logoUrl.startsWith('/uploads/')) {
+    const rel  = settings.logoUrl.replace('/uploads/', '')
+    const path = join(UPLOAD_ROOT, rel)
+    if (existsSync(path)) {
       try {
-        const bytes = readFileSync(candidate)
-        return new Response(bytes, {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/png',
-            'Cache-Control': 'public, max-age=86400',
-          },
-        })
-      } catch {
-        continue
-      }
+        const ext  = path.split('.').pop()?.toLowerCase() ?? 'png'
+        const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'webp' ? 'image/webp' : 'image/png'
+        return serveFile(path, mime)
+      } catch { /* fall through */ }
+    }
+  }
+
+  // 2. Static fallback
+  for (const candidate of STATIC_CANDIDATES) {
+    if (existsSync(candidate)) {
+      try { return serveFile(candidate, 'image/png') } catch { continue }
     }
   }
 

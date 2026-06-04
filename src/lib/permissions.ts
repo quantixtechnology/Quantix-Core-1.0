@@ -520,5 +520,6 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "backup-monitoring":      "backup:view",
   "security-access":        "platform:security",
   "audit-logs":             "platform:audit_logs",
+  "platform-settings":      "settings:view",
   "settings":               "settings:view",
 }

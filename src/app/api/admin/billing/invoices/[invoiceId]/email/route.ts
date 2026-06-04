@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { sendTransactionalEmail } from '@/lib/email-service';
+import { getPlatformSettings, emailLogoUrl } from '@/lib/platform-settings';
 
 interface LineItem { name: string; description?: string; amount: number; type: string }
 
@@ -40,6 +41,9 @@ function buildInvoiceEmailHtml(opts: {
   paymentMode: string | null;
   receiptReference: string | null;
   baseUrl: string;
+  logoUrl: string;
+  sacCode: string;
+  companyName: string;
 }): string {
   const cgst = opts.cgstAmount ?? 0;
   const sgst = opts.sgstAmount ?? 0;
@@ -98,9 +102,9 @@ function buildInvoiceEmailHtml(opts: {
 <table width="100%" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);" cellpadding="0" cellspacing="0">
   <tr><td style="background:#10B981;padding:28px 32px;">
     <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:8px 16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);display:inline-block;margin-bottom:12px;">
-      <img src="${opts.baseUrl}/quantix-logo.png" alt="Quantix Technology" style="height:32px;display:block;" />
+      <img src="${opts.logoUrl}" alt="${opts.companyName}" style="height:32px;display:block;" />
     </div>
-    <p style="margin:0;color:#ffffff;font-size:22px;font-weight:800;">Quantix Technology</p>
+    <p style="margin:0;color:#ffffff;font-size:22px;font-weight:800;">${opts.companyName}</p>
     <p style="margin:4px 0 0;color:#d1fae5;font-size:13px;">Platform Invoice</p>
   </td></tr>
   <tr><td style="padding:32px;">
@@ -131,7 +135,7 @@ function buildInvoiceEmailHtml(opts: {
       For queries: <a href="mailto:billing@quantixtechnology.in" style="color:#10B981;">billing@quantixtechnology.in</a>
     </p>
     <p style="margin:20px 0 0;font-size:11px;color:#9ca3af;line-height:1.6;">
-      Automated invoice — Quantix Technology. HSN/SAC: 998314.
+      Automated invoice — ${opts.companyName}. HSN/SAC: ${opts.sacCode}.
     </p>
   </td></tr>
 </table>
@@ -184,6 +188,7 @@ export const POST = withMiddleware({
     }
 
     const baseUrl = (process.env.DEPLOY_APP_URL ?? 'https://app.quantixtechnology.in').replace(/\/$/, '');
+    const ps = await getPlatformSettings();
 
     const html = buildInvoiceEmailHtml({
       invoiceNumber,
@@ -205,6 +210,9 @@ export const POST = withMiddleware({
       paymentMode: record.paymentMode,
       receiptReference: record.receiptReference,
       baseUrl,
+      logoUrl: emailLogoUrl(ps, baseUrl),
+      sacCode: ps.sacCode,
+      companyName: ps.companyName,
     });
 
     const subject = record.status === 'paid'

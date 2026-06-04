@@ -7,9 +7,9 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
+import { getPlatformSettings } from '@/lib/platform-settings';
 
 const EXTRA_STORE_RATE = 1999;
-const GST_RATE = 18;
 
 function getFinancialYear(date: Date): string {
   const m = date.getMonth();
@@ -19,7 +19,7 @@ function getFinancialYear(date: Date): string {
   return `${startYear}-${String(endYear).padStart(2, '0')}`;
 }
 
-async function generateInvoiceNumber(date: Date): Promise<string> {
+async function generateInvoiceNumber(date: Date, prefix: string): Promise<string> {
   const financialYear = getFinancialYear(date);
   const seq = await db.invoiceSequence.upsert({
     where: { financialYear },
@@ -27,7 +27,7 @@ async function generateInvoiceNumber(date: Date): Promise<string> {
     create: { financialYear, nextVal: 2 },
   });
   const serial = seq.nextVal - 1;
-  return `QTX/${financialYear}/${String(serial).padStart(4, '0')}`;
+  return `${prefix}/${financialYear}/${String(serial).padStart(4, '0')}`;
 }
 
 function addPeriod(date: Date, cycle: string): Date {
@@ -117,22 +117,24 @@ export const POST = withMiddleware({
     let igstAmount: number | null = null;
     let totalWithGst: number | null = null;
 
+    const ps = await getPlatformSettings();
+
     if (includeGst) {
       const isInterState = body.isInterState ?? false;
-      const gstAmount = Math.round(baseTotal * (GST_RATE / 100) * 100) / 100;
+      const gstAmount = Math.round(baseTotal * (ps.gstRate / 100) * 100) / 100;
       if (isInterState) {
         igstAmount = gstAmount;
         cgstAmount = 0;
         sgstAmount = 0;
       } else {
-        cgstAmount = Math.round(gstAmount / 2 * 100) / 100;
-        sgstAmount = Math.round(gstAmount / 2 * 100) / 100;
+        cgstAmount = Math.round(baseTotal * (ps.cgstRate / 100) * 100) / 100;
+        sgstAmount = Math.round(baseTotal * (ps.sgstRate / 100) * 100) / 100;
         igstAmount = 0;
       }
       totalWithGst = Math.round((baseTotal + gstAmount) * 100) / 100;
     }
 
-    const invoiceNumber = await generateInvoiceNumber(paidDate);
+    const invoiceNumber = await generateInvoiceNumber(paidDate, ps.invoicePrefix);
 
     await db.billingRecord.create({
       data: {
@@ -150,7 +152,7 @@ export const POST = withMiddleware({
         periodYear: body.periodYear ?? paidDate.getFullYear(),
         periodLabel: body.periodLabel ?? null,
         description: `Platform subscription — ${sub.plan.name} — ${body.paymentMode}`,
-        gstRate: includeGst ? GST_RATE : null,
+        gstRate: includeGst ? ps.gstRate : null,
         cgstAmount: cgstAmount ?? null,
         sgstAmount: sgstAmount ?? null,
         igstAmount: igstAmount ?? null,
