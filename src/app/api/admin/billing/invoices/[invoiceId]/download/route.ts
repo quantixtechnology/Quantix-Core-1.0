@@ -125,6 +125,7 @@ function buildInvoiceHtml(opts: {
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #111827; background: #fff; }
   .page { max-width: 800px; margin: 0 auto; padding: 40px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #10B981; padding-bottom: 20px; margin-bottom: 24px; }
+  .brand .logo-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:8px 16px; box-shadow:0 2px 8px rgba(0,0,0,0.08); display:inline-block; margin-bottom:12px; }
   .brand h1 { font-size: 22px; color: #10B981; font-weight: 800; letter-spacing: -0.5px; }
   .brand p { font-size: 11px; color: #6b7280; margin-top: 2px; }
   .inv-meta { text-align: right; }
@@ -168,6 +169,7 @@ function buildInvoiceHtml(opts: {
 <div class="page">
   <div class="header">
     <div class="brand">
+      <div class="logo-card"><img src="/quantix-logo.png" alt="Quantix Technology" style="height:32px;display:block;" /></div>
       <h1>${opts.sellerName}</h1>
       <p>Platform Invoice</p>
       <p style="margin-top:4px;font-size:10px;color:#9ca3af;">${opts.sellerAddress}</p>

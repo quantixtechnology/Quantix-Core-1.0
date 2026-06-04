@@ -39,6 +39,7 @@ function buildInvoiceEmailHtml(opts: {
   status: string;
   paymentMode: string | null;
   receiptReference: string | null;
+  baseUrl: string;
 }): string {
   const cgst = opts.cgstAmount ?? 0;
   const sgst = opts.sgstAmount ?? 0;
@@ -96,6 +97,9 @@ function buildInvoiceEmailHtml(opts: {
 <tr><td align="center">
 <table width="100%" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);" cellpadding="0" cellspacing="0">
   <tr><td style="background:#10B981;padding:28px 32px;">
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:8px 16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);display:inline-block;margin-bottom:12px;">
+      <img src="${opts.baseUrl}/quantix-logo.png" alt="Quantix Technology" style="height:32px;display:block;" />
+    </div>
     <p style="margin:0;color:#ffffff;font-size:22px;font-weight:800;">Quantix Technology</p>
     <p style="margin:4px 0 0;color:#d1fae5;font-size:13px;">Platform Invoice</p>
   </td></tr>
@@ -179,6 +183,8 @@ export const POST = withMiddleware({
       try { parsedLineItems = JSON.parse(record.lineItems) as LineItem[]; } catch { /* fall back */ }
     }
 
+    const baseUrl = (process.env.DEPLOY_APP_URL ?? 'https://app.quantixtechnology.in').replace(/\/$/, '');
+
     const html = buildInvoiceEmailHtml({
       invoiceNumber,
       businessName,
@@ -198,6 +204,7 @@ export const POST = withMiddleware({
       status: record.status,
       paymentMode: record.paymentMode,
       receiptReference: record.receiptReference,
+      baseUrl,
     });
 
     const subject = record.status === 'paid'
