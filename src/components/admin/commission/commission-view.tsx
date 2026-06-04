@@ -32,10 +32,10 @@ const PLAN_LABELS: Record<PlanType, string> = {
 
 // Commission % keyed by [planType][slab]
 const MATRIX: Record<PlanType, Record<25 | 35 | 45, number>> = {
-  monthly:    { 25: 25,   35: 35,    45: 45    },
-  quarterly:  { 25: 10,   35: 13.33, 45: 16.67 },
-  halfYearly: { 25: 10,   35: 12.50, 45: 15    },
-  yearly:     { 25: 8.33, 35: 10.42, 45: 12.50 },
+  monthly:    { 25: 25, 35: 35, 45: 45 },
+  quarterly:  { 25: 12, 35: 16, 45: 20 },
+  halfYearly: { 25: 14, 35: 18, 45: 22 },
+  yearly:     { 25: 16, 35: 20, 45: 25 },
 }
 
 const SLAB_TIERS = [
