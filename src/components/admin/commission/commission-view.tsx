@@ -39,10 +39,17 @@ const MATRIX: Record<PlanType, Record<25 | 35 | 45, number>> = {
 }
 
 const SLAB_TIERS = [
-  { slab: 25 as 25 | 35 | 45, label: "1–5",  min: 1,  max: 5        },
-  { slab: 35 as 25 | 35 | 45, label: "6–10", min: 6,  max: 10       },
-  { slab: 45 as 25 | 35 | 45, label: "11+",  min: 11, max: Infinity  },
+  { slab: 25 as 25 | 35 | 45, tier: "Tier 1", label: "1–5",  min: 1,  max: 5        },
+  { slab: 35 as 25 | 35 | 45, tier: "Tier 2", label: "6–10", min: 6,  max: 10       },
+  { slab: 45 as 25 | 35 | 45, tier: "Tier 3", label: "11+",  min: 11, max: Infinity  },
 ]
+
+// UI display name for each internal slab value (25/35/45 remain unchanged in MATRIX)
+function slabToTier(slab: 25 | 35 | 45): string {
+  if (slab === 25) return "Tier 1"
+  if (slab === 35) return "Tier 2"
+  return "Tier 3"
+}
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -180,7 +187,7 @@ function buildPrintHtml(opts: {
   </div>
   <div class="kpi">
     <div class="kpi-card"><div class="label">Total Signups</div><div class="value">${opts.totalQty}</div></div>
-    <div class="kpi-card"><div class="label">Qualified Slab</div><div class="slab">${opts.slab}%</div></div>
+    <div class="kpi-card"><div class="label">Performance Tier</div><div class="slab">${slabToTier(opts.slab)}</div></div>
     <div class="kpi-card"><div class="label">Business Generated</div><div class="value" style="font-size:13px">${fmt(opts.totalValue)}</div></div>
     <div class="kpi-card"><div class="label">Total Commission</div><div class="value" style="font-size:13px;color:#10B981">${fmt(opts.totalCommission)}</div></div>
   </div>
@@ -341,7 +348,7 @@ function SaveModal({
           {/* Summary */}
           <div className="rounded-lg bg-muted/30 border p-3 text-xs space-y-1">
             <div className="flex justify-between"><span className="text-muted-foreground">Total Signups</span><strong>{totalQty}</strong></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Qualified Slab</span><strong>{slab}%</strong></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Performance Tier</span><strong>{slabToTier(slab)}</strong></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Business Generated</span><strong>{fmt(totalValue)}</strong></div>
             <div className="flex justify-between border-t pt-1"><span className="text-muted-foreground">Commission Earned</span><strong className="text-emerald-600">{fmt(totalCommission)}</strong></div>
           </div>
@@ -364,14 +371,14 @@ function SaveModal({
 function ReferenceSection({ activeSlab }: { activeSlab: 25 | 35 | 45 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-2">
-      {/* Slab Qualification */}
+      {/* Performance Tier Qualification */}
       <div className="rounded-xl border bg-card p-4">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Slab Qualification</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">Performance Tier Qualification</p>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b">
               <th className="text-left pb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Total Signups</th>
-              <th className="text-right pb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Commission Slab</th>
+              <th className="text-right pb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Performance Tier</th>
             </tr>
           </thead>
           <tbody>
@@ -384,7 +391,7 @@ function ReferenceSection({ activeSlab }: { activeSlab: 25 | 35 | 45 }) {
                   <td className="py-2 text-right">
                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${col.badge} ${active ? "ring-2 ring-offset-1 ring-emerald-400" : ""}`}>
                       {active && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-                      {t.slab}%
+                      {t.tier}
                     </span>
                   </td>
                 </tr>
@@ -401,9 +408,9 @@ function ReferenceSection({ activeSlab }: { activeSlab: 25 | 35 | 45 }) {
           <thead>
             <tr className="border-b">
               <th className="text-left pb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Plan</th>
-              <th className="text-right pb-2 text-[10px] font-bold text-amber-600">25% Slab</th>
-              <th className="text-right pb-2 text-[10px] font-bold text-blue-600">35% Slab</th>
-              <th className="text-right pb-2 text-[10px] font-bold text-emerald-600">45% Slab</th>
+              <th className="text-right pb-2 text-[10px] font-bold text-amber-600">Tier 1</th>
+              <th className="text-right pb-2 text-[10px] font-bold text-blue-600">Tier 2</th>
+              <th className="text-right pb-2 text-[10px] font-bold text-emerald-600">Tier 3</th>
             </tr>
           </thead>
           <tbody>
@@ -530,12 +537,12 @@ function NewSignupCalculator({
             </div>
           </div>
 
-          {/* Qualified Slab */}
+          {/* Performance Tier */}
           {hasInputs && (
             <div className={`rounded-xl border-2 p-4 flex items-center justify-between ${col.badge}`}>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Qualified Slab</p>
-                <p className="text-3xl font-black mt-0.5">{slab}%</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Performance Tier</p>
+                <p className="text-3xl font-black mt-0.5">{slabToTier(slab)}</p>
                 <p className="text-xs font-medium opacity-80 mt-0.5">
                   {slab === 25 ? "1–5 signups" : slab === 35 ? "6–10 signups" : "11+ signups"}
                 </p>
@@ -576,7 +583,7 @@ function NewSignupCalculator({
           <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-2 gap-3">
             {[
               { icon: Users,        label: "Total Signups",       value: totalQty.toString(),       color: "text-blue-600",    bg: "bg-blue-50"    },
-              { icon: Percent,      label: "Qualified Slab",      value: `${slab}%`,                color: col.badge.split(" ")[1], bg: col.badge.split(" ")[0] },
+              { icon: Percent,      label: "Performance Tier",    value: slabToTier(slab),          color: col.badge.split(" ")[1], bg: col.badge.split(" ")[0] },
               { icon: IndianRupee,  label: "Business Generated",  value: fmt(totalValue),           color: "text-purple-600",  bg: "bg-purple-50"  },
               { icon: TrendingUp,   label: "Total Commission",    value: fmt(totalComm),            color: "text-emerald-600", bg: "bg-emerald-50" },
             ].map(({ icon: Icon, label, value, color, bg }) => (
@@ -756,7 +763,7 @@ function CommissionHistory({ isAdmin }: { isAdmin: boolean }) {
             <div className="grid grid-cols-4 gap-3 mb-4">
               {[
                 { label: "Signups",    val: viewRecord.totalQty.toString()               },
-                { label: "Slab",       val: `${viewRecord.qualifiedSlab}%`               },
+                { label: "Tier",       val: slabToTier(viewRecord.qualifiedSlab as 25 | 35 | 45) },
                 { label: "Business",   val: fmt(viewRecord.totalValue)                   },
                 { label: "Commission", val: fmt(viewRecord.totalCommission)              },
               ].map(k => (
@@ -816,7 +823,7 @@ function CommissionHistory({ isAdmin }: { isAdmin: boolean }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30">
-                {["Date", "Sales Person", "Period", "Signups", "Business Value", "Slab", "Commission", "Actions"].map(h => (
+                {["Date", "Sales Person", "Period", "Signups", "Business Value", "Performance Tier", "Commission", "Actions"].map(h => (
                   <th key={h} className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap ${h === "Actions" || h === "Date" || h === "Sales Person" || h === "Period" ? "text-left" : "text-right"}`}>{h}</th>
                 ))}
               </tr>
@@ -850,7 +857,7 @@ function CommissionHistory({ isAdmin }: { isAdmin: boolean }) {
                     <td className="px-4 py-3 text-right font-mono font-bold">{row.totalQty}</td>
                     <td className="px-4 py-3 text-right font-mono text-xs">{fmt(row.totalValue)}</td>
                     <td className="px-4 py-3 text-right">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold border ${col.badge}`}>{row.qualifiedSlab}%</span>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold border ${col.badge}`}>{slabToTier(row.qualifiedSlab as 25 | 35 | 45)}</span>
                     </td>
                     <td className="px-4 py-3 text-right font-mono font-extrabold text-emerald-700">{fmt(row.totalCommission)}</td>
                     <td className="px-4 py-3">
@@ -1241,7 +1248,7 @@ function RenewalReferenceSection() {
           </tbody>
         </table>
         <p className="mt-3 text-[10px] text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
-          Renewal rates are fixed and do not depend on slab qualification.
+          Renewal rates are fixed and do not depend on tier qualification.
         </p>
       </div>
 
@@ -1795,7 +1802,7 @@ export function CommissionView() {
     <div className="flex flex-col h-full">
       <PageHeader
         title="Commission Calculator"
-        description="Calculate and track sales commissions for new customer signups based on quantity slabs"
+        description="Calculate and track sales commissions for new customer signups based on performance tiers"
         icon={Calculator}
       />
 
