@@ -65,7 +65,12 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
 
   const activeTab   = getActiveTab()
   const showHeader  = customerPage !== "auth"
-  const showCartBar = totalItems > 0 && customerPage !== "cart" && customerPage !== "checkout" && showHeader
+  // product-detail has its own sticky add-to-cart bar — suppress floating bar there
+  const showCartBar = totalItems > 0 &&
+    customerPage !== "cart" &&
+    customerPage !== "checkout" &&
+    customerPage !== "product-detail" &&
+    showHeader
 
   const tabs = [
     { id: "home",       label: "Home",       icon: Home,        action: () => handleTabPress("home") },
@@ -79,45 +84,37 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gray-100 flex justify-center">
       <div className="w-full max-w-md bg-white min-h-screen flex flex-col relative overflow-hidden">
 
-        {/* ── Top header ─────────────────────────────────────────────────── */}
+        {/* ── Top header — compact (≈36px tall, ~40% smaller than typical) ── */}
         {showHeader && (
           <header
-            className="sticky top-0 z-50 text-white px-4 pt-3 pb-2.5 flex items-center justify-between shadow-sm"
+            className="sticky top-0 z-50 text-white px-4 py-1.5 flex items-center justify-between"
             style={{ backgroundColor: brandColor }}
           >
+            {/* Brand left */}
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center shrink-0 shadow-sm">
-                <span className="font-extrabold text-sm" style={activeStyle}>{businessInitials}</span>
+              <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center shrink-0">
+                <span className="font-extrabold text-[11px] text-white">{businessInitials}</span>
               </div>
-              <div className="min-w-0">
-                <h1 className="text-sm font-bold leading-none text-white">{businessName}</h1>
-                <div className="flex items-center gap-0.5 mt-0.5">
-                  <svg className="w-2.5 h-2.5 text-white/70 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                  </svg>
-                  <p className="text-[10px] text-white/70 truncate leading-none">
-                    {currentStoreName ? `Delivering from ${currentStoreName}` : "Select a store"}
-                  </p>
-                </div>
-              </div>
+              <span className="text-[13px] font-bold text-white truncate leading-none">{businessName}</span>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
+            {/* Actions right */}
+            <div className="flex items-center shrink-0">
               <button
                 onClick={() => navigate("notifications")}
-                className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-white/20 transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors"
                 aria-label="Notifications"
               >
-                <Bell className="w-5 h-5" />
+                <Bell className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setCustomerPage("cart")}
-                className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-white/20 transition-colors"
+                className="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors"
                 aria-label="Cart"
               >
-                <ShoppingBag className="w-5 h-5" />
+                <ShoppingBag className="w-4 h-4" />
                 {totalItems > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5 leading-none">
+                  <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[8px] font-bold rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5 leading-none">
                     {totalItems > 99 ? "99+" : totalItems}
                   </span>
                 )}

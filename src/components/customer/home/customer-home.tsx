@@ -236,31 +236,30 @@ export function CustomerHome() {
   }
 
   return (
-    <div className="pb-4">
-      {/* Search Bar */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <Input
-            placeholder={`Search for ${businessName.toLowerCase()}...`}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => setCustomerPage("products")}
-            className="pl-10 h-10 rounded-xl bg-gray-50 border-gray-200 text-sm"
-            readOnly
-          />
-        </div>
-      </div>
+    <div className="pb-4 bg-white">
+      {/* ── Search pill + Store selector ─────────────────────────────── */}
+      <div className="px-4 pt-3 pb-3 space-y-2">
+        {/* M3 search pill */}
+        <button
+          onClick={() => setCustomerPage("products")}
+          className="w-full flex items-center gap-3 h-11 rounded-full bg-gray-100 px-4 border border-gray-200/80 active:bg-gray-200 transition-colors"
+        >
+          <Search className="w-4 h-4 text-gray-400 shrink-0" />
+          <span className="text-sm text-gray-400 flex-1 text-left">{`Search for ${businessName.toLowerCase()}...`}</span>
+          <div className="w-px h-4 bg-gray-300" />
+          <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+        </button>
 
-      {/* Store Selector */}
-      <div className="px-4 pb-2">
+        {/* Delivery location pill */}
         <button
           onClick={() => setStorePickerOpen(true)}
-          className="flex items-center gap-1.5 text-xs w-full text-left"
+          className="w-full flex items-center gap-2 h-9 rounded-full bg-gray-50 border border-gray-100 px-3 active:bg-gray-100 transition-colors"
         >
           <MapPin className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
-          <span className="text-gray-500">Delivering from</span>
-          <span className="font-semibold text-gray-800 truncate flex-1">
+          <span className="text-[11px] text-gray-400 shrink-0">Delivering from</span>
+          <span className="text-[11px] font-semibold text-gray-700 truncate flex-1 text-left">
             {currentStoreName || "Select a store"}
           </span>
           <ChevronDown className="w-3 h-3 text-gray-400 shrink-0" />
@@ -390,26 +389,26 @@ export function CustomerHome() {
             See All
           </button>
         </div>
-        <div className="grid grid-cols-4 gap-3 px-4">
-          {categories.slice(0, 8).map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setCustomerPage("products")}
-              className="flex flex-col items-center gap-1.5 p-2 rounded-2xl active:scale-95 transition-transform"
-            >
-              <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm"
-                style={{ backgroundColor: `${cat.color || "#10B981"}18` }}
+        {/* 4-column grid — each cell ≈90px square matching Blinkit/Zepto tiles */}
+        <div className="grid grid-cols-4 gap-2.5 px-4">
+          {categories.slice(0, 8).map((cat) => {
+            const tileColor = cat.color || "#10B981"
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setCustomerPage("products")}
+                className="aspect-square flex flex-col items-center justify-center gap-1 rounded-3xl active:scale-95 transition-transform overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.08)]"
+                style={{ backgroundColor: `${tileColor}20` }}
               >
-                <span style={{ color: cat.color || "#10B981" }}>
-                  {categoryIcons[cat.icon || ""] || <Sparkles className="w-7 h-7" />}
+                <div className="w-10 h-10 flex items-center justify-center" style={{ color: tileColor }}>
+                  {categoryIcons[cat.icon || ""] || <Sparkles className="w-8 h-8" />}
+                </div>
+                <span className="text-[9.5px] font-bold text-gray-700 text-center leading-tight line-clamp-2 px-1 w-full">
+                  {cat.name}
                 </span>
-              </div>
-              <span className="text-[10.5px] font-semibold text-gray-700 text-center leading-tight line-clamp-2 w-full">
-                {cat.name}
-              </span>
-            </button>
-          ))}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -440,12 +439,12 @@ export function CustomerHome() {
               return (
                 <div
                   key={product.id}
-                  className="flex-shrink-0 w-38 bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm"
-                  style={{ width: "150px" }}
+                  className="flex-shrink-0 bg-white rounded-3xl overflow-hidden shadow-[0_2px_14px_rgba(0,0,0,0.09)]"
+                  style={{ width: "152px" }}
                 >
                   <button onClick={() => handleProductClick(product.id)} className="w-full">
                     <div
-                      className="h-32 flex items-center justify-center relative overflow-hidden"
+                      className="h-36 flex items-center justify-center relative overflow-hidden"
                       style={{ backgroundColor: `${getCatColor(product.categoryId)}12` }}
                     >
                       {product.image ? (
@@ -527,14 +526,14 @@ export function CustomerHome() {
 
       {/* Recently Ordered */}
       {customerLoggedIn && recentProducts.length > 0 && (
-        <div className="mb-4">
-          <div className="flex items-center justify-between px-4 mb-2">
+        <div className="mb-5">
+          <div className="flex items-center justify-between px-4 mb-3">
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-gray-400" />
-              <h2 className="text-sm font-bold text-gray-900">Buy Again</h2>
+              <h2 className="text-[15px] font-extrabold text-gray-900 tracking-tight">Buy Again</h2>
             </div>
           </div>
-          <div className="space-y-2 px-4">
+          <div className="space-y-2.5 px-4">
             {recentProducts.slice(0, 4).map((product) => {
               const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
               if (!defaultVariant) return null
@@ -543,14 +542,14 @@ export function CustomerHome() {
               return (
                 <div
                   key={product.id}
-                  className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-2.5"
+                  className="flex items-center gap-3 bg-white rounded-3xl p-3 shadow-[0_2px_12px_rgba(0,0,0,0.07)]"
                 >
                   <button
                     onClick={() => handleProductClick(product.id)}
                     className="flex items-center gap-3 flex-1 min-w-0"
                   >
                     <div
-                      className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden"
+                      className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden"
                       style={{ backgroundColor: `${getCatColor(product.categoryId)}12` }}
                     >
                       {product.image ? (

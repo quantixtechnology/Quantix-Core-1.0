@@ -242,33 +242,30 @@ export function CustomerProducts() {
 
   return (
     <div className="pb-4">
-      {/* Search Bar */}
+      {/* Search bar — M3 pill */}
       <div className="px-4 pt-3 pb-2">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <Input
             placeholder="Search products..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 pr-10 h-10 rounded-xl bg-gray-50 border-gray-200 text-sm"
+            className="pl-10 pr-10 h-11 rounded-full bg-gray-100 border-gray-200 text-sm focus:ring-1"
           />
           {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-            >
+            <button onClick={() => setSearchQuery("")} className="absolute right-4 top-1/2 -translate-y-1/2">
               <X className="w-4 h-4 text-gray-400" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Category Filter Chips */}
+      {/* Category filter chips — pill style */}
       <div className="flex gap-2 px-4 overflow-x-auto pb-2 scrollbar-hide">
         <button
           onClick={() => setSelectedCategory(null)}
-          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-            !selectedCategory ? "text-white" : "bg-gray-100 text-gray-600"
+          className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+            !selectedCategory ? "text-white shadow-sm" : "bg-gray-100 text-gray-600"
           }`}
           style={!selectedCategory ? { backgroundColor: brandColor } : undefined}
         >
@@ -278,16 +275,10 @@ export function CustomerProducts() {
           <button
             key={cat.id}
             onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
-            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-              cat.id === selectedCategory
-                ? "text-white"
-                : "bg-gray-100 text-gray-600"
+            className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap ${
+              cat.id === selectedCategory ? "text-white shadow-sm" : "bg-gray-100 text-gray-600"
             }`}
-            style={
-              cat.id === selectedCategory
-                ? { backgroundColor: cat.color || "#10B981" }
-                : {}
-            }
+            style={cat.id === selectedCategory ? { backgroundColor: cat.color || "#10B981" } : {}}
           >
             {cat.name}
           </button>
@@ -388,15 +379,15 @@ export function CustomerProducts() {
 
       {/* Product Grid */}
       {productsLoading ? (
-        <div className="grid grid-cols-2 gap-2.5 px-4">
+        <div className="grid grid-cols-2 gap-3 px-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-              <Skeleton className="h-36 w-full" />
-              <div className="p-2.5 space-y-2">
-                <Skeleton className="h-3 w-4/5 rounded-lg" />
-                <Skeleton className="h-2 w-2/5 rounded-lg" />
-                <Skeleton className="h-4 w-1/3 rounded-lg" />
-                <Skeleton className="h-8 w-full rounded-xl" />
+            <div key={i} className="bg-white rounded-3xl overflow-hidden shadow-[0_2px_14px_rgba(0,0,0,0.07)]">
+              <Skeleton className="h-44 w-full" />
+              <div className="p-3 space-y-2">
+                <Skeleton className="h-3.5 w-4/5 rounded-full" />
+                <Skeleton className="h-2.5 w-2/5 rounded-full" />
+                <Skeleton className="h-5 w-1/2 rounded-full" />
+                <Skeleton className="h-9 w-full rounded-2xl" />
               </div>
             </div>
           ))}
@@ -417,7 +408,7 @@ export function CustomerProducts() {
           <p className="text-xs text-gray-400 mt-1">Try a different search or category</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2.5 px-4">
+        <div className="grid grid-cols-2 gap-3 px-4">
           {filteredProducts.map((product) => {
             const defaultVariant = product.variants.find((v) => v.isDefault) || product.variants[0]
             if (!defaultVariant) return null
@@ -429,7 +420,7 @@ export function CustomerProducts() {
             return (
               <div
                 key={product.id}
-                className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm"
+                className="bg-white rounded-3xl overflow-hidden shadow-[0_2px_14px_rgba(0,0,0,0.09)]"
               >
                 <button
                   onClick={() => handleProductClick(product.id)}
@@ -437,7 +428,7 @@ export function CustomerProducts() {
                   disabled={isOutOfStock}
                 >
                   <div
-                    className="h-36 flex items-center justify-center relative overflow-hidden"
+                    className="h-44 flex items-center justify-center relative overflow-hidden"
                     style={{ backgroundColor: `${catColor}12` }}
                   >
                     {product.image ? (

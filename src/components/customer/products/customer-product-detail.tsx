@@ -298,8 +298,8 @@ export function CustomerProductDetail() {
         </div>
       </div>
 
-      {/* Product Image */}
-      <div className="relative h-64 bg-gray-50 overflow-hidden">
+      {/* Product Image — taller for app-like immersion */}
+      <div className="relative h-72 bg-gray-50 overflow-hidden">
         <ProductImage src={resolveImageUrl(product.images[0])} alt={product.name} catColor={brandColor} />
         {/* Veg / Non-veg indicator */}
         <div className="absolute top-3 left-3">
@@ -354,8 +354,8 @@ export function CustomerProductDetail() {
                   <button
                     key={variant.id}
                     onClick={() => { setSelectedVariantId(variant.id); setQuantity(1) }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
-                    style={active ? { borderColor: brandColor, backgroundColor: `${brandColor}10`, color: brandColor } : undefined}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
+                    style={active ? { borderColor: brandColor, backgroundColor: `${brandColor}15`, color: brandColor } : undefined}
                   >
                     {variant.name}
                     <span className="ml-1 text-[10px] opacity-70">{formatINR(variant.price)}</span>
@@ -431,7 +431,7 @@ export function CustomerProductDetail() {
         {!isOutOfStock && (
           <div className="mt-4 flex items-center gap-3">
             <span className="text-xs font-medium text-gray-500">Quantity</span>
-            <div className="flex items-center gap-0 border border-gray-200 rounded-lg overflow-hidden">
+            <div className="flex items-center gap-0 border border-gray-200 rounded-2xl overflow-hidden">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
                 className="w-9 h-9 flex items-center justify-center hover:bg-gray-50 transition-colors disabled:opacity-40"
@@ -480,9 +480,9 @@ export function CustomerProductDetail() {
                   <button
                     key={rp.id}
                     onClick={() => handleRelatedClick(rp.id)}
-                    className="flex-shrink-0 w-32 bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm"
+                    className="flex-shrink-0 w-32 bg-white rounded-2xl overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.08)]"
                   >
-                    <div className="h-24 bg-gray-50 overflow-hidden">
+                    <div className="h-28 bg-gray-50 overflow-hidden">
                       {rp.image ? (
                         <img src={resolveImageUrl(rp.image)} alt={rp.name} className="w-full h-full object-cover" />
                       ) : (
@@ -504,13 +504,16 @@ export function CustomerProductDetail() {
         )}
       </div>
 
-      {/* Sticky Add to Cart */}
+      {/* Sticky Add to Cart — positioned above bottom nav with safe-area awareness */}
       {!isOutOfStock && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-100 p-3 z-40 shadow-lg">
+        <div
+          className="fixed left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-100 px-4 pt-3 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]"
+          style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px))", paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+        >
           {cartQty === 0 ? (
             <Button
               onClick={handleAddToCart}
-              className="w-full h-11 text-sm font-bold rounded-xl text-white shadow-md"
+              className="w-full h-12 text-sm font-bold rounded-2xl text-white shadow-[0_4px_14px_rgba(0,0,0,0.2)]"
               style={{ backgroundColor: brandColor }}
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -518,28 +521,28 @@ export function CustomerProductDetail() {
             </Button>
           ) : (
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-between rounded-xl h-11 flex-1 px-2" style={{ backgroundColor: brandColor }}>
+              <div className="flex items-center justify-between rounded-2xl h-12 flex-1 px-2" style={{ backgroundColor: brandColor }}>
                 <button
                   onClick={() =>
                     cartQty === 1
                       ? removeItem(product.id, activeVariant.id)
                       : updateQuantity(product.id, activeVariant.id, cartQty - 1)
                   }
-                  className="w-8 h-8 flex items-center justify-center text-white"
+                  className="w-9 h-9 flex items-center justify-center text-white"
                 >
                   <Minus className="w-4 h-4" />
                 </button>
                 <span className="text-sm font-bold text-white">{cartQty} in cart</span>
                 <button
                   onClick={() => updateQuantity(product.id, activeVariant.id, cartQty + 1)}
-                  className="w-8 h-8 flex items-center justify-center text-white"
+                  className="w-9 h-9 flex items-center justify-center text-white"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
               </div>
               <Button
                 onClick={() => pushCustomerPage("cart")}
-                className="h-11 px-5 text-sm font-bold rounded-xl bg-gray-900 hover:bg-gray-800 text-white"
+                className="h-12 px-5 text-sm font-bold rounded-2xl bg-gray-900 hover:bg-gray-800 text-white"
               >
                 View Cart
               </Button>
