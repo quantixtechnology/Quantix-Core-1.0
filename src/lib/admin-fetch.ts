@@ -77,10 +77,14 @@ export function getAuthHeaders(): Record<string, string> {
  * login on hard auth failure. Use instead of bare fetch() in admin views.
  */
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const makeHeaders = () => ({
-    ...getAuthHeaders(),
-    ...(options.headers as Record<string, string> || {}),
-  });
+  const makeHeaders = () => {
+    const base = getAuthHeaders()
+    // FormData bodies must not carry a Content-Type header.
+    // The browser sets multipart/form-data + boundary automatically; an
+    // explicit JSON header overwrites it and breaks multipart parsing.
+    if (options.body instanceof FormData) delete base['Content-Type']
+    return { ...base, ...(options.headers as Record<string, string> || {}) }
+  }
 
   let response = await fetch(url, { ...options, headers: makeHeaders() });
 
