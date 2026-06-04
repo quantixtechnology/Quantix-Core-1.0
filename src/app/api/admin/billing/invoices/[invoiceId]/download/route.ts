@@ -8,7 +8,7 @@
 import { db } from '@/lib/db';
 import { withMiddleware } from '@/lib/middleware';
 import { NextResponse } from 'next/server';
-import { getPlatformSettings, browserLogoUrl } from '@/lib/platform-settings';
+import { getPlatformSettings, emailLogoUrl } from '@/lib/platform-settings';
 
 interface LineItem { name: string; description?: string; amount: number; type: string }
 
@@ -302,6 +302,9 @@ export const GET = withMiddleware({
     const sellerName    = ps.companyName;
     const sellerAddress = ps.companyAddress;
     const sellerGst     = ps.companyGst;
+    // Invoice HTML opens as blob:// — relative URLs have no origin. Build an
+    // absolute URL exactly like the email route does.
+    const baseUrl = (process.env.DEPLOY_APP_URL ?? 'https://app.quantixtechnology.in').replace(/\/$/, '');
 
     // Parse lineItems if present
     let parsedLineItems: LineItem[] | null = null;
@@ -318,7 +321,7 @@ export const GET = withMiddleware({
       sellerName,
       sellerAddress,
       sellerGst,
-      logoUrl: browserLogoUrl(ps),
+      logoUrl: emailLogoUrl(ps, baseUrl),
       sacCode: ps.sacCode,
       buyerName: biz.name,
       buyerAddress,
