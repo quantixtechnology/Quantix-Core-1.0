@@ -244,7 +244,7 @@ status "assets" "Copying standalone assets"
 log ""
 log "── Standalone assets ────────────────────────────────────────"
 SERVER_JS=$(find "$PROJECT/.next/standalone" -maxdepth 2 -name "server.js" \
-  -not -path "*/node_modules/*" -not -path "*/.next/*" 2>/dev/null | head -1)
+  -not -path "*/node_modules/*" 2>/dev/null | head -1)
 [ -n "$SERVER_JS" ] || fail "Standalone server.js not found — build may have failed"
 STANDALONE="$(dirname "$SERVER_JS")"
 log "Standalone dir: $STANDALONE"
