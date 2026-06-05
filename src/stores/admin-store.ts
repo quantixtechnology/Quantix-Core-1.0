@@ -67,6 +67,12 @@ export type AdminPage =
   | "addons"
   | "platform-settings"
   | "commission-calculator"
+  | "hrms-employees"
+  | "hrms-offer-letter"
+  | "hrms-commission-slip"
+  | "hrms-payslip"
+  | "hrms-templates"
+  | "hrms-settings"
 
 export type BusinessPage =
   | "dashboard"

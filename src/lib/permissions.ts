@@ -50,6 +50,9 @@ export type Permission =
   // ── Commission Calculator ─────────────────────────────────────────────────
   | "commission:view"
   | "commission:edit"
+  // ── HRMS ─────────────────────────────────────────────────────────────────
+  | "hrms:view"
+  | "hrms:manage"
 
 // All roles supported by the platform
 export type PlatformRole =
@@ -139,6 +142,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "proposals:view", "proposals:create", "proposals:delete", "proposals:export",
     "payment_config:view", "payment_config:edit",
     "commission:view", "commission:edit",
+    "hrms:view", "hrms:manage",
   ],
   PLATFORM_ADMIN: [
     // Navigation — near-full admin, no destructive system access
@@ -437,6 +441,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "payment_config:edit":          "Edit Payment Configuration",
   "commission:view":              "View Commission Calculator",
   "commission:edit":              "Save & Manage Commission Calculations",
+  "hrms:view":                    "View HRMS Module",
+  "hrms:manage":                  "Manage HRMS Settings & Approvals",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {
@@ -531,4 +537,11 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "platform-settings":      "settings:view",
   "settings":               "settings:view",
   "commission-calculator":  "commission:view",
+  // HRMS
+  "hrms-employees":         "hrms:view",
+  "hrms-offer-letter":      "hrms:view",
+  "hrms-commission-slip":   "hrms:view",
+  "hrms-payslip":           "hrms:view",
+  "hrms-templates":         "hrms:view",
+  "hrms-settings":          "hrms:manage",
 }

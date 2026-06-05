@@ -7,6 +7,7 @@ import {
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
   DatabaseZap, FileText, Archive, Package, Calculator,
+  UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -95,6 +96,15 @@ const opsNavItems: NavItem[] = [
 const importNavItems: NavItem[] = [
   { key: "leads-import",         label: "Lead Import",          icon: Upload     },
   { key: "business-data-import", label: "Business Data Upload", icon: DatabaseZap},
+]
+
+const hrmsNavItems: NavItem[] = [
+  { key: "hrms-employees",       label: "Employee Master",    icon: UserSquare         },
+  { key: "hrms-offer-letter",    label: "Offer Letter",       icon: FileSignature      },
+  { key: "hrms-commission-slip", label: "Commission Slip",    icon: BadgeDollarSign    },
+  { key: "hrms-payslip",         label: "Payslip",            icon: Wallet             },
+  { key: "hrms-templates",       label: "Templates",          icon: LayoutTemplate     },
+  { key: "hrms-settings",        label: "HRMS Settings",      icon: SlidersHorizontal  },
 ]
 
 const systemNavItems: NavItem[] = [
@@ -193,6 +203,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
     { title: "Client Operations", items: filterItems(clientNavItems),   open: false },
     { title: "Data Imports",      items: filterItems(importNavItems),   open: false },
     { title: "Platform Ops",      items: filterItems(opsNavItems),      open: false },
+    { title: "HRMS",              items: filterItems(hrmsNavItems),     open: false },
     { title: "System",            items: filterItems(systemNavItems),   open: false },
   ]
 

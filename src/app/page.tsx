@@ -174,6 +174,16 @@ const BackupMonitoringView = dynamic(() => import("@/components/dashboard/backup
 const SecurityAccessView = dynamic(() => import("@/components/dashboard/security-access-view").then(m => ({ default: m.SecurityAccessView })), { loading: () => <PageLoader /> })
 const AuditLogsView = dynamic(() => import("@/components/dashboard/audit-logs-view").then(m => ({ default: m.AuditLogsView })), { loading: () => <PageLoader /> })
 
+// ── HRMS pages (lazy) ─────────────────────────────────────────────────────
+const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
+const HrmsEmployeesView = dynamic(() => import("@/components/admin/hrms/hrms-employees").then(m => ({ default: m.HrmsEmployeesView })), { loading: () => <PageLoader /> })
+const HrmsOwnershipView = dynamic(() => import("@/components/admin/hrms/hrms-ownership").then(m => ({ default: m.HrmsOwnershipView })), { loading: () => <PageLoader /> })
+const HrmsCommissionPolicyView = dynamic(() => import("@/components/admin/hrms/hrms-commission-policy").then(m => ({ default: m.HrmsCommissionPolicyView })), { loading: () => <PageLoader /> })
+const HrmsCommissionSlipView = dynamic(() => import("@/components/admin/hrms/hrms-commission-slip").then(m => ({ default: m.HrmsCommissionSlipView })), { loading: () => <PageLoader /> })
+const HrmsOfferLetterView = dynamic(() => import("@/components/admin/hrms/hrms-offer-letter").then(m => ({ default: m.HrmsOfferLetterView })), { loading: () => <PageLoader /> })
+const HrmsTemplatesView = dynamic(() => import("@/components/admin/hrms/hrms-templates").then(m => ({ default: m.HrmsTemplatesView })), { loading: () => <PageLoader /> })
+const HrmsPayslipView = dynamic(() => import("@/components/admin/hrms/hrms-payslip").then(m => ({ default: m.HrmsPayslipView })), { loading: () => <PageLoader /> })
+
 // ── Business Owner pages (lazy) ───────────────────────────────────────────
 const BusinessDashboard = dynamic(() => import("@/components/business/dashboard/business-dashboard").then(m => ({ default: m.BusinessDashboard })), { loading: () => <PageLoader /> })
 const OrdersView = dynamic(() => import("@/components/business/orders/orders-view").then(m => ({ default: m.OrdersView })), { loading: () => <PageLoader /> })
@@ -411,6 +421,13 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "settings": return <SettingsView />
       case "platform-settings": return <PlatformSettingsView />
       case "commission-calculator": return <CommissionView />
+      // HRMS
+      case "hrms-employees":        return <HrmsEmployeesView />
+      case "hrms-offer-letter":     return <HrmsOfferLetterView />
+      case "hrms-commission-slip":  return <HrmsCommissionSlipView />
+      case "hrms-payslip":          return <HrmsPayslipView />
+      case "hrms-templates":        return <HrmsTemplatesView />
+      case "hrms-settings":         return <HrmsSettingsView />
       // Mobile & Apps
       case "mobile-apps": return <MobileAppsView />
       // Deployment & Operations

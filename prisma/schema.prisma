@@ -2338,3 +2338,194 @@ enum AddonStatus {
   INACTIVE
   COMPLETED
 }
+
+// ============================================================================
+// HRMS — Human Resource Management System (Phase 1)
+// Isolated module — businessId fields reference Business.id by convention
+// but without Prisma @relation to avoid modifying the existing Business model.
+// All HRMS data is scoped to hrmsBusinessId = Quantix Technology's Business.id
+// (multi-tenant ready for future expansion).
+// ============================================================================
+
+enum EmploymentType {
+  PERMANENT
+  CONTRACT
+  COMMISSION_BASED
+  CONSULTANT
+  INTERN
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+enum CommissionSlipStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  PAID
+}
+
+enum OfferLetterStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+// HRMS branding — separate from platform logo, used only in HR documents
+model HrmsSettings {
+  id                  String   @id @default(cuid())
+  businessId          String   @unique
+  companyName         String?
+  logo                String?
+  registeredAddress   String?
+  hrContact           String?
+  authorizedSignatory String?
+  signatureImage      String?
+  pan                 String?
+  gstNumber           String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// Employee Master
+model Employee {
+  id               String         @id @default(cuid())
+  businessId       String
+  employeeCode     String
+  name             String
+  email            String
+  mobile           String?
+  designation      String
+  department       String?
+  joiningDate      DateTime
+  employmentType   EmploymentType @default(PERMANENT)
+  reportingManager String?
+  status           EmployeeStatus @default(ACTIVE)
+  deletedAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  commissionSlips  CommissionSlip[]
+  offerLetters     OfferLetter[]
+
+  @@unique([businessId, employeeCode])
+  @@index([businessId])
+  @@index([status])
+}
+
+// Revenue Ownership — maps a client business to employee owners per revenue type
+model OwnershipAssignment {
+  id               String   @id @default(cuid())
+  hrmsBusinessId   String
+  clientBusinessId String
+  signupOwnerId    String?
+  renewalOwnerId   String?
+  addonOwnerId     String?
+  assignedBy       String
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([hrmsBusinessId, clientBusinessId])
+  @@index([hrmsBusinessId])
+  @@index([signupOwnerId])
+  @@index([renewalOwnerId])
+  @@index([addonOwnerId])
+}
+
+// Commission Policy — tier-based percentages referenced at slip generation time
+model CommissionPolicy {
+  id            String    @id @default(cuid())
+  businessId    String
+  name          String
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  tiers         String    @default("[]")
+  isActive      Boolean   @default(true)
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([businessId])
+  @@index([isActive])
+}
+
+// Commission Slip — amounts snapshotted only at approval; generated dynamically until then
+model CommissionSlip {
+  id             String               @id @default(cuid())
+  businessId     String
+  employeeId     String
+  periodType     String
+  periodFrom     DateTime
+  periodTo       DateTime
+  policyId       String?
+  signupLines    String               @default("[]")
+  renewalLines   String               @default("[]")
+  addonLines     String               @default("[]")
+  adjustments    Float                @default(0)
+  adjustmentNote String?
+  status         CommissionSlipStatus @default(DRAFT)
+  generatedBy    String?
+  approvedBy     String?
+  paidAt         DateTime?
+  approvedAt     DateTime?
+  notes          String?
+  deletedAt      DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  employee       Employee             @relation(fields: [employeeId], references: [id])
+
+  @@index([businessId])
+  @@index([employeeId])
+  @@index([status])
+}
+
+// Offer Letter Template — reusable rich-text with {{MergeTag}} placeholders
+model OfferLetterTemplate {
+  id           String        @id @default(cuid())
+  businessId   String
+  name         String
+  description  String?
+  content      String
+  isDefault    Boolean       @default(false)
+  isActive     Boolean       @default(true)
+  deletedAt    DateTime?
+  createdBy    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  offerLetters OfferLetter[]
+
+  @@index([businessId])
+}
+
+// Generated Offer Letter — rendered HTML after merge tag substitution
+model OfferLetter {
+  id               String              @id @default(cuid())
+  businessId       String
+  templateId       String?
+  employeeId       String?
+  candidateName    String
+  designation      String
+  joiningDate      DateTime?
+  department       String?
+  reportingManager String?
+  workLocation     String?
+  employmentType   EmploymentType      @default(PERMANENT)
+  content          String
+  status           OfferLetterStatus   @default(DRAFT)
+  emailedAt        DateTime?
+  deletedAt        DateTime?
+  createdBy        String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  template         OfferLetterTemplate? @relation(fields: [templateId], references: [id])
+  employee         Employee?           @relation(fields: [employeeId], references: [id])
+
+  @@index([businessId])
+  @@index([status])
+}
