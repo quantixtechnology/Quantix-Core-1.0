@@ -88,21 +88,203 @@ HR Team
 Quantix Technology Pvt. Ltd.`,
   },
   {
-    name: "Commission-Based Offer Letter",
-    description: "Commission-based role offer",
-    content: `Dear {{CandidateName}},
+    name: "Commission Engagement — Quantix Standard",
+    description: "Official Quantix Technology commission-based engagement offer letter with full terms",
+    content: `QUANTIX TECHNOLOGY
 
-We are excited to offer you the role of {{Designation}} on a commission-based engagement at Quantix Technology Pvt. Ltd.
+OFFER LETTER
 
-Commencement Date: {{JoiningDate}}
-Reporting to: {{ReportingManager}}
-Base Location: {{WorkLocation}}
+Date: {{JoiningDate}}
 
-Your compensation will be governed by the active Commission Policy. Details will be shared separately.
+---
 
-Regards,
-HR Department
-Quantix Technology Pvt. Ltd.`,
+PRIVATE & CONFIDENTIAL
+
+To,
+
+{{CandidateName}}
+
+Subject: Offer of Engagement as {{Designation}}
+
+Dear {{CandidateName}},
+
+We are pleased to offer you an engagement opportunity with Quantix Technology for the position of {{Designation}}.
+
+We believe your skills, commitment, and professional capabilities will contribute significantly to the growth of Quantix Technology and our customer success initiatives.
+
+Your engagement shall commence on {{JoiningDate}} and you will report to {{ReportingManager}}.
+
+The details of your engagement are outlined below.
+
+---
+
+APPOINTMENT DETAILS
+
+Candidate Name:
+{{CandidateName}}
+
+Designation:
+{{Designation}}
+
+Department:
+{{Department}}
+
+Date of Joining:
+{{JoiningDate}}
+
+Reporting Manager:
+{{ReportingManager}}
+
+Work Location:
+{{WorkLocation}}
+
+Employment Type:
+{{EmploymentType}}
+
+---
+
+ROLE & RESPONSIBILITIES
+
+As a {{Designation}}, your responsibilities shall include but not be limited to:
+
+• Generating new business opportunities and customer acquisitions.
+• Promoting Quantix products and services.
+• Conducting product demonstrations and sales presentations.
+• Building and maintaining customer relationships.
+• Supporting customer onboarding activities.
+• Coordinating with internal teams for successful implementations.
+• Assisting with renewals, upselling and customer retention initiatives.
+• Maintaining accurate sales records and activity reports.
+• Achieving assigned performance targets and business objectives.
+
+Additional responsibilities may be assigned based on business requirements.
+
+---
+
+COMPENSATION STRUCTURE
+
+This is a performance-based engagement.
+
+Compensation shall be governed by the prevailing Quantix Commission & Incentive Policy.
+
+Commission earnings shall be based on:
+
+• New Customer Signups
+• Renewal Performance
+• Revenue Ownership Assignment
+• Performance Tier Qualification
+• Compliance with company policies
+
+The applicable commission structure may be revised by Quantix Technology from time to time based on business requirements.
+
+---
+
+COMMISSION AUDIT & PAYMENT
+
+All commission earnings are subject to:
+
+• Successful payment realization
+• Customer verification
+• Internal audit and compliance review
+• Ownership validation
+• Policy compliance checks
+
+Approved commission payouts shall be processed between the 1st and 5th of every calendar month following successful audit and approval.
+
+Quantix Technology reserves the right to adjust, reverse, defer, withhold, or recover commissions in cases involving refunds, cancellations, duplicate accounts, fraudulent transactions, or policy violations.
+
+---
+
+CAREER PROGRESSION & ON-ROLE ELIGIBILITY
+
+Quantix Technology encourages long-term career growth and provides a structured pathway for high-performing team members.
+
+A team member may become eligible for consideration for On-Role Employment upon meeting all of the following criteria:
+
+• 100 Active Customer Signups
+• Customers must have completed a minimum active tenure of six (6) months
+• Consistent performance and compliance record
+• Positive management review
+• Final management approval
+
+Only active, paid, genuine customers shall be considered for eligibility calculations.
+
+Meeting eligibility criteria does not guarantee employment conversion.
+
+Final approval remains at the sole discretion of Quantix Technology.
+
+---
+
+CONFIDENTIALITY
+
+During the course of your engagement, you may have access to confidential information relating to customers, business operations, products, pricing, financial information, software systems, marketing strategies, and internal processes.
+
+You agree to maintain strict confidentiality and shall not disclose, copy, distribute, or use such information for any purpose other than authorized business activities.
+
+This obligation shall survive termination of engagement.
+
+---
+
+INFORMATION SECURITY POLICY
+
+You shall comply with all Information Security policies established by Quantix Technology.
+
+You agree to:
+
+• Protect company credentials and passwords.
+• Use only authorized systems and applications.
+• Handle customer information responsibly.
+• Report security incidents immediately.
+• Follow company security procedures and controls.
+
+You shall not:
+
+• Share login credentials.
+• Install unauthorized software.
+• Access unauthorized systems or information.
+• Transfer company data without approval.
+• Use company resources for unlawful or unethical purposes.
+
+Violation of Information Security requirements may result in disciplinary action, termination of engagement, and legal proceedings where applicable.
+
+---
+
+GENERAL TERMS & CONDITIONS
+
+• This engagement is governed by the policies of Quantix Technology.
+• The Company may modify policies, procedures, commission structures, and operational guidelines from time to time.
+• You are expected to conduct yourself professionally and ethically at all times.
+• Any misconduct, fraud, misrepresentation, confidentiality breach, or policy violation may result in immediate termination.
+• This offer is subject to verification of information provided by you.
+
+---
+
+ACCEPTANCE OF OFFER
+
+I hereby confirm that I have read, understood, and accepted the terms and conditions contained in this Offer Letter.
+
+Candidate Name:
+{{CandidateName}}
+
+Signature:
+_______________________
+
+Date:
+_______________________
+
+---
+
+FOR QUANTIX TECHNOLOGY
+
+Authorized Signatory:
+_______________________
+
+Date:
+_______________________
+
+Welcome to Quantix Technology.
+
+We look forward to a successful and rewarding professional association.`,
   },
 ]
 
@@ -182,7 +364,7 @@ export function HrmsTemplatesView() {
           body: JSON.stringify({ ...tpl, isDefault: false, isActive: true }),
         })
       }
-      toast.success("4 default templates added")
+      toast.success(`${DEFAULT_TEMPLATES.length} default templates added`)
       load()
     } catch { toast.error("Seed failed") }
     finally { setSeeding(false) }
