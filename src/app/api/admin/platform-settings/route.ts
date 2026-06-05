@@ -11,9 +11,19 @@ import { invalidatePlatformSettingsCache } from '@/lib/platform-settings'
 
 // Fields the client is allowed to PATCH
 const PATCHABLE = new Set([
+  // Company identity
   'companyName', 'companyAddress', 'companyEmail', 'companyPhone',
   'companyWebsite', 'companyGst',
+  // Zone 1 — Core Platform
+  'tagline',
   'primaryColor', 'secondaryColor', 'accentColor',
+  'successColor', 'warningColor', 'infoColor',
+  // Zone 2 — Sales Documents
+  'salesAccentColor', 'salesFooterText',
+  // Zone 3 — HRMS
+  'hrmsAccentColor',
+  'signatoryName', 'signatoryDesignation',
+  // Billing
   'invoicePrefix', 'sacCode',
   'gstRate', 'cgstRate', 'sgstRate',
 ])

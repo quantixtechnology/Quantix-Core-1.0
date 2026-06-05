@@ -35,10 +35,37 @@ model PlatformSettings {
   faviconUrl     String?
   emailLogoUrl   String?
 
-  // Brand colors
+  // Zone 1 — Core Platform: additional assets
+  tagline        String?
+  compactLogoUrl String?  // collapsed sidebar / app icon
+  watermarkUrl   String?  // platform watermark
+
+  // Zone 1 — Core Platform: brand colors
   primaryColor   String?
   secondaryColor String?
   accentColor    String?
+  successColor   String?
+  warningColor   String?
+  infoColor      String?
+
+  // Zone 2 — Sales Documents: assets
+  salesLogoUrl      String?
+  salesWatermarkUrl String?
+
+  // Zone 2 — Sales Documents: config
+  salesAccentColor  String?
+  salesFooterText   String?
+
+  // Zone 3 — HRMS: assets
+  hrmsLogoUrl      String?
+  hrmsWatermarkUrl String?
+
+  // Zone 3 — HRMS: config
+  hrmsAccentColor      String?
+  signatoryName        String?
+  signatoryDesignation String?
+  signatorySignUrl     String?  // digital signature image
+  signatoryStampUrl    String?  // signature + stamp image
 
   // Billing / invoice configuration
   invoicePrefix  String? @default("QTX")

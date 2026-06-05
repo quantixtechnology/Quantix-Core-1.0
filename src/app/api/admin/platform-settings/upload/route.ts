@@ -22,7 +22,16 @@ const ALLOWED_TYPES = new Set([
   'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon',
 ])
 const MAX_SIZE = 5 * 1024 * 1024
-const ALLOWED_FIELDS = new Set(['logoUrl', 'darkLogoUrl', 'faviconUrl', 'emailLogoUrl'])
+const ALLOWED_FIELDS = new Set([
+  // Zone 1 — Core Platform
+  'logoUrl', 'darkLogoUrl', 'faviconUrl', 'emailLogoUrl',
+  'compactLogoUrl', 'watermarkUrl',
+  // Zone 2 — Sales Documents
+  'salesLogoUrl', 'salesWatermarkUrl',
+  // Zone 3 — HRMS
+  'hrmsLogoUrl', 'hrmsWatermarkUrl',
+  'signatorySignUrl', 'signatoryStampUrl',
+])
 
 export const POST = withMiddleware({
   requireAuth: true,
@@ -35,7 +44,7 @@ export const POST = withMiddleware({
 
     if (!file)        return createErrorResponse('No file provided', 400)
     if (!assetField || !ALLOWED_FIELDS.has(assetField))
-      return createErrorResponse('Invalid assetField — must be logoUrl | darkLogoUrl | faviconUrl | emailLogoUrl', 400)
+      return createErrorResponse('Invalid assetField', 400)
     if (!ALLOWED_TYPES.has(file.type))
       return createErrorResponse('Only JPEG, PNG, WebP, GIF, SVG, ICO allowed', 400)
     if (file.size > MAX_SIZE)

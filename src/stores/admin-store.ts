@@ -77,6 +77,7 @@ export type AdminPage =
   | "rev-renewal-ownership"
   | "rev-addon-ownership"
   | "rev-commission-processing"
+  | "brand-studio"
 
 export type BusinessPage =
   | "dashboard"

@@ -541,6 +541,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "security-access":        "platform:security",
   "audit-logs":             "platform:audit_logs",
   "platform-settings":      "settings:view",
+  "brand-studio":           "settings:view",
   "settings":               "settings:view",
   "commission-calculator":  "commission:view",
   // HRMS

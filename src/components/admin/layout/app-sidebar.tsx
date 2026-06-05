@@ -8,7 +8,7 @@ import {
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
   DatabaseZap, FileText, Archive, Package, Calculator,
   UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal,
-  TrendingUp, RefreshCcw, Puzzle, CheckCircle,
+  TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -121,7 +121,7 @@ const systemNavItems: NavItem[] = [
   { key: "backup-monitoring",   label: "Backup & Monitoring", icon: Server    },
   { key: "security-access",     label: "Security & Access",   icon: Lock      },
   { key: "audit-logs",          label: "Audit Logs",          icon: ScrollText},
-  { key: "platform-settings",   label: "Platform Settings",   icon: Settings  },
+  { key: "brand-studio",        label: "Brand Studio",        icon: Palette   },
   { key: "settings",            label: "Settings",            icon: Settings  },
 ]
 
@@ -228,14 +228,12 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
           <SheetHeader className="px-4 py-4 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
             <SheetTitle className="sr-only">Quantix Technology</SheetTitle>
             <SheetDescription className="sr-only">Navigation menu</SheetDescription>
-            <div
-              className="rounded-xl px-4 py-2.5"
-              style={{
-                background: "rgba(255,255,255,0.97)",
-                boxShadow: "0 2px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
-              }}
-            >
-              <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "38px", display: "block" }} className="object-contain w-full" />
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center font-black text-white text-base select-none" style={{ background: "#2563EB", letterSpacing: "-0.01em" }}>Q</div>
+              <div className="flex flex-col">
+                <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight">Quantix Core</span>
+                <span className="text-[10px] leading-tight" style={{ color: "rgba(255,255,255,0.38)" }}>Platform Admin</span>
+              </div>
             </div>
           </SheetHeader>
 
@@ -274,15 +272,13 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   return (
     <Sidebar collapsible="icon" className="border-r-0" style={sidebarVars}>
       {/* Brand header */}
-      <SidebarHeader className="px-3 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <div
-          className="rounded-xl px-4 py-2.5 transition-shadow hover:shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
-          style={{
-            background: "rgba(255,255,255,0.97)",
-            boxShadow: "0 2px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)",
-          }}
-        >
-          <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "38px", display: "block" }} className="object-contain w-full" />
+      <SidebarHeader className="px-3 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center font-black text-white text-base select-none" style={{ background: "#2563EB", letterSpacing: "-0.01em" }}>Q</div>
+          <div className="flex flex-col group-data-[state=collapsed]:hidden min-w-0">
+            <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight truncate">Quantix Core</span>
+            <span className="text-[10px] leading-tight truncate" style={{ color: "rgba(255,255,255,0.38)" }}>Platform Admin</span>
+          </div>
         </div>
       </SidebarHeader>
 
