@@ -16,6 +16,7 @@ import { formatINR } from "@/lib/currency"
 import { resolveImageUrl } from "@/lib/image-url"
 import { InstallAppButton } from "@/components/storefront/install-app-button"
 import { usePwaMode } from "@/hooks/use-pwa-mode"
+import { PwaModeContext } from "@/contexts/pwa-mode-context"
 
 interface Category { id: string; name: string; slug: string; image: string | null }
 
@@ -218,6 +219,7 @@ export function StorefrontLayout({
   // ══════════════════════════════════════════════════════════════════════════
   if (isPwa) {
     return (
+      <PwaModeContext.Provider value={isPwa}>
       <div className="min-h-screen flex flex-col bg-gray-50">
         {/* PWA App Bar */}
         <header className="sticky top-0 z-40 bg-white shadow-sm">
@@ -234,27 +236,33 @@ export function StorefrontLayout({
               </>
             ) : (
               <>
-                {/* Home: logo + name + store name as one grouped unit */}
-                <button
-                  onClick={() => nav.go("home")}
-                  className="flex items-center gap-2.5 shrink-0 min-w-0 max-w-[calc(100%-80px)]"
-                >
-                  <img
-                    src={currentBusinessLogo || "/placeholder-logo.svg"}
-                    alt={currentBusinessName || "Store"}
-                    className="w-9 h-9 rounded-xl object-contain border border-gray-100 shrink-0"
-                    onError={(e) => {
-                      const img = e.currentTarget
-                      if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
-                    }}
-                  />
+                {/* Home header: logo + stacked name/store — three separate tap targets, no nesting */}
+                <div className="flex items-center gap-2.5 shrink-0 min-w-0 max-w-[calc(100%-80px)]">
+                  <button
+                    onClick={() => nav.go("home")}
+                    className="shrink-0 active:opacity-70"
+                    aria-label="Go home"
+                  >
+                    <img
+                      src={currentBusinessLogo || "/placeholder-logo.svg"}
+                      alt={currentBusinessName || "Store"}
+                      className="w-9 h-9 rounded-xl object-contain border border-gray-100"
+                      onError={(e) => {
+                        const img = e.currentTarget
+                        if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
+                      }}
+                    />
+                  </button>
                   <div className="flex flex-col justify-center min-w-0">
-                    <p className="text-[14px] font-bold text-gray-900 leading-none truncate">
+                    <button
+                      onClick={() => nav.go("home")}
+                      className="text-[14px] font-bold text-gray-900 leading-none truncate text-left active:opacity-70"
+                    >
                       {currentBusinessName || "Store"}
-                    </p>
+                    </button>
                     {currentStore && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
+                        onClick={onOpenStorePicker}
                         className="flex items-center gap-0.5 text-[11px] leading-none mt-[5px] active:opacity-70"
                         style={{ color: brandColor }}
                       >
@@ -264,7 +272,7 @@ export function StorefrontLayout({
                       </button>
                     )}
                   </div>
-                </button>
+                </div>
                 <div className="flex-1" />
               </>
             )}
@@ -390,6 +398,7 @@ export function StorefrontLayout({
 
         {CartDrawer}
       </div>
+      </PwaModeContext.Provider>
     )
   }
 
@@ -399,6 +408,7 @@ export function StorefrontLayout({
   // Desktop: category nav strip  |  Mobile: hamburger menu
   // ══════════════════════════════════════════════════════════════════════════
   return (
+    <PwaModeContext.Provider value={isPwa}>
     <div className="min-h-screen bg-white flex flex-col">
 
       {/* ── Full web header ────────────────────────────────────────────── */}
@@ -653,5 +663,6 @@ export function StorefrontLayout({
 
       {CartDrawer}
     </div>
+    </PwaModeContext.Provider>
   )
 }

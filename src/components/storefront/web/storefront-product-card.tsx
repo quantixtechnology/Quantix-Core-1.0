@@ -19,7 +19,7 @@ import { Plus, Minus } from "lucide-react"
 import { ProductImage } from "./product-image"
 import type { WebNav } from "./storefront-website"
 import { getCardClasses, TYPE } from "@/design-system"
-import { usePwaMode } from "@/hooks/use-pwa-mode"
+import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
 
 // ── Shared types ───────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ export function StorefrontProductCard({
   businessType,
   storeClosed = false,
 }: StorefrontProductCardProps) {
-  const isPwa = usePwaMode()
+  const isPwa = usePwaModeCtx()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const { currentImageConfig, currentBusinessTheme } = useAdminStore()
   const btConfig = getBusinessTypeConfig(businessType)
@@ -220,16 +220,29 @@ export function StorefrontProductCard({
             )}
             {!isOutOfStock && !storeClosed && cartItem && (
               <div
-                className="flex items-center h-[30px] rounded-xl overflow-hidden select-none shrink-0"
-                style={{ backgroundColor: brandColor }}
+                className="flex items-center h-[26px] rounded-xl select-none shrink-0 border-[1.5px] bg-white"
+                style={{ borderColor: brandColor }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <button onClick={handleDecrease} className="w-[26px] h-full flex items-center justify-center text-white active:opacity-70">
-                  <Minus className="w-3 h-3" />
+                <button
+                  onClick={handleDecrease}
+                  className="w-[22px] h-full flex items-center justify-center active:opacity-60"
+                  style={{ color: brandColor }}
+                >
+                  <Minus className="w-[9px] h-[9px]" strokeWidth={2.5} />
                 </button>
-                <span className="w-5 text-center text-[12px] font-bold text-white select-none">{cartItem.quantity}</span>
-                <button onClick={handleIncrease} className="w-[26px] h-full flex items-center justify-center text-white active:opacity-70">
-                  <Plus className="w-3 h-3" />
+                <span
+                  className="w-4 text-center text-[11px] font-bold select-none"
+                  style={{ color: brandColor }}
+                >
+                  {cartItem.quantity}
+                </span>
+                <button
+                  onClick={handleIncrease}
+                  className="w-[22px] h-full flex items-center justify-center active:opacity-60"
+                  style={{ color: brandColor }}
+                >
+                  <Plus className="w-[9px] h-[9px]" strokeWidth={2.5} />
                 </button>
               </div>
             )}

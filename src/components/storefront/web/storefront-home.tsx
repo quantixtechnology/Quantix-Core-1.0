@@ -12,7 +12,7 @@ import type { StorefrontCategory } from "./storefront-category-card"
 import { StorefrontBanner } from "./storefront-banner"
 import { StorefrontEmptyState } from "./storefront-empty-state"
 import { PwaInstallBanner } from "./pwa-install-banner"
-import { usePwaMode } from "@/hooks/use-pwa-mode"
+import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
 import {
   TYPE, PRODUCT_GRID, GRID_GAP, CATEGORY_GRID, CAT_GAP,
   PAGE_X, SECTION_Y, BTN_LG, BTN_GHOST,
@@ -99,7 +99,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
     storefrontWhyChooseUs, storefrontPromiseBar,
   } = useAdminStore()
 
-  const isPwa      = usePwaMode()
+  const isPwa      = usePwaModeCtx()
   const config     = getBusinessTypeConfig(currentBusinessType)
   const heroContent  = getHeroContent(currentBusinessType)
   const deliveryMeta = getDeliveryMeta(currentBusinessType)
@@ -174,47 +174,48 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
   if (isPwa) {
     return (
       <div className="pb-4">
-        {/* Promise chips + search bar */}
-        <div className="bg-white px-4 pt-1 pb-3">
-          <div className="flex items-center gap-2.5 mb-3 overflow-x-auto scrollbar-none">
-            {promiseItems.slice(0, 3).map(({ emoji, label }) => (
-              <div
-                key={label}
-                className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold"
-                style={{ backgroundColor: `${brandColor}12`, color: brandColor }}
-              >
-                <span className="text-base leading-none">{emoji}</span>
-                <span>{label}</span>
-              </div>
-            ))}
-            {storeClosed && (
-              <div className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-red-600">
-                <span>🔴</span>
-                <span>Store Closed</span>
-              </div>
-            )}
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        {/* Hero — search + service chips, flows seamlessly from app bar */}
+        <div className="bg-white px-4 pt-3 pb-4" style={{ boxShadow: "0 1px 0 rgba(0,0,0,0.06)" }}>
+          {/* Search — primary action */}
+          <div className="relative mb-3">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
               type="search"
-              placeholder={`Search ${currentBusinessName || "products"}…`}
+              placeholder={`Search in ${currentBusinessName || "store"}…`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearch}
-              className="w-full h-11 pl-10 pr-4 text-sm bg-gray-100 rounded-2xl border border-transparent focus:outline-none focus:bg-white focus:border-gray-300 transition-colors placeholder:text-gray-400"
+              className="w-full h-11 pl-10 pr-4 text-sm bg-gray-50 rounded-2xl border border-gray-200 focus:outline-none focus:bg-white focus:border-gray-300 transition-colors placeholder:text-gray-400"
             />
+          </div>
+
+          {/* Service chips + store status — compact, below search */}
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+            {storeClosed ? (
+              <div className="flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-50 text-red-600">
+                <span>🔴</span><span>Store Closed</span>
+              </div>
+            ) : promiseItems.slice(0, 3).map(({ emoji, label }) => (
+              <div
+                key={label}
+                className="flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium"
+                style={{ backgroundColor: `${brandColor}10`, color: brandColor }}
+              >
+                <span className="text-sm leading-none">{emoji}</span>
+                <span>{label}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* PWA install */}
-        <div className="px-4">
+        {/* PWA install banner */}
+        <div className="px-4 pt-2">
           <PwaInstallBanner brandColor={brandColor} />
         </div>
 
         {/* Banner carousel */}
         {currentBusinessId && (
-          <div className="mt-2 px-3">
+          <div className="mt-3 px-3">
             <StorefrontBanner
               businessId={currentBusinessId}
               storeId={currentStoreId || null}
@@ -245,15 +246,15 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
               <>
                 <button
                   onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                  className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform duration-150"
+                  className="flex flex-col items-center gap-1.5 shrink-0 active:scale-[0.91] transition-transform duration-100"
                 >
                   <div
-                    className="rounded-2xl flex items-center justify-center text-[28px] border-2"
-                    style={{ backgroundColor: `${brandColor}15`, borderColor: `${brandColor}30`, width: 76, height: 68 }}
+                    className="rounded-xl flex items-center justify-center text-[26px] border-[1.5px] bg-white"
+                    style={{ borderColor: `${brandColor}60`, width: 72, height: 72 }}
                   >
                     🛒
                   </div>
-                  <span className="text-[11px] font-medium text-gray-700 text-center leading-tight" style={{ width: 76 }}>All</span>
+                  <span className="text-[11px] font-semibold text-gray-800 text-center leading-tight" style={{ width: 72 }}>All</span>
                 </button>
                 {categories.map((c) => (
                   <StorefrontCategoryCard

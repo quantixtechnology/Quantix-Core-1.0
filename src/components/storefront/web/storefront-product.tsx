@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import { ProductImage } from "./product-image"
-import { usePwaMode } from "@/hooks/use-pwa-mode"
+import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
 
 interface Variant {
   id: string
@@ -121,7 +121,7 @@ function OptionChip({
 export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPageProps) {
   const { currentBusinessId, currentBusinessType, currentStoreId } = useAdminStore()
   const { addItem, items, updateQuantity } = useCartStore()
-  const isPwa = usePwaMode()
+  const isPwa = usePwaModeCtx()
 
   const config   = getBusinessTypeConfig(currentBusinessType)
   const checkout = config.checkoutOptions

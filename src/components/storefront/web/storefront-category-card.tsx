@@ -11,7 +11,7 @@
 
 import { resolveImageUrl } from "@/lib/image-url"
 import { getCategoryIcon } from "@/lib/business-type-config"
-import { usePwaMode } from "@/hooks/use-pwa-mode"
+import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ export function StorefrontCategoryCard({
   onClick,
   showCount = false,
 }: StorefrontCategoryCardProps) {
-  const isPwa = usePwaMode()
+  const isPwa = usePwaModeCtx()
 
   const tileColor = category.color
     ? `${category.color}20`
@@ -55,35 +55,47 @@ export function StorefrontCategoryCard({
   const iconFallback = category.icon || getCategoryIcon(businessType, category.name)
   const imgSrc       = category.image ? resolveImageUrl(category.image) : null
 
-  const tileW = isPwa ? 76 : 60
-  const tileH = isPwa ? 68 : 60
-  const iconCls = isPwa ? "text-[28px]" : "text-[26px]"
+  const tileW = isPwa ? 72 : 60
+  const tileH = isPwa ? 72 : 60
+  const iconCls = isPwa ? "text-[26px]" : "text-[24px]"
+
+  // PWA: white bg with brand border — clean contrast
+  const pwaTileBg    = imgSrc ? "transparent" : "white"
+  const pwaBorderClr = category.color ? `${category.color}80` : `${brandColor}60`
 
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform duration-150 group"
+      className="flex flex-col items-center gap-1.5 shrink-0 active:scale-[0.91] transition-transform duration-100 group"
     >
       {/* Tile */}
-      <div
-        className="rounded-2xl flex items-center justify-center overflow-hidden border-2 transition-all"
-        style={{ backgroundColor: tileColor, borderColor, width: tileW, height: tileH }}
-      >
-        {imgSrc ? (
-          <img
-            src={imgSrc}
-            alt={category.name}
-            loading="lazy"
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <span className={`${iconCls} leading-none`}>{iconFallback}</span>
-        )}
-      </div>
+      {isPwa ? (
+        <div
+          className="rounded-xl flex items-center justify-center overflow-hidden border-[1.5px] transition-colors"
+          style={{ backgroundColor: pwaTileBg, borderColor: pwaBorderClr, width: tileW, height: tileH }}
+        >
+          {imgSrc ? (
+            <img src={imgSrc} alt={category.name} loading="lazy" className="w-full h-full object-cover" />
+          ) : (
+            <span className={`${iconCls} leading-none`}>{iconFallback}</span>
+          )}
+        </div>
+      ) : (
+        <div
+          className="rounded-2xl flex items-center justify-center overflow-hidden border-2 transition-all"
+          style={{ backgroundColor: tileColor, borderColor, width: tileW, height: tileH }}
+        >
+          {imgSrc ? (
+            <img src={imgSrc} alt={category.name} loading="lazy" className="w-full h-full object-cover" />
+          ) : (
+            <span className={`${iconCls} leading-none`}>{iconFallback}</span>
+          )}
+        </div>
+      )}
 
       {/* Label */}
       <span
-        className="text-[11px] font-medium text-gray-700 text-center leading-tight line-clamp-2"
+        className={`text-[11px] text-center leading-tight line-clamp-2 ${isPwa ? "font-semibold text-gray-800" : "font-medium text-gray-700"}`}
         style={{ width: tileW }}
       >
         {category.name}
@@ -102,13 +114,12 @@ export function StorefrontCategoryCard({
 // ── Skeleton ───────────────────────────────────────────────────────────────
 
 export function StorefrontCategoryCardSkeleton() {
-  const isPwa = usePwaMode()
-  const w = isPwa ? 76 : 60
-  const h = isPwa ? 68 : 60
+  const isPwa = usePwaModeCtx()
+  const sz = isPwa ? 72 : 60
   return (
     <div className="flex flex-col items-center gap-1.5 shrink-0 animate-pulse">
-      <div className="rounded-2xl bg-gray-100" style={{ width: w, height: h }} />
-      <div className="h-3 bg-gray-100 rounded" style={{ width: w }} />
+      <div className={isPwa ? "rounded-xl bg-gray-100" : "rounded-2xl bg-gray-100"} style={{ width: sz, height: sz }} />
+      <div className="h-3 bg-gray-100 rounded" style={{ width: sz }} />
     </div>
   )
 }
