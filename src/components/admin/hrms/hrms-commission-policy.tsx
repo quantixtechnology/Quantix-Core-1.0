@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,7 +24,6 @@ interface PolicyTier {
 
 interface CommissionPolicy {
   id: string
-  businessId: string
   name: string
   effectiveFrom: string
   effectiveTo?: string
@@ -35,16 +34,13 @@ interface CommissionPolicy {
 
 const EMPTY_TIER: PolicyTier = { minRevenue: 0, maxRevenue: null, signupPct: 0, renewalPct: 0, addonPct: 0 }
 
-const EMPTY_FORM = {
-  name: "", effectiveFrom: "", effectiveTo: "", isActive: true, notes: "",
-}
+const EMPTY_FORM = { name: "", effectiveFrom: "", effectiveTo: "", isActive: true, notes: "" }
 
 function parseTiers(json: string): PolicyTier[] {
   try { return JSON.parse(json) } catch { return [] }
 }
 
 export function HrmsCommissionPolicyView() {
-  const [businessId, setBusinessId] = useState("")
   const [policies, setPolicies] = useState<CommissionPolicy[]>([])
   const [loading, setLoading] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
@@ -54,39 +50,25 @@ export function HrmsCommissionPolicyView() {
   const [tiers, setTiers] = useState<PolicyTier[]>([{ ...EMPTY_TIER }])
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetch("/api/admin/hrms/settings")
-      .then((r) => r.json())
-      .then((j) => { if (j.success && j.data?.businessId) setBusinessId(j.data.businessId) })
-      .catch(() => {})
-  }, [])
-
   const load = useCallback(async () => {
-    if (!businessId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/hrms/commission-policy?businessId=${businessId}`)
+      const res = await fetch("/api/admin/hrms/commission-policy")
       const json = await res.json()
       if (json.success) setPolicies(json.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [businessId])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
   const openCreate = () => {
-    setEditItem(null)
-    setForm({ ...EMPTY_FORM })
-    setTiers([{ ...EMPTY_TIER }])
-    setFormOpen(true)
+    setEditItem(null); setForm({ ...EMPTY_FORM }); setTiers([{ ...EMPTY_TIER }]); setFormOpen(true)
   }
 
   const openEdit = (p: CommissionPolicy) => {
     setEditItem(p)
-    setForm({
-      name: p.name, effectiveFrom: p.effectiveFrom.slice(0, 10),
-      effectiveTo: p.effectiveTo?.slice(0, 10) ?? "", isActive: p.isActive, notes: p.notes ?? "",
-    })
+    setForm({ name: p.name, effectiveFrom: p.effectiveFrom.slice(0, 10), effectiveTo: p.effectiveTo?.slice(0, 10) ?? "", isActive: p.isActive, notes: p.notes ?? "" })
     setTiers(parseTiers(p.tiers).length ? parseTiers(p.tiers) : [{ ...EMPTY_TIER }])
     setFormOpen(true)
   }
@@ -100,7 +82,7 @@ export function HrmsCommissionPolicyView() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, businessId, tiers: JSON.stringify(tiers) }),
+        body: JSON.stringify({ ...form, tiers: JSON.stringify(tiers) }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -137,21 +119,18 @@ export function HrmsCommissionPolicyView() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Commission Policy</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Define tier-based commission rates for Signup, Renewal, and Addon revenue.</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            <h1 className="text-2xl font-bold tracking-tight">Commission Policy</h1>
+            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Quantix Internal</span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Define tier-based commission rates applied to Quantix employee commission slips.
+          </p>
         </div>
-        <Button onClick={openCreate} className="gap-2" disabled={!businessId}>
+        <Button onClick={openCreate} className="gap-2">
           <Plus className="h-4 w-4" /> New Policy
         </Button>
       </div>
-
-      {!businessId && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-4 text-sm text-amber-800">
-            Configure your Business ID in <strong>HRMS Settings</strong> first.
-          </CardContent>
-        </Card>
-      )}
 
       <div className="space-y-4">
         {loading ? (
@@ -166,7 +145,7 @@ export function HrmsCommissionPolicyView() {
             </CardContent>
           </Card>
         ) : policies.map((p) => {
-          const tiers = parseTiers(p.tiers)
+          const trs = parseTiers(p.tiers)
           return (
             <Card key={p.id}>
               <CardHeader className="pb-3">
@@ -180,7 +159,7 @@ export function HrmsCommissionPolicyView() {
                     </CardTitle>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Effective: {format(new Date(p.effectiveFrom), "d MMM yyyy")}
-                      {p.effectiveTo ? ` → ${format(new Date(p.effectiveTo), "d MMM yyyy")}` : " (Open)"}
+                      {p.effectiveTo ? ` → ${format(new Date(p.effectiveTo), "d MMM yyyy")}` : " (Open ended)"}
                     </p>
                     {p.notes && <p className="text-xs text-muted-foreground mt-0.5">{p.notes}</p>}
                   </div>
@@ -194,7 +173,7 @@ export function HrmsCommissionPolicyView() {
                   </div>
                 </div>
               </CardHeader>
-              {tiers.length > 0 && (
+              {trs.length > 0 && (
                 <CardContent className="pt-0">
                   <Table>
                     <TableHeader>
@@ -207,7 +186,7 @@ export function HrmsCommissionPolicyView() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {tiers.map((t, i) => (
+                      {trs.map((t, i) => (
                         <TableRow key={i}>
                           <TableCell className="text-sm font-mono">₹{t.minRevenue.toLocaleString("en-IN")}</TableCell>
                           <TableCell className="text-sm font-mono">{t.maxRevenue != null ? `₹${t.maxRevenue.toLocaleString("en-IN")}` : "∞"}</TableCell>
@@ -225,7 +204,6 @@ export function HrmsCommissionPolicyView() {
         })}
       </div>
 
-      {/* Policy Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -255,7 +233,6 @@ export function HrmsCommissionPolicyView() {
               </div>
             </div>
 
-            {/* Tiers */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold">Commission Tiers</Label>

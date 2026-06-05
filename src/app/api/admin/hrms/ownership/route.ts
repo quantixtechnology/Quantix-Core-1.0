@@ -7,15 +7,10 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
   async (req: NextRequest) => {
     try {
       const { searchParams } = new URL(req.url)
-      const hrmsBusinessId = searchParams.get('hrmsBusinessId') || ''
       const search = searchParams.get('search') || ''
 
-      const assignments = await db.ownershipAssignment.findMany({
-        where: { hrmsBusinessId },
-        orderBy: { createdAt: 'desc' },
-      })
+      const assignments = await db.ownershipAssignment.findMany({ orderBy: { createdAt: 'desc' } })
 
-      // Enrich with client business names and employee names
       const clientIds = [...new Set(assignments.map((a) => a.clientBusinessId))]
       const employeeIds = [...new Set([
         ...assignments.map((a) => a.signupOwnerId).filter(Boolean),
@@ -39,9 +34,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
           renewalOwner:   a.renewalOwnerId ? empMap[a.renewalOwnerId] ?? null : null,
           addonOwner:     a.addonOwnerId   ? empMap[a.addonOwnerId]   ?? null : null,
         }))
-        .filter((a) =>
-          !search || a.clientBusiness.name.toLowerCase().includes(search.toLowerCase())
-        )
+        .filter((a) => !search || a.clientBusiness.name.toLowerCase().includes(search.toLowerCase()))
 
       return NextResponse.json({ success: true, data: enriched })
     } catch (e) {
@@ -54,21 +47,20 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
   async (req: NextRequest) => {
     try {
       const body = await req.json() as {
-        hrmsBusinessId: string
         clientBusinessId: string
         signupOwnerId?: string
         renewalOwnerId?: string
         addonOwnerId?: string
-        assignedBy: string
+        assignedBy?: string
         notes?: string
       }
 
-      if (!body.hrmsBusinessId || !body.clientBusinessId) {
-        return createErrorResponse('hrmsBusinessId and clientBusinessId required', 400)
+      if (!body.clientBusinessId) {
+        return createErrorResponse('clientBusinessId required', 400)
       }
 
       const assignment = await db.ownershipAssignment.upsert({
-        where: { hrmsBusinessId_clientBusinessId: { hrmsBusinessId: body.hrmsBusinessId, clientBusinessId: body.clientBusinessId } },
+        where: { clientBusinessId: body.clientBusinessId },
         update: {
           signupOwnerId:  body.signupOwnerId  || null,
           renewalOwnerId: body.renewalOwnerId || null,
@@ -77,7 +69,6 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
           notes:          body.notes,
         },
         create: {
-          hrmsBusinessId:   body.hrmsBusinessId,
           clientBusinessId: body.clientBusinessId,
           signupOwnerId:    body.signupOwnerId  || null,
           renewalOwnerId:   body.renewalOwnerId || null,

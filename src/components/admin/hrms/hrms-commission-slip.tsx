@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Plus, Eye, CheckCircle, Printer, Trash2, BadgeDollarSign, ChevronDown } from "lucide-react"
+import { Plus, Eye, Printer, Trash2, BadgeDollarSign } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 
@@ -22,18 +22,19 @@ interface CommissionLine {
   businessId: string
   businessName?: string
   amount: number
-  pct: number
-  commission: number
+  commissionPct: number
+  commissionEarned: number
 }
+
+interface RenewalLine extends CommissionLine { renewalAmount: number }
 
 interface CommissionSlip {
   id: string
-  businessId: string
   employeeId: string
   periodType: string
   periodFrom: string
   periodTo: string
-  policyId: string
+  policyId?: string
   signupLines: string
   renewalLines: string
   addonLines: string
@@ -56,20 +57,13 @@ const STATUS_STYLES: Record<SlipStatus, string> = {
   PAID:         "bg-blue-100 text-blue-700",
 }
 
-function parseLine(json: string): CommissionLine[] {
-  try { return JSON.parse(json) } catch { return [] }
-}
-
-function sumLines(lines: CommissionLine[]) {
-  return lines.reduce((a, l) => a + l.commission, 0)
-}
-
+function parseLine<T>(json: string): T[] { try { return JSON.parse(json) } catch { return [] } }
+function sumLines(lines: CommissionLine[]) { return lines.reduce((a, l) => a + l.commissionEarned, 0) }
 function fmtCurrency(n: number) {
   return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function HrmsCommissionSlipView() {
-  const [businessId, setBusinessId] = useState("")
   const [slips, setSlips] = useState<CommissionSlip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
@@ -78,55 +72,49 @@ export function HrmsCommissionSlipView() {
   const [viewSlip, setViewSlip] = useState<CommissionSlip | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
-  const [preview, setPreview] = useState<CommissionSlip | null>(null)
+  const [preview, setPreview] = useState<Record<string, unknown> | null>(null)
   const [form, setForm] = useState({
     employeeId: "", policyId: "", periodType: "MONTHLY",
     periodFrom: "", periodTo: "", adjustments: "", adjustmentNote: "", notes: "",
   })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetch("/api/admin/hrms/settings")
-      .then((r) => r.json())
-      .then((j) => { if (j.success && j.data?.businessId) setBusinessId(j.data.businessId) })
-      .catch(() => {})
-  }, [])
-
   const loadDeps = useCallback(async () => {
-    if (!businessId) return
     const [empRes, polRes] = await Promise.all([
-      fetch(`/api/admin/hrms/employees?businessId=${businessId}&limit=200`),
-      fetch(`/api/admin/hrms/commission-policy?businessId=${businessId}`),
+      fetch("/api/admin/hrms/employees?limit=200"),
+      fetch("/api/admin/hrms/commission-policy"),
     ])
     const [empJson, polJson] = await Promise.all([empRes.json(), polRes.json()])
     if (empJson.success) setEmployees(empJson.data)
     if (polJson.success) setPolicies(polJson.data)
-  }, [businessId])
+  }, [])
 
   const load = useCallback(async () => {
-    if (!businessId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/hrms/commission-slips?businessId=${businessId}&limit=100`)
+      const res = await fetch("/api/admin/hrms/commission-slips?limit=100")
       const json = await res.json()
       if (json.success) setSlips(json.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [businessId])
+  }, [])
 
   useEffect(() => { load(); loadDeps() }, [load, loadDeps])
 
+  const resetForm = () => setForm({ employeeId: "", policyId: "", periodType: "MONTHLY", periodFrom: "", periodTo: "", adjustments: "", adjustmentNote: "", notes: "" })
+
   const handlePreview = async () => {
-    if (!form.employeeId || !form.policyId || !form.periodFrom || !form.periodTo) {
-      toast.error("Fill Employee, Policy, Period From and To")
+    if (!form.employeeId || !form.periodFrom || !form.periodTo) {
+      toast.error("Fill Employee, Period From and To")
       return
     }
     setPreviewing(true)
+    setPreview(null)
     try {
       const res = await fetch("/api/admin/hrms/commission-slips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, businessId, adjustments: parseFloat(form.adjustments) || 0, preview: true }),
+        body: JSON.stringify({ ...form, adjustments: parseFloat(form.adjustments) || 0, preview: true }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -137,8 +125,8 @@ export function HrmsCommissionSlipView() {
   }
 
   const handleGenerate = async () => {
-    if (!form.employeeId || !form.policyId || !form.periodFrom || !form.periodTo) {
-      toast.error("Fill Employee, Policy, Period From and To")
+    if (!form.employeeId || !form.periodFrom || !form.periodTo) {
+      toast.error("Fill Employee, Period From and To")
       return
     }
     setSaving(true)
@@ -146,7 +134,7 @@ export function HrmsCommissionSlipView() {
       const res = await fetch("/api/admin/hrms/commission-slips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, businessId, adjustments: parseFloat(form.adjustments) || 0 }),
+        body: JSON.stringify({ ...form, adjustments: parseFloat(form.adjustments) || 0 }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -190,12 +178,40 @@ export function HrmsCommissionSlipView() {
     }
   }
 
-  const SlipDetail = ({ slip }: { slip: CommissionSlip }) => {
-    const signup  = parseLine(slip.signupLines)
-    const renewal = parseLine(slip.renewalLines)
-    const addon   = parseLine(slip.addonLines)
-    const total = sumLines(signup) + sumLines(renewal) + sumLines(addon) + (slip.adjustments ?? 0)
+  function LineTable({ title, lines, amountKey = "amount" }: { title: string; lines: CommissionLine[]; amountKey?: string }) {
+    if (!lines.length) return null
+    return (
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{title}</p>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs">Business</TableHead>
+              <TableHead className="text-xs text-right">Revenue</TableHead>
+              <TableHead className="text-xs text-right">%</TableHead>
+              <TableHead className="text-xs text-right">Commission</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lines.map((l, i) => (
+              <TableRow key={i}>
+                <TableCell className="text-xs">{(l as unknown as Record<string, string>).businessName || l.businessId}</TableCell>
+                <TableCell className="text-xs text-right font-mono">{fmtCurrency((l as unknown as Record<string, number>)[amountKey] ?? l.amount)}</TableCell>
+                <TableCell className="text-xs text-right">{l.commissionPct}%</TableCell>
+                <TableCell className="text-xs text-right font-semibold font-mono">{fmtCurrency(l.commissionEarned)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    )
+  }
 
+  function SlipDetail({ slip }: { slip: CommissionSlip }) {
+    const signup  = parseLine<CommissionLine>(slip.signupLines)
+    const renewal = parseLine<CommissionLine>(slip.renewalLines)
+    const addon   = parseLine<CommissionLine>(slip.addonLines)
+    const total   = sumLines(signup) + sumLines(renewal) + sumLines(addon) + (slip.adjustments ?? 0)
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
@@ -204,61 +220,26 @@ export function HrmsCommissionSlipView() {
             {slip.employee?.name} ({slip.employee?.employeeCode}) · {slip.periodType} · {format(new Date(slip.periodFrom), "d MMM")} – {format(new Date(slip.periodTo), "d MMM yyyy")}
           </span>
         </div>
-
-        {signup.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Signup</p>
-            <Table><TableHeader><TableRow><TableHead className="text-xs">Business</TableHead><TableHead className="text-xs text-right">Revenue</TableHead><TableHead className="text-xs text-right">%</TableHead><TableHead className="text-xs text-right">Commission</TableHead></TableRow></TableHeader>
-              <TableBody>{signup.map((l, i) => <TableRow key={i}><TableCell className="text-xs">{l.businessId}</TableCell><TableCell className="text-xs text-right font-mono">{fmtCurrency(l.amount)}</TableCell><TableCell className="text-xs text-right">{l.pct}%</TableCell><TableCell className="text-xs text-right font-semibold font-mono">{fmtCurrency(l.commission)}</TableCell></TableRow>)}</TableBody>
-            </Table>
-          </div>
-        )}
-
-        {renewal.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Renewal</p>
-            <Table><TableHeader><TableRow><TableHead className="text-xs">Business</TableHead><TableHead className="text-xs text-right">Revenue</TableHead><TableHead className="text-xs text-right">%</TableHead><TableHead className="text-xs text-right">Commission</TableHead></TableRow></TableHeader>
-              <TableBody>{renewal.map((l, i) => <TableRow key={i}><TableCell className="text-xs">{l.businessId}</TableCell><TableCell className="text-xs text-right font-mono">{fmtCurrency(l.amount)}</TableCell><TableCell className="text-xs text-right">{l.pct}%</TableCell><TableCell className="text-xs text-right font-semibold font-mono">{fmtCurrency(l.commission)}</TableCell></TableRow>)}</TableBody>
-            </Table>
-          </div>
-        )}
-
-        {addon.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Addon</p>
-            <Table><TableHeader><TableRow><TableHead className="text-xs">Business</TableHead><TableHead className="text-xs text-right">Revenue</TableHead><TableHead className="text-xs text-right">%</TableHead><TableHead className="text-xs text-right">Commission</TableHead></TableRow></TableHeader>
-              <TableBody>{addon.map((l, i) => <TableRow key={i}><TableCell className="text-xs">{l.businessId}</TableCell><TableCell className="text-xs text-right font-mono">{fmtCurrency(l.amount)}</TableCell><TableCell className="text-xs text-right">{l.pct}%</TableCell><TableCell className="text-xs text-right font-semibold font-mono">{fmtCurrency(l.commission)}</TableCell></TableRow>)}</TableBody>
-            </Table>
-          </div>
-        )}
-
+        <LineTable title="Signup" lines={signup} />
+        <LineTable title="Renewal" lines={renewal} amountKey="renewalAmount" />
+        <LineTable title="Addon" lines={addon} />
         {(slip.adjustments !== 0 && slip.adjustments != null) && (
           <div className="flex justify-between text-sm px-1">
-            <span className="text-muted-foreground">Adjustment {slip.adjustmentNote ? `(${slip.adjustmentNote})` : ""}</span>
+            <span className="text-muted-foreground">Adjustment{slip.adjustmentNote ? ` (${slip.adjustmentNote})` : ""}</span>
             <span className="font-mono font-semibold">{fmtCurrency(slip.adjustments)}</span>
           </div>
         )}
-
         <Separator />
         <div className="flex justify-between text-base font-bold px-1">
           <span>Total Commission</span>
           <span className="font-mono text-emerald-700">{fmtCurrency(total)}</span>
         </div>
-
         {slip.notes && <p className="text-xs text-muted-foreground px-1">{slip.notes}</p>}
-
-        {/* Workflow buttons */}
-        {slip.status !== "PAID" && !("preview" in slip) && (
+        {slip.status !== "PAID" && (
           <div className="flex gap-2 pt-2 flex-wrap">
-            {slip.status === "DRAFT" && (
-              <Button size="sm" onClick={() => handleAction(slip.id, "submit")}>Submit for Review</Button>
-            )}
-            {slip.status === "UNDER_REVIEW" && (
-              <Button size="sm" onClick={() => handleAction(slip.id, "approve")}>Approve</Button>
-            )}
-            {slip.status === "APPROVED" && (
-              <Button size="sm" variant="outline" onClick={() => handleAction(slip.id, "paid")}>Mark as Paid</Button>
-            )}
+            {slip.status === "DRAFT"        && <Button size="sm" onClick={() => handleAction(slip.id, "submit")}>Submit for Review</Button>}
+            {slip.status === "UNDER_REVIEW" && <Button size="sm" onClick={() => handleAction(slip.id, "approve")}>Approve</Button>}
+            {slip.status === "APPROVED"     && <Button size="sm" variant="outline" onClick={() => handleAction(slip.id, "paid")}>Mark as Paid</Button>}
             <Button size="sm" variant="outline" className="gap-1" onClick={() => window.print()}>
               <Printer className="h-3.5 w-3.5" /> Print
             </Button>
@@ -272,21 +253,18 @@ export function HrmsCommissionSlipView() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Commission Slips</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Generated dynamically from ownership + active policy. Amounts frozen at approval.</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            <h1 className="text-2xl font-bold tracking-tight">Commission Slips</h1>
+            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Quantix Internal</span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Generated from Revenue Ownership + Business Module + Active Commission Policy. Amounts frozen at approval.
+          </p>
         </div>
-        <Button onClick={() => { setForm({ employeeId: "", policyId: "", periodType: "MONTHLY", periodFrom: "", periodTo: "", adjustments: "", adjustmentNote: "", notes: "" }); setPreview(null); setGenerateOpen(true) }} className="gap-2" disabled={!businessId}>
+        <Button onClick={() => { resetForm(); setPreview(null); setGenerateOpen(true) }} className="gap-2">
           <Plus className="h-4 w-4" /> Generate Slip
         </Button>
       </div>
-
-      {!businessId && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-4 text-sm text-amber-800">
-            Configure your Business ID in <strong>HRMS Settings</strong> first.
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardContent className="p-0">
@@ -322,7 +300,7 @@ export function HrmsCommissionSlipView() {
                           <div className="text-xs text-muted-foreground">{slip.employee?.employeeCode}</div>
                         </TableCell>
                         <TableCell className="text-sm">{format(new Date(slip.periodFrom), "d MMM")} – {format(new Date(slip.periodTo), "d MMM yyyy")}</TableCell>
-                        <TableCell className="text-xs"><Badge variant="outline">{slip.periodType}</Badge></TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs">{slip.periodType}</Badge></TableCell>
                         <TableCell>
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[slip.status]}`}>{slip.status}</span>
                         </TableCell>
@@ -367,10 +345,11 @@ export function HrmsCommissionSlipView() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Commission Policy <span className="text-destructive">*</span></Label>
-                <Select value={form.policyId} onValueChange={(v) => setForm((s) => ({ ...s, policyId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select policy" /></SelectTrigger>
+                <Label>Commission Policy <span className="text-muted-foreground text-xs">(auto-selects active if blank)</span></Label>
+                <Select value={form.policyId} onValueChange={(v) => setForm((s) => ({ ...s, policyId: v === "auto" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="— Auto (active policy) —" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="auto">— Auto (active policy) —</SelectItem>
                     {policies.map((p) => <SelectItem key={p.id} value={p.id}>{p.name} {p.isActive ? "✓" : ""}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -397,7 +376,7 @@ export function HrmsCommissionSlipView() {
               </div>
               <div className="space-y-1.5">
                 <Label>Adjustment (₹)</Label>
-                <Input type="number" placeholder="0 or negative" value={form.adjustments} onChange={(e) => setForm((s) => ({ ...s, adjustments: e.target.value }))} />
+                <Input type="number" placeholder="0 or negative for deductions" value={form.adjustments} onChange={(e) => setForm((s) => ({ ...s, adjustments: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
                 <Label>Adjustment Note</Label>
@@ -409,11 +388,39 @@ export function HrmsCommissionSlipView() {
               </div>
             </div>
 
-            {/* Preview result */}
             {preview && (
-              <div className="border rounded-lg p-4 bg-muted/30">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Preview</p>
-                <SlipDetail slip={preview} />
+              <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview</p>
+                {["signupLines", "renewalLines", "addonLines"].map((key) => {
+                  const lines = (preview[key] as CommissionLine[]) ?? []
+                  if (!lines.length) return null
+                  return (
+                    <div key={key}>
+                      <p className="text-xs text-muted-foreground font-semibold capitalize mb-1">{key.replace("Lines", "")}</p>
+                      {lines.map((l, i) => (
+                        <div key={i} className="flex justify-between text-xs py-0.5">
+                          <span>{(l as unknown as Record<string, string>).businessName || l.businessId}</span>
+                          <span className="font-mono font-semibold">{fmtCurrency(l.commissionEarned)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+                <Separator />
+                <div className="flex justify-between font-bold text-sm">
+                  <span>Gross Commission</span>
+                  <span className="text-emerald-700 font-mono">{fmtCurrency((preview.grossCommission as number) ?? 0)}</span>
+                </div>
+                {(preview.adjustments as number) !== 0 && (
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Adjustments</span>
+                    <span className="font-mono">{fmtCurrency(preview.adjustments as number)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-sm">
+                  <span>Final Payable</span>
+                  <span className="text-primary font-mono">{fmtCurrency((preview.finalPayable as number) ?? 0)}</span>
+                </div>
               </div>
             )}
           </div>
@@ -428,14 +435,11 @@ export function HrmsCommissionSlipView() {
       {/* View Slip Dialog */}
       <Dialog open={!!viewSlip} onOpenChange={(o) => !o && setViewSlip(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Commission Slip</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Commission Slip</DialogTitle></DialogHeader>
           {viewSlip && <SlipDetail slip={viewSlip} />}
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

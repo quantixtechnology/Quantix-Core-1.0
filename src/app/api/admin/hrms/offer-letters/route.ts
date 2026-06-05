@@ -4,13 +4,13 @@ import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
 const MERGE_TAGS: Record<string, string> = {
-  CandidateName: 'candidateName',
-  Designation: 'designation',
-  JoiningDate: 'joiningDate',
-  ReportingManager: 'reportingManager',
-  WorkLocation: 'workLocation',
-  Department: 'department',
-  EmploymentType: 'employmentType',
+  CandidateName:   'candidateName',
+  Designation:     'designation',
+  JoiningDate:     'joiningDate',
+  ReportingManager:'reportingManager',
+  WorkLocation:    'workLocation',
+  Department:      'department',
+  EmploymentType:  'employmentType',
 }
 
 function renderTemplate(content: string, data: Record<string, string>): string {
@@ -21,13 +21,11 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
   async (req: NextRequest) => {
     try {
       const { searchParams } = new URL(req.url)
-      const businessId = searchParams.get('businessId') || ''
-      const status     = searchParams.get('status')
-      const page       = Math.max(1, parseInt(searchParams.get('page') ?? '1'))
-      const limit      = Math.min(100, parseInt(searchParams.get('limit') ?? '20'))
+      const status = searchParams.get('status')
+      const page   = Math.max(1, parseInt(searchParams.get('page')  ?? '1'))
+      const limit  = Math.min(100, parseInt(searchParams.get('limit') ?? '20'))
 
       const where = {
-        businessId,
         deletedAt: null as null,
         ...(status ? { status: status as 'DRAFT' | 'SENT' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' } : {}),
       }
@@ -43,11 +41,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
         db.offerLetter.count({ where }),
       ])
 
-      return NextResponse.json({
-        success: true,
-        data: rows,
-        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-      })
+      return NextResponse.json({ success: true, data: rows, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
     } catch (e) {
       return createErrorResponse(e instanceof Error ? e.message : 'Failed', 500)
     }
@@ -58,7 +52,6 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
   async (req: NextRequest) => {
     try {
       const body = await req.json() as {
-        businessId: string
         templateId?: string
         employeeId?: string
         candidateName: string
@@ -71,11 +64,10 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
         createdBy?: string
       }
 
-      if (!body.businessId || !body.candidateName || !body.designation) {
-        return createErrorResponse('businessId, candidateName, designation required', 400)
+      if (!body.candidateName || !body.designation) {
+        return createErrorResponse('candidateName and designation required', 400)
       }
 
-      // Render template if provided
       let content = ''
       if (body.templateId) {
         const tpl = await db.offerLetterTemplate.findUnique({ where: { id: body.templateId } })
@@ -86,25 +78,26 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
               (body[field as keyof typeof body] as string | undefined) ?? '',
             ])
           )
-          mergeData.JoiningDate = body.joiningDate ? new Date(body.joiningDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+          mergeData.JoiningDate = body.joiningDate
+            ? new Date(body.joiningDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+            : ''
           content = renderTemplate(tpl.content, mergeData)
         }
       }
 
       const letter = await db.offerLetter.create({
         data: {
-          businessId:      body.businessId,
-          templateId:      body.templateId,
-          employeeId:      body.employeeId,
-          candidateName:   body.candidateName,
-          designation:     body.designation,
-          joiningDate:     body.joiningDate ? new Date(body.joiningDate) : null,
-          department:      body.department,
+          templateId:       body.templateId,
+          employeeId:       body.employeeId,
+          candidateName:    body.candidateName,
+          designation:      body.designation,
+          joiningDate:      body.joiningDate ? new Date(body.joiningDate) : null,
+          department:       body.department,
           reportingManager: body.reportingManager,
-          workLocation:    body.workLocation,
-          employmentType:  (body.employmentType as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN') ?? 'PERMANENT',
+          workLocation:     body.workLocation,
+          employmentType:   (body.employmentType as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN') ?? 'PERMANENT',
           content,
-          createdBy:       body.createdBy,
+          createdBy:        body.createdBy,
         },
       })
 

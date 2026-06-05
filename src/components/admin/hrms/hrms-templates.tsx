@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,14 +9,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Switch } from "@/components/ui/switch"
-import { Badge } from "@/components/ui/badge"
 import { Plus, Pencil, Trash2, LayoutTemplate, Star } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 
 interface OfferLetterTemplate {
   id: string
-  businessId: string
   name: string
   description?: string
   content: string
@@ -41,7 +39,7 @@ const DEFAULT_TEMPLATES = [
     description: "General employment offer for permanent hires",
     content: `Dear {{CandidateName}},
 
-We are pleased to offer you the position of {{Designation}} at our organisation.
+We are pleased to offer you the position of {{Designation}} at Quantix Technology Pvt. Ltd.
 
 Your date of joining will be {{JoiningDate}}. You will report to {{ReportingManager}} at our {{WorkLocation}} office.
 
@@ -51,14 +49,15 @@ Employment Type: {{EmploymentType}}
 Please confirm your acceptance by signing and returning this letter.
 
 Warm regards,
-HR Department`,
+HR Department
+Quantix Technology Pvt. Ltd.`,
   },
   {
     name: "Contract Offer Letter",
     description: "Fixed-term contract position offer",
     content: `Dear {{CandidateName}},
 
-We are pleased to offer you a contract position as {{Designation}}.
+We are pleased to offer you a contract position as {{Designation}} at Quantix Technology Pvt. Ltd.
 
 Contract Start Date: {{JoiningDate}}
 Reporting to: {{ReportingManager}}
@@ -67,14 +66,15 @@ Location: {{WorkLocation}}
 Please sign and return this letter within 3 business days.
 
 Regards,
-HR Team`,
+HR Team
+Quantix Technology Pvt. Ltd.`,
   },
   {
     name: "Internship Offer Letter",
     description: "Internship program offer",
     content: `Dear {{CandidateName}},
 
-Congratulations! We are delighted to offer you an internship as {{Designation}}.
+Congratulations! We are delighted to offer you an internship as {{Designation}} at Quantix Technology Pvt. Ltd.
 
 Start Date: {{JoiningDate}}
 Department: {{Department}}
@@ -84,14 +84,15 @@ Location: {{WorkLocation}}
 We look forward to having you on the team.
 
 Best regards,
-HR Team`,
+HR Team
+Quantix Technology Pvt. Ltd.`,
   },
   {
     name: "Commission-Based Offer Letter",
-    description: "Commission-based role offer with variable compensation note",
+    description: "Commission-based role offer",
     content: `Dear {{CandidateName}},
 
-We are excited to offer you the role of {{Designation}} on a commission-based engagement.
+We are excited to offer you the role of {{Designation}} on a commission-based engagement at Quantix Technology Pvt. Ltd.
 
 Commencement Date: {{JoiningDate}}
 Reporting to: {{ReportingManager}}
@@ -100,14 +101,14 @@ Base Location: {{WorkLocation}}
 Your compensation will be governed by the active Commission Policy. Details will be shared separately.
 
 Regards,
-HR Department`,
+HR Department
+Quantix Technology Pvt. Ltd.`,
   },
 ]
 
 const EMPTY_FORM = { name: "", description: "", content: "", isDefault: false, isActive: true }
 
 export function HrmsTemplatesView() {
-  const [businessId, setBusinessId] = useState("")
   const [templates, setTemplates] = useState<OfferLetterTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
@@ -117,28 +118,20 @@ export function HrmsTemplatesView() {
   const [saving, setSaving] = useState(false)
   const [seeding, setSeeding] = useState(false)
 
-  useEffect(() => {
-    fetch("/api/admin/hrms/settings")
-      .then((r) => r.json())
-      .then((j) => { if (j.success && j.data?.businessId) setBusinessId(j.data.businessId) })
-      .catch(() => {})
-  }, [])
-
   const load = useCallback(async () => {
-    if (!businessId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/hrms/templates?businessId=${businessId}`)
+      const res = await fetch("/api/admin/hrms/templates")
       const json = await res.json()
       if (json.success) setTemplates(json.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [businessId])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
   const openCreate = () => { setEditItem(null); setForm({ ...EMPTY_FORM }); setFormOpen(true) }
-  const openEdit = (t: OfferLetterTemplate) => {
+  const openEdit   = (t: OfferLetterTemplate) => {
     setEditItem(t)
     setForm({ name: t.name, description: t.description ?? "", content: t.content, isDefault: t.isDefault, isActive: t.isActive })
     setFormOpen(true)
@@ -153,7 +146,7 @@ export function HrmsTemplatesView() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, businessId }),
+        body: JSON.stringify(form),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -186,7 +179,7 @@ export function HrmsTemplatesView() {
         await fetch("/api/admin/hrms/templates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...tpl, businessId, isDefault: false, isActive: true }),
+          body: JSON.stringify({ ...tpl, isDefault: false, isActive: true }),
         })
       }
       toast.success("4 default templates added")
@@ -199,28 +192,23 @@ export function HrmsTemplatesView() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Offer Letter Templates</h1>
+          <div className="flex items-center gap-2 mb-0.5">
+            <h1 className="text-2xl font-bold tracking-tight">Offer Letter Templates</h1>
+            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Quantix Internal</span>
+          </div>
           <p className="text-sm text-muted-foreground mt-0.5">Use merge tags like {MERGE_TAGS[0]} to personalise letters.</p>
         </div>
         <div className="flex gap-2">
-          {templates.length === 0 && businessId && (
+          {templates.length === 0 && (
             <Button variant="outline" onClick={handleSeedDefaults} disabled={seeding} className="gap-2">
               <LayoutTemplate className="h-4 w-4" /> {seeding ? "Seeding…" : "Add Default Templates"}
             </Button>
           )}
-          <Button onClick={openCreate} className="gap-2" disabled={!businessId}>
+          <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" /> New Template
           </Button>
         </div>
       </div>
-
-      {!businessId && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-4 text-sm text-amber-800">
-            Configure your Business ID in <strong>HRMS Settings</strong> first.
-          </CardContent>
-        </Card>
-      )}
 
       {/* Merge tag reference */}
       <Card className="border-dashed">

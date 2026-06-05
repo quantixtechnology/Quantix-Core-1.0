@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,7 +17,6 @@ type OfferStatus = "DRAFT" | "SENT" | "ACCEPTED" | "DECLINED" | "EXPIRED"
 
 interface OfferLetter {
   id: string
-  businessId: string
   templateId?: string
   employeeId?: string
   candidateName: string
@@ -52,7 +51,6 @@ const EMPTY_FORM = {
 }
 
 export function HrmsOfferLetterView() {
-  const [businessId, setBusinessId] = useState("")
   const [letters, setLetters] = useState<OfferLetter[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -63,34 +61,25 @@ export function HrmsOfferLetterView() {
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetch("/api/admin/hrms/settings")
-      .then((r) => r.json())
-      .then((j) => { if (j.success && j.data?.businessId) setBusinessId(j.data.businessId) })
-      .catch(() => {})
-  }, [])
-
   const loadDeps = useCallback(async () => {
-    if (!businessId) return
     const [tplRes, empRes] = await Promise.all([
-      fetch(`/api/admin/hrms/templates?businessId=${businessId}`),
-      fetch(`/api/admin/hrms/employees?businessId=${businessId}&limit=200`),
+      fetch("/api/admin/hrms/templates"),
+      fetch("/api/admin/hrms/employees?limit=200"),
     ])
     const [tplJson, empJson] = await Promise.all([tplRes.json(), empRes.json()])
     if (tplJson.success) setTemplates(tplJson.data.filter((t: Template) => t.isActive))
     if (empJson.success) setEmployees(empJson.data)
-  }, [businessId])
+  }, [])
 
   const load = useCallback(async () => {
-    if (!businessId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/hrms/offer-letters?businessId=${businessId}&limit=100`)
+      const res = await fetch("/api/admin/hrms/offer-letters?limit=100")
       const json = await res.json()
       if (json.success) setLetters(json.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [businessId])
+  }, [])
 
   useEffect(() => { load(); loadDeps() }, [load, loadDeps])
 
@@ -101,7 +90,7 @@ export function HrmsOfferLetterView() {
       const res = await fetch("/api/admin/hrms/offer-letters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, businessId, templateId: form.templateId || undefined, employeeId: form.employeeId || undefined }),
+        body: JSON.stringify({ ...form, templateId: form.templateId || undefined, employeeId: form.employeeId || undefined }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -153,21 +142,18 @@ export function HrmsOfferLetterView() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Offer Letters</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Generate from templates with automatic merge tag rendering.</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            <h1 className="text-2xl font-bold tracking-tight">Offer Letters</h1>
+            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Quantix Internal</span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Generate from Quantix HR templates with automatic merge tag rendering.
+          </p>
         </div>
-        <Button onClick={() => { setForm({ ...EMPTY_FORM }); setFormOpen(true) }} className="gap-2" disabled={!businessId}>
+        <Button onClick={() => { setForm({ ...EMPTY_FORM }); setFormOpen(true) }} className="gap-2">
           <Plus className="h-4 w-4" /> Generate
         </Button>
       </div>
-
-      {!businessId && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-4 text-sm text-amber-800">
-            Configure your Business ID in <strong>HRMS Settings</strong> first.
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardContent className="p-0">
@@ -304,11 +290,13 @@ export function HrmsOfferLetterView() {
       <Dialog open={!!viewLetter} onOpenChange={(o) => !o && setViewLetter(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
               Offer Letter — {viewLetter?.candidateName}
-              <span className={`ml-2 text-xs font-semibold px-2 py-0.5 rounded-full ${viewLetter ? STATUS_STYLES[viewLetter.status] : ""}`}>
-                {viewLetter?.status}
-              </span>
+              {viewLetter && (
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[viewLetter.status]}`}>
+                  {viewLetter.status}
+                </span>
+              )}
             </DialogTitle>
           </DialogHeader>
           {viewLetter && (

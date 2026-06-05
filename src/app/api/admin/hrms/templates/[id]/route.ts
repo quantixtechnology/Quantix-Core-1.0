@@ -18,10 +18,7 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
       const body = await req.json() as Record<string, unknown>
 
       if (body.isDefault) {
-        const tpl = await db.offerLetterTemplate.findUnique({ where: { id } })
-        if (tpl) {
-          await db.offerLetterTemplate.updateMany({ where: { businessId: tpl.businessId, isDefault: true }, data: { isDefault: false } })
-        }
+        await db.offerLetterTemplate.updateMany({ where: { isDefault: true }, data: { isDefault: false } })
       }
 
       const template = await db.offerLetterTemplate.update({

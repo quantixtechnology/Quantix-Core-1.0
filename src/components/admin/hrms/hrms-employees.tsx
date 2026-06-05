@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -52,7 +52,6 @@ const EMP_TYPE_LABELS: Record<EmploymentType, string> = {
 }
 
 export function HrmsEmployeesView() {
-  const [businessId, setBusinessId] = useState("")
   const [employees, setEmployees] = useState<Employee[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -64,26 +63,17 @@ export function HrmsEmployeesView() {
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
 
-  // Load HRMS settings to get businessId
-  useEffect(() => {
-    fetch("/api/admin/hrms/settings")
-      .then((r) => r.json())
-      .then((j) => { if (j.success && j.data?.businessId) setBusinessId(j.data.businessId) })
-      .catch(() => {})
-  }, [])
-
   const load = useCallback(async () => {
-    if (!businessId) return
     setLoading(true)
     try {
-      const params = new URLSearchParams({ businessId, search, limit: "100" })
+      const params = new URLSearchParams({ search, limit: "100" })
       if (statusFilter !== "all") params.set("status", statusFilter)
       const res = await fetch(`/api/admin/hrms/employees?${params}`)
       const json = await res.json()
       if (json.success) { setEmployees(json.data); setTotal(json.pagination?.total ?? json.data.length) }
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [businessId, search, statusFilter])
+  }, [search, statusFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -112,7 +102,7 @@ export function HrmsEmployeesView() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, businessId }),
+        body: JSON.stringify(form),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -145,26 +135,19 @@ export function HrmsEmployeesView() {
 
   return (
     <div className="p-6 space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Employee Master</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{total} employee{total !== 1 ? "s" : ""}</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            <h1 className="text-2xl font-bold tracking-tight">Employee Master</h1>
+            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Quantix Internal</span>
+          </div>
+          <p className="text-sm text-muted-foreground">{total} employee{total !== 1 ? "s" : ""}</p>
         </div>
-        <Button onClick={openCreate} className="gap-2" disabled={!businessId}>
+        <Button onClick={openCreate} className="gap-2">
           <Plus className="h-4 w-4" /> Add Employee
         </Button>
       </div>
 
-      {!businessId && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-4 text-sm text-amber-800">
-            Configure your Business ID in <strong>HRMS Settings</strong> to start managing employees.
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Filters */}
       <div className="flex gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -186,7 +169,6 @@ export function HrmsEmployeesView() {
         </Select>
       </div>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           {loading ? (
@@ -251,7 +233,6 @@ export function HrmsEmployeesView() {
         </CardContent>
       </Card>
 
-      {/* Create / Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -320,7 +301,6 @@ export function HrmsEmployeesView() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

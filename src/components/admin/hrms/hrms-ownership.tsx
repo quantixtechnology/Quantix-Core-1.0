@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,20 +12,20 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Pencil, Trash2, Link2 } from "lucide-react"
 import { toast } from "sonner"
 
-interface Employee { id: string; employeeCode: string; name: string }
+interface Employee { id: string; employeeCode: string; name: string; designation?: string }
 
 interface OwnershipAssignment {
   id: string
-  hrmsBusinessId: string
   clientBusinessId: string
   signupOwnerId?: string
   renewalOwnerId?: string
   addonOwnerId?: string
   assignedBy?: string
   notes?: string
-  signupOwner?: Employee
-  renewalOwner?: Employee
-  addonOwner?: Employee
+  clientBusiness?: { id: string; name: string; status: string }
+  signupOwner?: Employee | null
+  renewalOwner?: Employee | null
+  addonOwner?: Employee | null
 }
 
 const EMPTY_FORM = {
@@ -33,7 +33,6 @@ const EMPTY_FORM = {
 }
 
 export function HrmsOwnershipView() {
-  const [businessId, setBusinessId] = useState("")
   const [assignments, setAssignments] = useState<OwnershipAssignment[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
@@ -43,30 +42,21 @@ export function HrmsOwnershipView() {
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    fetch("/api/admin/hrms/settings")
-      .then((r) => r.json())
-      .then((j) => { if (j.success && j.data?.businessId) setBusinessId(j.data.businessId) })
-      .catch(() => {})
-  }, [])
-
   const loadEmployees = useCallback(async () => {
-    if (!businessId) return
-    const res = await fetch(`/api/admin/hrms/employees?businessId=${businessId}&limit=200`)
+    const res = await fetch("/api/admin/hrms/employees?limit=200")
     const json = await res.json()
     if (json.success) setEmployees(json.data)
-  }, [businessId])
+  }, [])
 
   const load = useCallback(async () => {
-    if (!businessId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/hrms/ownership?hrmsBusinessId=${businessId}`)
+      const res = await fetch("/api/admin/hrms/ownership")
       const json = await res.json()
       if (json.success) setAssignments(json.data)
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [businessId])
+  }, [])
 
   useEffect(() => { load(); loadEmployees() }, [load, loadEmployees])
 
@@ -90,7 +80,7 @@ export function HrmsOwnershipView() {
       const res = await fetch("/api/admin/hrms/ownership", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hrmsBusinessId: businessId, ...form }),
+        body: JSON.stringify(form),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -116,11 +106,8 @@ export function HrmsOwnershipView() {
     }
   }
 
-  const empLabel = (id?: string) => {
-    if (!id) return "—"
-    const e = employees.find((x) => x.id === id)
-    return e ? `${e.name} (${e.employeeCode})` : id
-  }
+  const empLabel = (owner?: Employee | null) =>
+    owner ? `${owner.name} (${owner.employeeCode})` : "—"
 
   const EmployeePicker = ({ label, field }: { label: string; field: keyof typeof form }) => (
     <div className="space-y-1.5">
@@ -141,21 +128,24 @@ export function HrmsOwnershipView() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Revenue Ownership</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Map client businesses to Signup / Renewal / Addon owners for commission calculation.</p>
+          <div className="flex items-center gap-2 mb-0.5">
+            <h1 className="text-2xl font-bold tracking-tight">Revenue Ownership</h1>
+            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Quantix Internal</span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Map client businesses to Quantix employees for Signup, Renewal and Addon commission calculation.
+          </p>
         </div>
-        <Button onClick={openCreate} className="gap-2" disabled={!businessId || employees.length === 0}>
+        <Button onClick={openCreate} className="gap-2">
           <Plus className="h-4 w-4" /> Assign
         </Button>
       </div>
 
-      {!businessId && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-4 text-sm text-amber-800">
-            Configure your Business ID in <strong>HRMS Settings</strong> first.
-          </CardContent>
-        </Card>
-      )}
+      <Card className="border-blue-100 bg-blue-50/50">
+        <CardContent className="py-3 text-xs text-blue-800">
+          Revenue Ownership is read-only to the Business Module — it reads business data for commission calculations but never modifies business records.
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-0">
@@ -173,7 +163,7 @@ export function HrmsOwnershipView() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Client Business ID</TableHead>
+                    <TableHead>Client Business</TableHead>
                     <TableHead>Signup Owner</TableHead>
                     <TableHead>Renewal Owner</TableHead>
                     <TableHead>Addon Owner</TableHead>
@@ -184,10 +174,13 @@ export function HrmsOwnershipView() {
                 <TableBody>
                   {assignments.map((a) => (
                     <TableRow key={a.id}>
-                      <TableCell className="font-mono text-xs font-semibold">{a.clientBusinessId}</TableCell>
-                      <TableCell className="text-sm">{empLabel(a.signupOwnerId)}</TableCell>
-                      <TableCell className="text-sm">{empLabel(a.renewalOwnerId)}</TableCell>
-                      <TableCell className="text-sm">{empLabel(a.addonOwnerId)}</TableCell>
+                      <TableCell>
+                        <div className="text-sm font-semibold">{a.clientBusiness?.name ?? a.clientBusinessId}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{a.clientBusinessId}</div>
+                      </TableCell>
+                      <TableCell className="text-sm">{empLabel(a.signupOwner)}</TableCell>
+                      <TableCell className="text-sm">{empLabel(a.renewalOwner)}</TableCell>
+                      <TableCell className="text-sm">{empLabel(a.addonOwner)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{a.notes || "—"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
@@ -211,7 +204,7 @@ export function HrmsOwnershipView() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editItem ? "Edit Ownership" : "Assign Ownership"}</DialogTitle>
+            <DialogTitle>{editItem ? "Edit Ownership" : "Assign Revenue Ownership"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
@@ -242,7 +235,7 @@ export function HrmsOwnershipView() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove Assignment?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently remove the ownership mapping.</AlertDialogDescription>
+            <AlertDialogDescription>This will permanently remove the ownership mapping for this client business.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

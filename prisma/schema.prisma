@@ -2377,28 +2377,32 @@ enum OfferLetterStatus {
 }
 
 // HRMS branding — separate from platform logo, used only in HR documents
+// Quantix Internal HRMS — singleton settings record
 model HrmsSettings {
-  id                  String   @id @default(cuid())
-  businessId          String   @unique
-  companyName         String?
-  logo                String?
-  registeredAddress   String?
-  hrContact           String?
-  authorizedSignatory String?
-  signatureImage      String?
-  pan                 String?
-  gstNumber           String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                             String   @id @default(cuid())
+  companyName                    String?
+  registeredAddress              String?
+  pan                            String?
+  gstNumber                      String?
+  cin                            String?
+  website                        String?
+  hrContactName                  String?
+  hrContactEmail                 String?
+  hrContactMobile                String?
+  authorizedSignatory            String?
+  authorizedSignatoryDesignation String?
+  signatureImage                 String?
+  logo                           String?
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
 }
 
-// Employee Master
+// Quantix Employee Master
 model Employee {
   id               String         @id @default(cuid())
-  businessId       String
-  employeeCode     String
+  employeeCode     String         @unique
   name             String
-  email            String
+  email            String         @unique
   mobile           String?
   designation      String
   department       String?
@@ -2412,35 +2416,29 @@ model Employee {
   commissionSlips  CommissionSlip[]
   offerLetters     OfferLetter[]
 
-  @@unique([businessId, employeeCode])
-  @@index([businessId])
   @@index([status])
 }
 
-// Revenue Ownership — maps a client business to employee owners per revenue type
+// Revenue Ownership — maps a client business to Quantix employee owners per revenue type
 model OwnershipAssignment {
   id               String   @id @default(cuid())
-  hrmsBusinessId   String
-  clientBusinessId String
+  clientBusinessId String   @unique
   signupOwnerId    String?
   renewalOwnerId   String?
   addonOwnerId     String?
-  assignedBy       String
+  assignedBy       String?
   notes            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  @@unique([hrmsBusinessId, clientBusinessId])
-  @@index([hrmsBusinessId])
   @@index([signupOwnerId])
   @@index([renewalOwnerId])
   @@index([addonOwnerId])
 }
 
-// Commission Policy — tier-based percentages referenced at slip generation time
+// Commission Policy — tier-based percentages for Quantix employees
 model CommissionPolicy {
   id            String    @id @default(cuid())
-  businessId    String
   name          String
   effectiveFrom DateTime
   effectiveTo   DateTime?
@@ -2451,14 +2449,12 @@ model CommissionPolicy {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  @@index([businessId])
   @@index([isActive])
 }
 
 // Commission Slip — amounts snapshotted only at approval; generated dynamically until then
 model CommissionSlip {
   id             String               @id @default(cuid())
-  businessId     String
   employeeId     String
   periodType     String
   periodFrom     DateTime
@@ -2480,15 +2476,13 @@ model CommissionSlip {
   updatedAt      DateTime             @updatedAt
   employee       Employee             @relation(fields: [employeeId], references: [id])
 
-  @@index([businessId])
   @@index([employeeId])
   @@index([status])
 }
 
-// Offer Letter Template — reusable rich-text with {{MergeTag}} placeholders
+// Offer Letter Template — reusable with {{MergeTag}} placeholders
 model OfferLetterTemplate {
   id           String        @id @default(cuid())
-  businessId   String
   name         String
   description  String?
   content      String
@@ -2499,14 +2493,11 @@ model OfferLetterTemplate {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   offerLetters OfferLetter[]
-
-  @@index([businessId])
 }
 
-// Generated Offer Letter — rendered HTML after merge tag substitution
+// Generated Offer Letter — rendered content after merge tag substitution
 model OfferLetter {
-  id               String              @id @default(cuid())
-  businessId       String
+  id               String               @id @default(cuid())
   templateId       String?
   employeeId       String?
   candidateName    String
@@ -2515,17 +2506,16 @@ model OfferLetter {
   department       String?
   reportingManager String?
   workLocation     String?
-  employmentType   EmploymentType      @default(PERMANENT)
+  employmentType   EmploymentType       @default(PERMANENT)
   content          String
-  status           OfferLetterStatus   @default(DRAFT)
+  status           OfferLetterStatus    @default(DRAFT)
   emailedAt        DateTime?
   deletedAt        DateTime?
   createdBy        String?
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
   template         OfferLetterTemplate? @relation(fields: [templateId], references: [id])
-  employee         Employee?           @relation(fields: [employeeId], references: [id])
+  employee         Employee?            @relation(fields: [employeeId], references: [id])
 
-  @@index([businessId])
   @@index([status])
 }
