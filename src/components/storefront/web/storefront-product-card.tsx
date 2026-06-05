@@ -188,68 +188,70 @@ export function StorefrontProductCard({
           )}
         </div>
 
-        {/* Info + Action */}
-        <div className="flex-1 flex flex-col px-2.5 pt-2 pb-2.5">
-          <p className="text-[13px] font-semibold text-gray-900 leading-snug line-clamp-2 mb-0.5">
+        {/* Info + Price + Action — price and action are always separate rows */}
+        <div className="flex flex-col px-2.5 pt-2 pb-2.5" style={{ minHeight: 96 }}>
+          {/* Name */}
+          <p className="text-[13px] font-semibold text-gray-900 leading-snug line-clamp-2">
             {product.name}
           </p>
-          {defaultVariant && defaultVariant.name !== "Default" ? (
-            <p className="text-[11px] text-gray-400 truncate mb-1">{defaultVariant.name}</p>
-          ) : product.shortDesc ? (
-            <p className="text-[11px] text-gray-400 line-clamp-1 mb-1">{product.shortDesc}</p>
-          ) : <div className="mb-1" />}
 
+          {/* Unit / variant */}
+          {defaultVariant && defaultVariant.name !== "Default" ? (
+            <p className="text-[11px] text-gray-400 truncate mt-0.5">{defaultVariant.name}</p>
+          ) : product.shortDesc ? (
+            <p className="text-[11px] text-gray-400 line-clamp-1 mt-0.5">{product.shortDesc}</p>
+          ) : null}
+
+          {/* Spacer — pushes price+action to bottom */}
           <div className="flex-1" />
 
-          <div className="flex items-center justify-between gap-2 mt-1.5">
-            <div className="flex flex-col min-w-0">
-              <span className="text-[15px] font-bold leading-none" style={{ color: brandColor }}>
-                {formatINR(price)}
+          {/* Price row — always its own row */}
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-[15px] font-bold leading-none" style={{ color: brandColor }}>
+              {formatINR(price)}
+            </span>
+            {hasDiscount && (
+              <span className="text-[10px] text-gray-400 line-through leading-none">
+                {formatINR(mrp)}
               </span>
-              {hasDiscount && (
-                <span className="text-[10px] text-gray-400 line-through leading-none mt-0.5">{formatINR(mrp)}</span>
-              )}
-            </div>
+            )}
+          </div>
 
-            {(isOutOfStock || storeClosed) && (
-              <div className="h-[30px] px-2 flex items-center justify-center rounded-xl bg-gray-100 shrink-0">
-                <span className="text-[9px] font-bold text-gray-400 whitespace-nowrap uppercase tracking-wide">
+          {/* Action row — always its own row, full width, never shares with price */}
+          <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+            {(isOutOfStock || storeClosed) ? (
+              <div className="w-full h-8 rounded-xl bg-gray-100 flex items-center justify-center">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">
                   {isOutOfStock ? "Sold Out" : "Closed"}
                 </span>
               </div>
-            )}
-            {!isOutOfStock && !storeClosed && cartItem && (
+            ) : cartItem ? (
               <div
-                className="flex items-center h-[26px] rounded-xl select-none shrink-0 border-[1.5px] bg-white"
+                className="flex items-center h-8 rounded-xl border-[1.5px] bg-white select-none"
                 style={{ borderColor: brandColor }}
-                onClick={(e) => e.stopPropagation()}
               >
                 <button
                   onClick={handleDecrease}
-                  className="w-[22px] h-full flex items-center justify-center active:opacity-60"
+                  className="flex-1 h-full flex items-center justify-center active:opacity-60"
                   style={{ color: brandColor }}
                 >
-                  <Minus className="w-[9px] h-[9px]" strokeWidth={2.5} />
+                  <Minus className="w-[10px] h-[10px]" strokeWidth={2.5} />
                 </button>
-                <span
-                  className="w-4 text-center text-[11px] font-bold select-none"
-                  style={{ color: brandColor }}
-                >
+                <span className="w-6 text-center text-[12px] font-bold" style={{ color: brandColor }}>
                   {cartItem.quantity}
                 </span>
                 <button
                   onClick={handleIncrease}
-                  className="w-[22px] h-full flex items-center justify-center active:opacity-60"
+                  className="flex-1 h-full flex items-center justify-center active:opacity-60"
                   style={{ color: brandColor }}
                 >
-                  <Plus className="w-[9px] h-[9px]" strokeWidth={2.5} />
+                  <Plus className="w-[10px] h-[10px]" strokeWidth={2.5} />
                 </button>
               </div>
-            )}
-            {!isOutOfStock && !storeClosed && !cartItem && (
+            ) : (
               <button
                 onClick={handleAdd}
-                className="h-[30px] px-3 rounded-xl border-[1.5px] flex items-center gap-1 shrink-0 active:opacity-70 transition-opacity"
+                className="w-full h-8 rounded-xl border-[1.5px] flex items-center justify-center gap-1 active:opacity-70 transition-opacity"
                 style={{ borderColor: brandColor, color: brandColor, backgroundColor: `${brandColor}08` }}
                 aria-label={`Add ${product.name} to cart`}
               >

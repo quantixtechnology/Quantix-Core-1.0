@@ -236,34 +236,37 @@ export function StorefrontLayout({
               </>
             ) : (
               <>
-                {/* Home header: logo + stacked name/store — three separate tap targets, no nesting */}
+                {/* Home header: logo beside stacked name + store — no nested buttons */}
                 <div className="flex items-center gap-2.5 shrink-0 min-w-0 max-w-[calc(100%-80px)]">
+                  {/* Logo */}
                   <button
                     onClick={() => nav.go("home")}
-                    className="shrink-0 active:opacity-70"
+                    className="shrink-0 p-0 border-0 bg-transparent active:opacity-70"
                     aria-label="Go home"
                   >
                     <img
                       src={currentBusinessLogo || "/placeholder-logo.svg"}
                       alt={currentBusinessName || "Store"}
-                      className="w-9 h-9 rounded-xl object-contain border border-gray-100"
+                      className="w-9 h-9 rounded-xl object-contain border border-gray-100 block"
                       onError={(e) => {
                         const img = e.currentTarget
                         if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
                       }}
                     />
                   </button>
-                  <div className="flex flex-col justify-center min-w-0">
+
+                  {/* Name + store stacked, using gap not margin */}
+                  <div className="flex flex-col gap-[3px] min-w-0">
                     <button
                       onClick={() => nav.go("home")}
-                      className="text-[14px] font-bold text-gray-900 leading-none truncate text-left active:opacity-70"
+                      className="p-0 border-0 bg-transparent text-[14px] font-bold text-gray-900 leading-tight truncate text-left active:opacity-70 w-full"
                     >
                       {currentBusinessName || "Store"}
                     </button>
                     {currentStore && (
                       <button
                         onClick={onOpenStorePicker}
-                        className="flex items-center gap-0.5 text-[11px] leading-none mt-[5px] active:opacity-70"
+                        className="p-0 border-0 bg-transparent flex items-center gap-0.5 text-[11px] leading-tight active:opacity-70"
                         style={{ color: brandColor }}
                       >
                         <MapPin className="w-2.5 h-2.5 shrink-0" />
