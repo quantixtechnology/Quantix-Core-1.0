@@ -3,6 +3,20 @@ import type { NextRequest } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
+async function generateEmployeeId(joiningDate: string): Promise<string> {
+  const year = new Date(joiningDate).getFullYear()
+  const existing = await db.employee.findMany({
+    where: { employeeCode: { startsWith: `QT-${year}-` } },
+    select: { employeeCode: true },
+  })
+  const maxSeq = existing.reduce((max, e) => {
+    const parts = e.employeeCode.split('-')
+    const seq = parseInt(parts[2] ?? '0', 10)
+    return isNaN(seq) ? max : Math.max(max, seq)
+  }, 0)
+  return `QT-${year}-${String(maxSeq + 1).padStart(3, '0')}`
+}
+
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:view' })(
   async (req: NextRequest) => {
     try {
@@ -41,7 +55,6 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
   async (req: NextRequest) => {
     try {
       const body = await req.json() as {
-        employeeCode: string
         name: string
         email: string
         mobile?: string
@@ -53,20 +66,22 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
         status?: string
       }
 
-      if (!body.name || !body.email || !body.employeeCode || !body.designation || !body.joiningDate) {
-        return createErrorResponse('name, email, employeeCode, designation, joiningDate required', 400)
+      if (!body.name || !body.email || !body.designation || !body.joiningDate) {
+        return createErrorResponse('name, email, designation, joiningDate required', 400)
       }
+
+      const employeeCode = await generateEmployeeId(body.joiningDate)
 
       const employee = await db.employee.create({
         data: {
-          employeeCode:     body.employeeCode,
+          employeeCode,
           name:             body.name,
           email:            body.email,
           mobile:           body.mobile,
           designation:      body.designation,
           department:       body.department,
           joiningDate:      new Date(body.joiningDate),
-          employmentType:   (body.employmentType   as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN') ?? 'PERMANENT',
+          employmentType:   (body.employmentType as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN') ?? 'PERMANENT',
           reportingManager: body.reportingManager,
           status:           (body.status as 'PROSPECT' | 'OFFERED' | 'JOINED' | 'ACTIVE' | 'RESIGNED' | 'TERMINATED') ?? 'PROSPECT',
         },
@@ -76,8 +91,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
         data: {
           employeeId:  employee.id,
           event:       'Employee Created',
-          description: `${employee.name} (${employee.employeeCode}) added as ${employee.designation}`,
-          performedBy: undefined,
+          description: `${employee.name} (${employeeCode}) added as ${employee.designation}`,
         },
       })
 

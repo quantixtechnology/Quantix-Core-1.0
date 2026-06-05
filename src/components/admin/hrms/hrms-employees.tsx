@@ -31,10 +31,10 @@ interface Employee {
   status: EmployeeStatus
 }
 
-const EMPTY_FORM: Omit<Employee, "id"> = {
-  employeeCode: "", name: "", email: "", mobile: "", designation: "",
-  department: "", joiningDate: "", employmentType: "PERMANENT",
-  reportingManager: "", status: "PROSPECT",
+const EMPTY_FORM = {
+  name: "", email: "", mobile: "", designation: "",
+  department: "", joiningDate: "", employmentType: "PERMANENT" as EmploymentType,
+  reportingManager: "", status: "PROSPECT" as EmployeeStatus,
 }
 
 const STATUS_COLORS: Record<EmployeeStatus, string> = {
@@ -84,7 +84,7 @@ export function HrmsEmployeesView() {
   const openEdit   = (emp: Employee) => {
     setEditEmployee(emp)
     setForm({
-      employeeCode: emp.employeeCode, name: emp.name, email: emp.email,
+      name: emp.name, email: emp.email,
       mobile: emp.mobile ?? "", designation: emp.designation,
       department: emp.department ?? "", joiningDate: emp.joiningDate.slice(0, 10),
       employmentType: emp.employmentType, reportingManager: emp.reportingManager ?? "",
@@ -94,7 +94,7 @@ export function HrmsEmployeesView() {
   }
 
   const handleSave = async () => {
-    if (!form.employeeCode || !form.name || !form.email || !form.designation || !form.joiningDate) {
+    if (!form.name || !form.email || !form.designation || !form.joiningDate) {
       toast.error("Fill all required fields")
       return
     }
@@ -192,7 +192,7 @@ export function HrmsEmployeesView() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Employee ID</TableHead>
-                    <TableHead>Name</TableHead>
+                    <TableHead>Name / Email</TableHead>
                     <TableHead>Designation</TableHead>
                     <TableHead>Department</TableHead>
                     <TableHead>Type</TableHead>
@@ -245,10 +245,16 @@ export function HrmsEmployeesView() {
             <DialogTitle>{editEmployee ? "Edit Employee" : "Add Employee"}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Employee Code <span className="text-destructive">*</span></Label>
-              <Input placeholder="QT-001" {...f("employeeCode")} disabled={!!editEmployee} />
-            </div>
+            {editEmployee ? (
+              <div className="space-y-1.5 col-span-2">
+                <Label>Employee ID</Label>
+                <Input value={editEmployee.employeeCode} disabled className="font-mono bg-muted/50" />
+              </div>
+            ) : (
+              <div className="col-span-2 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
+                Employee ID will be generated automatically upon creation (e.g. QT-2026-001).
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Full Name <span className="text-destructive">*</span></Label>
               <Input placeholder="Rahul Sharma" {...f("name")} />
@@ -275,7 +281,7 @@ export function HrmsEmployeesView() {
             </div>
             <div className="space-y-1.5">
               <Label>Reporting Manager</Label>
-              <Input placeholder="Name or Employee Code" {...f("reportingManager")} />
+              <Input placeholder="Name or Employee ID" {...f("reportingManager")} />
             </div>
             <div className="space-y-1.5">
               <Label>Employment Type</Label>

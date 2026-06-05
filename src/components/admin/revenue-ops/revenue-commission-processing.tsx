@@ -274,7 +274,7 @@ export function RevenueCommissionProcessingView() {
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Employee Details</CardTitle></CardHeader>
                 <CardContent className="grid grid-cols-2 gap-2 text-sm">
                   <div><span className="text-muted-foreground">Name:</span> <span className="font-medium">{viewSlip.employee?.name}</span></div>
-                  <div><span className="text-muted-foreground">Code:</span> <span className="font-mono">{viewSlip.employee?.employeeCode}</span></div>
+                  <div><span className="text-muted-foreground">Employee ID:</span> <span className="font-mono">{viewSlip.employee?.employeeCode}</span></div>
                   <div><span className="text-muted-foreground">Designation:</span> <span>{viewSlip.employee?.designation}</span></div>
                   <div><span className="text-muted-foreground">Period:</span> <span>{format(new Date(viewSlip.periodFrom), "d MMM")} – {format(new Date(viewSlip.periodTo), "d MMM yyyy")}</span></div>
                 </CardContent>
