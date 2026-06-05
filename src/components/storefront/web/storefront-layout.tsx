@@ -221,8 +221,13 @@ export function StorefrontLayout({
     return (
       <PwaModeContext.Provider value={isPwa}>
       <div className="min-h-screen flex flex-col bg-gray-50">
-        {/* PWA App Bar */}
-        <header className="sticky top-0 z-40 bg-white shadow-sm">
+        {/* PWA App Bar — paddingTop pushes content below the device status bar.
+             viewport-fit=cover + black-translucent means the WebView extends
+             edge-to-edge; safe-area-inset-top is the status bar height (24–44px). */}
+        <header
+          className="sticky top-0 z-40 bg-white shadow-sm"
+          style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+        >
           <div className="flex items-center gap-3 px-4" style={{ height: 56 }}>
             {showBackInPwa ? (
               <>
