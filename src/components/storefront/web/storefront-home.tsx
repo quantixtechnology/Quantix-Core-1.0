@@ -245,15 +245,15 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
               <>
                 <button
                   onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                  className="flex flex-col items-center gap-1.5 shrink-0"
+                  className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform duration-150"
                 >
                   <div
-                    className="w-[60px] h-[60px] rounded-2xl flex items-center justify-center text-2xl border-2"
-                    style={{ backgroundColor: `${brandColor}15`, borderColor: `${brandColor}30` }}
+                    className="rounded-2xl flex items-center justify-center text-[28px] border-2"
+                    style={{ backgroundColor: `${brandColor}15`, borderColor: `${brandColor}30`, width: 76, height: 68 }}
                   >
                     🛒
                   </div>
-                  <span className="text-[11px] font-medium text-gray-700 text-center leading-tight w-[60px]">All</span>
+                  <span className="text-[11px] font-medium text-gray-700 text-center leading-tight" style={{ width: 76 }}>All</span>
                 </button>
                 {categories.map((c) => (
                   <StorefrontCategoryCard

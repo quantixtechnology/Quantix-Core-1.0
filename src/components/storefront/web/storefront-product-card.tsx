@@ -19,6 +19,7 @@ import { Plus, Minus } from "lucide-react"
 import { ProductImage } from "./product-image"
 import type { WebNav } from "./storefront-website"
 import { getCardClasses, TYPE } from "@/design-system"
+import { usePwaMode } from "@/hooks/use-pwa-mode"
 
 // ── Shared types ───────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ export function StorefrontProductCard({
   businessType,
   storeClosed = false,
 }: StorefrontProductCardProps) {
+  const isPwa = usePwaMode()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const { currentImageConfig, currentBusinessTheme } = useAdminStore()
   const btConfig = getBusinessTypeConfig(businessType)
@@ -150,7 +152,105 @@ export function StorefrontProductCard({
     else updateQuantity(product.id, defaultVariant.id, cartItem.quantity - 1)
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  // ── PWA: Blinkit-style card ─────────────────────────────────────────────
+  if (isPwa) {
+    return (
+      <div
+        className="bg-white rounded-2xl overflow-hidden cursor-pointer border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.04)] active:scale-[0.985] transition-transform duration-150 flex flex-col"
+        onClick={() => nav.go("product", { productId: product.id })}
+      >
+        {/* Image */}
+        <div className="relative shrink-0 overflow-hidden w-full aspect-[4/3] bg-gray-50">
+          <ProductImage src={imgSrc} alt={product.name} fallbackEmoji={emoji} className="w-full h-full" config={currentImageConfig} />
+          <div className="absolute top-1.5 left-1.5 flex gap-1 flex-wrap max-w-[calc(100%-12px)]">
+            {isOutOfStock ? (
+              <span className="px-1.5 py-0.5 bg-gray-700/80 backdrop-blur-sm text-white text-[8px] font-bold rounded-md tracking-wide">SOLD OUT</span>
+            ) : (
+              <>
+                {product.isVeg === true && <span className="px-1.5 py-0.5 bg-green-500 text-white text-[8px] font-bold rounded-md">VEG</span>}
+                {product.isVeg === false && <span className="px-1.5 py-0.5 bg-red-500 text-white text-[8px] font-bold rounded-md">NON-VEG</span>}
+                {showHalal && !!meta.isHalal && <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[8px] font-bold rounded-md">HALAL</span>}
+              </>
+            )}
+          </div>
+          {hasDiscount && !isOutOfStock && (
+            <span
+              className="absolute top-1.5 right-1.5 px-1.5 py-0.5 text-white text-[8px] font-bold rounded-md"
+              style={{ backgroundColor: brandColor }}
+            >
+              {discountPct}% OFF
+            </span>
+          )}
+          {showFresh && !!meta.freshnessTag && !hasDiscount && (
+            <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-white/90 backdrop-blur-sm text-[8px] font-semibold text-gray-700 rounded-md border border-gray-200">
+              {String(meta.freshnessTag)}
+            </div>
+          )}
+        </div>
+
+        {/* Info + Action */}
+        <div className="flex-1 flex flex-col px-2.5 pt-2 pb-2.5">
+          <p className="text-[13px] font-semibold text-gray-900 leading-snug line-clamp-2 mb-0.5">
+            {product.name}
+          </p>
+          {defaultVariant && defaultVariant.name !== "Default" ? (
+            <p className="text-[11px] text-gray-400 truncate mb-1">{defaultVariant.name}</p>
+          ) : product.shortDesc ? (
+            <p className="text-[11px] text-gray-400 line-clamp-1 mb-1">{product.shortDesc}</p>
+          ) : <div className="mb-1" />}
+
+          <div className="flex-1" />
+
+          <div className="flex items-center justify-between gap-2 mt-1.5">
+            <div className="flex flex-col min-w-0">
+              <span className="text-[15px] font-bold leading-none" style={{ color: brandColor }}>
+                {formatINR(price)}
+              </span>
+              {hasDiscount && (
+                <span className="text-[10px] text-gray-400 line-through leading-none mt-0.5">{formatINR(mrp)}</span>
+              )}
+            </div>
+
+            {(isOutOfStock || storeClosed) && (
+              <div className="h-[30px] px-2 flex items-center justify-center rounded-xl bg-gray-100 shrink-0">
+                <span className="text-[9px] font-bold text-gray-400 whitespace-nowrap uppercase tracking-wide">
+                  {isOutOfStock ? "Sold Out" : "Closed"}
+                </span>
+              </div>
+            )}
+            {!isOutOfStock && !storeClosed && cartItem && (
+              <div
+                className="flex items-center h-[30px] rounded-xl overflow-hidden select-none shrink-0"
+                style={{ backgroundColor: brandColor }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button onClick={handleDecrease} className="w-[26px] h-full flex items-center justify-center text-white active:opacity-70">
+                  <Minus className="w-3 h-3" />
+                </button>
+                <span className="w-5 text-center text-[12px] font-bold text-white select-none">{cartItem.quantity}</span>
+                <button onClick={handleIncrease} className="w-[26px] h-full flex items-center justify-center text-white active:opacity-70">
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+            {!isOutOfStock && !storeClosed && !cartItem && (
+              <button
+                onClick={handleAdd}
+                className="h-[30px] px-3 rounded-xl border-[1.5px] flex items-center gap-1 shrink-0 active:opacity-70 transition-opacity"
+                style={{ borderColor: brandColor, color: brandColor, backgroundColor: `${brandColor}08` }}
+                aria-label={`Add ${product.name} to cart`}
+              >
+                <Plus className="w-3 h-3" strokeWidth={2.5} />
+                <span className="text-[11px] font-bold tracking-wide">ADD</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Web card ────────────────────────────────────────────────────────────
   return (
     <div
       className="bg-white rounded-2xl overflow-hidden cursor-pointer border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.10)] active:scale-[0.985] transition-all duration-200 flex flex-col"

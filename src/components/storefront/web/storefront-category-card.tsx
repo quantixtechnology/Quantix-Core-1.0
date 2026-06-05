@@ -11,6 +11,7 @@
 
 import { resolveImageUrl } from "@/lib/image-url"
 import { getCategoryIcon } from "@/lib/business-type-config"
+import { usePwaMode } from "@/hooks/use-pwa-mode"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,8 @@ export function StorefrontCategoryCard({
   onClick,
   showCount = false,
 }: StorefrontCategoryCardProps) {
+  const isPwa = usePwaMode()
+
   const tileColor = category.color
     ? `${category.color}20`
     : `${brandColor}15`
@@ -52,6 +55,10 @@ export function StorefrontCategoryCard({
   const iconFallback = category.icon || getCategoryIcon(businessType, category.name)
   const imgSrc       = category.image ? resolveImageUrl(category.image) : null
 
+  const tileW = isPwa ? 76 : 60
+  const tileH = isPwa ? 68 : 60
+  const iconCls = isPwa ? "text-[28px]" : "text-[26px]"
+
   return (
     <button
       onClick={onClick}
@@ -59,8 +66,8 @@ export function StorefrontCategoryCard({
     >
       {/* Tile */}
       <div
-        className="w-[60px] h-[60px] rounded-2xl flex items-center justify-center overflow-hidden border-2 transition-all"
-        style={{ backgroundColor: tileColor, borderColor }}
+        className="rounded-2xl flex items-center justify-center overflow-hidden border-2 transition-all"
+        style={{ backgroundColor: tileColor, borderColor, width: tileW, height: tileH }}
       >
         {imgSrc ? (
           <img
@@ -70,12 +77,15 @@ export function StorefrontCategoryCard({
             className="w-full h-full object-cover"
           />
         ) : (
-          <span className="text-[26px] leading-none">{iconFallback}</span>
+          <span className={`${iconCls} leading-none`}>{iconFallback}</span>
         )}
       </div>
 
       {/* Label */}
-      <span className="text-[11px] font-medium text-gray-700 text-center leading-tight line-clamp-2 w-[60px]">
+      <span
+        className="text-[11px] font-medium text-gray-700 text-center leading-tight line-clamp-2"
+        style={{ width: tileW }}
+      >
         {category.name}
       </span>
 
@@ -92,10 +102,13 @@ export function StorefrontCategoryCard({
 // ── Skeleton ───────────────────────────────────────────────────────────────
 
 export function StorefrontCategoryCardSkeleton() {
+  const isPwa = usePwaMode()
+  const w = isPwa ? 76 : 60
+  const h = isPwa ? 68 : 60
   return (
     <div className="flex flex-col items-center gap-1.5 shrink-0 animate-pulse">
-      <div className="w-[60px] h-[60px] rounded-2xl bg-gray-100" />
-      <div className="h-3 bg-gray-100 rounded w-14" />
+      <div className="rounded-2xl bg-gray-100" style={{ width: w, height: h }} />
+      <div className="h-3 bg-gray-100 rounded" style={{ width: w }} />
     </div>
   )
 }

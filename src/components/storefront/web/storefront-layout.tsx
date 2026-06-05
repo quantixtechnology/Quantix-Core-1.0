@@ -223,48 +223,51 @@ export function StorefrontLayout({
         <header className="sticky top-0 z-40 bg-white shadow-sm">
           <div className="flex items-center gap-3 px-4" style={{ height: 56 }}>
             {showBackInPwa ? (
-              <button
-                onClick={() => nav.goBack()}
-                className="w-9 h-9 -ml-1 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors shrink-0"
-              >
-                <ArrowLeft className="w-5 h-5 text-gray-800" />
-              </button>
+              <>
+                <button
+                  onClick={() => nav.goBack()}
+                  className="w-9 h-9 -ml-1 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors shrink-0"
+                >
+                  <ArrowLeft className="w-5 h-5 text-gray-800" />
+                </button>
+                <h1 className="flex-1 min-w-0 text-[15px] font-bold text-gray-900 truncate">{pwaPageTitle}</h1>
+              </>
             ) : (
-              <button onClick={() => nav.go("home")} className="shrink-0">
-                <img
-                  src={currentBusinessLogo || "/placeholder-logo.svg"}
-                  alt={currentBusinessName || "Store"}
-                  className="w-8 h-8 rounded-xl object-contain border border-gray-100"
-                  onError={(e) => {
-                    const img = e.currentTarget
-                    if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
-                  }}
-                />
-              </button>
+              <>
+                {/* Home: logo + name + store name as one grouped unit */}
+                <button
+                  onClick={() => nav.go("home")}
+                  className="flex items-center gap-2.5 shrink-0 min-w-0 max-w-[calc(100%-80px)]"
+                >
+                  <img
+                    src={currentBusinessLogo || "/placeholder-logo.svg"}
+                    alt={currentBusinessName || "Store"}
+                    className="w-9 h-9 rounded-xl object-contain border border-gray-100 shrink-0"
+                    onError={(e) => {
+                      const img = e.currentTarget
+                      if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
+                    }}
+                  />
+                  <div className="flex flex-col justify-center min-w-0">
+                    <p className="text-[14px] font-bold text-gray-900 leading-none truncate">
+                      {currentBusinessName || "Store"}
+                    </p>
+                    {currentStore && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
+                        className="flex items-center gap-0.5 text-[11px] leading-none mt-[5px] active:opacity-70"
+                        style={{ color: brandColor }}
+                      >
+                        <MapPin className="w-2.5 h-2.5 shrink-0" />
+                        <span className="truncate max-w-[130px]">{currentStore.name}</span>
+                        <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+                      </button>
+                    )}
+                  </div>
+                </button>
+                <div className="flex-1" />
+              </>
             )}
-
-            <div className="flex-1 min-w-0">
-              {nav.current === "home" ? (
-                <div>
-                  <p className="text-[15px] font-bold text-gray-900 leading-tight truncate">
-                    {currentBusinessName || "Store"}
-                  </p>
-                  {currentStore && (
-                    <button
-                      onClick={onOpenStorePicker}
-                      className="flex items-center gap-0.5 text-[11px] leading-none mt-0.5 active:opacity-70"
-                      style={{ color: brandColor }}
-                    >
-                      <MapPin className="w-3 h-3 shrink-0" />
-                      <span className="truncate max-w-[150px]">{currentStore.name}</span>
-                      <ChevronDown className="w-3 h-3 shrink-0" />
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <h1 className="text-[15px] font-bold text-gray-900 truncate">{pwaPageTitle}</h1>
-              )}
-            </div>
 
             <div className="flex items-center gap-0.5 shrink-0">
               <button
@@ -310,27 +313,29 @@ export function StorefrontLayout({
         >
           {/* Floating cart bar */}
           {showFloatingCart && (
-            <div className="bg-white border-t border-gray-100 px-3 pt-2 pb-1">
+            <div className="bg-white border-t border-gray-100 px-4 pt-3 pb-1.5">
               <button
                 onClick={() => setCartOpen(true)}
-                className="w-full h-[52px] rounded-2xl flex items-center justify-between px-4 text-white active:opacity-90 transition-opacity"
+                className="w-full h-[60px] rounded-[28px] flex items-center justify-between px-5 text-white active:opacity-90 transition-opacity"
                 style={{
                   background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}ee 100%)`,
+                  boxShadow: `0 8px 24px ${brandColor}55, 0 2px 8px rgba(0,0,0,0.12)`,
                 }}
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-white/25 flex items-center justify-center">
-                    <ShoppingCart className="w-[15px] h-[15px]" />
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-white/25 flex items-center justify-center shrink-0">
+                    <ShoppingCart className="w-[16px] h-[16px]" />
                   </div>
-                  <span className="text-[13px] font-semibold">
-                    {cartCount} item{cartCount !== 1 ? "s" : ""}
-                  </span>
+                  <div className="flex flex-col items-start">
+                    <span className="text-[13px] font-bold leading-none">
+                      {cartCount} item{cartCount !== 1 ? "s" : ""}
+                    </span>
+                    <span className="text-[11px] font-medium opacity-80 leading-none mt-0.5">in your cart</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-bold">{formatINR(cartSubtotal)}</span>
-                  <div className="flex items-center gap-0.5 text-[13px] font-semibold opacity-90">
-                    View Cart <ChevronRight className="w-[15px] h-[15px]" />
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[15px] font-bold">{formatINR(cartSubtotal)}</span>
+                  <ChevronRight className="w-[18px] h-[18px] opacity-90" />
                 </div>
               </button>
             </div>

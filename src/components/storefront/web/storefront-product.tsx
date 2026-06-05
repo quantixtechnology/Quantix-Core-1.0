@@ -370,25 +370,32 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
         </div>
       )}
 
-      {/* Meta chips */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        {product.preparationTime && (
+      {/* Meta: info cards on web, inline text rows on PWA */}
+      {!isPwa ? (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {product.preparationTime && (
+            <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
+              <p className="text-[10px] text-gray-400">Prep Time</p>
+              <p className="text-xs font-semibold text-gray-800">{product.preparationTime} min</p>
+            </div>
+          )}
+          {product.category && (
+            <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
+              <p className="text-[10px] text-gray-400">Category</p>
+              <p className="text-xs font-semibold text-gray-800">{product.category.name}</p>
+            </div>
+          )}
           <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
-            <p className="text-[10px] text-gray-400">Prep Time</p>
-            <p className="text-xs font-semibold text-gray-800">{product.preparationTime} min</p>
+            <p className="text-[10px] text-gray-400">Min Order</p>
+            <p className="text-xs font-semibold text-gray-800">{product.minOrderQty} {product.unit || "unit"}</p>
           </div>
-        )}
-        {product.category && (
-          <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
-            <p className="text-[10px] text-gray-400">Category</p>
-            <p className="text-xs font-semibold text-gray-800">{product.category.name}</p>
-          </div>
-        )}
-        <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
-          <p className="text-[10px] text-gray-400">Min Order</p>
-          <p className="text-xs font-semibold text-gray-800">{product.minOrderQty} {product.unit || "unit"}</p>
         </div>
-      </div>
+      ) : (product.preparationTime || product.category) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-[12px] text-gray-500">
+          {product.preparationTime && <span>⏱ {product.preparationTime} min prep</span>}
+          {product.category && <span>· {product.category.name}</span>}
+        </div>
+      )}
 
       {/* Description — collapsible in PWA, always shown on web */}
       {product.description && (
@@ -435,8 +442,8 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
           <ChevronLeft className="w-5 h-5 text-gray-800" />
         </button>
 
-        {/* Hero image — edge-to-edge */}
-        <div className="relative w-full aspect-[4/3] bg-gray-50 overflow-hidden">
+        {/* Hero image — edge-to-edge, 45% viewport height */}
+        <div className="relative w-full bg-gray-50 overflow-hidden" style={{ height: "45vh" }}>
           <ProductImage
             src={resolvedImages[activeImage]}
             alt={product.name}
