@@ -183,6 +183,10 @@ const HrmsCommissionSlipView = dynamic(() => import("@/components/admin/hrms/hrm
 const HrmsOfferLetterView = dynamic(() => import("@/components/admin/hrms/hrms-offer-letter").then(m => ({ default: m.HrmsOfferLetterView })), { loading: () => <PageLoader /> })
 const HrmsTemplatesView = dynamic(() => import("@/components/admin/hrms/hrms-templates").then(m => ({ default: m.HrmsTemplatesView })), { loading: () => <PageLoader /> })
 const HrmsPayslipView = dynamic(() => import("@/components/admin/hrms/hrms-payslip").then(m => ({ default: m.HrmsPayslipView })), { loading: () => <PageLoader /> })
+const RevenueSignupOwnershipView   = dynamic(() => import("@/components/admin/revenue-ops/revenue-signup-ownership").then(m => ({ default: m.RevenueSignupOwnershipView })), { loading: () => <PageLoader /> })
+const RevenueRenewalOwnershipView  = dynamic(() => import("@/components/admin/revenue-ops/revenue-renewal-ownership").then(m => ({ default: m.RevenueRenewalOwnershipView })), { loading: () => <PageLoader /> })
+const RevenueAddonOwnershipView    = dynamic(() => import("@/components/admin/revenue-ops/revenue-addon-ownership").then(m => ({ default: m.RevenueAddonOwnershipView })), { loading: () => <PageLoader /> })
+const RevenueCommissionProcessingView = dynamic(() => import("@/components/admin/revenue-ops/revenue-commission-processing").then(m => ({ default: m.RevenueCommissionProcessingView })), { loading: () => <PageLoader /> })
 
 // ── Business Owner pages (lazy) ───────────────────────────────────────────
 const BusinessDashboard = dynamic(() => import("@/components/business/dashboard/business-dashboard").then(m => ({ default: m.BusinessDashboard })), { loading: () => <PageLoader /> })
@@ -428,6 +432,11 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "hrms-payslip":          return <HrmsPayslipView />
       case "hrms-templates":        return <HrmsTemplatesView />
       case "hrms-settings":         return <HrmsSettingsView />
+      // Revenue Operations
+      case "rev-signup-ownership":      return <RevenueSignupOwnershipView />
+      case "rev-renewal-ownership":     return <RevenueRenewalOwnershipView />
+      case "rev-addon-ownership":       return <RevenueAddonOwnershipView />
+      case "rev-commission-processing": return <RevenueCommissionProcessingView />
       // Mobile & Apps
       case "mobile-apps": return <MobileAppsView />
       // Deployment & Operations

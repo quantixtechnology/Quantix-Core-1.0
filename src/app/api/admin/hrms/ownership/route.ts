@@ -59,6 +59,8 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
         return createErrorResponse('clientBusinessId required', 400)
       }
 
+      const existing = await db.ownershipAssignment.findUnique({ where: { clientBusinessId: body.clientBusinessId } })
+
       const assignment = await db.ownershipAssignment.upsert({
         where: { clientBusinessId: body.clientBusinessId },
         update: {
@@ -77,6 +79,19 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
           notes:            body.notes,
         },
       })
+
+      const auditEntries: { clientBusinessId: string; assignmentType: string; previousOwnerId?: string | null; newOwnerId?: string | null; changedBy?: string; remarks?: string }[] = []
+      const prev = existing ?? { signupOwnerId: null, renewalOwnerId: null, addonOwnerId: null }
+      if ((body.signupOwnerId || null) !== prev.signupOwnerId)
+        auditEntries.push({ clientBusinessId: body.clientBusinessId, assignmentType: 'SIGNUP', previousOwnerId: prev.signupOwnerId, newOwnerId: body.signupOwnerId || null, changedBy: body.assignedBy, remarks: body.notes })
+      if ((body.renewalOwnerId || null) !== prev.renewalOwnerId)
+        auditEntries.push({ clientBusinessId: body.clientBusinessId, assignmentType: 'RENEWAL', previousOwnerId: prev.renewalOwnerId, newOwnerId: body.renewalOwnerId || null, changedBy: body.assignedBy, remarks: body.notes })
+      if ((body.addonOwnerId || null) !== prev.addonOwnerId)
+        auditEntries.push({ clientBusinessId: body.clientBusinessId, assignmentType: 'ADDON', previousOwnerId: prev.addonOwnerId, newOwnerId: body.addonOwnerId || null, changedBy: body.assignedBy, remarks: body.notes })
+
+      if (auditEntries.length > 0) {
+        await db.ownershipAuditLog.createMany({ data: auditEntries })
+      }
 
       return NextResponse.json({ success: true, data: assignment }, { status: 201 })
     } catch (e) {

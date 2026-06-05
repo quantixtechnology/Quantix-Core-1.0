@@ -15,7 +15,7 @@ import { toast } from "sonner"
 import { format } from "date-fns"
 
 type EmploymentType = "PERMANENT" | "CONTRACT" | "COMMISSION_BASED" | "CONSULTANT" | "INTERN"
-type EmployeeStatus = "ACTIVE" | "INACTIVE" | "TERMINATED"
+type EmployeeStatus = "PROSPECT" | "OFFERED" | "JOINED" | "ACTIVE" | "RESIGNED" | "TERMINATED"
 
 interface Employee {
   id: string
@@ -34,12 +34,15 @@ interface Employee {
 const EMPTY_FORM: Omit<Employee, "id"> = {
   employeeCode: "", name: "", email: "", mobile: "", designation: "",
   department: "", joiningDate: "", employmentType: "PERMANENT",
-  reportingManager: "", status: "ACTIVE",
+  reportingManager: "", status: "PROSPECT",
 }
 
 const STATUS_COLORS: Record<EmployeeStatus, string> = {
+  PROSPECT:   "bg-slate-100 text-slate-700",
+  OFFERED:    "bg-amber-100 text-amber-700",
+  JOINED:     "bg-blue-100 text-blue-700",
   ACTIVE:     "bg-emerald-100 text-emerald-700",
-  INACTIVE:   "bg-amber-100 text-amber-700",
+  RESIGNED:   "bg-orange-100 text-orange-700",
   TERMINATED: "bg-red-100 text-red-700",
 }
 
@@ -162,8 +165,11 @@ export function HrmsEmployeesView() {
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="PROSPECT">Prospect</SelectItem>
+            <SelectItem value="OFFERED">Offered</SelectItem>
+            <SelectItem value="JOINED">Joined</SelectItem>
             <SelectItem value="ACTIVE">Active</SelectItem>
-            <SelectItem value="INACTIVE">Inactive</SelectItem>
+            <SelectItem value="RESIGNED">Resigned</SelectItem>
             <SelectItem value="TERMINATED">Terminated</SelectItem>
           </SelectContent>
         </Select>
@@ -287,8 +293,11 @@ export function HrmsEmployeesView() {
               <Select value={form.status} onValueChange={(v) => setForm((s) => ({ ...s, status: v as EmployeeStatus }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="PROSPECT">Prospect</SelectItem>
+                  <SelectItem value="OFFERED">Offered</SelectItem>
+                  <SelectItem value="JOINED">Joined</SelectItem>
                   <SelectItem value="ACTIVE">Active</SelectItem>
-                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  <SelectItem value="RESIGNED">Resigned</SelectItem>
                   <SelectItem value="TERMINATED">Terminated</SelectItem>
                 </SelectContent>
               </Select>

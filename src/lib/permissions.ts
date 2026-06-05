@@ -53,6 +53,9 @@ export type Permission =
   // ── HRMS ─────────────────────────────────────────────────────────────────
   | "hrms:view"
   | "hrms:manage"
+  // ── Revenue Operations ───────────────────────────────────────────────────
+  | "revenue_ops:view"
+  | "revenue_ops:manage"
 
 // All roles supported by the platform
 export type PlatformRole =
@@ -143,6 +146,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "payment_config:view", "payment_config:edit",
     "commission:view", "commission:edit",
     "hrms:view", "hrms:manage",
+    "revenue_ops:view", "revenue_ops:manage",
   ],
   PLATFORM_ADMIN: [
     // Navigation — near-full admin, no destructive system access
@@ -443,6 +447,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "commission:edit":              "Save & Manage Commission Calculations",
   "hrms:view":                    "View HRMS Module",
   "hrms:manage":                  "Manage HRMS Settings & Approvals",
+  "revenue_ops:view":             "View Revenue Operations",
+  "revenue_ops:manage":           "Manage Revenue Operations & Commission Approvals",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {
@@ -544,4 +550,9 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "hrms-payslip":           "hrms:view",
   "hrms-templates":         "hrms:view",
   "hrms-settings":          "hrms:manage",
+  // Revenue Operations
+  "rev-signup-ownership":      "revenue_ops:view",
+  "rev-renewal-ownership":     "revenue_ops:view",
+  "rev-addon-ownership":       "revenue_ops:view",
+  "rev-commission-processing": "revenue_ops:manage",
 }

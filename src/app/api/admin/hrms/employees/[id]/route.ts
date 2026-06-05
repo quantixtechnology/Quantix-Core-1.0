@@ -41,7 +41,7 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
           joiningDate:      body.joiningDate ? new Date(body.joiningDate as string) : undefined,
           employmentType:   body.employmentType   as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN' | undefined,
           reportingManager: body.reportingManager as string | undefined,
-          status:           body.status           as 'ACTIVE' | 'INACTIVE' | 'TERMINATED' | undefined,
+          status:           body.status           as 'PROSPECT' | 'OFFERED' | 'JOINED' | 'ACTIVE' | 'RESIGNED' | 'TERMINATED' | undefined,
         },
       })
       return NextResponse.json({ success: true, data: emp })

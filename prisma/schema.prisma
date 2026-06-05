@@ -2356,8 +2356,11 @@ enum EmploymentType {
 }
 
 enum EmployeeStatus {
+  PROSPECT
+  OFFERED
+  JOINED
   ACTIVE
-  INACTIVE
+  RESIGNED
   TERMINATED
 }
 
@@ -2409,14 +2412,54 @@ model Employee {
   joiningDate      DateTime
   employmentType   EmploymentType @default(PERMANENT)
   reportingManager String?
-  status           EmployeeStatus @default(ACTIVE)
+  status           EmployeeStatus @default(PROSPECT)
   deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   commissionSlips  CommissionSlip[]
   offerLetters     OfferLetter[]
+  timeline         EmployeeTimeline[]
 
   @@index([status])
+}
+
+model EmployeeTimeline {
+  id          String   @id @default(cuid())
+  employeeId  String
+  event       String
+  description String?
+  performedBy String?
+  createdAt   DateTime @default(now())
+  employee    Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+}
+
+model OwnershipAuditLog {
+  id               String   @id @default(cuid())
+  clientBusinessId String
+  assignmentType   String
+  previousOwnerId  String?
+  newOwnerId       String?
+  changedBy        String?
+  remarks          String?
+  createdAt        DateTime @default(now())
+
+  @@index([clientBusinessId])
+}
+
+model HrmsAuditLog {
+  id          String   @id @default(cuid())
+  module      String
+  entityId    String
+  action      String
+  oldValue    String?
+  newValue    String?
+  performedBy String?
+  createdAt   DateTime @default(now())
+
+  @@index([module])
+  @@index([entityId])
 }
 
 // Revenue Ownership — maps a client business to Quantix employee owners per revenue type

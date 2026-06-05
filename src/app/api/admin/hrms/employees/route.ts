@@ -14,7 +14,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
 
       const where = {
         deletedAt: null,
-        ...(status ? { status: status as 'ACTIVE' | 'INACTIVE' | 'TERMINATED' } : {}),
+        ...(status ? { status: status as 'PROSPECT' | 'OFFERED' | 'JOINED' | 'ACTIVE' | 'RESIGNED' | 'TERMINATED' } : {}),
         ...(search ? {
           OR: [
             { name:         { contains: search } },
@@ -68,7 +68,16 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
           joiningDate:      new Date(body.joiningDate),
           employmentType:   (body.employmentType   as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN') ?? 'PERMANENT',
           reportingManager: body.reportingManager,
-          status:           (body.status as 'ACTIVE' | 'INACTIVE' | 'TERMINATED') ?? 'ACTIVE',
+          status:           (body.status as 'PROSPECT' | 'OFFERED' | 'JOINED' | 'ACTIVE' | 'RESIGNED' | 'TERMINATED') ?? 'PROSPECT',
+        },
+      })
+
+      await db.employeeTimeline.create({
+        data: {
+          employeeId:  employee.id,
+          event:       'Employee Created',
+          description: `${employee.name} (${employee.employeeCode}) added as ${employee.designation}`,
+          performedBy: undefined,
         },
       })
 

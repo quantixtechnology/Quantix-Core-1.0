@@ -73,6 +73,10 @@ export type AdminPage =
   | "hrms-payslip"
   | "hrms-templates"
   | "hrms-settings"
+  | "rev-signup-ownership"
+  | "rev-renewal-ownership"
+  | "rev-addon-ownership"
+  | "rev-commission-processing"
 
 export type BusinessPage =
   | "dashboard"

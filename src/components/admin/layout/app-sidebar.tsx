@@ -8,6 +8,7 @@ import {
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
   DatabaseZap, FileText, Archive, Package, Calculator,
   UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal,
+  TrendingUp, RefreshCcw, Puzzle, CheckCircle,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -107,6 +108,13 @@ const hrmsNavItems: NavItem[] = [
   { key: "hrms-settings",        label: "HRMS Settings",      icon: SlidersHorizontal  },
 ]
 
+const revenueOpsNavItems: NavItem[] = [
+  { key: "rev-signup-ownership",      label: "Signup Ownership",      icon: TrendingUp    },
+  { key: "rev-renewal-ownership",     label: "Renewal Ownership",     icon: RefreshCcw    },
+  { key: "rev-addon-ownership",       label: "Add-On Ownership",      icon: Puzzle        },
+  { key: "rev-commission-processing", label: "Commission Processing", icon: CheckCircle   },
+]
+
 const systemNavItems: NavItem[] = [
   { key: "payment-config",      label: "Payment Config",      icon: Receipt   },
   { key: "roles-permissions",   label: "Roles & Permissions", icon: KeyRound  },
@@ -203,8 +211,9 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
     { title: "Client Operations", items: filterItems(clientNavItems),   open: false },
     { title: "Data Imports",      items: filterItems(importNavItems),   open: false },
     { title: "Platform Ops",      items: filterItems(opsNavItems),      open: false },
-    { title: "HRMS",              items: filterItems(hrmsNavItems),     open: false },
-    { title: "System",            items: filterItems(systemNavItems),   open: false },
+    { title: "HRMS",              items: filterItems(hrmsNavItems),         open: false },
+    { title: "Revenue Operations", items: filterItems(revenueOpsNavItems), open: false },
+    { title: "System",            items: filterItems(systemNavItems),       open: false },
   ]
 
   if (isMobile) {
