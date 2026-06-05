@@ -316,7 +316,7 @@ export function HrmsOfferLetterView() {
 
               {/* Workflow Actions */}
               <div className="flex gap-2 flex-wrap">
-                <Button size="sm" variant="outline" className="gap-1" onClick={() => window.print()}>
+                <Button size="sm" variant="outline" className="gap-1" onClick={() => window.open(`/offer-letter-print/${viewLetter.id}?print=1`, '_blank')}>
                   <Printer className="h-3.5 w-3.5" /> Print / PDF
                 </Button>
                 {viewLetter.status === "DRAFT" && (
