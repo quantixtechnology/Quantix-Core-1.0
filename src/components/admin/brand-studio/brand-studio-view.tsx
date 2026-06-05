@@ -13,6 +13,7 @@ import {
   ImageIcon, Palette, CheckCircle2,
 } from "lucide-react"
 import { toast } from "sonner"
+import { authFetch } from "@/lib/admin-fetch"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,9 +129,9 @@ function AssetUpload({
       const form = new FormData()
       form.append("file", file)
       form.append("assetField", field)
-      const res  = await fetch("/api/admin/platform-settings/upload", { method: "POST", body: form })
+      const res  = await authFetch("/api/admin/platform-settings/upload", { method: "POST", body: form })
       const json = await res.json()
-      if (!json.success) throw new Error(json.error)
+      if (!json.success) throw new Error(json.error ?? `Upload failed (${res.status})`)
       onUploaded(field, json.url)
       toast.success(`${label} uploaded`)
     } catch (e) {
@@ -144,9 +145,9 @@ function AssetUpload({
   const handleDelete = async () => {
     setDeleting(true)
     try {
-      const res  = await fetch(`/api/admin/platform-settings/upload?assetField=${field}`, { method: "DELETE" })
+      const res  = await authFetch(`/api/admin/platform-settings/upload?assetField=${field}`, { method: "DELETE" })
       const json = await res.json()
-      if (!json.success) throw new Error(json.error)
+      if (!json.success) throw new Error(json.error ?? `Delete failed (${res.status})`)
       onDeleted(field)
       toast.success(`${label} removed`)
     } catch (e) {
@@ -319,7 +320,7 @@ export function BrandStudioView() {
 
   const load = useCallback(async () => {
     try {
-      const res  = await fetch("/api/admin/platform-settings")
+      const res  = await authFetch("/api/admin/platform-settings")
       const json = await res.json()
       if (json.success) {
         setSettings((prev) => ({
@@ -372,13 +373,13 @@ export function BrandStudioView() {
         })
       }
 
-      const res  = await fetch("/api/admin/platform-settings", {
+      const res  = await authFetch("/api/admin/platform-settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
       const json = await res.json()
-      if (!json.success) throw new Error(json.error)
+      if (!json.success) throw new Error(json.error ?? `Save failed (${res.status})`)
       toast.success("Brand settings saved")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed")

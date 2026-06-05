@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator"
 import { Plus, Eye, Printer, Trash2, FileSignature, Mail, CheckCircle, XCircle, Clock } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { authFetch } from "@/lib/admin-fetch"
 
 type OfferStatus = "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED"
 
@@ -77,8 +78,8 @@ export function HrmsOfferLetterView() {
 
   const loadDeps = useCallback(async () => {
     const [tplRes, empRes] = await Promise.all([
-      fetch("/api/admin/hrms/templates"),
-      fetch("/api/admin/hrms/employees?limit=200"),
+      authFetch("/api/admin/hrms/templates"),
+      authFetch("/api/admin/hrms/employees?limit=200"),
     ])
     const [tplJson, empJson] = await Promise.all([tplRes.json(), empRes.json()])
     if (tplJson.success) setTemplates(tplJson.data.filter((t: Template) => t.isActive))
@@ -88,7 +89,7 @@ export function HrmsOfferLetterView() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/admin/hrms/offer-letters?limit=100")
+      const res = await authFetch("/api/admin/hrms/offer-letters?limit=100")
       const json = await res.json()
       if (json.success) setLetters(json.data)
     } catch { /* silent */ }
@@ -101,7 +102,7 @@ export function HrmsOfferLetterView() {
     if (!form.candidateName || !form.designation) { toast.error("Candidate Name and Designation are required"); return }
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/hrms/offer-letters", {
+      const res = await authFetch("/api/admin/hrms/offer-letters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -122,7 +123,7 @@ export function HrmsOfferLetterView() {
 
   const updateStatus = async (id: string, status: OfferStatus) => {
     try {
-      const res = await fetch(`/api/admin/hrms/offer-letters/${id}`, {
+      const res = await authFetch(`/api/admin/hrms/offer-letters/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -131,7 +132,7 @@ export function HrmsOfferLetterView() {
       if (!json.success) throw new Error(json.error)
       toast.success(`Status updated to ${STATUS_LABELS[status]}`)
       // Refresh view letter from server
-      const detailRes = await fetch(`/api/admin/hrms/offer-letters/${id}`)
+      const detailRes = await authFetch(`/api/admin/hrms/offer-letters/${id}`)
       const detailJson = await detailRes.json()
       if (detailJson.success) setViewLetter(detailJson.data)
       load()
@@ -143,7 +144,7 @@ export function HrmsOfferLetterView() {
   const handleDelete = async () => {
     if (!deleteId) return
     try {
-      const res = await fetch(`/api/admin/hrms/offer-letters/${deleteId}`, { method: "DELETE" })
+      const res = await authFetch(`/api/admin/hrms/offer-letters/${deleteId}`, { method: "DELETE" })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       toast.success("Offer letter deleted")

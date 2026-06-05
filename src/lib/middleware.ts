@@ -98,15 +98,25 @@ function cleanupRateLimitStore(now: number) {
 // SESSION / AUTH EXTRACTION
 // ============================================================================
 
-async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRequest['user'] | null> {
+// Distinct sentinel values so withMiddleware can return specific 401 messages
+const AUTH_ERRORS = {
+  NO_TOKEN:    'Session not found. Please sign in.',
+  EXPIRED:     'Session expired. Please sign in again.',
+  INACTIVE:    'Account is inactive or suspended.',
+} as const
+type AuthError = typeof AUTH_ERRORS[keyof typeof AUTH_ERRORS]
+
+async function extractUserFromRequest(
+  req: NextRequest,
+): Promise<AuthenticatedRequest['user'] | AuthError | null> {
   try {
     const authHeader = req.headers.get('authorization');
     const businessIdHeader = req.headers.get('x-business-id');
 
-    if (!authHeader) return null;
+    if (!authHeader) return AUTH_ERRORS.NO_TOKEN;
 
-    const token = authHeader.replace('Bearer ', '');
-    if (!token) return null;
+    const token = authHeader.replace('Bearer ', '').trim();
+    if (!token) return AUTH_ERRORS.NO_TOKEN;
 
     const refreshToken = await db.refreshToken.findUnique({
       where: { token },
@@ -132,8 +142,8 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
       },
     });
 
-    if (!refreshToken || refreshToken.expiresAt < new Date()) return null;
-    if (!refreshToken.user.isActive) return null;
+    if (!refreshToken || refreshToken.expiresAt < new Date()) return AUTH_ERRORS.EXPIRED;
+    if (!refreshToken.user.isActive) return AUTH_ERRORS.INACTIVE;
 
     const user = refreshToken.user;
     let role: Role = 'CUSTOMER';
@@ -229,15 +239,17 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
 
         // Authentication
         if (config.requireAuth) {
-          const user = await extractUserFromRequest(req);
-          if (!user) {
-            return createErrorResponse('Authentication required', 401);
+          const userOrError = await extractUserFromRequest(req);
+          // String return = a specific auth error message
+          if (!userOrError || typeof userOrError === 'string') {
+            return createErrorResponse(userOrError || AUTH_ERRORS.NO_TOKEN, 401);
           }
+          const user = userOrError;
           (req as AuthenticatedRequest).user = user;
 
           // Platform admin check
           if (config.requirePlatformAdmin && !user.isPlatformAdmin) {
-            return createErrorResponse('Platform admin access required', 403);
+            return createErrorResponse(`Unauthorized role: ${user.role} — platform admin required`, 403);
           }
 
           // Business context
@@ -248,21 +260,21 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
           // Role check
           if (config.requiredRoles && config.requiredRoles.length > 0) {
             if (!config.requiredRoles.includes(user.role)) {
-              return createErrorResponse('Insufficient role permissions', 403);
+              return createErrorResponse(`Unauthorized role: ${user.role}`, 403);
             }
           }
 
           // Single permission check
           if (config.requiredPermission) {
             if (!user.permissions.includes(config.requiredPermission)) {
-              return createErrorResponse('Insufficient permissions', 403);
+              return createErrorResponse(`Missing permission: ${config.requiredPermission}`, 403);
             }
           }
 
           // Multiple permissions check
           if (config.requiredPermissions && config.requiredPermissions.length > 0) {
             if (!config.requiredPermissions.some((p) => user.permissions.includes(p))) {
-              return createErrorResponse('Insufficient permissions', 403);
+              return createErrorResponse(`Missing permission: one of [${config.requiredPermissions.join(', ')}]`, 403);
             }
           }
 

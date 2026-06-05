@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator"
 import { Plus, Search, Pencil, Trash2, Users, Clock, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { authFetch } from "@/lib/admin-fetch"
 
 type EmploymentType = "PERMANENT" | "CONTRACT" | "COMMISSION_BASED" | "CONSULTANT" | "INTERN"
 type EmployeeStatus = "PROSPECT" | "OFFERED" | "JOINED" | "ACTIVE" | "RESIGNED" | "TERMINATED"
@@ -109,7 +110,7 @@ export function HrmsEmployeesView() {
     try {
       const params = new URLSearchParams({ search, limit: "100" })
       if (statusFilter !== "all") params.set("status", statusFilter)
-      const res = await fetch(`/api/admin/hrms/employees?${params}`)
+      const res = await authFetch(`/api/admin/hrms/employees?${params}`)
       const json = await res.json()
       if (json.success) { setEmployees(json.data); setTotal(json.pagination?.total ?? json.data.length) }
     } catch { /* silent */ }
@@ -122,7 +123,7 @@ export function HrmsEmployeesView() {
     setTimelineEmp(emp)
     setTimelineLoading(true)
     try {
-      const res = await fetch(`/api/admin/hrms/employee-timeline?employeeId=${emp.id}`)
+      const res = await authFetch(`/api/admin/hrms/employee-timeline?employeeId=${emp.id}`)
       const json = await res.json()
       if (json.success) setTimeline(json.data)
     } catch { /* silent */ }
@@ -157,7 +158,7 @@ export function HrmsEmployeesView() {
         ...form,
         payrollType: form.payrollType || undefined,
       }
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -175,7 +176,7 @@ export function HrmsEmployeesView() {
   const handleDelete = async () => {
     if (!deleteId) return
     try {
-      const res = await fetch(`/api/admin/hrms/employees/${deleteId}`, { method: "DELETE" })
+      const res = await authFetch(`/api/admin/hrms/employees/${deleteId}`, { method: "DELETE" })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       toast.success("Employee removed")
