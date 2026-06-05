@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Star, Clock, Zap, Search } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import { StorefrontProductCard, ProductCardSkeleton } from "./storefront-product-card"
 import type { StorefrontProduct } from "./storefront-product-card"
@@ -12,51 +12,129 @@ import type { StorefrontCategory } from "./storefront-category-card"
 import { StorefrontBanner } from "./storefront-banner"
 import { StorefrontEmptyState } from "./storefront-empty-state"
 import { PwaInstallBanner } from "./pwa-install-banner"
-import { TYPE, PRODUCT_GRID, GRID_GAP, CATEGORY_GRID, CAT_GAP, PAGE_X, SECTION_Y, BTN_LG, BTN_GHOST, primaryBtnStyle } from "@/design-system"
 
-// ── Local type aliases ────────────────────────────────────────────────────
 type Category = StorefrontCategory
 type Product  = StorefrontProduct
 
-// ── Business-type hero content (generic, brand-neutral) ──────────────────
-
-function getHeroContent(businessType: string) {
+// ── Business-type delivery copy ────────────────────────────────────────────
+function getDeliveryMeta(businessType: string) {
   switch (businessType) {
     case "MEAT_DELIVERY":
-      return { headline: "Fresh. Halal.\nDelivered Fast.", sub: "Premium quality meat & poultry, hygienically processed and delivered to your doorstep.", cta: "Shop Now" }
+      return { time: "30-45 min", tag: "Fresh & Halal" }
     case "GROCERY":
-      return { headline: "Fresh Groceries,\nDelivered Daily.", sub: "Everything you need — vegetables, dairy, grains and more — delivered in minutes.", cta: "Shop Now" }
+      return { time: "20-40 min", tag: "Daily Fresh" }
     case "FOOD_DELIVERY":
-      return { headline: "Delicious Food,\nDelivered Hot.", sub: "Restaurant-quality meals at your door in 30–45 minutes.", cta: "Order Now" }
+      return { time: "25-40 min", tag: "Hot & Fresh" }
     case "PHARMACY":
-      return { headline: "Medicines\nDelivered in 30 min.", sub: "Genuine medicines and vitamins from licensed pharmacists.", cta: "Order Now" }
+      return { time: "30 min", tag: "Genuine Meds" }
     default:
-      return { headline: "Quality Products,\nDelivered Fast.", sub: "Browse our selection and get everything you need delivered to your door.", cta: "Shop Now" }
+      return { time: "30-60 min", tag: "Fast Delivery" }
   }
 }
 
-// ── Main component ───────────────────────────────────────────────────────
+// ── Horizontal product carousel card (narrow) ─────────────────────────────
+function CarouselProductCard({
+  product,
+  brandColor,
+  nav,
+  businessType,
+  storeClosed,
+}: {
+  product: StorefrontProduct
+  brandColor: string
+  nav: WebNav
+  businessType: string
+  storeClosed: boolean
+}) {
+  return (
+    <div className="w-[152px] shrink-0">
+      <StorefrontProductCard
+        product={product}
+        brandColor={brandColor}
+        nav={nav}
+        businessType={businessType}
+        storeClosed={storeClosed}
+      />
+    </div>
+  )
+}
 
-interface StorefrontHomeProps { brandColor: string; nav: WebNav; storeClosed?: boolean }
+// ── Section header ─────────────────────────────────────────────────────────
+function SectionHeader({
+  title,
+  sub,
+  brandColor,
+  onViewAll,
+}: {
+  title: string
+  sub?: string
+  brandColor: string
+  onViewAll: () => void
+}) {
+  return (
+    <div className="flex items-end justify-between mb-3">
+      <div>
+        <h2 className="text-[15px] font-bold text-gray-900 leading-tight">{title}</h2>
+        {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+      </div>
+      <button
+        onClick={onViewAll}
+        className="flex items-center gap-0.5 text-[12px] font-semibold active:opacity-70"
+        style={{ color: brandColor }}
+      >
+        See all <ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  )
+}
+
+// ── Skeleton for carousel products ────────────────────────────────────────
+function CarouselSkeleton() {
+  return (
+    <div className="flex gap-3 px-4 overflow-hidden">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="w-[152px] shrink-0 animate-pulse">
+          <div className="w-full aspect-[4/3] bg-gray-100 rounded-2xl mb-2" />
+          <div className="h-3 bg-gray-100 rounded w-4/5 mb-1.5" />
+          <div className="h-3 bg-gray-100 rounded w-1/2" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
+
+interface StorefrontHomeProps {
+  brandColor: string
+  nav: WebNav
+  storeClosed?: boolean
+}
 
 export function StorefrontHome({ brandColor, nav, storeClosed = false }: StorefrontHomeProps) {
   const {
-    currentBusinessId, currentBusinessName, currentBusinessType, currentStoreId,
-    storefrontWhyChooseUs, storefrontPromiseBar,
+    currentBusinessId,
+    currentBusinessName,
+    currentBusinessLogo,
+    currentBusinessType,
+    currentStoreId,
+    storefrontWhyChooseUs,
+    storefrontPromiseBar,
   } = useAdminStore()
-  const initial = (currentBusinessName || "Q").charAt(0).toUpperCase()
 
   const config      = getBusinessTypeConfig(currentBusinessType)
-  const heroContent = getHeroContent(currentBusinessType)
-  const deliveryCfg = config.deliveryConfig
   const labels      = config.labels
+  const deliveryMeta = getDeliveryMeta(currentBusinessType)
 
-  const [categories, setCategories]       = useState<Category[]>([])
-  const [catLoading, setCatLoading]       = useState(true)
-  const [products, setProducts]           = useState<Product[]>([])
-  const [prodsLoading, setProdsLoading]   = useState(true)
+  const [categories, setCategories]     = useState<Category[]>([])
+  const [catLoading, setCatLoading]     = useState(true)
+  const [products, setProducts]         = useState<Product[]>([])
+  const [prodsLoading, setProdsLoading] = useState(true)
+  const [searchQuery, setSearchQuery]   = useState("")
 
-  // ── Categories ─────────────────────────────────────────────────
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // ── Data fetching — UNCHANGED ──────────────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
     setCatLoading(true)
@@ -67,158 +145,156 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
       .finally(() => setCatLoading(false))
   }, [currentBusinessId])
 
-  // ── Products ───────────────────────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
     setProdsLoading(true)
-
     const productParams = new URLSearchParams({ businessId: currentBusinessId, limit: "16" })
     if (currentStoreId) productParams.set("storeId", currentStoreId)
     fetch(`/api/core/storefront/products?${productParams}`)
       .then((r) => r.json())
       .then((j) => {
-        // The API returns { success, data: Product[], pagination: { total } }
-        // data IS the array — NOT an object with a .products key.
         const prods: Product[] = Array.isArray(j.data) ? j.data : []
-
         console.log("[StorefrontHome] products loaded", {
-          businessId:   currentBusinessId,
-          businessType: currentBusinessType,
-          storeId:      currentStoreId,
-          returned:     prods.length,
-          apiSuccess:   j.success,
+          businessId:      currentBusinessId,
+          businessType:    currentBusinessType,
+          storeId:         currentStoreId,
+          returned:        prods.length,
+          apiSuccess:      j.success,
           paginationTotal: j.pagination?.total,
         })
-
         setProducts(prods)
       })
-      .catch((err) => {
-        console.error("[StorefrontHome] products fetch error", err)
-      })
+      .catch((err) => { console.error("[StorefrontHome] products fetch error", err) })
       .finally(() => setProdsLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBusinessId])
 
-  // Split into featured + rest — both from the SAME fetch
+  // Split featured / rest — UNCHANGED logic
   const featured        = products.filter((p) => p.isFeatured)
   const displayProducts = featured.length > 0 ? featured.slice(0, 8) : products.slice(0, 8)
-  const moreProducts    = featured.length > 0 ? products.filter((p) => !p.isFeatured).slice(0, 8) : products.slice(8, 16)
+  const moreProducts    = featured.length > 0
+    ? products.filter((p) => !p.isFeatured).slice(0, 8)
+    : products.slice(8, 16)
 
-  // Promise bar: business-configured items only.
-  // If the admin hasn't set custom items, show only the delivery promise from
-  // the business-type config — never show unverified generic claims.
+  // ── Search handler ────────────────────────────────────────────────────
+  function handleSearch(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && searchQuery.trim()) {
+      nav.go("category", { categoryId: undefined, categoryName: `Search: ${searchQuery.trim()}` })
+    }
+  }
+
   const promiseItems = storefrontPromiseBar.length > 0
-    ? storefrontPromiseBar.map(({ emoji, label, sub }) => ({ emoji, label, sub }))
-    : [{ emoji: "⚡", label: deliveryCfg.promiseHeadline, sub: deliveryCfg.promiseSubtext }]
+    ? storefrontPromiseBar
+    : [
+        { emoji: "⚡", label: deliveryMeta.time, sub: "Delivery time" },
+        { emoji: "✓", label: deliveryMeta.tag,  sub: "Quality assured" },
+      ]
 
   return (
-    <div>
-      {/* ── Hero ─────────────────────────────────────────────── */}
-      <section
-        className="relative overflow-hidden"
-        style={{ background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}cc 60%, #1B1B1B 100%)` }}
-      >
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl bg-white" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full blur-3xl bg-white" />
-        </div>
-        <div className={`relative max-w-7xl mx-auto ${PAGE_X} py-16 sm:py-24`}>
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-xl border-2 border-white/30"
-                style={{ backgroundColor: `${brandColor}80` }}
-              >
-                {initial}
-              </div>
-              <div>
-                <p className="text-white/70 text-sm font-medium">Welcome to</p>
-                <h1 className="text-white font-bold text-xl">{currentBusinessName || "Our Store"}</h1>
-              </div>
+    <div className="pb-4">
+
+      {/* ── Brand Header (mobile) ─────────────────────────────────────── */}
+      {/* Desktop sees the standard header; on mobile we add a richer brand section */}
+      <div className="md:hidden bg-white px-4 pt-1 pb-3">
+
+        {/* Promise chips — e.g. "30-45 min · Fresh & Halal" */}
+        <div className="flex items-center gap-3 mb-3 overflow-x-auto scrollbar-none">
+          {promiseItems.slice(0, 3).map(({ emoji, label }) => (
+            <div
+              key={label}
+              className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold"
+              style={{ backgroundColor: `${brandColor}12`, color: brandColor }}
+            >
+              <span className="text-base leading-none">{emoji}</span>
+              <span>{label}</span>
             </div>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4 whitespace-pre-line">
-              {heroContent.headline}
-            </h2>
-            <p className="text-white/80 text-base sm:text-lg mb-8 max-w-lg">{heroContent.sub}</p>
-            <div className="flex flex-wrap gap-3">
+          ))}
+          {storeClosed && (
+            <div className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-red-600">
+              <span>🔴</span>
+              <span>Store Closed</span>
+            </div>
+          )}
+        </div>
+
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            ref={searchRef}
+            type="search"
+            placeholder={`Search ${currentBusinessName || "products"}…`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearch}
+            className="w-full h-11 pl-10 pr-4 text-sm bg-gray-100 rounded-2xl border border-transparent focus:outline-none focus:bg-white focus:border-gray-300 transition-colors placeholder:text-gray-400"
+          />
+        </div>
+      </div>
+
+      {/* ── Desktop: store-closed banner ─────────────────────────────── */}
+      {storeClosed && (
+        <div className="hidden md:block bg-red-50 border-b border-red-100 text-center py-2 text-sm font-medium text-red-600">
+          🔴 Store is currently closed
+        </div>
+      )}
+
+      {/* ── PWA install prompt ────────────────────────────────────────── */}
+      <div className="px-4 md:max-w-7xl md:mx-auto md:px-8">
+        <PwaInstallBanner brandColor={brandColor} />
+      </div>
+
+      {/* ── Banner carousel ──────────────────────────────────────────── */}
+      {currentBusinessId && (
+        <div className="mt-2 px-3 md:px-8 md:max-w-7xl md:mx-auto">
+          <StorefrontBanner
+            businessId={currentBusinessId}
+            storeId={currentStoreId || null}
+            brandColor={brandColor}
+            variant="carousel"
+          />
+        </div>
+      )}
+
+      {/* ── Category chips ─────────────────────────────────────────── */}
+      <section className="mt-5">
+        <div className="flex items-center justify-between px-4 md:max-w-7xl md:mx-auto md:px-8 mb-3">
+          <h2 className="text-[15px] font-bold text-gray-900">{labels.categoryHeading}</h2>
+          <button
+            onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
+            className="flex items-center gap-0.5 text-[12px] font-semibold active:opacity-70"
+            style={{ color: brandColor }}
+          >
+            See all <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="flex gap-2.5 overflow-x-auto scrollbar-none px-4 md:px-8 pb-1">
+          {catLoading ? (
+            <>
+              {Array.from({ length: 7 }).map((_, i) => (
+                <StorefrontCategoryCardSkeleton key={i} />
+              ))}
+            </>
+          ) : categories.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4">No categories yet</p>
+          ) : (
+            <>
+              {/* "All" chip */}
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                className={`${BTN_LG} bg-white hover:bg-gray-50 gap-2`}
-                style={{ color: brandColor }}
+                className="flex flex-col items-center gap-1.5 shrink-0"
               >
-                {heroContent.cta} <ChevronRight className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => nav.go("orders")}
-                className={BTN_GHOST}
-              >
-                My Orders
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Delivery promise bar ─────────────────────────────── */}
-      <section className="bg-gray-900 text-white">
-        <div className={`max-w-7xl mx-auto ${PAGE_X} py-4`}>
-          <div className={`grid gap-4 ${promiseItems.length === 1 ? "grid-cols-1 max-w-xs" : promiseItems.length === 2 ? "grid-cols-2" : promiseItems.length === 3 ? "grid-cols-3" : "grid-cols-2 md:grid-cols-4"}`}>
-            {promiseItems.map(({ emoji, label, sub }) => (
-              <div key={label} className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg" style={{ backgroundColor: `${brandColor}30` }}>
-                  {emoji}
+                <div
+                  className="w-[60px] h-[60px] rounded-2xl flex items-center justify-center text-2xl border-2 border-transparent transition-all"
+                  style={{ backgroundColor: `${brandColor}15`, borderColor: `${brandColor}30` }}
+                >
+                  🛒
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-white leading-tight">{label}</p>
-                  <p className="text-[11px] text-gray-400">{sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <div className={`max-w-7xl mx-auto ${PAGE_X}`}>
-
-        {/* ── PWA install prompt ───────────────────────────────── */}
-        <PwaInstallBanner brandColor={brandColor} />
-
-        {/* ── Banner carousel ──────────────────────────────────── */}
-        {currentBusinessId && (
-          <section className={SECTION_Y}>
-            <StorefrontBanner
-              businessId={currentBusinessId}
-              storeId={currentStoreId || null}
-              brandColor={brandColor}
-              variant="carousel"
-            />
-          </section>
-        )}
-
-        {/* ── Categories ──────────────────────────────────────── */}
-        <section className={SECTION_Y}>
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className={TYPE.SECTION_TITLE}>{labels.categoryHeading}</h2>
-              <p className={TYPE.SECTION_SUB}>Browse our selections</p>
-            </div>
-            <button
-              onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-              className={TYPE.VIEW_ALL}
-              style={{ color: brandColor }}
-            >
-              View all <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          {catLoading ? (
-            <div className={`${CATEGORY_GRID} ${CAT_GAP}`}>
-              {Array.from({ length: 8 }).map((_, i) => <StorefrontCategoryCardSkeleton key={i} />)}
-            </div>
-          ) : categories.length === 0 ? (
-            <p className="text-center py-8 text-sm text-gray-400">No categories added yet</p>
-          ) : (
-            <div className={`${CATEGORY_GRID} ${CAT_GAP}`}>
+                <span className="text-[11px] font-medium text-gray-700 text-center leading-tight w-[60px]">
+                  All
+                </span>
+              </button>
               {categories.map((c) => (
                 <StorefrontCategoryCard
                   key={c.id}
@@ -228,87 +304,107 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
                   onClick={() => nav.go("category", { categoryId: c.id, categoryName: c.name })}
                 />
               ))}
-            </div>
+            </>
           )}
-        </section>
+        </div>
+      </section>
 
-        {/* ── Featured / primary products ──────────────────────── */}
-        <section className="pb-10">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className={TYPE.SECTION_TITLE}>{labels.featuredHeading}</h2>
-              <p className={TYPE.SECTION_SUB}>Fresh stock, updated daily</p>
-            </div>
-            <button
-              onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-              className={TYPE.VIEW_ALL}
-              style={{ color: brandColor }}
-            >
-              View all <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+      {/* ── Popular Picks — horizontal carousel ──────────────────────── */}
+      <section className="mt-6">
+        <div className="px-4 md:max-w-7xl md:mx-auto md:px-8">
+          <SectionHeader
+            title={labels.featuredHeading}
+            sub="Fresh stock, updated daily"
+            brandColor={brandColor}
+            onViewAll={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
+          />
+        </div>
 
-          {prodsLoading ? (
-            <div className={`${PRODUCT_GRID} ${GRID_GAP}`}>
-              {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
-            </div>
-          ) : displayProducts.length === 0 ? (
+        {prodsLoading ? (
+          <CarouselSkeleton />
+        ) : displayProducts.length === 0 ? (
+          <div className="px-4 md:max-w-7xl md:mx-auto md:px-8">
             <StorefrontEmptyState
               variant="no-products"
               brandColor={brandColor}
               onAction={() => nav.go("category")}
             />
-          ) : (
-            <div className={`${PRODUCT_GRID} ${GRID_GAP}`}>
-              {displayProducts.map((p) => (
-                <StorefrontProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
-              ))}
-            </div>
-          )}
+          </div>
+        ) : (
+          <div className="flex gap-3 overflow-x-auto scrollbar-none px-4 pb-2 md:hidden">
+            {displayProducts.map((p) => (
+              <CarouselProductCard
+                key={p.id}
+                product={p}
+                brandColor={brandColor}
+                nav={nav}
+                businessType={currentBusinessType}
+                storeClosed={storeClosed}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Desktop: standard 2-col → 5-col grid */}
+        {!prodsLoading && displayProducts.length > 0 && (
+          <div className="hidden md:grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 px-8 max-w-7xl mx-auto">
+            {displayProducts.map((p) => (
+              <StorefrontProductCard
+                key={p.id}
+                product={p}
+                brandColor={brandColor}
+                nav={nav}
+                businessType={currentBusinessType}
+                storeClosed={storeClosed}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Best Sellers — 2-col grid on mobile ─────────────────────── */}
+      {!prodsLoading && moreProducts.length > 0 && (
+        <section className="mt-6 px-4 md:max-w-7xl md:mx-auto md:px-8">
+          <SectionHeader
+            title={labels.bestSellersHeading}
+            sub="Customer favourites"
+            brandColor={brandColor}
+            onViewAll={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
+          />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {moreProducts.map((p) => (
+              <StorefrontProductCard
+                key={p.id}
+                product={p}
+                brandColor={brandColor}
+                nav={nav}
+                businessType={currentBusinessType}
+                storeClosed={storeClosed}
+              />
+            ))}
+          </div>
         </section>
+      )}
 
-        {/* ── More / best sellers ───────────────────────────────── */}
-        {!prodsLoading && moreProducts.length > 0 && (
-          <section className="pb-12">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className={TYPE.SECTION_TITLE}>{labels.bestSellersHeading}</h2>
-                <p className={TYPE.SECTION_SUB}>Customer favourites</p>
-              </div>
-              <button
-                onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                className={TYPE.VIEW_ALL}
-                style={{ color: brandColor }}
-              >
-                View all <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-            <div className={`${PRODUCT_GRID} ${GRID_GAP}`}>
-              {moreProducts.map((p) => (
-                <StorefrontProductCard key={p.id} product={p} brandColor={brandColor} nav={nav} businessType={currentBusinessType} storeClosed={storeClosed} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Why choose us ────────────────────────────────────── */}
-        {/* Only shown when the admin has configured items — no generic placeholders */}
-        {storefrontWhyChooseUs.length > 0 && (
-          <section className="py-10 border-t border-gray-100">
-            <h2 className={`${TYPE.SECTION_TITLE} mb-8 text-center`}>Why Choose Us?</h2>
-            <div className={`grid gap-6 ${storefrontWhyChooseUs.length <= 3 ? `grid-cols-${storefrontWhyChooseUs.length}` : "grid-cols-2 md:grid-cols-4"}`}>
-              {storefrontWhyChooseUs.map(({ emoji, title, desc }) => (
-                <div key={title} className="text-center">
-                  <div className="text-4xl mb-3">{emoji}</div>
-                  <h3 className="text-sm font-bold text-gray-900 mb-1">{title}</h3>
-                  <p className="text-xs text-gray-500">{desc}</p>
+      {/* ── Promise / Why choose us strip ──────────────────────────── */}
+      {storefrontWhyChooseUs.length > 0 && (
+        <section className="mt-8 mx-4 md:max-w-7xl md:mx-auto md:px-8">
+          <div
+            className="rounded-2xl p-5 grid grid-cols-2 sm:grid-cols-4 gap-4"
+            style={{ backgroundColor: `${brandColor}08` }}
+          >
+            {storefrontWhyChooseUs.map(({ emoji, title, desc }) => (
+              <div key={title} className="flex items-start gap-2.5">
+                <span className="text-xl shrink-0 mt-0.5">{emoji}</span>
+                <div>
+                  <p className="text-[13px] font-bold text-gray-900 leading-tight">{title}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">{desc}</p>
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-      </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

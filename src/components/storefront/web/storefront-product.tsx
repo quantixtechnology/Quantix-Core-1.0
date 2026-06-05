@@ -6,7 +6,10 @@ import { useCartStore } from "@/stores/cart-store"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"
 import { resolveImageUrl } from "@/lib/image-url"
 import { formatINR } from "@/lib/currency"
-import { ChevronRight, ShoppingCart, Plus, Minus, Check, Package } from "lucide-react"
+import {
+  ChevronLeft, ShoppingCart, Plus, Minus, Check, Package,
+  ChevronRight, ChevronDown,
+} from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import { ProductImage } from "./product-image"
 
@@ -59,71 +62,66 @@ function getDefaultProductEmoji(businessType: string): string {
   }
 }
 
+// ── Loading skeleton ────────────────────────────────────────────────────────
 function SkeletonProduct() {
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-pulse">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-        <div className="space-y-3">
-          <div className="aspect-square rounded-2xl bg-gray-100" />
-          <div className="flex gap-2">
-            {[1, 2, 3].map((i) => <div key={i} className="w-20 h-20 rounded-xl bg-gray-100" />)}
-          </div>
-        </div>
-        <div className="space-y-4">
-          <div className="h-7 bg-gray-100 rounded w-2/3" />
-          <div className="h-4 bg-gray-100 rounded w-full" />
-          <div className="h-4 bg-gray-100 rounded w-3/4" />
-          <div className="h-8 bg-gray-100 rounded w-1/3 mt-4" />
-          <div className="h-12 bg-gray-100 rounded w-full mt-6" />
+    <div className="animate-pulse">
+      {/* Hero image */}
+      <div className="w-full aspect-[4/3] bg-gray-100" />
+      <div className="px-4 pt-4 space-y-3">
+        <div className="h-6 bg-gray-100 rounded w-3/4" />
+        <div className="h-4 bg-gray-100 rounded w-full" />
+        <div className="h-4 bg-gray-100 rounded w-2/3" />
+        <div className="h-8 bg-gray-100 rounded w-1/3 mt-4" />
+        <div className="flex gap-2 mt-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-9 w-20 bg-gray-100 rounded-xl" />
+          ))}
         </div>
       </div>
     </div>
   )
 }
 
+// ── Main component ──────────────────────────────────────────────────────────
 export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPageProps) {
   const { currentBusinessId, currentBusinessType, currentStoreId } = useAdminStore()
   const { addItem, items, updateQuantity } = useCartStore()
 
-  const config = getBusinessTypeConfig(currentBusinessType)
+  const config   = getBusinessTypeConfig(currentBusinessType)
   const checkout = config.checkoutOptions
 
-  // Badge visibility — driven by business-type productMeta config
   const showHalal   = config.productMeta.some((m) => m.key === "isHalal"      && m.showOnDetail)
   const showFresh   = config.productMeta.some((m) => m.key === "freshnessTag" && m.showOnDetail)
 
-  const [product, setProduct]       = useState<ProductDetail | null>(null)
-  const [loading, setLoading]       = useState(true)
-  const [notFound, setNotFound]     = useState(false)
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
-  const [activeImage, setActiveImage] = useState(0)
-  const [qty, setQty]               = useState(1)
-  const [selectedCutType, setSelectedCutType]   = useState<string | null>(null)
-  const [selectedCleaning, setSelectedCleaning] = useState<string | null>(null)
-  const [selectedMarinade, setSelectedMarinade] = useState<string | null>(null)
-  const [addedToCart, setAddedToCart] = useState(false)
+  const [product, setProduct]                       = useState<ProductDetail | null>(null)
+  const [loading, setLoading]                       = useState(true)
+  const [notFound, setNotFound]                     = useState(false)
+  const [selectedVariantId, setSelectedVariantId]   = useState<string | null>(null)
+  const [activeImage, setActiveImage]               = useState(0)
+  const [qty, setQty]                               = useState(1)
+  const [selectedCutType, setSelectedCutType]       = useState<string | null>(null)
+  const [selectedCleaning, setSelectedCleaning]     = useState<string | null>(null)
+  const [selectedMarinade, setSelectedMarinade]     = useState<string | null>(null)
+  const [addedToCart, setAddedToCart]               = useState(false)
+  const [descExpanded, setDescExpanded]             = useState(false)
 
+  // ── Data fetching — UNCHANGED ──────────────────────────────────────────
   useEffect(() => {
     if (!nav.productId || !currentBusinessId) return
     setLoading(true)
     setNotFound(false)
     setProduct(null)
 
-    const params = new URLSearchParams({
-      businessId: currentBusinessId,
-      limit: "100",
-    })
+    const params = new URLSearchParams({ businessId: currentBusinessId, limit: "100" })
     if (currentStoreId) params.set("storeId", currentStoreId)
 
     fetch(`/api/core/storefront/products?${params}`)
       .then((r) => r.json())
       .then((j) => {
         if (!j.success) { setNotFound(true); return }
-        // API returns { success, data: Product[], pagination }
-        // data IS the array — NOT an object with a .products key
         const prods: ProductDetail[] = Array.isArray(j.data) ? j.data : []
         const found = prods.find((p) => p.id === nav.productId)
-
         console.log("[StorefrontProduct] lookup", {
           productId:    nav.productId,
           businessId:   currentBusinessId,
@@ -131,7 +129,6 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
           foundInBatch: !!found,
           totalInBatch: prods.length,
         })
-
         if (!found) { setNotFound(true); return }
         setProduct(found)
         const defaultVar = found.variants.find((v) => v.isDefault) || found.variants[0]
@@ -161,11 +158,10 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     )
   }
 
-  const images    = Array.isArray(product.images) ? product.images : []
+  const images         = Array.isArray(product.images) ? product.images : []
   const resolvedImages = images.map(resolveImageUrl).filter(Boolean)
-  const meta      = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
+  const meta           = (product.metadata && typeof product.metadata === "object") ? product.metadata : {}
 
-  // Meat-specific fields — only read when business type supports them
   const cutTypes        = checkout.showCutType  ? ((meta.cutTypes        as string[] | undefined) || []) : []
   const cleaningOptions = checkout.showCleaning ? ((meta.cleaningOptions as string[] | undefined) || []) : []
   const marinades       = checkout.showMarinade ? ((meta.marinade        as string[] | undefined) || []) : []
@@ -174,16 +170,16 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
     || product.variants.find((v) => v.isDefault)
     || product.variants[0]
 
-  const price = selectedVariant?.price ?? 0
-  const mrp   = selectedVariant?.mrp   ?? 0
-  const hasDiscount  = mrp > price && mrp > 0
-  const discountPct  = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
+  const price       = selectedVariant?.price ?? 0
+  const mrp         = selectedVariant?.mrp   ?? 0
+  const hasDiscount = mrp > price && mrp > 0
+  const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0
 
-  const cartItem = selectedVariant
+  const cartItem    = selectedVariant
     ? items.find((i) => i.productId === product.id && i.variantId === selectedVariant.id)
     : undefined
 
-  const isOutOfStock = product.hasInventory && product.stockStatus === 'OUT_OF_STOCK'
+  const isOutOfStock = product.hasInventory && product.stockStatus === "OUT_OF_STOCK"
 
   const handleAddToCart = () => {
     if (!selectedVariant || isOutOfStock) return
@@ -191,15 +187,15 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
       updateQuantity(product.id, selectedVariant.id, cartItem.quantity + qty)
     } else {
       addItem({
-        productId: product.id,
-        variantId: selectedVariant.id,
-        name: product.name,
+        productId:   product.id,
+        variantId:   selectedVariant.id,
+        name:        product.name,
         variantName: selectedVariant.name !== "Default" ? selectedVariant.name : "",
-        price: selectedVariant.price,
-        mrp: selectedVariant.mrp,
-        quantity: qty,
-        image: resolvedImages[0] || "",
-        isVeg: product.isVeg ?? false,
+        price:       selectedVariant.price,
+        mrp:         selectedVariant.mrp,
+        quantity:    qty,
+        image:       resolvedImages[0] || "",
+        isVeg:       product.isVeg ?? false,
       })
     }
     setAddedToCart(true)
@@ -207,11 +203,21 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
   }
 
   const defaultEmoji = getDefaultProductEmoji(currentBusinessType)
+  const activeVariants = product.variants.filter((v) => v.isActive)
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-gray-500 mb-6 flex-wrap">
+    <div className="relative pb-[80px] md:pb-0">
+
+      {/* ── Mobile back button (overlaid on hero image) ────────────────── */}
+      <button
+        onClick={() => nav.goBack("category")}
+        className="md:hidden absolute top-3 left-3 z-20 w-9 h-9 rounded-full bg-white/85 backdrop-blur-md shadow flex items-center justify-center active:opacity-70 transition-opacity"
+      >
+        <ChevronLeft className="w-5 h-5 text-gray-800" />
+      </button>
+
+      {/* ── Desktop breadcrumb ────────────────────────────────────────── */}
+      <nav className="hidden md:flex items-center gap-1.5 text-sm text-gray-500 max-w-7xl mx-auto px-8 pt-6 pb-4 flex-wrap">
         <button onClick={() => nav.go("home")} className="hover:text-gray-900 transition-colors">Home</button>
         <ChevronRight className="w-3 h-3 shrink-0" />
         <button
@@ -226,10 +232,13 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
         <span className="text-gray-900 font-medium truncate max-w-[200px]">{product.name}</span>
       </nav>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-        {/* ── Image gallery ────────────────────────────────── */}
-        <div className="space-y-3">
-          <div className="aspect-square rounded-2xl overflow-hidden border border-gray-100">
+      {/* ── Main layout: stacked on mobile, side-by-side on desktop ────── */}
+      <div className="md:max-w-7xl md:mx-auto md:px-8 md:grid md:grid-cols-2 md:gap-10 md:pb-12">
+
+        {/* ── Hero image: edge-to-edge on mobile ───────────────────────── */}
+        <div>
+          {/* Main image */}
+          <div className="relative w-full aspect-[4/3] md:rounded-2xl overflow-hidden bg-gray-50">
             <ProductImage
               src={resolvedImages[activeImage]}
               alt={product.name}
@@ -237,15 +246,17 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
               className="w-full h-full"
             />
           </div>
+          {/* Thumbnail strip */}
           {resolvedImages.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto scrollbar-none">
+            <div className="flex gap-2 overflow-x-auto scrollbar-none px-4 md:px-0 pt-3 pb-1">
               {resolvedImages.map((img, i) => (
                 <button
                   key={i}
-                  onClick={() => { setActiveImage(i) }}
-                  className={`shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${
-                    activeImage === i ? "border-gray-800" : "border-transparent hover:border-gray-300"
+                  onClick={() => setActiveImage(i)}
+                  className={`shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${
+                    activeImage === i ? "" : "border-transparent opacity-60 hover:opacity-100"
                   }`}
+                  style={activeImage === i ? { borderColor: brandColor } : {}}
                 >
                   <ProductImage src={img} alt={`view ${i + 1}`} className="w-full h-full" />
                 </button>
@@ -254,46 +265,54 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
           )}
         </div>
 
-        {/* ── Product info ─────────────────────────────────── */}
-        <div className="flex flex-col">
-          {/* Badges — only show if business type supports them */}
-          <div className="flex flex-wrap gap-2 mb-3">
+        {/* ── Product info ──────────────────────────────────────────────── */}
+        <div className="flex flex-col px-4 md:px-0 pt-4 md:pt-0">
+
+          {/* Badges */}
+          <div className="flex flex-wrap gap-1.5 mb-2">
             {product.isVeg === true && (
-              <span className="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">🌿 VEG</span>
+              <span className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-full border border-green-100">🌿 VEG</span>
             )}
             {product.isVeg === false && (
-              <span className="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">🍖 NON-VEG</span>
+              <span className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-bold rounded-full border border-red-100">🍖 NON-VEG</span>
             )}
             {showHalal && !!meta.isHalal && (
-              <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">✓ HALAL</span>
+              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-100">✓ HALAL</span>
             )}
             {showFresh && !!meta.freshnessTag && (
-              <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
+              <span className="px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-100">
                 ⭐ {String(meta.freshnessTag)}
               </span>
             )}
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
+          {/* Name */}
+          <h1 className="text-xl font-bold text-gray-900 leading-snug mb-1">
+            {product.name}
+          </h1>
 
+          {/* Short desc */}
           {product.shortDesc && (
-            <p className="text-gray-500 text-sm mb-4">{product.shortDesc}</p>
+            <p className="text-sm text-gray-500 mb-3 leading-relaxed">{product.shortDesc}</p>
           )}
 
-          {/* Weight label for single-variant products */}
-          {selectedVariant && selectedVariant.name !== "Default" && product.variants.filter((v) => v.isActive).length === 1 && (
+          {/* Single-variant label */}
+          {selectedVariant && selectedVariant.name !== "Default" && activeVariants.length === 1 && (
             <p className="text-sm font-medium text-gray-600 mb-2">{selectedVariant.name}</p>
           )}
 
-          {/* Price */}
-          <div className="flex items-baseline gap-3 mb-2">
-            <span className="text-3xl font-extrabold" style={{ color: brandColor }}>
+          {/* Price row */}
+          <div className="flex items-baseline gap-2.5 mb-1 flex-wrap">
+            <span className="text-2xl font-extrabold" style={{ color: brandColor }}>
               {formatINR(price)}
             </span>
             {hasDiscount && (
               <>
-                <span className="text-lg text-gray-400 line-through">{formatINR(mrp)}</span>
-                <span className="text-sm font-bold text-white px-2 py-0.5 rounded-full" style={{ backgroundColor: brandColor }}>
+                <span className="text-base text-gray-400 line-through">{formatINR(mrp)}</span>
+                <span
+                  className="text-xs font-bold text-white px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: brandColor }}
+                >
                   {discountPct}% OFF
                 </span>
               </>
@@ -301,48 +320,57 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
           </div>
 
           {product.unit && (
-            <p className="text-xs text-gray-500 mb-5">
+            <p className="text-xs text-gray-400 mb-4">
               per {product.unitQuantity ? `${product.unitQuantity} ` : ""}{product.unit}
             </p>
           )}
 
-          {/* Variants */}
-          {product.variants.filter((v) => v.isActive).length > 1 && (
-            <div className="mb-5">
-              <p className="text-sm font-semibold text-gray-700 mb-2">Select Size / Weight</p>
+          {/* ── Variants (Material chips) ─────────────────────────────── */}
+          {activeVariants.length > 1 && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Select Size / Weight
+              </p>
               <div className="flex flex-wrap gap-2">
-                {product.variants.filter((v) => v.isActive).map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => setSelectedVariantId(v.id)}
-                    className={`px-4 py-2 text-sm font-medium rounded-xl border-2 transition-all ${
-                      selectedVariantId === v.id ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
-                    style={selectedVariantId === v.id ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
-                  >
-                    {v.name}
-                    {v.price !== price && (
-                      <span className="ml-1 opacity-80">· {formatINR(v.price)}</span>
-                    )}
-                  </button>
-                ))}
+                {activeVariants.map((v) => {
+                  const isSelected = selectedVariantId === v.id
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => setSelectedVariantId(v.id)}
+                      className="px-3.5 py-2 text-sm font-medium rounded-xl border-2 transition-all"
+                      style={
+                        isSelected
+                          ? { backgroundColor: brandColor, borderColor: brandColor, color: "#fff" }
+                          : { borderColor: "#E5E7EB", color: "#374151" }
+                      }
+                    >
+                      {v.name}
+                      {v.price !== price && (
+                        <span className="ml-1 opacity-80 text-xs">· {formatINR(v.price)}</span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
 
-          {/* Cut Types — MEAT_DELIVERY only */}
+          {/* ── Meat options (Cut, Cleaning, Marinade) ─────────────────── */}
           {cutTypes.length > 0 && (
-            <div className="mb-5">
-              <p className="text-sm font-semibold text-gray-700 mb-2">Cut Type</p>
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cut Type</p>
               <div className="flex flex-wrap gap-2">
                 {cutTypes.map((cut) => (
                   <button
                     key={cut}
                     onClick={() => setSelectedCutType(selectedCutType === cut ? null : cut)}
-                    className={`px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5 ${
-                      selectedCutType === cut ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
-                    style={selectedCutType === cut ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
+                    className="px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5"
+                    style={
+                      selectedCutType === cut
+                        ? { backgroundColor: brandColor, borderColor: brandColor, color: "#fff" }
+                        : { borderColor: "#E5E7EB", color: "#374151" }
+                    }
                   >
                     {selectedCutType === cut && <Check className="w-3 h-3" />}
                     {cut}
@@ -352,19 +380,20 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
             </div>
           )}
 
-          {/* Cleaning Options — MEAT_DELIVERY only */}
           {cleaningOptions.length > 0 && (
-            <div className="mb-5">
-              <p className="text-sm font-semibold text-gray-700 mb-2">Cleaning</p>
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cleaning</p>
               <div className="flex flex-wrap gap-2">
                 {cleaningOptions.map((opt) => (
                   <button
                     key={opt}
                     onClick={() => setSelectedCleaning(selectedCleaning === opt ? null : opt)}
-                    className={`px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5 ${
-                      selectedCleaning === opt ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
-                    style={selectedCleaning === opt ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
+                    className="px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5"
+                    style={
+                      selectedCleaning === opt
+                        ? { backgroundColor: brandColor, borderColor: brandColor, color: "#fff" }
+                        : { borderColor: "#E5E7EB", color: "#374151" }
+                    }
                   >
                     {selectedCleaning === opt && <Check className="w-3 h-3" />}
                     {opt}
@@ -374,19 +403,20 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
             </div>
           )}
 
-          {/* Marinade — MEAT_DELIVERY only */}
           {marinades.length > 0 && (
-            <div className="mb-5">
-              <p className="text-sm font-semibold text-gray-700 mb-2">Marinade</p>
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Marinade</p>
               <div className="flex flex-wrap gap-2">
                 {marinades.map((m) => (
                   <button
                     key={m}
                     onClick={() => setSelectedMarinade(selectedMarinade === m ? null : m)}
-                    className={`px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5 ${
-                      selectedMarinade === m ? "text-white" : "border-gray-200 text-gray-700 hover:border-gray-300"
-                    }`}
-                    style={selectedMarinade === m ? { backgroundColor: brandColor, borderColor: brandColor } : {}}
+                    className="px-3 py-1.5 text-sm rounded-xl border-2 transition-all flex items-center gap-1.5"
+                    style={
+                      selectedMarinade === m
+                        ? { backgroundColor: brandColor, borderColor: brandColor, color: "#fff" }
+                        : { borderColor: "#E5E7EB", color: "#374151" }
+                    }
                   >
                     {selectedMarinade === m && <Check className="w-3 h-3" />}
                     {m}
@@ -396,10 +426,52 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
             </div>
           )}
 
-          {/* Quantity + Add to Cart */}
-          <div className="flex items-center gap-3 mt-2 mb-6">
+          {/* ── Meta info chips ───────────────────────────────────────── */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {product.preparationTime && (
+              <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
+                <p className="text-[10px] text-gray-400">Prep Time</p>
+                <p className="text-xs font-semibold text-gray-800">{product.preparationTime} min</p>
+              </div>
+            )}
+            {product.category && (
+              <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
+                <p className="text-[10px] text-gray-400">Category</p>
+                <p className="text-xs font-semibold text-gray-800">{product.category.name}</p>
+              </div>
+            )}
+            <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-center">
+              <p className="text-[10px] text-gray-400">Min Order</p>
+              <p className="text-xs font-semibold text-gray-800">
+                {product.minOrderQty} {product.unit || "unit"}
+              </p>
+            </div>
+          </div>
+
+          {/* ── Description ───────────────────────────────────────────── */}
+          {product.description && (
+            <div className="mb-4">
+              <button
+                onClick={() => setDescExpanded((v) => !v)}
+                className="flex items-center justify-between w-full text-sm font-bold text-gray-900 mb-1"
+              >
+                <span>Description</span>
+                <ChevronDown
+                  className={`w-4 h-4 text-gray-500 transition-transform ${descExpanded ? "rotate-180" : ""}`}
+                />
+              </button>
+              {descExpanded && (
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+                  {product.description}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Desktop: qty + add to cart inline ─────────────────────── */}
+          <div className="hidden md:flex items-center gap-3 mt-2">
             {isOutOfStock ? (
-              <div className="flex-1 h-12 bg-gray-100 rounded-xl flex items-center justify-center gap-2">
+              <div className="flex-1 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
                 <span className="text-sm font-bold text-gray-500">Out of Stock</span>
               </div>
             ) : (
@@ -439,41 +511,70 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
               </>
             )}
           </div>
-
-          {/* Meta info grid */}
-          <div className="grid grid-cols-2 gap-3 p-4 bg-gray-50 rounded-2xl text-sm">
-            {product.preparationTime && (
-              <div>
-                <p className="text-gray-500 text-xs">Prep Time</p>
-                <p className="font-semibold text-gray-800">{product.preparationTime} mins</p>
-              </div>
-            )}
-            {product.category && (
-              <div>
-                <p className="text-gray-500 text-xs">Category</p>
-                <p className="font-semibold text-gray-800">{product.category.name}</p>
-              </div>
-            )}
-            <div>
-              <p className="text-gray-500 text-xs">Min Order</p>
-              <p className="font-semibold text-gray-800">{product.minOrderQty} {product.unit || "unit"}</p>
-            </div>
-            {product.unit && (
-              <div>
-                <p className="text-gray-500 text-xs">Unit</p>
-                <p className="font-semibold text-gray-800">{product.unit}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Description */}
-          {product.description && (
-            <div className="mt-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-2">Description</h3>
-              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{product.description}</p>
-            </div>
-          )}
         </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MOBILE STICKY BOTTOM BAR
+          Fixed at bottom, above the layout's bottom padding
+      ══════════════════════════════════════════════════════════════════ */}
+      <div
+        className="md:hidden fixed bottom-[64px] inset-x-0 z-30 bg-white border-t border-gray-100 px-4 py-3"
+        style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))" }}
+      >
+        {isOutOfStock ? (
+          <div className="h-12 bg-gray-100 rounded-2xl flex items-center justify-center">
+            <span className="text-sm font-bold text-gray-500">Out of Stock</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            {/* Qty stepper */}
+            <div
+              className="flex items-center rounded-2xl overflow-hidden h-12 border-2"
+              style={{ borderColor: brandColor }}
+            >
+              <button
+                onClick={() => setQty((q) => Math.max(product.minOrderQty || 1, q - 1))}
+                className="w-11 h-full flex items-center justify-center active:opacity-60 transition-opacity"
+                style={{ color: brandColor }}
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <span
+                className="w-9 text-center text-base font-bold"
+                style={{ color: brandColor }}
+              >
+                {qty}
+              </span>
+              <button
+                onClick={() => setQty((q) => Math.min(product.maxOrderQty || 100, q + 1))}
+                className="w-11 h-full flex items-center justify-center active:opacity-60 transition-opacity"
+                style={{ color: brandColor }}
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Add to cart */}
+            <button
+              onClick={handleAddToCart}
+              className="flex-1 h-12 font-bold text-sm text-white rounded-2xl flex items-center justify-center gap-2 active:opacity-80 transition-opacity"
+              style={{ backgroundColor: brandColor }}
+            >
+              {addedToCart ? (
+                <>
+                  <Check className="w-5 h-5" />
+                  Added!
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="w-[18px] h-[18px]" />
+                  {config.labels.addToCart} · {formatINR(price * qty)}
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,17 +1,13 @@
 "use client"
 
 // ============================================================================
-// StorefrontProductCard — rigid 3-zone layout, platform-wide.
+// StorefrontProductCard — Material 3 elevated card.
 //
-// Zone 1 — IMAGE   shrink-0  fixed height (config.cardHeight)
-// Zone 2 — INFO    flex-1    product name (2 lines max) · variant · price
-// Zone 3 — ACTION  shrink-0  52 px  always visible, never pushed off-screen
+// Zone 1 — IMAGE   shrink-0  aspect-[4/3] with rounded top corners
+// Zone 2 — INFO    flex-1    name (2 lines) · variant/desc · price row
+// Zone 3 — ACTION  shrink-0  round ADD button or stepper (always visible)
 //
-// The card itself is flex-col so CSS grid stretches it to the tallest sibling,
-// giving every row perfectly equal heights.
-//
-// Business theme colors flow in via brandColor — zero hardcoded values.
-// All listing surfaces (home, category, search) inherit automatically.
+// Business brand color flows through brandColor prop — no hardcoded values.
 // ============================================================================
 
 import { useCartStore } from "@/stores/cart-store"
@@ -24,7 +20,7 @@ import { ProductImage } from "./product-image"
 import type { WebNav } from "./storefront-website"
 import { getCardClasses, TYPE } from "@/design-system"
 
-// ── Shared product types ───────────────────────────────────────────────────────
+// ── Shared types ───────────────────────────────────────────────────────────
 
 export interface StorefrontVariant {
   id: string
@@ -54,43 +50,37 @@ export interface StorefrontProduct {
   metadata?: Record<string, unknown> | null
 }
 
-// ── Skeleton ───────────────────────────────────────────────────────────────────
+// ── Skeleton ───────────────────────────────────────────────────────────────
 
 export function ProductCardSkeleton() {
-  const { currentImageConfig, currentBusinessTheme } = useAdminStore()
   return (
-    <div className={`${getCardClasses(currentBusinessTheme.cardStyle)} flex flex-col animate-pulse`}>
-      {/* Zone 1 — image placeholder */}
-      <div className="shrink-0 bg-gray-100" style={{ height: currentImageConfig.cardHeight }} />
-
-      {/* Zone 2 — info placeholder */}
-      <div className="flex-1 px-2.5 pt-2 pb-0 space-y-1.5">
+    <div className="bg-white rounded-2xl overflow-hidden animate-pulse shadow-sm border border-gray-100">
+      <div className="w-full aspect-[4/3] bg-gray-100" />
+      <div className="p-2.5 space-y-2">
         <div className="h-3 bg-gray-100 rounded w-5/6" />
         <div className="h-3 bg-gray-100 rounded w-2/3" />
-        <div className="h-4 bg-gray-100 rounded w-1/3 mt-2" />
-      </div>
-
-      {/* Zone 3 — action placeholder */}
-      <div className="shrink-0 px-2.5 pb-2.5 pt-1.5">
-        <div className="h-9 bg-gray-100 rounded-xl" />
+        <div className="flex items-center justify-between mt-2">
+          <div className="h-4 bg-gray-100 rounded w-1/3" />
+          <div className="w-8 h-8 bg-gray-100 rounded-full" />
+        </div>
       </div>
     </div>
   )
 }
 
-// ── Business-type fallback emoji ───────────────────────────────────────────────
+// ── Fallback emoji ─────────────────────────────────────────────────────────
 
 function defaultEmojiFor(businessType: string): string {
   switch (businessType) {
-    case "MEAT_DELIVERY":  return "🥩"
-    case "GROCERY":        return "🛒"
-    case "FOOD_DELIVERY":  return "🍽️"
-    case "PHARMACY":       return "💊"
-    default:               return "📦"
+    case "MEAT_DELIVERY": return "🥩"
+    case "GROCERY":       return "🛒"
+    case "FOOD_DELIVERY": return "🍽️"
+    case "PHARMACY":      return "💊"
+    default:              return "📦"
   }
 }
 
-// ── Card ───────────────────────────────────────────────────────────────────────
+// ── Card ───────────────────────────────────────────────────────────────────
 
 interface StorefrontProductCardProps {
   product: StorefrontProduct
@@ -130,8 +120,7 @@ export function StorefrontProductCard({
   const showFresh    = btConfig.productMeta.some((m) => m.key === "freshnessTag" && m.showOnCard)
   const isOutOfStock = product.hasInventory && product.stockStatus === "OUT_OF_STOCK"
 
-  // ── Cart handlers ──────────────────────────────────────────────────────────
-
+  // ── Cart handlers (UNCHANGED) ──────────────────────────────────────────
   function handleAdd(e: React.MouseEvent) {
     e.stopPropagation()
     if (!defaultVariant || isOutOfStock || storeClosed) return
@@ -161,23 +150,15 @@ export function StorefrontProductCard({
     else updateQuantity(product.id, defaultVariant.id, cartItem.quantity - 1)
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div
-      className={`${getCardClasses(currentBusinessTheme.cardStyle)} flex flex-col`}
+      className="bg-white rounded-2xl overflow-hidden cursor-pointer border border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.10)] active:scale-[0.985] transition-all duration-200 flex flex-col"
       onClick={() => nav.go("product", { productId: product.id })}
     >
 
-      {/* ══════════════════════════════════════════════════════════════════
-          Zone 1 — IMAGE
-          shrink-0 · height driven by imageConfig.cardHeight
-          Image never compressed, always object-contain on white bg.
-      ══════════════════════════════════════════════════════════════════ */}
-      <div
-        className="relative shrink-0 overflow-hidden"
-        style={{ height: currentImageConfig.cardHeight }}
-      >
+      {/* ── Zone 1: IMAGE ───────────────────────────────────────────── */}
+      <div className="relative shrink-0 overflow-hidden w-full aspect-[4/3] bg-gray-50">
         <ProductImage
           src={imgSrc}
           alt={product.name}
@@ -186,10 +167,10 @@ export function StorefrontProductCard({
           config={currentImageConfig}
         />
 
-        {/* Overlay badges — top-left */}
-        <div className="absolute top-1.5 left-1.5 flex gap-1 flex-wrap max-w-[calc(100%-0.75rem)]">
+        {/* Top-left badges */}
+        <div className="absolute top-1.5 left-1.5 flex gap-1 flex-wrap max-w-[calc(100%-12px)]">
           {isOutOfStock ? (
-            <span className="px-1.5 py-0.5 bg-gray-600/90 text-white text-[9px] font-bold rounded-full">
+            <span className="px-1.5 py-0.5 bg-gray-700/80 backdrop-blur-sm text-white text-[9px] font-bold rounded-full">
               OUT OF STOCK
             </span>
           ) : (
@@ -223,89 +204,74 @@ export function StorefrontProductCard({
         )}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          Zone 2 — INFO
-          flex-1 · absorbs all remaining vertical space.
-          Price is pushed to the bottom with mt-auto so it's always
-          adjacent to the action zone regardless of name length.
-      ══════════════════════════════════════════════════════════════════ */}
+      {/* ── Zone 2: INFO ────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col px-2.5 pt-2 pb-0 min-h-0">
-        {/* Product name — 2 lines max, never pushes action zone */}
-        <p className={TYPE.CARD_NAME}>{product.name}</p>
+        <p className="text-[12px] font-semibold text-gray-900 leading-tight line-clamp-2 min-h-[2.2em]">
+          {product.name}
+        </p>
 
-        {/* Variant / short description */}
         {defaultVariant && defaultVariant.name !== "Default" ? (
-          <p className={TYPE.CARD_VARIANT}>{defaultVariant.name}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5 truncate">{defaultVariant.name}</p>
         ) : product.shortDesc ? (
-          <p className={TYPE.CARD_DESC}>{product.shortDesc}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-1">{product.shortDesc}</p>
         ) : null}
+      </div>
 
-        {/* Price — mt-auto anchors it directly above the action zone */}
-        <div className="mt-auto pt-1.5 flex items-baseline gap-1 flex-wrap">
-          <span className={TYPE.PRICE_MAIN} style={{ color: brandColor }}>
+      {/* ── Zone 3: PRICE + ACTION ────────────────────────────────── */}
+      <div className="shrink-0 px-2.5 pb-2.5 pt-1.5 flex items-center justify-between gap-1">
+        {/* Price */}
+        <div className="flex items-baseline gap-1 flex-wrap min-w-0">
+          <span className="text-[13px] font-bold" style={{ color: brandColor }}>
             {formatINR(price)}
           </span>
           {hasDiscount && (
-            <span className={TYPE.PRICE_STRIKE}>{formatINR(mrp)}</span>
+            <span className="text-[10px] text-gray-400 line-through">{formatINR(mrp)}</span>
           )}
         </div>
-      </div>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          Zone 3 — ACTION
-          shrink-0 · 52 px total (6 top + 36 button + 10 bottom).
-          Physically impossible to push down — it is always the last
-          flex item and the card is fixed to the grid row height.
-      ══════════════════════════════════════════════════════════════════ */}
-      <div className="shrink-0 px-2.5 pb-2.5 pt-1.5">
-
-        {/* ── State: out of stock or store closed ── */}
+        {/* Action: out of stock / store closed */}
         {(isOutOfStock || storeClosed) && (
-          <div className="h-9 flex items-center justify-center rounded-xl bg-gray-100">
-            <span className="text-[11px] font-semibold text-gray-400 select-none">
-              {isOutOfStock ? "Out of Stock" : "Store Closed"}
+          <div className="h-7 px-2 flex items-center justify-center rounded-xl bg-gray-100">
+            <span className="text-[10px] font-semibold text-gray-400 select-none whitespace-nowrap">
+              {isOutOfStock ? "Out of Stock" : "Closed"}
             </span>
           </div>
         )}
 
-        {/* ── State: item in cart — full-width stepper ── */}
+        {/* Action: in cart → compact stepper */}
         {!isOutOfStock && !storeClosed && cartItem && (
           <div
-            className="h-9 flex items-stretch rounded-xl overflow-hidden select-none"
+            className="flex items-center h-7 rounded-xl overflow-hidden select-none shrink-0"
             style={{ backgroundColor: brandColor }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={handleDecrease}
-              className="w-10 flex items-center justify-center shrink-0 text-white transition-opacity active:opacity-70 hover:opacity-90"
-              aria-label="Decrease quantity"
+              className="w-7 h-full flex items-center justify-center text-white active:opacity-70"
             >
-              <Minus className="w-3.5 h-3.5" />
+              <Minus className="w-3 h-3" />
             </button>
-
-            <span className="flex-1 flex items-center justify-center text-sm font-bold text-white">
+            <span className="w-6 text-center text-[12px] font-bold text-white">
               {cartItem.quantity}
             </span>
-
             <button
               onClick={handleIncrease}
-              className="w-10 flex items-center justify-center shrink-0 text-white transition-opacity active:opacity-70 hover:opacity-90"
-              aria-label="Increase quantity"
+              className="w-7 h-full flex items-center justify-center text-white active:opacity-70"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
             </button>
           </div>
         )}
 
-        {/* ── State: not in cart — Add button ── */}
+        {/* Action: not in cart → round ADD pill */}
         {!isOutOfStock && !storeClosed && !cartItem && (
           <button
             onClick={handleAdd}
-            className="w-full h-9 flex items-center justify-center gap-1.5 rounded-xl border-2 font-bold text-xs transition-all duration-150 active:scale-[0.97] hover:opacity-90 select-none"
-            style={{ borderColor: brandColor, color: brandColor, backgroundColor: "white" }}
+            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-transform border-2"
+            style={{ borderColor: brandColor, color: brandColor, backgroundColor: `${brandColor}10` }}
+            aria-label={`Add ${product.name} to cart`}
           >
-            <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
-            <span>Add</span>
+            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
           </button>
         )}
       </div>

@@ -1,18 +1,18 @@
 "use client"
 
 // ============================================================================
-// StorefrontCategoryCard + StorefrontCategoryCardSkeleton
+// StorefrontCategoryCard — compact circular/tile chip for horizontal scrolling.
 //
-// Extracted from storefront-home.tsx so every listing surface renders
-// categories through a single component.  No page should contain its
-// own category tile markup.
+// Used on the home screen category strip (horizontal scroll) and the full
+// category grid page.  Two layouts:
+//   default — stacked chip: circular icon tile + label below (use in scroll)
+//   grid    — same visual, works in a grid container
 // ============================================================================
 
 import { resolveImageUrl } from "@/lib/image-url"
 import { getCategoryIcon } from "@/lib/business-type-config"
-import { ANIM, TYPE } from "@/design-system"
 
-// ── Types ─────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
 export interface StorefrontCategory {
   id: string
@@ -24,14 +24,13 @@ export interface StorefrontCategory {
   productCount?: number
 }
 
-// ── Category card ─────────────────────────────────────────────────────────
+// ── Category card ──────────────────────────────────────────────────────────
 
 interface StorefrontCategoryCardProps {
   category: StorefrontCategory
   brandColor: string
   businessType: string
   onClick: () => void
-  /** Show product count badge (optional) */
   showCount?: boolean
 }
 
@@ -42,36 +41,45 @@ export function StorefrontCategoryCard({
   onClick,
   showCount = false,
 }: StorefrontCategoryCardProps) {
-  const bg = category.color
+  const tileColor = category.color
     ? `${category.color}20`
-    : `${brandColor}18`
+    : `${brandColor}15`
+
+  const borderColor = category.color
+    ? `${category.color}30`
+    : `${brandColor}25`
 
   const iconFallback = category.icon || getCategoryIcon(businessType, category.name)
-  const imgSrc = category.image ? resolveImageUrl(category.image) : null
+  const imgSrc       = category.image ? resolveImageUrl(category.image) : null
 
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center gap-2 group ${ANIM.TRANSITION}`}
+      className="flex flex-col items-center gap-1.5 shrink-0 active:scale-95 transition-transform duration-150 group"
     >
+      {/* Tile */}
       <div
-        className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden border-2 border-transparent group-hover:border-gray-200 transition-all"
-        style={{ backgroundColor: bg }}
+        className="w-[60px] h-[60px] rounded-2xl flex items-center justify-center overflow-hidden border-2 transition-all"
+        style={{ backgroundColor: tileColor, borderColor }}
       >
         {imgSrc ? (
           <img
             src={imgSrc}
             alt={category.name}
             loading="lazy"
-            className="w-full h-full object-cover rounded-2xl"
+            className="w-full h-full object-cover"
           />
         ) : (
-          <span className="text-2xl">{iconFallback}</span>
+          <span className="text-[26px] leading-none">{iconFallback}</span>
         )}
       </div>
 
-      <span className={`${TYPE.NAV_LABEL} w-16`}>{category.name}</span>
+      {/* Label */}
+      <span className="text-[11px] font-medium text-gray-700 text-center leading-tight line-clamp-2 w-[60px]">
+        {category.name}
+      </span>
 
+      {/* Optional count badge */}
       {showCount && typeof category.productCount === "number" && (
         <span className="text-[10px] text-gray-400 -mt-1">
           {category.productCount} items
@@ -81,12 +89,12 @@ export function StorefrontCategoryCard({
   )
 }
 
-// ── Loading skeleton ──────────────────────────────────────────────────────
+// ── Skeleton ───────────────────────────────────────────────────────────────
 
 export function StorefrontCategoryCardSkeleton() {
   return (
-    <div className={`flex flex-col items-center gap-2 ${ANIM.SKELETON}`}>
-      <div className="w-16 h-16 rounded-2xl bg-gray-100" />
+    <div className="flex flex-col items-center gap-1.5 shrink-0 animate-pulse">
+      <div className="w-[60px] h-[60px] rounded-2xl bg-gray-100" />
       <div className="h-3 bg-gray-100 rounded w-14" />
     </div>
   )

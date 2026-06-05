@@ -42,3 +42,17 @@ export const PRODUCT_GRID = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:g
 
 /** Responsive category grid */
 export const CATEGORY_GRID = "grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8"
+
+// ── Mobile PWA tokens ────────────────────────────────────────────────────
+
+/** Height of the fixed bottom navigation bar (px) */
+export const BOTTOM_NAV_H = 64
+
+/** Height of the floating cart bar that appears above the bottom nav (px) */
+export const CART_BAR_H = 68
+
+/** Content padding-bottom when bottom nav is visible (no cart bar) */
+export const MOBILE_PB_NAV = `pb-16`
+
+/** Content padding-bottom when both bottom nav + cart bar are visible */
+export const MOBILE_PB_CART = `pb-[132px]`
