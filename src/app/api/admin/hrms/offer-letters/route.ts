@@ -3,16 +3,6 @@ import type { NextRequest } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-const MERGE_TAGS: Record<string, string> = {
-  CandidateName:   'candidateName',
-  Designation:     'designation',
-  JoiningDate:     'joiningDate',
-  ReportingManager:'reportingManager',
-  WorkLocation:    'workLocation',
-  Department:      'department',
-  EmploymentType:  'employmentType',
-}
-
 function renderTemplate(content: string, data: Record<string, string>): string {
   return content.replace(/\{\{(\w+)\}\}/g, (_, key) => data[key] ?? `{{${key}}}`)
 }
@@ -33,7 +23,6 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
       const [rows, total] = await Promise.all([
         db.offerLetter.findMany({
           where,
-          include: { employee: { select: { id: true, name: true, employeeCode: true, status: true } } },
           orderBy: { createdAt: 'desc' },
           skip: (page - 1) * limit,
           take: limit,
@@ -53,8 +42,9 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
     try {
       const body = await req.json() as {
         templateId?: string
-        employeeId?: string
         candidateName: string
+        candidateEmail?: string
+        candidateMobile?: string
         designation: string
         joiningDate?: string
         department?: string
@@ -72,15 +62,17 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
       if (body.templateId) {
         const tpl = await db.offerLetterTemplate.findUnique({ where: { id: body.templateId } })
         if (tpl) {
-          const mergeData = Object.fromEntries(
-            Object.entries(MERGE_TAGS).map(([tag, field]) => [
-              tag,
-              (body[field as keyof typeof body] as string | undefined) ?? '',
-            ])
-          )
-          mergeData.JoiningDate = body.joiningDate
-            ? new Date(body.joiningDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-            : ''
+          const mergeData: Record<string, string> = {
+            CandidateName:    body.candidateName ?? '',
+            Designation:      body.designation ?? '',
+            JoiningDate:      body.joiningDate
+              ? new Date(body.joiningDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+              : '',
+            ReportingManager: body.reportingManager ?? '',
+            WorkLocation:     body.workLocation ?? '',
+            Department:       body.department ?? '',
+            EmploymentType:   body.employmentType ?? '',
+          }
           content = renderTemplate(tpl.content, mergeData)
         }
       }
@@ -88,8 +80,9 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
       const letter = await db.offerLetter.create({
         data: {
           templateId:       body.templateId,
-          employeeId:       body.employeeId,
           candidateName:    body.candidateName,
+          candidateEmail:   body.candidateEmail,
+          candidateMobile:  body.candidateMobile,
           designation:      body.designation,
           joiningDate:      body.joiningDate ? new Date(body.joiningDate) : null,
           department:       body.department,
@@ -100,17 +93,6 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
           createdBy:        body.createdBy,
         },
       })
-
-      if (body.employeeId) {
-        await db.employeeTimeline.create({
-          data: {
-            employeeId:  body.employeeId,
-            event:       'Offer Letter Generated',
-            description: `Offer letter generated for ${body.candidateName} — ${body.designation}`,
-            performedBy: body.createdBy,
-          },
-        })
-      }
 
       return NextResponse.json({ success: true, data: letter }, { status: 201 })
     } catch (e) {

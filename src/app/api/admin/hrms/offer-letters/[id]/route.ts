@@ -10,11 +10,6 @@ const getId = async (ctx?: Ctx) => {
   return Array.isArray(p?.id) ? p?.id[0] : p?.id
 }
 
-const EMPLOYEE_STATUS_ON_OFFER: Record<string, 'OFFERED' | 'JOINED'> = {
-  SENT:     'OFFERED',
-  ACCEPTED: 'JOINED',
-}
-
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:view' })(
   async (_req: NextRequest, ctx?: Ctx) => {
     try {
@@ -22,10 +17,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
       if (!id) return createErrorResponse('id required', 400)
       const letter = await db.offerLetter.findUnique({
         where: { id },
-        include: {
-          employee: { select: { id: true, name: true, employeeCode: true, status: true } },
-          template: { select: { id: true, name: true } },
-        },
+        include: { template: { select: { id: true, name: true } } },
       })
       if (!letter || letter.deletedAt) return createErrorResponse('Not found', 404)
       return NextResponse.json({ success: true, data: letter })
@@ -79,41 +71,6 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
             performedBy: body.performedBy ?? body.sentBy,
           },
         })
-
-        if (existing.employeeId) {
-          const empStatus = EMPLOYEE_STATUS_ON_OFFER[statusUpdate]
-          const timelineEvent =
-            statusUpdate === 'SENT'     ? 'Offer Letter Sent'     :
-            statusUpdate === 'ACCEPTED' ? 'Offer Letter Accepted' :
-            statusUpdate === 'REJECTED' ? 'Offer Letter Rejected' :
-            statusUpdate === 'EXPIRED'  ? 'Offer Letter Expired'  : `Offer Letter ${statusUpdate}`
-
-          await db.employeeTimeline.create({
-            data: {
-              employeeId:  existing.employeeId,
-              event:       timelineEvent,
-              description: `Offer letter for ${existing.candidateName} marked as ${statusUpdate}`,
-              performedBy: body.performedBy ?? body.sentBy,
-            },
-          })
-
-          if (empStatus) {
-            await db.employee.update({
-              where: { id: existing.employeeId },
-              data:  { status: empStatus },
-            })
-            await db.hrmsAuditLog.create({
-              data: {
-                module:      'EMPLOYEE',
-                entityId:    existing.employeeId,
-                action:      `Status auto-updated via Offer Letter`,
-                oldValue:    undefined,
-                newValue:    empStatus,
-                performedBy: body.performedBy ?? body.sentBy,
-              },
-            })
-          }
-        }
       }
 
       return NextResponse.json({ success: true, data: letter })

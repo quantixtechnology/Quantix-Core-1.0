@@ -2579,6 +2579,8 @@ model OfferLetter {
   templateId       String?
   employeeId       String?
   candidateName    String
+  candidateEmail   String?
+  candidateMobile  String?
   designation      String
   joiningDate      DateTime?
   department       String?

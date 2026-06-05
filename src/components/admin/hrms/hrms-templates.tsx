@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { Plus, Pencil, Trash2, LayoutTemplate, Star } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { authFetch } from "@/lib/admin-fetch"
 
 interface OfferLetterTemplate {
   id: string
@@ -303,7 +304,7 @@ export function HrmsTemplatesView() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/admin/hrms/templates")
+      const res = await authFetch("/api/admin/hrms/templates")
       const json = await res.json()
       if (json.success) setTemplates(json.data)
     } catch { /* silent */ }
@@ -325,7 +326,7 @@ export function HrmsTemplatesView() {
     try {
       const url    = editItem ? `/api/admin/hrms/templates/${editItem.id}` : "/api/admin/hrms/templates"
       const method = editItem ? "PUT" : "POST"
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -343,7 +344,7 @@ export function HrmsTemplatesView() {
   const handleDelete = async () => {
     if (!deleteId) return
     try {
-      const res = await fetch(`/api/admin/hrms/templates/${deleteId}`, { method: "DELETE" })
+      const res = await authFetch(`/api/admin/hrms/templates/${deleteId}`, { method: "DELETE" })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       toast.success("Template deleted")
@@ -358,7 +359,7 @@ export function HrmsTemplatesView() {
     setSeeding(true)
     try {
       for (const tpl of DEFAULT_TEMPLATES) {
-        await fetch("/api/admin/hrms/templates", {
+        await authFetch("/api/admin/hrms/templates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...tpl, isDefault: false, isActive: true }),

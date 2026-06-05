@@ -20,8 +20,9 @@ type OfferStatus = "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED"
 interface OfferLetter {
   id: string
   templateId?: string
-  employeeId?: string
   candidateName: string
+  candidateEmail?: string
+  candidateMobile?: string
   designation: string
   joiningDate?: string
   department?: string
@@ -37,11 +38,9 @@ interface OfferLetter {
   expiredAt?: string
   createdBy?: string
   createdAt: string
-  employee?: { id: string; name: string; employeeCode: string }
 }
 
 interface Template { id: string; name: string; isActive: boolean }
-interface Employee { id: string; employeeCode: string; name: string }
 
 const STATUS_STYLES: Record<OfferStatus, string> = {
   DRAFT:    "bg-slate-100 text-slate-700",
@@ -60,15 +59,14 @@ const STATUS_LABELS: Record<OfferStatus, string> = {
 }
 
 const EMPTY_FORM = {
-  templateId: "", employeeId: "", candidateName: "", designation: "",
-  joiningDate: "", department: "", reportingManager: "", workLocation: "",
-  employmentType: "PERMANENT",
+  templateId: "", candidateName: "", candidateEmail: "", candidateMobile: "",
+  designation: "", joiningDate: "", department: "", reportingManager: "",
+  workLocation: "", employmentType: "PERMANENT",
 }
 
 export function HrmsOfferLetterView() {
   const [letters, setLetters] = useState<OfferLetter[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [viewLetter, setViewLetter] = useState<OfferLetter | null>(null)
@@ -76,14 +74,10 @@ export function HrmsOfferLetterView() {
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
 
-  const loadDeps = useCallback(async () => {
-    const [tplRes, empRes] = await Promise.all([
-      authFetch("/api/admin/hrms/templates"),
-      authFetch("/api/admin/hrms/employees?limit=200"),
-    ])
-    const [tplJson, empJson] = await Promise.all([tplRes.json(), empRes.json()])
-    if (tplJson.success) setTemplates(tplJson.data.filter((t: Template) => t.isActive))
-    if (empJson.success) setEmployees(empJson.data)
+  const loadTemplates = useCallback(async () => {
+    const res = await authFetch("/api/admin/hrms/templates")
+    const json = await res.json()
+    if (json.success) setTemplates(json.data.filter((t: Template) => t.isActive))
   }, [])
 
   const load = useCallback(async () => {
@@ -96,7 +90,7 @@ export function HrmsOfferLetterView() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { load(); loadDeps() }, [load, loadDeps])
+  useEffect(() => { load(); loadTemplates() }, [load, loadTemplates])
 
   const handleGenerate = async () => {
     if (!form.candidateName || !form.designation) { toast.error("Candidate Name and Designation are required"); return }
@@ -108,7 +102,6 @@ export function HrmsOfferLetterView() {
         body: JSON.stringify({
           ...form,
           templateId: form.templateId || undefined,
-          employeeId: form.employeeId || undefined,
         }),
       })
       const json = await res.json()
@@ -131,11 +124,8 @@ export function HrmsOfferLetterView() {
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       toast.success(`Status updated to ${STATUS_LABELS[status]}`)
-      // Refresh view letter from server
-      const detailRes = await authFetch(`/api/admin/hrms/offer-letters/${id}`)
-      const detailJson = await detailRes.json()
-      if (detailJson.success) setViewLetter(detailJson.data)
-      load()
+      setViewLetter(json.data)
+      setLetters(prev => prev.map(l => l.id === id ? { ...l, ...json.data } : l))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed")
     }
@@ -206,7 +196,7 @@ export function HrmsOfferLetterView() {
                     <TableRow key={l.id}>
                       <TableCell>
                         <div className="text-sm font-semibold">{l.candidateName}</div>
-                        {l.employee && <div className="text-xs text-muted-foreground">{l.employee.employeeCode}</div>}
+                        {l.candidateEmail && <div className="text-xs text-muted-foreground">{l.candidateEmail}</div>}
                       </TableCell>
                       <TableCell className="text-sm">{l.designation}</TableCell>
                       <TableCell className="text-sm">{l.joiningDate ? format(new Date(l.joiningDate), "d MMM yyyy") : "—"}</TableCell>
@@ -253,21 +243,16 @@ export function HrmsOfferLetterView() {
               </Select>
             </div>
             <div className="space-y-1.5 col-span-2">
-              <Label>Link to Employee (optional)</Label>
-              <Select value={form.employeeId} onValueChange={(v) => {
-                const emp = employees.find((e) => e.id === v)
-                setForm((s) => ({ ...s, employeeId: v === "none" ? "" : v, candidateName: emp ? emp.name : s.candidateName }))
-              }}>
-                <SelectTrigger><SelectValue placeholder="— No employee link —" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">— No link —</SelectItem>
-                  {employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name} ({e.employeeCode})</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 col-span-2">
               <Label>Candidate Name <span className="text-destructive">*</span></Label>
               <Input placeholder="Rahul Sharma" {...f("candidateName")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email</Label>
+              <Input type="email" placeholder="rahul@example.com" {...f("candidateEmail")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Mobile</Label>
+              <Input placeholder="+91 98765 43210" {...f("candidateMobile")} />
             </div>
             <div className="space-y-1.5">
               <Label>Designation <span className="text-destructive">*</span></Label>
@@ -377,13 +362,6 @@ export function HrmsOfferLetterView() {
                   )}
                   {viewLetter.expiredAt && (
                     <HistoryRow label="Expired" value={format(new Date(viewLetter.expiredAt), "d MMM yyyy, HH:mm")} />
-                  )}
-                  {viewLetter.employee && (
-                    <div className="col-span-2 pt-1">
-                      <span className="text-muted-foreground">Linked Employee: </span>
-                      <span className="font-mono text-xs font-semibold">{viewLetter.employee.employeeCode}</span>
-                      <span className="text-muted-foreground"> — {viewLetter.employee.name}</span>
-                    </div>
                   )}
                 </div>
               </div>
