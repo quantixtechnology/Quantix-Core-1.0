@@ -1,6 +1,7 @@
 "use client"
 
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 
 export interface CartItem {
   productId: string
@@ -31,6 +32,7 @@ interface CartState {
   setCartStoreId: (id: string) => void
   setStoreContext: (deliveryFee: number | null, minOrderAmount: number | null, paymentGateways?: StorePaymentGateway[]) => void
   switchStore: (newStoreId: string, deliveryFee: number | null, paymentGateways: StorePaymentGateway[]) => void
+  restoreStore: (storeId: string, deliveryFee: number | null) => void
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void
   removeItem: (productId: string, variantId: string) => void
   updateQuantity: (productId: string, variantId: string, quantity: number) => void
@@ -44,7 +46,9 @@ interface CartState {
   total: () => number
 }
 
-export const useCartStore = create<CartState>((set, get) => ({
+export const useCartStore = create<CartState>()(
+  persist(
+  (set, get) => ({
   items: [],
   storeId: null,
   storeDeliveryFee: null,
@@ -57,6 +61,8 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ storeDeliveryFee: deliveryFee, paymentGateways: paymentGateways || [] }),
   switchStore: (newStoreId, deliveryFee, paymentGateways) =>
     set({ storeId: newStoreId, items: [], storeDeliveryFee: deliveryFee, paymentGateways, couponCode: null, couponDiscount: 0 }),
+  restoreStore: (storeId, deliveryFee) =>
+    set({ storeId, storeDeliveryFee: deliveryFee }),
 
   addItem: (item) => {
     set((state) => {
@@ -134,4 +140,16 @@ export const useCartStore = create<CartState>((set, get) => ({
     const discount = get().couponDiscount
     return Math.max(0, subtotal + deliveryFee - discount)
   },
-}))
+  }),
+  {
+    name: "quantix-cart-v1",
+    partialize: (state) => ({
+      items: state.items,
+      storeId: state.storeId,
+      storeDeliveryFee: state.storeDeliveryFee,
+      couponCode: state.couponCode,
+      couponDiscount: state.couponDiscount,
+    }),
+  }
+  )
+)

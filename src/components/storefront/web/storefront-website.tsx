@@ -126,7 +126,7 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
 
 export function StorefrontWebsite() {
   const { currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
-  const { switchStore, storeId: cartStoreId } = useCartStore()
+  const { switchStore, restoreStore, storeId: cartStoreId } = useCartStore()
   const brandColor = currentBusinessPrimaryColor || "#C62828"
 
   const [page, setPage] = useState<WebPage>("home")
@@ -140,6 +140,10 @@ export function StorefrontWebsite() {
   // listing every field as a useCallback dependency.
   const snapRef = useRef<NavSnapshot>({ page: "home", categoryId: null, categoryName: "", productId: null, orderId: null })
   snapRef.current = { page, categoryId, categoryName, productId, orderId }
+
+  // Ref mirrors navStack so the popstate handler can read current length
+  // synchronously without re-subscribing on every stack change.
+  const navStackRef = useRef<NavSnapshot[]>([])
 
   // Store picker state
   const [showStorePicker, setShowStorePicker] = useState(false)
@@ -160,7 +164,12 @@ export function StorefrontWebsite() {
       try {
         const parsed: PickedStore = JSON.parse(saved)
         setCurrentStore(parsed)
-        switchStore(parsed.id, parsed.deliveryFee, [])
+        // Preserve persisted cart items if same store; clear only on store change.
+        if (cartStoreId === parsed.id) {
+          restoreStore(parsed.id, parsed.deliveryFee)
+        } else {
+          switchStore(parsed.id, parsed.deliveryFee, [])
+        }
       } catch {
         // corrupt data — show picker
         setPickerMandatory(true)
@@ -177,16 +186,12 @@ export function StorefrontWebsite() {
     if (typeof window !== "undefined") {
       localStorage.setItem(key, JSON.stringify(store))
     }
-    // If switching away from an existing store, clear cart
-    if (cartStoreId && cartStoreId !== store.id) {
-      switchStore(store.id, store.deliveryFee, [])
-    } else {
-      switchStore(store.id, store.deliveryFee, [])
-    }
+    // User explicitly picked a store — always clear the cart.
+    switchStore(store.id, store.deliveryFee, [])
     setCurrentStore(store)
     setShowStorePicker(false)
     setPickerMandatory(false)
-  }, [currentBusinessId, cartStoreId, switchStore])
+  }, [currentBusinessId, switchStore])
 
   const handleOpenStorePicker = useCallback(() => {
     setPickerMandatory(false)
@@ -210,7 +215,13 @@ export function StorefrontWebsite() {
     const curr = snapRef.current
     // Push current state onto the stack only when navigating to a different page.
     if (p !== curr.page) {
-      setNavStack(prev => [...prev, { ...curr }])
+      setNavStack(prev => {
+        const next = [...prev, { ...curr }]
+        navStackRef.current = next
+        return next
+      })
+      // Add a browser history entry so Android back button fires popstate.
+      if (typeof window !== "undefined") window.history.pushState(null, "")
     }
     setPage(p)
     if (opts?.categoryId !== undefined) setCategoryId(opts.categoryId ?? null)
@@ -223,6 +234,7 @@ export function StorefrontWebsite() {
   const goBack = useCallback((defaultPage: WebPage = "home") => {
     setNavStack(prev => {
       if (prev.length === 0) {
+        navStackRef.current = []
         setPage(defaultPage)
         setCategoryId(null)
         setCategoryName("")
@@ -232,15 +244,31 @@ export function StorefrontWebsite() {
         return prev
       }
       const last = prev[prev.length - 1]
+      const next = prev.slice(0, -1)
+      navStackRef.current = next
       setPage(last.page)
       setCategoryId(last.categoryId)
       setCategoryName(last.categoryName)
       setProductId(last.productId)
       setOrderId(last.orderId)
       if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
-      return prev.slice(0, -1)
+      return next
     })
   }, []) // stable — no external deps
+
+  // Intercept Android hardware back button in PWA by listening to popstate.
+  // Each in-app navigation pushes a history entry; back consumes one entry
+  // and calls goBack(). When the stack is empty, the PWA exits normally.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const handler = () => {
+      if (navStackRef.current.length > 0) {
+        goBack()
+      }
+    }
+    window.addEventListener("popstate", handler)
+    return () => window.removeEventListener("popstate", handler)
+  }, [goBack])
 
   const prevPage: WebPage | null = navStack.length > 0 ? navStack[navStack.length - 1].page : null
   const canGoBack = navStack.length > 0

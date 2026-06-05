@@ -228,7 +228,7 @@ export function StorefrontLayout({
           className="sticky top-0 z-40 bg-white shadow-sm"
           style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
         >
-          <div className="flex items-center gap-3 px-4" style={{ height: 56 }}>
+          <div className="flex items-center gap-3 px-4 overflow-hidden" style={{ height: 56 }}>
             {showBackInPwa ? (
               <>
                 <button
@@ -241,47 +241,41 @@ export function StorefrontLayout({
               </>
             ) : (
               <>
-                {/* Home header: logo beside stacked name + store — no nested buttons */}
-                <div className="flex items-center gap-2.5 shrink-0 min-w-0 max-w-[calc(100%-80px)]">
-                  {/* Logo */}
-                  <button
-                    onClick={() => nav.go("home")}
-                    className="shrink-0 p-0 border-0 bg-transparent active:opacity-70"
-                    aria-label="Go home"
-                  >
-                    <img
-                      src={currentBusinessLogo || "/placeholder-logo.svg"}
-                      alt={currentBusinessName || "Store"}
-                      className="w-9 h-9 rounded-xl object-contain border border-gray-100 block"
-                      onError={(e) => {
-                        const img = e.currentTarget
-                        if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
-                      }}
-                    />
-                  </button>
-
-                  {/* Name + store stacked, using gap not margin */}
-                  <div className="flex flex-col gap-[3px] min-w-0">
+                {/* Logo — plain img, no wrapping button to avoid default browser styles */}
+                <img
+                  src={currentBusinessLogo || "/placeholder-logo.svg"}
+                  alt={currentBusinessName || "Store"}
+                  className="w-9 h-9 rounded-xl object-contain border border-gray-100 block shrink-0 cursor-pointer active:opacity-70"
+                  onClick={() => nav.go("home")}
+                  onError={(e) => {
+                    const img = e.currentTarget
+                    if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
+                  }}
+                />
+                {/* Name + store — flex-1 fills space between logo and actions.
+                     Using span+button (not button+button) removes all browser
+                     default button padding that was pushing the name off-screen. */}
+                <div
+                  className="flex-1 min-w-0 flex flex-col gap-[3px] cursor-pointer"
+                  onClick={() => nav.go("home")}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <span className="text-[14px] font-bold text-gray-900 leading-[18px] truncate block">
+                    {currentBusinessName || "Store"}
+                  </span>
+                  {currentStore && (
                     <button
-                      onClick={() => nav.go("home")}
-                      className="p-0 border-0 bg-transparent text-[14px] font-bold text-gray-900 leading-tight truncate text-left active:opacity-70 w-full"
+                      onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
+                      className="flex items-center gap-0.5 p-0 border-0 bg-transparent active:opacity-70 w-fit"
+                      style={{ color: brandColor }}
                     >
-                      {currentBusinessName || "Store"}
+                      <MapPin className="w-2.5 h-2.5 shrink-0" />
+                      <span className="text-[11px] leading-[14px] truncate max-w-[140px]">{currentStore.name}</span>
+                      <ChevronDown className="w-2.5 h-2.5 shrink-0" />
                     </button>
-                    {currentStore && (
-                      <button
-                        onClick={onOpenStorePicker}
-                        className="p-0 border-0 bg-transparent flex items-center gap-0.5 text-[11px] leading-tight active:opacity-70"
-                        style={{ color: brandColor }}
-                      >
-                        <MapPin className="w-2.5 h-2.5 shrink-0" />
-                        <span className="truncate max-w-[130px]">{currentStore.name}</span>
-                        <ChevronDown className="w-2.5 h-2.5 shrink-0" />
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
-                <div className="flex-1" />
               </>
             )}
 
