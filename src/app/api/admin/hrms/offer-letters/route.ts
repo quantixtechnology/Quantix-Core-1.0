@@ -27,13 +27,13 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
 
       const where = {
         deletedAt: null as null,
-        ...(status ? { status: status as 'DRAFT' | 'SENT' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' } : {}),
+        ...(status ? { status: status as 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' } : {}),
       }
 
       const [rows, total] = await Promise.all([
         db.offerLetter.findMany({
           where,
-          include: { employee: { select: { id: true, name: true, employeeCode: true } } },
+          include: { employee: { select: { id: true, name: true, employeeCode: true, status: true } } },
           orderBy: { createdAt: 'desc' },
           skip: (page - 1) * limit,
           take: limit,
@@ -100,6 +100,17 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
           createdBy:        body.createdBy,
         },
       })
+
+      if (body.employeeId) {
+        await db.employeeTimeline.create({
+          data: {
+            employeeId:  body.employeeId,
+            event:       'Offer Letter Generated',
+            description: `Offer letter generated for ${body.candidateName} — ${body.designation}`,
+            performedBy: body.createdBy,
+          },
+        })
+      }
 
       return NextResponse.json({ success: true, data: letter }, { status: 201 })
     } catch (e) {

@@ -2375,8 +2375,14 @@ enum OfferLetterStatus {
   DRAFT
   SENT
   ACCEPTED
-  DECLINED
+  REJECTED
   EXPIRED
+}
+
+enum PayrollType {
+  SALARY
+  COMMISSION
+  HYBRID
 }
 
 // HRMS branding — separate from platform logo, used only in HR documents
@@ -2404,6 +2410,7 @@ model HrmsSettings {
 model Employee {
   id               String         @id @default(cuid())
   employeeCode     String         @unique
+  internalSequence Int?
   name             String
   email            String         @unique
   mobile           String?
@@ -2411,6 +2418,7 @@ model Employee {
   department       String?
   joiningDate      DateTime
   employmentType   EmploymentType @default(PERMANENT)
+  payrollType      PayrollType?
   reportingManager String?
   status           EmployeeStatus @default(PROSPECT)
   deletedAt        DateTime?
@@ -2553,6 +2561,10 @@ model OfferLetter {
   content          String
   status           OfferLetterStatus    @default(DRAFT)
   emailedAt        DateTime?
+  sentBy           String?
+  acceptedAt       DateTime?
+  rejectedAt       DateTime?
+  expiredAt        DateTime?
   deletedAt        DateTime?
   createdBy        String?
   createdAt        DateTime             @default(now())

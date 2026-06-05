@@ -10,6 +10,11 @@ const getId = async (ctx?: Ctx) => {
   return Array.isArray(p?.id) ? p?.id[0] : p?.id
 }
 
+const EMPLOYEE_STATUS_ON_OFFER: Record<string, 'OFFERED' | 'JOINED'> = {
+  SENT:     'OFFERED',
+  ACCEPTED: 'JOINED',
+}
+
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:view' })(
   async (_req: NextRequest, ctx?: Ctx) => {
     try {
@@ -18,7 +23,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
       const letter = await db.offerLetter.findUnique({
         where: { id },
         include: {
-          employee: { select: { id: true, name: true, employeeCode: true } },
+          employee: { select: { id: true, name: true, employeeCode: true, status: true } },
           template: { select: { id: true, name: true } },
         },
       })
@@ -35,15 +40,82 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
     try {
       const id = await getId(ctx)
       if (!id) return createErrorResponse('id required', 400)
-      const body = await req.json() as Record<string, unknown>
-      const letter = await db.offerLetter.update({
-        where: { id },
-        data: {
-          status:    body.status    as 'DRAFT' | 'SENT' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | undefined,
-          content:   body.content   as string | undefined,
-          emailedAt: body.emailedAt ? new Date(body.emailedAt as string) : undefined,
-        },
-      })
+      const body = await req.json() as {
+        status?: string
+        content?: string
+        sentBy?: string
+        performedBy?: string
+      }
+
+      const existing = await db.offerLetter.findUnique({ where: { id } })
+      if (!existing || existing.deletedAt) return createErrorResponse('Not found', 404)
+
+      const now = new Date()
+      const statusUpdate = body.status as 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | undefined
+      const updateData: Record<string, unknown> = {}
+
+      if (body.content !== undefined) updateData.content = body.content
+      if (statusUpdate) {
+        updateData.status = statusUpdate
+        if (statusUpdate === 'SENT') {
+          updateData.emailedAt = now
+          updateData.sentBy    = body.sentBy ?? body.performedBy ?? null
+        }
+        if (statusUpdate === 'ACCEPTED') updateData.acceptedAt = now
+        if (statusUpdate === 'REJECTED') updateData.rejectedAt = now
+        if (statusUpdate === 'EXPIRED')  updateData.expiredAt  = now
+      }
+
+      const letter = await db.offerLetter.update({ where: { id }, data: updateData })
+
+      if (statusUpdate && statusUpdate !== existing.status) {
+        await db.hrmsAuditLog.create({
+          data: {
+            module:      'OFFER_LETTER',
+            entityId:    id,
+            action:      `Status changed to ${statusUpdate}`,
+            oldValue:    existing.status,
+            newValue:    statusUpdate,
+            performedBy: body.performedBy ?? body.sentBy,
+          },
+        })
+
+        if (existing.employeeId) {
+          const empStatus = EMPLOYEE_STATUS_ON_OFFER[statusUpdate]
+          const timelineEvent =
+            statusUpdate === 'SENT'     ? 'Offer Letter Sent'     :
+            statusUpdate === 'ACCEPTED' ? 'Offer Letter Accepted' :
+            statusUpdate === 'REJECTED' ? 'Offer Letter Rejected' :
+            statusUpdate === 'EXPIRED'  ? 'Offer Letter Expired'  : `Offer Letter ${statusUpdate}`
+
+          await db.employeeTimeline.create({
+            data: {
+              employeeId:  existing.employeeId,
+              event:       timelineEvent,
+              description: `Offer letter for ${existing.candidateName} marked as ${statusUpdate}`,
+              performedBy: body.performedBy ?? body.sentBy,
+            },
+          })
+
+          if (empStatus) {
+            await db.employee.update({
+              where: { id: existing.employeeId },
+              data:  { status: empStatus },
+            })
+            await db.hrmsAuditLog.create({
+              data: {
+                module:      'EMPLOYEE',
+                entityId:    existing.employeeId,
+                action:      `Status auto-updated via Offer Letter`,
+                oldValue:    undefined,
+                newValue:    empStatus,
+                performedBy: body.performedBy ?? body.sentBy,
+              },
+            })
+          }
+        }
+      }
+
       return NextResponse.json({ success: true, data: letter })
     } catch (e) {
       return createErrorResponse(e instanceof Error ? e.message : 'Failed', 500)

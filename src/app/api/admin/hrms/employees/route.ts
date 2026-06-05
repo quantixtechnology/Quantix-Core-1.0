@@ -3,18 +3,19 @@ import type { NextRequest } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-async function generateEmployeeId(joiningDate: string): Promise<string> {
+async function generateEmployeeId(joiningDate: string): Promise<{ employeeCode: string; internalSequence: number }> {
   const year = new Date(joiningDate).getFullYear()
   const existing = await db.employee.findMany({
     where: { employeeCode: { startsWith: `QT-${year}-` } },
-    select: { employeeCode: true },
+    select: { employeeCode: true, internalSequence: true },
   })
   const maxSeq = existing.reduce((max, e) => {
     const parts = e.employeeCode.split('-')
     const seq = parseInt(parts[2] ?? '0', 10)
     return isNaN(seq) ? max : Math.max(max, seq)
   }, 0)
-  return `QT-${year}-${String(maxSeq + 1).padStart(3, '0')}`
+  const next = maxSeq + 1
+  return { employeeCode: `QT-${year}-${String(next).padStart(3, '0')}`, internalSequence: next }
 }
 
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:view' })(
@@ -62,19 +63,22 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
         department?: string
         joiningDate: string
         employmentType?: string
+        payrollType?: string
         reportingManager?: string
         status?: string
+        createdBy?: string
       }
 
       if (!body.name || !body.email || !body.designation || !body.joiningDate) {
         return createErrorResponse('name, email, designation, joiningDate required', 400)
       }
 
-      const employeeCode = await generateEmployeeId(body.joiningDate)
+      const { employeeCode, internalSequence } = await generateEmployeeId(body.joiningDate)
 
       const employee = await db.employee.create({
         data: {
           employeeCode,
+          internalSequence,
           name:             body.name,
           email:            body.email,
           mobile:           body.mobile,
@@ -82,6 +86,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
           department:       body.department,
           joiningDate:      new Date(body.joiningDate),
           employmentType:   (body.employmentType as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN') ?? 'PERMANENT',
+          payrollType:      body.payrollType ? (body.payrollType as 'SALARY' | 'COMMISSION' | 'HYBRID') : undefined,
           reportingManager: body.reportingManager,
           status:           (body.status as 'PROSPECT' | 'OFFERED' | 'JOINED' | 'ACTIVE' | 'RESIGNED' | 'TERMINATED') ?? 'PROSPECT',
         },
@@ -92,6 +97,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
           employeeId:  employee.id,
           event:       'Employee Created',
           description: `${employee.name} (${employeeCode}) added as ${employee.designation}`,
+          performedBy: body.createdBy,
         },
       })
 

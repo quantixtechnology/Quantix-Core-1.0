@@ -9,11 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { Plus, Eye, Printer, Trash2, FileSignature, Mail } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { Plus, Eye, Printer, Trash2, FileSignature, Mail, CheckCircle, XCircle, Clock } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 
-type OfferStatus = "DRAFT" | "SENT" | "ACCEPTED" | "DECLINED" | "EXPIRED"
+type OfferStatus = "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED"
 
 interface OfferLetter {
   id: string
@@ -29,6 +30,11 @@ interface OfferLetter {
   content: string
   status: OfferStatus
   emailedAt?: string
+  sentBy?: string
+  acceptedAt?: string
+  rejectedAt?: string
+  expiredAt?: string
+  createdBy?: string
   createdAt: string
   employee?: { id: string; name: string; employeeCode: string }
 }
@@ -40,8 +46,16 @@ const STATUS_STYLES: Record<OfferStatus, string> = {
   DRAFT:    "bg-slate-100 text-slate-700",
   SENT:     "bg-amber-100 text-amber-700",
   ACCEPTED: "bg-emerald-100 text-emerald-700",
-  DECLINED: "bg-red-100 text-red-700",
+  REJECTED: "bg-red-100 text-red-700",
   EXPIRED:  "bg-muted text-muted-foreground",
+}
+
+const STATUS_LABELS: Record<OfferStatus, string> = {
+  DRAFT:    "Draft",
+  SENT:     "Sent",
+  ACCEPTED: "Accepted",
+  REJECTED: "Rejected",
+  EXPIRED:  "Expired",
 }
 
 const EMPTY_FORM = {
@@ -90,7 +104,11 @@ export function HrmsOfferLetterView() {
       const res = await fetch("/api/admin/hrms/offer-letters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, templateId: form.templateId || undefined, employeeId: form.employeeId || undefined }),
+        body: JSON.stringify({
+          ...form,
+          templateId: form.templateId || undefined,
+          employeeId: form.employeeId || undefined,
+        }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -111,8 +129,11 @@ export function HrmsOfferLetterView() {
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
-      toast.success(`Status updated to ${status}`)
-      setViewLetter(null)
+      toast.success(`Status updated to ${STATUS_LABELS[status]}`)
+      // Refresh view letter from server
+      const detailRes = await fetch(`/api/admin/hrms/offer-letters/${id}`)
+      const detailJson = await detailRes.json()
+      if (detailJson.success) setViewLetter(detailJson.data)
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed")
@@ -189,7 +210,9 @@ export function HrmsOfferLetterView() {
                       <TableCell className="text-sm">{l.designation}</TableCell>
                       <TableCell className="text-sm">{l.joiningDate ? format(new Date(l.joiningDate), "d MMM yyyy") : "—"}</TableCell>
                       <TableCell>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[l.status]}`}>{l.status}</span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[l.status]}`}>
+                          {STATUS_LABELS[l.status]}
+                        </span>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{format(new Date(l.createdAt), "d MMM yyyy")}</TableCell>
                       <TableCell>
@@ -286,7 +309,7 @@ export function HrmsOfferLetterView() {
         </DialogContent>
       </Dialog>
 
-      {/* View Letter Dialog */}
+      {/* View / Workflow Dialog */}
       <Dialog open={!!viewLetter} onOpenChange={(o) => !o && setViewLetter(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -294,16 +317,18 @@ export function HrmsOfferLetterView() {
               Offer Letter — {viewLetter?.candidateName}
               {viewLetter && (
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[viewLetter.status]}`}>
-                  {viewLetter.status}
+                  {STATUS_LABELS[viewLetter.status]}
                 </span>
               )}
             </DialogTitle>
           </DialogHeader>
           {viewLetter && (
             <div className="space-y-4">
-              <pre className="whitespace-pre-wrap font-sans text-sm bg-muted/30 rounded-lg p-4 min-h-[300px]">
+              <pre className="whitespace-pre-wrap font-sans text-sm bg-muted/30 rounded-lg p-4 min-h-[200px]">
                 {viewLetter.content || "(No content — template was blank)"}
               </pre>
+
+              {/* Workflow Actions */}
               <div className="flex gap-2 flex-wrap">
                 <Button size="sm" variant="outline" className="gap-1" onClick={() => window.print()}>
                   <Printer className="h-3.5 w-3.5" /> Print / PDF
@@ -315,10 +340,51 @@ export function HrmsOfferLetterView() {
                 )}
                 {viewLetter.status === "SENT" && (
                   <>
-                    <Button size="sm" onClick={() => updateStatus(viewLetter.id, "ACCEPTED")}>Mark Accepted</Button>
-                    <Button size="sm" variant="outline" onClick={() => updateStatus(viewLetter.id, "DECLINED")}>Mark Declined</Button>
+                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => updateStatus(viewLetter.id, "ACCEPTED")}>
+                      <CheckCircle className="h-3.5 w-3.5" /> Mark Accepted
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1 text-destructive border-destructive hover:bg-destructive/10" onClick={() => updateStatus(viewLetter.id, "REJECTED")}>
+                      <XCircle className="h-3.5 w-3.5" /> Mark Rejected
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => updateStatus(viewLetter.id, "EXPIRED")}>
+                      <Clock className="h-3.5 w-3.5" /> Mark Expired
+                    </Button>
                   </>
                 )}
+                {viewLetter.status === "DRAFT" && (
+                  <Button size="sm" variant="outline" className="gap-1" onClick={() => updateStatus(viewLetter.id, "EXPIRED")}>
+                    <Clock className="h-3.5 w-3.5" /> Mark Expired
+                  </Button>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Offer History */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Offer History</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <HistoryRow label="Created" value={format(new Date(viewLetter.createdAt), "d MMM yyyy, HH:mm")} by={viewLetter.createdBy} />
+                  {viewLetter.emailedAt && (
+                    <HistoryRow label="Sent" value={format(new Date(viewLetter.emailedAt), "d MMM yyyy, HH:mm")} by={viewLetter.sentBy} />
+                  )}
+                  {viewLetter.acceptedAt && (
+                    <HistoryRow label="Accepted" value={format(new Date(viewLetter.acceptedAt), "d MMM yyyy, HH:mm")} />
+                  )}
+                  {viewLetter.rejectedAt && (
+                    <HistoryRow label="Rejected" value={format(new Date(viewLetter.rejectedAt), "d MMM yyyy, HH:mm")} />
+                  )}
+                  {viewLetter.expiredAt && (
+                    <HistoryRow label="Expired" value={format(new Date(viewLetter.expiredAt), "d MMM yyyy, HH:mm")} />
+                  )}
+                  {viewLetter.employee && (
+                    <div className="col-span-2 pt-1">
+                      <span className="text-muted-foreground">Linked Employee: </span>
+                      <span className="font-mono text-xs font-semibold">{viewLetter.employee.employeeCode}</span>
+                      <span className="text-muted-foreground"> — {viewLetter.employee.name}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -337,6 +403,16 @@ export function HrmsOfferLetterView() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  )
+}
+
+function HistoryRow({ label, value, by }: { label: string; value: string; by?: string | null }) {
+  return (
+    <div className="space-y-0.5">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-medium">{value}</p>
+      {by && <p className="text-xs text-muted-foreground">by {by}</p>}
     </div>
   )
 }
