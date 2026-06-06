@@ -10,10 +10,11 @@ import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Monitor, FileText, Users, Upload, X, Save, Loader2,
-  ImageIcon, Palette, CheckCircle2, PanelLeft,
+  ImageIcon, Palette, CheckCircle2, PanelLeft, Crop,
 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
+import { CropModal } from "./crop-modal"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ function AssetUpload({
 }) {
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting]   = useState(false)
+  const [cropOpen, setCropOpen]   = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,9 +170,14 @@ function AssetUpload({
       <div className="flex items-center justify-between">
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</Label>
         {url && (
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive hover:text-destructive gap-1" onClick={handleDelete} disabled={deleting}>
-            {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />} Remove
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs gap-1 text-muted-foreground" onClick={() => setCropOpen(true)} disabled={deleting || uploading}>
+              <Crop className="h-3 w-3" /> Crop
+            </Button>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive hover:text-destructive gap-1" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />} Remove
+            </Button>
+          </div>
         )}
       </div>
       {url ? (
@@ -190,6 +197,16 @@ function AssetUpload({
         </button>
       )}
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      {url && (
+        <CropModal
+          open={cropOpen}
+          imageUrl={url}
+          assetField={field}
+          label={label}
+          onSave={(newUrl) => onUploaded(field, newUrl)}
+          onClose={() => setCropOpen(false)}
+        />
+      )}
     </div>
   )
 }
