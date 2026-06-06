@@ -23,6 +23,7 @@ interface OfferLetterData {
 
 interface HrmsSettings {
   companyName?: string
+  registeredAddress?: string
   logo?: string
   primaryColor?: string
   secondaryColor?: string
@@ -34,6 +35,8 @@ interface HrmsSettings {
   hrContactEmail?: string
   hrContactMobile?: string
   website?: string
+  companyPhone?: string
+  companyEmail?: string
 }
 
 interface PlatformSettings {
@@ -243,10 +246,10 @@ export default function OfferLetterPrintPage() {
   // Identity
   const company = hrms.companyName || platform.companyName || 'Quantix Technology'
 
-  // Footer
-  const footerWebsite = hrms.website       || platform.companyWebsite || ''
-  const footerEmail   = hrms.hrContactEmail  || ''
-  const footerPhone   = hrms.hrContactMobile || ''
+  // Footer — 3-line format: Company Name / Address / Phone | Email | Website
+  const footerAddress = (hrms.registeredAddress || '').replace(/\n+/g, ', ').trim()
+  const footerContact = [hrms.companyPhone, hrms.companyEmail, hrms.website || platform.companyWebsite]
+    .filter(Boolean).join(' | ')
 
   // Document fields
   const refNum  = letter.offerRef || `QT/HR/${new Date(letter.createdAt).getFullYear()}/${letter.id.slice(-6).toUpperCase()}`
@@ -602,11 +605,12 @@ html, body {
 .doc-footer {
   background: #f8fafc; border-top: 1px solid #e2e8f0;
   padding: 7px 40px;
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
   font-size: 7pt; color: #9ca3af; letter-spacing: 0.03em;
+  text-align: center; line-height: 1.5;
 }
-.footer-co  { font-weight: 700; color: #64748b; }
-.footer-sep { color: #d1d5db; }
+.footer-co   { font-weight: 700; color: #64748b; font-size: 7.5pt; }
+.footer-addr { color: #6b7280; }
+.footer-contact { color: #9ca3af; }
 
 /* ─── Print FAB (screen only) ────────────────────────────── */
 .print-fab {
@@ -821,12 +825,11 @@ html, body {
 
           </main>
 
-          {/* Footer: Company · Website · HR Email · HR Mobile */}
+          {/* Footer: 3 lines — Company Name / Address / Phone | Email | Website */}
           <footer className="doc-footer">
-            <span className="footer-co">{company}</span>
-            {footerWebsite && <><span className="footer-sep">·</span><span>{footerWebsite}</span></>}
-            {footerEmail   && <><span className="footer-sep">·</span><span>{footerEmail}</span></>}
-            {footerPhone   && <><span className="footer-sep">·</span><span>{footerPhone}</span></>}
+            <div className="footer-co">{company}</div>
+            {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
+            {footerContact  && <div className="footer-contact">{footerContact}</div>}
           </footer>
 
           <div className="accent-bar-bottom" />

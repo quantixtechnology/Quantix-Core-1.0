@@ -2432,6 +2432,8 @@ model HrmsSettings {
   gstNumber                      String?
   cin                            String?
   website                        String?
+  companyPhone                   String?
+  companyEmail                   String?
   hrContactName                  String?
   hrContactEmail                 String?
   hrContactMobile                String?

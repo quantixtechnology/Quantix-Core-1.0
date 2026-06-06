@@ -27,6 +27,8 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
         gstNumber:                      body.gstNumber                      as string | undefined,
         cin:                            body.cin                            as string | undefined,
         website:                        body.website                        as string | undefined,
+        companyPhone:                   body.companyPhone                   as string | undefined,
+        companyEmail:                   body.companyEmail                   as string | undefined,
         hrContactName:                  body.hrContactName                  as string | undefined,
         hrContactEmail:                 body.hrContactEmail                 as string | undefined,
         hrContactMobile:                body.hrContactMobile                as string | undefined,

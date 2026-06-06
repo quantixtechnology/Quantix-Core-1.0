@@ -19,6 +19,8 @@ interface HrmsSettingsData {
   gstNumber?: string
   cin?: string
   website?: string
+  companyPhone?: string
+  companyEmail?: string
   hrContactName?: string
   hrContactEmail?: string
   hrContactMobile?: string
@@ -182,6 +184,14 @@ export function HrmsSettingsView() {
             <div className="space-y-1.5">
               <Label htmlFor="website">Company Website</Label>
               <Input id="website" placeholder="https://quantix.in" {...field("website")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="companyPhone">Company Phone</Label>
+              <Input id="companyPhone" type="tel" placeholder="+91 73505 51170" {...field("companyPhone")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="companyEmail">Company Email</Label>
+              <Input id="companyEmail" type="email" placeholder="hr@quantixtechnology.in" {...field("companyEmail")} />
             </div>
           </div>
         </CardContent>
