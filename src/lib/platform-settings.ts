@@ -39,6 +39,12 @@ export interface PlatformSettingsData {
   salesLogoUrl: string | null
   salesAccentColor: string | null
 
+  // Zone 4 — Sidebar Theme
+  sidebarBg: string
+  sidebarActiveColor: string
+  sidebarTextColor: string
+  sidebarHeadingColor: string
+
   invoicePrefix: string
   sacCode: string
 
@@ -67,6 +73,11 @@ const DEFAULTS: Omit<PlatformSettingsData, 'id'> = {
 
   salesLogoUrl:      null,
   salesAccentColor:  null,
+
+  sidebarBg:           '#04132E',
+  sidebarActiveColor:  '#2563EB',
+  sidebarTextColor:    '#FFFFFF',
+  sidebarHeadingColor: '#38BDF8',
 
   invoicePrefix: 'QTX',
   sacCode:       '998314',
@@ -115,6 +126,11 @@ export async function getPlatformSettings(): Promise<PlatformSettingsData> {
 
       salesLogoUrl:     row.salesLogoUrl     ?? null,
       salesAccentColor: row.salesAccentColor ?? null,
+
+      sidebarBg:           row.sidebarBg           ?? DEFAULTS.sidebarBg,
+      sidebarActiveColor:  row.sidebarActiveColor  ?? DEFAULTS.sidebarActiveColor,
+      sidebarTextColor:    row.sidebarTextColor     ?? DEFAULTS.sidebarTextColor,
+      sidebarHeadingColor: row.sidebarHeadingColor ?? DEFAULTS.sidebarHeadingColor,
 
       invoicePrefix: row.invoicePrefix ?? DEFAULTS.invoicePrefix,
       sacCode:       row.sacCode       ?? DEFAULTS.sacCode,

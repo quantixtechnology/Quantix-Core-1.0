@@ -67,6 +67,12 @@ model PlatformSettings {
   signatorySignUrl     String?  // digital signature image
   signatoryStampUrl    String?  // signature + stamp image
 
+  // Zone 4 — Sidebar Theme
+  sidebarBg           String?  // e.g. #04132E
+  sidebarActiveColor  String?  // e.g. #2563EB
+  sidebarTextColor    String?  // e.g. #FFFFFF
+  sidebarHeadingColor String?  // e.g. #38BDF8
+
   // Billing / invoice configuration
   invoicePrefix  String? @default("QTX")
   sacCode        String? @default("998314")

@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Monitor, FileText, Users, Upload, X, Save, Loader2,
-  ImageIcon, Palette, CheckCircle2,
+  ImageIcon, Palette, CheckCircle2, PanelLeft,
 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
@@ -59,6 +59,12 @@ interface BrandSettings {
   signatoryDesignation: string
   signatorySignUrl:     string | null
   signatoryStampUrl:    string | null
+
+  // Zone 4 — Sidebar Theme
+  sidebarBg:           string
+  sidebarActiveColor:  string
+  sidebarTextColor:    string
+  sidebarHeadingColor: string
 }
 
 const DEFAULTS: BrandSettings = {
@@ -72,6 +78,8 @@ const DEFAULTS: BrandSettings = {
   hrmsLogoUrl: null, hrmsWatermarkUrl: null,
   hrmsAccentColor: "#2563EB", signatoryName: "", signatoryDesignation: "",
   signatorySignUrl: null, signatoryStampUrl: null,
+  sidebarBg: "#04132E", sidebarActiveColor: "#2563EB",
+  sidebarTextColor: "#FFFFFF", sidebarHeadingColor: "#38BDF8",
 }
 
 type AssetField = keyof { [K in keyof BrandSettings as BrandSettings[K] extends string | null ? K : never]: unknown }
@@ -311,6 +319,67 @@ function HrmsDocumentPreview({ s }: { s: BrandSettings }) {
   )
 }
 
+function SidebarThemePreview({ s }: { s: BrandSettings }) {
+  const bg      = s.sidebarBg           || "#04132E"
+  const active  = s.sidebarActiveColor  || "#2563EB"
+  const text    = s.sidebarTextColor    || "#FFFFFF"
+  const heading = s.sidebarHeadingColor || "#38BDF8"
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Live Preview</p>
+      <div className="rounded-xl overflow-hidden border border-border/40 shadow-sm" style={{ background: bg }}>
+        {/* Brand area */}
+        <div className="px-3 py-3 border-b" style={{ borderColor: `${text}12` }}>
+          {s.logoUrl
+            ? <img src={s.logoUrl} alt="Logo" style={{ height: 28, maxWidth: 120, objectFit: "contain", display: "block" }} />
+            : <span className="text-[11px] font-bold tracking-wide uppercase" style={{ color: text }}>Quantix Core</span>
+          }
+        </div>
+        {/* Nav */}
+        <div className="px-2 py-2 space-y-0.5">
+          <div className="px-2 py-1 text-[7.5px] font-bold uppercase tracking-widest" style={{ color: heading }}>
+            Platform Control
+          </div>
+          {[
+            { label: "Dashboard",     active: true  },
+            { label: "Businesses",    active: false },
+            { label: "Subscriptions", active: false },
+          ].map((item) => (
+            <div key={item.label} className="flex items-center gap-2 px-2 py-1.5 rounded-md" style={{
+              background: item.active ? `${active}28` : "transparent",
+            }}>
+              <div className="h-1.5 w-1.5 rounded-sm shrink-0" style={{ background: item.active ? active : `${text}35` }} />
+              <span className="text-[9px] font-semibold" style={{ color: item.active ? text : `${text}80` }}>
+                {item.label}
+              </span>
+            </div>
+          ))}
+          <div className="px-2 py-1 mt-1.5 text-[7.5px] font-bold uppercase tracking-widest" style={{ color: heading }}>
+            System
+          </div>
+          {["Brand Studio", "Settings"].map((item) => (
+            <div key={item} className="flex items-center gap-2 px-2 py-1.5 rounded-md">
+              <div className="h-1.5 w-1.5 rounded-sm shrink-0" style={{ background: `${text}35` }} />
+              <span className="text-[9px] font-semibold" style={{ color: `${text}80` }}>{item}</span>
+            </div>
+          ))}
+        </div>
+        {/* User footer */}
+        <div className="px-3 py-2 mt-1" style={{ borderTop: `1px solid ${text}12` }}>
+          <div className="flex items-center gap-2">
+            <div className="h-5 w-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0" style={{ background: active }}>A</div>
+            <div className="min-w-0">
+              <p className="text-[9px] font-semibold truncate" style={{ color: text }}>Admin User</p>
+              <p className="text-[7.5px] truncate" style={{ color: `${text}55` }}>admin@platform.in</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function BrandStudioView() {
@@ -372,6 +441,14 @@ export function BrandStudioView() {
           signatoryDesignation: settings.signatoryDesignation,
         })
       }
+      if (zone === "sidebar" || zone === "all") {
+        Object.assign(payload, {
+          sidebarBg:           settings.sidebarBg,
+          sidebarActiveColor:  settings.sidebarActiveColor,
+          sidebarTextColor:    settings.sidebarTextColor,
+          sidebarHeadingColor: settings.sidebarHeadingColor,
+        })
+      }
 
       const res  = await authFetch("/api/admin/platform-settings", {
         method: "PATCH",
@@ -417,10 +494,11 @@ export function BrandStudioView() {
 
       {/* Zones */}
       <Tabs defaultValue="core" className="space-y-6">
-        <TabsList className="grid grid-cols-3 w-full max-w-lg h-10">
-          <TabsTrigger value="core"  className="gap-1.5 text-xs"><Monitor  className="h-3.5 w-3.5" />Core Platform</TabsTrigger>
-          <TabsTrigger value="sales" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Sales Documents</TabsTrigger>
-          <TabsTrigger value="hrms"  className="gap-1.5 text-xs"><Users    className="h-3.5 w-3.5" />HRMS</TabsTrigger>
+        <TabsList className="grid grid-cols-4 w-full max-w-2xl h-10">
+          <TabsTrigger value="core"    className="gap-1.5 text-xs"><Monitor    className="h-3.5 w-3.5" />Core Platform</TabsTrigger>
+          <TabsTrigger value="sales"   className="gap-1.5 text-xs"><FileText   className="h-3.5 w-3.5" />Sales Documents</TabsTrigger>
+          <TabsTrigger value="hrms"    className="gap-1.5 text-xs"><Users      className="h-3.5 w-3.5" />HRMS</TabsTrigger>
+          <TabsTrigger value="sidebar" className="gap-1.5 text-xs"><PanelLeft  className="h-3.5 w-3.5" />Sidebar Theme</TabsTrigger>
         </TabsList>
 
         {/* ── ZONE 1: Core Platform ── */}
@@ -682,6 +760,72 @@ export function BrandStudioView() {
             </div>
           </div>
         </TabsContent>
+        {/* ── ZONE 4: Sidebar Theme ── */}
+        <TabsContent value="sidebar">
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-6 items-start">
+            <div className="space-y-6">
+
+              {/* Sidebar Colors */}
+              <Card>
+                <CardContent className="pt-5 pb-6 space-y-5">
+                  <SectionHeader icon={<PanelLeft className="h-4 w-4" />} title="Sidebar Theme Colors" />
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    These colors apply only to the left navigation sidebar. Documents, invoices, and proposals are unaffected.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-2 gap-5">
+                    <ColorSwatch label="Background"          field="sidebarBg"           value={settings.sidebarBg}           onChange={handleColor} />
+                    <ColorSwatch label="Active Menu Color"   field="sidebarActiveColor"  value={settings.sidebarActiveColor}  onChange={handleColor} />
+                    <ColorSwatch label="Text Color"          field="sidebarTextColor"    value={settings.sidebarTextColor}    onChange={handleColor} />
+                    <ColorSwatch label="Section Heading"     field="sidebarHeadingColor" value={settings.sidebarHeadingColor} onChange={handleColor} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Apply To */}
+              <Card>
+                <CardContent className="pt-5 pb-5">
+                  <SectionHeader icon={<CheckCircle2 className="h-4 w-4" />} title="Applied To" />
+                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {["Left Navigation Sidebar", "Sidebar Branding Area", "Menu Items", "Menu Hover States", "Section Headings", "Collapsed Icon Rail"].map((item) => (
+                      <div key={item} className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-border/40">
+                    <p className="text-xs text-muted-foreground font-medium mb-2">Not affected:</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {["Offer Letter", "Annexure", "Proposals", "Invoices", "HRMS Documents"].map((item) => (
+                        <div key={item} className="flex items-center gap-2 text-sm text-muted-foreground/60">
+                          <div className="h-3.5 w-3.5 rounded-full border border-border shrink-0" />
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end">
+                <Button onClick={() => handleSave("sidebar")} disabled={saving} className="gap-2 min-w-[120px]">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save Sidebar Theme
+                </Button>
+              </div>
+            </div>
+
+            {/* Sticky preview */}
+            <div className="xl:sticky xl:top-6">
+              <Card>
+                <CardContent className="pt-5 pb-5">
+                  <SidebarThemePreview s={settings} />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
       </Tabs>
     </div>
   )

@@ -27,25 +27,22 @@ import { ADMIN_NAV_PERMISSIONS } from "@/lib/permissions"
 import { useState, useEffect } from "react"
 import { authFetch } from "@/lib/admin-fetch"
 
-const NAVY = "#081028"
-
-// CSS variables scoped directly to the sidebar element — main content stays light
-const sidebarVars = {
-  "--sidebar": NAVY,
-  "--sidebar-foreground": "rgba(255, 255, 255, 0.82)",
-  "--sidebar-accent": "rgba(255, 255, 255, 0.06)",
-  "--sidebar-accent-foreground": "rgba(255, 255, 255, 0.95)",
-  "--sidebar-border": "rgba(255, 255, 255, 0.08)",
-  "--sidebar-primary": "#2563EB",
-  "--sidebar-primary-foreground": "#ffffff",
-  "--sidebar-ring": "#2563EB",
-} as React.CSSProperties
-
-// ─── Brand logo (loaded from Brand Studio platform settings) ─────────────────
+// ─── Brand logo + sidebar theme (loaded from Brand Studio platform settings) ──
 
 interface SidebarBrand {
-  expandedUrl: string | null  // darkLogoUrl → logoUrl (white/primary on dark bg)
-  collapseUrl: string | null  // compactLogoUrl → darkLogoUrl (icon slot)
+  expandedUrl: string | null
+  collapseUrl: string | null
+  sidebarBg: string
+  sidebarActiveColor: string
+  sidebarTextColor: string
+  sidebarHeadingColor: string
+}
+
+const SIDEBAR_DEFAULTS = {
+  sidebarBg:           '#04132E',
+  sidebarActiveColor:  '#2563EB',
+  sidebarTextColor:    '#FFFFFF',
+  sidebarHeadingColor: '#38BDF8',
 }
 
 // A single logo <img> that silently falls back to null on load error so we
@@ -178,7 +175,7 @@ function CollapsibleSection({
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex w-full items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors"
-        style={{ color: "rgba(34, 199, 240, 0.55)" }}
+        style={{ color: "var(--sidebar-heading, rgba(34,199,240,0.55))" }}
         aria-expanded={isOpen}
       >
         {title}
@@ -218,24 +215,41 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   const { user, permissions } = useAuthStore()
   const { isMobile } = useResponsive()
 
-  const [brand, setBrand] = useState<SidebarBrand>({ expandedUrl: null, collapseUrl: null })
+  const [brand, setBrand] = useState<SidebarBrand>({
+    expandedUrl: null,
+    collapseUrl: null,
+    ...SIDEBAR_DEFAULTS,
+  })
 
   useEffect(() => {
-    // Fetch Brand Studio settings once on mount.
-    // silentFailure: true — if the user doesn't have settings:view the fetch
-    // returns a 403; we fall back to the Q icon instead of logging out.
     authFetch('/api/admin/platform-settings', { silentFailure: true } as Parameters<typeof authFetch>[1])
       .then(r => (r.ok ? r.json() : null))
       .then((j: { success: boolean; data: Record<string, string | null> } | null) => {
         if (!j?.success || !j.data) return
         const d = j.data
         setBrand({
-          expandedUrl: d.logoUrl || null,         // Brand Studio: Primary Logo
-          collapseUrl: d.compactLogoUrl || null,  // Brand Studio: Compact Logo
+          expandedUrl: d.logoUrl || null,
+          collapseUrl: d.compactLogoUrl || null,
+          sidebarBg:           d.sidebarBg           || SIDEBAR_DEFAULTS.sidebarBg,
+          sidebarActiveColor:  d.sidebarActiveColor  || SIDEBAR_DEFAULTS.sidebarActiveColor,
+          sidebarTextColor:    d.sidebarTextColor     || SIDEBAR_DEFAULTS.sidebarTextColor,
+          sidebarHeadingColor: d.sidebarHeadingColor || SIDEBAR_DEFAULTS.sidebarHeadingColor,
         })
       })
-      .catch(() => {}) // network failure — Q icon remains
+      .catch(() => {})
   }, [])
+
+  const sidebarVars = {
+    "--sidebar":                 brand.sidebarBg,
+    "--sidebar-foreground":      brand.sidebarTextColor,
+    "--sidebar-accent":          "rgba(255,255,255,0.06)",
+    "--sidebar-accent-foreground": brand.sidebarTextColor,
+    "--sidebar-border":          "rgba(255,255,255,0.08)",
+    "--sidebar-primary":         brand.sidebarActiveColor,
+    "--sidebar-primary-foreground": "#ffffff",
+    "--sidebar-ring":            brand.sidebarActiveColor,
+    "--sidebar-heading":         brand.sidebarHeadingColor,
+  } as React.CSSProperties
 
   const userInitials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
@@ -276,7 +290,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
         <SheetContent
           side="left"
           className="w-[272px] p-0 flex flex-col"
-          style={{ ...sidebarVars, background: NAVY, borderColor: "rgba(255,255,255,0.08)" }}
+          style={{ ...sidebarVars, background: brand.sidebarBg, borderColor: "rgba(255,255,255,0.08)" }}
         >
           {/* Brand header */}
           <SheetHeader className="px-4 py-4 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
@@ -359,7 +373,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
           <SidebarGroup key={s.title} className="px-2 py-0 mb-3">
             <SidebarGroupLabel
               className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 h-auto py-1"
-              style={{ color: "rgba(34,199,240,0.55)" }}
+              style={{ color: "var(--sidebar-heading, rgba(34,199,240,0.55))" }}
             >
               {s.title}
             </SidebarGroupLabel>

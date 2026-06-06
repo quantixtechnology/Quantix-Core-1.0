@@ -23,6 +23,8 @@ const PATCHABLE = new Set([
   // Zone 3 — HRMS
   'hrmsAccentColor',
   'signatoryName', 'signatoryDesignation',
+  // Zone 4 — Sidebar Theme
+  'sidebarBg', 'sidebarActiveColor', 'sidebarTextColor', 'sidebarHeadingColor',
   // Billing
   'invoicePrefix', 'sacCode',
   'gstRate', 'cgstRate', 'sgstRate',
