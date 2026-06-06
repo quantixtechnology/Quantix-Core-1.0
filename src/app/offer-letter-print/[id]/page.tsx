@@ -203,9 +203,6 @@ function parseContentToHtml(content: string): string {
   return segments.join('\n')
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Draft', SENT: 'Sent', ACCEPTED: 'Accepted', REJECTED: 'Rejected', EXPIRED: 'Expired',
-}
 
 export default function OfferLetterPrintPage() {
   const params = useParams()
@@ -325,16 +322,15 @@ html, body {
   border-bottom: 2.5px solid ${accent};
 }
 .brand-group { display: flex; align-items: center; gap: 14px; }
-.brand-logo  { height: 54px; max-width: 180px; object-fit: contain; }
+.brand-logo  { height: auto; max-height: 56px; width: auto; max-width: 160px; object-fit: contain; display: block; }
 .brand-name    { font-size: 15pt; font-weight: 800; color: #0f172a; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.1; }
 .brand-tagline { font-size: 8pt; color: #6b7280; letter-spacing: 0.04em; margin-top: 3px; }
 .doc-meta { text-align: right; font-size: 9pt; color: #374151; line-height: 1.8; flex-shrink: 0; }
 .doc-ref  { font-family: 'Courier New', monospace; font-size: 8.5pt; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 2px 8px; border-radius: 3px; display: inline-block; margin-bottom: 4px; letter-spacing: 0.05em; }
 
 /* ─── Title band ─────────────────────────────────────────── */
-.title-band    { background: ${accent}; padding: 13px 48px; display: flex; align-items: center; justify-content: space-between; }
-.doc-title     { font-size: 13pt; font-weight: 800; color: #fff; letter-spacing: 0.16em; text-transform: uppercase; }
-.doc-status-pill { font-size: 7.5pt; font-weight: 700; padding: 3px 12px; border-radius: 20px; background: rgba(255,255,255,0.22); color: #fff; border: 1px solid rgba(255,255,255,0.45); letter-spacing: 0.1em; text-transform: uppercase; }
+.title-band { background: ${accent}; padding: 13px 48px; }
+.doc-title  { font-size: 13pt; font-weight: 800; color: #fff; letter-spacing: 0.16em; text-transform: uppercase; }
 
 /* ─── Body ───────────────────────────────────────────────── */
 .doc-body { flex: 1; padding: 32px 48px 40px; }
@@ -510,12 +506,8 @@ html, body {
             <div className="brand-group">
               {logoUrl
                 ? <img src={logoUrl} alt={company} className="brand-logo" />
-                : null
+                : <div className="brand-name">{company}</div>
               }
-              <div>
-                <div className="brand-name">{company}</div>
-                {tagline && <div className="brand-tagline">{tagline}</div>}
-              </div>
             </div>
             <div className="doc-meta">
               <div className="doc-ref">{refNum}</div>
@@ -525,7 +517,6 @@ html, body {
 
           <div className="title-band">
             <span className="doc-title">Offer Letter</span>
-            <span className="doc-status-pill">{STATUS_LABELS[letter.status] ?? letter.status}</span>
           </div>
 
           <main className="doc-body">
