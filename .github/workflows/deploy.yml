@@ -162,6 +162,13 @@ jobs:
               -H "x-deploy-secret: ${SECRET}" \
               "${APP_URL}/api/deploy/status" 2>/dev/null || echo '{"status":"unreachable"}')
 
+            # Guard: if the response is not valid JSON (e.g. Nginx 502 HTML during
+            # PM2 restart), replace it so jq doesn't fail the step with exit code 5.
+            if ! echo "$RESPONSE" | jq -e . > /dev/null 2>&1; then
+              echo "[$POLL/$MAX_POLLS] ⚠️  Non-JSON response — app may be restarting, retrying…"
+              continue
+            fi
+
             STATUS=$(echo "$RESPONSE" | jq -r '.status  // "unknown"')
             STEP=$(echo "$RESPONSE"   | jq -r '.step    // ""')
             MSG=$(echo "$RESPONSE"    | jq -r '.message // ""')
