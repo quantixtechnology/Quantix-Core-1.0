@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
-import { Building2, Save, Image as ImageIcon, Phone, UserCheck } from "lucide-react"
+import { Building2, Save, Image as ImageIcon, Phone, UserCheck, Palette } from "lucide-react"
 import { toast } from "sonner"
+import { authFetch } from "@/lib/admin-fetch"
 
 interface HrmsSettingsData {
   id?: string
@@ -24,8 +25,54 @@ interface HrmsSettingsData {
   authorizedSignatory?: string
   authorizedSignatoryDesignation?: string
   signatureImage?: string
+  stampImage?: string
   logo?: string
+  primaryColor?: string
+  secondaryColor?: string
 }
+
+function ColorField({ label, hint, value, onChange }: {
+  label: string
+  hint?: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={value || '#2563EB'}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-9 w-9 rounded border cursor-pointer p-0.5 shrink-0"
+          style={{ background: 'transparent' }}
+        />
+        <Input
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="#2563EB"
+          className="font-mono w-32"
+          maxLength={7}
+        />
+        <div
+          className="h-9 w-9 rounded-md border shrink-0"
+          style={{ background: value || '#2563EB' }}
+        />
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+    </div>
+  )
+}
+
+const PRESET_COLORS = [
+  { name: 'Royal Blue',  value: '#1E40AF' },
+  { name: 'Emerald',     value: '#16A34A' },
+  { name: 'Violet',      value: '#7C3AED' },
+  { name: 'Gold',        value: '#B45309' },
+  { name: 'Crimson',     value: '#DC2626' },
+  { name: 'Slate',       value: '#334155' },
+]
 
 export function HrmsSettingsView() {
   const [settings, setSettings] = useState<HrmsSettingsData>({})
@@ -33,7 +80,7 @@ export function HrmsSettingsView() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch("/api/admin/hrms/settings")
+    authFetch("/api/admin/hrms/settings")
       .then((r) => r.json())
       .then((j) => { if (j.success && j.data) setSettings(j.data) })
       .catch(() => {})
@@ -43,7 +90,7 @@ export function HrmsSettingsView() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/hrms/settings", {
+      const res = await authFetch("/api/admin/hrms/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
@@ -65,6 +112,9 @@ export function HrmsSettingsView() {
       setSettings((s) => ({ ...s, [key]: e.target.value })),
   })
 
+  const setColor = (key: 'primaryColor' | 'secondaryColor') => (v: string) =>
+    setSettings((s) => ({ ...s, [key]: v }))
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -72,6 +122,9 @@ export function HrmsSettingsView() {
       </div>
     )
   }
+
+  const accent = settings.primaryColor || '#2563EB'
+  const secondary = settings.secondaryColor || '#64748B'
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -84,8 +137,8 @@ export function HrmsSettingsView() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground max-w-xl">
-            HRMS settings are used for Quantix internal employee documents including Offer Letters,
-            Commission Slips, Payslips, Appointment Letters, Experience Letters and other HR records.
+            HRMS settings are used for Quantix internal HR documents including Offer Letters,
+            Commission Slips, Payslips, Appointment Letters and Experience Letters.
           </p>
         </div>
         <Button onClick={handleSave} disabled={saving} className="gap-2 shrink-0">
@@ -101,7 +154,7 @@ export function HrmsSettingsView() {
             <Building2 className="h-4 w-4" /> Company Information
           </CardTitle>
           <CardDescription>
-            Printed on all Quantix HR documents — Offer Letters, Commission Slips, Payslips and Experience Letters.
+            Printed on all Quantix HR documents.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -129,6 +182,82 @@ export function HrmsSettingsView() {
             <div className="space-y-1.5">
               <Label htmlFor="website">Company Website</Label>
               <Input id="website" placeholder="https://quantix.in" {...field("website")} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* HRMS Branding Colors */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Palette className="h-4 w-4" /> HRMS Document Branding
+          </CardTitle>
+          <CardDescription>
+            Colors applied to Offer Letters, Commission Slips, Payslips, and all HRMS documents.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-2 gap-5">
+            <ColorField
+              label="Primary Color"
+              hint="Header band, section titles, accent bar"
+              value={settings.primaryColor || ''}
+              onChange={setColor('primaryColor')}
+            />
+            <ColorField
+              label="Secondary Color"
+              hint="Sub-headings, dividers, metadata"
+              value={settings.secondaryColor || ''}
+              onChange={setColor('secondaryColor')}
+            />
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-2">Quick presets</p>
+            <div className="flex gap-2 flex-wrap">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  title={c.name}
+                  onClick={() => setSettings((s) => ({ ...s, primaryColor: c.value }))}
+                  className="h-7 w-7 rounded-full border-2 transition-all hover:scale-110"
+                  style={{
+                    background: c.value,
+                    borderColor: settings.primaryColor === c.value ? '#000' : 'transparent',
+                    outline: settings.primaryColor === c.value ? `2px solid ${c.value}` : 'none',
+                    outlineOffset: 2,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Live preview */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-2">Live preview</p>
+            <div className="rounded-lg overflow-hidden border shadow-sm" style={{ fontFamily: 'Arial, sans-serif', fontSize: 11 }}>
+              <div style={{ height: 4, background: accent }} />
+              <div className="p-3 border-b flex items-center gap-2">
+                <div style={{ width: 28, height: 28, borderRadius: 6, background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 900, fontSize: 13 }}>Q</div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{settings.companyName || 'QUANTIX TECHNOLOGY'}</div>
+                  <div style={{ fontSize: 8, color: '#6b7280' }}>Official HR Document</div>
+                </div>
+              </div>
+              <div style={{ padding: '6px 12px', background: accent }}>
+                <span style={{ color: '#fff', fontWeight: 700, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>OFFER LETTER</span>
+              </div>
+              <div className="p-3 space-y-1.5">
+                <div style={{ fontWeight: 700, fontSize: 10, color: secondary, letterSpacing: '0.08em', textTransform: 'uppercase', borderBottom: `1.5px solid ${accent}20`, paddingBottom: 3 }}>APPOINTMENT DETAILS</div>
+                <div style={{ fontSize: 9.5, color: '#374151' }}>Designation: <strong>Business Development Manager</strong></div>
+                <div style={{ fontSize: 9.5, color: '#374151' }}>Department: <strong>Sales</strong></div>
+              </div>
+              <div style={{ padding: '6px 12px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: 8, color: '#9ca3af', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 600, color: '#64748b' }}>{settings.companyName || 'Quantix Technology'}</span>
+                <span>CONFIDENTIAL</span>
+              </div>
+              <div style={{ height: 3, background: accent }} />
             </div>
           </div>
         </CardContent>
@@ -186,11 +315,10 @@ export function HrmsSettingsView() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <ImageIcon className="h-4 w-4" /> Logos &amp; Signature Image
+            <ImageIcon className="h-4 w-4" /> Logo, Signature &amp; Stamp
           </CardTitle>
           <CardDescription>
-            This HRMS logo is independent from the platform logo, invoice logo, and quote logo.
-            It is used only on employee-facing HR documents.
+            Used only on HRMS documents — independent from platform logo, invoice logo, and quote logo.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -202,9 +330,6 @@ export function HrmsSettingsView() {
                 <img src={settings.logo} alt="HRMS logo" className="h-10 w-10 object-contain rounded border shrink-0" />
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Used on Offer Letters, Commission Slips, Payslips and Experience Letters only.
-            </p>
           </div>
 
           <Separator />
@@ -217,9 +342,18 @@ export function HrmsSettingsView() {
                 <img src={settings.signatureImage} alt="Signature" className="h-10 w-24 object-contain rounded border shrink-0" />
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Printed below the Authorized Signatory name on all HR documents.
-            </p>
+            <p className="text-xs text-muted-foreground">Printed below the signatory name on all HR documents.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="stampImage">Company Stamp URL</Label>
+            <div className="flex gap-2">
+              <Input id="stampImage" placeholder="https://…/stamp.png" {...field("stampImage")} />
+              {settings.stampImage && (
+                <img src={settings.stampImage} alt="Stamp" className="h-10 w-10 object-contain rounded border shrink-0" />
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">Appears alongside the signature for official documents.</p>
           </div>
         </CardContent>
       </Card>

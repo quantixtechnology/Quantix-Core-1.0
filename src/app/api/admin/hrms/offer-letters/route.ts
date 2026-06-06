@@ -77,8 +77,17 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: 'hrm
         }
       }
 
+      const year = new Date().getFullYear().toString()
+      const seq = await db.offerLetterSequence.upsert({
+        where: { yearKey: year },
+        update: { nextVal: { increment: 1 } },
+        create: { yearKey: year, nextVal: 2 },
+      })
+      const offerRef = `QT/HR/${year}/${String(seq.nextVal - 1).padStart(5, '0')}`
+
       const letter = await db.offerLetter.create({
         data: {
+          offerRef,
           templateId:       body.templateId,
           candidateName:    body.candidateName,
           candidateEmail:   body.candidateEmail,

@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator"
 import { Plus, Eye, Printer, Trash2, BadgeDollarSign } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { authFetch } from "@/lib/admin-fetch"
 
 type SlipStatus = "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "PAID"
 
@@ -81,8 +82,8 @@ export function HrmsCommissionSlipView() {
 
   const loadDeps = useCallback(async () => {
     const [empRes, polRes] = await Promise.all([
-      fetch("/api/admin/hrms/employees?limit=200"),
-      fetch("/api/admin/hrms/commission-policy"),
+      authFetch("/api/admin/hrms/employees?limit=200"),
+      authFetch("/api/admin/hrms/commission-policy"),
     ])
     const [empJson, polJson] = await Promise.all([empRes.json(), polRes.json()])
     if (empJson.success) setEmployees(empJson.data)
@@ -92,7 +93,7 @@ export function HrmsCommissionSlipView() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/admin/hrms/commission-slips?limit=100")
+      const res = await authFetch("/api/admin/hrms/commission-slips?limit=100")
       const json = await res.json()
       if (json.success) setSlips(json.data)
     } catch { /* silent */ }
@@ -111,7 +112,7 @@ export function HrmsCommissionSlipView() {
     setPreviewing(true)
     setPreview(null)
     try {
-      const res = await fetch("/api/admin/hrms/commission-slips", {
+      const res = await authFetch("/api/admin/hrms/commission-slips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, adjustments: parseFloat(form.adjustments) || 0, preview: true }),
@@ -131,7 +132,7 @@ export function HrmsCommissionSlipView() {
     }
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/hrms/commission-slips", {
+      const res = await authFetch("/api/admin/hrms/commission-slips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, adjustments: parseFloat(form.adjustments) || 0 }),
@@ -149,7 +150,7 @@ export function HrmsCommissionSlipView() {
 
   const handleAction = async (id: string, action: "submit" | "approve" | "paid") => {
     try {
-      const res = await fetch(`/api/admin/hrms/commission-slips/${id}/approve`, {
+      const res = await authFetch(`/api/admin/hrms/commission-slips/${id}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
@@ -167,7 +168,7 @@ export function HrmsCommissionSlipView() {
   const handleDelete = async () => {
     if (!deleteId) return
     try {
-      const res = await fetch(`/api/admin/hrms/commission-slips/${deleteId}`, { method: "DELETE" })
+      const res = await authFetch(`/api/admin/hrms/commission-slips/${deleteId}`, { method: "DELETE" })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       toast.success("Slip deleted")

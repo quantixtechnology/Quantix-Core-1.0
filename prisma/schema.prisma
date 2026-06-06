@@ -2428,9 +2428,18 @@ model HrmsSettings {
   authorizedSignatory            String?
   authorizedSignatoryDesignation String?
   signatureImage                 String?
+  stampImage                     String?
   logo                           String?
+  primaryColor                   String?
+  secondaryColor                 String?
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
+}
+
+model OfferLetterSequence {
+  yearKey   String   @id
+  nextVal   Int      @default(1)
+  updatedAt DateTime @updatedAt
 }
 
 // Quantix Employee Master
@@ -2576,6 +2585,7 @@ model OfferLetterTemplate {
 // Generated Offer Letter — rendered content after merge tag substitution
 model OfferLetter {
   id               String               @id @default(cuid())
+  offerRef         String?
   templateId       String?
   employeeId       String?
   candidateName    String

@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Switch } from "@/components/ui/switch"
@@ -13,6 +12,7 @@ import { Plus, Pencil, Trash2, LayoutTemplate, Star } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { authFetch } from "@/lib/admin-fetch"
+import { RichTextEditor } from "./rich-text-editor"
 
 interface OfferLetterTemplate {
   id: string
@@ -465,11 +465,10 @@ export function HrmsTemplatesView() {
             </div>
             <div className="space-y-1.5">
               <Label>Content <span className="text-destructive">*</span></Label>
-              <Textarea
-                className="font-mono text-sm min-h-[300px]"
-                placeholder={`Dear {{CandidateName}},\n\nWe are pleased to offer you the position of {{Designation}}…`}
+              <RichTextEditor
                 value={form.content}
-                onChange={(e) => setForm((s) => ({ ...s, content: e.target.value }))}
+                onChange={(html) => setForm((s) => ({ ...s, content: html }))}
+                placeholder="Dear {{CandidateName}}, We are pleased to offer you the position of {{Designation}}…"
               />
             </div>
             <div className="flex items-center gap-6">

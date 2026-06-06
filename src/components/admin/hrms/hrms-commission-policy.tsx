@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Pencil, Trash2, PlusCircle, MinusCircle, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { authFetch } from "@/lib/admin-fetch"
 
 interface PolicyTier {
   minRevenue: number
@@ -53,7 +54,7 @@ export function HrmsCommissionPolicyView() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/admin/hrms/commission-policy")
+      const res = await authFetch("/api/admin/hrms/commission-policy")
       const json = await res.json()
       if (json.success) setPolicies(json.data)
     } catch { /* silent */ }
@@ -79,7 +80,7 @@ export function HrmsCommissionPolicyView() {
     try {
       const url    = editItem ? `/api/admin/hrms/commission-policy/${editItem.id}` : "/api/admin/hrms/commission-policy"
       const method = editItem ? "PUT" : "POST"
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, tiers: JSON.stringify(tiers) }),
@@ -97,7 +98,7 @@ export function HrmsCommissionPolicyView() {
   const handleDelete = async () => {
     if (!deleteId) return
     try {
-      const res = await fetch(`/api/admin/hrms/commission-policy/${deleteId}`, { method: "DELETE" })
+      const res = await authFetch(`/api/admin/hrms/commission-policy/${deleteId}`, { method: "DELETE" })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       toast.success("Policy deleted")

@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Pencil, Trash2, Link2, History } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { authFetch } from "@/lib/admin-fetch"
 
 interface Employee { id: string; employeeCode: string; name: string; designation?: string }
 
@@ -67,9 +68,9 @@ export function HrmsOwnershipView() {
     setLoading(true)
     try {
       const [aRes, auRes, eRes] = await Promise.all([
-        fetch("/api/admin/hrms/ownership"),
-        fetch("/api/admin/hrms/ownership-audit"),
-        fetch("/api/admin/hrms/employees?limit=200"),
+        authFetch("/api/admin/hrms/ownership"),
+        authFetch("/api/admin/hrms/ownership-audit"),
+        authFetch("/api/admin/hrms/employees?limit=200"),
       ])
       const [aJson, auJson, eJson] = await Promise.all([aRes.json(), auRes.json(), eRes.json()])
       if (aJson.success)  setAssignments(aJson.data)
@@ -98,7 +99,7 @@ export function HrmsOwnershipView() {
     if (!form.clientBusinessId.trim()) { toast.error("Client Business ID is required"); return }
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/hrms/ownership", {
+      const res = await authFetch("/api/admin/hrms/ownership", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -116,7 +117,7 @@ export function HrmsOwnershipView() {
   const handleDelete = async () => {
     if (!deleteId) return
     try {
-      const res = await fetch(`/api/admin/hrms/ownership/${deleteId}`, { method: "DELETE" })
+      const res = await authFetch(`/api/admin/hrms/ownership/${deleteId}`, { method: "DELETE" })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
       toast.success("Assignment removed")

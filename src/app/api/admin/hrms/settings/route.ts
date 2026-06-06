@@ -33,7 +33,10 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
         authorizedSignatory:            body.authorizedSignatory            as string | undefined,
         authorizedSignatoryDesignation: body.authorizedSignatoryDesignation as string | undefined,
         signatureImage:                 body.signatureImage                 as string | undefined,
+        stampImage:                     body.stampImage                     as string | undefined,
         logo:                           body.logo                           as string | undefined,
+        primaryColor:                   body.primaryColor                   as string | undefined,
+        secondaryColor:                 body.secondaryColor                 as string | undefined,
       }
 
       const existing = await db.hrmsSettings.findFirst()
