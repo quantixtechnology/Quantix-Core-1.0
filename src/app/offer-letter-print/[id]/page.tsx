@@ -50,11 +50,23 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
+// Groups HTML content (from Tiptap) into .doc-section wrappers so that
+// each heading stays with its following content across print page breaks.
+function groupHtmlSections(html: string): string {
+  // Split BEFORE each heading tag — each resulting part that starts with a
+  // heading contains that heading + all content up to the next heading.
+  const parts = html.split(/(?=<h[1-3][^>]*>)/i)
+  return parts.map((part) => {
+    const isHeadingSection = /^<h[1-3][^>]*>/i.test(part.trimStart())
+    return isHeadingSection ? `<div class="doc-section">${part}</div>` : part
+  }).join('\n')
+}
+
 function parseContentToHtml(content: string): string {
   if (!content) return ''
 
-  // If content is already HTML (from rich text editor), return directly
-  if (content.trimStart().startsWith('<')) return content
+  // HTML from rich text editor — group into sections and return
+  if (content.trimStart().startsWith('<')) return groupHtmlSections(content)
 
   const lines = content.split('\n')
 
@@ -79,24 +91,46 @@ function parseContentToHtml(content: string): string {
     ) { startAt++ } else { break }
   }
 
-  const html: string[] = []
+  // Output segments (sections and standalone elements)
+  const segments: string[] = []
+  // Buffer for the current section (heading + content)
+  let sectionBuf: string[] = []
   let listItems: string[] = []
   let inList = false
+  let inSection = false
 
   const flushList = () => {
-    if (inList) {
-      html.push(`<ul class="ol">${listItems.map(it => `<li>${it}</li>`).join('')}</ul>`)
-      listItems = []
-      inList = false
+    if (!inList) return
+    sectionBuf.push(`<ul class="ol">${listItems.map(it => `<li>${it}</li>`).join('')}</ul>`)
+    listItems = []
+    inList = false
+  }
+
+  const flushSection = () => {
+    flushList()
+    if (sectionBuf.length === 0) return
+    if (inSection) {
+      segments.push(`<div class="doc-section">${sectionBuf.join('\n')}</div>`)
+    } else {
+      segments.push(sectionBuf.join('\n'))
     }
+    sectionBuf = []
+    inSection = false
   }
 
   for (let i = startAt; i < stopAt; i++) {
     const line = lines[i].trim()
 
-    if (line === '---') { flushList(); html.push('<hr class="sec-rule" />'); continue }
     if (line === '') { flushList(); continue }
 
+    // Horizontal rule → flush current section, emit hr outside any wrapper
+    if (line === '---') {
+      flushSection()
+      segments.push('<hr class="sec-rule" />')
+      continue
+    }
+
+    // Bullet item → accumulate into list buffer
     if (line.startsWith('•')) {
       inList = true
       listItems.push(escHtml(line.slice(1).trim()))
@@ -105,39 +139,53 @@ function parseContentToHtml(content: string): string {
 
     flushList()
 
+    // ALL-CAPS section heading → flush previous section, start a new one
+    const isAllCaps = (
+      line.length >= 4 &&
+      line === line.toUpperCase() &&
+      /[A-Z]{3}/.test(line) &&
+      !/\d/.test(line) &&
+      !line.includes(':') &&
+      line !== 'TO,'
+    )
+
+    if (isAllCaps) {
+      flushSection()
+      inSection = true
+      sectionBuf.push(`<h3 class="sec-heading">${escHtml(line)}</h3>`)
+      continue
+    }
+
     if (line.toUpperCase() === 'PRIVATE & CONFIDENTIAL' || line.toUpperCase() === 'PRIVATE AND CONFIDENTIAL') {
-      html.push(`<div class="confidential-badge">&#128274; PRIVATE &amp; CONFIDENTIAL</div>`)
+      sectionBuf.push(`<div class="confidential-badge">&#128274; PRIVATE &amp; CONFIDENTIAL</div>`)
       continue
     }
 
     if (line.startsWith('Subject:')) {
-      html.push(`<p class="subject-line"><strong>Subject:</strong> ${escHtml(line.slice(8).trim())}</p>`)
+      sectionBuf.push(`<p class="subject-line"><strong>Subject:</strong> ${escHtml(line.slice(8).trim())}</p>`)
       continue
     }
 
-    const upper = line.toUpperCase()
-    if (line.length >= 4 && line === upper && /[A-Z]{3}/.test(line) && !/\d/.test(line) && !line.includes(':') && line !== 'TO,') {
-      html.push(`<h3 class="sec-heading">${escHtml(line)}</h3>`)
-      continue
-    }
+    if (/^_{3,}$/.test(line)) { sectionBuf.push(`<div class="sig-blank"></div>`); continue }
+    if (line === 'To,') { sectionBuf.push(`<p class="to-label">To,</p>`); continue }
 
-    if (/^_{3,}$/.test(line)) { html.push(`<div class="sig-blank"></div>`); continue }
-    if (line === 'To,') { html.push(`<p class="to-label">To,</p>`); continue }
-
+    // Key: Value pair (label ending in colon, value on next line)
     if (line.endsWith(':') && i + 1 < stopAt) {
       const next = lines[i + 1].trim()
       if (next && next !== '---' && !next.startsWith('•') && next.length <= 120) {
-        html.push(`<div class="kv-row"><span class="kv-label">${escHtml(line)}</span><span class="kv-value">${escHtml(next)}</span></div>`)
+        sectionBuf.push(
+          `<div class="kv-row"><span class="kv-label">${escHtml(line)}</span><span class="kv-value">${escHtml(next)}</span></div>`
+        )
         i++
         continue
       }
     }
 
-    html.push(`<p class="body-p">${escHtml(line)}</p>`)
+    sectionBuf.push(`<p class="body-p">${escHtml(line)}</p>`)
   }
 
-  flushList()
-  return html.join('\n')
+  flushSection()
+  return segments.join('\n')
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -220,108 +268,129 @@ html, body {
   print-color-adjust: exact;
 }
 
+/* ─── Screen layout ─────────────────────────────────────── */
 .page-shell { max-width: 820px; margin: 32px auto 60px; box-shadow: 0 6px 40px rgba(0,0,0,0.18); }
 .doc { background: #fff; min-height: 1122px; display: flex; flex-direction: column; }
 
-.accent-bar-top { height: 6px; background: ${accent}; }
+/* ─── Accent bars ────────────────────────────────────────── */
+.accent-bar-top    { height: 6px; background: ${accent}; }
+.accent-bar-bottom { height: 5px; background: ${accent}; }
 
+/* ─── Document header ────────────────────────────────────── */
 .doc-header {
   padding: 28px 48px 22px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
   border-bottom: 2.5px solid ${accent};
 }
-
 .brand-group { display: flex; align-items: center; gap: 14px; }
-
-.brand-logo { height: 54px; max-width: 150px; object-fit: contain; }
-
+.brand-logo  { height: 54px; max-width: 150px; object-fit: contain; }
 .brand-logo-q {
   width: 54px; height: 54px; border-radius: 12px; background: ${accent};
   display: flex; align-items: center; justify-content: center;
   font-size: 24px; font-weight: 900; color: #fff; letter-spacing: -1px; flex-shrink: 0;
 }
-
-.brand-name { font-size: 16pt; font-weight: 800; color: #0f172a; letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.1; }
+.brand-name    { font-size: 16pt; font-weight: 800; color: #0f172a; letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.1; }
 .brand-tagline { font-size: 8pt; color: #6b7280; letter-spacing: 0.04em; margin-top: 3px; }
-
 .doc-meta { text-align: right; font-size: 9pt; color: #374151; line-height: 1.8; flex-shrink: 0; }
-.doc-ref { font-family: 'Courier New', monospace; font-size: 8.5pt; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 2px 8px; border-radius: 3px; display: inline-block; margin-bottom: 4px; letter-spacing: 0.05em; }
+.doc-ref  { font-family: 'Courier New', monospace; font-size: 8.5pt; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 2px 8px; border-radius: 3px; display: inline-block; margin-bottom: 4px; letter-spacing: 0.05em; }
 
-.title-band { background: ${accent}; padding: 13px 48px; display: flex; align-items: center; justify-content: space-between; }
-.doc-title { font-size: 13pt; font-weight: 800; color: #fff; letter-spacing: 0.16em; text-transform: uppercase; }
+/* ─── Title band ─────────────────────────────────────────── */
+.title-band    { background: ${accent}; padding: 13px 48px; display: flex; align-items: center; justify-content: space-between; }
+.doc-title     { font-size: 13pt; font-weight: 800; color: #fff; letter-spacing: 0.16em; text-transform: uppercase; }
 .doc-status-pill { font-size: 7.5pt; font-weight: 700; padding: 3px 12px; border-radius: 20px; background: rgba(255,255,255,0.22); color: #fff; border: 1px solid rgba(255,255,255,0.45); letter-spacing: 0.1em; text-transform: uppercase; }
 
+/* ─── Body ───────────────────────────────────────────────── */
 .doc-body { flex: 1; padding: 32px 48px 40px; }
 
+/* ─── Candidate info block ───────────────────────────────── */
 .candidate-block {
   background: #f8fafc;
   border-left: 5px solid ${accent};
   padding: 18px 22px;
   margin-bottom: 32px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px 32px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px 32px;
+  break-inside: avoid; page-break-inside: avoid;
 }
 .candidate-top { grid-column: 1 / -1; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 2px; }
-.candidate-name { font-size: 14pt; font-weight: 800; color: #0f172a; margin-bottom: 3px; }
+.candidate-name    { font-size: 14pt; font-weight: 800; color: #0f172a; margin-bottom: 3px; }
 .candidate-contact { font-size: 9pt; color: #6b7280; display: flex; gap: 12px; flex-wrap: wrap; }
-.cand-field-label { font-size: 7pt; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; font-weight: 700; margin-bottom: 2px; }
-.cand-field-value { font-size: 9.5pt; color: #0f172a; font-weight: 600; }
+.cand-field-label  { font-size: 7pt; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; font-weight: 700; margin-bottom: 2px; }
+.cand-field-value  { font-size: 9.5pt; color: #0f172a; font-weight: 600; }
 
+/* ─── Content body ───────────────────────────────────────── */
 .content-body { font-size: 10.5pt; line-height: 1.7; color: #1e293b; }
-.content-body .body-p { margin-bottom: 9px; }
+
+/* Section wrappers produced by the parsers */
+.content-body .doc-section {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Plain-text section headings */
 .content-body .sec-heading {
   font-size: 9.5pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
   color: ${accent}; margin: 24px 0 10px; padding-bottom: 5px; border-bottom: 1.5px solid #e2e8f0;
+  break-after: avoid; page-break-after: avoid;
 }
-.content-body .sec-rule { border: none; border-top: 1px solid #e5e7eb; margin: 18px 0; }
-.content-body .ol { padding-left: 20px; margin: 8px 0 14px; }
-.content-body .ol li { margin-bottom: 5px; font-size: 10.5pt; }
-.content-body .confidential-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5pt; font-weight: 700; letter-spacing: 0.08em; color: #92400e; background: #fef3c7; border: 1px solid #fde68a; padding: 4px 12px; border-radius: 4px; margin-bottom: 14px; text-transform: uppercase; }
-.content-body .subject-line { font-size: 10.5pt; margin: 8px 0 16px; color: #0f172a; }
-.content-body .to-label { font-size: 10pt; color: #374151; margin-bottom: 3px; }
-.content-body .kv-row { display: flex; gap: 8px; margin-bottom: 7px; align-items: baseline; }
-.content-body .kv-label { font-weight: 700; font-size: 10pt; color: #374151; white-space: nowrap; }
-.content-body .kv-value { font-size: 10pt; color: #0f172a; }
-.content-body .sig-blank { width: 200px; border-bottom: 1.5px solid #374151; margin: 8px 0 4px; }
 
-/* Tiptap HTML output */
-.content-body h1 { font-size: 14pt; font-weight: 800; color: #0f172a; margin: 22px 0 10px; }
-.content-body h2 { font-size: 12pt; font-weight: 700; color: ${accent}; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1.5px solid #e2e8f0; }
-.content-body h3 { font-size: 10.5pt; font-weight: 700; color: ${secondary}; letter-spacing: 0.06em; text-transform: uppercase; margin: 16px 0 6px; }
-.content-body p { margin-bottom: 9px; }
+/* Tiptap headings */
+.content-body h1 { font-size: 14pt; font-weight: 800; color: #0f172a; margin: 22px 0 10px; break-after: avoid; page-break-after: avoid; }
+.content-body h2 { font-size: 12pt; font-weight: 700; color: ${accent}; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1.5px solid #e2e8f0; break-after: avoid; page-break-after: avoid; }
+.content-body h3 { font-size: 10.5pt; font-weight: 700; color: ${secondary}; letter-spacing: 0.06em; text-transform: uppercase; margin: 16px 0 6px; break-after: avoid; page-break-after: avoid; }
+
+/* Body elements */
+.content-body p, .content-body .body-p { margin-bottom: 9px; orphans: 3; widows: 3; }
 .content-body strong { font-weight: 700; color: #0f172a; }
-.content-body em { font-style: italic; }
-.content-body u { text-decoration: underline; }
-.content-body ul { padding-left: 20px; margin: 8px 0 14px; list-style-type: disc; }
-.content-body ol { padding-left: 20px; margin: 8px 0 14px; list-style-type: decimal; }
-.content-body ul li, .content-body ol li { margin-bottom: 5px; font-size: 10.5pt; }
+.content-body em     { font-style: italic; }
+.content-body u      { text-decoration: underline; }
+
+/* Lists */
+.content-body .ol,
+.content-body ul,
+.content-body ol { padding-left: 20px; margin: 8px 0 14px; break-inside: avoid; page-break-inside: avoid; }
+.content-body .ol { list-style-type: disc; }
+.content-body ul   { list-style-type: disc; }
+.content-body ol   { list-style-type: decimal; }
+.content-body .ol li, .content-body ul li, .content-body ol li { margin-bottom: 5px; font-size: 10.5pt; break-inside: avoid; page-break-inside: avoid; }
+
+/* Horizontal rule */
+.content-body .sec-rule,
 .content-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 18px 0; }
-.content-body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 10pt; }
+
+/* Tables */
+.content-body table    { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 10pt; break-inside: avoid; page-break-inside: avoid; }
 .content-body table th { background: ${accent}15; color: #0f172a; font-weight: 700; padding: 7px 10px; border: 1px solid #d1d5db; text-align: left; }
 .content-body table td { padding: 6px 10px; border: 1px solid #e5e7eb; }
 .content-body table tr:nth-child(even) td { background: #f8fafc; }
 
-.signatory-section { margin-top: 36px; padding-top: 28px; border-top: 2px solid #e2e8f0; page-break-inside: avoid; }
+/* Misc */
+.content-body .confidential-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5pt; font-weight: 700; letter-spacing: 0.08em; color: #92400e; background: #fef3c7; border: 1px solid #fde68a; padding: 4px 12px; border-radius: 4px; margin-bottom: 14px; text-transform: uppercase; }
+.content-body .subject-line       { font-size: 10.5pt; margin: 8px 0 16px; color: #0f172a; }
+.content-body .to-label           { font-size: 10pt; color: #374151; margin-bottom: 3px; }
+.content-body .kv-row   { display: flex; gap: 8px; margin-bottom: 7px; align-items: baseline; break-inside: avoid; page-break-inside: avoid; }
+.content-body .kv-label { font-weight: 700; font-size: 10pt; color: #374151; white-space: nowrap; }
+.content-body .kv-value { font-size: 10pt; color: #0f172a; }
+.content-body .sig-blank { width: 200px; border-bottom: 1.5px solid #374151; margin: 8px 0 4px; }
+
+/* ─── Signatory section ──────────────────────────────────── */
+.signatory-section { margin-top: 36px; padding-top: 28px; border-top: 2px solid #e2e8f0; break-inside: avoid; page-break-inside: avoid; }
 .signatory-section-heading { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 20px; }
 .signatory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
-.sig-for { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.1em; color: #9ca3af; font-weight: 700; margin-bottom: 10px; }
+.sig-for   { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.1em; color: #9ca3af; font-weight: 700; margin-bottom: 10px; }
 .sig-image-row { display: flex; align-items: flex-end; gap: 10px; height: 64px; margin-bottom: 6px; }
 .sig-image { max-height: 56px; max-width: 110px; object-fit: contain; }
 .sig-stamp { max-height: 52px; max-width: 52px; object-fit: contain; opacity: 0.85; }
-.sig-line { width: 220px; border-bottom: 1.5px solid #374151; margin-bottom: 8px; }
-.sig-name { font-size: 10.5pt; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+.sig-line  { width: 220px; border-bottom: 1.5px solid #374151; margin-bottom: 8px; }
+.sig-name  { font-size: 10.5pt; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
 .sig-designation { font-size: 9pt; color: #6b7280; margin-bottom: 2px; }
-.sig-company { font-size: 8.5pt; font-weight: 700; color: ${accent}; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
+.sig-company     { font-size: 8.5pt; font-weight: 700; color: ${accent}; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
 .acceptance-date-field { margin-top: 14px; font-size: 9pt; color: #374151; }
 
-.doc-footer { margin-top: auto; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 10px 48px; display: flex; align-items: center; justify-content: space-between; font-size: 7.5pt; color: #9ca3af; letter-spacing: 0.03em; }
+/* ─── Footer ─────────────────────────────────────────────── */
+.doc-footer    { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 10px 48px; display: flex; align-items: center; justify-content: space-between; font-size: 7.5pt; color: #9ca3af; letter-spacing: 0.03em; }
 .footer-company { font-weight: 700; color: #64748b; }
-.accent-bar-bottom { height: 5px; background: ${accent}; }
 
+/* ─── Print FAB ──────────────────────────────────────────── */
 .print-fab {
   position: fixed; bottom: 28px; right: 28px;
   background: ${accent}; color: #fff; border: none;
@@ -332,18 +401,49 @@ html, body {
 }
 .print-fab:hover { opacity: 0.9; }
 
+/* ─── Print / Chrome Save as PDF ────────────────────────── */
 @media print {
   @page { size: A4; margin: 0; }
+
   html, body { background: #fff; margin: 0; padding: 0; font-size: 10pt; }
+
   .page-shell { max-width: 100%; margin: 0; box-shadow: none; }
-  .print-fab { display: none !important; }
-  .doc { min-height: 100vh; }
-  .doc-body { padding: 24px 42px 32px; }
-  .doc-header { padding: 22px 42px 18px; }
-  .title-band { padding: 11px 42px; }
-  .doc-footer { position: fixed; bottom: 0; left: 0; right: 0; }
-  .accent-bar-bottom { position: fixed; bottom: 28px; left: 0; right: 0; }
-  .signatory-section { page-break-inside: avoid; }
+  .print-fab  { display: none !important; }
+
+  .doc-body   { padding: 20px 42px 24px; }
+  .doc-header { padding: 18px 42px 16px; }
+  .title-band { padding: 10px 42px; }
+
+  /* Static footer — position:fixed causes a blank gap at the bottom of every page */
+  .doc-footer        { position: static !important; margin-top: 32px; }
+  .accent-bar-bottom { position: static !important; }
+
+  /* Candidate block always intact */
+  .candidate-block   { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Section containers (produced by parser) */
+  .doc-section       { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Signatory always on same page */
+  .signatory-section { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Prevent any heading from sitting alone at a page bottom */
+  .sec-heading,
+  .content-body h1,
+  .content-body h2,
+  .content-body h3  { break-after: avoid !important; page-break-after: avoid !important; }
+
+  /* KV rows and list items must not split */
+  .kv-row { break-inside: avoid; page-break-inside: avoid; }
+  .content-body .ol,
+  .content-body ul,
+  .content-body ol  { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Tables must not split */
+  .content-body table { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Orphan / widow control for body paragraphs */
+  .body-p, .content-body p { orphans: 3; widows: 3; }
 }
 `}</style>
 
