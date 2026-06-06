@@ -40,6 +40,11 @@ interface PlatformSettings {
   businessName?: string
   logoUrl?: string
   tagline?: string
+  // Brand Studio → Authorized Signatory
+  signatoryName?: string
+  signatoryDesignation?: string
+  signatorySignUrl?: string    // Digital Signature (no stamp)
+  signatoryStampUrl?: string   // Signature with Stamp (preferred)
 }
 
 function escHtml(s: string): string {
@@ -251,7 +256,12 @@ export default function OfferLetterPrintPage() {
     : '—'
   const empType  = (letter.employmentType || '').replace(/_/g, ' ')
   const bodyHtml = parseContentToHtml(letter.content)
-  const isHtml   = letter.content.trimStart().startsWith('<')
+
+  // Signatory: Brand Studio (signatoryStampUrl > signatorySignUrl) takes precedence
+  // over HRMS Settings (signatureImage/stampImage) which are legacy/fallback fields.
+  const sigImageUrl = platform.signatoryStampUrl || platform.signatorySignUrl || hrms.signatureImage || null
+  const sigName     = platform.signatoryName     || hrms.authorizedSignatory     || 'Authorized Signatory'
+  const sigDesig    = platform.signatoryDesignation || hrms.authorizedSignatoryDesignation || ''
 
   return (
     <>
@@ -377,9 +387,8 @@ html, body {
 .signatory-section-heading { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 20px; }
 .signatory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
 .sig-for   { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.1em; color: #9ca3af; font-weight: 700; margin-bottom: 10px; }
-.sig-image-row { display: flex; align-items: flex-end; gap: 10px; height: 64px; margin-bottom: 6px; }
-.sig-image { max-height: 56px; max-width: 110px; object-fit: contain; }
-.sig-stamp { max-height: 52px; max-width: 52px; object-fit: contain; opacity: 0.85; }
+.sig-image-row { display: flex; align-items: flex-end; gap: 10px; height: 72px; margin-bottom: 6px; }
+.sig-image { max-height: 68px; max-width: 200px; object-fit: contain; }
 .sig-line  { width: 220px; border-bottom: 1.5px solid #374151; margin-bottom: 8px; }
 .sig-name  { font-size: 10.5pt; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
 .sig-designation { font-size: 9pt; color: #6b7280; margin-bottom: 2px; }
@@ -544,20 +553,19 @@ html, body {
 
                 <div className="sig-block">
                   <div className="sig-for">For {company}</div>
-                  <div className="sig-image-row">
-                    {hrms.signatureImage
-                      ? <img src={hrms.signatureImage} alt="Signature" className="sig-image" />
-                      : <div style={{ width: 220, borderBottom: '1.5px solid #374151' }} />
-                    }
-                    {hrms.stampImage && (
-                      <img src={hrms.stampImage} alt="Stamp" className="sig-stamp" />
-                    )}
-                  </div>
-                  {hrms.signatureImage && <div className="sig-line" />}
-                  <div className="sig-name">{hrms.authorizedSignatory || 'Authorized Signatory'}</div>
-                  {hrms.authorizedSignatoryDesignation && (
-                    <div className="sig-designation">{hrms.authorizedSignatoryDesignation}</div>
-                  )}
+                  {sigImageUrl
+                    ? (
+                      <>
+                        <div className="sig-image-row">
+                          <img src={sigImageUrl} alt="Authorized Signatory" className="sig-image" />
+                        </div>
+                        <div className="sig-line" />
+                      </>
+                    )
+                    : <div className="sig-line" style={{ marginTop: 52, marginBottom: 8 }} />
+                  }
+                  <div className="sig-name">{sigName}</div>
+                  {sigDesig && <div className="sig-designation">{sigDesig}</div>}
                   <div className="sig-company">{company}</div>
                 </div>
 
