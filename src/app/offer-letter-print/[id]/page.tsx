@@ -71,6 +71,67 @@ function groupHtmlSections(html: string): string {
   }).join('\n')
 }
 
+interface ContentSplit {
+  main: string
+  annexure: string | null
+  annexureId: string
+  annexureSubtitle: string
+}
+
+function splitAtAnnexure(content: string): ContentSplit {
+  const isHtml = content.trimStart().startsWith('<')
+
+  if (isHtml) {
+    const match = /<h[1-6][^>]*>(.*?ANNEXURE.*?)<\/h[1-6]>/i.exec(content)
+    if (!match) return { main: content, annexure: null, annexureId: 'A', annexureSubtitle: '' }
+
+    const headingText = match[1].replace(/<[^>]+>/g, '').trim()
+    const lm = headingText.match(/ANNEXURE\s+([A-Z])/i)
+    const annexureId = lm?.[1]?.toUpperCase() || 'A'
+    const main = content.slice(0, match.index)
+    let rest = content.slice(match.index + match[0].length).trim()
+
+    let annexureSubtitle = ''
+    const subtitleMatch = /^<h[1-6][^>]*>(.*?)<\/h[1-6]>/i.exec(rest)
+    if (subtitleMatch) {
+      annexureSubtitle = subtitleMatch[1].replace(/<[^>]+>/g, '').trim()
+      rest = rest.slice(subtitleMatch[0].length).trim()
+    }
+
+    return { main, annexure: rest || null, annexureId, annexureSubtitle }
+  }
+
+  // Plain text
+  const lines = content.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const u = lines[i].trim().toUpperCase()
+    if (/^ANNEXURE\s*[A-Z]?$/.test(u)) {
+      const lm = lines[i].trim().match(/ANNEXURE\s+([A-Z])/i)
+      const annexureId = lm?.[1]?.toUpperCase() || 'A'
+      const main = lines.slice(0, i).join('\n')
+      const rest = lines.slice(i + 1)
+      let annexureSubtitle = ''
+      let bodyStart = 0
+      for (let j = 0; j < Math.min(3, rest.length); j++) {
+        const l = rest[j].trim()
+        if (l && l !== '---' && l.length < 80) {
+          annexureSubtitle = l
+          bodyStart = j + 1
+          break
+        }
+      }
+      return {
+        main,
+        annexure: rest.slice(bodyStart).join('\n').trim() || null,
+        annexureId,
+        annexureSubtitle,
+      }
+    }
+  }
+
+  return { main: content, annexure: null, annexureId: 'A', annexureSubtitle: '' }
+}
+
 function parseContentToHtml(content: string): string {
   if (!content) return ''
   if (content.trimStart().startsWith('<')) return groupHtmlSections(content)
@@ -258,7 +319,9 @@ export default function OfferLetterPrintPage() {
     ? new Date(letter.joiningDate).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
     : '—'
   const empType  = (letter.employmentType || '').replace(/_/g, ' ')
-  const bodyHtml = parseContentToHtml(letter.content)
+  const split       = splitAtAnnexure(letter.content)
+  const bodyHtml    = parseContentToHtml(split.main)
+  const annexureHtml = split.annexure ? parseContentToHtml(split.annexure) : null
 
   // Signature priority: Stamp → Digital → HRMS stamp → HRMS signature → none
   const sigImageUrl = platform.signatoryStampUrl || platform.signatorySignUrl || hrms.stampImage || hrms.signatureImage || null
@@ -612,6 +675,24 @@ html, body {
 .footer-addr { color: #6b7280; }
 .footer-contact { color: #9ca3af; }
 
+/* ─── Annexure section (screen gap) ──────────────────────── */
+.annexure-shell { margin-top: 28px; }
+
+/* Annexure title band extras */
+.annexure-subtitle {
+  font-size: 8.5pt;
+  color: rgba(255,255,255,0.82);
+  letter-spacing: 0.06em;
+  margin-top: 3px;
+}
+.annexure-ref {
+  font-size: 6.5pt;
+  color: rgba(255,255,255,0.58);
+  font-style: italic;
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
 /* ─── Print FAB (screen only) ────────────────────────────── */
 .print-fab {
   position: fixed; bottom: 24px; right: 24px;
@@ -682,6 +763,9 @@ html, body {
 
   /* Watermark in PDF */
   .doc-watermark { position: absolute; }
+
+  /* Annexure — force onto a new page, remove screen gap */
+  .annexure-shell { break-before: page; page-break-before: always; margin-top: 0; }
 }
 `}</style>
 
@@ -835,6 +919,57 @@ html, body {
           <div className="accent-bar-bottom" />
         </div>
       </div>
+
+      {/* Annexure — separate document identity, starts on new page */}
+      {annexureHtml && (
+        <div className="page-shell annexure-shell">
+          <div className="doc">
+
+            {watermarkUrl && (
+              <div className="doc-watermark">
+                <img src={watermarkUrl} alt="" aria-hidden />
+              </div>
+            )}
+
+            <div className="accent-bar-top" />
+
+            {/* Header: same logo, ref appended with Annexure label */}
+            <header className="doc-header">
+              <div>
+                {logoUrl
+                  ? <img src={logoUrl} alt={company} className="brand-logo" />
+                  : <div className="brand-name-text">{company}</div>
+                }
+              </div>
+              <div className="doc-meta">
+                <div className="doc-ref">{refNum} — Annexure {split.annexureId}</div>
+                <div>Date: {dateStr}</div>
+              </div>
+            </header>
+
+            {/* Annexure title band — distinct from "OFFER LETTER" */}
+            <div className="title-band">
+              <div className="doc-title">Annexure {split.annexureId}</div>
+              {split.annexureSubtitle && (
+                <div className="annexure-subtitle">{split.annexureSubtitle}</div>
+              )}
+              <div className="annexure-ref">Ref: {refNum}</div>
+            </div>
+
+            <main className="doc-body">
+              <div className="content-body" dangerouslySetInnerHTML={{ __html: annexureHtml }} />
+            </main>
+
+            <footer className="doc-footer">
+              <div className="footer-co">{company}</div>
+              {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
+              {footerContact  && <div className="footer-contact">{footerContact}</div>}
+            </footer>
+
+            <div className="accent-bar-bottom" />
+          </div>
+        </div>
+      )}
     </>
   )
 }
