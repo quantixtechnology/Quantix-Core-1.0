@@ -247,7 +247,6 @@ export default function OfferLetterPrintPage() {
     // auth-provider.tsx and kills the main app session across all open tabs.
     const opts = { silentFailure: true } as const
 
-    // Parse JSON defensively — on auth/server error just return a failed shape
     const safeJson = (res: Response) =>
       res.ok
         ? res.json().catch(() => ({ success: false }))
@@ -259,11 +258,9 @@ export default function OfferLetterPrintPage() {
       authFetch('/api/admin/platform-settings', opts),
     ])
       .then(([lr, hr, pr]) => {
-        // Offer letter is the critical resource — auth failure here is a real error
         if (lr.status === 401 || lr.status === 403) {
           throw new Error('Session expired or access denied. Please sign in and try again.')
         }
-        // Settings are supplementary — fall back to {} on any failure
         return Promise.all([lr.json(), safeJson(hr), safeJson(pr)])
       })
       .then(([lj, hj, pj]) => {
@@ -296,37 +293,42 @@ export default function OfferLetterPrintPage() {
     </div>
   )
 
-  // Branding — HRMS Settings → Brand Studio HRMS zone → Brand Studio global
+  // Branding: HRMS Settings → Brand Studio HRMS zone → Brand Studio global
   const accent    = hrms.primaryColor   || platform.hrmsAccentColor || platform.primaryColor  || '#1E3A8A'
   const secondary = hrms.secondaryColor || platform.secondaryColor  || '#475569'
 
-  // Logo: Primary → Compact → HRMS → text fallback
   const logoUrl      = platform.logoUrl || platform.compactLogoUrl || hrms.logo || null
   const watermarkUrl = platform.watermarkUrl || null
 
-  // Identity
   const company = hrms.companyName || platform.companyName || 'Quantix Technology'
 
-  // Footer — 3-line format: Company Name / Address / Phone | Email | Website
+  // Footer: Company Name / Address / Phone | Email | Website
   const footerAddress = (hrms.registeredAddress || '').replace(/\n+/g, ', ').trim()
   const footerContact = [hrms.companyPhone, hrms.companyEmail, hrms.website || platform.companyWebsite]
     .filter(Boolean).join(' | ')
 
-  // Document fields
   const refNum  = letter.offerRef || `QT/HR/${new Date(letter.createdAt).getFullYear()}/${letter.id.slice(-6).toUpperCase()}`
   const dateStr = new Date(letter.createdAt).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
   const joinStr = letter.joiningDate
     ? new Date(letter.joiningDate).toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
     : '—'
-  const empType  = (letter.employmentType || '').replace(/_/g, ' ')
+  const empType     = (letter.employmentType || '').replace(/_/g, ' ')
   const split       = splitAtAnnexure(letter.content)
   const bodyHtml    = parseContentToHtml(split.main)
   const annexureHtml = split.annexure ? parseContentToHtml(split.annexure) : null
 
-  // Signature priority: Stamp → Digital → HRMS stamp → HRMS signature → none
   const sigImageUrl = platform.signatoryStampUrl || platform.signatorySignUrl || hrms.stampImage || hrms.signatureImage || null
   const sigName     = platform.signatoryName        || hrms.authorizedSignatory            || 'Authorized Signatory'
   const sigDesig    = platform.signatoryDesignation || hrms.authorizedSignatoryDesignation || ''
+
+  // Shared footer JSX — rendered once in screen-footer per section, once in print-fixed-footer
+  const footerContent = (
+    <>
+      <div className="footer-co">{company}</div>
+      {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
+      {footerContact  && <div className="footer-contact">{footerContact}</div>}
+    </>
+  )
 
   return (
     <>
@@ -390,186 +392,98 @@ html, body {
   gap: 16px;
   border-bottom: 2px solid ${accent};
 }
-
-/* Logo: never upscaled, maintains ratio, sharp in PDF */
 .brand-logo {
-  width: auto;
-  max-width: 210px;
-  min-width: 140px;
-  height: auto;
-  max-height: 54px;
-  object-fit: contain;
-  display: block;
-  image-rendering: auto;
+  width: auto; max-width: 210px; min-width: 140px;
+  height: auto; max-height: 54px;
+  object-fit: contain; display: block; image-rendering: auto;
 }
-
-/* Text fallback when no logo */
 .brand-name-text {
-  font-size: 13pt;
-  font-weight: 800;
-  color: #0f172a;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 13pt; font-weight: 800; color: #0f172a;
+  letter-spacing: 0.04em; text-transform: uppercase;
 }
-
 .doc-meta {
-  text-align: right;
-  font-size: 8pt;
-  color: #374151;
-  line-height: 1.7;
-  flex-shrink: 0;
+  text-align: right; font-size: 8pt; color: #374151; line-height: 1.7; flex-shrink: 0;
 }
 .doc-ref {
-  font-family: 'Courier New', monospace;
-  font-size: 7.5pt;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  padding: 2px 7px;
-  border-radius: 3px;
-  display: inline-block;
-  margin-bottom: 3px;
-  letter-spacing: 0.06em;
+  font-family: 'Courier New', monospace; font-size: 7.5pt;
+  background: #f3f4f6; border: 1px solid #e5e7eb;
+  padding: 2px 7px; border-radius: 3px; display: inline-block;
+  margin-bottom: 3px; letter-spacing: 0.06em;
 }
 
 /* ─── Title band ─────────────────────────────────────────── */
 .title-band { background: ${accent}; padding: 8px 40px; }
 .doc-title  {
-  font-size: 11pt;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-size: 11pt; font-weight: 700; color: #fff;
+  letter-spacing: 0.18em; text-transform: uppercase;
 }
 
 /* ─── Body ───────────────────────────────────────────────── */
 .doc-body { flex: 1; padding: 16px 40px 20px; }
 
-/* ─── Candidate card (compact) ───────────────────────────── */
+/* ─── Candidate card ─────────────────────────────────────── */
 .cand-card {
-  border-left: 4px solid ${accent};
-  background: #f8fafc;
-  padding: 9px 14px;
-  margin-bottom: 14px;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  border-left: 4px solid ${accent}; background: #f8fafc;
+  padding: 9px 14px; margin-bottom: 14px;
+  break-inside: avoid; page-break-inside: avoid;
 }
-
 .cand-identity {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  flex-wrap: wrap;
-  padding-bottom: 7px;
-  margin-bottom: 7px;
-  border-bottom: 1px solid #e2e8f0;
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+  padding-bottom: 7px; margin-bottom: 7px; border-bottom: 1px solid #e2e8f0;
 }
 .cand-name    { font-size: 11pt; font-weight: 700; color: #0f172a; }
 .cand-dot     { color: #cbd5e1; font-size: 9pt; }
 .cand-contact { font-size: 8pt; color: #475569; }
-
 .cand-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 20px;
-  row-gap: 4px;
+  display: grid; grid-template-columns: 1fr 1fr;
+  column-gap: 20px; row-gap: 4px;
 }
 .cand-field { display: flex; gap: 5px; align-items: baseline; }
 .cfl {
-  font-size: 6pt;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: #94a3b8;
-  font-weight: 700;
-  white-space: nowrap;
-  flex-shrink: 0;
-  min-width: 72px;
+  font-size: 6pt; text-transform: uppercase; letter-spacing: 0.09em;
+  color: #94a3b8; font-weight: 700; white-space: nowrap; flex-shrink: 0; min-width: 72px;
 }
 .cfv { font-size: 8pt; color: #0f172a; font-weight: 600; }
 
 /* ─── Content body ───────────────────────────────────────── */
-.content-body {
-  font-size: 9.5pt;
-  line-height: 1.4;
-  color: #1e293b;
-}
-
-/* Section containers — keep heading + content together */
-.content-body .doc-section {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-/* Plain-text ALL-CAPS section headings */
+.content-body { font-size: 9.5pt; line-height: 1.4; color: #1e293b; }
+.content-body .doc-section { break-inside: avoid; page-break-inside: avoid; }
 .content-body .sec-heading {
-  font-size: 8.5pt;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: ${accent};
-  margin: 12px 0 5px;
-  padding-bottom: 4px;
-  border-bottom: 1.5px solid #e2e8f0;
-  break-after: avoid;
-  page-break-after: avoid;
+  font-size: 8.5pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: ${accent}; margin: 12px 0 5px; padding-bottom: 4px; border-bottom: 1.5px solid #e2e8f0;
+  break-after: avoid; page-break-after: avoid;
 }
-
-/* Tiptap headings */
 .content-body h1 {
-  font-size: 12pt; font-weight: 700; color: #0f172a;
-  margin: 14px 0 6px;
+  font-size: 12pt; font-weight: 700; color: #0f172a; margin: 14px 0 6px;
   break-after: avoid; page-break-after: avoid;
 }
 .content-body h2 {
-  font-size: 10pt; font-weight: 600; color: ${accent};
-  margin: 11px 0 5px; padding-bottom: 3px; border-bottom: 1px solid #e2e8f0;
+  font-size: 10pt; font-weight: 600; color: ${accent}; margin: 11px 0 5px;
+  padding-bottom: 3px; border-bottom: 1px solid #e2e8f0;
   break-after: avoid; page-break-after: avoid;
 }
 .content-body h3 {
-  font-size: 9pt; font-weight: 600; color: ${secondary};
-  letter-spacing: 0.06em; text-transform: uppercase;
-  margin: 9px 0 4px;
+  font-size: 9pt; font-weight: 600; color: ${secondary}; letter-spacing: 0.06em;
+  text-transform: uppercase; margin: 9px 0 4px;
   break-after: avoid; page-break-after: avoid;
 }
-
-/* Paragraphs */
-.content-body p, .content-body .body-p {
-  margin-bottom: 5px;
-  orphans: 3; widows: 3;
-}
-
-/* Inline */
+.content-body p, .content-body .body-p { margin-bottom: 5px; orphans: 3; widows: 3; }
 .content-body strong { font-weight: 700; color: #0f172a; }
 .content-body em     { font-style: italic; }
 .content-body u      { text-decoration: underline; }
-
-/* Lists */
-.content-body .ol,
-.content-body ul,
-.content-body ol {
-  padding-left: 18px;
-  margin: 4px 0 8px;
+.content-body .ol, .content-body ul, .content-body ol {
+  padding-left: 18px; margin: 4px 0 8px;
   break-inside: avoid; page-break-inside: avoid;
 }
-.content-body .ol      { list-style-type: disc; }
-.content-body ul       { list-style-type: disc; }
-.content-body ol       { list-style-type: decimal; }
-.content-body .ol li,
-.content-body ul li,
-.content-body ol li {
-  margin-bottom: 2px;
-  font-size: 9.5pt;
-  break-inside: avoid; page-break-inside: avoid;
+.content-body .ol     { list-style-type: disc; }
+.content-body ul      { list-style-type: disc; }
+.content-body ol      { list-style-type: decimal; }
+.content-body .ol li, .content-body ul li, .content-body ol li {
+  margin-bottom: 2px; font-size: 9.5pt; break-inside: avoid; page-break-inside: avoid;
 }
-
-/* Dividers */
-.content-body .sec-rule,
-.content-body hr {
-  border: none;
-  border-top: 1px solid #e5e7eb;
-  margin: 8px 0;
+.content-body .sec-rule, .content-body hr {
+  border: none; border-top: 1px solid #e5e7eb; margin: 8px 0;
 }
-
-/* Tables */
 .content-body table {
   border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.5pt;
   break-inside: avoid; page-break-inside: avoid;
@@ -578,22 +492,16 @@ html, body {
   background: ${accent}18; color: #0f172a; font-weight: 700;
   padding: 5px 8px; border: 1px solid #d1d5db; text-align: left;
 }
-.content-body table td {
-  padding: 4px 8px; border: 1px solid #e5e7eb;
-}
+.content-body table td { padding: 4px 8px; border: 1px solid #e5e7eb; }
 .content-body table tr:nth-child(even) td { background: #f8fafc; }
-
-/* Misc inline */
 .content-body .conf-badge {
-  display: inline-block;
-  font-size: 7pt; font-weight: 700; letter-spacing: 0.1em;
+  display: inline-block; font-size: 7pt; font-weight: 700; letter-spacing: 0.1em;
   color: #92400e; background: #fef3c7; border: 1px solid #fde68a;
-  padding: 3px 10px; border-radius: 3px; margin-bottom: 10px;
-  text-transform: uppercase;
+  padding: 3px 10px; border-radius: 3px; margin-bottom: 10px; text-transform: uppercase;
 }
 .content-body .subject-line { font-size: 9.5pt; margin: 6px 0 10px; }
 .content-body .to-label     { font-size: 9pt; color: #374151; margin-bottom: 2px; }
-.content-body .kv-row   {
+.content-body .kv-row {
   display: flex; gap: 6px; margin-bottom: 4px; align-items: baseline;
   break-inside: avoid; page-break-inside: avoid;
 }
@@ -601,11 +509,9 @@ html, body {
 .content-body .kv-value { font-size: 9pt; color: #0f172a; }
 .content-body .sig-blank { width: 180px; border-bottom: 1.5px solid #374151; margin: 6px 0 3px; }
 
-/* ─── Signatory section ──────────────────────────────────── */
+/* ─── Signatory ──────────────────────────────────────────── */
 .signatory-section {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1.5px solid #e2e8f0;
+  margin-top: 18px; padding-top: 14px; border-top: 1.5px solid #e2e8f0;
   break-inside: avoid; page-break-inside: avoid;
 }
 .signatory-label {
@@ -613,49 +519,18 @@ html, body {
   letter-spacing: 0.14em; color: #94a3b8; margin-bottom: 16px;
 }
 .signatory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-.sig-block { display: flex; flex-direction: column; }
-
-/* "FOR QUANTIX TECHNOLOGY" label */
+.sig-block      { display: flex; flex-direction: column; }
 .sig-for {
-  font-size: 6pt; text-transform: uppercase;
-  letter-spacing: 0.12em; color: #9ca3af; font-weight: 700; margin-bottom: 12px;
+  font-size: 6pt; text-transform: uppercase; letter-spacing: 0.12em;
+  color: #9ca3af; font-weight: 700; margin-bottom: 12px;
 }
-
-/* Signature image — full resolution, prominently sized */
-.sig-img-wrap {
-  display: flex;
-  align-items: flex-end;
-  min-height: 90px;
-  margin-bottom: 0;
-  padding-bottom: 6px;
-}
+.sig-img-wrap  { display: flex; align-items: flex-end; min-height: 90px; padding-bottom: 6px; }
 .sig-img-wrap img {
-  max-height: 120px;
-  width: auto;
-  max-width: 260px;
-  object-fit: contain;
-  display: block;
-  image-rendering: high-quality;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  max-height: 120px; width: auto; max-width: 260px; object-fit: contain; display: block;
+  image-rendering: high-quality; -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-
-/* Horizontal rule beneath signature image */
-.sig-line {
-  width: 240px;
-  border: none;
-  border-top: 1.5px solid #374151;
-  margin: 0 0 8px;
-}
-
-/* Blank placeholder when no signature uploaded */
-.sig-line-blank {
-  width: 240px;
-  border: none;
-  border-top: 1.5px solid #374151;
-  margin: 80px 0 8px;
-}
-
+.sig-line       { width: 240px; border: none; border-top: 1.5px solid #374151; margin: 0 0 8px; }
+.sig-line-blank { width: 240px; border: none; border-top: 1.5px solid #374151; margin: 80px 0 8px; }
 .sig-name  { font-size: 10pt; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
 .sig-desig { font-size: 8.5pt; color: #374151; margin-bottom: 3px; }
 .sig-auth  {
@@ -664,33 +539,30 @@ html, body {
 }
 .sig-date  { margin-top: 12px; font-size: 8pt; color: #374151; }
 
-/* ─── Footer ─────────────────────────────────────────────── */
+/* ─── Footer (shared styles) ─────────────────────────────── */
 .doc-footer {
   background: #f8fafc; border-top: 1px solid #e2e8f0;
   padding: 7px 40px;
   font-size: 7pt; color: #9ca3af; letter-spacing: 0.03em;
   text-align: center; line-height: 1.5;
 }
-.footer-co   { font-weight: 700; color: #64748b; font-size: 7.5pt; }
-.footer-addr { color: #6b7280; }
+.footer-co      { font-weight: 700; color: #64748b; font-size: 7.5pt; }
+.footer-addr    { color: #6b7280; }
 .footer-contact { color: #9ca3af; }
+
+/* ─── Screen-only: footer sits in flex flow inside each .doc ─ */
+.print-fixed-footer { display: none; }
+.print-footer-spacer { display: none; }
 
 /* ─── Annexure section (screen gap) ──────────────────────── */
 .annexure-shell { margin-top: 28px; }
-
-/* Annexure title band extras */
 .annexure-subtitle {
-  font-size: 8.5pt;
-  color: rgba(255,255,255,0.82);
-  letter-spacing: 0.06em;
-  margin-top: 3px;
+  font-size: 8.5pt; color: rgba(255,255,255,0.82);
+  letter-spacing: 0.06em; margin-top: 3px;
 }
 .annexure-ref {
-  font-size: 6.5pt;
-  color: rgba(255,255,255,0.58);
-  font-style: italic;
-  margin-top: 2px;
-  letter-spacing: 0.02em;
+  font-size: 6.5pt; color: rgba(255,255,255,0.58);
+  font-style: italic; margin-top: 2px; letter-spacing: 0.02em;
 }
 
 /* ─── Print FAB (screen only) ────────────────────────────── */
@@ -706,68 +578,104 @@ html, body {
 
 /* ─── Print / Chrome Save as PDF ────────────────────────── */
 @media print {
+  /*
+   * @page margin: 0 removes the browser URL, date, and page number
+   * from the printed output. In Chrome, the user must also uncheck
+   * "Headers and footers" in the print dialog for this to take full
+   * effect. Server-side Puppeteer rendering (preferred) bypasses
+   * this limitation entirely.
+   */
   @page { size: A4; margin: 0; }
 
-  html, body { background: #fff; font-size: 9.5pt; }
+  html, body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 9.5pt;
+  }
 
   .page-shell { max-width: 100%; margin: 0; box-shadow: none; }
 
-  /* Hide all screen-only UI */
+  /* Hide print FAB */
   .print-fab { display: none !important; }
+
+  /*
+   * Fixed footer: appears at the bottom of EVERY page.
+   * Shows company name / registered address / phone | email | website.
+   * One instance covers both the offer letter and annexure sections.
+   */
+  .print-fixed-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 999;
+  }
+
+  /*
+   * Spacer inside each .doc that reserves the same height as the
+   * fixed footer, preventing body content from flowing underneath it.
+   */
+  .print-footer-spacer {
+    display: block;
+    height: 62px; /* doc-footer (~54px) + accent-bar-bottom (4px) + buffer (4px) */
+  }
+
+  /* Hide in-flow screen footers — the fixed footer replaces them */
+  .screen-footer { display: none !important; }
 
   /* Tighter padding for A4 */
   .doc-header { padding: 11px 36px 10px; }
   .title-band { padding: 7px 36px; }
   .doc-body   { padding: 12px 36px 16px; }
-  .doc-footer { padding: 6px 36px; position: static !important; }
-  .accent-bar-bottom { position: static !important; }
+
+  /* Print footer padding */
+  .print-fixed-footer .doc-footer { padding: 6px 36px; }
 
   /* Logo sharp in PDF */
   .brand-logo { max-width: 210px; min-width: 140px; height: auto; image-rendering: auto; }
 
-  /* Candidate card */
-  .cand-card { break-inside: avoid; page-break-inside: avoid; }
-
-  /* Section containers — never break inside */
+  .cand-card   { break-inside: avoid; page-break-inside: avoid; }
   .doc-section { break-inside: avoid; page-break-inside: avoid; }
-
-  /* Signatory — always on the same page */
   .signatory-section { break-inside: avoid; page-break-inside: avoid; }
 
-  /* Signature image — full resolution in PDF, no downscaling */
   .sig-img-wrap img {
-    max-height: 120px;
-    width: auto;
-    max-width: 260px;
-    object-fit: contain;
-    image-rendering: high-quality;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    max-height: 120px; width: auto; max-width: 260px; object-fit: contain;
+    image-rendering: high-quality; -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
 
-  /* Headings must never be orphaned */
   .sec-heading,
   .content-body h1,
   .content-body h2,
   .content-body h3 { break-after: avoid !important; page-break-after: avoid !important; }
 
-  /* Fine elements */
   .kv-row { break-inside: avoid; page-break-inside: avoid; }
   .content-body .ol,
   .content-body ul,
   .content-body ol { break-inside: avoid; page-break-inside: avoid; }
   .content-body table { break-inside: avoid; page-break-inside: avoid; }
 
-  /* Orphan / widow control */
   .body-p, .content-body p { orphans: 3; widows: 3; }
 
-  /* Watermark in PDF */
   .doc-watermark { position: absolute; }
 
-  /* Annexure — force onto a new page, remove screen gap */
+  /* Annexure: new page, no screen gap */
   .annexure-shell { break-before: page; page-break-before: always; margin-top: 0; }
 }
 `}</style>
+
+      {/*
+        Print-only fixed footer — position: fixed in @media print
+        so it appears at the bottom of every A4 page.
+        Covers both the offer letter pages and the annexure pages.
+        Hidden on screen (display: none in screen CSS above).
+      */}
+      <div className="print-fixed-footer">
+        <footer className="doc-footer">
+          {footerContent}
+        </footer>
+        <div className="accent-bar-bottom" />
+      </div>
 
       {/* Print / Save as PDF button — hidden in print */}
       <button className="print-fab" onClick={() => window.print()}>
@@ -779,10 +687,10 @@ html, body {
         Print / Save as PDF
       </button>
 
+      {/* ── Offer Letter section ──────────────────────────────────── */}
       <div className="page-shell">
         <div className="doc">
 
-          {/* Watermark — 6% opacity, does not affect readability */}
           {watermarkUrl && (
             <div className="doc-watermark">
               <img src={watermarkUrl} alt="" aria-hidden />
@@ -791,7 +699,6 @@ html, body {
 
           <div className="accent-bar-top" />
 
-          {/* Header: Logo left | Ref + Date right */}
           <header className="doc-header">
             <div>
               {logoUrl
@@ -805,14 +712,12 @@ html, body {
             </div>
           </header>
 
-          {/* Title band — no badge */}
           <div className="title-band">
             <span className="doc-title">Offer Letter</span>
           </div>
 
           <main className="doc-body">
 
-            {/* Candidate information — compact 2-col grid */}
             <div className="cand-card">
               <div className="cand-identity">
                 <span className="cand-name">{letter.candidateName}</span>
@@ -861,7 +766,6 @@ html, body {
               </div>
             </div>
 
-            {/* Letter body */}
             {bodyHtml
               ? <div className="content-body" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
               : (
@@ -874,7 +778,6 @@ html, body {
               )
             }
 
-            {/* Signature block */}
             <div className="signatory-section">
               <div className="signatory-label">Signatures</div>
               <div className="signatory-grid">
@@ -883,11 +786,7 @@ html, body {
                   <div className="sig-for">For {company}</div>
                   {sigImageUrl ? (
                     <div className="sig-img-wrap">
-                      <img
-                        src={sigImageUrl}
-                        alt="Authorized Signatory"
-                        crossOrigin="anonymous"
-                      />
+                      <img src={sigImageUrl} alt="Authorized Signatory" crossOrigin="anonymous" />
                     </div>
                   ) : null}
                   <div className="sig-line" style={!sigImageUrl ? { marginTop: 80 } : undefined} />
@@ -909,18 +808,19 @@ html, body {
 
           </main>
 
-          {/* Footer: 3 lines — Company Name / Address / Phone | Email | Website */}
-          <footer className="doc-footer">
-            <div className="footer-co">{company}</div>
-            {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
-            {footerContact  && <div className="footer-contact">{footerContact}</div>}
-          </footer>
+          {/* Reserves space equal to the fixed footer height — print only */}
+          <div className="print-footer-spacer" />
 
-          <div className="accent-bar-bottom" />
+          {/* Screen-only footer — hidden in print (the fixed footer takes over) */}
+          <div className="screen-footer">
+            <footer className="doc-footer">{footerContent}</footer>
+            <div className="accent-bar-bottom" />
+          </div>
+
         </div>
       </div>
 
-      {/* Annexure — separate document identity, starts on new page */}
+      {/* ── Annexure section — new page in print ─────────────────── */}
       {annexureHtml && (
         <div className="page-shell annexure-shell">
           <div className="doc">
@@ -933,7 +833,6 @@ html, body {
 
             <div className="accent-bar-top" />
 
-            {/* Header: same logo, ref appended with Annexure label */}
             <header className="doc-header">
               <div>
                 {logoUrl
@@ -947,7 +846,6 @@ html, body {
               </div>
             </header>
 
-            {/* Annexure title band — distinct from "OFFER LETTER" */}
             <div className="title-band">
               <div className="doc-title">Annexure {split.annexureId}</div>
               {split.annexureSubtitle && (
@@ -960,13 +858,13 @@ html, body {
               <div className="content-body" dangerouslySetInnerHTML={{ __html: annexureHtml }} />
             </main>
 
-            <footer className="doc-footer">
-              <div className="footer-co">{company}</div>
-              {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
-              {footerContact  && <div className="footer-contact">{footerContact}</div>}
-            </footer>
+            <div className="print-footer-spacer" />
 
-            <div className="accent-bar-bottom" />
+            <div className="screen-footer">
+              <footer className="doc-footer">{footerContent}</footer>
+              <div className="accent-bar-bottom" />
+            </div>
+
           </div>
         </div>
       )}

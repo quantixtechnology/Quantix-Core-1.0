@@ -155,6 +155,20 @@ export default function AnnexurePrintPage() {
   const sigName     = platform.signatoryName        || hrms.authorizedSignatory            || 'Authorized Signatory'
   const sigDesig    = platform.signatoryDesignation || hrms.authorizedSignatoryDesignation || ''
 
+  const footerContent = (
+    <>
+      <div className="footer-co">{company}</div>
+      {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
+      {footerContact  && <div className="footer-contact">{footerContact}</div>}
+    </>
+  )
+
+  // Title band has 3 lines: ANNEXURE A / subtitle / ref — measure height for spacer
+  // accent-bar-top(5) + doc-header(~77) + title-band(~63) = ~145px → spacer: 152px
+  const HEADER_SPACER_H = 152
+  // doc-footer(~54) + accent-bar-bottom(4) = ~58 → spacer: 64px
+  const FOOTER_SPACER_H = 64
+
   return (
     <>
       <style>{`
@@ -201,8 +215,7 @@ html, body {
 }
 
 /* All structural children above watermark */
-.accent-bar-top, .doc-header, .title-band,
-.doc-body, .doc-footer, .accent-bar-bottom { position: relative; z-index: 1; }
+.doc-header-region, .doc-body, .doc-footer-region { position: relative; z-index: 1; }
 
 /* ─── Accent bars ────────────────────────────────────────── */
 .accent-bar-top    { height: 5px; background: ${accent}; }
@@ -213,6 +226,7 @@ html, body {
   padding: 14px 40px 12px;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   border-bottom: 2px solid ${accent};
+  background: #fff;
 }
 .brand-logo {
   width: auto; max-width: 210px; min-width: 140px;
@@ -234,103 +248,52 @@ html, body {
 }
 
 /* ─── Title band ─────────────────────────────────────────── */
-.title-band { background: ${accent}; padding: 8px 40px 10px; }
-.doc-title  {
-  font-size: 11pt; font-weight: 700; color: #fff;
-  letter-spacing: 0.18em; text-transform: uppercase;
-}
-.doc-subtitle {
-  font-size: 8.5pt; color: rgba(255,255,255,0.82);
-  letter-spacing: 0.06em; margin-top: 3px;
-}
-.doc-annexure-ref {
-  font-size: 6.5pt; color: rgba(255,255,255,0.58);
-  font-style: italic; margin-top: 2px; letter-spacing: 0.02em;
-}
+.title-band    { background: ${accent}; padding: 8px 40px 10px; }
+.doc-title     { font-size: 11pt; font-weight: 700; color: #fff; letter-spacing: 0.18em; text-transform: uppercase; }
+.doc-subtitle  { font-size: 8.5pt; color: rgba(255,255,255,0.82); letter-spacing: 0.06em; margin-top: 3px; }
+.doc-annexure-ref { font-size: 6.5pt; color: rgba(255,255,255,0.58); font-style: italic; margin-top: 2px; letter-spacing: 0.02em; }
 
 /* ─── Body ───────────────────────────────────────────────── */
 .doc-body { flex: 1; padding: 16px 40px 20px; }
 
 /* ─── Content body ───────────────────────────────────────── */
-.content-body {
-  font-size: 9.5pt; line-height: 1.4; color: #1e293b;
-}
+.content-body { font-size: 9.5pt; line-height: 1.4; color: #1e293b; }
 .content-body .doc-section { break-inside: avoid; page-break-inside: avoid; }
 .content-body .sec-heading {
-  font-size: 8.5pt; font-weight: 700; letter-spacing: 0.1em;
-  text-transform: uppercase; color: ${accent};
-  margin: 12px 0 5px; padding-bottom: 4px;
-  border-bottom: 1.5px solid #e2e8f0;
+  font-size: 8.5pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: ${accent}; margin: 12px 0 5px; padding-bottom: 4px; border-bottom: 1.5px solid #e2e8f0;
   break-after: avoid; page-break-after: avoid;
 }
-.content-body h1 {
-  font-size: 12pt; font-weight: 700; color: #0f172a;
-  margin: 14px 0 6px; break-after: avoid; page-break-after: avoid;
-}
-.content-body h2 {
-  font-size: 10pt; font-weight: 600; color: ${accent};
-  margin: 11px 0 5px; padding-bottom: 3px; border-bottom: 1px solid #e2e8f0;
-  break-after: avoid; page-break-after: avoid;
-}
-.content-body h3 {
-  font-size: 9pt; font-weight: 600; color: ${secondary};
-  letter-spacing: 0.06em; text-transform: uppercase;
-  margin: 9px 0 4px; break-after: avoid; page-break-after: avoid;
-}
+.content-body h1 { font-size: 12pt; font-weight: 700; color: #0f172a; margin: 14px 0 6px; break-after: avoid; page-break-after: avoid; }
+.content-body h2 { font-size: 10pt; font-weight: 600; color: ${accent}; margin: 11px 0 5px; padding-bottom: 3px; border-bottom: 1px solid #e2e8f0; break-after: avoid; page-break-after: avoid; }
+.content-body h3 { font-size: 9pt; font-weight: 600; color: ${secondary}; letter-spacing: 0.06em; text-transform: uppercase; margin: 9px 0 4px; break-after: avoid; page-break-after: avoid; }
 .content-body p, .content-body .body-p { margin-bottom: 5px; orphans: 3; widows: 3; }
 .content-body strong { font-weight: 700; color: #0f172a; }
 .content-body em     { font-style: italic; }
 .content-body u      { text-decoration: underline; }
-.content-body ul, .content-body ol {
-  padding-left: 18px; margin: 4px 0 8px;
-  break-inside: avoid; page-break-inside: avoid;
-}
+.content-body ul, .content-body ol { padding-left: 18px; margin: 4px 0 8px; break-inside: avoid; page-break-inside: avoid; }
 .content-body ul { list-style-type: disc; }
 .content-body ol { list-style-type: decimal; }
 .content-body li { margin-bottom: 2px; font-size: 9.5pt; break-inside: avoid; }
-.content-body hr, .content-body .sec-rule {
-  border: none; border-top: 1px solid #e5e7eb; margin: 8px 0;
-}
-.content-body table {
-  border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.5pt;
-  break-inside: avoid; page-break-inside: avoid;
-}
-.content-body table th {
-  background: ${accent}18; color: #0f172a; font-weight: 700;
-  padding: 5px 8px; border: 1px solid #d1d5db; text-align: left;
-}
+.content-body hr, .content-body .sec-rule { border: none; border-top: 1px solid #e5e7eb; margin: 8px 0; }
+.content-body table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.5pt; break-inside: avoid; page-break-inside: avoid; }
+.content-body table th { background: ${accent}18; color: #0f172a; font-weight: 700; padding: 5px 8px; border: 1px solid #d1d5db; text-align: left; }
 .content-body table td { padding: 4px 8px; border: 1px solid #e5e7eb; }
 .content-body table tr:nth-child(even) td { background: #f8fafc; }
 
 /* ─── Signatory ──────────────────────────────────────────── */
-.signatory-section {
-  margin-top: 24px; padding-top: 14px; border-top: 1.5px solid #e2e8f0;
-  break-inside: avoid; page-break-inside: avoid;
-}
-.signatory-label {
-  font-size: 6pt; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.14em; color: #94a3b8; margin-bottom: 16px;
-}
+.signatory-section { margin-top: 24px; padding-top: 14px; border-top: 1.5px solid #e2e8f0; break-inside: avoid; page-break-inside: avoid; }
+.signatory-label { font-size: 6pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #94a3b8; margin-bottom: 16px; }
 .sig-block { display: flex; flex-direction: column; max-width: 260px; }
-.sig-for {
-  font-size: 6pt; text-transform: uppercase;
-  letter-spacing: 0.12em; color: #9ca3af; font-weight: 700; margin-bottom: 12px;
-}
+.sig-for { font-size: 6pt; text-transform: uppercase; letter-spacing: 0.12em; color: #9ca3af; font-weight: 700; margin-bottom: 12px; }
 .sig-img-wrap { display: flex; align-items: flex-end; min-height: 90px; padding-bottom: 6px; }
-.sig-img-wrap img {
-  max-height: 120px; width: auto; max-width: 260px; object-fit: contain; display: block;
-  image-rendering: high-quality; -webkit-print-color-adjust: exact; print-color-adjust: exact;
-}
+.sig-img-wrap img { max-height: 120px; width: auto; max-width: 260px; object-fit: contain; display: block; image-rendering: high-quality; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .sig-line { width: 240px; border: none; border-top: 1.5px solid #374151; margin: 0 0 8px; }
-.sig-line-blank { width: 240px; border: none; border-top: 1.5px solid #374151; margin: 80px 0 8px; }
 .sig-name  { font-size: 10pt; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
 .sig-desig { font-size: 8.5pt; color: #374151; margin-bottom: 3px; }
-.sig-auth  {
-  font-size: 7pt; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.1em; color: #64748b; margin-top: 2px;
-}
+.sig-auth  { font-size: 7pt; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-top: 2px; }
 
-/* ─── Footer ─────────────────────────────────────────────── */
+/* ─── Footer (shared styles) ─────────────────────────────── */
 .doc-footer {
   background: #f8fafc; border-top: 1px solid #e2e8f0;
   padding: 7px 40px;
@@ -340,6 +303,10 @@ html, body {
 .footer-co      { font-weight: 700; color: #64748b; font-size: 7.5pt; }
 .footer-addr    { color: #6b7280; }
 .footer-contact { color: #9ca3af; }
+
+/* ─── Screen: in-flow header and footer, spacers hidden ─── */
+.print-header-spacer { display: none; }
+.print-footer-spacer { display: none; }
 
 /* ─── Print FAB ──────────────────────────────────────────── */
 .print-fab {
@@ -352,19 +319,72 @@ html, body {
 }
 .print-fab:hover { opacity: 0.88; }
 
-/* ─── Print ──────────────────────────────────────────────── */
+/* ─── Print / Chrome Save as PDF ────────────────────────── */
 @media print {
+  /*
+   * @page margin: 0 removes the browser URL, date, and page number.
+   * In Chrome, also uncheck "Headers and footers" in the print dialog.
+   * Puppeteer-based server-side rendering eliminates this requirement.
+   */
   @page { size: A4; margin: 0; }
-  html, body { background: #fff; font-size: 9.5pt; }
+
+  html, body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 9.5pt;
+  }
+
   .page-shell { max-width: 100%; margin: 0; box-shadow: none; }
-  .print-fab { display: none !important; }
+  .print-fab  { display: none !important; }
+
+  /*
+   * Fixed header: repeats on every page of the annexure.
+   * Correct for a single-document annexure where the title
+   * should appear on page 1 as well as continuation pages.
+   */
+  .doc-header-region {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 999;
+    background: #fff;
+  }
+
+  /*
+   * Fixed footer: company name / registered address / contact info
+   * at the bottom of every page.
+   */
+  .doc-footer-region {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 999;
+  }
+
+  /*
+   * In-flow spacers: invisible placeholders the same height as the
+   * fixed header/footer, preventing body content from sliding under them.
+   */
+  .print-header-spacer {
+    display: block;
+    height: ${HEADER_SPACER_H}px;
+  }
+  .print-footer-spacer {
+    display: block;
+    height: ${FOOTER_SPACER_H}px;
+  }
+
+  /* Tighter padding for A4 */
   .doc-header { padding: 11px 36px 10px; }
   .title-band { padding: 7px 36px 9px; }
   .doc-body   { padding: 12px 36px 16px; }
-  .doc-footer { padding: 6px 36px; position: static !important; }
-  .accent-bar-bottom { position: static !important; }
+  .doc-footer-region .doc-footer { padding: 6px 36px; }
+
   .brand-logo { max-width: 210px; min-width: 140px; height: auto; image-rendering: auto; }
-  .doc-section { break-inside: avoid; page-break-inside: avoid; }
+  .doc-section       { break-inside: avoid; page-break-inside: avoid; }
   .signatory-section { break-inside: avoid; page-break-inside: avoid; }
   .sig-img-wrap img {
     max-height: 120px; width: auto; max-width: 260px; object-fit: contain;
@@ -395,31 +415,38 @@ html, body {
             </div>
           )}
 
-          <div className="accent-bar-top" />
+          {/*
+            Header region: fixed in print so it appears on every page.
+            Wraps accent-bar-top + doc-header + title-band as one unit.
+          */}
+          <div className="doc-header-region">
+            <div className="accent-bar-top" />
 
-          {/* Header: Logo left | Annexure ref + Date right */}
-          <header className="doc-header">
-            <div>
-              {logoUrl
-                ? <img src={logoUrl} alt={company} className="brand-logo" />
-                : <div className="brand-name-text">{company}</div>
-              }
-            </div>
-            <div className="doc-meta">
-              <div className="doc-ref">{annexureRef}</div>
-              {offerRef && <div style={{ fontSize: '7pt', color: '#94a3b8' }}>Offer: {offerRef}</div>}
-              <div>Date: {dateStr}</div>
-            </div>
-          </header>
+            <header className="doc-header">
+              <div>
+                {logoUrl
+                  ? <img src={logoUrl} alt={company} className="brand-logo" />
+                  : <div className="brand-name-text">{company}</div>
+                }
+              </div>
+              <div className="doc-meta">
+                <div className="doc-ref">{annexureRef}</div>
+                {offerRef && <div style={{ fontSize: '7pt', color: '#94a3b8' }}>Offer: {offerRef}</div>}
+                <div>Date: {dateStr}</div>
+              </div>
+            </header>
 
-          {/* Annexure title band — distinct identity */}
-          <div className="title-band">
-            <div className="doc-title">Annexure {annexure.label}</div>
-            <div className="doc-subtitle">{annexure.title}</div>
-            {offerRef && (
-              <div className="doc-annexure-ref">Ref: {offerRef} — Annexure {annexure.label}</div>
-            )}
+            <div className="title-band">
+              <div className="doc-title">Annexure {annexure.label}</div>
+              <div className="doc-subtitle">{annexure.title}</div>
+              {offerRef && (
+                <div className="doc-annexure-ref">Ref: {offerRef} — Annexure {annexure.label}</div>
+              )}
+            </div>
           </div>
+
+          {/* Reserves the header height in the document flow (print only) */}
+          <div className="print-header-spacer" />
 
           <main className="doc-body">
             {bodyHtml ? (
@@ -432,7 +459,6 @@ html, body {
               </div>
             )}
 
-            {/* Signatory */}
             <div className="signatory-section">
               <div className="signatory-label">Authorized Signatory</div>
               <div className="sig-block">
@@ -450,13 +476,20 @@ html, body {
             </div>
           </main>
 
-          <footer className="doc-footer">
-            <div className="footer-co">{company}</div>
-            {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
-            {footerContact  && <div className="footer-contact">{footerContact}</div>}
-          </footer>
+          {/* Reserves the footer height in the document flow (print only) */}
+          <div className="print-footer-spacer" />
 
-          <div className="accent-bar-bottom" />
+          {/*
+            Footer region: fixed in print so it appears on every page.
+            On screen it sits in the flex flow at the bottom of the card.
+          */}
+          <div className="doc-footer-region">
+            <footer className="doc-footer">
+              {footerContent}
+            </footer>
+            <div className="accent-bar-bottom" />
+          </div>
+
         </div>
       </div>
     </>
