@@ -37,14 +37,24 @@ interface HrmsSettings {
 }
 
 interface PlatformSettings {
-  businessName?: string
-  logoUrl?: string
+  // Identity
+  companyName?: string
+  companyWebsite?: string
   tagline?: string
-  // Brand Studio → Authorized Signatory
+  // Zone 1 logos
+  logoUrl?: string         // Primary Logo
+  compactLogoUrl?: string  // Compact Logo (fallback)
+  watermarkUrl?: string    // Watermark overlay
+  // Zone 1 colors
+  primaryColor?: string
+  secondaryColor?: string
+  // Zone 3 HRMS
+  hrmsAccentColor?: string
+  // Authorized Signatory
   signatoryName?: string
   signatoryDesignation?: string
-  signatorySignUrl?: string    // Digital Signature (no stamp)
-  signatoryStampUrl?: string   // Signature with Stamp (preferred)
+  signatorySignUrl?: string   // Digital Signature
+  signatoryStampUrl?: string  // Signature with Stamp
 }
 
 function escHtml(s: string): string {
@@ -244,23 +254,34 @@ export default function OfferLetterPrintPage() {
     </div>
   )
 
-  const accent   = hrms.primaryColor || '#2563EB'
-  const secondary = hrms.secondaryColor || '#64748B'
-  const logoUrl  = hrms.logo || null
-  const company  = hrms.companyName || platform.businessName || 'QUANTIX TECHNOLOGY'
-  const tagline  = platform.tagline || ''
-  const refNum   = letter.offerRef || `QT/HR/${new Date(letter.createdAt).getFullYear()}/${letter.id.slice(-6).toUpperCase()}`
-  const dateStr  = new Date(letter.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-  const joinStr  = letter.joiningDate
+  // Colors: HRMS Settings → Brand Studio HRMS zone → Brand Studio global → hardcoded default
+  const accent    = hrms.primaryColor   || platform.hrmsAccentColor || platform.primaryColor  || '#2563EB'
+  const secondary = hrms.secondaryColor || platform.secondaryColor  || '#64748B'
+
+  // Logo: Brand Studio Primary → Compact → HRMS-specific → text fallback (no hardcoded icon)
+  const logoUrl      = platform.logoUrl || platform.compactLogoUrl || hrms.logo || null
+  const watermarkUrl = platform.watermarkUrl || null
+
+  // Company identity
+  const company = hrms.companyName || platform.companyName || 'Quantix Technology'
+  const tagline = platform.tagline || ''
+
+  // Footer contact info from HRMS Settings
+  const footerWebsite = hrms.website || platform.companyWebsite || ''
+  const footerEmail   = hrms.hrContactEmail || ''
+  const footerPhone   = hrms.hrContactMobile || ''
+
+  const refNum  = letter.offerRef || `QT/HR/${new Date(letter.createdAt).getFullYear()}/${letter.id.slice(-6).toUpperCase()}`
+  const dateStr = new Date(letter.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  const joinStr = letter.joiningDate
     ? new Date(letter.joiningDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
     : '—'
   const empType  = (letter.employmentType || '').replace(/_/g, ' ')
   const bodyHtml = parseContentToHtml(letter.content)
 
-  // Signatory: Brand Studio (signatoryStampUrl > signatorySignUrl) takes precedence
-  // over HRMS Settings (signatureImage/stampImage) which are legacy/fallback fields.
-  const sigImageUrl = platform.signatoryStampUrl || platform.signatorySignUrl || hrms.signatureImage || null
-  const sigName     = platform.signatoryName     || hrms.authorizedSignatory     || 'Authorized Signatory'
+  // Signature: Digital Signature first, then Signature with Stamp, then HRMS fallback
+  const sigImageUrl = platform.signatorySignUrl || platform.signatoryStampUrl || hrms.signatureImage || null
+  const sigName     = platform.signatoryName        || hrms.authorizedSignatory            || 'Authorized Signatory'
   const sigDesig    = platform.signatoryDesignation || hrms.authorizedSignatoryDesignation || ''
 
   return (
@@ -280,7 +301,18 @@ html, body {
 
 /* ─── Screen layout ─────────────────────────────────────── */
 .page-shell { max-width: 820px; margin: 32px auto 60px; box-shadow: 0 6px 40px rgba(0,0,0,0.18); }
-.doc { background: #fff; min-height: 1122px; display: flex; flex-direction: column; }
+.doc { background: #fff; min-height: 1122px; display: flex; flex-direction: column; position: relative; }
+
+/* ─── Watermark ─────────────────────────────────────────── */
+.doc-watermark {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none; display: flex; align-items: center; justify-content: center;
+  z-index: 0; overflow: hidden;
+}
+.doc-watermark img { max-width: 55%; max-height: 55%; object-fit: contain; opacity: 0.06; }
+
+/* All direct doc children sit above the watermark */
+.accent-bar-top, .doc-header, .title-band, .doc-body, .doc-footer, .accent-bar-bottom { position: relative; z-index: 1; }
 
 /* ─── Accent bars ────────────────────────────────────────── */
 .accent-bar-top    { height: 6px; background: ${accent}; }
@@ -293,13 +325,8 @@ html, body {
   border-bottom: 2.5px solid ${accent};
 }
 .brand-group { display: flex; align-items: center; gap: 14px; }
-.brand-logo  { height: 54px; max-width: 150px; object-fit: contain; }
-.brand-logo-q {
-  width: 54px; height: 54px; border-radius: 12px; background: ${accent};
-  display: flex; align-items: center; justify-content: center;
-  font-size: 24px; font-weight: 900; color: #fff; letter-spacing: -1px; flex-shrink: 0;
-}
-.brand-name    { font-size: 16pt; font-weight: 800; color: #0f172a; letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.1; }
+.brand-logo  { height: 54px; max-width: 180px; object-fit: contain; }
+.brand-name    { font-size: 15pt; font-weight: 800; color: #0f172a; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.1; }
 .brand-tagline { font-size: 8pt; color: #6b7280; letter-spacing: 0.04em; margin-top: 3px; }
 .doc-meta { text-align: right; font-size: 9pt; color: #374151; line-height: 1.8; flex-shrink: 0; }
 .doc-ref  { font-family: 'Courier New', monospace; font-size: 8.5pt; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 2px 8px; border-radius: 3px; display: inline-block; margin-bottom: 4px; letter-spacing: 0.05em; }
@@ -396,8 +423,9 @@ html, body {
 .acceptance-date-field { margin-top: 14px; font-size: 9pt; color: #374151; }
 
 /* ─── Footer ─────────────────────────────────────────────── */
-.doc-footer    { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 10px 48px; display: flex; align-items: center; justify-content: space-between; font-size: 7.5pt; color: #9ca3af; letter-spacing: 0.03em; }
+.doc-footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 9px 48px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 7.5pt; color: #9ca3af; letter-spacing: 0.03em; }
 .footer-company { font-weight: 700; color: #64748b; }
+.footer-sep { color: #d1d5db; }
 
 /* ─── Print FAB ──────────────────────────────────────────── */
 .print-fab {
@@ -426,6 +454,10 @@ html, body {
   /* Static footer — position:fixed causes a blank gap at the bottom of every page */
   .doc-footer        { position: static !important; margin-top: 32px; }
   .accent-bar-bottom { position: static !important; }
+
+  /* Watermark must render in PDF */
+  .doc-watermark { position: absolute; }
+  .doc-watermark img { opacity: 0.06; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
   /* Candidate block always intact */
   .candidate-block   { break-inside: avoid; page-break-inside: avoid; }
@@ -465,13 +497,20 @@ html, body {
 
       <div className="page-shell">
         <div className="doc">
+          {/* Watermark — centered, 6% opacity, does not affect readability */}
+          {watermarkUrl && (
+            <div className="doc-watermark">
+              <img src={watermarkUrl} alt="" aria-hidden />
+            </div>
+          )}
+
           <div className="accent-bar-top" />
 
           <header className="doc-header">
             <div className="brand-group">
               {logoUrl
                 ? <img src={logoUrl} alt={company} className="brand-logo" />
-                : <div className="brand-logo-q">Q</div>
+                : null
               }
               <div>
                 <div className="brand-name">{company}</div>
@@ -585,8 +624,9 @@ html, body {
 
           <footer className="doc-footer">
             <span className="footer-company">{company}</span>
-            <span>CONFIDENTIAL</span>
-            <span>Ref: {refNum}</span>
+            {footerWebsite && <><span className="footer-sep">·</span><span>{footerWebsite}</span></>}
+            {footerEmail   && <><span className="footer-sep">·</span><span>{footerEmail}</span></>}
+            {footerPhone   && <><span className="footer-sep">·</span><span>{footerPhone}</span></>}
           </footer>
 
           <div className="accent-bar-bottom" />
