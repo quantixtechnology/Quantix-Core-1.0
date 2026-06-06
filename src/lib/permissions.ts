@@ -53,14 +53,39 @@ export type Permission =
   // ── HRMS ─────────────────────────────────────────────────────────────────
   | "hrms:view"
   | "hrms:manage"
+  // ── HRMS — granular ──────────────────────────────────────────────────────
+  | "hrms.employees:view" | "hrms.employees:create" | "hrms.employees:edit" | "hrms.employees:delete" | "hrms.employees:export"
+  | "hrms.offer_letters:view" | "hrms.offer_letters:create" | "hrms.offer_letters:edit" | "hrms.offer_letters:delete" | "hrms.offer_letters:print" | "hrms.offer_letters:approve"
+  | "hrms.commission_slips:view" | "hrms.commission_slips:create" | "hrms.commission_slips:approve" | "hrms.commission_slips:export" | "hrms.commission_slips:print"
+  | "hrms.payslips:view" | "hrms.payslips:create" | "hrms.payslips:approve" | "hrms.payslips:export" | "hrms.payslips:print"
+  | "hrms.templates:view" | "hrms.templates:create" | "hrms.templates:edit" | "hrms.templates:delete"
+  | "hrms.settings:view" | "hrms.settings:edit" | "hrms.settings:configure"
   // ── Revenue Operations ───────────────────────────────────────────────────
   | "revenue_ops:view"
   | "revenue_ops:manage"
+  // ── Revenue Operations — granular ────────────────────────────────────────
+  | "revenue_ops.signup_ownership:view" | "revenue_ops.signup_ownership:edit" | "revenue_ops.signup_ownership:assign"
+  | "revenue_ops.renewal_ownership:view" | "revenue_ops.renewal_ownership:edit" | "revenue_ops.renewal_ownership:assign"
+  | "revenue_ops.addon_ownership:view" | "revenue_ops.addon_ownership:edit" | "revenue_ops.addon_ownership:assign"
+  | "revenue_ops.commission_processing:view" | "revenue_ops.commission_processing:approve" | "revenue_ops.commission_processing:export" | "revenue_ops.commission_processing:process" | "revenue_ops.commission_processing:release"
+  // ── Brand Studio ─────────────────────────────────────────────────────────
+  | "brand_studio:view" | "brand_studio:edit" | "brand_studio:configure"
+  // ── Roles & Permissions ───────────────────────────────────────────────────
+  | "roles_permissions:edit" | "roles_permissions:configure"
+  // ── Website Management ────────────────────────────────────────────────────
+  | "website:view" | "website:create" | "website:edit" | "website:delete" | "website:configure"
 
 // All roles supported by the platform
 export type PlatformRole =
   | "QUANTIX_SUPER_ADMIN"
   | "PLATFORM_ADMIN"
+  | "SALES_MANAGER"
+  | "BD_EXECUTIVE"
+  | "HR_ADMIN"
+  | "FINANCE_MANAGER"
+  | "OPERATIONS_MANAGER"
+  | "SUPPORT_MANAGER"
+  | "READ_ONLY_AUDITOR"
   | "QUANTIX_SALES_TEAM"
   | "SUPPORT_TEAM"
   | "DEPLOYMENT_TEAM"
@@ -75,8 +100,15 @@ export type PlatformRole =
 
 // Human-readable labels for all roles
 export const ROLE_LABELS: Record<string, string> = {
-  QUANTIX_SUPER_ADMIN:  "Super Admin",
-  PLATFORM_ADMIN:       "Platform Admin",
+  QUANTIX_SUPER_ADMIN:  "Quantix Super Admin",
+  PLATFORM_ADMIN:       "Platform Administrator",
+  SALES_MANAGER:        "Sales Manager",
+  BD_EXECUTIVE:         "Business Development Executive",
+  HR_ADMIN:             "HR Administrator",
+  FINANCE_MANAGER:      "Finance Manager",
+  OPERATIONS_MANAGER:   "Operations Manager",
+  SUPPORT_MANAGER:      "Support Manager",
+  READ_ONLY_AUDITOR:    "Read Only Auditor",
   QUANTIX_SALES_TEAM:   "Sales Team",
   SUPPORT_TEAM:         "Support Team",
   DEPLOYMENT_TEAM:      "Deployment Team",
@@ -94,6 +126,13 @@ export const ROLE_LABELS: Record<string, string> = {
 export const PLATFORM_ROLES: PlatformRole[] = [
   "QUANTIX_SUPER_ADMIN",
   "PLATFORM_ADMIN",
+  "SALES_MANAGER",
+  "BD_EXECUTIVE",
+  "HR_ADMIN",
+  "FINANCE_MANAGER",
+  "OPERATIONS_MANAGER",
+  "SUPPORT_MANAGER",
+  "READ_ONLY_AUDITOR",
   "QUANTIX_SALES_TEAM",
   "SUPPORT_TEAM",
   "DEPLOYMENT_TEAM",
@@ -146,7 +185,20 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "payment_config:view", "payment_config:edit",
     "commission:view", "commission:edit",
     "hrms:view", "hrms:manage",
+    "hrms.employees:view", "hrms.employees:create", "hrms.employees:edit", "hrms.employees:delete", "hrms.employees:export",
+    "hrms.offer_letters:view", "hrms.offer_letters:create", "hrms.offer_letters:edit", "hrms.offer_letters:delete", "hrms.offer_letters:print", "hrms.offer_letters:approve",
+    "hrms.commission_slips:view", "hrms.commission_slips:create", "hrms.commission_slips:approve", "hrms.commission_slips:export", "hrms.commission_slips:print",
+    "hrms.payslips:view", "hrms.payslips:create", "hrms.payslips:approve", "hrms.payslips:export", "hrms.payslips:print",
+    "hrms.templates:view", "hrms.templates:create", "hrms.templates:edit", "hrms.templates:delete",
+    "hrms.settings:view", "hrms.settings:edit", "hrms.settings:configure",
     "revenue_ops:view", "revenue_ops:manage",
+    "revenue_ops.signup_ownership:view", "revenue_ops.signup_ownership:edit", "revenue_ops.signup_ownership:assign",
+    "revenue_ops.renewal_ownership:view", "revenue_ops.renewal_ownership:edit", "revenue_ops.renewal_ownership:assign",
+    "revenue_ops.addon_ownership:view", "revenue_ops.addon_ownership:edit", "revenue_ops.addon_ownership:assign",
+    "revenue_ops.commission_processing:view", "revenue_ops.commission_processing:approve", "revenue_ops.commission_processing:export", "revenue_ops.commission_processing:process", "revenue_ops.commission_processing:release",
+    "brand_studio:view", "brand_studio:edit", "brand_studio:configure",
+    "roles_permissions:edit", "roles_permissions:configure",
+    "website:view", "website:create", "website:edit", "website:delete", "website:configure",
   ],
   PLATFORM_ADMIN: [
     // Navigation — near-full admin, no destructive system access
@@ -212,6 +264,117 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "platform:view_analytics",
     "notifications:view",
     "refunds:process",
+  ],
+  SALES_MANAGER: [
+    "dashboard:view", "workflow:view",
+    "leads:view", "leads:create", "leads:edit", "leads:delete", "leads:export",
+    "businesses:view", "businesses:create", "businesses:edit",
+    "sales:view", "sales:create", "sales:edit", "sales:delete", "sales:export",
+    "sales_team:view", "sales_team:create", "sales_team:edit", "sales_team:delete",
+    "subscriptions:view",
+    "platform:view_analytics",
+    "notifications:view", "notifications:send",
+    "import:leads", "export:leads",
+    "proposals:view", "proposals:create", "proposals:delete", "proposals:export",
+    "payment_config:view",
+    "commission:view", "commission:edit",
+    "revenue_ops:view",
+    "revenue_ops.signup_ownership:view", "revenue_ops.signup_ownership:assign",
+    "revenue_ops.renewal_ownership:view", "revenue_ops.renewal_ownership:assign",
+  ],
+  BD_EXECUTIVE: [
+    "leads:view", "leads:create", "leads:edit", "leads:export",
+    "businesses:view",
+    "sales:view", "sales:create", "sales:edit", "sales:export",
+    "sales_team:view",
+    "notifications:view",
+    "import:leads", "export:leads",
+    "proposals:view", "proposals:create", "proposals:export",
+    "commission:view",
+  ],
+  HR_ADMIN: [
+    "dashboard:view",
+    "hrms:view", "hrms:manage",
+    "hrms.employees:view", "hrms.employees:create", "hrms.employees:edit", "hrms.employees:delete", "hrms.employees:export",
+    "hrms.offer_letters:view", "hrms.offer_letters:create", "hrms.offer_letters:edit", "hrms.offer_letters:delete", "hrms.offer_letters:print", "hrms.offer_letters:approve",
+    "hrms.commission_slips:view", "hrms.commission_slips:create", "hrms.commission_slips:approve", "hrms.commission_slips:export", "hrms.commission_slips:print",
+    "hrms.payslips:view", "hrms.payslips:create", "hrms.payslips:approve", "hrms.payslips:export", "hrms.payslips:print",
+    "hrms.templates:view", "hrms.templates:create", "hrms.templates:edit", "hrms.templates:delete",
+    "hrms.settings:view", "hrms.settings:edit", "hrms.settings:configure",
+    "revenue_ops:view",
+    "revenue_ops.signup_ownership:view",
+    "revenue_ops.renewal_ownership:view",
+    "revenue_ops.commission_processing:view", "revenue_ops.commission_processing:export",
+    "users:view",
+    "notifications:view", "notifications:send",
+  ],
+  FINANCE_MANAGER: [
+    "dashboard:view", "revenue:view", "payment_plugins:view",
+    "subscriptions:view", "subscriptions:create", "subscriptions:edit", "subscriptions:delete", "subscriptions:override_price", "subscriptions:export",
+    "billing:view", "billing:create", "billing:edit", "billing:delete",
+    "reports:view", "reports:export",
+    "platform:view_analytics",
+    "notifications:view",
+    "refunds:process",
+    "payment_config:view", "payment_config:edit",
+    "revenue_ops:view", "revenue_ops:manage",
+    "revenue_ops.signup_ownership:view", "revenue_ops.signup_ownership:edit", "revenue_ops.signup_ownership:assign",
+    "revenue_ops.renewal_ownership:view", "revenue_ops.renewal_ownership:edit", "revenue_ops.renewal_ownership:assign",
+    "revenue_ops.addon_ownership:view", "revenue_ops.addon_ownership:edit", "revenue_ops.addon_ownership:assign",
+    "revenue_ops.commission_processing:view", "revenue_ops.commission_processing:approve", "revenue_ops.commission_processing:export", "revenue_ops.commission_processing:process", "revenue_ops.commission_processing:release",
+    "commission:view", "commission:edit",
+    "platform:audit_logs",
+  ],
+  OPERATIONS_MANAGER: [
+    "dashboard:view", "workflow:view", "backup:view",
+    "businesses:view", "businesses:create", "businesses:edit",
+    "subscriptions:view",
+    "platform:manage_deployments", "platform:view_analytics", "platform:audit_logs",
+    "domains:view", "domains:create", "domains:edit",
+    "notifications:view", "notifications:create", "notifications:send",
+    "users:view",
+    "import:business",
+  ],
+  SUPPORT_MANAGER: [
+    "dashboard:view", "support:view",
+    "leads:view",
+    "businesses:view",
+    "customers:view", "customers:edit",
+    "orders:view",
+    "notifications:view", "notifications:create", "notifications:send", "notifications:delete",
+    "platform:audit_logs",
+    "users:view",
+  ],
+  READ_ONLY_AUDITOR: [
+    "dashboard:view",
+    "leads:view", "leads:export",
+    "businesses:view",
+    "subscriptions:view", "subscriptions:export",
+    "sales:view", "sales:export",
+    "sales_team:view",
+    "platform:view_analytics", "platform:audit_logs",
+    "notifications:view",
+    "users:view",
+    "billing:view",
+    "proposals:view", "proposals:export",
+    "commission:view",
+    "hrms:view",
+    "hrms.employees:view", "hrms.employees:export",
+    "hrms.offer_letters:view",
+    "hrms.commission_slips:view", "hrms.commission_slips:export",
+    "hrms.payslips:view", "hrms.payslips:export",
+    "hrms.templates:view",
+    "revenue_ops:view",
+    "revenue_ops.signup_ownership:view",
+    "revenue_ops.renewal_ownership:view",
+    "revenue_ops.addon_ownership:view",
+    "revenue_ops.commission_processing:view", "revenue_ops.commission_processing:export",
+    "revenue:view",
+    "support:view",
+    "backup:view",
+    "brand_studio:view",
+    "roles_permissions:view",
+    "settings:view",
   ],
   CLIENT_OWNER: [
     "orders:view", "orders:edit", "orders:cancel",
@@ -447,8 +610,66 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "commission:edit":              "Save & Manage Commission Calculations",
   "hrms:view":                    "View HRMS Module",
   "hrms:manage":                  "Manage HRMS Settings & Approvals",
-  "revenue_ops:view":             "View Revenue Operations",
-  "revenue_ops:manage":           "Manage Revenue Operations & Commission Approvals",
+  // HRMS — granular
+  "hrms.employees:view":                   "View Employee Master",
+  "hrms.employees:create":                 "Create Employee Records",
+  "hrms.employees:edit":                   "Edit Employee Records",
+  "hrms.employees:delete":                 "Delete Employee Records",
+  "hrms.employees:export":                 "Export Employee Data",
+  "hrms.offer_letters:view":               "View Offer Letters",
+  "hrms.offer_letters:create":             "Create Offer Letters",
+  "hrms.offer_letters:edit":               "Edit Offer Letters",
+  "hrms.offer_letters:delete":             "Delete Offer Letters",
+  "hrms.offer_letters:print":              "Print / PDF Offer Letters",
+  "hrms.offer_letters:approve":            "Approve Offer Letters",
+  "hrms.commission_slips:view":            "View Commission Slips",
+  "hrms.commission_slips:create":          "Create Commission Slips",
+  "hrms.commission_slips:approve":         "Approve Commission Slips",
+  "hrms.commission_slips:export":          "Export Commission Slips",
+  "hrms.commission_slips:print":           "Print Commission Slips",
+  "hrms.payslips:view":                    "View Payslips",
+  "hrms.payslips:create":                  "Create Payslips",
+  "hrms.payslips:approve":                 "Approve Payslips",
+  "hrms.payslips:export":                  "Export Payslips",
+  "hrms.payslips:print":                   "Print Payslips",
+  "hrms.templates:view":                   "View Document Templates",
+  "hrms.templates:create":                 "Create Document Templates",
+  "hrms.templates:edit":                   "Edit Document Templates",
+  "hrms.templates:delete":                 "Delete Document Templates",
+  "hrms.settings:view":                    "View HRMS Settings",
+  "hrms.settings:edit":                    "Edit HRMS Settings",
+  "hrms.settings:configure":               "Configure HRMS Module",
+  // Revenue Operations — aggregate
+  "revenue_ops:view":                      "View Revenue Operations",
+  "revenue_ops:manage":                    "Manage Revenue Operations & Commission Approvals",
+  // Revenue Operations — granular
+  "revenue_ops.signup_ownership:view":     "View Signup Ownership",
+  "revenue_ops.signup_ownership:edit":     "Edit Signup Ownership",
+  "revenue_ops.signup_ownership:assign":   "Assign Signup Ownership",
+  "revenue_ops.renewal_ownership:view":    "View Renewal Ownership",
+  "revenue_ops.renewal_ownership:edit":    "Edit Renewal Ownership",
+  "revenue_ops.renewal_ownership:assign":  "Assign Renewal Ownership",
+  "revenue_ops.addon_ownership:view":      "View Add-On Ownership",
+  "revenue_ops.addon_ownership:edit":      "Edit Add-On Ownership",
+  "revenue_ops.addon_ownership:assign":    "Assign Add-On Ownership",
+  "revenue_ops.commission_processing:view":    "View Commission Processing",
+  "revenue_ops.commission_processing:approve": "Approve Commission Runs",
+  "revenue_ops.commission_processing:export":  "Export Commission Reports",
+  "revenue_ops.commission_processing:process": "Process Commission Payroll",
+  "revenue_ops.commission_processing:release": "Release Commission Payouts",
+  // Brand Studio
+  "brand_studio:view":                     "View Brand Studio",
+  "brand_studio:edit":                     "Edit Brand Studio Settings",
+  "brand_studio:configure":                "Configure Brand Studio",
+  // Roles & Permissions
+  "roles_permissions:edit":                "Edit Roles & Permissions",
+  "roles_permissions:configure":           "Configure Role Definitions",
+  // Website Management
+  "website:view":                          "View Website Management",
+  "website:create":                        "Create Website Content",
+  "website:edit":                          "Edit Website Content",
+  "website:delete":                        "Delete Website Content",
+  "website:configure":                     "Configure Website Settings",
 }
 
 export function hasPermission(userPermissions: string[], required: Permission): boolean {
@@ -541,7 +762,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "security-access":        "platform:security",
   "audit-logs":             "platform:audit_logs",
   "platform-settings":      "settings:view",
-  "brand-studio":           "settings:view",
+  "brand-studio":           "brand_studio:view",
   "settings":               "settings:view",
   "commission-calculator":  "commission:view",
   // HRMS

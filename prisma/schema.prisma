@@ -2108,12 +2108,22 @@ enum AuthProvider {
 }
 
 enum Role {
+  // ── Quantix Internal Platform Roles ───────────────────────────────
   QUANTIX_SUPER_ADMIN
   PLATFORM_ADMIN
   QUANTIX_SALES_TEAM
   SUPPORT_TEAM
   DEPLOYMENT_TEAM
   FINANCE_TEAM
+  // ── New Named Platform Roles ───────────────────────────────────────
+  SALES_MANAGER
+  BD_EXECUTIVE
+  HR_ADMIN
+  FINANCE_MANAGER
+  OPERATIONS_MANAGER
+  SUPPORT_MANAGER
+  READ_ONLY_AUDITOR
+  // ── Business / Client Roles ────────────────────────────────────────
   CLIENT_OWNER
   STORE_MANAGER
   STORE_OPERATOR

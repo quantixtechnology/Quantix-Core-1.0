@@ -8,11 +8,14 @@
 export type ActionId =
   | 'view' | 'create' | 'edit' | 'delete' | 'export' | 'import'
   | 'configure' | 'approve' | 'assign' | 'refund' | 'suspend'
-  | 'impersonate' | 'billing' | 'send' | 'cancel';
+  | 'impersonate' | 'billing' | 'send' | 'cancel'
+  // Document & HR actions
+  | 'print' | 'process' | 'release';
 
 export const STANDARD_ACTION_IDS: ActionId[] = ['view', 'create', 'edit', 'delete', 'export'];
 export const EXTENDED_ACTION_IDS: ActionId[] = [
-  'import', 'configure', 'approve', 'assign', 'refund', 'suspend', 'impersonate', 'billing', 'send', 'cancel',
+  'import', 'configure', 'approve', 'assign', 'refund', 'suspend',
+  'impersonate', 'billing', 'send', 'cancel', 'print', 'process', 'release',
 ];
 
 export interface ActionDef {
@@ -39,9 +42,12 @@ export const PERMISSION_ACTIONS: ActionDef[] = [
   { id: 'billing',     label: 'Billing',     description: 'Access billing & invoices',   color: '#ca8a04', isExtended: true  },
   { id: 'send',        label: 'Send',        description: 'Send messages / notifications',color: '#2563eb', isExtended: true  },
   { id: 'cancel',      label: 'Cancel',      description: 'Cancel operations / orders',  color: '#b91c1c', isExtended: true  },
+  { id: 'print',       label: 'Print',       description: 'Print / save document as PDF', color: '#0f172a', isExtended: true  },
+  { id: 'process',     label: 'Process',     description: 'Process payroll / commissions', color: '#7c3aed', isExtended: true  },
+  { id: 'release',     label: 'Release',     description: 'Release payout to recipient',  color: '#16a34a', isExtended: true  },
 ];
 
-export type ModuleGroup = 'platform' | 'deployment' | 'business';
+export type ModuleGroup = 'platform' | 'deployment' | 'business' | 'hrms';
 
 export interface SubmoduleDef {
   id: string;        // full key e.g. "businesses.stores"
@@ -421,6 +427,114 @@ export const PERMISSION_MODULES: ModuleDef[] = [
       { id: 'biz_settings.tax',     label: 'Tax Config',      actions: ['view', 'create', 'edit', 'configure'] },
     ],
   },
+
+  // ─── HRMS GROUP ───────────────────────────────────────────────────────────
+  {
+    id: 'hrms',
+    label: 'HRMS',
+    icon: 'Users2',
+    group: 'hrms',
+    description: 'Human Resource Management System — employees, documents, payroll',
+    actions: ['view', 'create', 'edit', 'delete', 'export', 'approve', 'configure'],
+    submodules: [
+      {
+        id: 'hrms.employees',
+        label: 'Employee Master',
+        actions: ['view', 'create', 'edit', 'delete', 'export'],
+      },
+      {
+        id: 'hrms.offer_letters',
+        label: 'Offer Letters',
+        actions: ['view', 'create', 'edit', 'delete', 'print', 'approve'],
+      },
+      {
+        id: 'hrms.commission_slips',
+        label: 'Commission Slips',
+        actions: ['view', 'create', 'approve', 'export', 'print'],
+      },
+      {
+        id: 'hrms.payslips',
+        label: 'Payslips',
+        actions: ['view', 'create', 'approve', 'export', 'print'],
+      },
+      {
+        id: 'hrms.templates',
+        label: 'Document Templates',
+        actions: ['view', 'create', 'edit', 'delete'],
+      },
+      {
+        id: 'hrms.settings',
+        label: 'HRMS Settings',
+        actions: ['view', 'edit', 'configure'],
+      },
+    ],
+  },
+  {
+    id: 'revenue_ops',
+    label: 'Revenue Operations',
+    icon: 'TrendingUp',
+    group: 'hrms',
+    description: 'Ownership assignment, commission processing and payout management',
+    actions: ['view', 'edit', 'approve', 'export', 'process', 'release'],
+    submodules: [
+      {
+        id: 'revenue_ops.signup_ownership',
+        label: 'Signup Ownership',
+        actions: ['view', 'edit', 'assign'],
+      },
+      {
+        id: 'revenue_ops.renewal_ownership',
+        label: 'Renewal Ownership',
+        actions: ['view', 'edit', 'assign'],
+      },
+      {
+        id: 'revenue_ops.addon_ownership',
+        label: 'Add-On Ownership',
+        actions: ['view', 'edit', 'assign'],
+      },
+      {
+        id: 'revenue_ops.commission_processing',
+        label: 'Commission Processing',
+        actions: ['view', 'approve', 'export', 'process', 'release'],
+      },
+    ],
+  },
+  {
+    id: 'commission',
+    label: 'Commission Calculator',
+    icon: 'Calculator',
+    group: 'hrms',
+    description: 'Sales commission calculation and management',
+    actions: ['view', 'create', 'edit', 'export'],
+    submodules: [],
+  },
+  {
+    id: 'brand_studio',
+    label: 'Brand Studio',
+    icon: 'Palette',
+    group: 'platform',
+    description: 'Company branding — logo, colors, watermark, authorized signatory',
+    actions: ['view', 'edit', 'configure'],
+    submodules: [],
+  },
+  {
+    id: 'roles_permissions',
+    label: 'Roles & Permissions',
+    icon: 'ShieldCheck',
+    group: 'platform',
+    description: 'Platform role management and permission matrix',
+    actions: ['view', 'edit', 'configure'],
+    submodules: [],
+  },
+  {
+    id: 'website',
+    label: 'Website Management',
+    icon: 'Globe2',
+    group: 'platform',
+    description: 'Company website and public-facing content',
+    actions: ['view', 'create', 'edit', 'delete', 'configure', 'export'],
+    submodules: [],
+  },
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -454,4 +568,5 @@ export const MODULE_GROUPS: { id: ModuleGroup; label: string }[] = [
   { id: 'platform',   label: 'Platform Control' },
   { id: 'deployment', label: 'Deployment & Ops' },
   { id: 'business',   label: 'Business Modules' },
+  { id: 'hrms',       label: 'HRMS & Revenue Ops' },
 ];

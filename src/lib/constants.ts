@@ -147,6 +147,48 @@ export const ROLES: Record<Role, { label: string; description: string; level: nu
     level: 70,
     scope: 'platform',
   },
+  SALES_MANAGER: {
+    label: 'Sales Manager',
+    description: 'Full lead lifecycle, sales team management and commission approvals',
+    level: 85,
+    scope: 'platform',
+  },
+  BD_EXECUTIVE: {
+    label: 'Business Development Executive',
+    description: 'Lead generation, prospect management and proposals',
+    level: 65,
+    scope: 'platform',
+  },
+  HR_ADMIN: {
+    label: 'HR Administrator',
+    description: 'Full HRMS — employees, offer letters, payslips and templates',
+    level: 75,
+    scope: 'platform',
+  },
+  FINANCE_MANAGER: {
+    label: 'Finance Manager',
+    description: 'Billing, revenue, subscriptions and commission processing',
+    level: 80,
+    scope: 'platform',
+  },
+  OPERATIONS_MANAGER: {
+    label: 'Operations Manager',
+    description: 'Business provisioning, deployments and operational monitoring',
+    level: 78,
+    scope: 'platform',
+  },
+  SUPPORT_MANAGER: {
+    label: 'Support Manager',
+    description: 'Support tickets, notifications and customer escalations',
+    level: 72,
+    scope: 'platform',
+  },
+  READ_ONLY_AUDITOR: {
+    label: 'Read Only Auditor',
+    description: 'View-only access across all modules for compliance and auditing',
+    level: 20,
+    scope: 'platform',
+  },
   CLIENT_OWNER: {
     label: 'Client Owner',
     description: 'Business owner — manages products, orders, delivery, POS, staff, reports',
