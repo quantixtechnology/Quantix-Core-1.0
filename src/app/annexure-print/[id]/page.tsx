@@ -163,9 +163,6 @@ export default function AnnexurePrintPage() {
     </>
   )
 
-  // Fixed header contains ONLY the company logo/branding row (no title band).
-  // accent-bar-top(5) + doc-header(~77) = ~82px → spacer: 88px
-  const HEADER_SPACER_H = 88
   // doc-footer(~54) + accent-bar-bottom(4) = ~58 → spacer: 64px
   const FOOTER_SPACER_H = 64
 
@@ -346,22 +343,15 @@ html, body {
   .doc-body { flex: none; }
 
   /*
-   * Fixed header: accent bar + company logo row only.
-   * The title band (ANNEXURE A / subtitle) stays in the document flow
-   * so it appears ONCE on page 1, not repeated on every page.
+   * Header is NOT fixed — it stays in the document flow and appears
+   * exactly ONCE on page 1. Content continues naturally on page 2+
+   * with no logo, no title band, no date repeated.
    */
-  .doc-header-region {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 999;
-    background: #fff;
-  }
+  .print-header-spacer { display: none; }
 
   /*
-   * Fixed footer: company name / registered address / contact info
-   * at the bottom of every page.
+   * Footer only: fixed at the bottom of every page.
+   * Does not create page breaks — the PDF engine paginates naturally.
    */
   .doc-footer-region {
     position: fixed;
@@ -371,14 +361,7 @@ html, body {
     z-index: 999;
   }
 
-  /*
-   * In-flow spacers: invisible placeholders the same height as the
-   * fixed header/footer, preventing body content from sliding under them.
-   */
-  .print-header-spacer {
-    display: block;
-    height: ${HEADER_SPACER_H}px;
-  }
+  /* Spacer reserves footer height so body content doesn't slide under it */
   .print-footer-spacer {
     display: block;
     height: ${FOOTER_SPACER_H}px;
@@ -422,11 +405,7 @@ html, body {
             </div>
           )}
 
-          {/*
-            Header region: fixed in print — company logo + ref only.
-            Does NOT include the title band so "ANNEXURE A" does not
-            repeat on continuation pages.
-          */}
+          {/* Header: flows in the document — appears on page 1 only */}
           <div className="doc-header-region">
             <div className="accent-bar-top" />
 
@@ -445,16 +424,7 @@ html, body {
             </header>
           </div>
 
-          {/*
-            Spacer = company header height only (~88px).
-            Keeps content below the fixed header without a title-band gap.
-          */}
-          <div className="print-header-spacer" />
-
-          {/*
-            Title band: in the document flow — appears exactly ONCE on page 1.
-            Not part of the fixed header, so it does not repeat.
-          */}
+          {/* Title band: in flow — appears once on page 1 */}
           <div className="title-band">
             <div className="doc-title">Annexure {annexure.label}</div>
             <div className="doc-subtitle">{annexure.title}</div>
