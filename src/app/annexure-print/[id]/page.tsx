@@ -85,10 +85,13 @@ export default function AnnexurePrintPage() {
   const [platform, setPlatform] = useState<PlatformSettings>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (!id) return
 
+    // silentFailure: true — prevents clearAuthAndRedirect() on 401,
+    // which would fire a StorageEvent killing the parent app session.
     const opts = { silentFailure: true } as const
     const safeJson = (res: Response) =>
       res.ok
@@ -124,6 +127,29 @@ export default function AnnexurePrintPage() {
     }
   }, [loading, annexure])
 
+  const handleDownloadPdf = async () => {
+    if (!annexure) return
+    try {
+      setDownloading(true)
+      const res = await authFetch(`/api/admin/hrms/annexures/${id}/pdf`, { silentFailure: true } as Parameters<typeof authFetch>[1])
+      if (!res.ok) throw new Error('PDF generation failed')
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      const ref  = annexure.annexureRef || `Annexure-${annexure.label}`
+      a.download = `${ref.replace(/\//g, '-')}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Failed to generate PDF. Please try again.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial,sans-serif', color: '#6b7280', fontSize: 14 }}>
       Loading document…
@@ -155,17 +181,6 @@ export default function AnnexurePrintPage() {
   const sigName     = platform.signatoryName        || hrms.authorizedSignatory            || 'Authorized Signatory'
   const sigDesig    = platform.signatoryDesignation || hrms.authorizedSignatoryDesignation || ''
 
-  const footerContent = (
-    <>
-      <div className="footer-co">{company}</div>
-      {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
-      {footerContact  && <div className="footer-contact">{footerContact}</div>}
-    </>
-  )
-
-  // doc-footer(~54) + accent-bar-bottom(4) = ~58 → spacer: 64px
-  const FOOTER_SPACER_H = 64
-
   return (
     <>
       <style>{`
@@ -189,7 +204,7 @@ html, body {
   box-shadow: 0 4px 32px rgba(0,0,0,0.16);
 }
 
-/* ─── Document ───────────────────────────────────────────── */
+/* ─── Document: flex column so doc-body(flex:1) pushes footer to bottom ─ */
 .doc {
   background: #fff;
   min-height: 1122px;
@@ -212,7 +227,8 @@ html, body {
 }
 
 /* All structural children above watermark */
-.doc-header-region, .doc-body, .doc-footer-region { position: relative; z-index: 1; }
+.doc-header-region, .doc-body, .doc-footer, .accent-bar-bottom,
+.title-band { position: relative; z-index: 1; }
 
 /* ─── Accent bars ────────────────────────────────────────── */
 .accent-bar-top    { height: 5px; background: ${accent}; }
@@ -250,7 +266,7 @@ html, body {
 .doc-subtitle  { font-size: 8.5pt; color: rgba(255,255,255,0.82); letter-spacing: 0.06em; margin-top: 3px; }
 .doc-annexure-ref { font-size: 6.5pt; color: rgba(255,255,255,0.58); font-style: italic; margin-top: 2px; letter-spacing: 0.02em; }
 
-/* ─── Body ───────────────────────────────────────────────── */
+/* ─── Body: flex:1 absorbs extra space, pushing footer to the bottom ─── */
 .doc-body { flex: 1; padding: 16px 40px 20px; }
 
 /* ─── Content body ───────────────────────────────────────── */
@@ -290,7 +306,7 @@ html, body {
 .sig-desig { font-size: 8.5pt; color: #374151; margin-bottom: 3px; }
 .sig-auth  { font-size: 7pt; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-top: 2px; }
 
-/* ─── Footer (shared styles) ─────────────────────────────── */
+/* ─── Footer: in flex flow — doc-body(flex:1) pushes it to the bottom ─── */
 .doc-footer {
   background: #f8fafc; border-top: 1px solid #e2e8f0;
   padding: 7px 40px;
@@ -301,27 +317,29 @@ html, body {
 .footer-addr    { color: #6b7280; }
 .footer-contact { color: #9ca3af; }
 
-/* ─── Screen: in-flow header and footer, spacers hidden ─── */
-.print-header-spacer { display: none; }
-.print-footer-spacer { display: none; }
-
-/* ─── Print FAB ──────────────────────────────────────────── */
-.print-fab {
+/* ─── Floating action buttons (screen only) ──────────────── */
+.fab-group {
   position: fixed; bottom: 24px; right: 24px;
-  background: ${accent}; color: #fff; border: none;
-  padding: 10px 22px; border-radius: 7px;
+  display: flex; gap: 8px; z-index: 9999;
+}
+.fab-primary, .fab-secondary {
+  border: none; padding: 10px 22px; border-radius: 7px;
   font-size: 12px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.22); z-index: 9999;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.22);
   letter-spacing: 0.03em; display: flex; align-items: center; gap: 7px;
 }
-.print-fab:hover { opacity: 0.88; }
+.fab-primary   { background: ${accent}; color: #fff; }
+.fab-secondary { background: #fff; color: ${accent}; border: 1.5px solid ${accent}; }
+.fab-primary:hover   { opacity: 0.88; }
+.fab-secondary:hover { opacity: 0.78; }
+.fab-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ─── Print / Chrome Save as PDF ────────────────────────── */
 @media print {
   /*
    * @page margin: 0 removes the browser URL, date, and page number.
-   * In Chrome, also uncheck "Headers and footers" in the print dialog.
-   * Puppeteer-based server-side rendering eliminates this requirement.
+   * Use "Download PDF" for server-side Puppeteer PDF which adds
+   * the footer on every page via footerTemplate.
    */
   @page { size: A4; margin: 0; }
 
@@ -333,45 +351,19 @@ html, body {
   }
 
   .page-shell { max-width: 100%; margin: 0; box-shadow: none; }
-  .print-fab  { display: none !important; }
+  .fab-group  { display: none !important; }
 
   /*
-   * Let content determine page count — no artificial A4 minimum height.
-   * Use block flow so flex: 1 on doc-body has no layout side-effects.
+   * min-height: 297mm keeps footer at the bottom of an A4 page.
+   * Content flows naturally — no position:fixed or position:absolute.
    */
-  .doc { display: block !important; min-height: unset !important; }
-  .doc-body { flex: none; }
-
-  /*
-   * Header is NOT fixed — it stays in the document flow and appears
-   * exactly ONCE on page 1. Content continues naturally on page 2+
-   * with no logo, no title band, no date repeated.
-   */
-  .print-header-spacer { display: none; }
-
-  /*
-   * Footer only: fixed at the bottom of every page.
-   * Does not create page breaks — the PDF engine paginates naturally.
-   */
-  .doc-footer-region {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 999;
-  }
-
-  /* Spacer reserves footer height so body content doesn't slide under it */
-  .print-footer-spacer {
-    display: block;
-    height: ${FOOTER_SPACER_H}px;
-  }
+  .doc { min-height: 297mm; }
 
   /* Tighter padding for A4 */
   .doc-header { padding: 11px 36px 10px; }
   .title-band { padding: 7px 36px 9px; }
   .doc-body   { padding: 12px 36px 16px; }
-  .doc-footer-region .doc-footer { padding: 6px 36px; }
+  .doc-footer { padding: 6px 36px; }
 
   .brand-logo { max-width: 210px; min-width: 140px; height: auto; image-rendering: auto; }
   .doc-section       { break-inside: avoid; page-break-inside: avoid; }
@@ -387,14 +379,29 @@ html, body {
 }
 `}</style>
 
-      <button className="print-fab" onClick={() => window.print()}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 6 2 18 2 18 9"/>
-          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-          <rect x="6" y="14" width="12" height="8"/>
-        </svg>
-        Print / Save as PDF
-      </button>
+      {/* Download PDF + Print buttons — hidden in print */}
+      <div className="fab-group">
+        <button
+          className="fab-primary"
+          onClick={handleDownloadPdf}
+          disabled={downloading}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          {downloading ? 'Generating…' : 'Download PDF'}
+        </button>
+        <button className="fab-secondary" onClick={() => window.print()}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>
+          Print
+        </button>
+      </div>
 
       <div className="page-shell">
         <div className="doc">
@@ -405,7 +412,7 @@ html, body {
             </div>
           )}
 
-          {/* Header: flows in the document — appears on page 1 only */}
+          {/* Header: in document flow — appears on page 1 only */}
           <div className="doc-header-region">
             <div className="accent-bar-top" />
 
@@ -461,19 +468,13 @@ html, body {
             </div>
           </main>
 
-          {/* Reserves the footer height in the document flow (print only) */}
-          <div className="print-footer-spacer" />
-
-          {/*
-            Footer region: fixed in print so it appears on every page.
-            On screen it sits in the flex flow at the bottom of the card.
-          */}
-          <div className="doc-footer-region">
-            <footer className="doc-footer">
-              {footerContent}
-            </footer>
-            <div className="accent-bar-bottom" />
-          </div>
+          {/* Footer: in flex flow — stays at the bottom via doc-body flex:1 */}
+          <footer className="doc-footer">
+            <div className="footer-co">{company}</div>
+            {footerAddress && <div className="footer-addr">{footerAddress}</div>}
+            {footerContact && <div className="footer-contact">{footerContact}</div>}
+          </footer>
+          <div className="accent-bar-bottom" />
 
         </div>
       </div>

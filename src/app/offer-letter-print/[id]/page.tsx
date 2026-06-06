@@ -237,6 +237,7 @@ export default function OfferLetterPrintPage() {
   const [platform, setPlatform] = useState<PlatformSettings>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -281,6 +282,28 @@ export default function OfferLetterPrintPage() {
     }
   }, [loading, letter])
 
+  const handleDownloadPdf = async () => {
+    if (!letter) return
+    try {
+      setDownloading(true)
+      const res = await authFetch(`/api/admin/hrms/offer-letters/${id}/pdf`, { silentFailure: true } as Parameters<typeof authFetch>[1])
+      if (!res.ok) throw new Error('PDF generation failed')
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `offer-letter-${letter.candidateName.replace(/\s+/g, '-').toLowerCase()}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Failed to generate PDF. Please try again.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'Arial,sans-serif', color:'#6b7280', fontSize:14 }}>
       Loading document…
@@ -302,7 +325,6 @@ export default function OfferLetterPrintPage() {
 
   const company = hrms.companyName || platform.companyName || 'Quantix Technology'
 
-  // Footer: Company Name / Address / Phone | Email | Website
   const footerAddress = (hrms.registeredAddress || '').replace(/\n+/g, ', ').trim()
   const footerContact = [hrms.companyPhone, hrms.companyEmail, hrms.website || platform.companyWebsite]
     .filter(Boolean).join(' | ')
@@ -321,12 +343,14 @@ export default function OfferLetterPrintPage() {
   const sigName     = platform.signatoryName        || hrms.authorizedSignatory            || 'Authorized Signatory'
   const sigDesig    = platform.signatoryDesignation || hrms.authorizedSignatoryDesignation || ''
 
-  // Shared footer JSX — rendered once in screen-footer per section, once in print-fixed-footer
-  const footerContent = (
+  const Footer = () => (
     <>
-      <div className="footer-co">{company}</div>
-      {footerAddress  && <div className="footer-addr">{footerAddress}</div>}
-      {footerContact  && <div className="footer-contact">{footerContact}</div>}
+      <footer className="doc-footer">
+        <div className="footer-co">{company}</div>
+        {footerAddress && <div className="footer-addr">{footerAddress}</div>}
+        {footerContact && <div className="footer-contact">{footerContact}</div>}
+      </footer>
+      <div className="accent-bar-bottom" />
     </>
   )
 
@@ -353,7 +377,7 @@ html, body {
   box-shadow: 0 4px 32px rgba(0,0,0,0.16);
 }
 
-/* ─── Document ───────────────────────────────────────────── */
+/* ─── Document: flex column so doc-body (flex:1) pushes footer to bottom ─ */
 .doc {
   background: #fff;
   min-height: 1122px;
@@ -418,7 +442,7 @@ html, body {
   letter-spacing: 0.18em; text-transform: uppercase;
 }
 
-/* ─── Body ───────────────────────────────────────────────── */
+/* ─── Body: flex:1 absorbs extra space, pushing footer to the bottom ─── */
 .doc-body { flex: 1; padding: 16px 40px 20px; }
 
 /* ─── Candidate card ─────────────────────────────────────── */
@@ -539,7 +563,7 @@ html, body {
 }
 .sig-date  { margin-top: 12px; font-size: 8pt; color: #374151; }
 
-/* ─── Footer (shared styles) ─────────────────────────────── */
+/* ─── Footer: in flex flow — doc-body(flex:1) pushes it to the bottom ─── */
 .doc-footer {
   background: #f8fafc; border-top: 1px solid #e2e8f0;
   padding: 7px 40px;
@@ -549,10 +573,6 @@ html, body {
 .footer-co      { font-weight: 700; color: #64748b; font-size: 7.5pt; }
 .footer-addr    { color: #6b7280; }
 .footer-contact { color: #9ca3af; }
-
-/* ─── Screen-only: footer sits in flex flow inside each .doc ─ */
-.print-fixed-footer { display: none; }
-.print-footer-spacer { display: none; }
 
 /* ─── Annexure section (screen gap) ──────────────────────── */
 .annexure-shell { margin-top: 28px; }
@@ -565,25 +585,29 @@ html, body {
   font-style: italic; margin-top: 2px; letter-spacing: 0.02em;
 }
 
-/* ─── Print FAB (screen only) ────────────────────────────── */
-.print-fab {
+/* ─── Floating action buttons (screen only) ──────────────── */
+.fab-group {
   position: fixed; bottom: 24px; right: 24px;
-  background: ${accent}; color: #fff; border: none;
-  padding: 10px 22px; border-radius: 7px;
+  display: flex; gap: 8px; z-index: 9999;
+}
+.fab-primary, .fab-secondary {
+  border: none; padding: 10px 22px; border-radius: 7px;
   font-size: 12px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.22); z-index: 9999;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.22);
   letter-spacing: 0.03em; display: flex; align-items: center; gap: 7px;
 }
-.print-fab:hover { opacity: 0.88; }
+.fab-primary   { background: ${accent}; color: #fff; }
+.fab-secondary { background: #fff; color: ${accent}; border: 1.5px solid ${accent}; }
+.fab-primary:hover   { opacity: 0.88; }
+.fab-secondary:hover { opacity: 0.78; }
+.fab-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ─── Print / Chrome Save as PDF ────────────────────────── */
 @media print {
   /*
-   * @page margin: 0 removes the browser URL, date, and page number
-   * from the printed output. In Chrome, the user must also uncheck
-   * "Headers and footers" in the print dialog for this to take full
-   * effect. Server-side Puppeteer rendering (preferred) bypasses
-   * this limitation entirely.
+   * @page margin: 0 removes the browser URL, date, and page number.
+   * Use "Download PDF" button for server-side Puppeteer PDF generation
+   * which adds a proper footer on every page via footerTemplate.
    */
   @page { size: A4; margin: 0; }
 
@@ -596,49 +620,21 @@ html, body {
 
   .page-shell { max-width: 100%; margin: 0; box-shadow: none; }
 
-  /* Hide print FAB */
-  .print-fab { display: none !important; }
+  /* Hide floating buttons */
+  .fab-group { display: none !important; }
 
   /*
-   * Fixed footer: appears at the bottom of EVERY page.
-   * Shows company name / registered address / phone | email | website.
-   * One instance covers both the offer letter and annexure sections.
+   * min-height: 297mm ensures footer sits at the bottom of an A4 page
+   * for single-page documents. flex layout keeps it in document flow —
+   * no position:fixed or position:absolute.
    */
-  .print-fixed-footer {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 999;
-  }
-
-  /*
-   * Spacer inside each .doc that reserves the same height as the
-   * fixed footer, preventing body content from flowing underneath it.
-   */
-  .print-footer-spacer {
-    display: block;
-    height: 62px; /* doc-footer (~54px) + accent-bar-bottom (4px) + buffer (4px) */
-  }
-
-  /* Hide in-flow screen footers — the fixed footer replaces them */
-  .screen-footer { display: none !important; }
-
-  /*
-   * Remove artificial A4 minimum height so annexure content flows
-   * naturally across however many pages it needs.
-   * The fixed footer appears at the page bottom regardless.
-   */
-  .annexure-shell .doc { display: block !important; min-height: unset !important; }
-  .annexure-shell .doc-body { flex: none; }
+  .doc { min-height: 297mm; }
 
   /* Tighter padding for A4 */
   .doc-header { padding: 11px 36px 10px; }
   .title-band { padding: 7px 36px; }
   .doc-body   { padding: 12px 36px 16px; }
-
-  /* Print footer padding */
-  .print-fixed-footer .doc-footer { padding: 6px 36px; }
+  .doc-footer { padding: 6px 36px; }
 
   /* Logo sharp in PDF */
   .brand-logo { max-width: 210px; min-width: 140px; height: auto; image-rendering: auto; }
@@ -672,30 +668,31 @@ html, body {
 }
 `}</style>
 
-      {/*
-        Print-only fixed footer — position: fixed in @media print
-        so it appears at the bottom of every A4 page.
-        Covers both the offer letter pages and the annexure pages.
-        Hidden on screen (display: none in screen CSS above).
-      */}
-      <div className="print-fixed-footer">
-        <footer className="doc-footer">
-          {footerContent}
-        </footer>
-        <div className="accent-bar-bottom" />
+      {/* Download PDF + Print buttons — hidden in print */}
+      <div className="fab-group">
+        <button
+          className="fab-primary"
+          onClick={handleDownloadPdf}
+          disabled={downloading}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          {downloading ? 'Generating…' : 'Download PDF'}
+        </button>
+        <button className="fab-secondary" onClick={() => window.print()}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>
+          Print
+        </button>
       </div>
 
-      {/* Print / Save as PDF button — hidden in print */}
-      <button className="print-fab" onClick={() => window.print()}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 6 2 18 2 18 9"/>
-          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-          <rect x="6" y="14" width="12" height="8"/>
-        </svg>
-        Print / Save as PDF
-      </button>
-
-      {/* ── Offer Letter section ──────────────────────────────────── */}
+      {/* ── Offer Letter ──────────────────────────────────────────── */}
       <div className="page-shell">
         <div className="doc">
 
@@ -816,14 +813,8 @@ html, body {
 
           </main>
 
-          {/* Reserves space equal to the fixed footer height — print only */}
-          <div className="print-footer-spacer" />
-
-          {/* Screen-only footer — hidden in print (the fixed footer takes over) */}
-          <div className="screen-footer">
-            <footer className="doc-footer">{footerContent}</footer>
-            <div className="accent-bar-bottom" />
-          </div>
+          {/* Footer in flex flow — stays at the bottom via doc-body flex:1 */}
+          <Footer />
 
         </div>
       </div>
@@ -866,12 +857,8 @@ html, body {
               <div className="content-body" dangerouslySetInnerHTML={{ __html: annexureHtml }} />
             </main>
 
-            <div className="print-footer-spacer" />
-
-            <div className="screen-footer">
-              <footer className="doc-footer">{footerContent}</footer>
-              <div className="accent-bar-bottom" />
-            </div>
+            {/* Footer in flex flow */}
+            <Footer />
 
           </div>
         </div>
