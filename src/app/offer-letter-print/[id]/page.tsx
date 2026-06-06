@@ -237,8 +237,8 @@ export default function OfferLetterPrintPage() {
   const empType  = (letter.employmentType || '').replace(/_/g, ' ')
   const bodyHtml = parseContentToHtml(letter.content)
 
-  // Signature: Digital Signature → Signature with Stamp → HRMS fallback
-  const sigImageUrl = platform.signatorySignUrl || platform.signatoryStampUrl || hrms.signatureImage || null
+  // Signature priority: Stamp → Digital → HRMS stamp → HRMS signature → none
+  const sigImageUrl = platform.signatoryStampUrl || platform.signatorySignUrl || hrms.stampImage || hrms.signatureImage || null
   const sigName     = platform.signatoryName        || hrms.authorizedSignatory            || 'Authorized Signatory'
   const sigDesig    = platform.signatoryDesignation || hrms.authorizedSignatoryDesignation || ''
 
@@ -523,23 +523,60 @@ html, body {
   break-inside: avoid; page-break-inside: avoid;
 }
 .signatory-label {
-  font-size: 6.5pt; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 14px;
+  font-size: 6pt; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.14em; color: #94a3b8; margin-bottom: 16px;
 }
 .signatory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-.sig-block { }
+.sig-block { display: flex; flex-direction: column; }
+
+/* "FOR QUANTIX TECHNOLOGY" label */
 .sig-for {
-  font-size: 6.5pt; text-transform: uppercase;
-  letter-spacing: 0.1em; color: #9ca3af; font-weight: 700; margin-bottom: 8px;
+  font-size: 6pt; text-transform: uppercase;
+  letter-spacing: 0.12em; color: #9ca3af; font-weight: 700; margin-bottom: 12px;
 }
-.sig-img-wrap { height: 56px; display: flex; align-items: flex-end; margin-bottom: 5px; }
-.sig-img-wrap img { max-height: 52px; max-width: 180px; object-fit: contain; }
-.sig-line { width: 200px; border-bottom: 1.5px solid #374151; margin-bottom: 6px; }
-.sig-line-blank { width: 200px; border-bottom: 1.5px solid #374151; margin: 48px 0 6px; }
-.sig-name  { font-size: 9.5pt; font-weight: 700; color: #0f172a; margin-bottom: 1px; }
-.sig-desig { font-size: 8pt; color: #6b7280; }
-.sig-co    { font-size: 7.5pt; font-weight: 700; color: ${accent}; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
-.sig-date  { margin-top: 10px; font-size: 8pt; color: #374151; }
+
+/* Signature image — full resolution, prominently sized */
+.sig-img-wrap {
+  display: flex;
+  align-items: flex-end;
+  min-height: 90px;
+  margin-bottom: 0;
+  padding-bottom: 6px;
+}
+.sig-img-wrap img {
+  max-height: 120px;
+  width: auto;
+  max-width: 260px;
+  object-fit: contain;
+  display: block;
+  image-rendering: high-quality;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Horizontal rule beneath signature image */
+.sig-line {
+  width: 240px;
+  border: none;
+  border-top: 1.5px solid #374151;
+  margin: 0 0 8px;
+}
+
+/* Blank placeholder when no signature uploaded */
+.sig-line-blank {
+  width: 240px;
+  border: none;
+  border-top: 1.5px solid #374151;
+  margin: 80px 0 8px;
+}
+
+.sig-name  { font-size: 10pt; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+.sig-desig { font-size: 8.5pt; color: #374151; margin-bottom: 3px; }
+.sig-auth  {
+  font-size: 7pt; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: #64748b; margin-top: 2px;
+}
+.sig-date  { margin-top: 12px; font-size: 8pt; color: #374151; }
 
 /* ─── Footer ─────────────────────────────────────────────── */
 .doc-footer {
@@ -591,6 +628,17 @@ html, body {
 
   /* Signatory — always on the same page */
   .signatory-section { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Signature image — full resolution in PDF, no downscaling */
+  .sig-img-wrap img {
+    max-height: 120px;
+    width: auto;
+    max-width: 260px;
+    object-fit: contain;
+    image-rendering: high-quality;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 
   /* Headings must never be orphaned */
   .sec-heading,
@@ -725,20 +773,19 @@ html, body {
 
                 <div className="sig-block">
                   <div className="sig-for">For {company}</div>
-                  {sigImageUrl
-                    ? (
-                      <>
-                        <div className="sig-img-wrap">
-                          <img src={sigImageUrl} alt="Authorized Signatory" />
-                        </div>
-                        <div className="sig-line" />
-                      </>
-                    )
-                    : <div className="sig-line-blank" />
-                  }
+                  {sigImageUrl ? (
+                    <div className="sig-img-wrap">
+                      <img
+                        src={sigImageUrl}
+                        alt="Authorized Signatory"
+                        crossOrigin="anonymous"
+                      />
+                    </div>
+                  ) : null}
+                  <div className="sig-line" style={!sigImageUrl ? { marginTop: 80 } : undefined} />
                   <div className="sig-name">{sigName}</div>
                   {sigDesig && <div className="sig-desig">{sigDesig}</div>}
-                  <div className="sig-co">{company}</div>
+                  <div className="sig-auth">Authorized Signatory</div>
                 </div>
 
                 <div className="sig-block">
