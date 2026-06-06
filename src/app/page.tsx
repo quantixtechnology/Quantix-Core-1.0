@@ -182,6 +182,7 @@ const HrmsOwnershipView = dynamic(() => import("@/components/admin/hrms/hrms-own
 const HrmsCommissionPolicyView = dynamic(() => import("@/components/admin/hrms/hrms-commission-policy").then(m => ({ default: m.HrmsCommissionPolicyView })), { loading: () => <PageLoader /> })
 const HrmsCommissionSlipView = dynamic(() => import("@/components/admin/hrms/hrms-commission-slip").then(m => ({ default: m.HrmsCommissionSlipView })), { loading: () => <PageLoader /> })
 const HrmsOfferLetterView = dynamic(() => import("@/components/admin/hrms/hrms-offer-letter").then(m => ({ default: m.HrmsOfferLetterView })), { loading: () => <PageLoader /> })
+const HrmsAnnexureView = dynamic(() => import("@/components/admin/hrms/hrms-annexure").then(m => ({ default: m.HrmsAnnexureView })), { loading: () => <PageLoader /> })
 const HrmsTemplatesView = dynamic(() => import("@/components/admin/hrms/hrms-templates").then(m => ({ default: m.HrmsTemplatesView })), { loading: () => <PageLoader /> })
 const HrmsPayslipView = dynamic(() => import("@/components/admin/hrms/hrms-payslip").then(m => ({ default: m.HrmsPayslipView })), { loading: () => <PageLoader /> })
 const RevenueSignupOwnershipView   = dynamic(() => import("@/components/admin/revenue-ops/revenue-signup-ownership").then(m => ({ default: m.RevenueSignupOwnershipView })), { loading: () => <PageLoader /> })
@@ -430,6 +431,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       // HRMS
       case "hrms-employees":        return <HrmsEmployeesView />
       case "hrms-offer-letter":     return <HrmsOfferLetterView />
+      case "hrms-annexure":         return <HrmsAnnexureView />
       case "hrms-commission-slip":  return <HrmsCommissionSlipView />
       case "hrms-payslip":          return <HrmsPayslipView />
       case "hrms-templates":        return <HrmsTemplatesView />

@@ -2592,6 +2592,7 @@ model OfferLetterTemplate {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   offerLetters OfferLetter[]
+  annexures    Annexure[]
 }
 
 // Generated Offer Letter — rendered content after merge tag substitution
@@ -2622,6 +2623,28 @@ model OfferLetter {
   updatedAt        DateTime             @updatedAt
   template         OfferLetterTemplate? @relation(fields: [templateId], references: [id])
   employee         Employee?            @relation(fields: [employeeId], references: [id])
+  annexures        Annexure[]
 
   @@index([status])
+}
+
+// Annexure — independently stored, linked to an Offer Letter
+// Numbered: QT/HR/2026/00001-A, QT/HR/2026/00001-B, etc.
+model Annexure {
+  id            String               @id @default(cuid())
+  offerLetterId String
+  label         String               // "A", "B", "C" — auto-assigned at creation
+  annexureRef   String?              // "QT/HR/2026/00001-A"
+  title         String               // "Commission & Incentive Policy"
+  content       String               @default("")
+  templateId    String?
+  deletedAt     DateTime?
+  createdBy     String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  offerLetter   OfferLetter          @relation(fields: [offerLetterId], references: [id])
+  template      OfferLetterTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([offerLetterId])
 }

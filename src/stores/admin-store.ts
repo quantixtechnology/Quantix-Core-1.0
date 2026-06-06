@@ -69,6 +69,7 @@ export type AdminPage =
   | "commission-calculator"
   | "hrms-employees"
   | "hrms-offer-letter"
+  | "hrms-annexure"
   | "hrms-commission-slip"
   | "hrms-payslip"
   | "hrms-templates"

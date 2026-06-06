@@ -9,16 +9,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { Separator } from "@/components/ui/separator"
-import { Plus, Eye, Printer, Trash2, FileSignature, Mail, CheckCircle, XCircle, Clock } from "lucide-react"
+import { Plus, Eye, Printer, Trash2, FileSignature } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { authFetch } from "@/lib/admin-fetch"
 
-type OfferStatus = "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED"
-
 interface OfferLetter {
   id: string
+  offerRef?: string
   templateId?: string
   candidateName: string
   candidateEmail?: string
@@ -30,33 +28,11 @@ interface OfferLetter {
   workLocation?: string
   employmentType: string
   content: string
-  status: OfferStatus
-  emailedAt?: string
-  sentBy?: string
-  acceptedAt?: string
-  rejectedAt?: string
-  expiredAt?: string
   createdBy?: string
   createdAt: string
 }
 
 interface Template { id: string; name: string; isActive: boolean }
-
-const STATUS_STYLES: Record<OfferStatus, string> = {
-  DRAFT:    "bg-slate-100 text-slate-700",
-  SENT:     "bg-amber-100 text-amber-700",
-  ACCEPTED: "bg-emerald-100 text-emerald-700",
-  REJECTED: "bg-red-100 text-red-700",
-  EXPIRED:  "bg-muted text-muted-foreground",
-}
-
-const STATUS_LABELS: Record<OfferStatus, string> = {
-  DRAFT:    "Draft",
-  SENT:     "Sent",
-  ACCEPTED: "Accepted",
-  REJECTED: "Rejected",
-  EXPIRED:  "Expired",
-}
 
 const EMPTY_FORM = {
   templateId: "", candidateName: "", candidateEmail: "", candidateMobile: "",
@@ -93,16 +69,16 @@ export function HrmsOfferLetterView() {
   useEffect(() => { load(); loadTemplates() }, [load, loadTemplates])
 
   const handleGenerate = async () => {
-    if (!form.candidateName || !form.designation) { toast.error("Candidate Name and Designation are required"); return }
+    if (!form.candidateName || !form.designation) {
+      toast.error("Candidate Name and Designation are required")
+      return
+    }
     setSaving(true)
     try {
       const res = await authFetch("/api/admin/hrms/offer-letters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          templateId: form.templateId || undefined,
-        }),
+        body: JSON.stringify({ ...form, templateId: form.templateId || undefined }),
       })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
@@ -112,23 +88,6 @@ export function HrmsOfferLetterView() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed")
     } finally { setSaving(false) }
-  }
-
-  const updateStatus = async (id: string, status: OfferStatus) => {
-    try {
-      const res = await authFetch(`/api/admin/hrms/offer-letters/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error)
-      toast.success(`Status updated to ${STATUS_LABELS[status]}`)
-      setViewLetter(json.data)
-      setLetters(prev => prev.map(l => l.id === id ? { ...l, ...json.data } : l))
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed")
-    }
   }
 
   const handleDelete = async () => {
@@ -147,7 +106,8 @@ export function HrmsOfferLetterView() {
 
   const f = (key: keyof typeof form) => ({
     value: form[key],
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm((s) => ({ ...s, [key]: e.target.value })),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((s) => ({ ...s, [key]: e.target.value })),
   })
 
   return (
@@ -156,13 +116,18 @@ export function HrmsOfferLetterView() {
         <div>
           <div className="flex items-center gap-2 mb-0.5">
             <h1 className="text-2xl font-bold tracking-tight">Offer Letters</h1>
-            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Quantix Internal</span>
+            <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">
+              Quantix Internal
+            </span>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Generate from Quantix HR templates with automatic merge tag rendering.
+            Issue appointment offers. Attach policies via the Annexure module.
           </p>
         </div>
-        <Button onClick={() => { setForm({ ...EMPTY_FORM }); setFormOpen(true) }} className="gap-2">
+        <Button
+          onClick={() => { setForm({ ...EMPTY_FORM }); setFormOpen(true) }}
+          className="gap-2"
+        >
           <Plus className="h-4 w-4" /> Generate
         </Button>
       </div>
@@ -183,35 +148,53 @@ export function HrmsOfferLetterView() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-44">Offer Ref</TableHead>
                     <TableHead>Candidate</TableHead>
                     <TableHead>Designation</TableHead>
                     <TableHead>Joining Date</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="w-20" />
+                    <TableHead>Issued</TableHead>
+                    <TableHead className="w-24" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {letters.map((l) => (
                     <TableRow key={l.id}>
                       <TableCell>
-                        <div className="text-sm font-semibold">{l.candidateName}</div>
-                        {l.candidateEmail && <div className="text-xs text-muted-foreground">{l.candidateEmail}</div>}
-                      </TableCell>
-                      <TableCell className="text-sm">{l.designation}</TableCell>
-                      <TableCell className="text-sm">{l.joiningDate ? format(new Date(l.joiningDate), "d MMM yyyy") : "—"}</TableCell>
-                      <TableCell>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[l.status]}`}>
-                          {STATUS_LABELS[l.status]}
+                        <span className="font-mono text-xs font-semibold text-primary bg-primary/8 px-2 py-0.5 rounded">
+                          {l.offerRef || "—"}
                         </span>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{format(new Date(l.createdAt), "d MMM yyyy")}</TableCell>
+                      <TableCell>
+                        <div className="text-sm font-semibold">{l.candidateName}</div>
+                        {l.candidateEmail && (
+                          <div className="text-xs text-muted-foreground">{l.candidateEmail}</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">{l.designation}</TableCell>
+                      <TableCell className="text-sm">
+                        {l.joiningDate ? format(new Date(l.joiningDate), "d MMM yyyy") : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {format(new Date(l.createdAt), "d MMM yyyy")}
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setViewLetter(l)}>
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7"
+                            onClick={() => setViewLetter(l)}
+                          >
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(l.id)}>
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7"
+                            onClick={() => window.open(`/offer-letter-print/${l.id}`, "_blank")}
+                          >
+                            <Printer className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => setDeleteId(l.id)}
+                          >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -234,11 +217,16 @@ export function HrmsOfferLetterView() {
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5 col-span-2">
               <Label>Template</Label>
-              <Select value={form.templateId} onValueChange={(v) => setForm((s) => ({ ...s, templateId: v === "none" ? "" : v }))}>
+              <Select
+                value={form.templateId}
+                onValueChange={(v) => setForm((s) => ({ ...s, templateId: v === "none" ? "" : v }))}
+              >
                 <SelectTrigger><SelectValue placeholder="— No template (blank letter) —" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">— No template —</SelectItem>
-                  {templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -276,7 +264,10 @@ export function HrmsOfferLetterView() {
             </div>
             <div className="space-y-1.5">
               <Label>Employment Type</Label>
-              <Select value={form.employmentType} onValueChange={(v) => setForm((s) => ({ ...s, employmentType: v }))}>
+              <Select
+                value={form.employmentType}
+                onValueChange={(v) => setForm((s) => ({ ...s, employmentType: v }))}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="PERMANENT">Permanent</SelectItem>
@@ -290,80 +281,58 @@ export function HrmsOfferLetterView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleGenerate} disabled={saving}>{saving ? "Generating…" : "Generate"}</Button>
+            <Button onClick={handleGenerate} disabled={saving}>
+              {saving ? "Generating…" : "Generate"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* View / Workflow Dialog */}
+      {/* View Dialog */}
       <Dialog open={!!viewLetter} onOpenChange={(o) => !o && setViewLetter(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              Offer Letter — {viewLetter?.candidateName}
-              {viewLetter && (
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[viewLetter.status]}`}>
-                  {STATUS_LABELS[viewLetter.status]}
+              {viewLetter?.offerRef && (
+                <span className="font-mono text-sm text-primary">
+                  {viewLetter.offerRef}
                 </span>
               )}
+              <span className="font-normal text-muted-foreground">—</span>
+              <span>{viewLetter?.candidateName}</span>
             </DialogTitle>
           </DialogHeader>
           {viewLetter && (
             <div className="space-y-4">
-              <pre className="whitespace-pre-wrap font-sans text-sm bg-muted/30 rounded-lg p-4 min-h-[200px]">
+              <div className="grid grid-cols-2 gap-3 text-sm bg-muted/30 rounded-lg p-3">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Designation</p>
+                  <p className="font-medium mt-0.5">{viewLetter.designation}</p>
+                  {viewLetter.department && (
+                    <p className="text-xs text-muted-foreground">{viewLetter.department}</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Joining Date</p>
+                  <p className="font-medium mt-0.5">
+                    {viewLetter.joiningDate
+                      ? format(new Date(viewLetter.joiningDate), "d MMM yyyy")
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+
+              <pre className="whitespace-pre-wrap font-sans text-sm bg-muted/30 rounded-lg p-4 min-h-[200px] max-h-96 overflow-y-auto">
                 {viewLetter.content || "(No content — template was blank)"}
               </pre>
 
-              {/* Workflow Actions */}
-              <div className="flex gap-2 flex-wrap">
-                <Button size="sm" variant="outline" className="gap-1" onClick={() => window.open(`/offer-letter-print/${viewLetter.id}?print=1`, '_blank')}>
+              <div className="flex gap-2">
+                <Button
+                  size="sm" variant="outline" className="gap-1"
+                  onClick={() => window.open(`/offer-letter-print/${viewLetter.id}`, "_blank")}
+                >
                   <Printer className="h-3.5 w-3.5" /> Print / PDF
                 </Button>
-                {viewLetter.status === "DRAFT" && (
-                  <Button size="sm" className="gap-1" onClick={() => updateStatus(viewLetter.id, "SENT")}>
-                    <Mail className="h-3.5 w-3.5" /> Mark as Sent
-                  </Button>
-                )}
-                {viewLetter.status === "SENT" && (
-                  <>
-                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => updateStatus(viewLetter.id, "ACCEPTED")}>
-                      <CheckCircle className="h-3.5 w-3.5" /> Mark Accepted
-                    </Button>
-                    <Button size="sm" variant="outline" className="gap-1 text-destructive border-destructive hover:bg-destructive/10" onClick={() => updateStatus(viewLetter.id, "REJECTED")}>
-                      <XCircle className="h-3.5 w-3.5" /> Mark Rejected
-                    </Button>
-                    <Button size="sm" variant="outline" className="gap-1" onClick={() => updateStatus(viewLetter.id, "EXPIRED")}>
-                      <Clock className="h-3.5 w-3.5" /> Mark Expired
-                    </Button>
-                  </>
-                )}
-                {viewLetter.status === "DRAFT" && (
-                  <Button size="sm" variant="outline" className="gap-1" onClick={() => updateStatus(viewLetter.id, "EXPIRED")}>
-                    <Clock className="h-3.5 w-3.5" /> Mark Expired
-                  </Button>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Offer History */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Offer History</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                  <HistoryRow label="Created" value={format(new Date(viewLetter.createdAt), "d MMM yyyy, HH:mm")} by={viewLetter.createdBy} />
-                  {viewLetter.emailedAt && (
-                    <HistoryRow label="Sent" value={format(new Date(viewLetter.emailedAt), "d MMM yyyy, HH:mm")} by={viewLetter.sentBy} />
-                  )}
-                  {viewLetter.acceptedAt && (
-                    <HistoryRow label="Accepted" value={format(new Date(viewLetter.acceptedAt), "d MMM yyyy, HH:mm")} />
-                  )}
-                  {viewLetter.rejectedAt && (
-                    <HistoryRow label="Rejected" value={format(new Date(viewLetter.rejectedAt), "d MMM yyyy, HH:mm")} />
-                  )}
-                  {viewLetter.expiredAt && (
-                    <HistoryRow label="Expired" value={format(new Date(viewLetter.expiredAt), "d MMM yyyy, HH:mm")} />
-                  )}
-                </div>
               </div>
             </div>
           )}
@@ -374,24 +343,21 @@ export function HrmsOfferLetterView() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Offer Letter?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently remove the offer letter.</AlertDialogDescription>
+            <AlertDialogDescription>
+              This will permanently remove the offer letter record.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  )
-}
-
-function HistoryRow({ label, value, by }: { label: string; value: string; by?: string | null }) {
-  return (
-    <div className="space-y-0.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="font-medium">{value}</p>
-      {by && <p className="text-xs text-muted-foreground">by {by}</p>}
     </div>
   )
 }

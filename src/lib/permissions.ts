@@ -768,6 +768,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   // HRMS
   "hrms-employees":         "hrms:view",
   "hrms-offer-letter":      "hrms:view",
+  "hrms-annexure":          "hrms:view",
   "hrms-commission-slip":   "hrms:view",
   "hrms-payslip":           "hrms:view",
   "hrms-templates":         "hrms:view",

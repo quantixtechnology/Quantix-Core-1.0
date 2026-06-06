@@ -7,7 +7,7 @@ import {
   Image, Workflow, Upload, FileCheck, Server, Lock, ScrollText,
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
   DatabaseZap, FileText, Archive, Package, Calculator,
-  UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal,
+  UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal, Paperclip,
   TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette,
 } from "lucide-react"
 import {
@@ -102,6 +102,7 @@ const importNavItems: NavItem[] = [
 const hrmsNavItems: NavItem[] = [
   { key: "hrms-employees",       label: "Employee Master",    icon: UserSquare         },
   { key: "hrms-offer-letter",    label: "Offer Letter",       icon: FileSignature      },
+  { key: "hrms-annexure",        label: "Annexure",           icon: Paperclip          },
   { key: "hrms-commission-slip", label: "Commission Slip",    icon: BadgeDollarSign    },
   { key: "hrms-payslip",         label: "Payslip",            icon: Wallet             },
   { key: "hrms-templates",       label: "Templates",          icon: LayoutTemplate     },
