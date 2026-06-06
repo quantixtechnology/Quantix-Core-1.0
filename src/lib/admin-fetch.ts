@@ -72,32 +72,43 @@ export function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+// Extended options type — adds silentFailure flag on top of standard RequestInit.
+// When silentFailure: true, a hard 401 returns the failed Response instead of
+// wiping localStorage and redirecting. Use this in standalone pages (e.g. print
+// pages) that open in a new tab — calling clearAuthAndRedirect() there would
+// fire a StorageEvent in the parent window and force logout the entire session.
+type AuthFetchOptions = RequestInit & { silentFailure?: boolean }
+
 /**
- * Authenticated fetch that auto-refreshes expired tokens and redirects to
- * login on hard auth failure. Use instead of bare fetch() in admin views.
+ * Authenticated fetch that auto-refreshes expired tokens. On hard auth failure
+ * it redirects to login UNLESS `silentFailure: true` is passed, in which case
+ * the failed Response is returned so the caller can handle it inline.
  */
-export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function authFetch(url: string, options: AuthFetchOptions = {}): Promise<Response> {
+  const { silentFailure = false, ...fetchOptions } = options
+
   const makeHeaders = () => {
     const base = getAuthHeaders()
     // FormData bodies must not carry a Content-Type header.
     // The browser sets multipart/form-data + boundary automatically; an
     // explicit JSON header overwrites it and breaks multipart parsing.
-    if (options.body instanceof FormData) delete base['Content-Type']
-    return { ...base, ...(options.headers as Record<string, string> || {}) }
+    if (fetchOptions.body instanceof FormData) delete base['Content-Type']
+    return { ...base, ...(fetchOptions.headers as Record<string, string> || {}) }
   }
 
-  let response = await fetch(url, { ...options, headers: makeHeaders() });
+  let response = await fetch(url, { ...fetchOptions, headers: makeHeaders() })
 
   if (response.status === 401) {
-    const refreshed = await attemptTokenRefresh();
+    const refreshed = await attemptTokenRefresh()
     if (refreshed) {
-      response = await fetch(url, { ...options, headers: makeHeaders() });
-    } else {
-      clearAuthAndRedirect();
+      response = await fetch(url, { ...fetchOptions, headers: makeHeaders() })
+    } else if (!silentFailure) {
+      clearAuthAndRedirect()
     }
+    // silentFailure: true → fall through and return the 401 Response to the caller
   }
 
-  return response;
+  return response
 }
 
 /**

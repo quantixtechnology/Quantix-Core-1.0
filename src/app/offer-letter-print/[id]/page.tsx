@@ -176,17 +176,37 @@ export default function OfferLetterPrintPage() {
 
   useEffect(() => {
     if (!id) return
+
+    // silentFailure: true — on hard 401 this page returns the failed Response
+    // instead of calling clearAuthAndRedirect(). That function wipes localStorage
+    // and fires a StorageEvent in the parent window, which triggers logout() in
+    // auth-provider.tsx and kills the main app session across all open tabs.
+    const opts = { silentFailure: true } as const
+
+    // Parse JSON defensively — on auth/server error just return a failed shape
+    const safeJson = (res: Response) =>
+      res.ok
+        ? res.json().catch(() => ({ success: false }))
+        : Promise.resolve({ success: false, status: res.status })
+
     Promise.all([
-      authFetch(`/api/admin/hrms/offer-letters/${id}`),
-      authFetch('/api/admin/hrms/settings'),
-      authFetch('/api/admin/platform-settings'),
+      authFetch(`/api/admin/hrms/offer-letters/${id}`, opts),
+      authFetch('/api/admin/hrms/settings', opts),
+      authFetch('/api/admin/platform-settings', opts),
     ])
-      .then(([lr, hr, pr]) => Promise.all([lr.json(), hr.json(), pr.json()]))
+      .then(([lr, hr, pr]) => {
+        // Offer letter is the critical resource — auth failure here is a real error
+        if (lr.status === 401 || lr.status === 403) {
+          throw new Error('Session expired or access denied. Please sign in and try again.')
+        }
+        // Settings are supplementary — fall back to {} on any failure
+        return Promise.all([lr.json(), safeJson(hr), safeJson(pr)])
+      })
       .then(([lj, hj, pj]) => {
         if (!lj.success) throw new Error(lj.error || 'Offer letter not found')
         setLetter(lj.data)
-        if (hj.success && hj.data) setHrms(hj.data)
-        if (pj.success && pj.data) setPlatform(pj.data)
+        if (hj.success && hj.data) setHrms(hj.data as HrmsSettings)
+        if (pj.success && pj.data) setPlatform(pj.data as PlatformSettings)
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
