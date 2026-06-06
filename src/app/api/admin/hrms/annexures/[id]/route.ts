@@ -3,6 +3,13 @@ import type { NextRequest } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
+type Ctx = { params?: Promise<Record<string, string | string[]>> }
+
+const getId = async (ctx?: Ctx) => {
+  const p = await ctx?.params
+  return Array.isArray(p?.id) ? p?.id[0] : p?.id
+}
+
 const withOfferLetter = {
   include: {
     offerLetter: {
@@ -15,9 +22,10 @@ const withOfferLetter = {
 }
 
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:view' })(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (_req: NextRequest, ctx?: Ctx) => {
     try {
-      const { id } = await params
+      const id = await getId(ctx)
+      if (!id) return createErrorResponse('id required', 400)
       const annexure = await db.annexure.findFirst({
         where: { id, deletedAt: null },
         ...withOfferLetter,
@@ -31,9 +39,10 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
 )
 
 export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:manage' })(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, ctx?: Ctx) => {
     try {
-      const { id } = await params
+      const id = await getId(ctx)
+      if (!id) return createErrorResponse('id required', 400)
       const body = await req.json() as { title?: string; content?: string }
       const annexure = await db.annexure.update({
         where: { id },
@@ -51,9 +60,10 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
 )
 
 export const DELETE = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:manage' })(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (_req: NextRequest, ctx?: Ctx) => {
     try {
-      const { id } = await params
+      const id = await getId(ctx)
+      if (!id) return createErrorResponse('id required', 400)
       await db.annexure.update({ where: { id }, data: { deletedAt: new Date() } })
       return NextResponse.json({ success: true })
     } catch (e) {

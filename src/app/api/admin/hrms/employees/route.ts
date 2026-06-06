@@ -6,16 +6,14 @@ import { db } from '@/lib/db'
 async function generateEmployeeId(joiningDate: string): Promise<{ employeeCode: string; internalSequence: number }> {
   const year = new Date(joiningDate).getFullYear()
   const existing = await db.employee.findMany({
-    where: { employeeCode: { startsWith: `QT-${year}-` } },
-    select: { employeeCode: true, internalSequence: true },
+    where: { employeeCode: { startsWith: `QT-${year}-` }, deletedAt: null },
+    select: { internalSequence: true },
+    orderBy: { internalSequence: 'desc' },
+    take: 1,
   })
-  const maxSeq = existing.reduce((max, e) => {
-    const parts = e.employeeCode.split('-')
-    const seq = parseInt(parts[2] ?? '0', 10)
-    return isNaN(seq) ? max : Math.max(max, seq)
-  }, 0)
+  const maxSeq = existing[0]?.internalSequence ?? 0
   const next = maxSeq + 1
-  return { employeeCode: `QT-${year}-${String(next).padStart(3, '0')}`, internalSequence: next }
+  return { employeeCode: `QT-${year}-EMP${String(next).padStart(3, '0')}`, internalSequence: next }
 }
 
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: 'hrms:view' })(

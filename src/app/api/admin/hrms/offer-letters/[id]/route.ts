@@ -37,6 +37,17 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
         content?: string
         sentBy?: string
         performedBy?: string
+        // Draft-edit fields — only applied when offerRef not yet assigned
+        candidateName?: string
+        candidateEmail?: string
+        candidateMobile?: string
+        designation?: string
+        department?: string
+        reportingManager?: string
+        workLocation?: string
+        joiningDate?: string
+        employmentType?: string
+        templateId?: string
       }
 
       const existing = await db.offerLetter.findUnique({ where: { id } })
@@ -56,6 +67,24 @@ export const PUT = withMiddleware({ requireAuth: true, requiredPermission: 'hrms
         if (statusUpdate === 'ACCEPTED') updateData.acceptedAt = now
         if (statusUpdate === 'REJECTED') updateData.rejectedAt = now
         if (statusUpdate === 'EXPIRED')  updateData.expiredAt  = now
+      }
+
+      // Draft edit — candidate fields may be updated before generate is called
+      if (!existing.offerRef) {
+        if (body.candidateName    !== undefined) updateData.candidateName    = body.candidateName
+        if (body.candidateEmail   !== undefined) updateData.candidateEmail   = body.candidateEmail
+        if (body.candidateMobile  !== undefined) updateData.candidateMobile  = body.candidateMobile
+        if (body.designation      !== undefined) updateData.designation      = body.designation
+        if (body.department       !== undefined) updateData.department       = body.department
+        if (body.reportingManager !== undefined) updateData.reportingManager = body.reportingManager
+        if (body.workLocation     !== undefined) updateData.workLocation     = body.workLocation
+        if (body.joiningDate      !== undefined) {
+          updateData.joiningDate = body.joiningDate ? new Date(body.joiningDate) : null
+        }
+        if (body.employmentType !== undefined) {
+          updateData.employmentType = body.employmentType as 'PERMANENT' | 'CONTRACT' | 'COMMISSION_BASED' | 'CONSULTANT' | 'INTERN'
+        }
+        if (body.templateId !== undefined) updateData.templateId = body.templateId || null
       }
 
       const letter = await db.offerLetter.update({ where: { id }, data: updateData })

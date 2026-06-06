@@ -9,14 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { Plus, Eye, Printer, Trash2, FileSignature } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { Plus, Eye, Printer, Trash2, FileSignature, Pencil, Zap } from "lucide-react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { authFetch } from "@/lib/admin-fetch"
 
 interface OfferLetter {
   id: string
-  offerRef?: string
+  offerRef?: string | null
   templateId?: string
   candidateName: string
   candidateEmail?: string
@@ -40,15 +41,35 @@ const EMPTY_FORM = {
   workLocation: "", employmentType: "PERMANENT",
 }
 
+type DialogMode = "create" | "edit" | "view"
+
+function letterForm(l: OfferLetter): typeof EMPTY_FORM {
+  return {
+    templateId:      l.templateId    ?? "",
+    candidateName:   l.candidateName,
+    candidateEmail:  l.candidateEmail   ?? "",
+    candidateMobile: l.candidateMobile  ?? "",
+    designation:     l.designation,
+    joiningDate:     l.joiningDate
+      ? l.joiningDate.slice(0, 10)   // ISO → YYYY-MM-DD for <input type="date">
+      : "",
+    department:      l.department       ?? "",
+    reportingManager:l.reportingManager ?? "",
+    workLocation:    l.workLocation     ?? "",
+    employmentType:  l.employmentType   ?? "PERMANENT",
+  }
+}
+
 export function HrmsOfferLetterView() {
   const [letters, setLetters] = useState<OfferLetter[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(false)
-  const [formOpen, setFormOpen] = useState(false)
-  const [viewLetter, setViewLetter] = useState<OfferLetter | null>(null)
+  const [dialogMode, setDialogMode] = useState<DialogMode | null>(null)
+  const [activeLetter, setActiveLetter] = useState<OfferLetter | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [form, setForm] = useState({ ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState<string | null>(null)
 
   const loadTemplates = useCallback(async () => {
     const res = await authFetch("/api/admin/hrms/templates")
@@ -68,26 +89,84 @@ export function HrmsOfferLetterView() {
 
   useEffect(() => { load(); loadTemplates() }, [load, loadTemplates])
 
-  const handleGenerate = async () => {
+  const openCreate = () => {
+    setForm({ ...EMPTY_FORM })
+    setActiveLetter(null)
+    setDialogMode("create")
+  }
+
+  const openEdit = (l: OfferLetter) => {
+    setForm(letterForm(l))
+    setActiveLetter(l)
+    setDialogMode("edit")
+  }
+
+  const openView = (l: OfferLetter) => {
+    setActiveLetter(l)
+    setDialogMode("view")
+  }
+
+  const closeDialog = () => { setDialogMode(null); setActiveLetter(null) }
+
+  const handleSaveDraft = async () => {
     if (!form.candidateName || !form.designation) {
       toast.error("Candidate Name and Designation are required")
       return
     }
     setSaving(true)
     try {
-      const res = await authFetch("/api/admin/hrms/offer-letters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, templateId: form.templateId || undefined }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error)
-      toast.success("Offer letter generated")
-      setFormOpen(false)
+      if (dialogMode === "create") {
+        const res = await authFetch("/api/admin/hrms/offer-letters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, templateId: form.templateId || undefined }),
+        })
+        const json = await res.json()
+        if (!json.success) throw new Error(json.error)
+        toast.success("Draft saved")
+      } else if (dialogMode === "edit" && activeLetter) {
+        const res = await authFetch(`/api/admin/hrms/offer-letters/${activeLetter.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, templateId: form.templateId || null }),
+        })
+        const json = await res.json()
+        if (!json.success) throw new Error(json.error)
+        toast.success("Draft updated")
+      }
+      closeDialog()
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed")
     } finally { setSaving(false) }
+  }
+
+  // Save draft edits first, then assign the offer number
+  const handleGenerate = async (letterId: string) => {
+    setGenerating(letterId)
+    try {
+      // If called from the edit dialog, persist any field changes before generating
+      if (dialogMode === "edit" && activeLetter?.id === letterId) {
+        const saveRes = await authFetch(`/api/admin/hrms/offer-letters/${letterId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, templateId: form.templateId || null }),
+        })
+        const saveJson = await saveRes.json()
+        if (!saveJson.success) throw new Error(saveJson.error)
+      }
+
+      const res = await authFetch(`/api/admin/hrms/offer-letters/${letterId}/generate`, {
+        method: "POST",
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      toast.success(`Offer letter issued — ${json.data.offerRef}`)
+      closeDialog()
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed")
+    } finally { setGenerating(null) }
   }
 
   const handleDelete = async () => {
@@ -96,7 +175,7 @@ export function HrmsOfferLetterView() {
       const res = await authFetch(`/api/admin/hrms/offer-letters/${deleteId}`, { method: "DELETE" })
       const json = await res.json()
       if (!json.success) throw new Error(json.error)
-      toast.success("Offer letter deleted")
+      toast.success("Deleted")
       setDeleteId(null)
       load()
     } catch (e) {
@@ -110,6 +189,15 @@ export function HrmsOfferLetterView() {
       setForm((s) => ({ ...s, [key]: e.target.value })),
   })
 
+  const isDraft  = (l: OfferLetter) => !l.offerRef
+  const isIssued = (l: OfferLetter) => !!l.offerRef
+
+  const dialogTitle =
+    dialogMode === "create" ? "New Offer Letter Draft" :
+    dialogMode === "edit"   ? `Edit Draft — ${activeLetter?.candidateName ?? ""}` :
+    dialogMode === "view"   ? `${activeLetter?.offerRef} — ${activeLetter?.candidateName}` :
+    ""
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
@@ -121,14 +209,11 @@ export function HrmsOfferLetterView() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Issue appointment offers. Attach policies via the Annexure module.
+            Save drafts first. Offer number is assigned only when you click <strong>Generate Offer Letter</strong>.
           </p>
         </div>
-        <Button
-          onClick={() => { setForm({ ...EMPTY_FORM }); setFormOpen(true) }}
-          className="gap-2"
-        >
-          <Plus className="h-4 w-4" /> Generate
+        <Button onClick={openCreate} className="gap-2">
+          <Plus className="h-4 w-4" /> Save Draft
         </Button>
       </div>
 
@@ -148,21 +233,27 @@ export function HrmsOfferLetterView() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-44">Offer Ref</TableHead>
+                    <TableHead className="w-52">Offer Ref</TableHead>
                     <TableHead>Candidate</TableHead>
                     <TableHead>Designation</TableHead>
                     <TableHead>Joining Date</TableHead>
-                    <TableHead>Issued</TableHead>
-                    <TableHead className="w-24" />
+                    <TableHead>Saved</TableHead>
+                    <TableHead className="w-28" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {letters.map((l) => (
                     <TableRow key={l.id}>
                       <TableCell>
-                        <span className="font-mono text-xs font-semibold text-primary bg-primary/8 px-2 py-0.5 rounded">
-                          {l.offerRef || "—"}
-                        </span>
+                        {isDraft(l) ? (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            Draft
+                          </span>
+                        ) : (
+                          <span className="font-mono text-xs font-semibold text-primary bg-primary/8 px-2 py-0.5 rounded">
+                            {l.offerRef}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="text-sm font-semibold">{l.candidateName}</div>
@@ -179,20 +270,46 @@ export function HrmsOfferLetterView() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
+                          {isDraft(l) ? (
+                            <>
+                              <Button
+                                size="icon" variant="ghost" className="h-7 w-7"
+                                title="Edit draft"
+                                onClick={() => openEdit(l)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="icon" variant="ghost" className="h-7 w-7 text-amber-600 hover:text-amber-700"
+                                title="Generate offer letter"
+                                disabled={generating === l.id}
+                                onClick={() => handleGenerate(l.id)}
+                              >
+                                <Zap className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                size="icon" variant="ghost" className="h-7 w-7"
+                                title="View"
+                                onClick={() => openView(l)}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="icon" variant="ghost" className="h-7 w-7"
+                                title="Print / PDF"
+                                onClick={() => window.open(`/offer-letter-print/${l.id}`, "_blank")}
+                              >
+                                <Printer className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
                           <Button
-                            size="icon" variant="ghost" className="h-7 w-7"
-                            onClick={() => setViewLetter(l)}
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="icon" variant="ghost" className="h-7 w-7"
-                            onClick={() => window.open(`/offer-letter-print/${l.id}`, "_blank")}
-                          >
-                            <Printer className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive"
+                            size="icon" variant="ghost"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            title="Delete"
                             onClick={() => setDeleteId(l.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -208,20 +325,21 @@ export function HrmsOfferLetterView() {
         </CardContent>
       </Card>
 
-      {/* Generate Dialog */}
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+      {/* ── Create / Edit Draft Dialog ──────────────────────────────── */}
+      <Dialog open={dialogMode === "create" || dialogMode === "edit"} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Generate Offer Letter</DialogTitle>
+            <DialogTitle>{dialogTitle}</DialogTitle>
           </DialogHeader>
+
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5 col-span-2">
               <Label>Template</Label>
               <Select
-                value={form.templateId}
+                value={form.templateId || "none"}
                 onValueChange={(v) => setForm((s) => ({ ...s, templateId: v === "none" ? "" : v }))}
               >
-                <SelectTrigger><SelectValue placeholder="— No template (blank letter) —" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="— No template (blank) —" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">— No template —</SelectItem>
                   {templates.map((t) => (
@@ -230,6 +348,7 @@ export function HrmsOfferLetterView() {
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-1.5 col-span-2">
               <Label>Candidate Name <span className="text-destructive">*</span></Label>
               <Input placeholder="Rahul Sharma" {...f("candidateName")} />
@@ -279,57 +398,87 @@ export function HrmsOfferLetterView() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleGenerate} disabled={saving}>
-              {saving ? "Generating…" : "Generate"}
+
+          {dialogMode === "edit" && (
+            <>
+              <Separator />
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                <p className="font-semibold mb-0.5">Ready to issue?</p>
+                <p>Click <strong>Generate Offer Letter</strong> to assign the next sequential number
+                   (QT/HR/{new Date().getFullYear()}/…). This cannot be undone.</p>
+              </div>
+            </>
+          )}
+
+          <DialogFooter className="gap-2 flex-wrap">
+            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+            <Button variant="outline" onClick={handleSaveDraft} disabled={saving}>
+              {saving ? "Saving…" : dialogMode === "create" ? "Save Draft" : "Save Changes"}
             </Button>
+            {dialogMode === "edit" && activeLetter && (
+              <Button
+                onClick={() => handleGenerate(activeLetter.id)}
+                disabled={generating === activeLetter.id || saving}
+                className="gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                <Zap className="h-4 w-4" />
+                {generating === activeLetter.id ? "Generating…" : "Generate Offer Letter"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog */}
-      <Dialog open={!!viewLetter} onOpenChange={(o) => !o && setViewLetter(null)}>
+      {/* ── View Dialog (generated letters) ────────────────────────── */}
+      <Dialog open={dialogMode === "view"} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {viewLetter?.offerRef && (
-                <span className="font-mono text-sm text-primary">
-                  {viewLetter.offerRef}
-                </span>
-              )}
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-sm text-primary">{activeLetter?.offerRef}</span>
               <span className="font-normal text-muted-foreground">—</span>
-              <span>{viewLetter?.candidateName}</span>
+              <span>{activeLetter?.candidateName}</span>
             </DialogTitle>
           </DialogHeader>
-          {viewLetter && (
+          {activeLetter && isIssued(activeLetter) && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm bg-muted/30 rounded-lg p-3">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Designation</p>
-                  <p className="font-medium mt-0.5">{viewLetter.designation}</p>
-                  {viewLetter.department && (
-                    <p className="text-xs text-muted-foreground">{viewLetter.department}</p>
+                  <p className="font-medium mt-0.5">{activeLetter.designation}</p>
+                  {activeLetter.department && (
+                    <p className="text-xs text-muted-foreground">{activeLetter.department}</p>
                   )}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Joining Date</p>
                   <p className="font-medium mt-0.5">
-                    {viewLetter.joiningDate
-                      ? format(new Date(viewLetter.joiningDate), "d MMM yyyy")
+                    {activeLetter.joiningDate
+                      ? format(new Date(activeLetter.joiningDate), "d MMM yyyy")
                       : "—"}
                   </p>
                 </div>
+                {activeLetter.workLocation && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Work Location</p>
+                    <p className="font-medium mt-0.5">{activeLetter.workLocation}</p>
+                  </div>
+                )}
+                {activeLetter.reportingManager && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Reporting Manager</p>
+                    <p className="font-medium mt-0.5">{activeLetter.reportingManager}</p>
+                  </div>
+                )}
               </div>
 
-              <pre className="whitespace-pre-wrap font-sans text-sm bg-muted/30 rounded-lg p-4 min-h-[200px] max-h-96 overflow-y-auto">
-                {viewLetter.content || "(No content — template was blank)"}
+              <pre className="whitespace-pre-wrap font-sans text-sm bg-muted/30 rounded-lg p-4 min-h-[160px] max-h-80 overflow-y-auto">
+                {activeLetter.content || "(No content — template was blank)"}
               </pre>
 
               <div className="flex gap-2">
                 <Button
                   size="sm" variant="outline" className="gap-1"
-                  onClick={() => window.open(`/offer-letter-print/${viewLetter.id}`, "_blank")}
+                  onClick={() => window.open(`/offer-letter-print/${activeLetter.id}`, "_blank")}
                 >
                   <Printer className="h-3.5 w-3.5" /> Print / PDF
                 </Button>
@@ -339,6 +488,7 @@ export function HrmsOfferLetterView() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Delete Confirmation ─────────────────────────────────────── */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
