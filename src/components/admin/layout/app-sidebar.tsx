@@ -282,18 +282,15 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
           <SheetHeader className="px-4 py-4 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
             <SheetTitle className="sr-only">Navigation menu</SheetTitle>
             <SheetDescription className="sr-only">Admin navigation</SheetDescription>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center">
               {brand.expandedUrl
                 ? <SidebarLogoImg
                     src={brand.expandedUrl}
                     alt="Logo"
-                    style={{ height: 44, width: "auto", maxWidth: 160, objectFit: "contain", display: "block", flexShrink: 0 }}
+                    style={{ height: 44, width: "auto", maxWidth: 160, objectFit: "contain", display: "block" }}
                   />
-                : <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight shrink-0">Quantix Core</span>
+                : <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight">Quantix Core</span>
               }
-              <div className="flex flex-col min-w-0">
-                <span className="text-[10px] leading-tight" style={{ color: "rgba(255,255,255,0.38)" }}>Platform Admin</span>
-              </div>
             </div>
           </SheetHeader>
 
@@ -345,18 +342,15 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
         </div>
 
         {/* Expanded: primary logo at full height — hidden when collapsed */}
-        <div className="flex items-center gap-3 group-data-[state=collapsed]:hidden">
+        <div className="flex items-center group-data-[state=collapsed]:hidden">
           {brand.expandedUrl
             ? <SidebarLogoImg
                 src={brand.expandedUrl}
                 alt="Logo"
-                style={{ height: 44, width: "auto", maxWidth: 160, objectFit: "contain", display: "block", flexShrink: 0 }}
+                style={{ height: 44, width: "auto", maxWidth: 160, objectFit: "contain", display: "block" }}
               />
-            : <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight shrink-0">Quantix Core</span>
+            : <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight">Quantix Core</span>
           }
-          <div className="flex flex-col min-w-0">
-            <span className="text-[10px] leading-tight truncate" style={{ color: "rgba(255,255,255,0.38)" }}>Platform Admin</span>
-          </div>
         </div>
       </SidebarHeader>
 
