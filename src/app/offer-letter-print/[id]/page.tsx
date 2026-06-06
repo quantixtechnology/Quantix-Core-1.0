@@ -322,7 +322,7 @@ html, body {
   border-bottom: 2.5px solid ${accent};
 }
 .brand-group { display: flex; align-items: center; gap: 14px; }
-.brand-logo  { height: auto; max-height: 56px; width: auto; max-width: 160px; object-fit: contain; display: block; }
+.brand-logo  { width: auto; max-width: 220px; min-width: 180px; height: auto; object-fit: contain; display: block; image-rendering: auto; }
 .brand-name    { font-size: 15pt; font-weight: 800; color: #0f172a; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.1; }
 .brand-tagline { font-size: 8pt; color: #6b7280; letter-spacing: 0.04em; margin-top: 3px; }
 .doc-meta { text-align: right; font-size: 9pt; color: #374151; line-height: 1.8; flex-shrink: 0; }
@@ -450,6 +450,9 @@ html, body {
   /* Static footer — position:fixed causes a blank gap at the bottom of every page */
   .doc-footer        { position: static !important; margin-top: 32px; }
   .accent-bar-bottom { position: static !important; }
+
+  /* Logo — preserve size and sharpness in PDF */
+  .brand-logo { max-width: 220px; min-width: 180px; width: auto; height: auto; image-rendering: auto; }
 
   /* Watermark must render in PDF */
   .doc-watermark { position: absolute; }
