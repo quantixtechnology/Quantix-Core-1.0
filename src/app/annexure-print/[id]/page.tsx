@@ -163,9 +163,9 @@ export default function AnnexurePrintPage() {
     </>
   )
 
-  // Title band has 3 lines: ANNEXURE A / subtitle / ref — measure height for spacer
-  // accent-bar-top(5) + doc-header(~77) + title-band(~63) = ~145px → spacer: 152px
-  const HEADER_SPACER_H = 152
+  // Fixed header contains ONLY the company logo/branding row (no title band).
+  // accent-bar-top(5) + doc-header(~77) = ~82px → spacer: 88px
+  const HEADER_SPACER_H = 88
   // doc-footer(~54) + accent-bar-bottom(4) = ~58 → spacer: 64px
   const FOOTER_SPACER_H = 64
 
@@ -339,9 +339,16 @@ html, body {
   .print-fab  { display: none !important; }
 
   /*
-   * Fixed header: repeats on every page of the annexure.
-   * Correct for a single-document annexure where the title
-   * should appear on page 1 as well as continuation pages.
+   * Let content determine page count — no artificial A4 minimum height.
+   * Use block flow so flex: 1 on doc-body has no layout side-effects.
+   */
+  .doc { display: block !important; min-height: unset !important; }
+  .doc-body { flex: none; }
+
+  /*
+   * Fixed header: accent bar + company logo row only.
+   * The title band (ANNEXURE A / subtitle) stays in the document flow
+   * so it appears ONCE on page 1, not repeated on every page.
    */
   .doc-header-region {
     position: fixed;
@@ -416,8 +423,9 @@ html, body {
           )}
 
           {/*
-            Header region: fixed in print so it appears on every page.
-            Wraps accent-bar-top + doc-header + title-band as one unit.
+            Header region: fixed in print — company logo + ref only.
+            Does NOT include the title band so "ANNEXURE A" does not
+            repeat on continuation pages.
           */}
           <div className="doc-header-region">
             <div className="accent-bar-top" />
@@ -435,18 +443,25 @@ html, body {
                 <div>Date: {dateStr}</div>
               </div>
             </header>
-
-            <div className="title-band">
-              <div className="doc-title">Annexure {annexure.label}</div>
-              <div className="doc-subtitle">{annexure.title}</div>
-              {offerRef && (
-                <div className="doc-annexure-ref">Ref: {offerRef} — Annexure {annexure.label}</div>
-              )}
-            </div>
           </div>
 
-          {/* Reserves the header height in the document flow (print only) */}
+          {/*
+            Spacer = company header height only (~88px).
+            Keeps content below the fixed header without a title-band gap.
+          */}
           <div className="print-header-spacer" />
+
+          {/*
+            Title band: in the document flow — appears exactly ONCE on page 1.
+            Not part of the fixed header, so it does not repeat.
+          */}
+          <div className="title-band">
+            <div className="doc-title">Annexure {annexure.label}</div>
+            <div className="doc-subtitle">{annexure.title}</div>
+            {offerRef && (
+              <div className="doc-annexure-ref">Ref: {offerRef} — Annexure {annexure.label}</div>
+            )}
+          </div>
 
           <main className="doc-body">
             {bodyHtml ? (

@@ -624,6 +624,14 @@ html, body {
   /* Hide in-flow screen footers — the fixed footer replaces them */
   .screen-footer { display: none !important; }
 
+  /*
+   * Remove artificial A4 minimum height so annexure content flows
+   * naturally across however many pages it needs.
+   * The fixed footer appears at the page bottom regardless.
+   */
+  .annexure-shell .doc { display: block !important; min-height: unset !important; }
+  .annexure-shell .doc-body { flex: none; }
+
   /* Tighter padding for A4 */
   .doc-header { padding: 11px 36px 10px; }
   .title-band { padding: 7px 36px; }
