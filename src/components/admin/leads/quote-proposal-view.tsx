@@ -106,6 +106,20 @@ function formatDateDDMMMYYYY(date: Date): string {
 // A4 Proposal Document (2 pages) — exported for reuse in Document Center
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface ProposalBranding {
+  logoUrl: string | null
+  companyName: string
+  companyWebsite: string
+  accentColor: string
+}
+
+const DEFAULT_BRANDING: ProposalBranding = {
+  logoUrl: null,
+  companyName: 'Quantix Technology',
+  companyWebsite: 'www.quantixtechnology.in',
+  accentColor: '#2563EB',
+}
+
 export function ProposalDocument({
   form, proposalId, proposalDate, bankDetails,
 }: {
@@ -114,6 +128,24 @@ export function ProposalDocument({
   proposalDate: string
   bankDetails?: BankDetails | null
 }) {
+  const [branding, setBranding] = useState<ProposalBranding>(DEFAULT_BRANDING)
+
+  useEffect(() => {
+    authFetch('/api/admin/platform-settings', { silentFailure: true } as Parameters<typeof authFetch>[1])
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!j?.success || !j.data) return
+        const d = j.data
+        setBranding({
+          logoUrl: d.salesLogoUrl || d.logoUrl || null,
+          companyName: d.companyName || DEFAULT_BRANDING.companyName,
+          companyWebsite: (d.companyWebsite || 'https://quantixtechnology.in').replace(/^https?:\/\//, ''),
+          accentColor: d.salesAccentColor || d.primaryColor || DEFAULT_BRANDING.accentColor,
+        })
+      })
+      .catch(() => {})
+  }, [])
+
   const sub    = parseFloat(form.subscriptionAmount)   || 0
   const impl   = parseFloat(form.implementationAmount) || 0
   const ios    = parseFloat(form.iosAppAmount)         || 0
@@ -130,7 +162,9 @@ export function ProposalDocument({
   ].filter(s => parseFloat(s.amount) > 0)
 
   const headerBg   = "#0f1729"
-  const accentBlue = "#2563EB"
+  const accentBlue = branding.accentColor
+  const companyName    = branding.companyName
+  const companyWebsite = branding.companyWebsite
   const confirmDate = formatDateDDMMMYYYY(new Date())
   const showBank   = !!(bankDetails?.active && bankDetails?.bankName)
   const qrUrl      = bankDetails?.active && bankDetails?.qrUrl ? bankDetails.qrUrl : null
@@ -158,7 +192,10 @@ export function ProposalDocument({
             borderRadius: "10px", padding: "8px 16px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           }}>
-            <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "32px", display: "block" }} />
+            {branding.logoUrl
+              ? <img src={branding.logoUrl} alt={companyName} style={{ maxHeight: "50px", width: "auto", objectFit: "contain", display: "block" }} onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+              : <span style={{ fontWeight: 800, fontSize: "15px", color: "#111827", letterSpacing: "-0.3px" }}>{companyName}</span>
+            }
           </div>
           <div style={{ textAlign: "right" as const }}>
             <div style={{ fontSize: "22px", fontWeight: 800, color: headerBg, letterSpacing: "-0.5px", lineHeight: 1 }}>
@@ -334,9 +371,9 @@ export function ProposalDocument({
           display: "flex", justifyContent: "space-between", alignItems: "center",
           fontSize: "10px", color: "#9ca3af",
         }}>
-          <span>Quantix Technology · www.quantixtechnology.in</span>
+          <span>{companyName} · {companyWebsite}</span>
           <span style={{ fontWeight: 600, color: "#6b7280" }}>Page 1 of 2</span>
-          <span>© {new Date().getFullYear()} Quantix Technology</span>
+          <span>© {new Date().getFullYear()} {companyName}</span>
         </div>
       </div>
 
@@ -357,7 +394,10 @@ export function ProposalDocument({
             borderRadius: "10px", padding: "5px 12px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           }}>
-            <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "22px", display: "block" }} />
+            {branding.logoUrl
+              ? <img src={branding.logoUrl} alt={companyName} style={{ maxHeight: "32px", width: "auto", objectFit: "contain", display: "block" }} onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+              : <span style={{ fontWeight: 700, fontSize: "12px", color: "#111827" }}>{companyName}</span>
+            }
           </div>
           <div style={{ fontSize: "11px", color: "#6b7280" }}>
             <span style={{ fontWeight: 600, color: "#374151" }}>Proposal No:</span> {proposalId || "QX-000000-000"}
@@ -373,8 +413,8 @@ export function ProposalDocument({
           {sectionLabel("TERMS & CONDITIONS", "8px")}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "13px 18px", background: "#f9fafb" }}>
             {[
-              "Quantix Technology will initiate development based on selected services and business details.",
-              "Mobile application and website will be developed and prepared by Quantix Technology.",
+              `${companyName} will initiate development based on selected services and business details.`,
+              `Mobile application and website will be developed and prepared by ${companyName}.`,
               "The next subscription date becomes the final delivery date.",
               "Customer must provide (.com / .in) domain.",
             ].map((term, i) => (
@@ -393,7 +433,7 @@ export function ProposalDocument({
             {[
               "Implementation fee is non-refundable.",
               "First subscription amount must be paid in advance with implementation fee.",
-              "Quantix Technology reserves rights to pause services if subscriptions are unpaid.",
+              `${companyName} reserves rights to pause services if subscriptions are unpaid.`,
             ].map((term, i) => (
               <div key={i} style={{ display: "flex", gap: "8px", marginBottom: i < 2 ? "7px" : 0 }}>
                 <span style={{ color: "#d97706", fontWeight: 700, flexShrink: 0 }}>•</span>
@@ -431,7 +471,7 @@ export function ProposalDocument({
             <p style={{ margin: "0 0 8px 0", color: "#374151", fontWeight: 600, fontSize: "12px" }}>Customer confirms:</p>
             {[
               "Acceptance of selected services and pricing",
-              "Authorization to Quantix Technology to proceed",
+              `Authorization to ${companyName} to proceed`,
             ].map((item, i) => (
               <div key={i} style={{ display: "flex", gap: "8px", marginBottom: i < 1 ? "6px" : 0 }}>
                 <span style={{ color: "#16a34a", fontWeight: 800, flexShrink: 0 }}>✓</span>
@@ -491,9 +531,9 @@ export function ProposalDocument({
         }}>
           {/* LEFT — branding */}
           <div style={{ flex: "0 0 auto" }}>
-            <div style={{ fontWeight: 700, color: accentBlue, fontSize: "12px", marginBottom: "3px" }}>www.quantixtechnology.in</div>
-            <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>Quantix Technology · Enterprise SaaS Platform</div>
-            <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>© {new Date().getFullYear()} Quantix Technology. All rights reserved.</div>
+            <div style={{ fontWeight: 700, color: accentBlue, fontSize: "12px", marginBottom: "3px" }}>{companyWebsite}</div>
+            <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>{companyName} · Enterprise SaaS Platform</div>
+            <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>© {new Date().getFullYear()} {companyName}. All rights reserved.</div>
           </div>
 
           {/* CENTER — system note */}

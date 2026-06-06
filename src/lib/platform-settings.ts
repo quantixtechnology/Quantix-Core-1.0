@@ -27,12 +27,17 @@ export interface PlatformSettingsData {
 
   logoUrl: string | null       // /uploads/platform/shared/xxx.png  (null → static fallback)
   darkLogoUrl: string | null
+  compactLogoUrl: string | null
   faviconUrl: string | null
   emailLogoUrl: string | null
 
   primaryColor: string
   secondaryColor: string | null
   accentColor: string | null
+
+  // Zone 2 — Sales Documents
+  salesLogoUrl: string | null
+  salesAccentColor: string | null
 
   invoicePrefix: string
   sacCode: string
@@ -50,14 +55,18 @@ const DEFAULTS: Omit<PlatformSettingsData, 'id'> = {
   companyWebsite: 'https://quantixtechnology.in',
   companyGst:     'APPLIED FOR',
 
-  logoUrl:      null,
-  darkLogoUrl:  null,
-  faviconUrl:   null,
-  emailLogoUrl: null,
+  logoUrl:        null,
+  darkLogoUrl:    null,
+  compactLogoUrl: null,
+  faviconUrl:     null,
+  emailLogoUrl:   null,
 
   primaryColor:   '#10B981',
   secondaryColor: null,
   accentColor:    null,
+
+  salesLogoUrl:      null,
+  salesAccentColor:  null,
 
   invoicePrefix: 'QTX',
   sacCode:       '998314',
@@ -94,14 +103,18 @@ export async function getPlatformSettings(): Promise<PlatformSettingsData> {
       companyWebsite: row.companyWebsite ?? DEFAULTS.companyWebsite,
       companyGst:     row.companyGst     ?? process.env.PLATFORM_SELLER_GST     ?? DEFAULTS.companyGst,
 
-      logoUrl:      row.logoUrl      ?? null,
-      darkLogoUrl:  row.darkLogoUrl  ?? null,
-      faviconUrl:   row.faviconUrl   ?? null,
-      emailLogoUrl: row.emailLogoUrl ?? null,
+      logoUrl:        row.logoUrl        ?? null,
+      darkLogoUrl:    row.darkLogoUrl    ?? null,
+      compactLogoUrl: row.compactLogoUrl ?? null,
+      faviconUrl:     row.faviconUrl     ?? null,
+      emailLogoUrl:   row.emailLogoUrl   ?? null,
 
       primaryColor:   row.primaryColor   ?? DEFAULTS.primaryColor,
       secondaryColor: row.secondaryColor ?? null,
       accentColor:    row.accentColor    ?? null,
+
+      salesLogoUrl:     row.salesLogoUrl     ?? null,
+      salesAccentColor: row.salesAccentColor ?? null,
 
       invoicePrefix: row.invoicePrefix ?? DEFAULTS.invoicePrefix,
       sacCode:       row.sacCode       ?? DEFAULTS.sacCode,
@@ -133,4 +146,20 @@ export function emailLogoUrl(settings: PlatformSettingsData, baseUrl: string): s
 /** Relative logo URL for browser-rendered HTML (invoice download / proposals). */
 export function browserLogoUrl(settings: PlatformSettingsData): string {
   return settings.logoUrl ?? '/api/assets/logo'
+}
+
+/**
+ * Absolute logo URL for sales documents (proposals, invoices).
+ * Priority: salesLogoUrl → logoUrl. Returns null when no logo is configured
+ * so callers can render a text fallback instead of a broken image.
+ */
+export function salesDocLogoUrl(settings: PlatformSettingsData, baseUrl: string): string | null {
+  const raw = settings.salesLogoUrl ?? settings.logoUrl
+  if (!raw) return null
+  return raw.startsWith('http') ? raw : `${baseUrl}${raw}`
+}
+
+/** Brand accent color for sales documents (invoices, proposals). */
+export function salesDocAccentColor(settings: PlatformSettingsData): string {
+  return settings.salesAccentColor ?? settings.primaryColor ?? '#10B981'
 }

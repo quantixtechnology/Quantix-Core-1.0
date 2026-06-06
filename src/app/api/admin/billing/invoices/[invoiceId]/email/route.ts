@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { sendTransactionalEmail } from '@/lib/email-service';
-import { getPlatformSettings, emailLogoUrl } from '@/lib/platform-settings';
+import { getPlatformSettings, salesDocLogoUrl, salesDocAccentColor } from '@/lib/platform-settings';
 
 interface LineItem { name: string; description?: string; amount: number; type: string }
 
@@ -41,9 +41,11 @@ function buildInvoiceEmailHtml(opts: {
   paymentMode: string | null;
   receiptReference: string | null;
   baseUrl: string;
-  logoUrl: string;
+  logoUrl: string | null;
+  accentColor: string;
   sacCode: string;
   companyName: string;
+  companyEmail: string;
 }): string {
   const cgst = opts.cgstAmount ?? 0;
   const sgst = opts.sgstAmount ?? 0;
@@ -100,12 +102,12 @@ function buildInvoiceEmailHtml(opts: {
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:40px 16px;">
 <tr><td align="center">
 <table width="100%" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);" cellpadding="0" cellspacing="0">
-  <tr><td style="background:#10B981;padding:28px 32px;">
-    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:8px 16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);display:inline-block;margin-bottom:12px;">
-      <img src="${opts.logoUrl}" alt="${opts.companyName}" style="height:32px;display:block;" />
-    </div>
+  <tr><td style="background:${opts.accentColor};padding:28px 32px;">
+    ${opts.logoUrl ? `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:8px 16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);display:inline-block;margin-bottom:12px;">
+      <img src="${opts.logoUrl}" alt="${opts.companyName}" style="max-height:40px;width:auto;object-fit:contain;display:block;" />
+    </div>` : ''}
     <p style="margin:0;color:#ffffff;font-size:22px;font-weight:800;">${opts.companyName}</p>
-    <p style="margin:4px 0 0;color:#d1fae5;font-size:13px;">Platform Invoice</p>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">Platform Invoice</p>
   </td></tr>
   <tr><td style="padding:32px;">
     <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Invoice Number</p>
@@ -123,7 +125,7 @@ function buildInvoiceEmailHtml(opts: {
       ${gstRows}
       <tr>
         <td style="padding:8px 0;font-weight:700;font-size:15px;color:#111827;">Total</td>
-        <td style="text-align:right;font-weight:700;font-size:15px;color:#10B981;">${formatINR(grandTotal)}</td>
+        <td style="text-align:right;font-weight:700;font-size:15px;color:${opts.accentColor};">${formatINR(grandTotal)}</td>
       </tr>
       <tr><td style="padding:4px 0;color:#6b7280;font-size:11px;">Due Date</td><td style="text-align:right;font-size:11px;">${formatDate(opts.dueDate)}</td></tr>
       ${opts.paidDate ? `<tr><td style="padding:4px 0;color:#059669;font-size:11px;">Paid On</td><td style="text-align:right;font-size:11px;color:#059669;">${formatDate(opts.paidDate)}</td></tr>` : ''}
@@ -132,7 +134,7 @@ function buildInvoiceEmailHtml(opts: {
     </table>
 
     <p style="margin:0 0 16px;font-size:13px;color:#374151;">
-      For queries: <a href="mailto:billing@quantixtechnology.in" style="color:#10B981;">billing@quantixtechnology.in</a>
+      For queries: <a href="mailto:${opts.companyEmail}" style="color:${opts.accentColor};">${opts.companyEmail}</a>
     </p>
     <p style="margin:20px 0 0;font-size:11px;color:#9ca3af;line-height:1.6;">
       Automated invoice — ${opts.companyName}. HSN/SAC: ${opts.sacCode}.
@@ -210,14 +212,16 @@ export const POST = withMiddleware({
       paymentMode: record.paymentMode,
       receiptReference: record.receiptReference,
       baseUrl,
-      logoUrl: emailLogoUrl(ps, baseUrl),
+      logoUrl: salesDocLogoUrl(ps, baseUrl),
+      accentColor: salesDocAccentColor(ps),
       sacCode: ps.sacCode,
       companyName: ps.companyName,
+      companyEmail: ps.companyEmail,
     });
 
     const subject = record.status === 'paid'
-      ? `Payment Receipt — ${invoiceNumber} — Quantix Technology`
-      : `Invoice — ${invoiceNumber} — Quantix Technology`;
+      ? `Payment Receipt — ${invoiceNumber} — ${ps.companyName}`
+      : `Invoice — ${invoiceNumber} — ${ps.companyName}`;
 
     const result = await sendTransactionalEmail(toEmail, subject, html);
 

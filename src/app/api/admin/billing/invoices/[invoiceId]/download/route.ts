@@ -8,7 +8,7 @@
 import { db } from '@/lib/db';
 import { withMiddleware } from '@/lib/middleware';
 import { NextResponse } from 'next/server';
-import { getPlatformSettings, emailLogoUrl } from '@/lib/platform-settings';
+import { getPlatformSettings, salesDocLogoUrl, salesDocAccentColor } from '@/lib/platform-settings';
 
 interface LineItem { name: string; description?: string; amount: number; type: string }
 
@@ -30,7 +30,9 @@ function buildInvoiceHtml(opts: {
   sellerName: string;
   sellerAddress: string;
   sellerGst: string;
-  logoUrl: string;
+  sellerEmail: string;
+  logoUrl: string | null;
+  accentColor: string;
   sacCode: string;
   buyerName: string;
   buyerAddress: string;
@@ -129,12 +131,13 @@ function buildInvoiceHtml(opts: {
   .page { max-width: 800px; margin: 0 auto; padding: 28px 40px 40px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 16px; margin-bottom: 0; }
   .brand { display: flex; align-items: flex-start; gap: 18px; }
-  .brand img { height: 64px; display: block; object-fit: contain; flex-shrink: 0; }
+  .brand-logo { max-height: 54px; max-width: 200px; object-fit: contain; display: block; flex-shrink: 0; width: auto; }
+  .brand-name { font-size: 20px; font-weight: 800; color: #111827; letter-spacing: -0.3px; line-height: 1.1; flex-shrink: 0; }
   .brand-text h1 { font-size: 20px; color: #111827; font-weight: 800; letter-spacing: -0.3px; line-height: 1.1; }
-  .brand-text .doc-type { font-size: 10px; font-weight: 700; color: #10B981; text-transform: uppercase; letter-spacing: 0.12em; margin-top: 4px; }
+  .brand-text .doc-type { font-size: 10px; font-weight: 700; color: ${opts.accentColor}; text-transform: uppercase; letter-spacing: 0.12em; margin-top: 4px; }
   .brand-text .addr { font-size: 10.5px; color: #6b7280; margin-top: 6px; line-height: 1.55; }
   .brand-text .gst-num { font-size: 10.5px; color: #374151; font-family: monospace; margin-top: 2px; }
-  .divider { height: 2px; background: linear-gradient(90deg, #10B981, #06b6d4); border-radius: 2px; margin-bottom: 20px; }
+  .divider { height: 2px; background: linear-gradient(90deg, ${opts.accentColor}, #06b6d4); border-radius: 2px; margin-bottom: 20px; }
   .inv-meta { text-align: right; }
   .inv-meta .inv-label { font-size: 10px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
   .inv-meta .inv-no { font-size: 17px; font-weight: 800; color: #111827; letter-spacing: -0.3px; font-family: monospace; }
@@ -177,7 +180,7 @@ function buildInvoiceHtml(opts: {
 <div class="page">
   <div class="header">
     <div class="brand">
-      <img src="${opts.logoUrl}" alt="${opts.sellerName}" />
+      ${opts.logoUrl ? `<img src="${opts.logoUrl}" alt="${opts.sellerName}" class="brand-logo" />` : `<div class="brand-name">${opts.sellerName}</div>`}
       <div class="brand-text">
         <h1>${opts.sellerName}</h1>
         <div class="doc-type">Tax Invoice</div>
@@ -249,12 +252,12 @@ function buildInvoiceHtml(opts: {
   <div class="footer">
     <p>This is a computer-generated invoice. No signature required.</p>
     <p>SAC Code ${opts.sacCode} — Information Technology (IT) Consulting and Support Services</p>
-    <p style="margin-top:4px;">For billing queries: billing@quantixtechnology.in</p>
+    <p style="margin-top:4px;">For billing queries: ${opts.sellerEmail}</p>
   </div>
 </div>
 
 <div class="no-print" style="position:fixed;top:16px;right:16px;">
-  <button onclick="window.print()" style="background:#10B981;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">
+  <button onclick="window.print()" style="background:${opts.accentColor};color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">
     Print / Save PDF
   </button>
 </div>
@@ -302,6 +305,7 @@ export const GET = withMiddleware({
     const sellerName    = ps.companyName;
     const sellerAddress = ps.companyAddress;
     const sellerGst     = ps.companyGst;
+    const sellerEmail   = ps.companyEmail;
     // Invoice HTML opens as blob:// — relative URLs have no origin. Build an
     // absolute URL exactly like the email route does.
     const baseUrl = (process.env.DEPLOY_APP_URL ?? 'https://app.quantixtechnology.in').replace(/\/$/, '');
@@ -321,7 +325,9 @@ export const GET = withMiddleware({
       sellerName,
       sellerAddress,
       sellerGst,
-      logoUrl: emailLogoUrl(ps, baseUrl),
+      sellerEmail,
+      logoUrl: salesDocLogoUrl(ps, baseUrl),
+      accentColor: salesDocAccentColor(ps),
       sacCode: ps.sacCode,
       buyerName: biz.name,
       buyerAddress,
