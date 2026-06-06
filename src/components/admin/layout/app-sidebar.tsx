@@ -24,7 +24,8 @@ import { useAdminStore, type AdminPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { ADMIN_NAV_PERMISSIONS } from "@/lib/permissions"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { authFetch } from "@/lib/admin-fetch"
 
 const NAVY = "#081028"
 
@@ -39,6 +40,39 @@ const sidebarVars = {
   "--sidebar-primary-foreground": "#ffffff",
   "--sidebar-ring": "#2563EB",
 } as React.CSSProperties
+
+// ─── Brand logo (loaded from Brand Studio platform settings) ─────────────────
+
+interface SidebarBrand {
+  expandedUrl: string | null  // darkLogoUrl → logoUrl (white/primary on dark bg)
+  collapseUrl: string | null  // compactLogoUrl → darkLogoUrl (icon slot)
+}
+
+// A single logo <img> that silently falls back to null on load error so we
+// never show a broken-image icon. The parent renders the Q-fallback when null.
+function SidebarLogoImg({
+  src,
+  alt,
+  style,
+  className,
+}: {
+  src: string
+  alt: string
+  style?: React.CSSProperties
+  className?: string
+}) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return null
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      style={style}
+      onError={() => setFailed(true)}
+    />
+  )
+}
 
 // Nav items carry only key, label, and icon.
 // Visibility is driven entirely by ADMIN_NAV_PERMISSIONS — no inline permission
@@ -184,6 +218,25 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   const { user, permissions } = useAuthStore()
   const { isMobile } = useResponsive()
 
+  const [brand, setBrand] = useState<SidebarBrand>({ expandedUrl: null, collapseUrl: null })
+
+  useEffect(() => {
+    // Fetch Brand Studio settings once on mount.
+    // silentFailure: true — if the user doesn't have settings:view the fetch
+    // returns a 403; we fall back to the Q icon instead of logging out.
+    authFetch('/api/admin/platform-settings', { silentFailure: true } as Parameters<typeof authFetch>[1])
+      .then(r => (r.ok ? r.json() : null))
+      .then((j: { success: boolean; data: Record<string, string | null> } | null) => {
+        if (!j?.success || !j.data) return
+        const d = j.data
+        setBrand({
+          expandedUrl: d.darkLogoUrl || d.logoUrl || null,
+          collapseUrl: d.compactLogoUrl || d.darkLogoUrl || null,
+        })
+      })
+      .catch(() => {}) // network failure — Q icon remains
+  }, [])
+
   const userInitials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : "QT"
@@ -230,9 +283,22 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
             <SheetTitle className="sr-only">Quantix Technology</SheetTitle>
             <SheetDescription className="sr-only">Navigation menu</SheetDescription>
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center font-black text-white text-base select-none" style={{ background: "#2563EB", letterSpacing: "-0.01em" }}>Q</div>
-              <div className="flex flex-col">
-                <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight">Quantix Core</span>
+              {/* Icon slot — compact logo or Q fallback */}
+              <div
+                className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center overflow-hidden select-none"
+                style={brand.collapseUrl ? {} : { background: "#2563EB" }}
+              >
+                {brand.collapseUrl
+                  ? <SidebarLogoImg src={brand.collapseUrl} alt="" style={{ height: 28, width: "auto", objectFit: "contain" }} />
+                  : <span className="font-black text-white text-base" style={{ letterSpacing: "-0.01em" }}>Q</span>
+                }
+              </div>
+              {/* Expanded: full logo or wordmark text */}
+              <div className="flex flex-col min-w-0">
+                {brand.expandedUrl
+                  ? <SidebarLogoImg src={brand.expandedUrl} alt="Logo" style={{ height: 28, width: "auto", maxWidth: 150, objectFit: "contain" }} />
+                  : <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight">Quantix Core</span>
+                }
                 <span className="text-[10px] leading-tight" style={{ color: "rgba(255,255,255,0.38)" }}>Platform Admin</span>
               </div>
             </div>
@@ -275,9 +341,30 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
       {/* Brand header */}
       <SidebarHeader className="px-3 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center font-black text-white text-base select-none" style={{ background: "#2563EB", letterSpacing: "-0.01em" }}>Q</div>
+          {/*
+            Icon slot — always visible in both expanded and collapsed states.
+            Shows compact logo when available; falls back to the Q icon.
+            The h-9 w-9 box is the single item shown in the collapsed sidebar rail.
+          */}
+          <div
+            className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center overflow-hidden select-none"
+            style={brand.collapseUrl ? {} : { background: "#2563EB" }}
+          >
+            {brand.collapseUrl
+              ? <SidebarLogoImg src={brand.collapseUrl} alt="" style={{ height: 28, width: "auto", objectFit: "contain" }} />
+              : <span className="font-black text-white text-base" style={{ letterSpacing: "-0.01em" }}>Q</span>
+            }
+          </div>
+
+          {/*
+            Expanded-only slot — hidden by shadcn when sidebar is collapsed.
+            Shows full dark/primary logo when available; falls back to wordmark.
+          */}
           <div className="flex flex-col group-data-[state=collapsed]:hidden min-w-0">
-            <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight truncate">Quantix Core</span>
+            {brand.expandedUrl
+              ? <SidebarLogoImg src={brand.expandedUrl} alt="Logo" style={{ height: 28, width: "auto", maxWidth: 150, objectFit: "contain" }} />
+              : <span className="text-[13px] font-bold tracking-[0.08em] text-white uppercase leading-tight truncate">Quantix Core</span>
+            }
             <span className="text-[10px] leading-tight truncate" style={{ color: "rgba(255,255,255,0.38)" }}>Platform Admin</span>
           </div>
         </div>
