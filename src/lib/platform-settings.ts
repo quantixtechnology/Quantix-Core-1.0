@@ -44,6 +44,7 @@ export interface PlatformSettingsData {
   sidebarActiveColor: string
   sidebarTextColor: string
   sidebarHeadingColor: string
+  sidebarLogoUrl: string | null
 
   invoicePrefix: string
   sacCode: string
@@ -78,6 +79,7 @@ const DEFAULTS: Omit<PlatformSettingsData, 'id'> = {
   sidebarActiveColor:  '#2563EB',
   sidebarTextColor:    '#FFFFFF',
   sidebarHeadingColor: '#38BDF8',
+  sidebarLogoUrl:      null,
 
   invoicePrefix: 'QTX',
   sacCode:       '998314',
@@ -131,6 +133,7 @@ export async function getPlatformSettings(): Promise<PlatformSettingsData> {
       sidebarActiveColor:  row.sidebarActiveColor  ?? DEFAULTS.sidebarActiveColor,
       sidebarTextColor:    row.sidebarTextColor     ?? DEFAULTS.sidebarTextColor,
       sidebarHeadingColor: row.sidebarHeadingColor ?? DEFAULTS.sidebarHeadingColor,
+      sidebarLogoUrl:      row.sidebarLogoUrl      ?? null,
 
       invoicePrefix: row.invoicePrefix ?? DEFAULTS.invoicePrefix,
       sacCode:       row.sacCode       ?? DEFAULTS.sacCode,

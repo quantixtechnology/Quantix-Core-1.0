@@ -31,6 +31,8 @@ const ALLOWED_FIELDS = new Set([
   // Zone 3 — HRMS
   'hrmsLogoUrl', 'hrmsWatermarkUrl',
   'signatorySignUrl', 'signatoryStampUrl',
+  // Zone 4 — Sidebar
+  'sidebarLogoUrl',
 ])
 
 export const POST = withMiddleware({

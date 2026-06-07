@@ -32,6 +32,7 @@ import { authFetch } from "@/lib/admin-fetch"
 interface SidebarBrand {
   expandedUrl: string | null
   collapseUrl: string | null
+  sidebarLogoUrl: string | null
   sidebarBg: string
   sidebarActiveColor: string
   sidebarTextColor: string
@@ -218,6 +219,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
   const [brand, setBrand] = useState<SidebarBrand>({
     expandedUrl: null,
     collapseUrl: null,
+    sidebarLogoUrl: null,
     ...SIDEBAR_DEFAULTS,
   })
 
@@ -228,8 +230,9 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
         if (!j?.success || !j.data) return
         const d = j.data
         setBrand({
-          expandedUrl: d.logoUrl || null,
-          collapseUrl: d.compactLogoUrl || null,
+          expandedUrl:    d.logoUrl        || null,
+          collapseUrl:    d.compactLogoUrl || null,
+          sidebarLogoUrl: d.sidebarLogoUrl || null,
           sidebarBg:           d.sidebarBg           || SIDEBAR_DEFAULTS.sidebarBg,
           sidebarActiveColor:  d.sidebarActiveColor  || SIDEBAR_DEFAULTS.sidebarActiveColor,
           sidebarTextColor:    d.sidebarTextColor     || SIDEBAR_DEFAULTS.sidebarTextColor,
@@ -297,9 +300,9 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
             <SheetTitle className="sr-only">Navigation menu</SheetTitle>
             <SheetDescription className="sr-only">Admin navigation</SheetDescription>
             <div className="flex items-center justify-center h-[90px] px-3 py-[10px]">
-              {brand.expandedUrl
+              {(brand.sidebarLogoUrl || brand.expandedUrl)
                 ? <SidebarLogoImg
-                    src={brand.expandedUrl}
+                    src={(brand.sidebarLogoUrl || brand.expandedUrl)!}
                     alt="Logo"
                     style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }}
                   />
@@ -357,11 +360,11 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
           </div>
         </div>
 
-        {/* Expanded: primary logo — hidden when collapsed */}
+        {/* Expanded: sidebar logo (falls back to primary logo) — hidden when collapsed */}
         <div className="flex items-center justify-center group-data-[state=collapsed]:hidden h-[90px] px-3 py-[10px]">
-          {brand.expandedUrl
+          {(brand.sidebarLogoUrl || brand.expandedUrl)
             ? <SidebarLogoImg
-                src={brand.expandedUrl}
+                src={(brand.sidebarLogoUrl || brand.expandedUrl)!}
                 alt="Logo"
                 style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }}
               />

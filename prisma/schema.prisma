@@ -72,6 +72,7 @@ model PlatformSettings {
   sidebarActiveColor  String?  // e.g. #2563EB
   sidebarTextColor    String?  // e.g. #FFFFFF
   sidebarHeadingColor String?  // e.g. #38BDF8
+  sidebarLogoUrl      String?  // dedicated sidebar logo; falls back to logoUrl when null
 
   // Billing / invoice configuration
   invoicePrefix  String? @default("QTX")

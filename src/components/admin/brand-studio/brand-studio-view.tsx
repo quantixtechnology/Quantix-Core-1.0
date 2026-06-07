@@ -66,6 +66,7 @@ interface BrandSettings {
   sidebarActiveColor:  string
   sidebarTextColor:    string
   sidebarHeadingColor: string
+  sidebarLogoUrl:      string | null
 }
 
 const DEFAULTS: BrandSettings = {
@@ -81,6 +82,7 @@ const DEFAULTS: BrandSettings = {
   signatorySignUrl: null, signatoryStampUrl: null,
   sidebarBg: "#04132E", sidebarActiveColor: "#2563EB",
   sidebarTextColor: "#FFFFFF", sidebarHeadingColor: "#38BDF8",
+  sidebarLogoUrl: null,
 }
 
 type AssetField = keyof { [K in keyof BrandSettings as BrandSettings[K] extends string | null ? K : never]: unknown }
@@ -347,9 +349,9 @@ function SidebarThemePreview({ s }: { s: BrandSettings }) {
       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Live Preview</p>
       <div className="rounded-xl overflow-hidden border border-border/40 shadow-sm" style={{ background: bg }}>
         {/* Brand area */}
-        <div className="px-3 py-3 border-b" style={{ borderColor: `${text}12` }}>
-          {s.logoUrl
-            ? <img src={s.logoUrl} alt="Logo" style={{ height: 28, maxWidth: 120, objectFit: "contain", display: "block" }} />
+        <div className="flex items-center justify-center border-b" style={{ borderColor: `${text}12`, height: 60, padding: "8px 10px" }}>
+          {(s.sidebarLogoUrl || s.logoUrl)
+            ? <img src={(s.sidebarLogoUrl || s.logoUrl)!} alt="Logo" style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }} />
             : <span className="text-[11px] font-bold tracking-wide uppercase" style={{ color: text }}>Quantix Core</span>
           }
         </div>
@@ -781,6 +783,29 @@ export function BrandStudioView() {
         <TabsContent value="sidebar">
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-6 items-start">
             <div className="space-y-6">
+
+              {/* Sidebar Logo */}
+              <Card>
+                <CardContent className="pt-5 pb-6 space-y-5">
+                  <div>
+                    <SectionHeader icon={<ImageIcon className="h-4 w-4" />} title="Sidebar Logo" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Displayed only in the left navigation sidebar. Falls back to the Primary Logo when not set.
+                      Recommended size: 2350 × 750 px, PNG with transparent background.
+                    </p>
+                  </div>
+                  <div className="max-w-xs">
+                    <AssetUpload
+                      label="Sidebar Logo"
+                      hint="2350 × 750 px · PNG transparent"
+                      field="sidebarLogoUrl"
+                      url={settings.sidebarLogoUrl}
+                      onUploaded={handleUploaded}
+                      onDeleted={handleDeleted}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Sidebar Colors */}
               <Card>
