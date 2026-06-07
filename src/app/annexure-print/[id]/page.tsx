@@ -101,7 +101,7 @@ export default function AnnexurePrintPage() {
     Promise.all([
       authFetch(`/api/admin/hrms/annexures/${id}`, opts),
       authFetch('/api/admin/hrms/settings', opts),
-      authFetch('/api/admin/platform-settings', opts),
+      authFetch('/api/admin/branding', opts),
     ])
       .then(([ar, hr, pr]) => {
         if (ar.status === 401 || ar.status === 403) {

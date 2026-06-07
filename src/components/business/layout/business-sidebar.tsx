@@ -181,6 +181,19 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
   const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
   const activeWorkflows = BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]
 
+  // Business logo — fetched from the branding API whenever the business context changes
+  const [businessLogo, setBusinessLogo] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!currentBusinessId) { setBusinessLogo(null); return }
+    fetch(`/api/core/businesses/${currentBusinessId}/branding`, {
+      headers: { "x-business-id": currentBusinessId },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.success && j.data?.logo) setBusinessLogo(j.data.logo) })
+      .catch(() => {})
+  }, [currentBusinessId])
+
   // Feature flags — fetched to control which management items are visible
   const [enabledFlags, setEnabledFlags] = useState<Set<string>>(new Set(["pos_enabled", "promo_codes_enabled", "loyalty_enabled", "online_orders_enabled"]))
 
@@ -244,21 +257,34 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
     return (
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
         <SheetContent side="left" className="w-[280px] p-0">
-          <SheetHeader className="border-b p-4">
-            <div className="flex items-center gap-3">
-              <div className={`flex size-10 items-center justify-center rounded-lg ${typeUI.color}`}>
-                <BusinessIcon className="size-5" />
+          <SheetHeader className="p-0 border-b">
+            <SheetTitle className="sr-only">{displayName}</SheetTitle>
+            <SheetDescription className="sr-only">{typeUI.label} Admin</SheetDescription>
+            {businessLogo ? (
+              <div className="flex items-center justify-center h-[90px] px-3 py-[10px]">
+                <img
+                  src={businessLogo}
+                  alt={displayName}
+                  style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
+                />
               </div>
-              <div>
-                <SheetTitle className="text-left text-base font-bold">{displayName}</SheetTitle>
-                <SheetDescription className="text-left text-xs flex items-center gap-1.5">
-                  {typeUI.label} Admin
-                  <Badge variant="outline" className="text-[8px] px-1 py-0 h-3">
-                    {activeWorkflows.length} workflow{activeWorkflows.length !== 1 ? "s" : ""}
-                  </Badge>
-                </SheetDescription>
+            ) : (
+              <div className="flex items-center gap-3 p-4">
+                <div className={`flex size-10 items-center justify-center rounded-lg ${typeUI.color}`}>
+                  <BusinessIcon className="size-5" />
+                </div>
+                <div>
+                  <p className="text-left text-base font-bold">{displayName}</p>
+                  <p className="text-left text-xs text-muted-foreground flex items-center gap-1.5">
+                    {typeUI.label} Admin
+                    <Badge variant="outline" className="text-[8px] px-1 py-0 h-3">
+                      {activeWorkflows.length} workflow{activeWorkflows.length !== 1 ? "s" : ""}
+                    </Badge>
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
           </SheetHeader>
 
           <ScrollArea className="flex-1 px-1 py-3">
@@ -297,20 +323,37 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
   // Desktop: Persistent sidebar
   return (
     <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="p-4">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="hover:bg-sidebar-accent">
-              <div className={`flex aspect-square size-8 items-center justify-center rounded-lg ${typeUI.color}`}>
+      <SidebarHeader className="p-0 shrink-0" style={{ borderBottom: "1px solid var(--sidebar-border, rgba(0,0,0,0.08))" }}>
+        {/* Collapsed: business type icon only */}
+        <div className="hidden group-data-[state=collapsed]:flex items-center justify-center py-[10px] px-3">
+          <div className={`flex size-9 items-center justify-center rounded-xl ${typeUI.color}`}>
+            <BusinessIcon className="size-5" />
+          </div>
+        </div>
+
+        {/* Expanded: logo when available, else icon + name */}
+        <div className="group-data-[state=collapsed]:hidden">
+          {businessLogo ? (
+            <div className="flex items-center justify-center h-[90px] px-3 py-[10px]">
+              <img
+                src={businessLogo}
+                alt={displayName}
+                style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 px-4 py-[10px]">
+              <div className={`flex size-8 items-center justify-center rounded-lg shrink-0 ${typeUI.color}`}>
                 <BusinessIcon className="size-4" />
               </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
+              <div className="grid flex-1 text-left text-sm leading-tight min-w-0">
                 <span className="truncate font-bold">{displayName}</span>
                 <span className="truncate text-xs text-muted-foreground">{typeUI.label} Admin</span>
               </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+            </div>
+          )}
+        </div>
       </SidebarHeader>
 
       <SidebarContent>

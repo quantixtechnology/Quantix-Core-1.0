@@ -256,7 +256,7 @@ export default function OfferLetterPrintPage() {
     Promise.all([
       authFetch(`/api/admin/hrms/offer-letters/${id}`, opts),
       authFetch('/api/admin/hrms/settings', opts),
-      authFetch('/api/admin/platform-settings', opts),
+      authFetch('/api/admin/branding', opts),
     ])
       .then(([lr, hr, pr]) => {
         if (lr.status === 401 || lr.status === 403) {

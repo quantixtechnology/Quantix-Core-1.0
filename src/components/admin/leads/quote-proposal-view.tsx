@@ -131,7 +131,7 @@ export function ProposalDocument({
   const [branding, setBranding] = useState<ProposalBranding>(DEFAULT_BRANDING)
 
   useEffect(() => {
-    authFetch('/api/admin/platform-settings', { silentFailure: true } as Parameters<typeof authFetch>[1])
+    authFetch('/api/admin/branding', { silentFailure: true } as Parameters<typeof authFetch>[1])
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (!j?.success || !j.data) return
