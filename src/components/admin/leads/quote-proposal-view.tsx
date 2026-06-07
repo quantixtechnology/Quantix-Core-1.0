@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { PageHeader } from "../shared/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,10 +8,11 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Sparkles, RefreshCw, Save, Eye, CheckCircle2 } from "lucide-react"
+import { FileText, Sparkles, RefreshCw, Save, Eye, CheckCircle2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
 import { useAuthStore } from "@/stores/auth-store"
+import { getCachedBranding, setCachedBranding, urlToDataUrl } from "@/lib/branding-cache"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -121,30 +122,65 @@ const DEFAULT_BRANDING: ProposalBranding = {
 }
 
 export function ProposalDocument({
-  form, proposalId, proposalDate, bankDetails,
+  form, proposalId, proposalDate, bankDetails, onBrandingReady,
 }: {
   form: ProposalForm
   proposalId: string
   proposalDate: string
   bankDetails?: BankDetails | null
+  onBrandingReady?: () => void
 }) {
-  const [branding, setBranding] = useState<ProposalBranding>(DEFAULT_BRANDING)
+  const [branding, setBranding] = useState<ProposalBranding>(() => {
+    const cached = getCachedBranding()
+    if (!cached) return DEFAULT_BRANDING
+    return {
+      logoUrl:        cached.logoDataUrl ?? cached.logoUrl,
+      companyName:    cached.companyName,
+      companyWebsite: cached.companyWebsite,
+      accentColor:    cached.accentColor,
+    }
+  })
+
+  // Keep the callback ref stable so the effect doesn't need it as a dep
+  const onReadyRef = useRef(onBrandingReady)
+  useEffect(() => { onReadyRef.current = onBrandingReady }, [onBrandingReady])
 
   useEffect(() => {
-    authFetch('/api/admin/branding', { silentFailure: true } as Parameters<typeof authFetch>[1])
-      .then(r => r.ok ? r.json() : null)
-      .then(j => {
-        if (!j?.success || !j.data) return
-        const d = j.data
-        setBranding({
-          logoUrl: d.salesLogoUrl || d.logoUrl || null,
-          companyName: d.companyName || DEFAULT_BRANDING.companyName,
-          companyWebsite: (d.companyWebsite || 'https://quantixtechnology.in').replace(/^https?:\/\//, ''),
-          accentColor: d.salesAccentColor || d.primaryColor || DEFAULT_BRANDING.accentColor,
-        })
-      })
-      .catch(() => {})
-  }, [])
+    // If cache was warm, branding is already applied from initial state above
+    if (getCachedBranding() !== null) {
+      onReadyRef.current?.()
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await authFetch('/api/admin/branding', { silentFailure: true } as Parameters<typeof authFetch>[1])
+        if (cancelled) return
+        const j = r.ok ? await r.json() : null
+        const d = j?.success ? j.data : null
+
+        const rawLogoUrl     = (d?.salesLogoUrl || d?.logoUrl) ?? null
+        const companyName    = d?.companyName || DEFAULT_BRANDING.companyName
+        const companyWebsite = (d?.companyWebsite || 'https://quantixtechnology.in').replace(/^https?:\/\//, '')
+        const accentColor    = d?.salesAccentColor || d?.primaryColor || DEFAULT_BRANDING.accentColor
+
+        // Convert to base64 data URL — logo embeds directly in print window HTML,
+        // eliminating the blank-logo-in-PDF problem caused by the 400ms timeout.
+        const logoDataUrl = rawLogoUrl ? await urlToDataUrl(rawLogoUrl) : null
+        if (cancelled) return
+
+        setCachedBranding({ logoUrl: rawLogoUrl, logoDataUrl, companyName, companyWebsite, accentColor })
+        setBranding({ logoUrl: logoDataUrl ?? rawLogoUrl, companyName, companyWebsite, accentColor })
+      } catch {
+        // Keep defaults on any error — don't block the user
+      } finally {
+        if (!cancelled) onReadyRef.current?.()
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sub    = parseFloat(form.subscriptionAmount)   || 0
   const impl   = parseFloat(form.implementationAmount) || 0
@@ -595,6 +631,9 @@ export function QuoteProposalView() {
   const [saving, setSaving]     = useState(false)
   const [savedId, setSavedId]   = useState<string>("")
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null)
+  // Starts true when the branding cache is already warm (e.g. user visited before)
+  const [proposalReady, setProposalReady] = useState(() => getCachedBranding() !== null)
+  const handleBrandingReady = useCallback(() => setProposalReady(true), [])
 
   const proposalDate = new Date().toLocaleDateString("en-IN", {
     day: "numeric", month: "long", year: "numeric",
@@ -746,8 +785,17 @@ export function QuoteProposalView() {
               {generating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               {generating ? "Enhancing…" : "Enhance with AI"}
             </Button>
-            <Button variant="outline" className="gap-2" onClick={handlePrintPreview}>
-              <Eye className="h-4 w-4" /> Print Preview
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={handlePrintPreview}
+              disabled={!proposalReady}
+              title={!proposalReady ? "Loading company branding…" : undefined}
+            >
+              {proposalReady
+                ? <><Eye className="h-4 w-4" /> Download PDF</>
+                : <><Loader2 className="h-4 w-4 animate-spin" /> Loading Branding…</>
+              }
             </Button>
             {canSave && (
               <Button className="gap-2" onClick={handleSaveProposal} disabled={saving}>
@@ -971,7 +1019,19 @@ export function QuoteProposalView() {
         </div>
 
         {/* ── RIGHT: A4 PREVIEW ─────────────────────────────────────── */}
-        <div className="flex-1 overflow-auto bg-muted/30 rounded-xl border p-6">
+        <div className="flex-1 overflow-auto bg-muted/30 rounded-xl border p-6 relative">
+          {/* Loading overlay — shown until branding + logo data URL are ready */}
+          {!proposalReady && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-muted/70 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <Loader2 className="h-7 w-7 animate-spin text-primary" />
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">Preparing Proposal</p>
+                  <p className="text-xs text-muted-foreground">Loading company branding…</p>
+                </div>
+              </div>
+            </div>
+          )}
           <div
             className="mx-auto"
             style={{
@@ -986,6 +1046,7 @@ export function QuoteProposalView() {
               proposalId={savedId || "QX-PENDING"}
               proposalDate={proposalDate}
               bankDetails={bankDetails}
+              onBrandingReady={handleBrandingReady}
             />
           </div>
         </div>
