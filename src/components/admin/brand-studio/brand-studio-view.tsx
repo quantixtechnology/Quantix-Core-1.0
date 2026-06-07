@@ -28,11 +28,12 @@ interface BrandSettings {
   companyWebsite: string
 
   // Zone 1 — Core Platform: asset URLs
-  logoUrl:        string | null
-  darkLogoUrl:    string | null   // white logo
-  compactLogoUrl: string | null
-  faviconUrl:     string | null
-  watermarkUrl:   string | null
+  logoUrl:            string | null
+  darkLogoUrl:        string | null   // white logo
+  compactLogoUrl:     string | null
+  faviconUrl:         string | null
+  watermarkUrl:       string | null
+  loginScreenLogoUrl: string | null
 
   // Zone 1 — Core Platform: colors
   primaryColor:   string
@@ -73,6 +74,7 @@ const DEFAULTS: BrandSettings = {
   companyName: "Quantix Technology", tagline: "Powering Business Growth",
   companyAddress: "", companyEmail: "", companyPhone: "", companyWebsite: "",
   logoUrl: null, darkLogoUrl: null, compactLogoUrl: null, faviconUrl: null, watermarkUrl: null,
+  loginScreenLogoUrl: null,
   primaryColor: "#2563EB", secondaryColor: "#64748B", accentColor: "#0EA5E9",
   successColor: "#10B981", warningColor: "#F59E0B", infoColor: "#6366F1",
   salesLogoUrl: null, salesWatermarkUrl: null,
@@ -552,6 +554,30 @@ export function BrandStudioView() {
                     <AssetUpload label="Favicon"        hint="32×32 PNG or ICO"          field="faviconUrl"     url={settings.faviconUrl}     onUploaded={handleUploaded} onDeleted={handleDeleted} />
                     <AssetUpload label="Watermark"      hint="Light, transparent PNG"    field="watermarkUrl"   url={settings.watermarkUrl}   onUploaded={handleUploaded} onDeleted={handleDeleted} />
                     <AssetUpload label="Email Logo"     hint="Used in email headers"     field="emailLogoUrl"   url={null}                    onUploaded={handleUploaded} onDeleted={handleDeleted} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Login Screen Logo */}
+              <Card>
+                <CardContent className="pt-5 pb-6 space-y-5">
+                  <div>
+                    <SectionHeader icon={<ImageIcon className="h-4 w-4" />} title="Login Screen Logo" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Displayed only on the login page. Upload a logo optimized for the dark login background
+                      (white or transparent PNG recommended). Falls back to the Primary Logo when not set.
+                      Recommended size: 1200 × 1200 px.
+                    </p>
+                  </div>
+                  <div className="max-w-xs">
+                    <AssetUpload
+                      label="Login Screen Logo"
+                      hint="1200 × 1200 px · PNG transparent"
+                      field="loginScreenLogoUrl"
+                      url={settings.loginScreenLogoUrl}
+                      onUploaded={handleUploaded}
+                      onDeleted={handleDeleted}
+                    />
                   </div>
                 </CardContent>
               </Card>

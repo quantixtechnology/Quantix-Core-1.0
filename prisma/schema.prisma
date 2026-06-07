@@ -30,10 +30,11 @@ model PlatformSettings {
   companyGst     String?
 
   // Branding assets (stored as /uploads/platform/shared/<filename> URLs)
-  logoUrl        String?
-  darkLogoUrl    String?
-  faviconUrl     String?
-  emailLogoUrl   String?
+  logoUrl             String?
+  darkLogoUrl         String?
+  faviconUrl          String?
+  emailLogoUrl        String?
+  loginScreenLogoUrl  String?  // login page logo; falls back to logoUrl when null
 
   // Zone 1 — Core Platform: additional assets
   tagline        String?

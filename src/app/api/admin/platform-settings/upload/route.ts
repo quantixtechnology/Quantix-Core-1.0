@@ -25,7 +25,7 @@ const MAX_SIZE = 5 * 1024 * 1024
 const ALLOWED_FIELDS = new Set([
   // Zone 1 — Core Platform
   'logoUrl', 'darkLogoUrl', 'faviconUrl', 'emailLogoUrl',
-  'compactLogoUrl', 'watermarkUrl',
+  'compactLogoUrl', 'watermarkUrl', 'loginScreenLogoUrl',
   // Zone 2 — Sales Documents
   'salesLogoUrl', 'salesWatermarkUrl',
   // Zone 3 — HRMS

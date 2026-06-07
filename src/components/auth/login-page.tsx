@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useAuthStore } from "@/stores/auth-store";
 import { useAdminStore, type ViewMode } from "@/stores/admin-store";
 import { setBusinessContext } from "@/lib/api-client";
@@ -31,6 +31,16 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loginLogoUrl, setLoginLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/assets/branding")
+      .then((r) => r.json())
+      .then((d: { loginScreenLogoUrl: string | null }) => {
+        if (d.loginScreenLogoUrl) setLoginLogoUrl(d.loginScreenLogoUrl);
+      })
+      .catch(() => {});
+  }, []);
 
   const { login, isLoading, error, clearError } = useAuthStore();
   const { setViewMode, setCurrentBusinessId } = useAdminStore();
@@ -80,8 +90,21 @@ export function LoginPage() {
       <div className="relative z-10 w-full max-w-[420px]">
         {/* Logo & Brand */}
         <div className="text-center mb-8">
-          <div className="flex justify-center mb-5">
-            <img src="/api/assets/logo" alt="Quantix Technology" style={{ height: "70px", filter: "brightness(0) invert(1)" }} className="object-contain" />
+          <div className="flex justify-center items-center mb-5" style={{ minHeight: "70px" }}>
+            {loginLogoUrl ? (
+              <img
+                src={loginLogoUrl}
+                alt="Platform Logo"
+                style={{ maxWidth: "220px", maxHeight: "220px", width: "auto", height: "auto", objectFit: "contain" }}
+              />
+            ) : (
+              <img
+                src="/api/assets/logo"
+                alt="Quantix Technology"
+                style={{ height: "70px", filter: "brightness(0) invert(1)" }}
+                className="object-contain"
+              />
+            )}
           </div>
           <p className="text-xs text-[#25B8F5]/70 mt-1 font-medium tracking-widest uppercase">
             Enterprise Business Management

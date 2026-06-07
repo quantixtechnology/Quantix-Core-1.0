@@ -25,11 +25,12 @@ export interface PlatformSettingsData {
   companyWebsite: string | null
   companyGst: string
 
-  logoUrl: string | null       // /uploads/platform/shared/xxx.png  (null → static fallback)
+  logoUrl: string | null            // /uploads/platform/shared/xxx.png  (null → static fallback)
   darkLogoUrl: string | null
   compactLogoUrl: string | null
   faviconUrl: string | null
   emailLogoUrl: string | null
+  loginScreenLogoUrl: string | null // login page logo; falls back to logoUrl when null
 
   primaryColor: string
   secondaryColor: string | null
@@ -62,11 +63,12 @@ const DEFAULTS: Omit<PlatformSettingsData, 'id'> = {
   companyWebsite: 'https://quantixtechnology.in',
   companyGst:     'APPLIED FOR',
 
-  logoUrl:        null,
-  darkLogoUrl:    null,
-  compactLogoUrl: null,
-  faviconUrl:     null,
-  emailLogoUrl:   null,
+  logoUrl:            null,
+  darkLogoUrl:        null,
+  compactLogoUrl:     null,
+  faviconUrl:         null,
+  emailLogoUrl:       null,
+  loginScreenLogoUrl: null,
 
   primaryColor:   '#10B981',
   secondaryColor: null,
@@ -116,11 +118,12 @@ export async function getPlatformSettings(): Promise<PlatformSettingsData> {
       companyWebsite: row.companyWebsite ?? DEFAULTS.companyWebsite,
       companyGst:     row.companyGst     ?? process.env.PLATFORM_SELLER_GST     ?? DEFAULTS.companyGst,
 
-      logoUrl:        row.logoUrl        ?? null,
-      darkLogoUrl:    row.darkLogoUrl    ?? null,
-      compactLogoUrl: row.compactLogoUrl ?? null,
-      faviconUrl:     row.faviconUrl     ?? null,
-      emailLogoUrl:   row.emailLogoUrl   ?? null,
+      logoUrl:            row.logoUrl            ?? null,
+      darkLogoUrl:        row.darkLogoUrl        ?? null,
+      compactLogoUrl:     row.compactLogoUrl     ?? null,
+      faviconUrl:         row.faviconUrl         ?? null,
+      emailLogoUrl:       row.emailLogoUrl       ?? null,
+      loginScreenLogoUrl: row.loginScreenLogoUrl ?? null,
 
       primaryColor:   row.primaryColor   ?? DEFAULTS.primaryColor,
       secondaryColor: row.secondaryColor ?? null,
