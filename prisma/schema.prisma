@@ -2500,16 +2500,98 @@ model EmployeeTimeline {
 }
 
 model OwnershipAuditLog {
-  id               String   @id @default(cuid())
-  clientBusinessId String
-  assignmentType   String
-  previousOwnerId  String?
-  newOwnerId       String?
-  changedBy        String?
-  remarks          String?
-  createdAt        DateTime @default(now())
+  id                String   @id @default(cuid())
+  clientBusinessId  String
+  assignmentType    String
+  action            String   @default("UPDATED")
+  previousOwnerId   String?
+  previousOwnerName String?
+  newOwnerId        String?
+  newOwnerName      String?
+  businessName      String?
+  changedBy         String?
+  changedById       String?
+  remarks           String?
+  createdAt         DateTime @default(now())
 
   @@index([clientBusinessId])
+  @@index([assignmentType])
+  @@index([createdAt])
+}
+
+enum OwnershipStatus {
+  ACTIVE
+  INACTIVE
+  PENDING_REASSIGN
+}
+
+model SignupOwnership {
+  id             String          @id @default(cuid())
+  businessId     String
+  businessName   String
+  employeeId     String
+  employeeName   String
+  employeeCode   String
+  designation    String?
+  effectiveDate  DateTime
+  notes          String?
+  status         OwnershipStatus @default(ACTIVE)
+  assignedById   String?
+  assignedByName String?
+  deactivatedAt  DateTime?
+  deactivatedBy  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([businessId, status])
+  @@index([employeeId])
+  @@index([status])
+}
+
+model RenewalOwnership {
+  id             String          @id @default(cuid())
+  businessId     String
+  businessName   String
+  employeeId     String
+  employeeName   String
+  employeeCode   String
+  designation    String?
+  effectiveDate  DateTime
+  notes          String?
+  status         OwnershipStatus @default(ACTIVE)
+  assignedById   String?
+  assignedByName String?
+  deactivatedAt  DateTime?
+  deactivatedBy  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([businessId, status])
+  @@index([employeeId])
+  @@index([status])
+}
+
+model AddonOwnership {
+  id             String          @id @default(cuid())
+  businessId     String
+  businessName   String
+  employeeId     String
+  employeeName   String
+  employeeCode   String
+  designation    String?
+  effectiveDate  DateTime
+  notes          String?
+  status         OwnershipStatus @default(ACTIVE)
+  assignedById   String?
+  assignedByName String?
+  deactivatedAt  DateTime?
+  deactivatedBy  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([businessId, status])
+  @@index([employeeId])
+  @@index([status])
 }
 
 model HrmsAuditLog {
