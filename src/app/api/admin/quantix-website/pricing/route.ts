@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
-import { withMiddleware } from "@/lib/api-middleware"
-import { prisma } from "@/lib/prisma"
+import { withMiddleware } from "@/lib/middleware"
+import { db } from "@/lib/db"
+import type { NextRequest } from "next/server"
+
+interface AuthenticatedRequest extends NextRequest {
+  user?: { id: string; name: string; email: string; role: string }
+}
 
 const SEED_PLANS = [
   {
@@ -134,13 +139,13 @@ const SEED_PLANS = [
 ]
 
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: "website:view" })(
-  async () => {
-    const count = await prisma.websitePricingPlan.count()
+  async (_req: AuthenticatedRequest) => {
+    const count = await db.websitePricingPlan.count()
 
     if (count === 0) {
       for (const plan of SEED_PLANS) {
         const { features, ...planData } = plan
-        await prisma.websitePricingPlan.create({
+        await db.websitePricingPlan.create({
           data: {
             ...planData,
             features: {
@@ -151,7 +156,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: "webs
       }
     }
 
-    const plans = await prisma.websitePricingPlan.findMany({
+    const plans = await db.websitePricingPlan.findMany({
       include: { features: { orderBy: { displayOrder: "asc" } } },
       orderBy: { displayOrder: "asc" },
     })

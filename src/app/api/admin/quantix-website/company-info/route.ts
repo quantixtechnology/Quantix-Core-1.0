@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server"
-import { withMiddleware } from "@/lib/api-middleware"
-import { prisma } from "@/lib/prisma"
+import { withMiddleware } from "@/lib/middleware"
+import { db } from "@/lib/db"
+import type { NextRequest } from "next/server"
+
+interface AuthenticatedRequest extends NextRequest {
+  user?: { id: string; name: string; email: string; role: string }
+}
 
 export const GET = withMiddleware({ requireAuth: true, requiredPermission: "website:view" })(
-  async () => {
-    let info = await prisma.websiteCompanyInfo.findUnique({ where: { id: "singleton" } })
+  async (_req: AuthenticatedRequest) => {
+    let info = await db.websiteCompanyInfo.findUnique({ where: { id: "singleton" } })
 
     if (!info) {
-      info = await prisma.websiteCompanyInfo.create({
+      info = await db.websiteCompanyInfo.create({
         data: {
           id: "singleton",
           companyName: "Quantix Technology",
@@ -21,7 +26,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredPermission: "webs
 )
 
 export const PATCH = withMiddleware({ requireAuth: true, requiredPermission: "website:configure" })(
-  async (req) => {
+  async (req: AuthenticatedRequest) => {
     const body = await req.json()
 
     const allowed = [
@@ -34,7 +39,7 @@ export const PATCH = withMiddleware({ requireAuth: true, requiredPermission: "we
       if (key in body) data[key] = body[key]
     }
 
-    const info = await prisma.websiteCompanyInfo.upsert({
+    const info = await db.websiteCompanyInfo.upsert({
       where: { id: "singleton" },
       create: { id: "singleton", ...data },
       update: data,
