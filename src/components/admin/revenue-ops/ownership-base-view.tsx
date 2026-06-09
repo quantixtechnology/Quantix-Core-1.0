@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { authFetch } from "@/lib/admin-fetch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -165,9 +166,9 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
 
     try {
       const [recRes, auditRes, statsRes] = await Promise.all([
-        fetch(`${apiBase}?${params}`),
-        fetch(`/api/admin/revenue-ops/ownership/audit?type=${type.toUpperCase()}`),
-        fetch("/api/admin/revenue-ops/ownership/stats"),
+        authFetch(`${apiBase}?${params}`),
+        authFetch(`/api/admin/revenue-ops/ownership/audit?type=${type.toUpperCase()}`),
+        authFetch("/api/admin/revenue-ops/ownership/stats"),
       ])
       const [recJson, auditJson, statsJson] = await Promise.all([
         recRes.json(), auditRes.json(), statsRes.json(),
@@ -175,7 +176,9 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
       if (recJson.success) setRecords(recJson.data)
       if (auditJson.success) setAudit(auditJson.data)
       if (statsJson.success) setStats(statsJson.data)
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error(`[OwnershipView:${type}] load failed`, e)
+    }
     finally { setLoading(false) }
   }, [apiBase, search, statusFilter, type])
 
@@ -185,14 +188,24 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
     if (businesses.length && employees.length) return
     setRefLoading(true)
     try {
+      console.log(`[OwnershipView:${type}] fetching businesses + employees`)
       const [bRes, eRes] = await Promise.all([
-        fetch("/api/admin/revenue-ops/ownership/businesses"),
-        fetch("/api/admin/hrms/employees?status=ACTIVE&limit=200"),
+        authFetch("/api/admin/revenue-ops/ownership/businesses"),
+        authFetch("/api/admin/hrms/employees?status=ACTIVE&limit=200"),
       ])
       const [bJson, eJson] = await Promise.all([bRes.json(), eRes.json()])
-      if (bJson.success) setBusinesses(bJson.data)
+      console.log(`[OwnershipView:${type}] businesses API →`, { success: bJson.success, count: bJson.data?.length, error: bJson.error })
+      console.log(`[OwnershipView:${type}] employees API →`, { success: eJson.success, count: eJson.data?.length, error: eJson.error })
+      if (bJson.success) {
+        setBusinesses(bJson.data)
+        console.log(`[OwnershipView:${type}] businesses loaded:`, bJson.data?.length ?? 0)
+      } else {
+        console.warn(`[OwnershipView:${type}] businesses failed:`, bJson.error)
+      }
       if (eJson.success) setEmployees(eJson.data)
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error(`[OwnershipView:${type}] loadRefData failed`, e)
+    }
     finally { setRefLoading(false) }
   }
 
@@ -206,7 +219,7 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
     if (!aBusinessId || !aEmployeeId || !aDate) { toast.error("Business, employee, and date are required"); return }
     setSaving(true)
     try {
-      const res = await fetch(apiBase, {
+      const res = await authFetch(apiBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ businessId: aBusinessId, employeeId: aEmployeeId, effectiveDate: aDate, notes: aNotes }),
@@ -224,7 +237,7 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
     if (!editItem) return
     setSaving(true)
     try {
-      const res = await fetch(`${apiBase}/${editItem.id}`, {
+      const res = await authFetch(`${apiBase}/${editItem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "edit", notes: eNotes, effectiveDate: eDate }),
@@ -242,7 +255,7 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
     if (!reassignItem || !rEmployeeId || !rDate) { toast.error("New employee and date are required"); return }
     setSaving(true)
     try {
-      const res = await fetch(`${apiBase}/${reassignItem.id}`, {
+      const res = await authFetch(`${apiBase}/${reassignItem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "reassign", newEmployeeId: rEmployeeId, newEffectiveDate: rDate, newNotes: rNotes }),
@@ -260,7 +273,7 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
     if (!deactivateItem) return
     setSaving(true)
     try {
-      const res = await fetch(`${apiBase}/${deactivateItem.id}`, {
+      const res = await authFetch(`${apiBase}/${deactivateItem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "deactivate" }),
@@ -477,17 +490,23 @@ export function OwnershipBaseView({ type }: { type: OwnershipType }) {
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <Label>Business <span className="text-destructive">*</span></Label>
-                <Select value={aBusinessId} onValueChange={setABusinessId}>
-                  <SelectTrigger><SelectValue placeholder="Select a business…" /></SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {businesses.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}
-                        <span className="ml-1 text-xs text-muted-foreground">({b.status})</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {businesses.length === 0 ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                    No customer businesses available. Create a customer first.
+                  </div>
+                ) : (
+                  <Select value={aBusinessId} onValueChange={setABusinessId}>
+                    <SelectTrigger><SelectValue placeholder={`Select from ${businesses.length} businesses…`} /></SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {businesses.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.name}
+                          <span className="ml-1 text-xs text-muted-foreground">({b.status})</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Employee <span className="text-destructive">*</span></Label>
