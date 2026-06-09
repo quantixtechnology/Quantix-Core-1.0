@@ -11,7 +11,7 @@ import {
   Calculator, BarChart3, Clock, Save, Download,
   FileSpreadsheet, Printer, Trash2, RefreshCw,
   ChevronLeft, ChevronRight, Eye, TrendingUp,
-  IndianRupee, Users, Percent,
+  IndianRupee, Users, Percent, Smartphone, Copy,
 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
@@ -1798,12 +1798,36 @@ export function CommissionView() {
 
   const safeUser = user ? { id: user.id, name: user.name ?? "Unknown" } : null
 
+  const mobileUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/mobile/commission`
+    : "/mobile/commission"
+
+  const handleOpenMobile = () => window.open("/mobile/commission", "_blank")
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(mobileUrl)
+      toast.success("Mobile URL copied to clipboard")
+    } catch {
+      toast.error("Could not copy URL")
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <PageHeader
         title="Commission Calculator"
         description="Calculate and track sales commissions for new customer signups based on performance tiers"
         icon={Calculator}
+        action={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleCopyUrl} className="gap-1.5 text-xs">
+              <Copy className="h-3.5 w-3.5" /> Copy Mobile URL
+            </Button>
+            <Button size="sm" onClick={handleOpenMobile} className="gap-1.5 text-xs">
+              <Smartphone className="h-3.5 w-3.5" /> Open Mobile Version
+            </Button>
+          </div>
+        }
       />
 
       <div className="mt-4 flex-1 min-h-0">
