@@ -3,6 +3,10 @@
 // PATCH  /api/admin/documents/[id]  — Soft-archive a document (proposals:delete)
 // DELETE /api/admin/documents/[id]  — Hard delete (proposals:delete, Super Admin only)
 //
+// Ownership enforcement:
+//   QUANTIX_SUPER_ADMIN | PLATFORM_ADMIN | SALES_MANAGER → access any document
+//   All other roles → 403 if the document was not created by req.user.id
+//
 // Soft archive sets status = "ARCHIVED" + deletedAt + deletedBy.
 // Documents are never permanently removed unless Super Admin explicitly hard-deletes.
 // ============================================================================
@@ -18,11 +22,22 @@ interface AuthenticatedRequest extends NextRequest {
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
 
+// Roles that can view and act on ALL proposals regardless of ownership.
+const PROPOSAL_ADMIN_ROLES = new Set([
+  'QUANTIX_SUPER_ADMIN',
+  'PLATFORM_ADMIN',
+  'SALES_MANAGER',
+])
+
+function isProposalAdmin(role: string | undefined): boolean {
+  return PROPOSAL_ADMIN_ROLES.has(role ?? '')
+}
+
 // ── GET — full document for PDF regeneration ──────────────────────────────────
 export const GET = withMiddleware({
   requireAuth: true,
   requiredPermission: 'proposals:view',
-})(async (_req: NextRequest, ctx?: Ctx) => {
+})(async (req: AuthenticatedRequest, ctx?: Ctx) => {
   try {
     const params = await ctx?.params
     const id = params?.id as string | undefined
@@ -39,6 +54,10 @@ export const GET = withMiddleware({
       },
     })
     if (!doc) return createErrorResponse('Document not found', 404)
+
+    if (!isProposalAdmin(req.user?.role) && doc.createdBy !== req.user?.id) {
+      return createErrorResponse('Access denied', 403)
+    }
 
     return NextResponse.json({ success: true, data: doc })
   } catch (error) {
@@ -60,14 +79,16 @@ export const PATCH = withMiddleware({
     const existing = await db.proposalDocument.findUnique({ where: { id } })
     if (!existing) return createErrorResponse('Document not found', 404)
 
-    const userId = req.user?.id ?? 'unknown'
+    if (!isProposalAdmin(req.user?.role) && existing.createdBy !== req.user?.id) {
+      return createErrorResponse('Access denied', 403)
+    }
 
     const updated = await db.proposalDocument.update({
       where: { id },
       data: {
         status:    'ARCHIVED',
         deletedAt: new Date(),
-        deletedBy: userId,
+        deletedBy: req.user?.id ?? 'unknown',
       },
     })
 
@@ -82,7 +103,7 @@ export const PATCH = withMiddleware({
 export const DELETE = withMiddleware({
   requireAuth: true,
   requiredPermission: 'proposals:delete',
-})(async (_req: NextRequest, ctx?: Ctx) => {
+})(async (req: AuthenticatedRequest, ctx?: Ctx) => {
   try {
     const params = await ctx?.params
     const id = params?.id as string | undefined
@@ -90,6 +111,10 @@ export const DELETE = withMiddleware({
 
     const existing = await db.proposalDocument.findUnique({ where: { id } })
     if (!existing) return createErrorResponse('Document not found', 404)
+
+    if (!isProposalAdmin(req.user?.role) && existing.createdBy !== req.user?.id) {
+      return createErrorResponse('Access denied', 403)
+    }
 
     await db.proposalDocument.delete({ where: { id } })
     return NextResponse.json({ success: true })

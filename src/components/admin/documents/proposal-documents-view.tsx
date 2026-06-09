@@ -91,9 +91,12 @@ function PDFPreviewPortal({ form, proposalId, proposalDate, bankDetails, DocComp
 
 // ─── Main View ───────────────────────────────────────────────────────────────
 
+const PROPOSAL_ADMIN_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "SALES_MANAGER"])
+
 export function ProposalDocumentsView() {
-  const { permissions } = useAuthStore()
-  const canDelete = (permissions as string[]).includes("proposals:delete")
+  const { user, permissions } = useAuthStore()
+  const canDelete    = (permissions as string[]).includes("proposals:delete")
+  const isAdminView  = PROPOSAL_ADMIN_ROLES.has((user as { role?: string } | null)?.role ?? "")
 
   const [proposals, setProposals]   = useState<ProposalRecord[]>([])
   const [loading, setLoading]       = useState(true)
@@ -294,7 +297,11 @@ export function ProposalDocumentsView() {
 
       <PageHeader
         title="Proposal Documents"
-        description="All saved proposal PDFs — search, download, and manage archived documents"
+        description={
+          isAdminView
+            ? "All saved proposal PDFs — search, download, and manage archived documents"
+            : "Your saved proposal PDFs — search, download, and manage your documents"
+        }
         icon={Archive}
         action={
           canDelete && anySelected ? (
@@ -412,7 +419,11 @@ export function ProposalDocumentsView() {
                         <FileCheck className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <p className="text-sm font-semibold text-muted-foreground">
-                        {statusFilter === "ARCHIVED" ? "No archived proposals" : "No proposal documents available"}
+                        {statusFilter === "ARCHIVED"
+                          ? "No archived proposals"
+                          : isAdminView
+                          ? "No proposal documents available"
+                          : "You haven't saved any proposals yet"}
                       </p>
                       <p className="text-xs text-muted-foreground max-w-xs text-center">
                         {statusFilter === "ARCHIVED"

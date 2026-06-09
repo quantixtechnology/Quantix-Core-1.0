@@ -1,6 +1,13 @@
 // ============================================================================
 // GET  /api/admin/documents  — List documents (defaults to ACTIVE only)
 // POST /api/admin/documents  — Save / upsert a generated proposal
+//
+// Ownership rules (enforced at DB query level):
+//   QUANTIX_SUPER_ADMIN | PLATFORM_ADMIN | SALES_MANAGER → see all proposals
+//   All other roles → see only proposals where createdBy = req.user.id
+//
+// POST always stores req.user.id as createdBy — the client-supplied value is
+// ignored to prevent impersonation.
 // ============================================================================
 
 import { NextResponse } from 'next/server'
@@ -8,11 +15,23 @@ import { withMiddleware, createErrorResponse, getPaginationParams } from '@/lib/
 import { db } from '@/lib/db'
 import type { NextRequest } from 'next/server'
 
+interface AuthenticatedRequest extends NextRequest {
+  user?: { id: string; name: string; email: string; role: string }
+}
+
+// Roles that can view and act on ALL proposals regardless of ownership.
+// Every other role is scoped to proposals they personally created.
+const PROPOSAL_ADMIN_ROLES = new Set([
+  'QUANTIX_SUPER_ADMIN',
+  'PLATFORM_ADMIN',
+  'SALES_MANAGER',
+])
+
 // ── GET ───────────────────────────────────────────────────────────────────────
 export const GET = withMiddleware({
   requireAuth: true,
   requiredPermission: 'proposals:view',
-})(async (req: NextRequest) => {
+})(async (req: AuthenticatedRequest) => {
   try {
     const { page, limit, skip } = getPaginationParams(req)
     const { searchParams } = new URL(req.url)
@@ -25,7 +44,14 @@ export const GET = withMiddleware({
 
     const where: Record<string, unknown> = {}
 
-    // Status filter — "ALL" skips filter (Super Admin view)
+    // Ownership filter — non-admin roles can only see their own proposals.
+    // Applied at DB query level so pagination counts are also accurate.
+    const role = req.user?.role ?? ''
+    if (!PROPOSAL_ADMIN_ROLES.has(role)) {
+      where.createdBy = req.user?.id
+    }
+
+    // Status filter — "ALL" skips filter (admin view)
     if (status !== 'ALL') {
       where.status = status
     }
@@ -92,7 +118,7 @@ export const GET = withMiddleware({
 export const POST = withMiddleware({
   requireAuth: true,
   requiredPermission: 'proposals:create',
-})(async (req: NextRequest) => {
+})(async (req: AuthenticatedRequest) => {
   try {
     const body = await req.json()
     const {
@@ -101,11 +127,18 @@ export const POST = withMiddleware({
       contactPhone, contactEmail, leadId,
       salesTeamMember, salesTeamEmail,
       totalAmount, formSnapshot,
-      createdBy, createdByName,
     } = body
 
-    if (!proposalId || !businessName || !createdBy) {
-      return createErrorResponse('proposalId, businessName, and createdBy are required', 400)
+    if (!proposalId || !businessName) {
+      return createErrorResponse('proposalId and businessName are required', 400)
+    }
+
+    // Always use the server-verified user identity — never trust client-supplied createdBy.
+    const createdBy     = req.user?.id   ?? ''
+    const createdByName = req.user?.name ?? body.createdByName ?? null
+
+    if (!createdBy) {
+      return createErrorResponse('Could not determine authenticated user', 401)
     }
 
     const doc = await db.proposalDocument.upsert({
@@ -124,7 +157,7 @@ export const POST = withMiddleware({
         totalAmount:     totalAmount     ?? null,
         formSnapshot:    formSnapshot ? JSON.stringify(formSnapshot) : '{}',
         createdBy,
-        createdByName:   createdByName   ?? null,
+        createdByName,
       },
       update: {
         formSnapshot: formSnapshot ? JSON.stringify(formSnapshot) : '{}',
