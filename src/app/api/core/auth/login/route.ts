@@ -8,6 +8,7 @@ import { verifyPassword, createAccessToken } from '@/lib/password-utils';
 import { resolveUserPermissions } from '@/lib/db-permissions';
 import { checkRateLimit } from '@/lib/middleware';
 import { logAuthActivity } from '@/lib/core/audit';
+import { logPlatformEvent } from '@/lib/platform-audit';
 import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
 
@@ -104,6 +105,14 @@ export async function POST(request: Request) {
       try {
         await logAuthActivity(null, 'auth.login_failed', { email: normalizedEmail, reason: 'invalid_password' }, request as unknown as { headers?: { get(name: string): string | null } });
       } catch { /* audit logging is non-blocking */ }
+      logPlatformEvent({
+        email:       normalizedEmail,
+        module:      'AUTHENTICATION',
+        action:      'FAILED_LOGIN',
+        description: `Failed login attempt for ${normalizedEmail}`,
+        severity:    'CRITICAL',
+        req:         request as unknown as import('next/server').NextRequest,
+      })
       return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
     }
 
@@ -181,6 +190,17 @@ export async function POST(request: Request) {
     try {
       await logAuthActivity(user.id, 'auth.login', { email: user.email, role, businessId: businessId || null, isPlatformAdmin }, request as unknown as { headers?: { get(name: string): string | null } });
     } catch { /* audit logging is non-blocking */ }
+    logPlatformEvent({
+      userId:      user.id,
+      userName:    user.name,
+      email:       user.email,
+      role,
+      module:      'AUTHENTICATION',
+      action:      'LOGIN',
+      description: `${user.name} logged in`,
+      severity:    'INFO',
+      req:         request as unknown as import('next/server').NextRequest,
+    })
 
     return NextResponse.json({
       success: true,

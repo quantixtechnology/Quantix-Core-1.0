@@ -2656,3 +2656,38 @@ model Annexure {
 
   @@index([offerLetterId])
 }
+
+// ============================================================================
+// Platform Audit Log — Quantix internal operations only.
+// Tracks every meaningful action by Quantix team members across CRM, Leads,
+// Proposals, HRMS, User Management, Settings, etc.
+// Never stores client business activities, orders, or customer app actions.
+// ============================================================================
+model PlatformAuditLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  userName        String?
+  email           String?
+  role            String?
+  module          String              // AUTHENTICATION | PROPOSALS | LEADS | etc.
+  action          String              // LOGIN | CREATE | UPDATE | DELETE | etc.
+  page            String?             // URL path that was accessed
+  resourceType    String?             // Entity type: Proposal, Lead, User, etc.
+  resourceId      String?             // Primary key of affected record
+  description     String              // Human-readable one-liner
+  oldValues       String?             // JSON — state before the change
+  newValues       String?             // JSON — state after the change
+  severity        String   @default("INFO")  // INFO | WARNING | CRITICAL
+  ipAddress       String?
+  browser         String?
+  operatingSystem String?
+  deviceType      String?
+  sessionId       String?
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([module])
+  @@index([action])
+  @@index([severity])
+}

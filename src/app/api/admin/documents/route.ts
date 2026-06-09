@@ -13,6 +13,7 @@
 import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse, getPaginationParams } from '@/lib/middleware'
 import { db } from '@/lib/db'
+import { logPlatformEvent } from '@/lib/platform-audit'
 import type { NextRequest } from 'next/server'
 
 interface AuthenticatedRequest extends NextRequest {
@@ -164,6 +165,18 @@ export const POST = withMiddleware({
         pdfVersion:   { increment: 1 },
         updatedAt:    new Date(),
       },
+    })
+
+    logPlatformEvent({
+      userId:       createdBy,
+      userName:     createdByName ?? undefined,
+      role:         req.user?.role,
+      module:       'PROPOSALS',
+      action:       'CREATE',
+      description:  `Proposal ${doc.proposalId} created for ${businessName}`,
+      resourceType: 'Proposal',
+      resourceId:   doc.proposalId,
+      req,
     })
 
     return NextResponse.json({ success: true, data: doc })

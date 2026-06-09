@@ -8,6 +8,11 @@ import type { NextRequest } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 import { invalidatePlatformSettingsCache } from '@/lib/platform-settings'
+import { logPlatformEvent } from '@/lib/platform-audit'
+
+interface AuthenticatedRequest extends NextRequest {
+  user?: { id: string; name: string; email: string; role: string }
+}
 
 // Fields the client is allowed to PATCH
 const PATCHABLE = new Set([
@@ -49,7 +54,7 @@ export const GET = withMiddleware({
 export const PATCH = withMiddleware({
   requireAuth: true,
   requiredPermission: 'settings:edit',
-})(async (req: NextRequest) => {
+})(async (req: AuthenticatedRequest) => {
   try {
     const body = await req.json() as Record<string, unknown>
 
@@ -63,6 +68,19 @@ export const PATCH = withMiddleware({
       where:  { id: 'singleton' },
       update: data,
       create: { id: 'singleton', ...data },
+    })
+
+    logPlatformEvent({
+      userId:      req.user?.id,
+      userName:    req.user?.name,
+      email:       req.user?.email,
+      role:        req.user?.role,
+      module:      'SETTINGS',
+      action:      'UPDATE',
+      description: `Platform settings updated (fields: ${Object.keys(data).join(', ')})`,
+      newValues:   data,
+      severity:    'WARNING',
+      req,
     })
 
     invalidatePlatformSettingsCache()

@@ -14,6 +14,7 @@
 import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
+import { logPlatformEvent } from '@/lib/platform-audit'
 import type { NextRequest } from 'next/server'
 
 interface AuthenticatedRequest extends NextRequest {
@@ -92,6 +93,19 @@ export const PATCH = withMiddleware({
       },
     })
 
+    logPlatformEvent({
+      userId:       req.user?.id,
+      userName:     req.user?.name,
+      email:        req.user?.email,
+      role:         req.user?.role,
+      module:       'PROPOSALS',
+      action:       'ARCHIVE',
+      description:  `Proposal ${existing.proposalId} archived`,
+      resourceType: 'Proposal',
+      resourceId:   existing.proposalId,
+      req,
+    })
+
     return NextResponse.json({ success: true, data: updated })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to archive document'
@@ -117,6 +131,21 @@ export const DELETE = withMiddleware({
     }
 
     await db.proposalDocument.delete({ where: { id } })
+
+    logPlatformEvent({
+      userId:       req.user?.id,
+      userName:     req.user?.name,
+      email:        req.user?.email,
+      role:         req.user?.role,
+      module:       'PROPOSALS',
+      action:       'DELETE',
+      description:  `Proposal ${existing.proposalId} permanently deleted`,
+      resourceType: 'Proposal',
+      resourceId:   existing.proposalId,
+      severity:     'CRITICAL',
+      req,
+    })
+
     return NextResponse.json({ success: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete document'
