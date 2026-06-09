@@ -158,6 +158,10 @@ const systemNavItems: NavItem[] = [
   { key: "settings",            label: "Settings",            icon: Settings  },
 ]
 
+const websiteNavItems: NavItem[] = [
+  { key: "quantix-website", label: "Quantix Website", icon: Globe },
+]
+
 function CollapsibleSection({
   title, items, activePage, onNavigate, defaultOpen = false,
 }: {
@@ -285,6 +289,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
     { title: "HRMS",              items: filterItems(hrmsNavItems),         open: false },
     { title: "Revenue Operations", items: filterItems(revenueOpsNavItems), open: false },
     { title: "System",            items: filterItems(systemNavItems),       open: false },
+    { title: "Website",           items: filterItems(websiteNavItems),      open: false },
   ]
 
   if (isMobile) {

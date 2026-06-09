@@ -174,6 +174,7 @@ const SupportView = dynamic(() => import("@/components/dashboard/support-view").
 const BackupMonitoringView = dynamic(() => import("@/components/dashboard/backup-monitoring-view").then(m => ({ default: m.BackupMonitoringView })), { loading: () => <PageLoader /> })
 const SecurityAccessView = dynamic(() => import("@/components/dashboard/security-access-view").then(m => ({ default: m.SecurityAccessView })), { loading: () => <PageLoader /> })
 const AuditLogsView = dynamic(() => import("@/components/dashboard/audit-logs-view").then(m => ({ default: m.AuditLogsView })), { loading: () => <PageLoader /> })
+const QuantixWebsiteView = dynamic(() => import("@/components/admin/websites/quantix-website-view").then(m => ({ default: m.QuantixWebsiteView })), { loading: () => <PageLoader /> })
 
 // ── HRMS pages (lazy) ─────────────────────────────────────────────────────
 const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
@@ -466,6 +467,8 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "backup-monitoring": return <BackupMonitoringView />
       case "security-access": return <SecurityAccessView />
       case "audit-logs": return <AuditLogsView />
+      // Website
+      case "quantix-website": return <QuantixWebsiteView />
       default: return <WorkflowEngineView />
     }
   }

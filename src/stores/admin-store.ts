@@ -79,6 +79,7 @@ export type AdminPage =
   | "rev-addon-ownership"
   | "rev-commission-processing"
   | "brand-studio"
+  | "quantix-website"
 
 export type BusinessPage =
   | "dashboard"

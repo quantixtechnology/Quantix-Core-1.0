@@ -2691,3 +2691,58 @@ model PlatformAuditLog {
   @@index([action])
   @@index([severity])
 }
+
+// ============================================================================
+// Quantix Corporate Website — Content Management
+// Manages content for quantixtechnology.in — pricing plans, features,
+// company information, and legal registrations.
+// Editable by Platform Admin through the "Quantix Website" module.
+// ============================================================================
+
+model WebsitePricingPlan {
+  id                String               @id @default(cuid())
+  planKey           String               @unique  // starter | business | yearly | custom | additional-store
+  planName          String
+  billingType       String               // monthly | yearly | one_time | custom
+  price             Float?               // null = "Contact Us" pricing
+  priceDisplay      String?              // override display string e.g. "Contact Us"
+  implementationFee Float?
+  description       String?
+  discountMessage   String?              // e.g. "Get 2 Months Free"
+  displayOrder      Int                  @default(0)
+  isActive          Boolean              @default(true)
+  features          WebsitePlanFeature[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([displayOrder])
+}
+
+model WebsitePlanFeature {
+  id           String             @id @default(cuid())
+  planId       String
+  featureName  String
+  displayOrder Int                @default(0)
+  plan         WebsitePricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([planId])
+  @@index([planId, displayOrder])
+}
+
+// Singleton — always upserted on id = "singleton"
+model WebsiteCompanyInfo {
+  id             String  @id @default("singleton")
+  companyName    String?
+  address        String?
+  contactNumber  String?
+  whatsappNumber String?
+  supportEmail   String?
+  salesEmail     String?
+  websiteUrl     String?
+  gstNumber      String?
+  shopActNumber  String?
+  msmeNumber     String?
+  updatedAt      DateTime @updatedAt
+}

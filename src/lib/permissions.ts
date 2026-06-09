@@ -225,6 +225,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "import:leads", "import:business", "export:leads",
     "proposals:view", "proposals:create", "proposals:export",
     "commission:view", "commission:edit",
+    "website:view", "website:create", "website:edit", "website:configure",
   ],
   QUANTIX_SALES_TEAM: [
     // Navigation — Sales Team sees only Sales & Leads + Commission Calculator
@@ -778,4 +779,6 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "rev-renewal-ownership":     "revenue_ops:view",
   "rev-addon-ownership":       "revenue_ops:view",
   "rev-commission-processing": "revenue_ops:manage",
+  // Corporate Website
+  "quantix-website":           "website:view",
 }
