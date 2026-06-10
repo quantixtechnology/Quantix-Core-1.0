@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { PageHeader } from "../shared/page-header"
 import { StatusBadge } from "../shared/status-badge"
 import { EmptyState } from "../shared/empty-state"
@@ -107,13 +107,27 @@ function WhatsAppIcon({ className }: { className?: string }) {
 }
 
 export function LeadsView() {
-  const { searchQuery, setCrmLeadTab } = useAdminStore()
+  const { setCrmLeadTab } = useAdminStore()
   const { permissions } = useAuthStore()
   const canEdit = permissions.includes("leads:edit" as never)
   const [leads, setLeads] = useState<LeadApiData[]>([])
   const [salesTeam, setSalesTeam] = useState<SalesTeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Local search state with 350ms debounce
+  const [localSearch, setLocalSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flushSearch = (value: string) => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    setDebouncedSearch(value)
+    setPage(1)
+  }
+  useEffect(() => {
+    searchDebounceRef.current = setTimeout(() => { setDebouncedSearch(localSearch); setPage(1) }, 350)
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current) }
+  }, [localSearch])
 
   // Server-side pagination
   const [page, setPage] = useState(1)
@@ -167,7 +181,7 @@ export function LeadsView() {
       if (typeFilter   !== "all") params.set("businessType", typeFilter)
       if (repFilter === "unassigned") params.set("salesRepId", "null")
       else if (repFilter !== "all") params.set("salesRepId", repFilter)
-      if (searchQuery)            params.set("search",       searchQuery)
+      if (debouncedSearch) params.set("search", debouncedSearch)
 
       const res = await authFetch(`/api/admin/leads?${params}`)
       if (!res.ok) throw new Error("Failed to fetch leads")
@@ -182,7 +196,7 @@ export function LeadsView() {
     } finally {
       setLoading(false)
     }
-  }, [stageFilter, sourceFilter, typeFilter, repFilter, searchQuery])
+  }, [stageFilter, sourceFilter, typeFilter, repFilter, debouncedSearch])
 
   const fetchSalesTeam = useCallback(async () => {
     try {
@@ -201,7 +215,7 @@ export function LeadsView() {
     setPage(1)
     fetchLeads(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageFilter, sourceFilter, typeFilter, repFilter, searchQuery])
+  }, [stageFilter, sourceFilter, typeFilter, repFilter, debouncedSearch])
 
   // Re-fetch when page changes
   useEffect(() => {
@@ -567,9 +581,24 @@ export function LeadsView() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input placeholder="Search leads..." className="pl-8 h-8 text-xs" value={searchQuery} readOnly />
+        <div className="relative flex-1 min-w-[220px] max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search by name or phone..."
+            className={`pl-8 h-8 text-xs ${localSearch ? "pr-7" : ""}`}
+            value={localSearch}
+            onChange={e => setLocalSearch(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") flushSearch(localSearch) }}
+          />
+          {localSearch && (
+            <button
+              className="absolute right-2 top-2 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => { setLocalSearch(""); setDebouncedSearch("") }}
+              tabIndex={-1}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <Select value={stageFilter} onValueChange={setStageFilter}>
           <SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue placeholder="All Stages" /></SelectTrigger>
@@ -627,13 +656,17 @@ export function LeadsView() {
 
       {/* Leads Table */}
       {leads.length === 0 && !loading ? (
-        <EmptyState icon={Users} title="No leads found" description="Try adjusting your filters or add a new lead" />
+        <EmptyState
+          icon={Users}
+          title="No leads found"
+          description={debouncedSearch ? `No leads matching "${debouncedSearch}"` : "Try adjusting your filters or add a new lead"}
+        />
       ) : (() => {
         const paginationBar = (
           <div className="flex items-center justify-between gap-4 px-4 py-2 bg-muted/20 border-b last:border-b-0 last:border-t">
             <p className="text-[11px] text-muted-foreground">
               {totalCount > 0
-                ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} leads`
+                ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} ${debouncedSearch ? "matching leads" : "leads"}`
                 : "No leads"}
             </p>
             <div className="flex items-center gap-1">
