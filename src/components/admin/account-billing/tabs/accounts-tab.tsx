@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Search, RefreshCw, Eye, IndianRupee } from "lucide-react"
+import { Search, RefreshCw, Eye } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
 import { AccountHealthBadge } from "../shared/account-health-badge"
@@ -18,15 +18,15 @@ interface AccountRow {
   businessSlug: string
   businessStatus: string
   planName: string
-  planTier: string
-  billingCycle: string
+  planTier: string | null
+  billingCycle: string | null
   baseAmount: number
-  nextDueDate: string
+  nextDueDate: string | null
   lastPaymentDate: string | null
   outstanding: number
   daysOverdue: number
   activeServices: number
-  subStatus: string
+  subStatus: string | null
   health: string
   healthReason: string
 }
@@ -37,8 +37,22 @@ function formatCurrency(v: number) {
   return `₹${v.toLocaleString("en-IN")}`
 }
 
+function fmtDate(d: string | null | undefined) {
+  if (!d) return "—"
+  return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+}
+
 const CYCLES: Record<string, string> = {
   MONTHLY: "Monthly", QUARTERLY: "Quarterly", HALF_YEARLY: "Half-Yearly", YEARLY: "Yearly",
+}
+
+const BIZ_STATUS_CLS: Record<string, string> = {
+  ACTIVE:      "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ONBOARDING:  "bg-sky-50 text-sky-700 border-sky-200",
+  TRIAL:       "bg-amber-50 text-amber-700 border-amber-200",
+  SUSPENDED:   "bg-red-50 text-red-700 border-red-200",
+  EXPIRED:     "bg-orange-50 text-orange-700 border-orange-200",
+  CHURNED:     "bg-gray-50 text-gray-600 border-gray-200",
 }
 
 interface Props { onViewAccount: (businessId: string) => void }
@@ -53,7 +67,7 @@ export function AccountsTab({ onViewAccount }: Props) {
   const [total, setTotal]         = useState(0)
   const LIMIT = 50
 
-  const fetch = useCallback(async () => {
+  const fetchAccounts = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) })
@@ -67,7 +81,7 @@ export function AccountsTab({ onViewAccount }: Props) {
     finally { setLoading(false) }
   }, [page, search, status, cycle])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => { fetchAccounts() }, [fetchAccounts])
   useEffect(() => { setPage(1) }, [search, status, cycle])
 
   return (
@@ -84,14 +98,15 @@ export function AccountsTab({ onViewAccount }: Props) {
           />
         </div>
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="h-9 text-xs w-[140px]"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+          <SelectTrigger className="h-9 text-xs w-[150px]"><SelectValue placeholder="All Statuses" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All Statuses</SelectItem>
             <SelectItem value="ACTIVE">Active</SelectItem>
+            <SelectItem value="ONBOARDING">Onboarding</SelectItem>
             <SelectItem value="TRIAL">Trial</SelectItem>
-            <SelectItem value="PAST_DUE">Past Due</SelectItem>
             <SelectItem value="SUSPENDED">Suspended</SelectItem>
             <SelectItem value="EXPIRED">Expired</SelectItem>
+            <SelectItem value="CHURNED">Churned</SelectItem>
           </SelectContent>
         </Select>
         <Select value={cycle} onValueChange={setCycle}>
@@ -104,12 +119,12 @@ export function AccountsTab({ onViewAccount }: Props) {
             <SelectItem value="YEARLY">Yearly</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" onClick={fetch} disabled={loading}>
+        <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" onClick={fetchAccounts} disabled={loading}>
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
-      <div className="text-xs text-muted-foreground">{total} accounts</div>
+      <div className="text-xs text-muted-foreground">{total} businesses</div>
 
       {/* Table */}
       <div className="rounded-md border overflow-x-auto">
@@ -117,6 +132,7 @@ export function AccountsTab({ onViewAccount }: Props) {
           <TableHeader>
             <TableRow className="text-[11px]">
               <TableHead>Business</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Plan / Cycle</TableHead>
               <TableHead>Services</TableHead>
               <TableHead className="text-right">Outstanding</TableHead>
@@ -130,14 +146,14 @@ export function AccountsTab({ onViewAccount }: Props) {
             {loading
               ? Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 8 }).map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}
+                    {Array.from({ length: 9 }).map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}
                   </TableRow>
                 ))
               : accounts.length === 0
               ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-10 text-sm text-muted-foreground">
-                      No accounts found
+                    <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
+                      No businesses found
                     </TableCell>
                   </TableRow>
                 )
@@ -150,9 +166,14 @@ export function AccountsTab({ onViewAccount }: Props) {
                       </div>
                     </TableCell>
                     <TableCell>
+                      <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${BIZ_STATUS_CLS[acc.businessStatus] ?? ""}`}>
+                        {acc.businessStatus}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <div>
                         <p className="font-medium">{acc.planName}</p>
-                        <p className="text-[10px] text-muted-foreground">{CYCLES[acc.billingCycle] ?? acc.billingCycle}</p>
+                        {acc.billingCycle && <p className="text-[10px] text-muted-foreground">{CYCLES[acc.billingCycle] ?? acc.billingCycle}</p>}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -163,14 +184,8 @@ export function AccountsTab({ onViewAccount }: Props) {
                         ? <span className="font-medium text-red-600">{formatCurrency(acc.outstanding)}{acc.daysOverdue > 0 && <span className="text-[10px] ml-1 text-red-400">({acc.daysOverdue}d)</span>}</span>
                         : <span className="text-emerald-600 font-medium">—</span>}
                     </TableCell>
-                    <TableCell>
-                      {new Date(acc.nextDueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                    </TableCell>
-                    <TableCell>
-                      {acc.lastPaymentDate
-                        ? new Date(acc.lastPaymentDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-                        : <span className="text-muted-foreground">—</span>}
-                    </TableCell>
+                    <TableCell>{fmtDate(acc.nextDueDate)}</TableCell>
+                    <TableCell>{fmtDate(acc.lastPaymentDate)}</TableCell>
                     <TableCell>
                       <AccountHealthBadge score={acc.health as never} reason={acc.healthReason} />
                     </TableCell>

@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   RefreshCw, ExternalLink, Calendar, Edit, IndianRupee, FileText, Receipt,
-  Clock, CheckCircle, XCircle, AlertCircle, User, ChevronRight, Zap
+  Clock, CheckCircle, XCircle, AlertCircle, User, ChevronRight, Zap, TrendingUp,
 } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
@@ -199,37 +199,91 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
                   ? <div className="space-y-3">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-16 w-full"/>)}</div>
                   : (
                     <>
-                      {/* KPI row */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <Card className="shadow-none">
-                          <CardContent className="p-3 text-center">
-                            <IndianRupee className="h-4 w-4 text-emerald-600 mx-auto mb-1" />
-                            <p className="text-lg font-bold">{formatCurrency(detail.lifetimeRevenue)}</p>
-                            <p className="text-[10px] text-muted-foreground">Lifetime Revenue</p>
-                          </CardContent>
-                        </Card>
-                        <Card className="shadow-none">
-                          <CardContent className="p-3 text-center">
-                            <AlertCircle className={`h-4 w-4 mx-auto mb-1 ${detail.outstanding > 0 ? "text-red-500" : "text-muted-foreground"}`} />
-                            <p className={`text-lg font-bold ${detail.outstanding > 0 ? "text-red-600" : ""}`}>{detail.outstanding > 0 ? formatCurrency(detail.outstanding) : "₹0"}</p>
-                            <p className="text-[10px] text-muted-foreground">Outstanding</p>
-                          </CardContent>
-                        </Card>
-                        <Card className="shadow-none">
-                          <CardContent className="p-3 text-center">
-                            <FileText className="h-4 w-4 text-sky-600 mx-auto mb-1" />
-                            <p className="text-lg font-bold">{detail.activeAddonCount}</p>
-                            <p className="text-[10px] text-muted-foreground">Add-Ons</p>
-                          </CardContent>
-                        </Card>
-                        <Card className="shadow-none">
-                          <CardContent className="p-3 text-center">
-                            <Clock className={`h-4 w-4 mx-auto mb-1 ${detail.pendingVerification > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
-                            <p className={`text-lg font-bold ${detail.pendingVerification > 0 ? "text-amber-600" : ""}`}>{detail.pendingVerification}</p>
-                            <p className="text-[10px] text-muted-foreground">Pending Verification</p>
-                          </CardContent>
-                        </Card>
-                      </div>
+                      {/* KPI row — 6 metrics */}
+                      {(() => {
+                        // Compute recurring monthly value from sub + active recurring addons
+                        const sub = detail.subscription
+                        let mrv = 0
+                        if (sub) {
+                          const base = sub.finalAmount ?? sub.baseAmount
+                          switch (sub.billingCycle) {
+                            case 'MONTHLY':     mrv += base;     break
+                            case 'QUARTERLY':   mrv += base / 3; break
+                            case 'HALF_YEARLY': mrv += base / 6; break
+                            case 'YEARLY':      mrv += base / 12; break
+                          }
+                        }
+                        for (const a of detail.addons) {
+                          if (a.status !== 'ACTIVE' || a.billingType !== 'RECURRING') continue
+                          switch (a.cycle) {
+                            case 'MONTHLY':     mrv += a.amount;     break
+                            case 'QUARTERLY':   mrv += a.amount / 3; break
+                            case 'HALF_YEARLY': mrv += a.amount / 6; break
+                            case 'YEARLY':      mrv += a.amount / 12; break
+                          }
+                        }
+                        const activeServices = sub ? 1 + detail.activeAddonCount : detail.activeAddonCount
+                        return (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                            <Card className="shadow-none">
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
+                                  <p className="text-[10px] text-muted-foreground">Active Services</p>
+                                </div>
+                                <p className="text-xl font-bold">{activeServices}</p>
+                              </CardContent>
+                            </Card>
+                            <Card className="shadow-none">
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <TrendingUp className="h-3.5 w-3.5 text-violet-600" />
+                                  <p className="text-[10px] text-muted-foreground">Monthly Value</p>
+                                </div>
+                                <p className="text-xl font-bold">{formatCurrency(Math.round(mrv))}</p>
+                              </CardContent>
+                            </Card>
+                            <Card className={`shadow-none ${detail.outstanding > 0 ? "border-red-200" : ""}`}>
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <AlertCircle className={`h-3.5 w-3.5 ${detail.outstanding > 0 ? "text-red-500" : "text-muted-foreground"}`} />
+                                  <p className="text-[10px] text-muted-foreground">Outstanding</p>
+                                </div>
+                                <p className={`text-xl font-bold ${detail.outstanding > 0 ? "text-red-600" : ""}`}>{detail.outstanding > 0 ? formatCurrency(detail.outstanding) : "₹0"}</p>
+                              </CardContent>
+                            </Card>
+                            <Card className="shadow-none">
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <Calendar className="h-3.5 w-3.5 text-sky-600" />
+                                  <p className="text-[10px] text-muted-foreground">Next Due</p>
+                                </div>
+                                <p className="text-sm font-bold leading-tight">{sub ? fmtDate(sub.nextBillingDate) : "—"}</p>
+                                {detail.daysOverdue > 0 && <p className="text-[10px] text-red-500 mt-0.5">{detail.daysOverdue}d overdue</p>}
+                              </CardContent>
+                            </Card>
+                            <Card className="shadow-none">
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <Receipt className="h-3.5 w-3.5 text-amber-600" />
+                                  <p className="text-[10px] text-muted-foreground">Last Payment</p>
+                                </div>
+                                <p className="text-sm font-bold leading-tight">{sub?.lastPaymentDate ? fmtDate(sub.lastPaymentDate) : "—"}</p>
+                                {sub?.lastPaymentAmount && <p className="text-[10px] text-muted-foreground mt-0.5">₹{sub.lastPaymentAmount.toLocaleString("en-IN")}</p>}
+                              </CardContent>
+                            </Card>
+                            <Card className="shadow-none">
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
+                                  <p className="text-[10px] text-muted-foreground">Lifetime Revenue</p>
+                                </div>
+                                <p className="text-xl font-bold">{formatCurrency(detail.lifetimeRevenue)}</p>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        )
+                      })()}
 
                       {/* Subscription */}
                       {sub && (

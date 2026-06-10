@@ -36,7 +36,6 @@ import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { MobileProvisionSection } from "./mobile-provision-section"
-import { AccountBillingSummary } from "@/components/admin/account-billing/shared/account-billing-summary"
 import { resolveImageUrl } from "@/lib/image-url"
 
 // ---- Plan data type — feature access only, no pricing ----
@@ -1310,7 +1309,7 @@ export function BusinessesView() {
                     const typeConf = businessTypeConfig[biz.businessType as BusinessType]
                     const sub = biz.subscription
                     return (
-                      <TableRow key={biz.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true); loadAddons(biz.id) }}>
+                      <TableRow key={biz.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
@@ -1359,7 +1358,7 @@ export function BusinessesView() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true); loadAddons(biz.id) }}>View</Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
                             {canImpersonate && (
                               <>
                                 <Button
@@ -1385,7 +1384,7 @@ export function BusinessesView() {
       )}
 
       {/* Business Detail Sheet */}
-      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false); setAddonsOpen(false); setShowAddAddon(false); setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false); setDrawerTab("overview") } }}>
+      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false); setDrawerTab("overview") } }}>
         <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
           {selectedBusiness && (() => {
             const biz = selectedBusiness
@@ -1456,7 +1455,6 @@ export function BusinessesView() {
                     <TabsTrigger value="stores" className="text-xs h-8 rounded-none">Stores</TabsTrigger>
                     <TabsTrigger value="deployments" className="text-xs h-8 rounded-none">Deployments</TabsTrigger>
                     <TabsTrigger value="apps" className="text-xs h-8 rounded-none">Apps</TabsTrigger>
-                    <TabsTrigger value="account-billing" className="text-xs h-8 rounded-none">Account &amp; Billing</TabsTrigger>
                   </TabsList>
                   <TabsContent value="overview" className="flex-1 min-h-0 mt-0">
                     <ScrollArea className="h-full">
@@ -1531,285 +1529,6 @@ export function BusinessesView() {
                         )}
                       </div>
                     </div>
-                    <Separator />
-                    {/* Subscription */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div><h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscription</h4></div>
-                        <div className="flex items-center gap-2">
-                          {!pricingOpen && canEdit && sub && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openPricingEditor(biz)}>
-                              <CreditCard className="size-3" /> Edit Pricing
-                            </Button>
-                          )}
-                          {(biz.status !== "ACTIVE" || (sub && sub.status !== "ACTIVE")) && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleActivateBusiness(biz)}
-                              disabled={activatingBusiness}
-                            >
-                              {biz.status !== "ACTIVE" ? "Activate Business" : "Reactivate Subscription"}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      {sub ? (
-                        <div className="rounded-lg border p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2"><CreditCard className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-medium">{sub.plan?.name || sub.plan?.tier || "Unknown"} Plan</span></div>
-                            <StatusBadge status={sub.status} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div><p className="text-[10px] text-muted-foreground">Billing</p><p className="font-medium">{sub.billingCycle === "MONTHLY" || sub.billingCycle === "monthly" ? "Monthly" : sub.billingCycle === "QUARTERLY" ? "Quarterly" : sub.billingCycle === "HALF_YEARLY" ? "Half-Yearly" : "Yearly"}{sub.billingCycleDay ? ` · day ${sub.billingCycleDay}` : ""}</p></div>
-                            <div>
-                              <p className="text-[10px] text-muted-foreground">Subscription</p>
-                              {sub.finalAmount !== null ? (
-                                <div>
-                                  <p className="font-medium">₹{(sub.finalAmount ?? 0).toLocaleString("en-IN")}</p>
-                                  {sub.discountAmount ? <p className="text-[10px] text-orange-600">-₹{sub.discountAmount.toLocaleString("en-IN")} disc.</p> : null}
-                                </div>
-                              ) : sub.customPrice ? (
-                                <CurrencyBadge amount={sub.customPrice} override original={sub.planPrice ?? 0} />
-                              ) : sub.planPrice !== null ? (
-                                <p className="font-medium">₹{(sub.planPrice ?? 0).toLocaleString("en-IN")}</p>
-                              ) : <p className="text-xs text-muted-foreground">Not set</p>}
-                            </div>
-                            <div><p className="text-[10px] text-muted-foreground">Sub. Started</p><p className="font-medium">{new Date(sub.currentPeriodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
-                            <div><p className="text-[10px] text-muted-foreground">Renewal Due</p><p className="font-medium">{new Date(sub.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p></div>
-                            {sub.implementationAmount ? <div><p className="text-[10px] text-muted-foreground">Implementation</p><p className="font-medium">₹{sub.implementationAmount.toLocaleString("en-IN")}</p></div> : null}
-                            {sub.discountPercentage && <div><p className="text-[10px] text-muted-foreground">Discount</p><p className="font-medium text-orange-600">{sub.discountPercentage}% off</p></div>}
-                          </div>
-
-                          {/* Inline pricing editor */}
-                          {pricingOpen && (() => {
-                            const baseAmount = sub.subscriptionAmount ?? sub.planPrice ?? 0
-                            return (
-                            <div className="border-t pt-3 space-y-3">
-                              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Edit Pricing</p>
-                              <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                  <Label className="text-xs">Subscription Amount (₹)</Label>
-                                  <Input
-                                    type="number"
-                                    placeholder={baseAmount > 0 ? String(baseAmount) : "Enter amount"}
-                                    value={editCustomPrice}
-                                    onChange={(e) => {
-                                      const amt = e.target.value
-                                      setEditCustomPrice(amt)
-                                      const num = parseFloat(amt)
-                                      if (!isNaN(num) && baseAmount > 0) {
-                                        const pct = Math.round(((baseAmount - num) / baseAmount) * 10000) / 100
-                                        setEditDiscountPct(pct > 0 ? String(pct) : "")
-                                      } else {
-                                        setEditDiscountPct("")
-                                      }
-                                    }}
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
-                                <div className="space-y-1.5">
-                                  <Label className="text-xs">Discount %</Label>
-                                  <Input
-                                    type="number"
-                                    placeholder="0"
-                                    min="0"
-                                    max="100"
-                                    value={editDiscountPct}
-                                    onChange={(e) => {
-                                      const pct = e.target.value
-                                      setEditDiscountPct(pct)
-                                      const num = parseFloat(pct)
-                                      if (!isNaN(num) && baseAmount > 0) {
-                                        const amt = Math.round(baseAmount * (1 - num / 100))
-                                        setEditCustomPrice(String(amt))
-                                      }
-                                    }}
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
-                              </div>
-                              {editCustomPrice && baseAmount > 0 && parseFloat(editCustomPrice) !== baseAmount && (
-                                <p className="text-[11px] text-muted-foreground">
-                                  Base: ₹{baseAmount.toLocaleString("en-IN")} → New: ₹{parseFloat(editCustomPrice).toLocaleString("en-IN")}
-                                  {editDiscountPct ? ` (${editDiscountPct}% off)` : ""}
-                                </p>
-                              )}
-                              <div className="space-y-1.5">
-                                <Label className="text-xs">Reason / Note</Label>
-                                <Input
-                                  placeholder="e.g. Negotiated rate, early adopter discount"
-                                  value={editPricingNote}
-                                  onChange={(e) => setEditPricingNote(e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                              </div>
-                              <div className="flex gap-2">
-                                <Button size="sm" className="h-7 text-xs flex-1" onClick={() => handleSavePricing(biz)} disabled={savingPricing}>
-                                  {savingPricing ? "Saving…" : "Save Pricing"}
-                                </Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => setPricingOpen(false)} disabled={savingPricing}>
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          )
-                          })()}
-                        </div>
-                      ) : (<div className="rounded-lg border border-dashed p-4 text-center"><p className="text-sm text-muted-foreground">No active subscription</p></div>)}
-                    </div>
-                    {/* ── Add-Ons ──────────────────────────────────────────── */}
-                    <Separator />
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <Package className="h-3.5 w-3.5 text-muted-foreground" />
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Add-Ons</h4>
-                          {addons.filter(a => a.status === "ACTIVE").length > 0 && (
-                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{addons.filter(a => a.status === "ACTIVE").length} active</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          {canEdit && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setShowAddAddon(!showAddAddon); if (!addonsOpen) setAddonsOpen(true) }}>
-                              <PlusCircle className="size-3" /> Add
-                            </Button>
-                          )}
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setAddonsOpen(!addonsOpen)}>
-                            {addonsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Add addon form */}
-                      {showAddAddon && (
-                        <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">New Add-On</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="col-span-2 space-y-1">
-                              <Label className="text-xs">Name *</Label>
-                              <Input value={newAddonName} onChange={(e) => setNewAddonName(e.target.value)} placeholder="e.g. Android App, iOS App…" className="h-7 text-xs" />
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-xs">Amount (₹) *</Label>
-                              <Input type="number" value={newAddonAmount} onChange={(e) => setNewAddonAmount(e.target.value)} placeholder="0" className="h-7 text-xs" />
-                            </div>
-                            <div className="space-y-1">
-                              <Label className="text-xs">Billing Type</Label>
-                              <Select value={newAddonType} onValueChange={(v) => setNewAddonType(v as "ONE_TIME" | "RECURRING")}>
-                                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="ONE_TIME">One-Time</SelectItem>
-                                  <SelectItem value="RECURRING">Recurring</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            {newAddonType === "RECURRING" && (
-                              <div className="space-y-1">
-                                <Label className="text-xs">Cycle</Label>
-                                <Select value={newAddonCycle} onValueChange={setNewAddonCycle}>
-                                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="MONTHLY">Monthly</SelectItem>
-                                    <SelectItem value="QUARTERLY">Quarterly</SelectItem>
-                                    <SelectItem value="HALF_YEARLY">Half-Yearly</SelectItem>
-                                    <SelectItem value="YEARLY">Yearly</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            )}
-                            <div className={`space-y-1 ${newAddonType === "RECURRING" ? "" : "col-span-2"}`}>
-                              <Label className="text-xs">Description</Label>
-                              <Input value={newAddonDesc} onChange={(e) => setNewAddonDesc(e.target.value)} placeholder="Optional note" className="h-7 text-xs" />
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" className="h-7 text-xs flex-1" onClick={() => handleSaveAddon(biz.id)} disabled={savingAddon || !newAddonName.trim() || !newAddonAmount}>
-                              {savingAddon ? "Saving…" : "Save Add-On"}
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAddAddon(false)}>Cancel</Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Add-on list */}
-                      {addonsOpen && (
-                        addonsLoading ? (
-                          <div className="space-y-1.5">
-                            {[...Array(2)].map((_, i) => <div key={i} className="rounded-lg border p-3 h-12 animate-pulse bg-muted/30" />)}
-                          </div>
-                        ) : addons.length === 0 ? (
-                          <div className="rounded-lg border border-dashed p-3 text-center">
-                            <p className="text-[11px] text-muted-foreground">No add-ons configured</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">Use the Add button to create one-time or recurring add-ons</p>
-                          </div>
-                        ) : (
-                          <div className="divide-y rounded-md border">
-                            {addons.map((addon) => (
-                              <div key={addon.id} className="px-3 py-2.5 flex items-center gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-xs font-medium truncate">{addon.name}</span>
-                                    <Badge variant="outline" className={`text-[9px] h-3.5 px-1 shrink-0 ${addon.billingType === "ONE_TIME" ? "border-amber-300 text-amber-700" : "border-sky-300 text-sky-700"}`}>
-                                      {addon.billingType === "ONE_TIME" ? "One-Time" : addon.cycle ?? "Recurring"}
-                                    </Badge>
-                                    <Badge variant="outline" className={`text-[9px] h-3.5 px-1 shrink-0 ${addon.status === "ACTIVE" ? "border-emerald-300 text-emerald-700" : addon.status === "COMPLETED" ? "border-sky-300 text-sky-700" : "border-gray-300 text-gray-600"}`}>
-                                      {addon.status}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-[10px] text-muted-foreground mt-0.5">₹{addon.amount.toLocaleString("en-IN")}</p>
-                                </div>
-                                {canEdit && addon.status === "ACTIVE" && (
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    {addon.billingType === "ONE_TIME" && (
-                                      <Button
-                                        size="sm" variant="ghost"
-                                        className="h-6 px-2 text-[10px] gap-1 text-emerald-700 hover:bg-emerald-50"
-                                        disabled={generatingAddonInvoiceId === addon.id}
-                                        onClick={() => handleGenerateAddonInvoice(biz.id, addon.id)}
-                                        title="Generate invoice"
-                                      >
-                                        <PlusCircle className="h-3 w-3" />
-                                        {generatingAddonInvoiceId === addon.id ? "…" : "Invoice"}
-                                      </Button>
-                                    )}
-                                    <Button
-                                      size="sm" variant="ghost"
-                                      className="h-6 w-6 p-0 text-gray-500 hover:bg-gray-100"
-                                      onClick={() => handleDeactivateAddon(biz.id, addon.id)}
-                                      title="Deactivate"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )
-                      )}
-                    </div>
-
-                    {biz.deployments.filter(d => !["CUSTOMER_APP","DELIVERY_APP","ADMIN_APP"].includes(d.type)).length > 0 && (
-                      <>
-                        <Separator />
-                        <div className="space-y-3">
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deployments</h4>
-                          <div className="space-y-1.5">
-                            {biz.deployments.filter(d => !["CUSTOMER_APP","DELIVERY_APP","ADMIN_APP"].includes(d.type)).map((dep) => (
-                              <div key={dep.id} className="rounded-lg border p-2.5 flex items-center justify-between">
-                                <div className="flex items-center gap-2"><span className="text-xs font-medium">{dep.type.replace(/_/g, " ")}</span><span className="text-[10px] text-muted-foreground">v{dep.version || "?"}</span></div>
-                                <StatusBadge status={dep.status} />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                    <MobileProvisionSection
-                      businessId={biz.id}
-                      slug={biz.slug}
-                      initialDeployments={biz.deployments}
-                    />
                     <Separator />
                     {/* Branding & Domain */}
                     <div className="space-y-3">
@@ -2274,19 +1993,6 @@ export function BusinessesView() {
                     </ScrollArea>
                   </TabsContent>
 
-                  {/* ── Account & Billing Tab ────────────────────────────── */}
-                  <TabsContent value="account-billing" className="flex-1 min-h-0 mt-0">
-                    <ScrollArea className="h-full">
-                      <div className="p-6 space-y-4">
-                        {biz && (
-                          <AccountBillingSummary
-                            businessId={biz.id}
-                            onOpenFullView={() => { setDetailOpen(false); setActivePage("account-billing") }}
-                          />
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </TabsContent>
                 </Tabs>
               </>
             )

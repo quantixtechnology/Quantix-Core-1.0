@@ -37,7 +37,7 @@ export const GET = withMiddleware({
     const [sub, addons, lastRecord, pendingCount, lifetimeAgg, recentDocs] = await Promise.all([
       db.businessSubscription.findUnique({
         where: { businessId },
-        include: { plan: true, business: { select: { id: true, name: true, slug: true, status: true, gstNumber: true, contactEmail: true, contactPhone: true } } },
+        include: { plan: true, business: { select: { id: true, name: true, slug: true, status: true, logo: true, gstNumber: true, address: true, city: true, state: true, pincode: true, contactEmail: true, contactPhone: true } } },
       }),
       db.addon.findMany({ where: { businessId }, orderBy: { createdAt: 'desc' } }),
       db.billingRecord.findFirst({ where: { subscription: { businessId } }, orderBy: { createdAt: 'desc' } }),
@@ -60,12 +60,17 @@ export const GET = withMiddleware({
       success: true,
       data: {
         businessId,
-        businessName: sub.business.name,
-        businessSlug: sub.business.slug,
+        businessName:   sub.business.name,
+        businessSlug:   sub.business.slug,
         businessStatus: sub.business.status,
-        gstNumber: sub.business.gstNumber,
-        contactEmail: sub.business.contactEmail,
-        contactPhone: sub.business.contactPhone,
+        logo:           sub.business.logo,
+        gstNumber:      sub.business.gstNumber,
+        address:        sub.business.address,
+        city:           sub.business.city,
+        state:          sub.business.state,
+        pincode:        sub.business.pincode,
+        contactEmail:   sub.business.contactEmail,
+        contactPhone:   sub.business.contactPhone,
         subscription: {
           id: sub.id,
           status: sub.status,
