@@ -7,231 +7,197 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Layers, PlusCircle, FileText, RefreshCw } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 
-interface Plan { id: string; name: string; tier: string }
-
-type ServiceType = 'PLATFORM_SUBSCRIPTION' | 'ADDON' | 'ONE_TIME'
+const CATEGORIES = [
+  { value: "PLATFORM",       label: "Platform" },
+  { value: "MOBILE_APP",     label: "Mobile App" },
+  { value: "IMPLEMENTATION", label: "Implementation" },
+  { value: "SUPPORT",        label: "Support" },
+  { value: "CUSTOM",         label: "Custom" },
+]
 
 const CYCLES = [
-  { value: 'MONTHLY',     label: 'Monthly'     },
-  { value: 'QUARTERLY',   label: 'Quarterly'   },
-  { value: 'HALF_YEARLY', label: 'Half-Yearly' },
-  { value: 'YEARLY',      label: 'Yearly'      },
+  { value: "MONTHLY",     label: "Monthly" },
+  { value: "QUARTERLY",   label: "Quarterly" },
+  { value: "HALF_YEARLY", label: "Half-Yearly" },
+  { value: "YEARLY",      label: "Yearly" },
+]
+
+const PRESETS = [
+  "Quantix Standard",
+  "Additional Store",
+  "iOS App",
+  "Android App",
+  "Payment Gateway Setup",
+  "Implementation Fee",
+  "Annual Support",
+  "Custom Development",
 ]
 
 function nextDueFromStart(start: string, cycle: string): string {
-  if (!start) return ''
+  if (!start) return ""
   const d = new Date(start)
-  const months = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, YEARLY: 12 }[cycle] ?? 1
-  d.setMonth(d.getMonth() + months)
+  const months: Record<string, number> = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, YEARLY: 12 }
+  d.setMonth(d.getMonth() + (months[cycle] ?? 1))
   return d.toISOString().slice(0, 10)
 }
 
 interface Props {
   open:         boolean
-  onOpenChange: (open: boolean) => void
+  onOpenChange: (v: boolean) => void
   businessId:   string
   onSuccess:    () => void
 }
 
 export function AddServiceDialog({ open, onOpenChange, businessId, onSuccess }: Props) {
   const { user } = useAuthStore()
-  const [plans,    setPlans]    = useState<Plan[]>([])
-  const [saving,   setSaving]   = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  // Form
-  const [serviceType, setServiceType] = useState<ServiceType>('PLATFORM_SUBSCRIPTION')
-  const [name,        setName]        = useState('')
-  const [amount,      setAmount]      = useState('')
-  const [billingCycle, setBillingCycle] = useState('MONTHLY')
-  const [startDate,   setStartDate]   = useState(() => new Date().toISOString().slice(0, 10))
-  const [nextDueDate, setNextDueDate] = useState('')
-  const [planId,      setPlanId]      = useState('')
-  const [description, setDescription] = useState('')
+  const [name,            setName]            = useState("")
+  const [description,     setDescription]     = useState("")
+  const [category,        setCategory]        = useState("PLATFORM")
+  const [billingType,     setBillingType]     = useState<"RECURRING" | "ONE_TIME">("RECURRING")
+  const [billingCycle,    setBillingCycle]    = useState("MONTHLY")
+  const [unitPrice,       setUnitPrice]       = useState("")
+  const [quantity,        setQuantity]        = useState("1")
+  const [startDate,       setStartDate]       = useState(() => new Date().toISOString().slice(0, 10))
+  const [nextBillingDate, setNextBillingDate] = useState("")
 
-  // Auto-fill name when plan selected
   useEffect(() => {
-    if (serviceType === 'PLATFORM_SUBSCRIPTION' && planId) {
-      const p = plans.find(pl => pl.id === planId)
-      if (p) setName(p.name + ' Subscription')
+    if (billingType === "RECURRING" && billingCycle && startDate) {
+      setNextBillingDate(nextDueFromStart(startDate, billingCycle))
     }
-  }, [planId, serviceType, plans])
-
-  // Auto-calculate next due date
-  useEffect(() => {
-    if (serviceType !== 'ONE_TIME' && billingCycle && startDate) {
-      setNextDueDate(nextDueFromStart(startDate, billingCycle))
-    }
-  }, [startDate, billingCycle, serviceType])
-
-  // Fetch plans when dialog opens
-  useEffect(() => {
-    if (!open) return
-    fetch('/api/core/platform/plans', { headers: getAuthHeaders() })
-      .then(r => r.json())
-      .then(j => { if (j.success) setPlans(j.data) })
-      .catch(() => {/* non-critical */})
-  }, [open])
+  }, [startDate, billingCycle, billingType])
 
   const reset = () => {
-    setServiceType('PLATFORM_SUBSCRIPTION'); setName(''); setAmount(''); setBillingCycle('MONTHLY')
-    setStartDate(new Date().toISOString().slice(0, 10)); setNextDueDate(''); setPlanId(''); setDescription('')
+    setName(""); setDescription(""); setCategory("PLATFORM"); setBillingType("RECURRING")
+    setBillingCycle("MONTHLY"); setUnitPrice(""); setQuantity("1")
+    setStartDate(new Date().toISOString().slice(0, 10)); setNextBillingDate("")
   }
 
   const handleSubmit = async () => {
-    if (!name.trim()) { toast.error('Service name is required'); return }
-    const amt = parseFloat(amount)
-    if (!amount || isNaN(amt) || amt <= 0) { toast.error('Enter a valid amount'); return }
-    if (serviceType === 'PLATFORM_SUBSCRIPTION' && !planId) { toast.error('Select a plan'); return }
+    if (!name.trim()) { toast.error("Service name required"); return }
+    const price = parseFloat(unitPrice)
+    if (!unitPrice || isNaN(price) || price <= 0) { toast.error("Enter a valid unit price"); return }
 
     setSaving(true)
     try {
       const res = await fetch(`/api/admin/account-billing/${businessId}/services`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          serviceType,
-          name: name.trim(),
-          amount: amt,
-          billingCycle: serviceType === 'ONE_TIME' ? undefined : billingCycle,
-          startDate:    startDate   || undefined,
-          nextDueDate:  nextDueDate || undefined,
-          planId:       serviceType === 'PLATFORM_SUBSCRIPTION' ? planId : undefined,
-          description:  description.trim() || undefined,
+        method:  "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          name: name.trim(), description: description.trim() || undefined,
+          category, billingType,
+          billingCycle: billingType === "RECURRING" ? billingCycle : undefined,
+          unitPrice: price, quantity: parseInt(quantity) || 1,
+          startDate: startDate || undefined,
+          nextBillingDate: billingType === "RECURRING" ? (nextBillingDate || undefined) : undefined,
           createdById:   user?.id   ?? undefined,
           createdByName: user?.name ?? undefined,
         }),
       })
       const json = await res.json()
-      if (!json.success) { toast.error(json.error ?? 'Failed to create service'); return }
-      toast.success(json.message ?? 'Service created')
-      reset()
-      onSuccess()
-    } catch { toast.error('Failed to create service') }
+      if (!json.success) { toast.error(json.error ?? "Failed to add service"); return }
+      toast.success(json.message ?? "Service added")
+      reset(); onSuccess()
+    } catch { toast.error("Failed to add service") }
     finally { setSaving(false) }
   }
 
-  const typeLabel: Record<ServiceType, string> = {
-    PLATFORM_SUBSCRIPTION: 'Platform Subscription',
-    ADDON:                 'Add-On',
-    ONE_TIME:              'One-Time Service',
-  }
-
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
+    <Dialog open={open} onOpenChange={v => { if (!v) reset(); onOpenChange(v) }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Layers className="h-4 w-4 text-violet-600" /> Add Service
-          </DialogTitle>
+          <DialogTitle className="text-base">Add Service</DialogTitle>
           <DialogDescription className="text-xs">
-            Subscription, Add-On, and One-Time charges are all managed from Account &amp; Billing.
+            Every billable item is a Service. Invoices are generated from services.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
-          {/* Service Type selector */}
-          <div className="grid grid-cols-3 gap-2">
-            {((['PLATFORM_SUBSCRIPTION', 'ADDON', 'ONE_TIME'] as ServiceType[])).map(t => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => { setServiceType(t); setName(''); setAmount('') }}
-                className={`rounded-lg border p-2.5 text-center transition-colors ${serviceType === t ? 'border-violet-400 bg-violet-50 text-violet-800' : 'border-muted hover:bg-muted/50'}`}
-              >
-                {t === 'PLATFORM_SUBSCRIPTION' && <Layers className="h-4 w-4 mx-auto mb-1 text-violet-600" />}
-                {t === 'ADDON'                 && <PlusCircle className="h-4 w-4 mx-auto mb-1 text-sky-600" />}
-                {t === 'ONE_TIME'              && <FileText className="h-4 w-4 mx-auto mb-1 text-amber-600" />}
-                <p className="text-[10px] font-medium leading-tight">{typeLabel[t]}</p>
+        <div className="space-y-3 py-1">
+          {/* Preset quick-fill */}
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map(p => (
+              <button key={p} type="button" onClick={() => setName(p)}
+                className="rounded-full border px-2.5 py-0.5 text-[11px] hover:bg-muted transition-colors">
+                {p}
               </button>
             ))}
           </div>
 
-          {/* Plan selector — only for Platform Subscription */}
-          {serviceType === 'PLATFORM_SUBSCRIPTION' && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Plan *</Label>
-              <Select value={planId} onValueChange={setPlanId}>
-                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select plan…" /></SelectTrigger>
-                <SelectContent>
-                  {plans.map(p => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                      <Badge variant="secondary" className="ml-2 text-[9px] h-4">{p.tier}</Badge>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Service name */}
           <div className="space-y-1.5">
             <Label className="text-xs">Service Name *</Label>
-            <Input
-              value={name} onChange={e => setName(e.target.value)}
-              placeholder={serviceType === 'PLATFORM_SUBSCRIPTION' ? 'e.g. Pro Plan Subscription' : serviceType === 'ADDON' ? 'e.g. SMS Credits' : 'e.g. Setup & Onboarding'}
-              className="h-9 text-xs"
-            />
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Quantix Standard" className="h-9 text-xs" />
           </div>
 
-          {/* Amount + Billing Cycle */}
-          <div className={`grid gap-3 ${serviceType === 'ONE_TIME' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {/* Billing type */}
+          <div className="grid grid-cols-2 gap-2">
+            {(["RECURRING", "ONE_TIME"] as const).map(t => (
+              <button key={t} type="button" onClick={() => setBillingType(t)}
+                className={`rounded-lg border p-2.5 text-center text-xs transition-colors ${billingType === t ? "border-violet-400 bg-violet-50 text-violet-800 font-medium" : "border-muted hover:bg-muted/50"}`}>
+                {t === "RECURRING" ? "Recurring" : "One-Time"}
+              </button>
+            ))}
+          </div>
+
+          <div className={`grid gap-3 ${billingType === "RECURRING" ? "grid-cols-2" : "grid-cols-1"}`}>
             <div className="space-y-1.5">
-              <Label className="text-xs">Amount (₹) *</Label>
-              <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="h-9 text-xs" />
+              <Label className="text-xs">Unit Price (₹) *</Label>
+              <Input type="number" value={unitPrice} onChange={e => setUnitPrice(e.target.value)} placeholder="0.00" className="h-9 text-xs" />
             </div>
-            {serviceType !== 'ONE_TIME' && (
+            {billingType === "RECURRING" && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Billing Cycle</Label>
                 <Select value={billingCycle} onValueChange={setBillingCycle}>
                   <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CYCLES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                  </SelectContent>
+                  <SelectContent>{CYCLES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             )}
           </div>
 
-          {/* Start Date + Next Due Date */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>{CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Quantity</Label>
+              <Input type="number" min="1" value={quantity} onChange={e => setQuantity(e.target.value)} className="h-9 text-xs" />
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Start Date</Label>
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9 text-xs" />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                {serviceType === 'ONE_TIME' ? 'Due Date' : 'Next Due Date'}
-                {serviceType !== 'ONE_TIME' && <span className="text-muted-foreground ml-1">(auto)</span>}
-              </Label>
-              <Input type="date" value={nextDueDate} onChange={e => setNextDueDate(e.target.value)} className="h-9 text-xs" />
-            </div>
+            {billingType === "RECURRING" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Next Billing <span className="text-muted-foreground">(auto)</span></Label>
+                <Input type="date" value={nextBillingDate} onChange={e => setNextBillingDate(e.target.value)} className="h-9 text-xs" />
+              </div>
+            )}
           </div>
 
-          {/* Description */}
           <div className="space-y-1.5">
             <Label className="text-xs">Notes <span className="text-muted-foreground">(optional)</span></Label>
-            <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Internal notes…" className="text-xs resize-none" rows={2} />
+            <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} className="text-xs resize-none" placeholder="Internal notes…" />
           </div>
-
-          {serviceType === 'ONE_TIME' && (
-            <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-[11px] text-amber-800">
-              <span className="font-semibold">Proforma auto-generated.</span> A Draft Proforma will be created immediately — go to Charges or Documents tab to send it.
-            </div>
-          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" className="text-xs" onClick={() => { reset(); onOpenChange(false) }} disabled={saving}>Cancel</Button>
-          <Button className="text-xs gap-1.5" onClick={handleSubmit} disabled={saving || !name.trim() || !amount}>
-            {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : null}
-            {saving ? 'Saving…' : `Add ${typeLabel[serviceType]}`}
+          <Button className="text-xs gap-1.5" onClick={handleSubmit} disabled={saving || !name.trim() || !unitPrice}>
+            {saving && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+            {saving ? "Adding…" : "Add Service"}
           </Button>
         </DialogFooter>
       </DialogContent>

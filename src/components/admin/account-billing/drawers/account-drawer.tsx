@@ -1,731 +1,597 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Card, CardContent } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  RefreshCw, ExternalLink, Calendar, Edit, IndianRupee, FileText, Receipt,
-  Clock, CheckCircle, XCircle, AlertCircle, User, ChevronRight, Zap, TrendingUp,
+  Building2, TrendingUp, AlertCircle, Plus, FileText,
+  CreditCard, BookOpen, ClipboardList, Layers, Calendar,
 } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
-import { AccountHealthBadge } from "../shared/account-health-badge"
-import { AckStatusBadge } from "../shared/ack-status-badge"
-import { ServiceTypeBadge, BillingTypeBadge } from "../shared/service-type-badge"
-import { DocumentTypeBadge, DocumentStatusBadge } from "../shared/document-type-badge"
-import { RecurringDateDrawer } from "./recurring-date-drawer"
-import { AddChargeDrawer } from "./add-charge-drawer"
-import { DocumentPreviewPanel } from "../document-preview/document-preview-panel"
-import { AddServiceDialog } from "./add-service-dialog"
+import { AddServiceDialog }    from "./add-service-dialog"
+import { CreateInvoiceDialog } from "./create-invoice-dialog"
+import { RecordPaymentDialog } from "./record-payment-dialog"
+import { InvoicePreviewPanel } from "../invoice-preview/invoice-preview-panel"
 
-function formatCurrency(v: number) {
-  if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`
-  if (v >= 1000)   return `₹${(v / 1000).toFixed(1)}K`
-  return `₹${v.toLocaleString("en-IN")}`
-}
-
-function fmtDate(d: string | null | undefined) {
-  if (!d) return "—"
-  return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-}
-
-const CYCLES: Record<string, string> = {
-  MONTHLY: "Monthly", QUARTERLY: "Quarterly", HALF_YEARLY: "Half-Yearly", YEARLY: "Yearly",
-}
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface AccountDetail {
-  businessId: string
-  businessName: string
-  businessSlug: string
+  accountId:      string
+  businessId:     string
+  businessName:   string
   businessStatus: string
-  logo: string | null
-  address: string | null
-  city: string | null
-  state: string | null
-  pincode: string | null
-  gstNumber: string | null
-  contactEmail: string | null
-  contactPhone: string | null
-  subscription: {
-    id: string; status: string; planName: string; planTier: string
-    billingCycle: string; baseAmount: number; finalAmount: number | null
-    discountAmount: number | null; currentPeriodStart: string; nextBillingDate: string
-    lastPaymentDate: string | null; lastPaymentAmount: number | null
-  } | null
-  addons: Array<{ id: string; name: string; amount: number; billingType: string; cycle: string | null; status: string; startDate: string }>
-  activeAddonCount: number
-  lastRecord: { id: string; amount: number; status: string; acknowledgeStatus: string | null; paidDate: string | null; invoiceNumber: string | null } | null
-  outstanding: number
-  daysOverdue: number
-  pendingVerification: number
-  lifetimeRevenue: number
-  health: string
-  healthReason: string
-  recentDocuments: Array<{ id: string; documentNumber: string; documentType: string; status: string; amount: number; createdAt: string }>
+  contactEmail:   string | null
+  contactPhone:   string | null
+  address:        string | null
+  gstNumber:      string | null
+  currency:       string
+  mrr:            number
+  outstanding:    number
+  activeServices: number
+  totalInvoices:  number
+  totalPayments:  number
+  lastPayment:    { amount: number; paidAt: string; paymentMode: string | null } | null
+  services:       BillingService[]
+  recentInvoices: BillingInvoice[]
 }
 
+interface BillingService {
+  id:              string
+  name:            string
+  category:        string
+  billingType:     string
+  billingCycle:    string | null
+  unitPrice:       number
+  quantity:        number
+  status:          string
+  startDate:       string
+  nextBillingDate: string | null
+  description:     string | null
+}
+
+interface BillingInvoice {
+  id:            string
+  invoiceNumber: string
+  status:        string
+  billingPeriod: string | null
+  totalAmount:   number
+  paidAmount:    number
+  dueDate:       string | null
+  issuedDate:    string | null
+  createdAt:     string
+  payments?:     Array<{ amount: number; paidAt: string; paymentMode: string | null; status: string }>
+}
+
+interface BillingPayment {
+  id:              string
+  amount:          number
+  paymentMode:     string | null
+  transactionId:   string | null
+  status:          string
+  paidAt:          string
+  recordedByName:  string | null
+  invoice:         { invoiceNumber: string; billingPeriod: string | null }
+}
+
+interface LedgerEntry {
+  id:              string
+  entryType:       string
+  description:     string
+  debit:           number
+  credit:          number
+  balance:         number
+  referenceNumber: string | null
+  date:            string
+}
+
+interface AuditEntry {
+  id:              string
+  action:          string
+  description:     string
+  performedByName: string | null
+  createdAt:       string
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt(n: number) { return "₹" + n.toLocaleString("en-IN") }
+function fmtDate(s: string | null | undefined) {
+  if (!s) return "—"
+  return new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+}
+
+const INVOICE_BADGE: Record<string, string> = {
+  DRAFT:          "bg-slate-100 text-slate-700",
+  SENT:           "bg-sky-100 text-sky-700",
+  PAID:           "bg-emerald-100 text-emerald-700",
+  PARTIALLY_PAID: "bg-amber-100 text-amber-700",
+  OVERDUE:        "bg-red-100 text-red-700",
+  CANCELLED:      "bg-rose-100 text-rose-700",
+}
+
+const CATEGORY_BADGE: Record<string, string> = {
+  PLATFORM:       "bg-violet-100 text-violet-700",
+  MOBILE_APP:     "bg-sky-100 text-sky-700",
+  IMPLEMENTATION: "bg-amber-100 text-amber-700",
+  SUPPORT:        "bg-emerald-100 text-emerald-700",
+  CUSTOM:         "bg-slate-100 text-slate-700",
+}
+
+function KPI({ label, value, sub, icon: Icon, color }: {
+  label: string; value: string; sub?: string
+  icon: React.ElementType; color: string
+}) {
+  return (
+    <div className="rounded-xl border bg-card px-4 py-3 flex items-start gap-3">
+      <div className={`rounded-lg p-2 ${color}`}><Icon className="h-4 w-4" /></div>
+      <div className="min-w-0">
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+        <p className="text-base font-semibold leading-tight">{value}</p>
+        {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
+      </div>
+    </div>
+  )
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 interface Props {
-  businessId: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  open:              boolean
+  businessId:        string | null
+  onOpenChange:      (v: boolean) => void
   onRefreshSummary?: () => void
 }
 
-export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary }: Props) {
-  const [detail, setDetail] = useState<AccountDetail | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("charges")
+export function AccountDrawer({ open, businessId, onOpenChange, onRefreshSummary }: Props) {
+  const [activeTab, setActiveTab] = useState("services")
+  const [detail,    setDetail]    = useState<AccountDetail | null>(null)
+  const [dLoading,  setDLoading]  = useState(false)
 
-  // Tab data (lazy-loaded)
-  const [charges,  setCharges]  = useState<Array<Record<string,unknown>> | null>(null)
-  const [services, setServices] = useState<Array<Record<string,unknown>> | null>(null)
-  const [invoices, setInvoices] = useState<Array<Record<string,unknown>> | null>(null)
-  const [payments, setPayments] = useState<Array<Record<string,unknown>> | null>(null)
-  const [ledger,   setLedger]   = useState<Array<Record<string,unknown>> | null>(null)
-  const [audit,    setAudit]    = useState<Array<Record<string,unknown>> | null>(null)
+  const [invoices,      setInvoices]      = useState<BillingInvoice[] | null>(null)
+  const [payments,      setPayments]      = useState<BillingPayment[] | null>(null)
+  const [ledger,        setLedger]        = useState<LedgerEntry[]    | null>(null)
+  const [audit,         setAudit]         = useState<AuditEntry[]     | null>(null)
+  const [ledgerBalance, setLedgerBalance] = useState(0)
 
-  // Sub-drawer state
-  const [recurringOpen,   setRecurringOpen]   = useState(false)
-  const [addChargeOpen,   setAddChargeOpen]   = useState(false)
-  const [addServiceOpen, setAddServiceOpen] = useState(false)
-  const [previewDocId,    setPreviewDocId]    = useState<string | null>(null)
-  const [previewOpen,     setPreviewOpen]     = useState(false)
+  const [addServiceOpen,    setAddServiceOpen]    = useState(false)
+  const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false)
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
+
+  const [previewId,   setPreviewId]   = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+
+  // ── Fetchers ─────────────────────────────────────────────────────────────
 
   const fetchDetail = useCallback(async () => {
-    setLoading(true)
+    if (!businessId) return
+    setDLoading(true)
     try {
       const res  = await fetch(`/api/admin/account-billing/${businessId}`, { headers: getAuthHeaders() })
       const json = await res.json()
       if (json.success) setDetail(json.data)
-      else toast.error(json.error ?? "Failed to load account")
     } catch { toast.error("Failed to load account") }
-    finally { setLoading(false) }
+    finally { setDLoading(false) }
   }, [businessId])
 
-  useEffect(() => {
-    if (open) { setActiveTab("charges"); fetchDetail() }
-  }, [open, fetchDetail])
-
-  const fetchTab = useCallback(async (tab: string, force = false) => {
+  const fetchInvoices = useCallback(async (force = false) => {
+    if (!businessId || (!force && invoices !== null)) return
     try {
-      if (tab === "charges" && (force || !charges)) {
-        const r = await fetch(`/api/admin/account-billing/${businessId}/charges?limit=50`, { headers: getAuthHeaders() })
-        const j = await r.json(); if (j.success) setCharges(j.data)
-      }
-      if (tab === "services" && (force || !services)) {
-        const r = await fetch(`/api/admin/account-billing/${businessId}/services`, { headers: getAuthHeaders() })
-        const j = await r.json(); if (j.success) setServices(j.data)
-      }
-      if (tab === "documents" && (force || !invoices)) {
-        const r = await fetch(`/api/admin/account-billing/${businessId}/documents?limit=50`, { headers: getAuthHeaders() })
-        const j = await r.json(); if (j.success) setInvoices(j.data)
-      }
-      if (tab === "payments" && (force || !payments)) {
-        const r = await fetch(`/api/admin/account-billing/${businessId}/payments?limit=50`, { headers: getAuthHeaders() })
-        const j = await r.json(); if (j.success) setPayments(j.data)
-      }
-      if (tab === "ledger" && (force || !ledger)) {
-        const r = await fetch(`/api/admin/account-billing/${businessId}/ledger`, { headers: getAuthHeaders() })
-        const j = await r.json(); if (j.success) setLedger(j.data)
-      }
-      if (tab === "audit" && (force || !audit)) {
-        const r = await fetch(`/api/admin/account-billing/${businessId}/audit-trail?limit=50`, { headers: getAuthHeaders() })
-        const j = await r.json(); if (j.success) setAudit(j.data)
-      }
-    } catch { toast.error(`Failed to load ${tab}`) }
-  }, [businessId, charges, services, invoices, payments, ledger, audit])
+      const res  = await fetch(`/api/admin/account-billing/${businessId}/invoices`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) setInvoices(json.data)
+    } catch { /* silent */ }
+  }, [businessId, invoices])
 
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab)
-    fetchTab(tab)
+  const fetchPayments = useCallback(async (force = false) => {
+    if (!businessId || (!force && payments !== null)) return
+    try {
+      const res  = await fetch(`/api/admin/account-billing/${businessId}/payments`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) setPayments(json.data)
+    } catch { /* silent */ }
+  }, [businessId, payments])
+
+  const fetchLedger = useCallback(async (force = false) => {
+    if (!businessId || (!force && ledger !== null)) return
+    try {
+      const res  = await fetch(`/api/admin/account-billing/${businessId}/ledger`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) { setLedger(json.data); setLedgerBalance(json.currentBalance ?? 0) }
+    } catch { /* silent */ }
+  }, [businessId, ledger])
+
+  const fetchAudit = useCallback(async (force = false) => {
+    if (!businessId || (!force && audit !== null)) return
+    try {
+      const res  = await fetch(`/api/admin/account-billing/${businessId}/audit-trail`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) setAudit(json.data)
+    } catch { /* silent */ }
+  }, [businessId, audit])
+
+  // ── Effects ───────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (open && businessId) {
+      setDetail(null); setInvoices(null); setPayments(null)
+      setLedger(null); setAudit(null); setActiveTab("services")
+      fetchDetail()
+    }
+  }, [open, businessId]) // eslint-disable-line
+
+  useEffect(() => {
+    if (!open || !businessId) return
+    if (activeTab === "invoices") fetchInvoices()
+    if (activeTab === "payments") fetchPayments()
+    if (activeTab === "ledger")   fetchLedger()
+    if (activeTab === "audit")    fetchAudit()
+  }, [activeTab]) // eslint-disable-line
+
+  // ── Post-action refreshes ─────────────────────────────────────────────────
+
+  const afterService = () => {
+    fetchDetail(); onRefreshSummary?.()
   }
 
-  const sub = detail?.subscription
+  const afterInvoice = () => {
+    setInvoices(null); fetchInvoices(true)
+    setLedger(null);   fetchLedger(true)
+    setAudit(null);    fetchAudit(true)
+    fetchDetail(); onRefreshSummary?.()
+    setActiveTab("invoices")
+  }
+
+  const afterPayment = () => {
+    setPayments(null); fetchPayments(true)
+    setInvoices(null); fetchInvoices(true)
+    setLedger(null);   fetchLedger(true)
+    setAudit(null);    fetchAudit(true)
+    fetchDetail(); onRefreshSummary?.()
+    setActiveTab("payments")
+  }
+
+  const afterInvoiceStatus = () => {
+    setInvoices(null); fetchInvoices(true)
+    setLedger(null);   fetchLedger(true)
+    setAudit(null);    fetchAudit(true)
+    fetchDetail(); onRefreshSummary?.()
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (!businessId) return null
 
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-[720px] sm:max-w-[720px] p-0 flex flex-col">
+        <SheetContent side="right" className="w-full sm:max-w-3xl p-0 overflow-hidden flex flex-col">
+
           {/* Header */}
-          <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-            {loading || !detail
-              ? <div className="space-y-2"><Skeleton className="h-6 w-48" /><Skeleton className="h-4 w-64" /></div>
-              : (
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <SheetTitle className="text-lg">{detail.businessName}</SheetTitle>
-                      <AccountHealthBadge score={detail.health as never} reason={detail.healthReason} />
-                      {detail.outstanding > 0 && (
-                        <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-red-200 text-red-600">
-                          <IndianRupee className="h-3 w-3 mr-0.5" />{formatCurrency(detail.outstanding)} outstanding
-                        </Badge>
-                      )}
-                    </div>
-                    <SheetDescription className="flex items-center gap-3 flex-wrap">
-                      {sub && <span className="font-medium text-foreground">{sub.planName} · {CYCLES[sub.billingCycle] ?? sub.billingCycle}</span>}
-                      {detail.contactEmail && <span className="text-[11px]">{detail.contactEmail}</span>}
-                      {sub && <span className="text-[11px] text-muted-foreground">Next due: {fmtDate(sub.nextBillingDate)}</span>}
-                    </SheetDescription>
-                  </div>
-                  <Button variant="outline" size="sm" className="h-7 gap-1 text-xs shrink-0" onClick={fetchDetail} disabled={loading}>
-                    <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-                  </Button>
-                </div>
+          <SheetHeader className="px-6 py-4 border-b shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-violet-100 p-2">
+                <Building2 className="h-5 w-5 text-violet-700" />
+              </div>
+              <div className="flex-1 min-w-0">
+                {dLoading ? (
+                  <Skeleton className="h-5 w-48" />
+                ) : (
+                  <SheetTitle className="text-base font-semibold truncate">
+                    {detail?.businessName ?? "Loading…"}
+                  </SheetTitle>
+                )}
+                {detail && (
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {[detail.contactEmail, detail.contactPhone, detail.gstNumber ? `GST: ${detail.gstNumber}` : null].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+              </div>
+              {detail && (
+                <Badge variant="outline" className="text-[10px] shrink-0">{detail.businessStatus}</Badge>
               )}
+            </div>
           </SheetHeader>
 
+          {/* KPIs */}
+          {detail && (
+            <div className="grid grid-cols-3 gap-3 px-6 py-4 border-b shrink-0">
+              <KPI label="Monthly Value" value={fmt(detail.mrr)} icon={TrendingUp}  color="bg-violet-100 text-violet-700" />
+              <KPI label="Outstanding"   value={fmt(detail.outstanding)} icon={AlertCircle} color={detail.outstanding > 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600"} />
+              <KPI label="Services"      value={String(detail.activeServices)} icon={Layers} color="bg-sky-100 text-sky-700"
+                sub={`${detail.totalInvoices} invoice${detail.totalInvoices !== 1 ? "s" : ""}`} />
+            </div>
+          )}
+
           {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col overflow-hidden">
-            <TabsList className="mx-6 mt-3 mb-0 h-8 justify-start shrink-0">
-              <TabsTrigger value="overview"   className="text-xs">Overview</TabsTrigger>
-              <TabsTrigger value="charges"    className="text-xs">Charges</TabsTrigger>
-              <TabsTrigger value="services"   className="text-xs">Services</TabsTrigger>
-              <TabsTrigger value="documents"  className="text-xs">Documents</TabsTrigger>
-              <TabsTrigger value="payments"   className="text-xs">Payments</TabsTrigger>
-              <TabsTrigger value="ledger"     className="text-xs">Ledger</TabsTrigger>
-              <TabsTrigger value="audit"      className="text-xs">Audit Trail</TabsTrigger>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
+            <TabsList className="px-6 h-10 w-full justify-start rounded-none border-b bg-transparent shrink-0 gap-1">
+              {[
+                { value: "services", label: "Services",  icon: Layers },
+                { value: "invoices", label: "Invoices",  icon: FileText },
+                { value: "payments", label: "Payments",  icon: CreditCard },
+                { value: "ledger",   label: "Ledger",    icon: BookOpen },
+                { value: "audit",    label: "Audit",     icon: ClipboardList },
+              ].map(({ value, label, icon: Icon }) => (
+                <TabsTrigger key={value} value={value}
+                  className="h-8 rounded-md px-3 text-xs data-[state=active]:bg-muted data-[state=active]:text-foreground">
+                  <Icon className="h-3.5 w-3.5 mr-1.5" />{label}
+                </TabsTrigger>
+              ))}
             </TabsList>
 
-            <ScrollArea className="flex-1 mt-3">
-              {/* OVERVIEW */}
-              <TabsContent value="overview" className="px-6 pb-6 mt-0 space-y-4">
-                {loading || !detail
-                  ? <div className="space-y-3">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-16 w-full"/>)}</div>
-                  : (
-                    <>
-                      {/* KPI row — 6 metrics */}
-                      {(() => {
-                        // Compute recurring monthly value from sub + active recurring addons
-                        const sub = detail.subscription
-                        let mrv = 0
-                        if (sub) {
-                          const base = sub.finalAmount ?? sub.baseAmount
-                          switch (sub.billingCycle) {
-                            case 'MONTHLY':     mrv += base;     break
-                            case 'QUARTERLY':   mrv += base / 3; break
-                            case 'HALF_YEARLY': mrv += base / 6; break
-                            case 'YEARLY':      mrv += base / 12; break
-                          }
-                        }
-                        for (const a of detail.addons) {
-                          if (a.status !== 'ACTIVE' || a.billingType !== 'RECURRING') continue
-                          switch (a.cycle) {
-                            case 'MONTHLY':     mrv += a.amount;     break
-                            case 'QUARTERLY':   mrv += a.amount / 3; break
-                            case 'HALF_YEARLY': mrv += a.amount / 6; break
-                            case 'YEARLY':      mrv += a.amount / 12; break
-                          }
-                        }
-                        const activeServices = sub ? 1 + detail.activeAddonCount : detail.activeAddonCount
-                        return (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                            <Card className="shadow-none">
-                              <CardContent className="p-3">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
-                                  <p className="text-[10px] text-muted-foreground">Active Services</p>
-                                </div>
-                                <p className="text-xl font-bold">{activeServices}</p>
-                              </CardContent>
-                            </Card>
-                            <Card className="shadow-none">
-                              <CardContent className="p-3">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <TrendingUp className="h-3.5 w-3.5 text-violet-600" />
-                                  <p className="text-[10px] text-muted-foreground">Monthly Value</p>
-                                </div>
-                                <p className="text-xl font-bold">{formatCurrency(Math.round(mrv))}</p>
-                              </CardContent>
-                            </Card>
-                            <Card className={`shadow-none ${detail.outstanding > 0 ? "border-red-200" : ""}`}>
-                              <CardContent className="p-3">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <AlertCircle className={`h-3.5 w-3.5 ${detail.outstanding > 0 ? "text-red-500" : "text-muted-foreground"}`} />
-                                  <p className="text-[10px] text-muted-foreground">Outstanding</p>
-                                </div>
-                                <p className={`text-xl font-bold ${detail.outstanding > 0 ? "text-red-600" : ""}`}>{detail.outstanding > 0 ? formatCurrency(detail.outstanding) : "₹0"}</p>
-                              </CardContent>
-                            </Card>
-                            <Card className="shadow-none">
-                              <CardContent className="p-3">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <Calendar className="h-3.5 w-3.5 text-sky-600" />
-                                  <p className="text-[10px] text-muted-foreground">Next Due</p>
-                                </div>
-                                <p className="text-sm font-bold leading-tight">{sub ? fmtDate(sub.nextBillingDate) : "—"}</p>
-                                {detail.daysOverdue > 0 && <p className="text-[10px] text-red-500 mt-0.5">{detail.daysOverdue}d overdue</p>}
-                              </CardContent>
-                            </Card>
-                            <Card className="shadow-none">
-                              <CardContent className="p-3">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <Receipt className="h-3.5 w-3.5 text-amber-600" />
-                                  <p className="text-[10px] text-muted-foreground">Last Payment</p>
-                                </div>
-                                <p className="text-sm font-bold leading-tight">{sub?.lastPaymentDate ? fmtDate(sub.lastPaymentDate) : "—"}</p>
-                                {sub?.lastPaymentAmount && <p className="text-[10px] text-muted-foreground mt-0.5">₹{sub.lastPaymentAmount.toLocaleString("en-IN")}</p>}
-                              </CardContent>
-                            </Card>
-                            <Card className="shadow-none">
-                              <CardContent className="p-3">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <IndianRupee className="h-3.5 w-3.5 text-emerald-600" />
-                                  <p className="text-[10px] text-muted-foreground">Lifetime Revenue</p>
-                                </div>
-                                <p className="text-xl font-bold">{formatCurrency(detail.lifetimeRevenue)}</p>
-                              </CardContent>
-                            </Card>
-                          </div>
-                        )
-                      })()}
+            <div className="flex-1 overflow-y-auto">
 
-                      {/* Subscription */}
-                      {sub && (
-                        <div className="rounded-lg border p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Plan</h4>
-                            <Button size="sm" variant="ghost" className="h-6 gap-1 text-[10px] px-2" onClick={() => setRecurringOpen(true)}>
-                              <Edit className="h-3 w-3" /> Edit Due Date
-                            </Button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 text-xs">
-                            <div><p className="text-[10px] text-muted-foreground">Plan</p><p className="font-medium">{sub.planName}</p></div>
-                            <div><p className="text-[10px] text-muted-foreground">Billing</p><p className="font-medium">{CYCLES[sub.billingCycle] ?? sub.billingCycle}</p></div>
-                            <div><p className="text-[10px] text-muted-foreground">Amount</p><p className="font-medium">₹{(sub.finalAmount ?? sub.baseAmount).toLocaleString("en-IN")}</p>{sub.discountAmount ? <p className="text-[10px] text-orange-600">-₹{sub.discountAmount.toLocaleString("en-IN")} discount</p> : null}</div>
-                            <div><p className="text-[10px] text-muted-foreground">Status</p><Badge variant="outline" className="text-[10px] h-5 px-1.5 mt-0.5">{sub.status}</Badge></div>
-                            <div><p className="text-[10px] text-muted-foreground">Period Start</p><p className="font-medium">{fmtDate(sub.currentPeriodStart)}</p></div>
-                            <div><p className="text-[10px] text-muted-foreground">Next Due</p><p className={`font-medium ${detail.daysOverdue > 0 ? "text-red-600" : ""}`}>{fmtDate(sub.nextBillingDate)}{detail.daysOverdue > 0 && <span className="text-[10px] ml-1 text-red-400">({detail.daysOverdue}d overdue)</span>}</p></div>
-                            <div><p className="text-[10px] text-muted-foreground">Last Payment</p><p className="font-medium">{fmtDate(sub.lastPaymentDate)}</p></div>
-                            <div><p className="text-[10px] text-muted-foreground">Last Amount</p><p className="font-medium">{sub.lastPaymentAmount ? `₹${sub.lastPaymentAmount.toLocaleString("en-IN")}` : "—"}</p></div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Last payment ack status */}
-                      {detail.lastRecord && (
-                        <div className="rounded-lg border p-3 flex items-center justify-between">
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">Last Transaction</p>
-                            <p className="text-sm font-medium">₹{detail.lastRecord.amount.toLocaleString("en-IN")}</p>
-                            {detail.lastRecord.invoiceNumber && <p className="text-[10px] font-mono text-muted-foreground">{detail.lastRecord.invoiceNumber}</p>}
-                          </div>
-                          <AckStatusBadge status={detail.lastRecord.acknowledgeStatus} />
-                        </div>
-                      )}
-
-                      {/* Recent documents */}
-                      {detail.recentDocuments.length > 0 && (
-                        <>
-                          <Separator />
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent Documents</h4>
-                              <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1" onClick={() => handleTabChange("documents")}>
-                                View all <ChevronRight className="h-3 w-3" />
-                              </Button>
-                            </div>
-                            {detail.recentDocuments.map(d => (
-                              <div key={d.id} className="flex items-center justify-between text-xs rounded-lg border p-2.5">
-                                <div className="flex items-center gap-2">
-                                  <DocumentTypeBadge value={d.documentType} />
-                                  <span className="font-mono text-[11px]">{d.documentNumber}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">{fmtDate(d.createdAt)}</span>
-                                  <DocumentStatusBadge value={d.status} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-              </TabsContent>
-
-              {/* CHARGES — primary billing workflow */}
-              <TabsContent value="charges" className="px-6 pb-6 mt-0 space-y-3">
+              {/* Services */}
+              <TabsContent value="services" className="p-6 space-y-4 m-0">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">{charges?.length ?? 0} charge{charges?.length !== 1 ? "s" : ""}</p>
-                  <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setAddChargeOpen(true)}>
-                    <Zap className="h-3 w-3" /> Add Charge
+                  <h3 className="text-sm font-semibold">Services</h3>
+                  <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setAddServiceOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Add Service
                   </Button>
                 </div>
-                {!charges
-                  ? <div className="space-y-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-12 w-full"/>)}</div>
-                  : charges.length === 0
-                  ? (
-                    <div className="py-10 text-center space-y-3">
-                      <Zap className="h-8 w-8 text-muted-foreground mx-auto" />
-                      <p className="text-sm font-medium">No charges yet</p>
-                      <p className="text-xs text-muted-foreground">Create a charge to start the billing workflow.</p>
-                      <Button size="sm" className="gap-1.5" onClick={() => setAddChargeOpen(true)}>
-                        <Zap className="h-3.5 w-3.5" /> Add First Charge
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {charges.map((c) => {
-                        const docs = (c.documents as Array<Record<string,unknown>>) ?? []
-                        const statusColor: Record<string,string> = {
-                          PENDING:  "bg-amber-50 text-amber-700 border-amber-200",
-                          INVOICED: "bg-sky-50 text-sky-700 border-sky-200",
-                          PAID:     "bg-emerald-50 text-emerald-700 border-emerald-200",
-                          CANCELLED:"bg-red-50 text-red-700 border-red-200",
-                          WAIVED:   "bg-gray-50 text-gray-600 border-gray-200",
-                        }
-                        return (
-                          <div key={String(c.id)} className="rounded-lg border p-3 space-y-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{String(c.serviceName)}</p>
-                                {Boolean(c.description) && <p className="text-[10px] text-muted-foreground">{String(c.description)}</p>}
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${statusColor[String(c.status)] ?? ""}`}>{String(c.status)}</Badge>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                              <div className="flex items-center gap-3">
-                                <span className="font-medium text-foreground">₹{Number(c.amount).toLocaleString("en-IN")}</span>
-                                <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{String(c.chargeType).replace(/_/g," ")}</Badge>
-                                {Boolean(c.dueDate) && <span>Due: {fmtDate(String(c.dueDate))}</span>}
-                              </div>
-                              {docs.length > 0 && (
-                                <button
-                                  type="button"
-                                  className="flex items-center gap-1 text-[10px] text-sky-600 hover:underline"
-                                  onClick={() => handleTabChange("documents")}
-                                >
-                                  <FileText className="h-3 w-3" /> {docs.length} doc{docs.length > 1 ? "s" : ""}
-                                </button>
-                              )}
-                            </div>
-                            {docs.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5">
-                                {docs.map(d => (
-                                  <button
-                                    key={String(d.id)}
-                                    type="button"
-                                    className="inline-flex items-center gap-1 text-[10px] rounded border px-1.5 py-0.5 hover:bg-muted transition-colors"
-                                    onClick={() => { setPreviewDocId(String(d.id)); setPreviewOpen(true) }}
-                                  >
-                                    <DocumentTypeBadge value={String(d.documentType)} />
-                                    <span className="font-mono">{String(d.documentNumber)}</span>
-                                    <DocumentStatusBadge value={String(d.status)} />
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-              </TabsContent>
 
-              {/* SERVICES */}
-              <TabsContent value="services" className="px-6 pb-6 mt-0 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">{services?.length ?? 0} service{services?.length !== 1 ? "s" : ""}</p>
-                  <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setAddServiceOpen(true)}>
-                    <Zap className="h-3 w-3" /> Add Service
-                  </Button>
-                </div>
-                {!services
-                  ? <div className="space-y-2">{Array.from({length:3}).map((_,i)=><Skeleton key={i} className="h-14 w-full"/>)}</div>
-                  : services.length === 0
-                  ? (
-                    <div className="py-10 text-center space-y-3">
-                      <Zap className="h-8 w-8 text-muted-foreground mx-auto" />
-                      <p className="text-sm font-medium">No services yet</p>
-                      <p className="text-xs text-muted-foreground">Add a Platform Subscription, Add-On, or One-Time Service.</p>
-                      <Button size="sm" className="gap-1.5" onClick={() => setAddServiceOpen(true)}>
-                        <Zap className="h-3.5 w-3.5" /> Add First Service
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {services.map((s) => {
-                        const isRecurring = String(s.billingType) !== "One-Time"
-                        const CYCLES: Record<string,string> = { MONTHLY: "Monthly", QUARTERLY: "Quarterly", HALF_YEARLY: "Half-Yearly", YEARLY: "Yearly" }
-                        const statusCls: Record<string,string> = {
-                          ACTIVE:   "bg-emerald-50 text-emerald-700 border-emerald-200",
-                          INACTIVE: "bg-gray-50 text-gray-600 border-gray-200",
-                          COMPLETED:"bg-sky-50 text-sky-700 border-sky-200",
-                          SUSPENDED:"bg-red-50 text-red-700 border-red-200",
-                        }
-                        return (
-                          <div key={String(s.id)} className="rounded-lg border p-3 space-y-1.5">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="text-sm font-medium">{String(s.name)}</p>
-                                  <ServiceTypeBadge type={String(s.serviceType)} />
-                                </div>
-                                {Boolean(s.description) && <p className="text-[10px] text-muted-foreground mt-0.5">{String(s.description)}</p>}
-                              </div>
-                              <Badge variant="outline" className={`text-[10px] h-5 px-1.5 shrink-0 ${statusCls[String(s.status)] ?? ""}`}>{String(s.status)}</Badge>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                              <span className="font-semibold text-foreground">{formatCurrency(Number(s.amount))}</span>
-                              {isRecurring && Boolean(s.cycle) && <span>{CYCLES[String(s.cycle)] ?? String(s.cycle)}</span>}
-                              <BillingTypeBadge type={String(s.billingType)} />
-                              <span>Started {fmtDate(String(s.startDate))}</span>
-                              {Boolean(s.renewalDate) && <span className="text-sky-700 font-medium">Due {fmtDate(String(s.renewalDate))}</span>}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-              </TabsContent>
+                {dLoading && <div className="space-y-2">{[0,1].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}</div>}
 
-              {/* DOCUMENTS */}
-              <TabsContent value="documents" className="px-6 pb-6 mt-0 space-y-3">
-                <div className="flex justify-between items-center">
-                  <p className="text-xs text-muted-foreground">{invoices?.length ?? 0} documents</p>
-                  <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setAddChargeOpen(true)}>
-                    <Zap className="h-3 w-3" /> Add Charge
-                  </Button>
-                </div>
-                {!invoices
-                  ? <div className="space-y-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-10 w-full"/>)}</div>
-                  : invoices.length === 0
-                  ? <div className="py-10 text-center text-sm text-muted-foreground">No documents yet</div>
-                  : (
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="text-[11px]">
-                            <TableHead>Number</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Date</TableHead>
-                            <TableHead></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {invoices.map((d) => (
-                            <TableRow key={String(d.id)} className="text-xs hover:bg-muted/30">
-                              <TableCell className="font-mono text-[11px]">{String(d.documentNumber)}</TableCell>
-                              <TableCell><DocumentTypeBadge value={String(d.documentType)} /></TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(Number(d.amount))}</TableCell>
-                              <TableCell><DocumentStatusBadge value={String(d.status)} /></TableCell>
-                              <TableCell>{fmtDate(String(d.createdAt))}</TableCell>
-                              <TableCell>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 text-[10px] px-2 gap-1"
-                                  onClick={() => { setPreviewDocId(String(d.id)); setPreviewOpen(true) }}
-                                >
-                                  <ExternalLink className="h-3 w-3" /> View
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-              </TabsContent>
+                {!dLoading && !detail?.services.length && (
+                  <div className="rounded-xl border border-dashed p-8 text-center">
+                    <Layers className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                    <p className="text-sm font-medium">No services yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Add a service to start the billing workflow.</p>
+                    <Button size="sm" className="mt-4 text-xs gap-1.5" onClick={() => setAddServiceOpen(true)}>
+                      <Plus className="h-3.5 w-3.5" /> Add First Service
+                    </Button>
+                  </div>
+                )}
 
-              {/* PAYMENTS */}
-              <TabsContent value="payments" className="px-6 pb-6 mt-0">
-                {!payments
-                  ? <div className="space-y-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-10 w-full"/>)}</div>
-                  : payments.length === 0
-                  ? <div className="py-10 text-center text-sm text-muted-foreground">No payment records</div>
-                  : (
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="text-[11px]">
-                            <TableHead>Date</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead>Mode</TableHead>
-                            <TableHead>Reference</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Proof</TableHead>
-                            <TableHead>Recorded By</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {payments.map((p) => (
-                            <TableRow key={String(p.id)} className="text-xs hover:bg-muted/30">
-                              <TableCell>{fmtDate(p.paidDate ? String(p.paidDate) : String(p.createdAt))}</TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(Number(p.amountReceived ?? p.amount))}</TableCell>
-                              <TableCell>{p.paymentMode ? String(p.paymentMode) : "—"}</TableCell>
-                              <TableCell className="font-mono text-[10px]">{p.transactionNumber ? String(p.transactionNumber) : p.receiptReference ? String(p.receiptReference) : "—"}</TableCell>
-                              <TableCell><AckStatusBadge status={p.acknowledgeStatus ? String(p.acknowledgeStatus) : null} /></TableCell>
-                              <TableCell>
-                                {p.proofUrl
-                                  ? <a href={String(p.proofUrl)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sky-600 hover:underline text-[10px]">View <ExternalLink className="h-3 w-3" /></a>
-                                  : "—"}
-                              </TableCell>
-                              <TableCell className="text-[10px]">{p.recordedByName ? String(p.recordedByName) : "—"}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-              </TabsContent>
-
-              {/* LEDGER */}
-              <TabsContent value="ledger" className="px-6 pb-6 mt-0 space-y-3">
-                <p className="text-xs text-muted-foreground">Chronological ledger with running balance</p>
-                {!ledger
-                  ? <div className="space-y-2">{Array.from({length:5}).map((_,i)=><Skeleton key={i} className="h-10 w-full"/>)}</div>
-                  : ledger.length === 0
-                  ? <div className="py-10 text-center text-sm text-muted-foreground">No ledger entries</div>
-                  : (
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="text-[11px]">
-                            <TableHead>Date</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead className="text-right">Debit</TableHead>
-                            <TableHead className="text-right">Credit</TableHead>
-                            <TableHead className="text-right">Balance</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {ledger.map((e) => (
-                            <TableRow key={String(e.id)} className="text-xs hover:bg-muted/30">
-                              <TableCell>{fmtDate(String(e.date))}</TableCell>
-                              <TableCell className="max-w-[200px] truncate">{String(e.description)}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-[10px] h-4 px-1.5">{String(e.entryType)}</Badge>
-                              </TableCell>
-                              <TableCell className="text-right">{Number(e.debit) > 0 ? <span className="text-red-600 font-medium">{formatCurrency(Number(e.debit))}</span> : "—"}</TableCell>
-                              <TableCell className="text-right">{Number(e.credit) > 0 ? <span className="text-emerald-600 font-medium">{formatCurrency(Number(e.credit))}</span> : "—"}</TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(Number(e.balance))}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-              </TabsContent>
-
-              {/* AUDIT TRAIL */}
-              <TabsContent value="audit" className="px-6 pb-6 mt-0 space-y-3">
-                {!audit
-                  ? <div className="space-y-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-12 w-full"/>)}</div>
-                  : audit.length === 0
-                  ? <div className="py-10 text-center text-sm text-muted-foreground">No audit entries</div>
-                  : (
-                    <div className="space-y-2">
-                      {audit.map((a) => (
-                        <div key={String(a.id)} className="rounded-lg border p-3 space-y-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              {String(a.action).includes("PAYMENT") ? <Receipt className="h-3.5 w-3.5 text-sky-500 shrink-0" /> : <Calendar className="h-3.5 w-3.5 text-violet-500 shrink-0" />}
-                              <span className="text-xs font-medium">{String(a.action).replace(/_/g, " ")}</span>
-                            </div>
-                            <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(String(a.createdAt))}</span>
-                          </div>
-                          {Boolean(a.user) && (
-                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <User className="h-3 w-3" /> {String(a.user)}
-                            </div>
-                          )}
-                          {Boolean(a.oldValue || a.newValue) && (
-                            <div className="flex items-center gap-2 text-[10px]">
-                              {Boolean(a.oldValue) && <span className="text-muted-foreground line-through">{String(a.oldValue).length > 30 ? String(a.oldValue).slice(0,30)+"…" : String(a.oldValue)}</span>}
-                              {Boolean(a.oldValue) && Boolean(a.newValue) && <span className="text-muted-foreground">→</span>}
-                              {Boolean(a.newValue) && <span className="font-medium">{String(a.newValue).length > 30 ? String(a.newValue).slice(0,30)+"…" : String(a.newValue)}</span>}
-                            </div>
-                          )}
-                          {Boolean(a.notes) && <p className="text-[10px] text-muted-foreground">{String(a.notes)}</p>}
+                {detail?.services.map(s => (
+                  <div key={s.id} className="rounded-xl border p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold truncate">{s.name}</p>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CATEGORY_BADGE[s.category] ?? "bg-muted text-muted-foreground"}`}>
+                            {s.category}
+                          </span>
                         </div>
-                      ))}
+                        {s.description && <p className="text-xs text-muted-foreground mt-0.5">{s.description}</p>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold">{fmt(s.unitPrice * s.quantity)}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {s.billingType === "RECURRING" ? s.billingCycle : "One-Time"}
+                          {s.quantity > 1 ? ` · ${s.quantity}×` : ""}
+                        </p>
+                      </div>
                     </div>
-                  )}
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <div className="flex items-center gap-3">
+                        <span>Started {fmtDate(s.startDate)}</span>
+                        {s.nextBillingDate && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" /> Next {fmtDate(s.nextBillingDate)}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`px-1.5 py-0.5 rounded-full font-medium ${s.status === "ACTIVE" ? "bg-emerald-100 text-emerald-700" : s.status === "PAUSED" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+                        {s.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                {detail && (detail.services.length > 0) && (
+                  <Button variant="outline" className="w-full text-xs h-9 gap-1.5" onClick={() => setCreateInvoiceOpen(true)}>
+                    <FileText className="h-3.5 w-3.5" /> Create Invoice from Services
+                  </Button>
+                )}
               </TabsContent>
-            </ScrollArea>
+
+              {/* Invoices */}
+              <TabsContent value="invoices" className="p-6 space-y-4 m-0">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Invoices</h3>
+                  <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateInvoiceOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Create Invoice
+                  </Button>
+                </div>
+
+                {invoices === null && <div className="space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}</div>}
+
+                {invoices !== null && invoices.length === 0 && (
+                  <div className="rounded-xl border border-dashed p-8 text-center">
+                    <FileText className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                    <p className="text-sm font-medium">No invoices yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Create an invoice from the Services tab.</p>
+                  </div>
+                )}
+
+                {invoices?.map(inv => (
+                  <button key={inv.id}
+                    className="w-full text-left rounded-xl border p-4 hover:bg-muted/30 transition-colors"
+                    onClick={() => { setPreviewId(inv.id); setPreviewOpen(true) }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-mono font-semibold">{inv.invoiceNumber}</p>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${INVOICE_BADGE[inv.status] ?? "bg-muted text-muted-foreground"}`}>
+                            {inv.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {inv.billingPeriod ?? fmtDate(inv.createdAt)}
+                          {inv.dueDate ? ` · Due ${fmtDate(inv.dueDate)}` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold">{fmt(inv.totalAmount)}</p>
+                        {inv.paidAmount > 0 && inv.paidAmount < inv.totalAmount && (
+                          <p className="text-[10px] text-emerald-600">{fmt(inv.paidAmount)} paid</p>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </TabsContent>
+
+              {/* Payments */}
+              <TabsContent value="payments" className="p-6 space-y-4 m-0">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Payments</h3>
+                  <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setRecordPaymentOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Record Payment
+                  </Button>
+                </div>
+
+                {payments === null && <div className="space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}</div>}
+
+                {payments !== null && payments.length === 0 && (
+                  <div className="rounded-xl border border-dashed p-8 text-center">
+                    <CreditCard className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                    <p className="text-sm font-medium">No payments recorded</p>
+                  </div>
+                )}
+
+                {payments?.map(p => (
+                  <div key={p.id} className="rounded-xl border p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold">{fmt(p.amount)}</p>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${p.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : p.status === "PENDING_VERIFICATION" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+                            {p.status === "PENDING_VERIFICATION" ? "Pending Verif." : p.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {[p.invoice.invoiceNumber, p.invoice.billingPeriod, p.paymentMode, p.transactionId].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0 text-xs text-muted-foreground">
+                        <p>{fmtDate(p.paidAt)}</p>
+                        {p.recordedByName && <p className="text-[10px]">{p.recordedByName}</p>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </TabsContent>
+
+              {/* Ledger */}
+              <TabsContent value="ledger" className="p-6 m-0">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold">Ledger</h3>
+                  {ledger !== null && (
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ledgerBalance > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                      {ledgerBalance > 0 ? `${fmt(ledgerBalance)} due` : ledgerBalance < 0 ? `${fmt(Math.abs(ledgerBalance))} credit` : "Settled"}
+                    </span>
+                  )}
+                </div>
+
+                {ledger === null && <div className="space-y-2">{[0,1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>}
+
+                {ledger !== null && ledger.length === 0 && (
+                  <div className="rounded-xl border border-dashed p-8 text-center">
+                    <BookOpen className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                    <p className="text-sm font-medium">No ledger entries</p>
+                    <p className="text-xs text-muted-foreground mt-1">Entries appear when invoices and payments are recorded.</p>
+                  </div>
+                )}
+
+                {ledger !== null && ledger.length > 0 && (
+                  <div className="rounded-xl border overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Date</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Description</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Debit</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Credit</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {ledger.map(e => (
+                          <tr key={e.id} className="hover:bg-muted/20">
+                            <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{fmtDate(e.date)}</td>
+                            <td className="px-3 py-2">
+                              <p className="truncate max-w-[160px]">{e.description}</p>
+                              {e.referenceNumber && <p className="text-[10px] text-muted-foreground font-mono">{e.referenceNumber}</p>}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums font-mono text-red-600">{e.debit > 0 ? fmt(e.debit) : "—"}</td>
+                            <td className="px-3 py-2 text-right tabular-nums font-mono text-emerald-600">{e.credit > 0 ? fmt(e.credit) : "—"}</td>
+                            <td className={`px-3 py-2 text-right tabular-nums font-mono font-semibold ${e.balance > 0 ? "text-red-600" : e.balance < 0 ? "text-emerald-600" : ""}`}>
+                              {fmt(Math.abs(e.balance))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Audit */}
+              <TabsContent value="audit" className="p-6 space-y-3 m-0">
+                <h3 className="text-sm font-semibold">Audit Trail</h3>
+
+                {audit === null && <div className="space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-12 w-full rounded-xl" />)}</div>}
+
+                {audit !== null && audit.length === 0 && (
+                  <div className="rounded-xl border border-dashed p-8 text-center">
+                    <ClipboardList className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                    <p className="text-sm font-medium">No audit entries</p>
+                    <p className="text-xs text-muted-foreground mt-1">All billing actions are logged here.</p>
+                  </div>
+                )}
+
+                {audit?.map(a => (
+                  <div key={a.id} className="rounded-xl border p-3 space-y-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono font-semibold bg-muted text-muted-foreground px-2 py-0.5 rounded">
+                        {a.action}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">{fmtDate(a.createdAt)}</span>
+                    </div>
+                    <p className="text-xs">{a.description}</p>
+                    {a.performedByName && <p className="text-[10px] text-muted-foreground">by {a.performedByName}</p>}
+                  </div>
+                ))}
+              </TabsContent>
+
+            </div>
           </Tabs>
         </SheetContent>
       </Sheet>
 
-      {/* Sub-drawers */}
-      {detail?.subscription && (
-        <RecurringDateDrawer
-          open={recurringOpen}
-          onOpenChange={setRecurringOpen}
-          businessId={businessId}
-          currentDueDate={detail.subscription.nextBillingDate}
-          onSuccess={() => { fetchDetail(); setRecurringOpen(false); onRefreshSummary?.() }}
-        />
+      {/* Action dialogs + invoice preview */}
+      {businessId && (
+        <>
+          <AddServiceDialog
+            open={addServiceOpen} onOpenChange={setAddServiceOpen}
+            businessId={businessId} onSuccess={afterService}
+          />
+          <CreateInvoiceDialog
+            open={createInvoiceOpen} onOpenChange={setCreateInvoiceOpen}
+            businessId={businessId}
+            services={detail?.services ?? []}
+            onSuccess={afterInvoice}
+          />
+          <RecordPaymentDialog
+            open={recordPaymentOpen} onOpenChange={setRecordPaymentOpen}
+            businessId={businessId}
+            invoices={invoices ?? detail?.recentInvoices ?? []}
+            onSuccess={afterPayment}
+          />
+          <InvoicePreviewPanel
+            open={previewOpen} invoiceId={previewId}
+            businessId={businessId}
+            onClose={() => setPreviewOpen(false)}
+            onStatusChange={afterInvoiceStatus}
+          />
+        </>
       )}
-
-      <DocumentPreviewPanel
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        businessId={businessId}
-        documentId={previewDocId}
-        letterhead={{
-          name:         detail?.businessName    ?? "",
-          logo:         detail?.logo            ?? null,
-          address:      detail?.address         ?? null,
-          city:         detail?.city            ?? null,
-          state:        detail?.state           ?? null,
-          pincode:      detail?.pincode         ?? null,
-          gstNumber:    detail?.gstNumber       ?? null,
-          contactEmail: detail?.contactEmail    ?? null,
-          contactPhone: detail?.contactPhone    ?? null,
-        }}
-        clientName={detail?.businessName ?? ""}
-        clientGst={detail?.gstNumber}
-        clientEmail={detail?.contactEmail}
-        onStatusChange={() => { setInvoices(null); setCharges(null); fetchTab("documents", true); fetchTab("charges", true); fetchDetail() }}
-      />
-
-      <AddServiceDialog
-        open={addServiceOpen}
-        onOpenChange={setAddServiceOpen}
-        businessId={businessId}
-        onSuccess={() => {
-          setServices(null)
-          setCharges(null)
-          setInvoices(null)
-          setAddServiceOpen(false)
-          fetchDetail()
-          onRefreshSummary?.()
-          // Navigate to Charges tab so user sees the generated charge + proforma
-          setActiveTab("charges")
-          fetchTab("charges", true)
-          fetchTab("documents", true)
-        }}
-      />
-
-      <AddChargeDrawer
-        open={addChargeOpen}
-        onOpenChange={setAddChargeOpen}
-        businessId={businessId}
-        onSuccess={() => {
-          setCharges(null)
-          setInvoices(null)
-          fetchTab("charges", true)
-          fetchTab("documents", true)
-          setAddChargeOpen(false)
-          fetchDetail()
-          onRefreshSummary?.()
-        }}
-      />
     </>
   )
 }

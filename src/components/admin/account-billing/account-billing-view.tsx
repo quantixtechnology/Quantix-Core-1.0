@@ -12,10 +12,8 @@ import {
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
 import { AccountsTab } from "./tabs/accounts-tab"
-import { ServicesTab } from "./tabs/services-tab"
 import { InvoicesTab } from "./tabs/invoices-tab"
 import { PaymentsTab } from "./tabs/payments-tab"
-import { ReportsTab } from "./tabs/reports-tab"
 import { AccountDrawer } from "./drawers/account-drawer"
 
 interface Summary {
@@ -119,27 +117,19 @@ export function AccountBillingView() {
       {/* Primary Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
         <TabsList className="h-9">
-          <TabsTrigger value="accounts"  className="text-xs">Accounts</TabsTrigger>
-          <TabsTrigger value="services"  className="text-xs">Services</TabsTrigger>
-          <TabsTrigger value="invoices"  className="text-xs">Invoices</TabsTrigger>
-          <TabsTrigger value="payments"  className="text-xs">Payments</TabsTrigger>
-          <TabsTrigger value="reports"   className="text-xs">Reports</TabsTrigger>
+          <TabsTrigger value="accounts" className="text-xs">Accounts</TabsTrigger>
+          <TabsTrigger value="invoices" className="text-xs">Invoices</TabsTrigger>
+          <TabsTrigger value="payments" className="text-xs">Payments</TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts" className="mt-4">
           <AccountsTab onViewAccount={openAccountDrawer} />
-        </TabsContent>
-        <TabsContent value="services" className="mt-4">
-          <ServicesTab onViewAccount={openAccountDrawer} />
         </TabsContent>
         <TabsContent value="invoices" className="mt-4">
           <InvoicesTab onViewAccount={openAccountDrawer} />
         </TabsContent>
         <TabsContent value="payments" className="mt-4">
           <PaymentsTab onViewAccount={openAccountDrawer} />
-        </TabsContent>
-        <TabsContent value="reports" className="mt-4">
-          <ReportsTab />
         </TabsContent>
       </Tabs>
 

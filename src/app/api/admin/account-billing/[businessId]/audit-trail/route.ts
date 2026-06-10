@@ -1,5 +1,5 @@
 // GET /api/admin/account-billing/[businessId]/audit-trail
-// Combined audit trail: SubscriptionPaymentAuditLog + RecurringDateOverride events.
+// Paginated audit trail from BillingAudit model.
 
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
@@ -16,69 +16,27 @@ export const GET = withMiddleware({
     if (!businessId) return NextResponse.json({ success: false, error: 'businessId required' }, { status: 400 })
 
     const { searchParams } = new URL(req.url)
-    const page  = Math.max(1, Number(searchParams.get('page') ?? '1'))
+    const page  = Math.max(1, Number(searchParams.get('page')  ?? '1'))
     const limit = Math.min(100, Math.max(10, Number(searchParams.get('limit') ?? '25')))
     const skip  = (page - 1) * limit
 
-    const [paymentLogs, dateOverrides, paymentTotal, overrideTotal] = await Promise.all([
-      db.subscriptionPaymentAuditLog.findMany({
-        where: { businessId },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      db.recurringDateOverride.findMany({
-        where: { businessId },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      db.subscriptionPaymentAuditLog.count({ where: { businessId } }),
-      db.recurringDateOverride.count({ where: { businessId } }),
-    ])
+    const account = await db.billingAccount.findUnique({ where: { businessId } })
+    if (!account) return NextResponse.json({ success: true, data: [], pagination: { page, limit, total: 0, pages: 0 } })
 
-    const combined = [
-      ...paymentLogs.map(l => ({
-        id: l.id,
-        type: 'PAYMENT_LOG',
-        action: l.action,
-        user: l.userName,
-        userId: l.userId,
-        oldValue: l.oldStatus,
-        newValue: l.newStatus,
-        amount: l.amount,
-        referenceNumber: l.referenceNumber,
-        attachmentUrl: l.attachmentUrl,
-        notes: l.notes,
-        metadata: l.metadata,
-        createdAt: l.createdAt,
-      })),
-      ...dateOverrides.map(d => ({
-        id: d.id,
-        type: 'DATE_OVERRIDE',
-        action: 'RECURRING_DATE_EDITED',
-        user: d.createdByName,
-        userId: d.createdById,
-        oldValue: d.originalDueDate.toISOString(),
-        newValue: d.overrideDueDate.toISOString(),
-        amount: null,
-        referenceNumber: null,
-        attachmentUrl: null,
-        notes: d.overrideReason,
-        metadata: JSON.stringify({ overrideUntil: d.overrideUntil, revertedAt: d.revertedAt }),
-        createdAt: d.createdAt,
-      })),
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    const [entries, total] = await Promise.all([
+      db.billingAudit.findMany({
+        where:   { accountId: account.id },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take:    limit,
+      }),
+      db.billingAudit.count({ where: { accountId: account.id } }),
+    ])
 
     return NextResponse.json({
       success: true,
-      data: combined,
-      pagination: {
-        page,
-        limit,
-        total: paymentTotal + overrideTotal,
-        pages: Math.ceil((paymentTotal + overrideTotal) / limit),
-      },
+      data: entries,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch audit trail'

@@ -323,6 +323,7 @@ model Business {
   billingDocuments      BillingDocument[]
   recurringDateOverrides RecurringDateOverride[]
   charges               Charge[]
+  billingAccount        BillingAccount?
 
   @@index([businessType])
   @@index([status])
@@ -3005,5 +3006,215 @@ model Charge {
   @@index([businessId])
   @@index([status])
   @@index([chargeType])
+  @@index([createdAt])
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  NEW BILLING ARCHITECTURE                                        ║
+// ║  Business → BillingAccount → BillingService → BillingInvoice    ║
+// ║            → BillingPayment → BillingLedger → BillingAudit      ║
+// ║  One invoice per billing cycle per account.                      ║
+// ║  All billable items are Services. No Charge / Subscription.      ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+// One billing account per Business. Auto-created on first access.
+model BillingAccount {
+  id             String   @id @default(cuid())
+  businessId     String   @unique
+  currency       String   @default("INR")
+  notes          String?
+  billingEmail   String?
+  billingPhone   String?
+  billingAddress String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services       BillingService[]
+  invoices       BillingInvoice[]
+  payments       BillingPayment[]
+  ledger         BillingLedger[]
+  auditLog       BillingAudit[]
+
+  @@index([businessId])
+}
+
+// Every billable item is a Service.
+// Examples: "Quantix Standard", "Additional Store", "iOS App", "Implementation Fee"
+model BillingService {
+  id              String   @id @default(cuid())
+  accountId       String
+  businessId      String
+  name            String
+  description     String?
+  category        String   @default("PLATFORM")
+                           // PLATFORM | MOBILE_APP | IMPLEMENTATION | SUPPORT | CUSTOM
+  billingType     String   @default("RECURRING")
+                           // RECURRING | ONE_TIME
+  billingCycle    String?
+                           // MONTHLY | QUARTERLY | HALF_YEARLY | YEARLY
+  unitPrice       Float
+  quantity        Int      @default(1)
+  status          String   @default("ACTIVE")
+                           // ACTIVE | PAUSED | CANCELLED
+  startDate       DateTime
+  endDate         DateTime?
+  nextBillingDate DateTime?
+  createdById     String?
+  createdByName   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  invoiceItems    BillingInvoiceItem[]
+
+  @@index([accountId])
+  @@index([businessId])
+  @@index([status])
+}
+
+// One invoice per billing cycle per account.
+// lineItems is a JSON array so any service composition works without schema changes.
+model BillingInvoice {
+  id            String   @id @default(cuid())
+  invoiceNumber String   @unique  // INV/2026-27/0001
+  accountId     String
+  businessId    String
+  status        String   @default("DRAFT")
+                         // DRAFT | SENT | PAID | PARTIALLY_PAID | OVERDUE | CANCELLED
+  billingPeriod String?  // human label: "June 2026"
+  periodStart   DateTime?
+  periodEnd     DateTime?
+  lineItems     String   @default("[]")  // JSON: [{serviceId,name,qty,unitPrice,amount}]
+  subtotal      Float    @default(0)
+  taxRate       Float    @default(18)
+  cgstRate      Float    @default(9)
+  sgstRate      Float    @default(9)
+  igstRate      Float    @default(0)
+  cgstAmount    Float    @default(0)
+  sgstAmount    Float    @default(0)
+  igstAmount    Float    @default(0)
+  taxAmount     Float    @default(0)
+  totalAmount   Float    @default(0)
+  paidAmount    Float    @default(0)
+  currency      String   @default("INR")
+  issuedDate    DateTime?
+  dueDate       DateTime?
+  sentAt        DateTime?
+  notes         String?
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  account       BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  payments      BillingPayment[]
+  items         BillingInvoiceItem[]
+
+  @@index([accountId])
+  @@index([businessId])
+  @@index([status])
+  @@index([invoiceNumber])
+  @@index([createdAt])
+}
+
+// Normalised line-items for reporting (invoice body also stored in lineItems JSON).
+model BillingInvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  serviceId   String?
+  name        String
+  description String?
+  quantity    Int      @default(1)
+  unitPrice   Float
+  amount      Float
+  invoice     BillingInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service     BillingService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([serviceId])
+}
+
+// Per-financial-year invoice number sequence.
+model BillingInvoiceSeq {
+  financialYear String   @id  // "2026-27"
+  nextVal       Int      @default(1)
+  updatedAt     DateTime @updatedAt
+}
+
+// Payment recorded against a specific invoice.
+model BillingPayment {
+  id              String   @id @default(cuid())
+  accountId       String
+  businessId      String
+  invoiceId       String
+  amount          Float
+  currency        String   @default("INR")
+  paymentMode     String?
+                           // CASH | BANK_TRANSFER | UPI | CHEQUE | CARD | ONLINE
+  transactionId   String?
+  referenceNumber String?
+  bankName        String?
+  status          String   @default("COMPLETED")
+                           // COMPLETED | PENDING_VERIFICATION | FAILED | REFUNDED
+  notes           String?
+  proofUrl        String?
+  proofFileType   String?
+  paidAt          DateTime
+  recordedById    String?
+  recordedByName  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  invoice         BillingInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([businessId])
+  @@index([invoiceId])
+  @@index([createdAt])
+}
+
+// Chronological ledger with pre-computed running balance.
+model BillingLedger {
+  id              String   @id @default(cuid())
+  accountId       String
+  businessId      String
+  entryType       String
+                           // INVOICE_RAISED | PAYMENT_RECEIVED | CREDIT | ADJUSTMENT
+  description     String
+  debit           Float    @default(0)
+  credit          Float    @default(0)
+  balance         Float    @default(0)
+  referenceType   String?  // INVOICE | PAYMENT
+  referenceId     String?
+  referenceNumber String?
+  date            DateTime
+  createdAt       DateTime @default(now())
+  account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([businessId])
+  @@index([date])
+}
+
+// Full audit trail for every billing action.
+model BillingAudit {
+  id              String   @id @default(cuid())
+  accountId       String
+  businessId      String
+  action          String
+                           // SERVICE_CREATED | SERVICE_UPDATED | SERVICE_CANCELLED
+                           // INVOICE_CREATED | INVOICE_SENT | INVOICE_PAID | INVOICE_CANCELLED
+                           // PAYMENT_RECORDED | PAYMENT_VERIFIED | PAYMENT_REFUNDED
+  entityType      String?  // SERVICE | INVOICE | PAYMENT
+  entityId        String?
+  description     String
+  oldValue        String?
+  newValue        String?
+  metadata        String   @default("{}")
+  performedById   String?
+  performedByName String?
+  createdAt       DateTime @default(now())
+  account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([businessId])
   @@index([createdAt])
 }

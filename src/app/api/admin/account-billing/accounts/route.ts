@@ -1,31 +1,35 @@
 // GET /api/admin/account-billing/accounts
-// Paginated list of ALL businesses with billing state.
-// Every business appears regardless of whether a subscription exists.
-// Query params: search, status (business status), cycle (subscription billingCycle), page, limit
+// Lists every business with its BillingAccount state.
+// Businesses without a BillingAccount are still returned (no account yet).
 
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { withMiddleware } from '@/lib/middleware'
 import type { NextRequest } from 'next/server'
 
-function computeHealth(params: {
-  outstanding: number
-  daysOverdue: number
-  pendingVerification: number
-  subStatus: string | null
-}): { score: 'Excellent' | 'Good' | 'Attention' | 'Critical'; reason: string } {
-  const { outstanding, daysOverdue, pendingVerification, subStatus } = params
-  if (subStatus === 'SUSPENDED' || subStatus === 'EXPIRED' || subStatus === 'CHURNED') {
-    return { score: 'Critical', reason: `Subscription ${subStatus.toLowerCase()}` }
-  }
-  if (daysOverdue > 30 || outstanding > 50000) {
-    return { score: 'Critical', reason: daysOverdue > 30 ? `${daysOverdue} days overdue` : `₹${outstanding.toLocaleString('en-IN')} outstanding` }
-  }
-  if (daysOverdue > 7 || outstanding > 10000 || pendingVerification > 0) {
-    return { score: 'Attention', reason: daysOverdue > 7 ? `${daysOverdue} days overdue` : pendingVerification > 0 ? 'Payment pending verification' : `₹${outstanding.toLocaleString('en-IN')} outstanding` }
-  }
-  if (daysOverdue > 0 || outstanding > 0) return { score: 'Good', reason: 'Minor outstanding balance' }
-  return { score: 'Excellent', reason: 'All payments up to date' }
+function healthScore(outstanding: number, overdueInvoices: number, subStatus: string | null): {
+  score: 'Excellent' | 'Good' | 'Attention' | 'Critical'
+  reason: string
+} {
+  if (overdueInvoices > 0 && outstanding > 50000)
+    return { score: 'Critical',   reason: `${overdueInvoices} overdue invoice(s)` }
+  if (overdueInvoices > 0)
+    return { score: 'Attention',  reason: `${overdueInvoices} overdue invoice(s)` }
+  if (outstanding > 10000)
+    return { score: 'Attention',  reason: `₹${outstanding.toLocaleString('en-IN')} outstanding` }
+  if (outstanding > 0)
+    return { score: 'Good',       reason: 'Minor outstanding balance' }
+  return   { score: 'Excellent',  reason: 'All payments up to date' }
+}
+
+function mrrFromServices(services: { billingType: string; billingCycle: string | null; unitPrice: number; quantity: number }[]): number {
+  const cycleMonths: Record<string, number> = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, YEARLY: 12 }
+  return services
+    .filter(s => s.billingType === 'RECURRING')
+    .reduce((sum, s) => {
+      const months = cycleMonths[s.billingCycle ?? 'MONTHLY'] ?? 1
+      return sum + (s.unitPrice * s.quantity) / months
+    }, 0)
 }
 
 export const GET = withMiddleware({
@@ -34,36 +38,19 @@ export const GET = withMiddleware({
 })(async (req: NextRequest) => {
   try {
     const { searchParams } = new URL(req.url)
-    const search  = searchParams.get('search') ?? ''
-    const status  = searchParams.get('status') ?? ''   // business status
-    const cycle   = searchParams.get('cycle') ?? ''    // subscription billingCycle filter
-    const page    = Math.max(1, Number(searchParams.get('page') ?? '1'))
-    const limit   = Math.min(100, Math.max(10, Number(searchParams.get('limit') ?? '50')))
-    const skip    = (page - 1) * limit
+    const search = searchParams.get('search') ?? ''
+    const status = searchParams.get('status') ?? ''
+    const page   = Math.max(1, Number(searchParams.get('page')  ?? '1'))
+    const limit  = Math.min(100, Math.max(10, Number(searchParams.get('limit') ?? '50')))
+    const skip   = (page - 1) * limit
 
-    const bizWhere: Record<string, unknown> = {}
-    if (search) bizWhere.name = { contains: search }
-    if (status) bizWhere.status = status
-
-    // When cycle filter is applied, restrict to businesses that have a matching subscription
-    let filteredBizIds: string[] | null = null
-    if (cycle) {
-      const matchingSubs = await db.businessSubscription.findMany({
-        where: { billingCycle: cycle as never },
-        select: { businessId: true },
-      })
-      filteredBizIds = matchingSubs.map(s => s.businessId)
-      if (filteredBizIds.length === 0) {
-        return NextResponse.json({ success: true, data: [], pagination: { page, limit, total: 0, pages: 0 } })
-      }
-    }
-
-    const finalWhere: Record<string, unknown> = { ...bizWhere }
-    if (filteredBizIds) finalWhere.id = { in: filteredBizIds }
+    const where: Record<string, unknown> = {}
+    if (search) where.name = { contains: search }
+    if (status) where.status = status
 
     const [businesses, total] = await Promise.all([
       db.business.findMany({
-        where: finalWhere,
+        where,
         skip,
         take: limit,
         orderBy: { name: 'asc' },
@@ -72,96 +59,73 @@ export const GET = withMiddleware({
           contactEmail: true, contactPhone: true,
         },
       }),
-      db.business.count({ where: finalWhere }),
+      db.business.count({ where }),
     ])
 
-    if (businesses.length === 0) {
-      return NextResponse.json({ success: true, data: [], pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    if (!businesses.length) {
+      return NextResponse.json({ success: true, data: [], pagination: { page, limit, total, pages: 0 } })
     }
 
     const bizIds = businesses.map(b => b.id)
 
-    // Fetch subscriptions for these businesses
-    const subs = await db.businessSubscription.findMany({
+    // Load billing accounts with aggregate data
+    const accounts = await db.billingAccount.findMany({
       where: { businessId: { in: bizIds } },
       include: {
-        plan: { select: { id: true, name: true, tier: true } },
-        billingHistory: {
+        services: {
+          where: { status: 'ACTIVE' },
+          select: { billingType: true, billingCycle: true, unitPrice: true, quantity: true },
+        },
+        invoices: {
+          where: { status: { notIn: ['CANCELLED'] } },
           orderBy: { createdAt: 'desc' },
           take: 1,
-          select: { amount: true, paidDate: true, status: true, acknowledgeStatus: true },
+          select: {
+            id: true, invoiceNumber: true, status: true,
+            totalAmount: true, paidAmount: true, dueDate: true, billingPeriod: true,
+          },
         },
+        _count: { select: { invoices: true, services: true } },
       },
     })
-    const subMap = new Map(subs.map(s => [s.businessId, s]))
-
-    // Addon counts
-    const addonCounts = await db.addon.groupBy({
-      by: ['businessId'],
-      where: { businessId: { in: bizIds }, status: 'ACTIVE' },
-      _count: { id: true },
-    })
-    const addonMap = new Map(addonCounts.map(a => [a.businessId, a._count.id]))
-
-    // Pending verification per business (via subscription ID)
-    const pendingVer = await db.billingRecord.groupBy({
-      by: ['businessSubscriptionId'],
-      where: { acknowledgeStatus: 'PENDING_VERIFICATION', subscription: { businessId: { in: bizIds } } },
-      _count: { id: true },
-    })
-    const subIdToBizId = new Map(subs.map(s => [s.id, s.businessId]))
-    const pendingVerMap = new Map<string, number>()
-    for (const pv of pendingVer) {
-      const bizId = subIdToBizId.get(pv.businessSubscriptionId)
-      if (bizId) pendingVerMap.set(bizId, pv._count.id)
-    }
+    const accountMap = new Map(accounts.map(a => [a.businessId, a]))
 
     const now = new Date()
 
-    const accounts = businesses.map(b => {
-      const sub = subMap.get(b.id) ?? null
-      const lastRecord = sub?.billingHistory[0] ?? null
-
-      const daysOverdue = sub?.nextBillingDate && sub.nextBillingDate < now
-        ? Math.floor((now.getTime() - sub.nextBillingDate.getTime()) / (1000 * 60 * 60 * 24))
+    const data = businesses.map(b => {
+      const acc = accountMap.get(b.id) ?? null
+      const latestInvoice = acc?.invoices[0] ?? null
+      const outstanding = acc
+        ? acc.invoices.reduce((s, inv) => s + Math.max(0, (inv.totalAmount - inv.paidAmount)), 0)
         : 0
-      const outstanding = lastRecord?.status === 'pending' && lastRecord.amount ? lastRecord.amount : 0
-      const health = computeHealth({
-        outstanding,
-        daysOverdue,
-        pendingVerification: pendingVerMap.get(b.id) ?? 0,
-        subStatus: sub?.status ?? null,
-      })
-      const base = sub ? (sub.finalAmount ?? sub.customPrice ?? sub.planPrice ?? 0) : 0
+      // Count overdue: we need to check all non-paid invoices — use a separate check for the row
+      // For the list view, just approximate from what we have
+      const overdueCount = latestInvoice && latestInvoice.status === 'OVERDUE' ? 1 : 0
+      const health = healthScore(outstanding, overdueCount, null)
+      const mrr = acc ? mrrFromServices(acc.services) : 0
 
       return {
-        businessId:        b.id,
-        businessName:      b.name,
-        businessSlug:      b.slug,
-        businessStatus:    b.status,
-        contactEmail:      b.contactEmail,
-        contactPhone:      b.contactPhone,
-        planId:            sub?.planId ?? null,
-        planName:          sub?.plan?.name ?? 'Not Assigned',
-        planTier:          sub?.plan?.tier ?? null,
-        billingCycle:      sub?.billingCycle ?? null,
-        baseAmount:        base,
-        nextDueDate:       sub?.nextBillingDate ?? null,
-        lastPaymentDate:   lastRecord?.paidDate ?? sub?.lastPaymentDate ?? null,
-        lastPaymentAmount: lastRecord?.amount ?? sub?.lastPaymentAmount ?? null,
-        lastPaymentStatus: lastRecord?.acknowledgeStatus ?? null,
-        outstanding,
-        daysOverdue,
-        activeServices:    sub ? 1 + (addonMap.get(b.id) ?? 0) : (addonMap.get(b.id) ?? 0),
-        subStatus:         sub?.status ?? null,
-        health:            health.score,
-        healthReason:      health.reason,
+        businessId:      b.id,
+        businessName:    b.name,
+        businessSlug:    b.slug,
+        businessStatus:  b.status,
+        contactEmail:    b.contactEmail,
+        contactPhone:    b.contactPhone,
+        hasAccount:      !!acc,
+        accountId:       acc?.id ?? null,
+        activeServices:  acc?._count.services ?? 0,
+        totalInvoices:   acc?._count.invoices ?? 0,
+        mrr:             Math.round(mrr),
+        outstanding:     Math.round(outstanding),
+        latestInvoice:   latestInvoice,
+        health:          health.score,
+        healthReason:    health.reason,
       }
     })
 
     return NextResponse.json({
       success: true,
-      data: accounts,
+      data,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   } catch (error) {
