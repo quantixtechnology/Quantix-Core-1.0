@@ -135,7 +135,7 @@ export function StorefrontProductCard({
       mrp:         defaultVariant.mrp,
       quantity:    1,
       image:       imgSrc || "",
-      isVeg:       product.isVeg ?? false,
+      isVeg:       product.isVeg ?? null,
     })
   }
 

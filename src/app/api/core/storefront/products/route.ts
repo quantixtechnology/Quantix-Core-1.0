@@ -183,6 +183,7 @@ export async function GET(request: Request) {
         unit: product.unit,
         unitQuantity: product.unitQuantity,
         isVeg: product.isVeg,
+        dietaryType: product.isVeg === true ? "VEG" : product.isVeg === false ? "NON_VEG" : "NONE",
         isFeatured: product.isFeatured,
         isPopular: product.isPopular,
         preparationTime: product.preparationTime,

@@ -221,7 +221,7 @@ export function CustomerHome() {
       price: defaultVariant.price,
       mrp: defaultVariant.mrp,
       image: product.image,
-      isVeg: product.isVeg ?? true,
+      isVeg: product.isVeg ?? null,
     })
   }
 

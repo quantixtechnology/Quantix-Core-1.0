@@ -231,7 +231,7 @@ export function StorefrontProductPage({ brandColor, nav }: StorefrontProductPage
         mrp:         selectedVariant.mrp,
         quantity:    qty,
         image:       resolvedImages[0] || "",
-        isVeg:       product.isVeg ?? false,
+        isVeg:       product.isVeg ?? null,
       })
     }
     setAddedToCart(true)

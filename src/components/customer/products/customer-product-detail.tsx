@@ -231,7 +231,7 @@ export function CustomerProductDetail() {
       price: activeVariant.price,
       mrp: activeVariant.mrp,
       image: product.images[0] || "",
-      isVeg: product.isVeg ?? true,
+      isVeg: product.isVeg ?? null,
     })
     setQuantity(1)
   }
@@ -301,12 +301,14 @@ export function CustomerProductDetail() {
       {/* Product Image — taller for app-like immersion */}
       <div className="relative h-72 bg-gray-50 overflow-hidden">
         <ProductImage src={resolveImageUrl(product.images[0])} alt={product.name} catColor={brandColor} />
-        {/* Veg / Non-veg indicator */}
-        <div className="absolute top-3 left-3">
-          <div className={`w-5 h-5 border-2 flex items-center justify-center rounded-sm bg-white ${product.isVeg ? "border-green-600" : "border-red-600"}`}>
-            <div className={`w-3 h-3 rounded-full ${product.isVeg ? "bg-green-600" : "bg-red-600"}`} />
+        {/* Veg / Non-veg indicator — only shown when explicitly set */}
+        {product.isVeg !== null && (
+          <div className="absolute top-3 left-3">
+            <div className={`w-5 h-5 border-2 flex items-center justify-center rounded-sm bg-white ${product.isVeg ? "border-green-600" : "border-red-600"}`}>
+              <div className={`w-3 h-3 rounded-full ${product.isVeg ? "bg-green-600" : "bg-red-600"}`} />
+            </div>
           </div>
-        </div>
+        )}
         {/* Freshness tag */}
         {meta?.freshnessTag && (
           <div className="absolute top-3 right-3 flex items-center gap-1 bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1 shadow-sm">

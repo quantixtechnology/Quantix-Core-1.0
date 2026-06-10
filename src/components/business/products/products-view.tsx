@@ -93,7 +93,7 @@ interface Product {
   categoryId: string
   category: string
   status: ProductStatus
-  isVeg: boolean
+  isVeg: boolean | null
   isFeatured: boolean
   image: string
   variants: Variant[]
@@ -309,7 +309,7 @@ export function ProductsView() {
       categoryId: String(p.categoryId || ""),
       category: p.category && typeof p.category === 'object' ? String((p.category as Record<string, unknown>).name || "") : String(p.category || ""),
       status: String(p.status || "ACTIVE") as ProductStatus,
-      isVeg: Boolean(p.isVeg),
+      isVeg: p.isVeg === true ? true : p.isVeg === false ? false : null,
       isFeatured: Boolean(p.isFeatured),
       image: Array.isArray(p.images) && p.images.length > 0 ? String(p.images[0]) : "",
       variants: Array.isArray(p.variants)
@@ -372,7 +372,7 @@ export function ProductsView() {
   const [formName, setFormName] = useState("")
   const [formSlug, setFormSlug] = useState("")
   const [formCategory, setFormCategory] = useState("")
-  const [formIsVeg, setFormIsVeg] = useState(true)
+  const [formIsVeg, setFormIsVeg] = useState<boolean | null>(null)
   const [formIsFeatured, setFormIsFeatured] = useState(false)
   const [formStatus, setFormStatus] = useState<string>("ACTIVE")
   const [formAddToAllStores, setFormAddToAllStores] = useState(true)
@@ -466,7 +466,7 @@ export function ProductsView() {
     setFormName("")
     setFormSlug("")
     setFormCategory("")
-    setFormIsVeg(true)
+    setFormIsVeg(null)
     setFormIsFeatured(false)
     setFormStatus("ACTIVE")
     setFormAddToAllStores(true)
@@ -912,9 +912,14 @@ export function ProductsView() {
                                         Featured
                                       </Badge>
                                     )}
-                                    {product.isVeg && (
-                                      <div className="w-4 h-4 border-2 border-emerald-500 rounded flex items-center justify-center shrink-0">
+                                    {product.isVeg === true && (
+                                      <div className="w-4 h-4 border-2 border-emerald-500 rounded flex items-center justify-center shrink-0" title="Veg">
                                         <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                      </div>
+                                    )}
+                                    {product.isVeg === false && (
+                                      <div className="w-4 h-4 border-2 border-red-500 rounded flex items-center justify-center shrink-0" title="Non-Veg">
+                                        <div className="w-2 h-2 rounded-full bg-red-500" />
                                       </div>
                                     )}
                                   </div>
@@ -1115,12 +1120,20 @@ export function ProductsView() {
                           {product.category}
                         </Badge>
                         <StatusBadge status={product.status} />
-                        {product.isVeg && (
+                        {product.isVeg === true && (
                           <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
                             <div className="w-3 h-3 border-2 border-emerald-500 rounded flex items-center justify-center">
                               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             </div>
                             Veg
+                          </span>
+                        )}
+                        {product.isVeg === false && (
+                          <span className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
+                            <div className="w-3 h-3 border-2 border-red-500 rounded flex items-center justify-center">
+                              <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                            </div>
+                            Non-Veg
                           </span>
                         )}
                         {product.isFeatured && (
@@ -1375,14 +1388,28 @@ export function ProductsView() {
               </div>
             </div>
 
-            {/* Toggles: Is Veg & Is Featured */}
+            {/* Dietary Type & Featured */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Vegetarian</Label>
-                  <p className="text-xs text-muted-foreground">Mark as veg product</p>
+              <div className="rounded-lg border p-3 space-y-2">
+                <Label className="text-sm font-medium">Dietary Type</Label>
+                <div className="flex flex-col gap-1.5">
+                  {([
+                    { value: null,  label: "Not Applicable", color: "text-muted-foreground" },
+                    { value: true,  label: "Veg",            color: "text-emerald-600" },
+                    { value: false, label: "Non-Veg",        color: "text-red-600" },
+                  ] as { value: boolean | null; label: string; color: string }[]).map(opt => (
+                    <label key={String(opt.value)} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="dietaryType"
+                        checked={formIsVeg === opt.value}
+                        onChange={() => setFormIsVeg(opt.value)}
+                        className="accent-emerald-500"
+                      />
+                      <span className={`text-xs font-medium ${opt.color}`}>{opt.label}</span>
+                    </label>
+                  ))}
                 </div>
-                <Switch checked={formIsVeg} onCheckedChange={setFormIsVeg} />
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div className="space-y-0.5">

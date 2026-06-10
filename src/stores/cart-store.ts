@@ -12,7 +12,7 @@ export interface CartItem {
   price: number
   mrp: number
   image: string
-  isVeg: boolean
+  isVeg: boolean | null
 }
 
 export interface StorePaymentGateway {

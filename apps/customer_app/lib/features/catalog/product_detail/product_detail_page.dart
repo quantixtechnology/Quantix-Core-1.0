@@ -179,6 +179,12 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                         ],
                       ),
 
+                      // ── Dietary indicator ───────────────────────────
+                      if (product.isVeg != null) ...[
+                        const SizedBox(height: 10),
+                        _VegBadge(isVeg: product.isVeg!),
+                      ],
+
                       // ── Description ─────────────────────────────────
                       if (product.description != null) ...[
                         const SizedBox(height: 16),
@@ -331,6 +337,49 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
             const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
       ),
+    );
+  }
+}
+
+/// Horizontal veg/non-veg badge row for the product detail screen.
+class _VegBadge extends StatelessWidget {
+  const _VegBadge({required this.isVeg});
+
+  final bool isVeg;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isVeg ? const Color(0xFF16A34A) : const Color(0xFFDC2626);
+    final label = isVeg ? 'VEG' : 'NON-VEG';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: color, width: 2),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Center(
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -202,6 +202,12 @@ class _ProductCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                if (product.isVeg != null)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: _VegIndicator(isVeg: product.isVeg!),
+                  ),
               ],
             ),
             Padding(
@@ -244,6 +250,37 @@ class _ProductCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small square veg/non-veg dot — shown only when isVeg is non-null.
+class _VegIndicator extends StatelessWidget {
+  const _VegIndicator({required this.isVeg});
+
+  final bool isVeg;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isVeg ? const Color(0xFF16A34A) : const Color(0xFFDC2626);
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: color, width: 1.5),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Center(
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
         ),
       ),
     );
