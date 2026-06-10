@@ -21,8 +21,8 @@ import { AckStatusBadge } from "../shared/ack-status-badge"
 import { ServiceTypeBadge, BillingTypeBadge } from "../shared/service-type-badge"
 import { DocumentTypeBadge, DocumentStatusBadge } from "../shared/document-type-badge"
 import { RecurringDateDrawer } from "./recurring-date-drawer"
-import { BillingDocumentDrawer } from "./billing-document-drawer"
 import { AddChargeDrawer } from "./add-charge-drawer"
+import { DocumentPreviewPanel } from "../document-preview/document-preview-panel"
 
 function formatCurrency(v: number) {
   if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`
@@ -44,6 +44,12 @@ interface AccountDetail {
   businessName: string
   businessSlug: string
   businessStatus: string
+  logo: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  pincode: string | null
+  gstNumber: string | null
   contactEmail: string | null
   contactPhone: string | null
   subscription: {
@@ -87,8 +93,8 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
   // Sub-drawer state
   const [recurringOpen,   setRecurringOpen]   = useState(false)
   const [addChargeOpen,   setAddChargeOpen]   = useState(false)
-  const [docDrawerOpen,   setDocDrawerOpen]   = useState(false)
-  const [selectedDoc,     setSelectedDoc]     = useState<Record<string,unknown> | null>(null)
+  const [previewDocId,    setPreviewDocId]    = useState<string | null>(null)
+  const [previewOpen,     setPreviewOpen]     = useState(false)
 
   const fetchDetail = useCallback(async () => {
     setLoading(true)
@@ -354,7 +360,7 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
                                     key={String(d.id)}
                                     type="button"
                                     className="inline-flex items-center gap-1 text-[10px] rounded border px-1.5 py-0.5 hover:bg-muted transition-colors"
-                                    onClick={() => { setSelectedDoc(d); setDocDrawerOpen(true) }}
+                                    onClick={() => { setPreviewDocId(String(d.id)); setPreviewOpen(true) }}
                                   >
                                     <DocumentTypeBadge value={String(d.documentType)} />
                                     <span className="font-mono">{String(d.documentNumber)}</span>
@@ -434,13 +440,22 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
                         </TableHeader>
                         <TableBody>
                           {invoices.map((d) => (
-                            <TableRow key={String(d.id)} className="text-xs hover:bg-muted/30 cursor-pointer" onClick={() => { setSelectedDoc(d); setDocDrawerOpen(true) }}>
+                            <TableRow key={String(d.id)} className="text-xs hover:bg-muted/30">
                               <TableCell className="font-mono text-[11px]">{String(d.documentNumber)}</TableCell>
                               <TableCell><DocumentTypeBadge value={String(d.documentType)} /></TableCell>
                               <TableCell className="text-right font-medium">{formatCurrency(Number(d.amount))}</TableCell>
                               <TableCell><DocumentStatusBadge value={String(d.status)} /></TableCell>
                               <TableCell>{fmtDate(String(d.createdAt))}</TableCell>
-                              <TableCell><ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /></TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-[10px] px-2 gap-1"
+                                  onClick={() => { setPreviewDocId(String(d.id)); setPreviewOpen(true) }}
+                                >
+                                  <ExternalLink className="h-3 w-3" /> View
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -581,12 +596,26 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
         />
       )}
 
-      <BillingDocumentDrawer
-        open={docDrawerOpen}
-        onOpenChange={setDocDrawerOpen}
+      <DocumentPreviewPanel
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
         businessId={businessId}
-        existingDoc={selectedDoc}
-        onSuccess={() => { setInvoices(null); setCharges(null); fetchTab("documents"); fetchTab("charges"); setDocDrawerOpen(false) }}
+        documentId={previewDocId}
+        letterhead={{
+          name:         detail?.businessName    ?? "",
+          logo:         detail?.logo            ?? null,
+          address:      detail?.address         ?? null,
+          city:         detail?.city            ?? null,
+          state:        detail?.state           ?? null,
+          pincode:      detail?.pincode         ?? null,
+          gstNumber:    detail?.gstNumber       ?? null,
+          contactEmail: detail?.contactEmail    ?? null,
+          contactPhone: detail?.contactPhone    ?? null,
+        }}
+        clientName={detail?.businessName ?? ""}
+        clientGst={detail?.gstNumber}
+        clientEmail={detail?.contactEmail}
+        onStatusChange={() => { setInvoices(null); setCharges(null); fetchTab("documents"); fetchTab("charges"); fetchDetail() }}
       />
 
       <AddChargeDrawer
