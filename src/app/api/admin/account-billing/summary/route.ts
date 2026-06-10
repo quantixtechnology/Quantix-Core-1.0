@@ -21,6 +21,7 @@ export const GET = withMiddleware({
       totalPaidAgg,
       monthlyAgg,
       overdueAgg,
+      overdueAccountsCount,
     ] = await Promise.all([
       // All active subscriptions with amounts
       db.businessSubscription.findMany({
@@ -48,11 +49,17 @@ export const GET = withMiddleware({
         where: { status: 'paid', paidDate: { gte: monthStart, lte: monthEnd } },
         _sum: { amount: true },
       }),
-      // Overdue (pending and past due date)
+      // Overdue amount (pending and past due date)
       db.billingRecord.aggregate({
         where: { status: 'pending', dueDate: { lt: now } },
         _sum: { amount: true },
         _count: { id: true },
+      }),
+      // Overdue subscriptions (distinct businessSubscriptionIds)
+      db.billingRecord.findMany({
+        where: { status: 'pending', dueDate: { lt: now } },
+        select: { businessSubscriptionId: true },
+        distinct: ['businessSubscriptionId'],
       }),
     ])
 
@@ -75,6 +82,7 @@ export const GET = withMiddleware({
     const collectionRate = totalInvoices > 0
       ? Math.round(((totalPaidAgg._count.id ?? 0) / totalInvoices) * 100)
       : 100
+    const overdueAccounts = overdueAccountsCount.length
 
     return NextResponse.json({
       success: true,
@@ -87,6 +95,7 @@ export const GET = withMiddleware({
         activeAccounts,
         collectedThisMonth: monthlyAgg._sum.amount ?? 0,
         totalCollected,
+        overdueAccounts,
       },
     })
   } catch (error) {

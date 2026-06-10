@@ -89,36 +89,38 @@ export function AccountBillingSummary({ businessId, onOpenFullView, onRecordPaym
 
   return (
     <div className="space-y-3">
-      {/* Plan + health */}
-      <div className="rounded-lg border p-3 space-y-2">
-        <div className="flex items-center justify-between">
+      {/* Financial summary grid — primary at-a-glance */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className={`rounded-lg border p-2.5 ${data.outstanding > 0 ? "border-red-200 bg-red-50/50" : ""}`}>
+          <p className="text-[10px] text-muted-foreground">Outstanding</p>
+          <p className={`text-base font-bold ${data.outstanding > 0 ? "text-red-600" : "text-emerald-600"}`}>
+            {data.outstanding > 0 ? formatCurrency(data.outstanding) : "₹0"}
+          </p>
+        </div>
+        <div className="rounded-lg border p-2.5">
+          <p className="text-[10px] text-muted-foreground">Next Due</p>
+          <p className="text-sm font-bold">{fmtDate(sub.nextBillingDate)}</p>
+        </div>
+        <div className="rounded-lg border p-2.5">
+          <p className="text-[10px] text-muted-foreground">Lifetime Revenue</p>
+          <p className="text-sm font-bold">{formatCurrency(data.lifetimeRevenue)}</p>
+        </div>
+        <div className="rounded-lg border p-2.5 flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium">{sub.planName}</p>
-            <p className="text-[10px] text-muted-foreground">{CYCLES[sub.billingCycle] ?? sub.billingCycle} · ₹{(sub.finalAmount ?? sub.baseAmount).toLocaleString("en-IN")}</p>
+            <p className="text-[10px] text-muted-foreground">Active Services</p>
+            <p className="text-sm font-bold">{1 + data.activeAddonCount}</p>
           </div>
           <AccountHealthBadge score={data.health as never} reason={data.healthReason} />
         </div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="flex items-center gap-1.5">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-            <div>
-              <p className="text-[10px] text-muted-foreground">Next Due</p>
-              <p className="font-medium">{fmtDate(sub.nextBillingDate)}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <IndianRupee className="h-3.5 w-3.5 text-muted-foreground" />
-            <div>
-              <p className="text-[10px] text-muted-foreground">Outstanding</p>
-              <p className={`font-medium ${data.outstanding > 0 ? "text-red-600" : "text-emerald-600"}`}>
-                {data.outstanding > 0 ? formatCurrency(data.outstanding) : "Nil"}
-              </p>
-            </div>
-          </div>
+      </div>
+
+      {/* Plan row */}
+      <div className="rounded-lg border p-3 space-y-1">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium">{sub.planName}</p>
+          <span className="text-[10px] text-muted-foreground">{CYCLES[sub.billingCycle] ?? sub.billingCycle}</span>
         </div>
-        {data.activeAddonCount > 0 && (
-          <p className="text-[10px] text-muted-foreground">{data.activeAddonCount} active add-on{data.activeAddonCount > 1 ? "s" : ""}</p>
-        )}
+        <p className="text-xs text-muted-foreground">₹{(sub.finalAmount ?? sub.baseAmount).toLocaleString("en-IN")} / cycle</p>
       </div>
 
       {/* Last payment */}

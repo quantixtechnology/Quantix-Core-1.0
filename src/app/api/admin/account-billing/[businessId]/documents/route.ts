@@ -9,7 +9,12 @@ import { getPlatformSettings } from '@/lib/platform-settings'
 import type { NextRequest } from 'next/server'
 
 const VALID_TYPES = ['PROFORMA', 'TAX_INVOICE', 'CREDIT_NOTE', 'DEBIT_NOTE', 'PAYMENT_RECEIPT', 'ADJUSTMENT_NOTE']
-const VALID_STATUSES = ['Draft', 'Sent', 'Accepted', 'Expired', 'Cancelled', 'Partially Paid', 'Paid']
+const VALID_STATUSES = [
+  'Draft', 'Sent', 'Viewed', 'Accepted',
+  'Payment Submitted', 'Under Verification',
+  'Paid', 'Converted To Invoice',
+  'Cancelled', 'Expired',
+]
 
 function getFinancialYear(date: Date): string {
   const m = date.getMonth()
@@ -23,7 +28,7 @@ const TYPE_PREFIXES: Record<string, string> = {
   TAX_INVOICE: 'INV',
   CREDIT_NOTE: 'CN',
   DEBIT_NOTE: 'DN',
-  PAYMENT_RECEIPT: 'PR',
+  PAYMENT_RECEIPT: 'RCPT',
   ADJUSTMENT_NOTE: 'AN',
 }
 
@@ -89,6 +94,7 @@ export const POST = withMiddleware({
       status?: string
       amount: number
       currency?: string
+      chargeId?: string
       gstRate?: number
       cgstAmount?: number
       sgstAmount?: number
@@ -125,6 +131,7 @@ export const POST = withMiddleware({
         documentNumber,
         documentType:   body.documentType,
         businessId,
+        chargeId:       body.chargeId ?? null,
         billingRecordId: body.billingRecordId ?? null,
         linkedDocId:    body.linkedDocId ?? null,
         status:         initialStatus,

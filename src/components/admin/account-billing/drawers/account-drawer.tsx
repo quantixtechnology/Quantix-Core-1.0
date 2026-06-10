@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   RefreshCw, ExternalLink, Calendar, Edit, IndianRupee, FileText, Receipt,
-  Clock, CheckCircle, XCircle, AlertCircle, User, ChevronRight
+  Clock, CheckCircle, XCircle, AlertCircle, User, ChevronRight, Zap
 } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
@@ -22,6 +22,7 @@ import { ServiceTypeBadge, BillingTypeBadge } from "../shared/service-type-badge
 import { DocumentTypeBadge, DocumentStatusBadge } from "../shared/document-type-badge"
 import { RecurringDateDrawer } from "./recurring-date-drawer"
 import { BillingDocumentDrawer } from "./billing-document-drawer"
+import { AddChargeDrawer } from "./add-charge-drawer"
 
 function formatCurrency(v: number) {
   if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`
@@ -76,6 +77,7 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
   const [activeTab, setActiveTab] = useState("overview")
 
   // Tab data (lazy-loaded)
+  const [charges,  setCharges]  = useState<Array<Record<string,unknown>> | null>(null)
   const [services, setServices] = useState<Array<Record<string,unknown>> | null>(null)
   const [invoices, setInvoices] = useState<Array<Record<string,unknown>> | null>(null)
   const [payments, setPayments] = useState<Array<Record<string,unknown>> | null>(null)
@@ -83,9 +85,10 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
   const [audit,    setAudit]    = useState<Array<Record<string,unknown>> | null>(null)
 
   // Sub-drawer state
-  const [recurringOpen, setRecurringOpen] = useState(false)
-  const [docDrawerOpen, setDocDrawerOpen] = useState(false)
-  const [selectedDoc, setSelectedDoc]     = useState<Record<string,unknown> | null>(null)
+  const [recurringOpen,   setRecurringOpen]   = useState(false)
+  const [addChargeOpen,   setAddChargeOpen]   = useState(false)
+  const [docDrawerOpen,   setDocDrawerOpen]   = useState(false)
+  const [selectedDoc,     setSelectedDoc]     = useState<Record<string,unknown> | null>(null)
 
   const fetchDetail = useCallback(async () => {
     setLoading(true)
@@ -104,11 +107,15 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
 
   const fetchTab = useCallback(async (tab: string) => {
     try {
+      if (tab === "charges" && !charges) {
+        const r = await fetch(`/api/admin/account-billing/${businessId}/charges?limit=50`, { headers: getAuthHeaders() })
+        const j = await r.json(); if (j.success) setCharges(j.data)
+      }
       if (tab === "services" && !services) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/services`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setServices(j.data)
       }
-      if (tab === "invoices" && !invoices) {
+      if (tab === "documents" && !invoices) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/documents?limit=50`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setInvoices(j.data)
       }
@@ -125,7 +132,7 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
         const j = await r.json(); if (j.success) setAudit(j.data)
       }
     } catch { toast.error(`Failed to load ${tab}`) }
-  }, [businessId, services, invoices, payments, ledger, audit])
+  }, [businessId, charges, services, invoices, payments, ledger, audit])
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
@@ -171,8 +178,9 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
           <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="mx-6 mt-3 mb-0 h-8 justify-start shrink-0">
               <TabsTrigger value="overview"   className="text-xs">Overview</TabsTrigger>
+              <TabsTrigger value="charges"    className="text-xs">Charges</TabsTrigger>
               <TabsTrigger value="services"   className="text-xs">Services</TabsTrigger>
-              <TabsTrigger value="invoices"   className="text-xs">Invoices</TabsTrigger>
+              <TabsTrigger value="documents"  className="text-xs">Documents</TabsTrigger>
               <TabsTrigger value="payments"   className="text-xs">Payments</TabsTrigger>
               <TabsTrigger value="ledger"     className="text-xs">Ledger</TabsTrigger>
               <TabsTrigger value="audit"      className="text-xs">Audit Trail</TabsTrigger>
@@ -258,7 +266,7 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent Documents</h4>
-                              <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1" onClick={() => handleTabChange("invoices")}>
+                              <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1" onClick={() => handleTabChange("documents")}>
                                 View all <ChevronRight className="h-3 w-3" />
                               </Button>
                             </div>
@@ -278,6 +286,87 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
                         </>
                       )}
                     </>
+                  )}
+              </TabsContent>
+
+              {/* CHARGES — primary billing workflow */}
+              <TabsContent value="charges" className="px-6 pb-6 mt-0 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">{charges?.length ?? 0} charge{charges?.length !== 1 ? "s" : ""}</p>
+                  <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setAddChargeOpen(true)}>
+                    <Zap className="h-3 w-3" /> Add Charge
+                  </Button>
+                </div>
+                {!charges
+                  ? <div className="space-y-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-12 w-full"/>)}</div>
+                  : charges.length === 0
+                  ? (
+                    <div className="py-10 text-center space-y-3">
+                      <Zap className="h-8 w-8 text-muted-foreground mx-auto" />
+                      <p className="text-sm font-medium">No charges yet</p>
+                      <p className="text-xs text-muted-foreground">Create a charge to start the billing workflow.</p>
+                      <Button size="sm" className="gap-1.5" onClick={() => setAddChargeOpen(true)}>
+                        <Zap className="h-3.5 w-3.5" /> Add First Charge
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {charges.map((c) => {
+                        const docs = (c.documents as Array<Record<string,unknown>>) ?? []
+                        const statusColor: Record<string,string> = {
+                          PENDING:  "bg-amber-50 text-amber-700 border-amber-200",
+                          INVOICED: "bg-sky-50 text-sky-700 border-sky-200",
+                          PAID:     "bg-emerald-50 text-emerald-700 border-emerald-200",
+                          CANCELLED:"bg-red-50 text-red-700 border-red-200",
+                          WAIVED:   "bg-gray-50 text-gray-600 border-gray-200",
+                        }
+                        return (
+                          <div key={String(c.id)} className="rounded-lg border p-3 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{String(c.serviceName)}</p>
+                                {Boolean(c.description) && <p className="text-[10px] text-muted-foreground">{String(c.description)}</p>}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${statusColor[String(c.status)] ?? ""}`}>{String(c.status)}</Badge>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <div className="flex items-center gap-3">
+                                <span className="font-medium text-foreground">₹{Number(c.amount).toLocaleString("en-IN")}</span>
+                                <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{String(c.chargeType).replace(/_/g," ")}</Badge>
+                                {Boolean(c.dueDate) && <span>Due: {fmtDate(String(c.dueDate))}</span>}
+                              </div>
+                              {docs.length > 0 && (
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-1 text-[10px] text-sky-600 hover:underline"
+                                  onClick={() => handleTabChange("documents")}
+                                >
+                                  <FileText className="h-3 w-3" /> {docs.length} doc{docs.length > 1 ? "s" : ""}
+                                </button>
+                              )}
+                            </div>
+                            {docs.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {docs.map(d => (
+                                  <button
+                                    key={String(d.id)}
+                                    type="button"
+                                    className="inline-flex items-center gap-1 text-[10px] rounded border px-1.5 py-0.5 hover:bg-muted transition-colors"
+                                    onClick={() => { setSelectedDoc(d); setDocDrawerOpen(true) }}
+                                  >
+                                    <DocumentTypeBadge value={String(d.documentType)} />
+                                    <span className="font-mono">{String(d.documentNumber)}</span>
+                                    <DocumentStatusBadge value={String(d.status)} />
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
               </TabsContent>
 
@@ -318,12 +407,12 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
                   )}
               </TabsContent>
 
-              {/* INVOICES */}
-              <TabsContent value="invoices" className="px-6 pb-6 mt-0 space-y-3">
+              {/* DOCUMENTS */}
+              <TabsContent value="documents" className="px-6 pb-6 mt-0 space-y-3">
                 <div className="flex justify-between items-center">
                   <p className="text-xs text-muted-foreground">{invoices?.length ?? 0} documents</p>
-                  <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => { setSelectedDoc(null); setDocDrawerOpen(true) }}>
-                    <FileText className="h-3 w-3" /> New Document
+                  <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setAddChargeOpen(true)}>
+                    <Zap className="h-3 w-3" /> Add Charge
                   </Button>
                 </div>
                 {!invoices
@@ -497,7 +586,22 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
         onOpenChange={setDocDrawerOpen}
         businessId={businessId}
         existingDoc={selectedDoc}
-        onSuccess={() => { setInvoices(null); fetchTab("invoices"); setDocDrawerOpen(false) }}
+        onSuccess={() => { setInvoices(null); setCharges(null); fetchTab("documents"); fetchTab("charges"); setDocDrawerOpen(false) }}
+      />
+
+      <AddChargeDrawer
+        open={addChargeOpen}
+        onOpenChange={setAddChargeOpen}
+        businessId={businessId}
+        onSuccess={() => {
+          setCharges(null)
+          setInvoices(null)
+          fetchTab("charges")
+          fetchTab("documents")
+          setAddChargeOpen(false)
+          fetchDetail()
+          onRefreshSummary?.()
+        }}
       />
     </>
   )

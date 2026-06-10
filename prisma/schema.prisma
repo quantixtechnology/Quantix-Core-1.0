@@ -322,6 +322,7 @@ model Business {
   refunds               Refund[]
   billingDocuments      BillingDocument[]
   recurringDateOverrides RecurringDateOverride[]
+  charges               Charge[]
 
   @@index([businessType])
   @@index([status])
@@ -2877,11 +2878,13 @@ model BillingDocument {
   documentType    String   // PROFORMA | TAX_INVOICE | CREDIT_NOTE |
                            // DEBIT_NOTE | PAYMENT_RECEIPT | ADJUSTMENT_NOTE
   businessId      String
+  chargeId        String?  // source charge that generated this document
   billingRecordId String?  // linked to BillingRecord when payment triggers a doc
   linkedDocId     String?  // e.g. TAX_INVOICE linked back to its PROFORMA
   status          String   @default("Draft")
-                           // Draft | Sent | Accepted | Expired |
-                           // Cancelled | Partially Paid | Paid
+                           // Draft | Sent | Viewed | Accepted | Payment Submitted |
+                           // Under Verification | Paid | Converted To Invoice |
+                           // Cancelled | Expired
   amount          Float
   currency        String   @default("INR")
   gstRate         Float?
@@ -2902,12 +2905,14 @@ model BillingDocument {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  charge          Charge?  @relation(fields: [chargeId], references: [id])
 
   @@index([businessId])
   @@index([documentType])
   @@index([status])
   @@index([documentNumber])
   @@index([billingRecordId])
+  @@index([chargeId])
   @@index([createdAt])
 }
 
@@ -2967,5 +2972,38 @@ model RecurringDateOverride {
 
   @@index([businessSubscriptionId])
   @@index([businessId])
+  @@index([createdAt])
+}
+
+// A billable event against a specific service line.
+// Primary entry point for the charge-based billing workflow:
+//   Service → Charge → Proforma → Payment → Verification → Tax Invoice → Receipt
+model Charge {
+  id              String    @id @default(cuid())
+  businessId      String
+  serviceId       String?   // null for manual / one-off charges
+  serviceName     String
+  description     String?
+  amount          Float
+  currency        String    @default("INR")
+  chargeType      String    @default("ONE_TIME")
+                            // ONE_TIME | RECURRING | IMPLEMENTATION | CREDIT | ADJUSTMENT
+  status          String    @default("PENDING")
+                            // PENDING | INVOICED | PAID | CANCELLED | WAIVED
+  dueDate         DateTime?
+  periodStart     DateTime? // billing period start (RECURRING charges)
+  periodEnd       DateTime? // billing period end  (RECURRING charges)
+  notes           String?
+  createdById     String?
+  createdByName   String?
+  metadata        String    @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  documents       BillingDocument[]
+
+  @@index([businessId])
+  @@index([status])
+  @@index([chargeType])
   @@index([createdAt])
 }

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  IndianRupee, TrendingUp, AlertCircle, Percent, Clock, Building2, RefreshCw,
+  IndianRupee, TrendingUp, AlertCircle, CheckCircle, Clock, Building2, RefreshCw,
 } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
@@ -27,6 +27,7 @@ interface Summary {
   activeAccounts: number
   collectedThisMonth: number
   totalCollected: number
+  overdueAccounts: number
 }
 
 function formatCurrency(value: number): string {
@@ -66,12 +67,12 @@ export function AccountBillingView() {
   useEffect(() => { fetchSummary() }, [fetchSummary])
 
   const metrics = summary ? [
-    { label: "MRR",                  value: formatCurrency(summary.mrr),             icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50" },
-    { label: "ARR",                  value: formatCurrency(summary.arr),             icon: TrendingUp,  color: "text-violet-600",  bg: "bg-violet-50"  },
-    { label: "Outstanding",          value: formatCurrency(summary.outstanding),     icon: AlertCircle, color: "text-red-600",     bg: "bg-red-50",    urgent: summary.outstanding > 0 },
-    { label: "Collection Rate",      value: `${summary.collectionRate}%`,            icon: Percent,     color: "text-sky-600",     bg: "bg-sky-50"     },
-    { label: "Pending Verification", value: String(summary.pendingVerification),     icon: Clock,       color: "text-amber-600",   bg: "bg-amber-50",  urgent: summary.pendingVerification > 0 },
-    { label: "Active Accounts",      value: String(summary.activeAccounts),          icon: Building2,   color: "text-indigo-600",  bg: "bg-indigo-50"  },
+    { label: "MRR",                   value: formatCurrency(summary.mrr),              icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "ARR",                   value: formatCurrency(summary.arr),              icon: TrendingUp,  color: "text-violet-600",  bg: "bg-violet-50"  },
+    { label: "Outstanding",           value: formatCurrency(summary.outstanding),      icon: AlertCircle, color: "text-red-600",     bg: "bg-red-50",    urgent: summary.outstanding > 0 },
+    { label: "Collections This Month",value: formatCurrency(summary.collectedThisMonth), icon: CheckCircle, color: "text-sky-600",   bg: "bg-sky-50"     },
+    { label: "Pending Verification",  value: String(summary.pendingVerification),      icon: Clock,       color: "text-amber-600",   bg: "bg-amber-50",  urgent: summary.pendingVerification > 0 },
+    { label: "Overdue Accounts",      value: String(summary.overdueAccounts ?? 0),     icon: Building2,   color: "text-rose-600",    bg: "bg-rose-50",   urgent: (summary.overdueAccounts ?? 0) > 0 },
   ] : []
 
   return (

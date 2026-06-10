@@ -13,13 +13,16 @@ const DOC_TYPE_CONFIG: Record<string, { label: string; cls: string }> = {
 }
 
 const DOC_STATUS_CONFIG: Record<string, string> = {
-  Draft:           "bg-gray-50 text-gray-600 border-gray-200",
-  Sent:            "bg-sky-50 text-sky-700 border-sky-200",
-  Accepted:        "bg-blue-50 text-blue-700 border-blue-200",
-  Expired:         "bg-amber-50 text-amber-700 border-amber-200",
-  Cancelled:       "bg-red-50 text-red-700 border-red-200",
-  "Partially Paid":"bg-orange-50 text-orange-700 border-orange-200",
-  Paid:            "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Draft":                 "bg-gray-50 text-gray-600 border-gray-200",
+  "Sent":                  "bg-sky-50 text-sky-700 border-sky-200",
+  "Viewed":                "bg-indigo-50 text-indigo-700 border-indigo-200",
+  "Accepted":              "bg-blue-50 text-blue-700 border-blue-200",
+  "Payment Submitted":     "bg-violet-50 text-violet-700 border-violet-200",
+  "Under Verification":    "bg-amber-50 text-amber-700 border-amber-200",
+  "Paid":                  "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Converted To Invoice":  "bg-teal-50 text-teal-700 border-teal-200",
+  "Cancelled":             "bg-red-50 text-red-700 border-red-200",
+  "Expired":               "bg-orange-50 text-orange-700 border-orange-200",
 }
 
 interface DocBadgeProps {
