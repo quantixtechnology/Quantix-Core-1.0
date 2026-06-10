@@ -113,29 +113,29 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
     if (open) { setActiveTab("charges"); fetchDetail() }
   }, [open, fetchDetail])
 
-  const fetchTab = useCallback(async (tab: string) => {
+  const fetchTab = useCallback(async (tab: string, force = false) => {
     try {
-      if (tab === "charges" && !charges) {
+      if (tab === "charges" && (force || !charges)) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/charges?limit=50`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setCharges(j.data)
       }
-      if (tab === "services" && !services) {
+      if (tab === "services" && (force || !services)) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/services`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setServices(j.data)
       }
-      if (tab === "documents" && !invoices) {
+      if (tab === "documents" && (force || !invoices)) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/documents?limit=50`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setInvoices(j.data)
       }
-      if (tab === "payments" && !payments) {
+      if (tab === "payments" && (force || !payments)) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/payments?limit=50`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setPayments(j.data)
       }
-      if (tab === "ledger" && !ledger) {
+      if (tab === "ledger" && (force || !ledger)) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/ledger`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setLedger(j.data)
       }
-      if (tab === "audit" && !audit) {
+      if (tab === "audit" && (force || !audit)) {
         const r = await fetch(`/api/admin/account-billing/${businessId}/audit-trail?limit=50`, { headers: getAuthHeaders() })
         const j = await r.json(); if (j.success) setAudit(j.data)
       }
@@ -691,7 +691,7 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
         clientName={detail?.businessName ?? ""}
         clientGst={detail?.gstNumber}
         clientEmail={detail?.contactEmail}
-        onStatusChange={() => { setInvoices(null); setCharges(null); fetchTab("documents"); fetchTab("charges"); fetchDetail() }}
+        onStatusChange={() => { setInvoices(null); setCharges(null); fetchTab("documents", true); fetchTab("charges", true); fetchDetail() }}
       />
 
       <AddServiceDialog
@@ -701,11 +701,14 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
         onSuccess={() => {
           setServices(null)
           setCharges(null)
-          fetchTab("services")
-          fetchTab("charges")
+          setInvoices(null)
           setAddServiceOpen(false)
           fetchDetail()
           onRefreshSummary?.()
+          // Navigate to Charges tab so user sees the generated charge + proforma
+          setActiveTab("charges")
+          fetchTab("charges", true)
+          fetchTab("documents", true)
         }}
       />
 
@@ -716,8 +719,8 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
         onSuccess={() => {
           setCharges(null)
           setInvoices(null)
-          fetchTab("charges")
-          fetchTab("documents")
+          fetchTab("charges", true)
+          fetchTab("documents", true)
           setAddChargeOpen(false)
           fetchDetail()
           onRefreshSummary?.()

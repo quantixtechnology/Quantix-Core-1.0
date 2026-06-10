@@ -1,6 +1,7 @@
 // GET /api/admin/account-billing/[businessId]/ledger
 // Chronological ledger with running balance.
-// Sources: BillingRecords (charges + payments) + BillingDocuments (doc events).
+// Sources: BillingRecords (legacy) + Charges + BillingDocuments (new flow).
+// Never 404 — returns empty ledger when no records exist.
 
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
@@ -14,7 +15,7 @@ interface LedgerEntry {
   debit: number
   credit: number
   reference: string | null
-  source: 'BILLING_RECORD' | 'BILLING_DOCUMENT'
+  source: 'BILLING_RECORD' | 'BILLING_DOCUMENT' | 'CHARGE'
 }
 
 export const GET = withMiddleware({
@@ -26,20 +27,36 @@ export const GET = withMiddleware({
     const businessId = params?.businessId as string
     if (!businessId) return NextResponse.json({ success: false, error: 'businessId required' }, { status: 400 })
 
+    // Optional: legacy subscription (may not exist for new businesses)
     const sub = await db.businessSubscription.findUnique({ where: { businessId }, select: { id: true } })
-    if (!sub) return NextResponse.json({ success: false, error: 'No subscription found' }, { status: 404 })
 
-    const [records, documents] = await Promise.all([
-      db.billingRecord.findMany({
-        where: { businessSubscriptionId: sub.id },
+    const [records, charges, documents] = await Promise.all([
+      // Legacy billing records — only if subscription exists
+      sub
+        ? db.billingRecord.findMany({
+            where: { businessSubscriptionId: sub.id },
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true, amount: true, status: true, invoiceNumber: true,
+              dueDate: true, paidDate: true, createdAt: true, description: true,
+              acknowledgeStatus: true, amountReceived: true, periodLabel: true,
+              paymentMode: true, receiptReference: true, transactionNumber: true,
+            },
+          })
+        : Promise.resolve([]),
+
+      // New flow: Charges (PENDING / PAID)
+      db.charge.findMany({
+        where: { businessId },
         orderBy: { createdAt: 'asc' },
         select: {
-          id: true, amount: true, status: true, invoiceNumber: true,
-          dueDate: true, paidDate: true, createdAt: true, description: true,
-          acknowledgeStatus: true, amountReceived: true, periodLabel: true,
-          paymentMode: true, receiptReference: true, transactionNumber: true,
+          id: true, serviceName: true, description: true, amount: true,
+          currency: true, chargeType: true, status: true,
+          dueDate: true, createdAt: true,
         },
       }),
+
+      // Billing documents for credit/debit notes and receipts
       db.billingDocument.findMany({
         where: { businessId },
         orderBy: { createdAt: 'asc' },
@@ -52,7 +69,7 @@ export const GET = withMiddleware({
 
     const entries: LedgerEntry[] = []
 
-    // Billing records → charge raised on dueDate, payment credited on paidDate
+    // ── Legacy BillingRecords ──────────────────────────────────────────────
     for (const r of records) {
       entries.push({
         id: `br-charge-${r.id}`,
@@ -78,7 +95,22 @@ export const GET = withMiddleware({
       }
     }
 
-    // Billing documents
+    // ── New Charges ────────────────────────────────────────────────────────
+    for (const c of charges) {
+      entries.push({
+        id: `charge-${c.id}`,
+        date: c.dueDate ?? c.createdAt,
+        description: c.description ?? c.serviceName,
+        entryType: 'CHARGE',
+        debit: c.amount,
+        credit: 0,
+        reference: null,
+        source: 'CHARGE',
+      })
+      // Payments from new-flow charges are captured via PAYMENT_RECEIPT BillingDocuments below
+    }
+
+    // ── BillingDocuments (credit notes, debit notes, receipts) ────────────
     for (const d of documents) {
       if (d.documentType === 'CREDIT_NOTE') {
         entries.push({
@@ -102,13 +134,24 @@ export const GET = withMiddleware({
           reference: d.documentNumber,
           source: 'BILLING_DOCUMENT',
         })
+      } else if (d.documentType === 'PAYMENT_RECEIPT' && d.status === 'Paid') {
+        entries.push({
+          id: `receipt-${d.id}`,
+          date: d.paidDate ?? d.createdAt,
+          description: `Payment Receipt — ${d.documentNumber}`,
+          entryType: 'PAYMENT',
+          debit: 0,
+          credit: d.amount,
+          reference: d.documentNumber,
+          source: 'BILLING_DOCUMENT',
+        })
       }
     }
 
     // Sort chronologically
     entries.sort((a, b) => a.date.getTime() - b.date.getTime())
 
-    // Add running balance
+    // Running balance
     let balance = 0
     const ledger = entries.map(e => {
       balance += e.debit - e.credit
