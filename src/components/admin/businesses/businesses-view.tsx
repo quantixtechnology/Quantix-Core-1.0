@@ -36,6 +36,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { MobileProvisionSection } from "./mobile-provision-section"
+import { AccountBillingSummary } from "@/components/admin/account-billing/shared/account-billing-summary"
 import { resolveImageUrl } from "@/lib/image-url"
 
 // ---- Plan data type — feature access only, no pricing ----
@@ -114,7 +115,7 @@ function formatCurrency(value: number): string {
 }
 
 export function BusinessesView() {
-  const { searchQuery, setCurrentBusiness } = useAdminStore()
+  const { searchQuery, setCurrentBusiness, setActivePage } = useAdminStore()
   const { permissions } = useAuthStore()
   const canCreate = permissions.includes("businesses:create" as never)
   const canEdit = permissions.includes("businesses:edit" as never)
@@ -128,6 +129,7 @@ export function BusinessesView() {
   const [onlineFilter, setOnlineFilter] = useState<string>("ALL")
   const [selectedBusiness, setSelectedBusiness] = useState<BusinessApiData | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [drawerTab, setDrawerTab] = useState("overview")
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [plans, setPlans] = useState<PlanApiData[]>([])
@@ -1383,7 +1385,7 @@ export function BusinessesView() {
       )}
 
       {/* Business Detail Sheet */}
-      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false); setAddonsOpen(false); setShowAddAddon(false); setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false) } }}>
+      <Sheet open={detailOpen} onOpenChange={(open) => { setDetailOpen(open); if (!open) { setSelectedBusiness(null); setBrandingOpen(false); setPricingOpen(false); setAddonsOpen(false); setShowAddAddon(false); setNewOwnerPassword(null); setCopiedPassword(false); setShowPassword(false); setDrawerTab("overview") } }}>
         <SheetContent className="w-[520px] sm:max-w-[520px] p-0">
           {selectedBusiness && (() => {
             const biz = selectedBusiness
@@ -1448,8 +1450,17 @@ export function BusinessesView() {
                     </div>
                   </div>
                 </SheetHeader>
-                <ScrollArea className="h-[calc(100vh-120px)]">
-                  <div className="space-y-6 p-6">
+                <Tabs value={drawerTab} onValueChange={setDrawerTab} className="flex flex-col" style={{ height: "calc(100vh - 120px)" }}>
+                  <TabsList className="px-6 h-9 border-b rounded-none bg-transparent justify-start shrink-0 gap-0">
+                    <TabsTrigger value="overview" className="text-xs h-8 rounded-none">Overview</TabsTrigger>
+                    <TabsTrigger value="stores" className="text-xs h-8 rounded-none">Stores</TabsTrigger>
+                    <TabsTrigger value="deployments" className="text-xs h-8 rounded-none">Deployments</TabsTrigger>
+                    <TabsTrigger value="apps" className="text-xs h-8 rounded-none">Apps</TabsTrigger>
+                    <TabsTrigger value="account-billing" className="text-xs h-8 rounded-none">Account &amp; Billing</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="overview" className="flex-1 min-h-0 mt-0">
+                    <ScrollArea className="h-full">
+                      <div className="space-y-6 p-6">
                     {/* Business Overview */}
                     <div className="space-y-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Overview</h4>
@@ -2189,8 +2200,94 @@ export function BusinessesView() {
                       </div>
                     </div>
 
-                  </div>
-                </ScrollArea>
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  {/* ── Stores Tab ───────────────────────────────────────── */}
+                  <TabsContent value="stores" className="flex-1 min-h-0 mt-0">
+                    <ScrollArea className="h-full">
+                      <div className="p-6 space-y-4">
+                        {biz && (<>
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Store Configuration</h4>
+                          <div className="flex items-center gap-3 rounded-lg border p-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50">
+                              <Store className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{biz.storeCount} {biz.storeCount === 1 ? "Store" : "Stores"}</p>
+                              <p className="text-[10px] text-muted-foreground">{biz.city ? `Across ${biz.city}` : "Main store"}</p>
+                            </div>
+                            {biz.mainStore?.storeCode && (
+                              <div className="text-right">
+                                <p className="text-[10px] text-muted-foreground">Primary Store</p>
+                                <p className="font-mono text-xs font-semibold">{biz.mainStore.storeCode}</p>
+                              </div>
+                            )}
+                          </div>
+                        </>)}
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  {/* ── Deployments Tab ──────────────────────────────────── */}
+                  <TabsContent value="deployments" className="flex-1 min-h-0 mt-0">
+                    <ScrollArea className="h-full">
+                      <div className="p-6 space-y-4">
+                        {biz && (() => {
+                          const nonAppDeps = biz.deployments.filter(d => !["CUSTOMER_APP","DELIVERY_APP","ADMIN_APP"].includes(d.type))
+                          return nonAppDeps.length > 0 ? (
+                            <>
+                              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deployments</h4>
+                              <div className="space-y-1.5">
+                                {nonAppDeps.map(dep => (
+                                  <div key={dep.id} className="rounded-lg border p-2.5 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-medium">{dep.type.replace(/_/g, " ")}</span>
+                                      <span className="text-[10px] text-muted-foreground">v{dep.version || "?"}</span>
+                                    </div>
+                                    <StatusBadge status={dep.status} />
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-center py-8 text-sm text-muted-foreground">No non-app deployments</div>
+                          )
+                        })()}
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  {/* ── Apps Tab ─────────────────────────────────────────── */}
+                  <TabsContent value="apps" className="flex-1 min-h-0 mt-0">
+                    <ScrollArea className="h-full">
+                      <div className="p-6">
+                        {biz && (
+                          <MobileProvisionSection
+                            businessId={biz.id}
+                            slug={biz.slug}
+                            initialDeployments={biz.deployments}
+                          />
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  {/* ── Account & Billing Tab ────────────────────────────── */}
+                  <TabsContent value="account-billing" className="flex-1 min-h-0 mt-0">
+                    <ScrollArea className="h-full">
+                      <div className="p-6 space-y-4">
+                        {biz && (
+                          <AccountBillingSummary
+                            businessId={biz.id}
+                            onOpenFullView={() => { setDetailOpen(false); setActivePage("account-billing") }}
+                          />
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+                </Tabs>
               </>
             )
           })()}

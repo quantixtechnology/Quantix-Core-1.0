@@ -80,6 +80,7 @@ export type AdminPage =
   | "rev-commission-processing"
   | "brand-studio"
   | "quantix-website"
+  | "account-billing"
 
 export type BusinessPage =
   | "dashboard"

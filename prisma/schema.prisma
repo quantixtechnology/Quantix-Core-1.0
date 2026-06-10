@@ -320,6 +320,8 @@ model Business {
   notificationDevices   NotificationDevice[]
   banners               Banner[]
   refunds               Refund[]
+  billingDocuments      BillingDocument[]
+  recurringDateOverrides RecurringDateOverride[]
 
   @@index([businessType])
   @@index([status])
@@ -2862,4 +2864,108 @@ model WebsiteCompanyInfo {
   shopActNumber  String?
   msmeNumber     String?
   updatedAt      DateTime @updatedAt
+}
+
+// ── Account & Billing Engine ──────────────────────────────────────
+
+// Unified document table: PROFORMA, TAX_INVOICE, CREDIT_NOTE,
+// DEBIT_NOTE, PAYMENT_RECEIPT, ADJUSTMENT_NOTE. Future types added
+// as new documentType string values without schema changes.
+model BillingDocument {
+  id              String   @id @default(cuid())
+  documentNumber  String   @unique
+  documentType    String   // PROFORMA | TAX_INVOICE | CREDIT_NOTE |
+                           // DEBIT_NOTE | PAYMENT_RECEIPT | ADJUSTMENT_NOTE
+  businessId      String
+  billingRecordId String?  // linked to BillingRecord when payment triggers a doc
+  linkedDocId     String?  // e.g. TAX_INVOICE linked back to its PROFORMA
+  status          String   @default("Draft")
+                           // Draft | Sent | Accepted | Expired |
+                           // Cancelled | Partially Paid | Paid
+  amount          Float
+  currency        String   @default("INR")
+  gstRate         Float?
+  cgstAmount      Float?
+  sgstAmount      Float?
+  igstAmount      Float?
+  totalWithGst    Float?
+  lineItems       String   @default("[]") // JSON LineItem[]
+  notes           String?
+  validUntil      DateTime?
+  issuedDate      DateTime?
+  paidDate        DateTime?
+  sentAt          DateTime?
+  acceptedAt      DateTime?
+  createdById     String?
+  createdByName   String?
+  metadata        String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([documentType])
+  @@index([status])
+  @@index([documentNumber])
+  @@index([billingRecordId])
+  @@index([createdAt])
+}
+
+// Per-(financialYear, documentType) sequence for BillingDocument numbering.
+// Completely separate from legacy InvoiceSequence used by BillingRecord.
+model BillingDocumentSequence {
+  financialYear String
+  documentType  String
+  nextVal       Int      @default(1)
+  updatedAt     DateTime @updatedAt
+
+  @@id([financialYear, documentType])
+}
+
+// Centralized service catalog — never hardcoded. Admins manage items here.
+// Used as the source when creating BillingDocument line items.
+model ServiceCatalog {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  serviceType   String   // Platform Plan | Add-On | Mobile App | Implementation |
+                         // Training | Support | Integration | Credits |
+                         // Custom Development | Other
+  billingType   String   // Recurring | One-Time | Usage Based | Credit | Discount | Refund
+  defaultAmount Float?
+  currency      String   @default("INR")
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  metadata      String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([serviceType])
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+// Every admin-initiated change to a business recurring due date.
+// overrideUntil = NEXT_BILLING_ONLY → reverts after one cycle.
+// overrideUntil = PERMANENT → stays until changed again.
+model RecurringDateOverride {
+  id                     String    @id @default(cuid())
+  businessSubscriptionId String
+  businessId             String
+  originalDueDate        DateTime
+  overrideDueDate        DateTime
+  overrideReason         String
+  overrideUntil          String    @default("NEXT_BILLING_ONLY")
+                                   // NEXT_BILLING_ONLY | PERMANENT
+  createdById            String?
+  createdByName          String?
+  appliedAt              DateTime?
+  revertedAt             DateTime?
+  metadata               String    @default("{}")
+  createdAt              DateTime  @default(now())
+  business               Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessSubscriptionId])
+  @@index([businessId])
+  @@index([createdAt])
 }

@@ -724,6 +724,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "subscriptions":          "subscriptions:view",
   "platform-invoices":      "subscriptions:view",
   "addons":                 "subscriptions:view",
+  "account-billing":        "subscriptions:view",
   "plan-management":        "plan_management:view",
   "payment-plugins":        "payment_plugins:view",
   "domains":                "platform:manage_domains",
