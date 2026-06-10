@@ -45,12 +45,6 @@ interface PlanApiData {
   name: string;
 }
 
-interface AddOnFormItem {
-  name: string;
-  amount: string;
-  cycle: string;
-  description: string;
-}
 
 // ---- API data types ----
 interface BusinessApiData {
@@ -193,93 +187,10 @@ export function BusinessesView() {
   const [stageSaving, setStageSaving] = useState(false)
   const [stageEditing, setStageEditing] = useState(false)
 
-  // Pricing edit state
-  const [pricingOpen, setPricingOpen] = useState(false)
-  const [editCustomPrice, setEditCustomPrice] = useState("")
-  const [editDiscountPct, setEditDiscountPct] = useState("")
-  const [editPricingNote, setEditPricingNote] = useState("")
-  const [savingPricing, setSavingPricing] = useState(false)
-
-  // ── Add-ons state ────────────────────────────────────────────────────────────
-  const [addonsOpen, setAddonsOpen] = useState(false)
-  const [addons, setAddons] = useState<Array<{
-    id: string; name: string; description: string | null; amount: number
-    billingType: "ONE_TIME" | "RECURRING"; cycle: string | null
-    status: "ACTIVE" | "INACTIVE" | "COMPLETED"; invoicedAt: string | null
-  }>>([])
-  const [addonsLoading, setAddonsLoading] = useState(false)
-  const [showAddAddon, setShowAddAddon] = useState(false)
-  const [newAddonName, setNewAddonName] = useState("")
-  const [newAddonDesc, setNewAddonDesc] = useState("")
-  const [newAddonAmount, setNewAddonAmount] = useState("")
-  const [newAddonType, setNewAddonType] = useState<"ONE_TIME" | "RECURRING">("ONE_TIME")
-  const [newAddonCycle, setNewAddonCycle] = useState("MONTHLY")
-  const [savingAddon, setSavingAddon] = useState(false)
-  const [generatingAddonInvoiceId, setGeneratingAddonInvoiceId] = useState<string | null>(null)
-
-  const loadAddons = useCallback(async (bizId: string) => {
-    setAddonsLoading(true)
-    try {
-      const res = await fetch(`/api/admin/businesses/${bizId}/addons`, { headers: getAuthHeaders() })
-      const json = await res.json()
-      if (json.success) setAddons(json.data)
-    } catch { /* silent */ }
-    finally { setAddonsLoading(false) }
-  }, [])
-
-  const handleSaveAddon = async (bizId: string) => {
-    if (!newAddonName.trim() || !newAddonAmount) return
-    setSavingAddon(true)
-    try {
-      const res = await fetch(`/api/admin/businesses/${bizId}/addons`, {
-        method: "POST", headers: getAuthHeaders(),
-        body: JSON.stringify({
-          name: newAddonName.trim(),
-          description: newAddonDesc.trim() || undefined,
-          amount: Number(newAddonAmount),
-          billingType: newAddonType,
-          cycle: newAddonType === "RECURRING" ? newAddonCycle : undefined,
-        }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        toast.success("Add-on created")
-        setShowAddAddon(false)
-        setNewAddonName(""); setNewAddonDesc(""); setNewAddonAmount(""); setNewAddonType("ONE_TIME"); setNewAddonCycle("MONTHLY")
-        loadAddons(bizId)
-      } else toast.error(json.error || "Failed to create add-on")
-    } catch { toast.error("Failed to create add-on") }
-    finally { setSavingAddon(false) }
-  }
-
-  const handleGenerateAddonInvoice = async (bizId: string, addonId: string) => {
-    setGeneratingAddonInvoiceId(addonId)
-    try {
-      const res = await fetch(`/api/admin/businesses/${bizId}/addons/${addonId}/invoice`, {
-        method: "POST", headers: getAuthHeaders(), body: JSON.stringify({}),
-      })
-      const json = await res.json()
-      if (json.success) { toast.success(`Invoice ${json.invoiceNumber} generated`); loadAddons(bizId) }
-      else toast.error(json.error || "Failed to generate invoice")
-    } catch { toast.error("Failed to generate invoice") }
-    finally { setGeneratingAddonInvoiceId(null) }
-  }
-
-  const handleDeactivateAddon = async (bizId: string, addonId: string) => {
-    try {
-      const res = await fetch(`/api/admin/businesses/${bizId}/addons/${addonId}`, {
-        method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify({ status: "INACTIVE" }),
-      })
-      const json = await res.json()
-      if (json.success) { toast.success("Add-on deactivated"); loadAddons(bizId) }
-      else toast.error(json.error || "Failed to deactivate")
-    } catch { toast.error("Failed to deactivate add-on") }
-  }
 
   const [createdResult, setCreatedResult] = useState<{
     businessCode: string | null; businessId: string
     mainStoreCode: string | null; registrationDate: string
-    subscriptionStart: string; renewalDate: string
     ownerEmail: string; ownerPassword: string; ownerLoginId: string
     mainStoreEmail: string; mainStorePassword: string; mainStoreLoginId: string
   } | null>(null)
@@ -305,41 +216,12 @@ export function BusinessesView() {
   // Form state — plan (feature access)
   const [formPlan, setFormPlan] = useState<string>("")
   const [formAllowedStores, setFormAllowedStores] = useState<string>("1")
-  // Form state — subscription billing
-  const [formBillingCycle, setFormBillingCycle] = useState<string>("MONTHLY")
-  const [formSubscriptionAmount, setFormSubscriptionAmount] = useState("")
-  const [formDiscountAmount, setFormDiscountAmount] = useState("")
-  const [formRenewalDate, setFormRenewalDate] = useState("")
-  const [formImplementationAmount, setFormImplementationAmount] = useState("")
-  // Form state — iOS billing (optional)
-  const [formIncludeIOS, setFormIncludeIOS] = useState(false)
-  const [formIOSAmount, setFormIOSAmount] = useState("")
-  const [formIOSDiscount, setFormIOSDiscount] = useState("")
-  const [formIOSCycle, setFormIOSCycle] = useState<string>("MONTHLY")
-  // Form state — add-ons (dynamic)
-  const [formAddOns, setFormAddOns] = useState<AddOnFormItem[]>([])
-  // Form state — enabled workflows (Super Admin controlled)
+  // Form state — enabled workflows
   const [formEnabledWorkflows, setFormEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
-  // Form state — notes + owner
-  const [formSubscriptionNotes, setFormSubscriptionNotes] = useState("")
+  // Form state — owner
   const [formOwnerName, setFormOwnerName] = useState("")
   const [formOwnerEmail, setFormOwnerEmail] = useState("")
   const [formOwnerPassword, setFormOwnerPassword] = useState("")
-
-  // Derived: final subscription amount
-  const formFinalAmount = (() => {
-    const sub = parseFloat(formSubscriptionAmount)
-    const disc = parseFloat(formDiscountAmount)
-    if (isNaN(sub)) return null
-    return sub - (isNaN(disc) ? 0 : disc)
-  })()
-  // Derived: iOS final amount
-  const formIOSFinal = (() => {
-    const ios = parseFloat(formIOSAmount)
-    const disc = parseFloat(formIOSDiscount)
-    if (isNaN(ios)) return null
-    return ios - (isNaN(disc) ? 0 : disc)
-  })()
 
   const fetchBusinesses = useCallback(async () => {
     setLoading(true)
@@ -407,10 +289,6 @@ export function BusinessesView() {
     setFormName(""); setFormSlug(""); setFormType(""); setFormPlan("")
     setFormCity(""); setFormState(""); setFormPincode("")
     setFormPhone(""); setFormEmail(""); setFormAddress(""); setFormGST("")
-    setFormBillingCycle("MONTHLY"); setFormSubscriptionAmount(""); setFormDiscountAmount("")
-    setFormRenewalDate(""); setFormImplementationAmount("")
-    setFormIncludeIOS(false); setFormIOSAmount(""); setFormIOSDiscount(""); setFormIOSCycle("MONTHLY")
-    setFormAddOns([]); setFormSubscriptionNotes("")
     setFormOwnerName(""); setFormOwnerEmail(""); setFormOwnerPassword("")
     setFormEnabledWorkflows(["ECOMMERCE"])
     setCreatedResult(null)
@@ -430,15 +308,6 @@ export function BusinessesView() {
     setFormSlug(value.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "").replace(/-+/g, "").slice(0, 20))
   }
 
-  const addAddOn = () => {
-    setFormAddOns(prev => [...prev, { name: "", amount: "", cycle: "MONTHLY", description: "" }])
-  }
-  const removeAddOn = (index: number) => {
-    setFormAddOns(prev => prev.filter((_, i) => i !== index))
-  }
-  const updateAddOn = (index: number, field: keyof AddOnFormItem, value: string) => {
-    setFormAddOns(prev => prev.map((a, i) => i === index ? { ...a, [field]: value } : a))
-  }
 
   const handleCreateBusiness = async () => {
     if (!formName || !formSlug || !formType) {
@@ -457,19 +326,7 @@ export function BusinessesView() {
       return
     }
 
-    const subscriptionAmount = formSubscriptionAmount ? Number(formSubscriptionAmount) : undefined
-    const discountAmount = formDiscountAmount ? Number(formDiscountAmount) : undefined
-    const implementationAmount = formImplementationAmount ? Number(formImplementationAmount) : undefined
 
-    const addOnsPayload = formAddOns
-      .filter(a => a.name.trim() && a.amount)
-      .map(a => ({ name: a.name.trim(), amount: Number(a.amount), cycle: a.cycle, description: a.description || undefined }))
-
-    const iosPayload = formIncludeIOS && formIOSAmount ? {
-      iosAppAmount: Number(formIOSAmount),
-      iosDiscountAmount: formIOSDiscount ? Number(formIOSDiscount) : undefined,
-      iosSubscriptionCycle: formIOSCycle,
-    } : {}
 
     setCreating(true)
     try {
@@ -481,18 +338,10 @@ export function BusinessesView() {
           planId: matchingPlan.id,
           planTier: formPlan,
           enabledWorkflows: formEnabledWorkflows,
-          billingCycle: formBillingCycle,
-          subscriptionAmount,
-          discountAmount,
-          implementationAmount,
-          ...iosPayload,
-          addOns: addOnsPayload.length > 0 ? addOnsPayload : undefined,
           allowedStores: Number(formAllowedStores),
           city: formCity, state: formState, pincode: formPincode,
           contactPhone: formPhone, contactEmail: formEmail,
           address: formAddress, gstNumber: formGST,
-          renewalDate: formRenewalDate || undefined,
-          subscriptionNotes: formSubscriptionNotes || undefined,
           ownerName: formOwnerName || undefined,
           ownerEmail: formOwnerEmail || undefined,
           ownerPassword: formOwnerPassword || undefined,
@@ -507,8 +356,6 @@ export function BusinessesView() {
           businessId: d?.slug ?? formSlug,
           mainStoreCode: d?.mainStoreCode ?? null,
           registrationDate: d?.createdAt ? new Date(d.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-          subscriptionStart: d?.businessSubscription?.currentPeriodStart ? new Date(d.businessSubscription.currentPeriodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-          renewalDate: d?.businessSubscription?.nextBillingDate ? new Date(d.businessSubscription.nextBillingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—",
           ownerEmail: d?.ownerCredentials?.email ?? formOwnerEmail,
           ownerPassword: d?.ownerCredentials?.password ?? "—",
           ownerLoginId: d?.ownerCredentials?.loginId ?? d?.ownerCredentials?.email ?? "—",
@@ -759,45 +606,6 @@ export function BusinessesView() {
     }
   }
 
-  const openPricingEditor = (biz: BusinessApiData) => {
-    const sub = biz.subscription
-    if (!sub) return
-    const current = sub.subscriptionAmount ?? sub.customPrice ?? sub.planPrice
-    setEditCustomPrice(current !== null ? String(current) : "")
-    setEditDiscountPct(sub.discountPercentage ? String(sub.discountPercentage) : "")
-    setEditPricingNote(sub.overrideReason ?? "")
-    setPricingOpen(true)
-  }
-
-  const handleSavePricing = async (biz: BusinessApiData) => {
-    const sub = biz.subscription
-    if (!sub) return
-    const newPrice = parseFloat(editCustomPrice)
-    if (isNaN(newPrice) || newPrice < 0) {
-      toast.error("Enter a valid amount")
-      return
-    }
-    setSavingPricing(true)
-    try {
-      const res = await fetch(`/api/core/businesses/${biz.id}/subscription`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({
-          customPrice: newPrice,
-          overrideReason: editPricingNote || "Manual price adjustment",
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save")
-      toast.success("Subscription pricing updated")
-      setPricingOpen(false)
-      fetchBusinesses()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save pricing")
-    } finally {
-      setSavingPricing(false)
-    }
-  }
 
   const handleToggleOnline = async (biz: BusinessApiData) => {
     try {
@@ -944,22 +752,6 @@ export function BusinessesView() {
                       </div>
                     </div>
                     <Separator className="border-emerald-200" />
-                    {/* Subscription dates */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="space-y-0.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Registered</p>
-                        <p className="text-xs font-medium text-emerald-900">{createdResult.registrationDate}</p>
-                      </div>
-                      <div className="space-y-0.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Sub. Start</p>
-                        <p className="text-xs font-medium text-emerald-900">{createdResult.subscriptionStart}</p>
-                      </div>
-                      <div className="space-y-0.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Renewal</p>
-                        <p className="text-xs font-medium text-emerald-900">{createdResult.renewalDate}</p>
-                      </div>
-                    </div>
-                    <Separator className="border-emerald-200" />
                     {/* Business Owner Credentials */}
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business Owner Login</p>
@@ -998,6 +790,10 @@ export function BusinessesView() {
                       </div>
                     </div>
                     <p className="text-[11px] text-emerald-700">Share these credentials securely. Passwords will not be shown again.</p>
+                  </div>
+                  <div className="rounded-lg bg-sky-50 border border-sky-200 p-3">
+                    <p className="text-xs font-semibold text-sky-800">Next: Set up services in Account &amp; Billing</p>
+                    <p className="text-[11px] text-sky-700 mt-0.5">Go to Account &amp; Billing → open this business → Services tab to add Platform Subscription, Add-Ons, and One-Time charges.</p>
                   </div>
                   <DialogFooter>
                     <Button onClick={() => { setCreateOpen(false); resetForm() }}>Done</Button>
@@ -1135,118 +931,10 @@ export function BusinessesView() {
                       <Input type="text" placeholder="Leave blank to auto-generate" value={formOwnerPassword} onChange={(e) => setFormOwnerPassword(e.target.value)} className="font-mono" />
                     </div>
 
-                    <Separator />
-
-                    {/* Billing */}
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold">Billing</p>
-                      <p className="text-[11px] text-muted-foreground">Set negotiated pricing and billing cycle. All amounts are flexible.</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Billing Cycle</Label>
-                        <Select value={formBillingCycle} onValueChange={setFormBillingCycle}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="MONTHLY">Monthly</SelectItem>
-                            <SelectItem value="QUARTERLY">Quarterly</SelectItem>
-                            <SelectItem value="HALF_YEARLY">Half Yearly</SelectItem>
-                            <SelectItem value="YEARLY">Yearly</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Renewal Date</Label>
-                        <Input type="date" value={formRenewalDate} onChange={(e) => setFormRenewalDate(e.target.value)} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>Subscription Amount (₹)</Label><Input placeholder="e.g. 3999" type="number" value={formSubscriptionAmount} onChange={(e) => setFormSubscriptionAmount(e.target.value)} /></div>
-                      <div className="space-y-2"><Label>Discount (₹)</Label><Input placeholder="e.g. 500" type="number" value={formDiscountAmount} onChange={(e) => setFormDiscountAmount(e.target.value)} /></div>
-                    </div>
-                    {formFinalAmount !== null && (
-                      <div className="rounded-md bg-muted/50 border px-3 py-2 flex items-center justify-between">
-                        <p className="text-xs text-muted-foreground">Final Amount</p>
-                        <p className="text-sm font-semibold">₹{formFinalAmount.toLocaleString("en-IN")}</p>
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                      <Label>Implementation Charge (₹) <span className="text-muted-foreground font-normal">(one-time)</span></Label>
-                      <Input placeholder="e.g. 15000" type="number" value={formImplementationAmount} onChange={(e) => setFormImplementationAmount(e.target.value)} />
-                    </div>
-
-                    {/* iOS Billing */}
-                    <div className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <p className="text-xs font-medium">iOS App Billing</p>
-                        <p className="text-[11px] text-muted-foreground">Separate iOS app subscription</p>
-                      </div>
-                      <Switch checked={formIncludeIOS} onCheckedChange={setFormIncludeIOS} />
-                    </div>
-                    {formIncludeIOS && (
-                      <div className="rounded-lg border p-3 space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1.5"><Label className="text-xs">iOS Amount (₹)</Label><Input placeholder="e.g. 999" type="number" value={formIOSAmount} onChange={(e) => setFormIOSAmount(e.target.value)} className="h-8 text-xs" /></div>
-                          <div className="space-y-1.5"><Label className="text-xs">iOS Discount (₹)</Label><Input placeholder="e.g. 100" type="number" value={formIOSDiscount} onChange={(e) => setFormIOSDiscount(e.target.value)} className="h-8 text-xs" /></div>
-                        </div>
-                        {formIOSFinal !== null && (
-                          <div className="rounded-md bg-muted/50 border px-2.5 py-1.5 flex items-center justify-between">
-                            <p className="text-[11px] text-muted-foreground">iOS Final</p>
-                            <p className="text-xs font-semibold">₹{formIOSFinal.toLocaleString("en-IN")}</p>
-                          </div>
-                        )}
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">iOS Billing Cycle</Label>
-                          <Select value={formIOSCycle} onValueChange={setFormIOSCycle}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="MONTHLY">Monthly</SelectItem>
-                              <SelectItem value="QUARTERLY">Quarterly</SelectItem>
-                              <SelectItem value="HALF_YEARLY">Half Yearly</SelectItem>
-                              <SelectItem value="YEARLY">Yearly</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Add-ons */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs font-medium">Add-ons <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] gap-1 px-2" onClick={addAddOn}>
-                          <Plus className="h-3 w-3" /> Add
-                        </Button>
-                      </div>
-                      {formAddOns.map((addon, index) => (
-                        <div key={index} className="rounded-lg border p-3 space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1"><Label className="text-[11px]">Name</Label><Input placeholder="e.g. SMS Credits" value={addon.name} onChange={(e) => updateAddOn(index, "name", e.target.value)} className="h-7 text-xs" /></div>
-                            <div className="space-y-1"><Label className="text-[11px]">Amount (₹)</Label><Input placeholder="e.g. 299" type="number" value={addon.amount} onChange={(e) => updateAddOn(index, "amount", e.target.value)} className="h-7 text-xs" /></div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                              <Label className="text-[11px]">Cycle</Label>
-                              <Select value={addon.cycle} onValueChange={(v) => updateAddOn(index, "cycle", v)}>
-                                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="MONTHLY">Monthly</SelectItem>
-                                  <SelectItem value="QUARTERLY">Quarterly</SelectItem>
-                                  <SelectItem value="HALF_YEARLY">Half Yearly</SelectItem>
-                                  <SelectItem value="YEARLY">Yearly</SelectItem>
-                                  <SelectItem value="ONE_TIME">One-time</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1"><Label className="text-[11px]">Description</Label><Input placeholder="Optional note" value={addon.description} onChange={(e) => updateAddOn(index, "description", e.target.value)} className="h-7 text-xs" /></div>
-                          </div>
-                          <Button type="button" variant="ghost" size="sm" className="h-6 text-[11px] text-destructive hover:text-destructive gap-1 px-2 w-full" onClick={() => removeAddOn(index)}>
-                            <Trash2 className="h-3 w-3" /> Remove
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="space-y-2"><Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label><Input placeholder="e.g. Negotiated rate, promotional offer" value={formSubscriptionNotes} onChange={(e) => setFormSubscriptionNotes(e.target.value)} /></div>
+                  </div>
+                  <div className="rounded-lg bg-sky-50 border border-sky-200 p-3">
+                    <p className="text-xs font-semibold text-sky-800">Billing is managed in Account &amp; Billing</p>
+                    <p className="text-[11px] text-sky-700 mt-0.5">Subscriptions, add-ons, charges, and invoices are set up after business creation from Account &amp; Billing.</p>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm() }}>Cancel</Button>

@@ -23,6 +23,7 @@ import { DocumentTypeBadge, DocumentStatusBadge } from "../shared/document-type-
 import { RecurringDateDrawer } from "./recurring-date-drawer"
 import { AddChargeDrawer } from "./add-charge-drawer"
 import { DocumentPreviewPanel } from "../document-preview/document-preview-panel"
+import { AddServiceDialog } from "./add-service-dialog"
 
 function formatCurrency(v: number) {
   if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`
@@ -80,7 +81,7 @@ interface Props {
 export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary }: Props) {
   const [detail, setDetail] = useState<AccountDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("overview")
+  const [activeTab, setActiveTab] = useState("charges")
 
   // Tab data (lazy-loaded)
   const [charges,  setCharges]  = useState<Array<Record<string,unknown>> | null>(null)
@@ -93,6 +94,7 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
   // Sub-drawer state
   const [recurringOpen,   setRecurringOpen]   = useState(false)
   const [addChargeOpen,   setAddChargeOpen]   = useState(false)
+  const [addServiceOpen, setAddServiceOpen] = useState(false)
   const [previewDocId,    setPreviewDocId]    = useState<string | null>(null)
   const [previewOpen,     setPreviewOpen]     = useState(false)
 
@@ -108,7 +110,7 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
   }, [businessId])
 
   useEffect(() => {
-    if (open) { setActiveTab("overview"); fetchDetail() }
+    if (open) { setActiveTab("charges"); fetchDetail() }
   }, [open, fetchDetail])
 
   const fetchTab = useCallback(async (tab: string) => {
@@ -431,38 +433,58 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
               </TabsContent>
 
               {/* SERVICES */}
-              <TabsContent value="services" className="px-6 pb-6 mt-0">
+              <TabsContent value="services" className="px-6 pb-6 mt-0 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">{services?.length ?? 0} service{services?.length !== 1 ? "s" : ""}</p>
+                  <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setAddServiceOpen(true)}>
+                    <Zap className="h-3 w-3" /> Add Service
+                  </Button>
+                </div>
                 {!services
-                  ? <div className="space-y-2">{Array.from({length:4}).map((_,i)=><Skeleton key={i} className="h-10 w-full"/>)}</div>
-                  : (
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="text-[11px]">
-                            <TableHead>Service</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Billing</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Started</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {services.map((s) => (
-                            <TableRow key={String(s.id)} className="text-xs hover:bg-muted/30">
-                              <TableCell>
-                                <p className="font-medium">{String(s.name)}</p>
-                                {Boolean(s.description) && <p className="text-[10px] text-muted-foreground truncate max-w-[160px]">{String(s.description)}</p>}
-                              </TableCell>
-                              <TableCell><ServiceTypeBadge type={String(s.serviceType)} /></TableCell>
-                              <TableCell><BillingTypeBadge type={String(s.billingType)} /></TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(Number(s.amount))}</TableCell>
-                              <TableCell><Badge variant="outline" className="text-[10px] h-5 px-1.5">{String(s.status)}</Badge></TableCell>
-                              <TableCell>{fmtDate(String(s.startDate))}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                  ? <div className="space-y-2">{Array.from({length:3}).map((_,i)=><Skeleton key={i} className="h-14 w-full"/>)}</div>
+                  : services.length === 0
+                  ? (
+                    <div className="py-10 text-center space-y-3">
+                      <Zap className="h-8 w-8 text-muted-foreground mx-auto" />
+                      <p className="text-sm font-medium">No services yet</p>
+                      <p className="text-xs text-muted-foreground">Add a Platform Subscription, Add-On, or One-Time Service.</p>
+                      <Button size="sm" className="gap-1.5" onClick={() => setAddServiceOpen(true)}>
+                        <Zap className="h-3.5 w-3.5" /> Add First Service
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {services.map((s) => {
+                        const isRecurring = String(s.billingType) !== "One-Time"
+                        const CYCLES: Record<string,string> = { MONTHLY: "Monthly", QUARTERLY: "Quarterly", HALF_YEARLY: "Half-Yearly", YEARLY: "Yearly" }
+                        const statusCls: Record<string,string> = {
+                          ACTIVE:   "bg-emerald-50 text-emerald-700 border-emerald-200",
+                          INACTIVE: "bg-gray-50 text-gray-600 border-gray-200",
+                          COMPLETED:"bg-sky-50 text-sky-700 border-sky-200",
+                          SUSPENDED:"bg-red-50 text-red-700 border-red-200",
+                        }
+                        return (
+                          <div key={String(s.id)} className="rounded-lg border p-3 space-y-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-sm font-medium">{String(s.name)}</p>
+                                  <ServiceTypeBadge type={String(s.serviceType)} />
+                                </div>
+                                {Boolean(s.description) && <p className="text-[10px] text-muted-foreground mt-0.5">{String(s.description)}</p>}
+                              </div>
+                              <Badge variant="outline" className={`text-[10px] h-5 px-1.5 shrink-0 ${statusCls[String(s.status)] ?? ""}`}>{String(s.status)}</Badge>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                              <span className="font-semibold text-foreground">{formatCurrency(Number(s.amount))}</span>
+                              {isRecurring && Boolean(s.cycle) && <span>{CYCLES[String(s.cycle)] ?? String(s.cycle)}</span>}
+                              <BillingTypeBadge type={String(s.billingType)} />
+                              <span>Started {fmtDate(String(s.startDate))}</span>
+                              {Boolean(s.renewalDate) && <span className="text-sky-700 font-medium">Due {fmtDate(String(s.renewalDate))}</span>}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
               </TabsContent>
@@ -670,6 +692,21 @@ export function AccountDrawer({ businessId, open, onOpenChange, onRefreshSummary
         clientGst={detail?.gstNumber}
         clientEmail={detail?.contactEmail}
         onStatusChange={() => { setInvoices(null); setCharges(null); fetchTab("documents"); fetchTab("charges"); fetchDetail() }}
+      />
+
+      <AddServiceDialog
+        open={addServiceOpen}
+        onOpenChange={setAddServiceOpen}
+        businessId={businessId}
+        onSuccess={() => {
+          setServices(null)
+          setCharges(null)
+          fetchTab("services")
+          fetchTab("charges")
+          setAddServiceOpen(false)
+          fetchDetail()
+          onRefreshSummary?.()
+        }}
       />
 
       <AddChargeDrawer
