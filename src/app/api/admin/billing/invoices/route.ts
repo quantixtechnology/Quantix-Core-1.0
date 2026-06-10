@@ -14,14 +14,16 @@ export const GET = withMiddleware({
 })(async (req) => {
   try {
     const { searchParams } = new URL(req.url);
-    const search = searchParams.get('search') ?? '';
-    const status = searchParams.get('status') ?? '';
-    const page = Math.max(1, Number(searchParams.get('page') ?? '1'));
+    const search    = searchParams.get('search') ?? '';
+    const status    = searchParams.get('status') ?? '';
+    const ackStatus = searchParams.get('ackStatus') ?? '';
+    const page  = Math.max(1, Number(searchParams.get('page') ?? '1'));
     const limit = Math.min(100, Math.max(10, Number(searchParams.get('limit') ?? '50')));
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
 
     const whereRecord: Record<string, unknown> = {};
-    if (status) whereRecord.status = status;
+    if (status)    whereRecord.status = status;
+    if (ackStatus) whereRecord.acknowledgeStatus = ackStatus;
 
     const whereSub: Record<string, unknown> = {};
     if (search) {
@@ -98,6 +100,12 @@ export const GET = withMiddleware({
       totalWithGst: r.totalWithGst,
       extraStores: r.extraStores,
       extraStoreAmount: r.extraStoreAmount,
+      acknowledgeStatus: r.acknowledgeStatus,
+      amountReceived: r.amountReceived,
+      transactionNumber: r.transactionNumber,
+      bankName: r.bankName,
+      proofUrl: r.proofUrl,
+      recordedByName: r.recordedByName,
       createdAt: r.createdAt,
     }));
 

@@ -11,9 +11,12 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 import {
   FileText, Search, X, IndianRupee, AlertTriangle, CheckCircle2,
-  RefreshCw, Download, Mail, TrendingUp, Store,
+  RefreshCw, Download, Mail, TrendingUp, Store, MessageSquare, Eye, ExternalLink,
 } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -52,7 +55,21 @@ interface PlatformInvoice {
   totalWithGst: number | null
   extraStores: number | null
   extraStoreAmount: number | null
+  acknowledgeStatus: string | null
+  amountReceived: number | null
+  transactionNumber: string | null
+  bankName: string | null
+  proofUrl: string | null
+  recordedByName: string | null
   createdAt: string
+}
+
+const ACK_BADGE: Record<string, { label: string; cls: string }> = {
+  RECEIVED:             { label: "Received",             cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  PARTIALLY_RECEIVED:   { label: "Partial",              cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  PENDING_VERIFICATION: { label: "Pending Verification", cls: "bg-sky-50 text-sky-700 border-sky-200" },
+  REJECTED:             { label: "Rejected",             cls: "bg-red-50 text-red-700 border-red-200" },
+  WAIVED:               { label: "Waived",               cls: "bg-purple-50 text-purple-700 border-purple-200" },
 }
 
 interface InvoiceStats {
@@ -98,13 +115,37 @@ export function PlatformInvoicesView() {
 
   const [statusFilter, setStatusFilter] = useState("all")
   const [emailingSending, setEmailingSending] = useState<string | null>(null)
+  const [drawerInvoice, setDrawerInvoice] = useState<PlatformInvoice | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  const handleWhatsApp = (inv: PlatformInvoice) => {
+    const phone = inv.businessPhone?.replace(/\D/g, "") ?? ""
+    const total = inv.totalWithGst ?? (inv.amount + (inv.extraStoreAmount ?? 0) + (inv.cgstAmount ?? 0) + (inv.sgstAmount ?? 0))
+    const lines = [
+      `📄 *Invoice: ${inv.invoiceNumber ?? "—"}*`,
+      `Business: ${inv.businessName}`,
+      `Plan: ${inv.planName} (${inv.planTier})`,
+      `Period: ${inv.periodLabel ?? "—"}`,
+      `Amount: ₹${total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+      `Status: ${inv.acknowledgeStatus ? (ACK_BADGE[inv.acknowledgeStatus]?.label ?? inv.acknowledgeStatus) : inv.status.toUpperCase()}`,
+      inv.invoiceNumber ? `\nPlease contact us for payment details.` : "",
+    ].filter(Boolean).join("\n")
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(lines)}`
+      : `https://wa.me/?text=${encodeURIComponent(lines)}`
+    window.open(url, "_blank", "noopener,noreferrer")
+  }
 
   const fetchInvoices = useCallback(async (page = 1) => {
     setLoading(true); setError(null)
     try {
       const params = new URLSearchParams({ page: String(page), limit: "50" })
       if (searchQuery) params.set("search", searchQuery)
-      if (statusFilter !== "all") params.set("status", statusFilter)
+      const ACK_STATUSES = ["RECEIVED", "PARTIALLY_RECEIVED", "PENDING_VERIFICATION", "REJECTED", "WAIVED"]
+      if (statusFilter !== "all") {
+        if (ACK_STATUSES.includes(statusFilter)) params.set("ackStatus", statusFilter)
+        else params.set("status", statusFilter)
+      }
       const res = await fetch(`/api/admin/billing/invoices?${params}`, { headers: getAuthHeaders() })
       if (!res.ok) throw new Error("Failed to fetch invoices")
       const json = await res.json()
@@ -234,11 +275,16 @@ export function PlatformInvoicesView() {
           <Input placeholder="Search invoices…" className="pl-8 h-9" value={searchQuery} readOnly />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[190px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="paid">Paid</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="RECEIVED">Received</SelectItem>
+            <SelectItem value="PARTIALLY_RECEIVED">Partially Received</SelectItem>
+            <SelectItem value="PENDING_VERIFICATION">Pending Verification</SelectItem>
+            <SelectItem value="REJECTED">Rejected</SelectItem>
+            <SelectItem value="WAIVED">Waived</SelectItem>
           </SelectContent>
         </Select>
         {statusFilter !== "all" && (
@@ -282,7 +328,7 @@ export function PlatformInvoicesView() {
                     <TableHead>Status</TableHead>
                     <TableHead>Paid On</TableHead>
                     <TableHead>Mode</TableHead>
-                    <TableHead className="text-right min-w-[80px]">Actions</TableHead>
+                    <TableHead className="text-right min-w-[108px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -313,19 +359,37 @@ export function PlatformInvoicesView() {
                       <TableCell className="text-right text-[10px] text-muted-foreground">{formatCurrency(inv.igstAmount)}</TableCell>
                       <TableCell className="text-right font-semibold text-[11px]">{formatCurrency(grandTotal(inv))}</TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                          inv.status === "paid"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : "bg-amber-50 text-amber-700 border-amber-200"
-                        }`}>
-                          {inv.status === "paid" ? <CheckCircle2 className="h-2.5 w-2.5 mr-1" /> : null}
-                          {inv.status.toUpperCase()}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          {inv.acknowledgeStatus ? (
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${ACK_BADGE[inv.acknowledgeStatus]?.cls ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                              {inv.acknowledgeStatus === "RECEIVED" || inv.acknowledgeStatus === "WAIVED" ? <CheckCircle2 className="h-2.5 w-2.5 mr-1" /> : null}
+                              {ACK_BADGE[inv.acknowledgeStatus]?.label ?? inv.acknowledgeStatus}
+                            </span>
+                          ) : (
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                              inv.status === "paid"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            }`}>
+                              {inv.status === "paid" ? <CheckCircle2 className="h-2.5 w-2.5 mr-1" /> : null}
+                              {inv.status.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-[10px] text-muted-foreground">{formatDate(inv.paidDate)}</TableCell>
                       <TableCell className="text-[10px]">{inv.paymentMode?.replace(/_/g, " ") ?? "—"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:bg-muted/60"
+                            title="View invoice details"
+                            onClick={() => { setDrawerInvoice(inv); setDrawerOpen(true) }}
+                          >
+                            <Eye className="h-3 w-3" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -347,6 +411,15 @@ export function PlatformInvoicesView() {
                             onClick={() => handleEmail(inv)}
                           >
                             <Mail className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-emerald-700 hover:bg-emerald-50"
+                            title="Share via WhatsApp"
+                            onClick={() => handleWhatsApp(inv)}
+                          >
+                            <MessageSquare className="h-3 w-3" />
                           </Button>
                         </div>
                       </TableCell>
@@ -382,6 +455,142 @@ export function PlatformInvoicesView() {
           </div>
         </div>
       )}
+
+      {/* ── Invoice Drawer ───────────────────────────────────────────────── */}
+      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <SheetContent className="w-[480px] sm:max-w-[480px] flex flex-col p-0">
+          {drawerInvoice && (
+            <>
+              <SheetHeader className="px-6 pt-6 pb-4 border-b">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <SheetTitle className="text-sm font-mono">{drawerInvoice.invoiceNumber ?? "—"}</SheetTitle>
+                    <SheetDescription className="text-xs mt-0.5">{drawerInvoice.businessName}</SheetDescription>
+                  </div>
+                  {drawerInvoice.acknowledgeStatus ? (
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 ${ACK_BADGE[drawerInvoice.acknowledgeStatus]?.cls ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                      {ACK_BADGE[drawerInvoice.acknowledgeStatus]?.label ?? drawerInvoice.acknowledgeStatus}
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 ${drawerInvoice.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                      {drawerInvoice.status.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              </SheetHeader>
+
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="px-6 py-5 space-y-5">
+
+                  {/* Invoice summary */}
+                  <div className="rounded-lg border bg-muted/30 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                    <div><span className="text-muted-foreground">Business: </span><span className="font-medium">{drawerInvoice.businessName}</span></div>
+                    <div><span className="text-muted-foreground">Plan: </span><span className="font-medium">{drawerInvoice.planName}</span></div>
+                    <div><span className="text-muted-foreground">Period: </span><span className="font-medium">{drawerInvoice.periodLabel ?? "—"}</span></div>
+                    <div><span className="text-muted-foreground">Due: </span><span className="font-medium">{formatDate(drawerInvoice.dueDate)}</span></div>
+                    {drawerInvoice.paidDate && (
+                      <div><span className="text-muted-foreground">Paid: </span><span className="font-medium">{formatDate(drawerInvoice.paidDate)}</span></div>
+                    )}
+                    {drawerInvoice.paymentMode && (
+                      <div><span className="text-muted-foreground">Mode: </span><span className="font-medium">{drawerInvoice.paymentMode.replace(/_/g, " ")}</span></div>
+                    )}
+                    {drawerInvoice.transactionNumber && (
+                      <div className="col-span-2"><span className="text-muted-foreground">TXN: </span><span className="font-medium font-mono">{drawerInvoice.transactionNumber}</span></div>
+                    )}
+                    {drawerInvoice.receiptReference && (
+                      <div className="col-span-2"><span className="text-muted-foreground">Ref: </span><span className="font-medium">{drawerInvoice.receiptReference}</span></div>
+                    )}
+                    {drawerInvoice.bankName && (
+                      <div><span className="text-muted-foreground">Bank: </span><span className="font-medium">{drawerInvoice.bankName}</span></div>
+                    )}
+                    {drawerInvoice.paidBy && (
+                      <div><span className="text-muted-foreground">Paid by: </span><span className="font-medium">{drawerInvoice.paidBy}</span></div>
+                    )}
+                    {drawerInvoice.recordedByName && (
+                      <div className="col-span-2"><span className="text-muted-foreground">Recorded by: </span><span className="font-medium">{drawerInvoice.recordedByName}</span></div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Amount breakdown */}
+                  <div className="space-y-1.5 text-xs">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount Breakdown</p>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Base (Subscription)</span><span className="font-medium">{formatCurrency(drawerInvoice.amount)}</span></div>
+                    {(drawerInvoice.extraStoreAmount ?? 0) > 0 && (
+                      <div className="flex justify-between"><span className="text-muted-foreground">Extra Stores ×{drawerInvoice.extraStores}</span><span>{formatCurrency(drawerInvoice.extraStoreAmount)}</span></div>
+                    )}
+                    {(drawerInvoice.cgstAmount ?? 0) > 0 && (
+                      <div className="flex justify-between"><span className="text-muted-foreground">CGST</span><span>{formatCurrency(drawerInvoice.cgstAmount)}</span></div>
+                    )}
+                    {(drawerInvoice.sgstAmount ?? 0) > 0 && (
+                      <div className="flex justify-between"><span className="text-muted-foreground">SGST</span><span>{formatCurrency(drawerInvoice.sgstAmount)}</span></div>
+                    )}
+                    {(drawerInvoice.igstAmount ?? 0) > 0 && (
+                      <div className="flex justify-between"><span className="text-muted-foreground">IGST</span><span>{formatCurrency(drawerInvoice.igstAmount)}</span></div>
+                    )}
+                    <Separator />
+                    <div className="flex justify-between font-semibold">
+                      <span>Grand Total</span>
+                      <span className="text-base">{formatCurrency(grandTotal(drawerInvoice))}</span>
+                    </div>
+                    {drawerInvoice.amountReceived != null && drawerInvoice.amountReceived !== grandTotal(drawerInvoice) && (
+                      <div className="flex justify-between text-amber-600">
+                        <span>Amount Received</span>
+                        <span>{formatCurrency(drawerInvoice.amountReceived)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {drawerInvoice.proofUrl && (
+                    <>
+                      <Separator />
+                      <a href={drawerInvoice.proofUrl} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-sky-600 hover:text-sky-800 hover:underline">
+                        <ExternalLink className="h-3.5 w-3.5" /> View Payment Proof
+                      </a>
+                    </>
+                  )}
+
+                  {drawerInvoice.remarks && (
+                    <>
+                      <Separator />
+                      <p className="text-xs text-muted-foreground italic">{drawerInvoice.remarks}</p>
+                    </>
+                  )}
+
+                  {/* Action buttons */}
+                  <Separator />
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                      disabled={downloadingId === drawerInvoice.id}
+                      onClick={() => handleDownload(drawerInvoice)}>
+                      {downloadingId === drawerInvoice.id
+                        ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        : <Download className="h-3.5 w-3.5" />}
+                      Download
+                    </Button>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                      disabled={!drawerInvoice.businessEmail || emailingSending === drawerInvoice.id}
+                      title={drawerInvoice.businessEmail ? `Email to ${drawerInvoice.businessEmail}` : "No email configured"}
+                      onClick={() => handleEmail(drawerInvoice)}>
+                      <Mail className="h-3.5 w-3.5" /> Email
+                    </Button>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-200"
+                      onClick={() => handleWhatsApp(drawerInvoice)}>
+                      <MessageSquare className="h-3.5 w-3.5" /> WhatsApp
+                    </Button>
+                  </div>
+                </div>
+              </ScrollArea>
+
+              <SheetFooter className="px-6 py-4 border-t bg-background">
+                <Button variant="outline" className="w-full" onClick={() => setDrawerOpen(false)}>Close</Button>
+              </SheetFooter>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

@@ -1223,12 +1223,23 @@ model BillingRecord {
   extraStoreAmount       Float?
   lineItems              String?
   addonTotal             Float?
+  acknowledgeStatus      String?
+  amountReceived         Float?
+  transactionNumber      String?
+  bankName               String?
+  proofUrl               String?
+  proofFileType          String?
+  nextDueDateMode        String?
+  nextDueDateOverride    DateTime?
+  recordedById           String?
+  recordedByName         String?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
   subscription           BusinessSubscription @relation(fields: [businessSubscriptionId], references: [id], onDelete: Cascade)
 
   @@index([businessSubscriptionId])
   @@index([status])
+  @@index([acknowledgeStatus])
   @@index([dueDate])
   @@index([periodYear])
   @@index([invoiceNumber])
@@ -1259,6 +1270,30 @@ model InvoiceSequence {
   financialYear String   @id
   nextVal       Int      @default(1)
   updatedAt     DateTime @updatedAt
+}
+
+model SubscriptionPaymentAuditLog {
+  id                     String   @id @default(cuid())
+  billingRecordId        String?
+  businessSubscriptionId String?
+  businessId             String?
+  businessName           String?
+  userId                 String?
+  userName               String?
+  action                 String
+  oldStatus              String?
+  newStatus              String?
+  amount                 Float?
+  referenceNumber        String?
+  attachmentUrl          String?
+  notes                  String?
+  metadata               String   @default("{}")
+  createdAt              DateTime @default(now())
+
+  @@index([billingRecordId])
+  @@index([businessSubscriptionId])
+  @@index([businessId])
+  @@index([createdAt])
 }
 
 model SubscriptionPlan {

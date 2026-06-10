@@ -26,7 +26,8 @@ import {
   CreditCard, Search, X, IndianRupee, AlertTriangle, CheckCircle2,
   ArrowUpRight, RefreshCw, Shield, Pencil, PauseCircle,
   CalendarDays, History, Phone, Mail, CheckCheck, Clock,
-  BanknoteIcon, TrendingUp, Bell, Store,
+  TrendingUp, Bell, Store, Upload, ExternalLink,
+  ClipboardList,
 } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -86,6 +87,9 @@ interface BillingHistoryYear {
     paidBy: string | null; receiptReference: string | null; remarks: string | null
     periodYear: number | null; periodLabel: string | null
     dueDate: string; paidDate: string | null; description: string | null; createdAt: string
+    acknowledgeStatus: string | null; amountReceived: number | null
+    transactionNumber: string | null; bankName: string | null
+    proofUrl: string | null; recordedByName: string | null
   }>
 }
 
@@ -101,6 +105,14 @@ const RENEWAL_STATUS_CONFIG: Record<string, { cls: string; label: string }> = {
   Upcoming:  { cls: "bg-sky-50    text-sky-700    border-sky-200",     label: "Upcoming" },
   Suspended: { cls: "bg-gray-100  text-gray-600   border-gray-200",   label: "Suspended" },
   Cancelled: { cls: "bg-gray-100  text-gray-500   border-gray-200",   label: "Cancelled" },
+}
+
+const ACK_STATUS_CONFIG: Record<string, { label: string; cls: string; desc: string }> = {
+  RECEIVED:             { label: "Received",             cls: "border-emerald-300 bg-emerald-50 text-emerald-800",   desc: "Full payment confirmed — period will advance" },
+  PARTIALLY_RECEIVED:   { label: "Partially Received",   cls: "border-amber-300 bg-amber-50 text-amber-800",         desc: "Partial payment — invoice generated, period advances" },
+  PENDING_VERIFICATION: { label: "Pending Verification", cls: "border-sky-300 bg-sky-50 text-sky-800",               desc: "Payment claimed — awaiting bank confirmation" },
+  REJECTED:             { label: "Rejected",             cls: "border-red-300 bg-red-50 text-red-800",               desc: "Payment rejected or bounced — no period change" },
+  WAIVED:               { label: "Waived",               cls: "border-purple-300 bg-purple-50 text-purple-800",      desc: "Payment forgiven — period advances" },
 }
 
 function formatCurrency(amount: number | null | undefined): string {
@@ -167,17 +179,27 @@ export function SubscriptionsView() {
   const [detailAutoRenew, setDetailAutoRenew] = useState<boolean>(true)
   const [detailSaving, setDetailSaving] = useState(false)
 
-  // ── Mark Received dialog ────────────────────────────────────────────────────
-  const [markOpen, setMarkOpen] = useState(false)
-  const [markRow, setMarkRow] = useState<RenewalRow | null>(null)
-  const [markAmount, setMarkAmount] = useState<string>("")
-  const [markMode, setMarkMode] = useState<string>("")
-  const [markPaidBy, setMarkPaidBy] = useState<string>("")
-  const [markRef, setMarkRef] = useState<string>("")
-  const [markRemarks, setMarkRemarks] = useState<string>("")
-  const [markPeriodLabel, setMarkPeriodLabel] = useState<string>("")
-  const [markPaidDate, setMarkPaidDate] = useState<string>("")
-  const [markSubmitting, setMarkSubmitting] = useState(false)
+  // ── Record Payment Sheet ────────────────────────────────────────────────────
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
+  const [rpRow, setRpRow] = useState<RenewalRow | null>(null)
+  const [rpAcknowledgeStatus, setRpAcknowledgeStatus] = useState("RECEIVED")
+  const [rpAmount, setRpAmount] = useState("")
+  const [rpAmountReceived, setRpAmountReceived] = useState("")
+  const [rpPaymentDate, setRpPaymentDate] = useState("")
+  const [rpMode, setRpMode] = useState("")
+  const [rpTransactionNumber, setRpTransactionNumber] = useState("")
+  const [rpRef, setRpRef] = useState("")
+  const [rpBankName, setRpBankName] = useState("")
+  const [rpPaidBy, setRpPaidBy] = useState("")
+  const [rpRemarks, setRpRemarks] = useState("")
+  const [rpPeriodLabel, setRpPeriodLabel] = useState("")
+  const [rpProofUrl, setRpProofUrl] = useState("")
+  const [rpProofFileType, setRpProofFileType] = useState("")
+  const [rpProofFileName, setRpProofFileName] = useState("")
+  const [rpProofUploading, setRpProofUploading] = useState(false)
+  const [rpNextDueDateMode, setRpNextDueDateMode] = useState("AUTO")
+  const [rpNextDueDateOverride, setRpNextDueDateOverride] = useState("")
+  const [rpSubmitting, setRpSubmitting] = useState(false)
 
   // ── Payment History sheet ───────────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -258,47 +280,96 @@ export function SubscriptionsView() {
     return matchSearch && matchStatus
   }), [renewals, searchQuery, renewalStatusFilter])
 
-  // ── Mark Received handlers ──────────────────────────────────────────────────
-  const openMarkReceived = (row: RenewalRow) => {
-    setMarkRow(row)
-    setMarkAmount(row.amountDue > 0 ? row.amountDue.toString() : "")
-    setMarkMode("")
-    setMarkPaidBy("")
-    setMarkRef("")
-    setMarkRemarks("")
-    setMarkPaidDate(new Date().toISOString().slice(0, 10))
+  // ── Record Payment handlers ─────────────────────────────────────────────────
+  const openRecordPayment = (row: RenewalRow) => {
+    setRpRow(row)
+    setRpAmount(row.amountDue > 0 ? row.amountDue.toString() : "")
+    setRpAmountReceived(row.amountDue > 0 ? row.amountDue.toString() : "")
+    setRpAcknowledgeStatus("RECEIVED")
+    setRpMode("")
+    setRpTransactionNumber("")
+    setRpRef("")
+    setRpBankName("")
+    setRpPaidBy("")
+    setRpRemarks("")
+    setRpPaymentDate(new Date().toISOString().slice(0, 10))
     const now = new Date()
-    setMarkPeriodLabel(`${now.toLocaleString("en-IN", { month: "long" })} ${now.getFullYear()}`)
-    setMarkOpen(true)
+    setRpPeriodLabel(`${now.toLocaleString("en-IN", { month: "long" })} ${now.getFullYear()}`)
+    setRpProofUrl("")
+    setRpProofFileType("")
+    setRpProofFileName("")
+    setRpNextDueDateMode("AUTO")
+    setRpNextDueDateOverride("")
+    setRecordPaymentOpen(true)
   }
 
-  const handleMarkReceived = async () => {
-    if (!markRow || !markMode || !markAmount) return
-    setMarkSubmitting(true)
+  const handleProofUpload = async (file: File) => {
+    if (!rpRow) return
+    setRpProofUploading(true)
     try {
-      const res = await fetch(`/api/admin/billing/${markRow.businessId}/mark-received`, {
-        method: "POST", headers: getAuthHeaders(),
+      const authHdrs = getAuthHeaders() as Record<string, string>
+      const fd = new FormData()
+      fd.append("file", file)
+      fd.append("businessId", rpRow.businessId)
+      const res = await fetch("/api/admin/billing/proof-upload", {
+        method: "POST",
+        headers: { Authorization: authHdrs["Authorization"] ?? "" },
+        body: fd,
+      })
+      const json = await res.json()
+      if (json.success) {
+        setRpProofUrl(json.url)
+        setRpProofFileType(json.fileType)
+        setRpProofFileName(file.name)
+      } else {
+        toast.error(json.error || "Upload failed")
+      }
+    } catch { toast.error("Upload failed") }
+    finally { setRpProofUploading(false) }
+  }
+
+  const handleRecordPayment = async () => {
+    if (!rpRow || !rpAcknowledgeStatus || !rpAmount) {
+      toast.error("Business, acknowledge status and amount are required")
+      return
+    }
+    const requiresMode = !["PENDING_VERIFICATION", "REJECTED"].includes(rpAcknowledgeStatus)
+    if (requiresMode && !rpMode) { toast.error("Payment mode is required"); return }
+    setRpSubmitting(true)
+    try {
+      const res = await fetch(`/api/admin/billing/${rpRow.businessId}/record-payment`, {
+        method: "POST",
+        headers: getAuthHeaders(),
         body: JSON.stringify({
-          amount: Number(markAmount),
-          paymentMode: markMode,
-          paidBy: markPaidBy || undefined,
-          receiptReference: markRef || undefined,
-          remarks: markRemarks || undefined,
-          periodLabel: markPeriodLabel || undefined,
-          periodYear: new Date(markPaidDate).getFullYear(),
-          paidDate: markPaidDate,
+          acknowledgeStatus:   rpAcknowledgeStatus,
+          amount:              Number(rpAmount),
+          amountReceived:      Number(rpAmountReceived || rpAmount),
+          paymentDate:         rpPaymentDate,
+          paymentMode:         rpMode || undefined,
+          transactionNumber:   rpTransactionNumber || undefined,
+          receiptReference:    rpRef || undefined,
+          bankName:            rpBankName || undefined,
+          paidBy:              rpPaidBy || undefined,
+          remarks:             rpRemarks || undefined,
+          periodLabel:         rpPeriodLabel || undefined,
+          periodYear:          rpPaymentDate ? new Date(rpPaymentDate).getFullYear() : undefined,
+          proofUrl:            rpProofUrl || undefined,
+          proofFileType:       rpProofFileType || undefined,
+          nextDueDateMode:     rpNextDueDateMode,
+          nextDueDateOverride: rpNextDueDateMode === "MANUAL" ? rpNextDueDateOverride : undefined,
         }),
       })
       const json = await res.json()
       if (json.success) {
-        toast.success("Payment recorded successfully")
-        setMarkOpen(false)
+        const ackLabel = ACK_STATUS_CONFIG[rpAcknowledgeStatus]?.label ?? rpAcknowledgeStatus
+        toast.success(`Payment recorded — ${ackLabel}${json.invoiceNumber ? ` · ${json.invoiceNumber}` : ""}`)
+        setRecordPaymentOpen(false)
         fetchRenewals()
       } else {
         toast.error(json.error || "Failed to record payment")
       }
     } catch { toast.error("Failed to record payment") }
-    finally { setMarkSubmitting(false) }
+    finally { setRpSubmitting(false) }
   }
 
   // ── Payment History handlers ────────────────────────────────────────────────
@@ -585,10 +656,10 @@ export function SubscriptionsView() {
                                     variant="ghost"
                                     size="sm"
                                     className="h-6 px-2 text-[10px] gap-1 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-                                    onClick={() => openMarkReceived(row)}
-                                    title="Mark payment received"
+                                    onClick={() => openRecordPayment(row)}
+                                    title="Record payment"
                                   >
-                                    <CheckCheck className="h-3 w-3" /> Received
+                                    <ClipboardList className="h-3 w-3" /> Record
                                   </Button>
                                   <Button
                                     variant="ghost"
@@ -731,66 +802,185 @@ export function SubscriptionsView() {
         </TabsContent>
       </Tabs>
 
-      {/* ── Mark Received Dialog ─────────────────────────────────────────── */}
-      <Dialog open={markOpen} onOpenChange={setMarkOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><BanknoteIcon className="h-4 w-4" /> Mark Payment Received</DialogTitle>
-            <DialogDescription>{markRow?.businessName} — record a manual payment</DialogDescription>
-          </DialogHeader>
-          {markRow && (
-            <div className="space-y-4 py-2">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Amount (₹) *</Label>
-                  <Input type="number" value={markAmount} onChange={(e) => setMarkAmount(e.target.value)} placeholder="0" className="h-8 text-sm" />
+      {/* ── Record Payment Sheet ─────────────────────────────────────────── */}
+      <Sheet open={recordPaymentOpen} onOpenChange={setRecordPaymentOpen}>
+        <SheetContent className="w-[580px] sm:max-w-[580px] flex flex-col p-0">
+          {rpRow && (
+            <>
+              <SheetHeader className="px-6 pt-6 pb-4 border-b">
+                <SheetTitle className="flex items-center gap-2 text-base"><ClipboardList className="h-4 w-4" /> Record Payment</SheetTitle>
+                <SheetDescription>{rpRow.businessName} — {rpRow.planName} · {rpRow.billingCycle}</SheetDescription>
+              </SheetHeader>
+
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="px-6 py-5 space-y-6">
+
+                  {/* ── Business Details ──────────────────────────────── */}
+                  <div className="rounded-lg border bg-muted/30 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                    <div><span className="text-muted-foreground">Business: </span><span className="font-medium">{rpRow.businessName}</span></div>
+                    <div><span className="text-muted-foreground">Plan: </span><span className="font-medium">{rpRow.planTier}</span></div>
+                    <div><span className="text-muted-foreground">Next Billing: </span><span className="font-medium">{formatDate(rpRow.nextBillingDate)}</span></div>
+                    <div><span className="text-muted-foreground">Amount Due: </span><span className="font-semibold text-amber-700">{formatCurrency(rpRow.amountDue)}</span></div>
+                  </div>
+
+                  {/* ── Payment Acknowledgement ───────────────────────── */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payment Acknowledgement *</p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {Object.entries(ACK_STATUS_CONFIG).map(([key, cfg]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setRpAcknowledgeStatus(key)}
+                          className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${rpAcknowledgeStatus === key ? cfg.cls + " ring-1 ring-inset ring-current" : "border-border bg-background hover:bg-muted/40"}`}
+                        >
+                          <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 flex items-center justify-center ${rpAcknowledgeStatus === key ? "border-current" : "border-muted-foreground/40"}`}>
+                            {rpAcknowledgeStatus === key && <div className="h-1.5 w-1.5 rounded-full bg-current" />}
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold leading-none">{cfg.label}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">{cfg.desc}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Payment Details ───────────────────────────────── */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payment Details</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Payment Date *</Label>
+                        <Input type="date" value={rpPaymentDate} onChange={(e) => setRpPaymentDate(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Billed Amount (₹) *</Label>
+                        <Input type="number" value={rpAmount} onChange={(e) => setRpAmount(e.target.value)} placeholder="0" className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Amount Received (₹)</Label>
+                        <Input type="number" value={rpAmountReceived} onChange={(e) => setRpAmountReceived(e.target.value)} placeholder="Same as billed" className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Payment Mode {!["PENDING_VERIFICATION","REJECTED"].includes(rpAcknowledgeStatus) && "*"}</Label>
+                        <Select value={rpMode} onValueChange={setRpMode}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select mode" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="CASH">Cash</SelectItem>
+                            <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                            <SelectItem value="UPI">UPI</SelectItem>
+                            <SelectItem value="CHEQUE">Cheque</SelectItem>
+                            <SelectItem value="ONLINE">Online</SelectItem>
+                            <SelectItem value="NEFT">NEFT</SelectItem>
+                            <SelectItem value="RTGS">RTGS</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Transaction Number</Label>
+                        <Input value={rpTransactionNumber} onChange={(e) => setRpTransactionNumber(e.target.value)} placeholder="UTR / TXN ID" className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Reference Number</Label>
+                        <Input value={rpRef} onChange={(e) => setRpRef(e.target.value)} placeholder="Receipt / Cheque no." className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Bank Name</Label>
+                        <Input value={rpBankName} onChange={(e) => setRpBankName(e.target.value)} placeholder="e.g. HDFC, SBI" className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Paid By</Label>
+                        <Input value={rpPaidBy} onChange={(e) => setRpPaidBy(e.target.value)} placeholder="Contact name" className="h-8 text-xs" />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Period Label</Label>
+                      <Input value={rpPeriodLabel} onChange={(e) => setRpPeriodLabel(e.target.value)} placeholder="e.g. June 2025, Q1 2025" className="h-8 text-xs" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Remarks</Label>
+                      <Textarea value={rpRemarks} onChange={(e) => setRpRemarks(e.target.value)} placeholder="Optional notes" rows={2} className="text-xs resize-none" />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Payment Proof ─────────────────────────────────── */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payment Proof</p>
+                    {rpProofUrl ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                        <CheckCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                        <span className="text-xs text-emerald-700 font-medium truncate flex-1">{rpProofFileName}</span>
+                        <a href={rpProofUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:text-emerald-800">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                        <button type="button" className="text-muted-foreground hover:text-red-500" onClick={() => { setRpProofUrl(""); setRpProofFileName(""); setRpProofFileType("") }}>
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors hover:bg-muted/30 ${rpProofUploading ? "opacity-50 pointer-events-none" : ""}`}>
+                        <Upload className="h-6 w-6 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground text-center">
+                          {rpProofUploading ? "Uploading…" : "Upload payment proof — PDF, PNG or JPEG (max 10 MB)"}
+                        </span>
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          className="hidden"
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleProofUpload(f) }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Next Due Date ─────────────────────────────────── */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Next Due Date</p>
+                    <div className="flex gap-2">
+                      {["AUTO", "MANUAL"].map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setRpNextDueDateMode(mode)}
+                          className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${rpNextDueDateMode === mode ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground hover:bg-muted/40"}`}
+                        >
+                          {mode === "AUTO" ? "Auto Calculate" : "Manual Override"}
+                        </button>
+                      ))}
+                    </div>
+                    {rpNextDueDateMode === "MANUAL" && (
+                      <Input type="date" value={rpNextDueDateOverride} onChange={(e) => setRpNextDueDateOverride(e.target.value)} className="h-8 text-xs" />
+                    )}
+                    {rpNextDueDateMode === "AUTO" && (
+                      <p className="text-[11px] text-muted-foreground">Next billing date will be calculated based on the subscription billing cycle.</p>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Paid Date *</Label>
-                  <Input type="date" value={markPaidDate} onChange={(e) => setMarkPaidDate(e.target.value)} className="h-8 text-sm" />
+              </ScrollArea>
+
+              <SheetFooter className="px-6 py-4 border-t bg-background">
+                <div className="flex w-full items-center gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setRecordPaymentOpen(false)}>Cancel</Button>
+                  <Button
+                    className="flex-1 gap-2"
+                    onClick={handleRecordPayment}
+                    disabled={rpSubmitting || !rpAmount || !rpAcknowledgeStatus}
+                  >
+                    {rpSubmitting ? "Saving…" : <><CheckCheck className="h-4 w-4" /> Save Payment</>}
+                  </Button>
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Payment Mode *</Label>
-                <Select value={markMode} onValueChange={setMarkMode}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select mode" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CASH">Cash</SelectItem>
-                    <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                    <SelectItem value="UPI">UPI</SelectItem>
-                    <SelectItem value="CHEQUE">Cheque</SelectItem>
-                    <SelectItem value="ONLINE">Online</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Paid By</Label>
-                  <Input value={markPaidBy} onChange={(e) => setMarkPaidBy(e.target.value)} placeholder="Contact name" className="h-8 text-sm" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Receipt / Ref No.</Label>
-                  <Input value={markRef} onChange={(e) => setMarkRef(e.target.value)} placeholder="TXN ID, receipt no." className="h-8 text-sm" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Period Label</Label>
-                <Input value={markPeriodLabel} onChange={(e) => setMarkPeriodLabel(e.target.value)} placeholder="e.g. May 2025, Q1 2025" className="h-8 text-sm" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Remarks</Label>
-                <Textarea value={markRemarks} onChange={(e) => setMarkRemarks(e.target.value)} placeholder="Optional notes about this payment" rows={2} className="text-sm resize-none" />
-              </div>
-            </div>
+              </SheetFooter>
+            </>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMarkOpen(false)}>Cancel</Button>
-            <Button onClick={handleMarkReceived} disabled={!markAmount || !markMode || markSubmitting} className="gap-2">
-              {markSubmitting ? "Saving..." : <><CheckCheck className="h-4 w-4" /> Confirm Payment</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       {/* ── Payment History Sheet ────────────────────────────────────────── */}
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
@@ -814,22 +1004,43 @@ export function SubscriptionsView() {
                     </div>
                     <div className="space-y-2">
                       {yearGroup.records.map((r) => (
-                        <div key={r.id} className="rounded-lg border px-4 py-3">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-semibold">{formatCurrency(r.amount)}</span>
-                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${r.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
-                              {r.status.toUpperCase()}
-                            </span>
+                        <div key={r.id} className="rounded-lg border px-4 py-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">{formatCurrency(r.amount)}</span>
+                              {r.amountReceived != null && r.amountReceived !== r.amount && (
+                                <span className="text-[10px] text-amber-600">(received {formatCurrency(r.amountReceived)})</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {r.acknowledgeStatus && (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-medium ${ACK_STATUS_CONFIG[r.acknowledgeStatus]?.cls ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                                  {ACK_STATUS_CONFIG[r.acknowledgeStatus]?.label ?? r.acknowledgeStatus}
+                                </span>
+                              )}
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${r.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                                {r.status.toUpperCase()}
+                              </span>
+                            </div>
                           </div>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground">
                             {r.periodLabel && <span>Period: {r.periodLabel}</span>}
                             {r.paymentMode && <span>Mode: {r.paymentMode.replace(/_/g, " ")}</span>}
                             {r.paidBy && <span>Paid by: {r.paidBy}</span>}
+                            {r.transactionNumber && <span>TXN: {r.transactionNumber}</span>}
                             {r.receiptReference && <span>Ref: {r.receiptReference}</span>}
+                            {r.bankName && <span>Bank: {r.bankName}</span>}
                             {r.invoiceNumber && <span>Invoice: {r.invoiceNumber}</span>}
                             {r.paidDate && <span>Paid: {formatDate(r.paidDate)}</span>}
+                            {r.recordedByName && <span>Recorded by: {r.recordedByName}</span>}
                           </div>
-                          {r.remarks && <p className="mt-1.5 text-[11px] text-muted-foreground italic">{r.remarks}</p>}
+                          {r.proofUrl && (
+                            <a href={r.proofUrl} target="_blank" rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] text-sky-600 hover:text-sky-800 hover:underline">
+                              <ExternalLink className="h-3 w-3" /> View Proof
+                            </a>
+                          )}
+                          {r.remarks && <p className="text-[11px] text-muted-foreground italic">{r.remarks}</p>}
                         </div>
                       ))}
                     </div>
