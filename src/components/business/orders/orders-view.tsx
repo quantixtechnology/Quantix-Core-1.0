@@ -416,6 +416,29 @@ export function OrdersView() {
     finally { setInvoiceLoading(false) }
   }
 
+  async function downloadInvoicePdf(invoiceId: string, invoiceNumber: string) {
+    try {
+      const res = await fetch(
+        `/api/core/businesses/${businessId}/invoices/${invoiceId}/pdf`,
+        { headers: getAuthHeaders() },
+      )
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error('[DownloadPDF] error', res.status, err)
+        return
+      }
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `${invoiceNumber}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('[DownloadPDF] fetch failed', e)
+    }
+  }
+
   function openDetail(order: Order) {
     setSelectedOrder(order)
     setSheetOpen(true)
@@ -1190,9 +1213,7 @@ export function OrdersView() {
                               size="sm"
                               variant="outline"
                               className="h-7 text-xs gap-1"
-                              onClick={() => {
-                                window.open(`/api/core/businesses/${businessId}/invoices/${orderInvoice.id}/pdf`, "_blank")
-                              }}
+                              onClick={() => downloadInvoicePdf(orderInvoice.id, orderInvoice.invoiceNumber)}
                             >
                               <Download className="h-3 w-3" />
                               Download PDF

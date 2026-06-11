@@ -75,9 +75,21 @@ export function CustomerOrderTracking() {
     finally { setInvoiceLoading(false) }
   }, [token])
 
-  const handleDownloadPdf = useCallback((orderId: string) => {
-    window.open(`/api/core/storefront/orders/${orderId}/invoice/pdf`, '_blank')
-  }, [])
+  const handleDownloadPdf = useCallback(async (orderId: string, invoiceNumber: string) => {
+    try {
+      const res = await fetch(`/api/core/storefront/orders/${orderId}/invoice/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `${invoiceNumber}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { /* silent — user can retry */ }
+  }, [token])
 
   // Fetch order details
   const { data: orderData, isLoading: orderLoading, error: orderError, refetch } = useOrder(selectedOrderId || "")
@@ -494,7 +506,7 @@ export function CustomerOrderTracking() {
               </button>
               {selectedOrderId && (
                 <button
-                  onClick={() => handleDownloadPdf(selectedOrderId)}
+                  onClick={() => handleDownloadPdf(selectedOrderId, invoice.invoiceNumber)}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50"
                 >
                   <Download className="w-3.5 h-3.5" />

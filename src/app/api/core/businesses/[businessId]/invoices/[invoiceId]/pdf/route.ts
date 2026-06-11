@@ -16,6 +16,13 @@ export const GET = withMiddleware({
     const businessId = params?.businessId as string
     const invoiceId  = params?.invoiceId  as string
 
+    console.log('[InvoicePDF/admin]', {
+      authorization: req.headers.get('authorization') ? 'present' : 'MISSING',
+      businessId,
+      invoiceId,
+      path: req.nextUrl.pathname,
+    })
+
     if (!businessId || !invoiceId) {
       return NextResponse.json({ success: false, error: 'Missing params' }, { status: 400 })
     }

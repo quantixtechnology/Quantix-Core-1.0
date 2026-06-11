@@ -127,6 +127,25 @@ export function BusinessInvoicesView() {
     }
   }
 
+  const downloadInvoicePdf = async (inv: InvoiceRow) => {
+    try {
+      const res = await fetch(
+        `/api/core/businesses/${businessId}/invoices/${inv.id}/pdf`,
+        { headers: getAuthHeaders() },
+      )
+      if (!res.ok) { showError("Failed to download PDF"); return }
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement("a")
+      a.href     = url
+      a.download = `${inv.invoiceNumber}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      showError("Failed to download PDF")
+    }
+  }
+
   const statusTabs = ["", "DRAFT", "PAYMENT_DUE", "PAID"]
   const statusLabels: Record<string, string> = { "": "All", DRAFT: "Draft", PAYMENT_DUE: "Payment Due", PAID: "Paid" }
 
@@ -249,6 +268,15 @@ export function BusinessInvoicesView() {
                         onClick={() => setDetailDialog(inv)}
                       >
                         <FileText className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        title="Download PDF"
+                        onClick={() => downloadInvoicePdf(inv)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
                       </Button>
                       {inv.status === "PAYMENT_DUE" && (
                         <Button

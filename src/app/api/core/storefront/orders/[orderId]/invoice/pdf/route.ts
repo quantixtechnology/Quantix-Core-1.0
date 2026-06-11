@@ -14,6 +14,13 @@ export const GET = withMiddleware({
   try {
     const params  = await context?.params
     const orderId = params?.orderId as string
+
+    console.log('[InvoicePDF/storefront]', {
+      authorization: req.headers.get('authorization') ? 'present' : 'MISSING',
+      orderId,
+      path: req.nextUrl.pathname,
+    })
+
     if (!orderId) return NextResponse.json({ success: false, error: 'orderId required' }, { status: 400 })
 
     const user       = req.user!
