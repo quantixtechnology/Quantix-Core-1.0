@@ -35,6 +35,18 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER
           items: {
             select: { itemName: true, quantity: true, unitPrice: true, totalPrice: true },
           },
+          invoice: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              status: true,
+              totalAmount: true,
+              paidAmount: true,
+              dueDate: true,
+              paidAt: true,
+              createdAt: true,
+            },
+          },
         },
       })
 
@@ -464,25 +476,13 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
 
       // Create DRAFT invoice — linked to this order from the start so it's always discoverable
       try {
-        // Invoice number: BIZSLUG/STORECODE/FY/NNNN
+        // Invoice number: {STORE_CODE}-{ORDER_NUMBER}-INV-001
         const invoiceStoreData = await db.store.findUnique({
           where: { id: body.storeId as string },
           select: { code: true },
         })
-        const invoiceBizData = await db.business.findUnique({
-          where: { id: businessId },
-          select: { slug: true },
-        })
-        const fy      = (() => { const m = now.getMonth(); const y = now.getFullYear(); const s = m >= 3 ? y : y - 1; return `${s}-${String((s + 1) % 100).padStart(2, '0')}` })()
-        const seqKey  = `${businessId}:${body.storeId}:${fy}`
-        const seq     = await db.invoiceSequence.upsert({
-          where:  { financialYear: seqKey },
-          update: { nextVal: { increment: 1 } },
-          create: { financialYear: seqKey, nextVal: 2, updatedAt: now },
-        })
-        const bizPart   = (invoiceBizData?.slug ?? businessId).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
-        const storePart = (invoiceStoreData?.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'MAIN'
-        const invoiceNumber = `${bizPart}/${storePart}/${fy}/${String(seq.nextVal - 1).padStart(4, '0')}`
+        const storePart = (invoiceStoreData?.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'MAIN'
+        const invoiceNumber = `${storePart}-${orderNumber}-INV-001`
 
         await db.invoice.create({
           data: {

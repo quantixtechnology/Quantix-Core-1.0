@@ -58,9 +58,11 @@ export const GET = withMiddleware({
         business: {
           select: {
             id: true, name: true, slug: true, logo: true, primaryColor: true,
-            gstNumber: true, panNumber: true,
-            address: true, city: true, state: true, pincode: true,
+            gstNumber: true, panNumber: true, cinNumber: true,
+            fssaiLicense: true, tagline: true,
+            address: true, city: true, state: true, country: true, pincode: true,
             contactEmail: true, contactPhone: true,
+            supportEmail: true, supportPhone: true,
           },
         },
       },

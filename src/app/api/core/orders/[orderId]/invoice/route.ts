@@ -11,28 +11,9 @@ import { NextResponse } from 'next/server'
 import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
-function getFinancialYear(date: Date): string {
-  const m = date.getMonth(); const y = date.getFullYear()
-  const s = m >= 3 ? y : y - 1
-  return `${s}-${String((s + 1) % 100).padStart(2, '0')}`
-}
-
-async function nextOrderInvoiceNumber(
-  businessId: string,
-  storeId:    string,
-  bizSlug:    string,
-  storeCode:  string | null,
-  fy:         string,
-): Promise<string> {
-  const key = `${businessId}:${storeId}:${fy}`
-  const seq = await db.invoiceSequence.upsert({
-    where:  { financialYear: key },
-    update: { nextVal: { increment: 1 } },
-    create: { financialYear: key, nextVal: 2, updatedAt: new Date() },
-  })
-  const bizPart   = bizSlug.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
-  const storePart = (storeCode ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'MAIN'
-  return `${bizPart}/${storePart}/${fy}/${String(seq.nextVal - 1).padStart(4, '0')}`
+function buildLegacyInvoiceNumber(orderNumber: string, storeCode: string | null): string {
+  const storePart = (storeCode ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'MAIN'
+  return `${storePart}-${orderNumber}-INV-001`
 }
 
 function appendAudit(existing: string, event: string, by?: string): string {
@@ -52,7 +33,7 @@ export const POST = withMiddleware({
     const orderId = params?.orderId as string
     if (!orderId) return NextResponse.json({ success: false, error: 'orderId required' }, { status: 400 })
 
-    const body = await req.json() as { paymentStatus?: 'paid' | 'pending'; notes?: string; adminName?: string }
+    const body = await req.json() as { paymentStatus?: 'paid' | 'partial' | 'pending'; paidAmount?: number; notes?: string; adminName?: string }
     const paymentStatus = body.paymentStatus ?? 'paid'
     const adminName = body.adminName
 
@@ -73,24 +54,21 @@ export const POST = withMiddleware({
     }
 
     const now = new Date()
-    const isPaid = paymentStatus === 'paid'
+    const isPaid    = paymentStatus === 'paid'
+    const isPartial = paymentStatus === 'partial'
+    const paidAmt   = isPaid ? order.totalAmount : isPartial ? (body.paidAmount ?? 0) : 0
     const newStatus = isPaid ? 'PAID' : 'PAYMENT_DUE'
 
     // Find existing DRAFT invoice
     const existing = await db.invoice.findUnique({ where: { orderId } })
 
     if (existing) {
-      // Transition the DRAFT invoice to the new status
-      const updatedMeta = appendAudit(
-        existing.metadata,
-        newStatus,
-        adminName,
-      )
+      const updatedMeta = appendAudit(existing.metadata, newStatus, adminName)
       const invoice = await db.invoice.update({
         where: { id: existing.id },
         data: {
           status:     newStatus,
-          paidAmount: isPaid ? order.totalAmount : 0,
+          paidAmount: paidAmt,
           notes:      body.notes ?? existing.notes ?? undefined,
           paidAt:     isPaid ? now : null,
           dueDate:    isPaid ? null : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
@@ -98,11 +76,12 @@ export const POST = withMiddleware({
         },
       })
 
-      // Credit accounts: update outstanding balance
+      // Credit accounts: update outstanding balance for unpaid/partial
       if (!isPaid && order.customerId) {
+        const outstanding = order.totalAmount - paidAmt
         await db.customer.update({
           where: { id: order.customerId },
-          data: { outstandingBalance: { increment: order.totalAmount } },
+          data: { outstandingBalance: { increment: outstanding } },
         }).catch(() => {})
       }
 
@@ -110,14 +89,7 @@ export const POST = withMiddleware({
     }
 
     // No existing invoice (legacy order) — create one now
-    const fy = getFinancialYear(now)
-    const invoiceNumber = await nextOrderInvoiceNumber(
-      order.businessId,
-      order.storeId,
-      order.business?.slug ?? order.businessId,
-      order.store?.code ?? null,
-      fy,
-    )
+    const invoiceNumber = buildLegacyInvoiceNumber(order.orderNumber, order.store?.code ?? null)
     const meta = appendAudit('{}', 'CREATED')
     const metaWithStatus = appendAudit(meta, newStatus, adminName)
 
@@ -135,7 +107,7 @@ export const POST = withMiddleware({
         cgstAmount:    order.cgstAmount,
         sgstAmount:    order.sgstAmount,
         igstAmount:    order.igstAmount,
-        paidAmount:    isPaid ? order.totalAmount : 0,
+        paidAmount:    paidAmt,
         notes:         body.notes ?? undefined,
         status:        newStatus,
         paidAt:        isPaid ? now : undefined,
@@ -145,9 +117,10 @@ export const POST = withMiddleware({
     })
 
     if (!isPaid && order.customerId) {
+      const outstanding = order.totalAmount - paidAmt
       await db.customer.update({
         where: { id: order.customerId },
-        data: { outstandingBalance: { increment: order.totalAmount } },
+        data: { outstandingBalance: { increment: outstanding } },
       }).catch(() => {})
     }
 

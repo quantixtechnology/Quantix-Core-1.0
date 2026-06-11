@@ -402,18 +402,24 @@ export interface OrderCustomer {
 }
 
 export interface OrderInvoiceBusiness {
-  name:         string
-  slug:         string
-  logo?:        string | null
+  name:          string
+  slug:          string
+  logo?:         string | null
   primaryColor?: string | null
-  gstNumber?:   string | null
-  panNumber?:   string | null
-  address?:     string | null
-  city?:        string | null
-  state?:       string | null
-  pincode?:     string | null
+  gstNumber?:    string | null
+  panNumber?:    string | null
+  cinNumber?:    string | null
+  fssaiLicense?: string | null
+  tagline?:      string | null
+  address?:      string | null
+  city?:         string | null
+  state?:        string | null
+  country?:      string | null
+  pincode?:      string | null
   contactEmail?: string | null
   contactPhone?: string | null
+  supportEmail?: string | null
+  supportPhone?: string | null
 }
 
 export interface OrderInvoiceRenderOpts {
@@ -448,8 +454,17 @@ export function buildOrderInvoiceHtml(opts: OrderInvoiceRenderOpts): string {
     business.address,
     business.city,
     business.state,
+    business.country && business.country !== 'India' ? business.country : null,
     business.pincode ? `– ${business.pincode}` : null,
   ].filter(Boolean).join(', ')
+
+  // Compliance registration numbers — hide empty
+  const complianceRegs = [
+    business.gstNumber   ? `GSTIN: ${business.gstNumber}`     : null,
+    business.panNumber   ? `PAN: ${business.panNumber}`        : null,
+    business.cinNumber   ? `CIN: ${business.cinNumber}`        : null,
+    business.fssaiLicense ? `FSSAI: ${business.fssaiLicense}` : null,
+  ].filter(Boolean) as string[]
 
   const lineRows = lineItems.map(li => `
     <tr>
@@ -580,7 +595,9 @@ ${printExtras}
     <div class="bsec">
       <div class="bsec-lbl">From</div>
       <div class="bsec-name">${business.name}</div>
-      <div class="bsec-meta">${[sellerAddr || null, business.contactEmail, business.gstNumber ? `GSTIN: ${business.gstNumber}` : null].filter(Boolean).join('<br/>')}</div>
+      ${business.tagline ? `<div class="bsec-meta" style="font-style:italic;color:#9ca3af;font-size:9.5px;">${business.tagline}</div>` : ''}
+      <div class="bsec-meta">${[sellerAddr || null, business.contactEmail, business.supportPhone || business.contactPhone].filter(Boolean).join('<br/>')}</div>
+      ${complianceRegs.length > 0 ? `<div class="bsec-meta" style="margin-top:4px;font-size:9px;">${complianceRegs.join(' &nbsp;|&nbsp; ')}</div>` : ''}
     </div>
     <div class="bsec">
       <div class="bsec-lbl">Bill To</div>
@@ -616,9 +633,10 @@ ${printExtras}
     ${notesText ? `<div class="notes-box"><strong>Notes:</strong> ${notesText}</div>` : ''}
 
     <div class="footer">
+      ${complianceRegs.length > 0 ? `<div style="font-size:9px;color:#b0b8c4;margin-bottom:3px;">${complianceRegs.join(' &nbsp;|&nbsp; ')}</div>` : ''}
       <div class="footer-bottom">
-        <div>${business.name} &nbsp;·&nbsp; ${business.contactEmail || ''}</div>
-        <div>${business.gstNumber ? `GSTIN: ${business.gstNumber}` : ''}</div>
+        <div>${business.name}${business.contactEmail ? ` &nbsp;·&nbsp; ${business.contactEmail}` : ''}${business.supportEmail && business.supportEmail !== business.contactEmail ? ` &nbsp;·&nbsp; ${business.supportEmail}` : ''}</div>
+        <div style="font-size:9px;color:#b0b8c4;">Thank you for your business!</div>
       </div>
     </div>
   </div>

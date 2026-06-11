@@ -57,7 +57,8 @@ import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { CreateOrderDialog } from "./create-order-dialog"
-import { InvoiceOnDeliveryDialog } from "./invoice-on-delivery-dialog"
+import { InvoiceOnDeliveryDialog, type DeliveryPaymentStatus } from "./invoice-on-delivery-dialog"
+import { resolveInvoiceStatus, invoiceStatusColors } from "@/lib/invoice-utils"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -461,14 +462,14 @@ export function OrdersView() {
     setStatusDialogOpen(true)
   }
 
-  async function handleInvoiceAndDeliver(paymentStatus: "paid" | "pending", notes: string) {
+  async function handleInvoiceAndDeliver(paymentStatus: DeliveryPaymentStatus, paidAmount: number, notes: string) {
     if (!invoiceDialogOrder) return
     const adminName = user?.name || undefined
     // Transition DRAFT invoice → PAID or PAYMENT_DUE
     await fetch(`/api/core/orders/${invoiceDialogOrder.id}/invoice`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ paymentStatus, notes: notes || undefined, adminName }),
+      body: JSON.stringify({ paymentStatus, paidAmount, notes: notes || undefined, adminName }),
     })
     // Mark order DELIVERED
     await updateStatusMutation.mutateAsync({
@@ -476,7 +477,7 @@ export function OrdersView() {
       status: "DELIVERED",
       note: notes || undefined,
     })
-    const label = paymentStatus === "paid" ? "Invoice PAID" : "Invoice PAYMENT_DUE"
+    const label = paymentStatus === "paid" ? "Invoice PAID" : paymentStatus === "partial" ? "Invoice PARTIALLY PAID" : "Invoice PAYMENT_DUE"
     showSuccess(`Order ${invoiceDialogOrder.orderNumber} delivered — ${label}`)
     setInvoiceDialogOpen(false)
     setInvoiceDialogOrder(null)
@@ -1173,15 +1174,15 @@ export function OrdersView() {
                               <Receipt className="h-4 w-4 text-emerald-600 shrink-0" />
                               <span className="text-sm font-semibold font-mono">{orderInvoice.invoiceNumber}</span>
                             </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              orderInvoice.status === "PAID"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : orderInvoice.status === "PAYMENT_DUE"
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-gray-100 text-gray-600"
-                            }`}>
-                              {orderInvoice.status}
-                            </span>
+                            {(() => {
+                              const label = resolveInvoiceStatus(orderInvoice.status, orderInvoice.totalAmount, orderInvoice.paidAmount)
+                              const colors = invoiceStatusColors(label)
+                              return (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+                                  {label}
+                                </span>
+                              )
+                            })()}
                           </div>
 
                           {/* Amounts */}
@@ -1218,6 +1219,28 @@ export function OrdersView() {
                               variant="outline"
                               className="h-7 text-xs gap-1"
                               onClick={() => downloadInvoicePdf(orderInvoice.id, orderInvoice.invoiceNumber)}
+                            >
+                              <Receipt className="h-3 w-3" />
+                              View Invoice
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1"
+                              onClick={async () => {
+                                const url = `/api/core/businesses/${businessId}/invoices/${orderInvoice.id}/pdf`
+                                try {
+                                  const res = await fetch(url, { headers: getAuthHeaders() })
+                                  if (!res.ok) { showError(`PDF download failed (${res.status})`); return }
+                                  const blob = await res.blob()
+                                  const blobUrl = URL.createObjectURL(blob)
+                                  const a = document.createElement("a")
+                                  a.href = blobUrl
+                                  a.download = `invoice-${orderInvoice.invoiceNumber}.html`
+                                  a.click()
+                                  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+                                } catch { showError("Could not download invoice PDF") }
+                              }}
                             >
                               <Download className="h-3 w-3" />
                               Download PDF

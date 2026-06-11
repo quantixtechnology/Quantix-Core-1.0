@@ -798,6 +798,18 @@ export async function getOrder(orderId: string) {
           value: true,
         },
       },
+      invoice: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          totalAmount: true,
+          paidAmount: true,
+          dueDate: true,
+          paidAt: true,
+          createdAt: true,
+        },
+      },
     },
   });
 
