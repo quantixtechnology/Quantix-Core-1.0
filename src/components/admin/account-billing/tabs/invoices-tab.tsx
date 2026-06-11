@@ -77,8 +77,9 @@ export function InvoicesTab({ onViewAccount }: Props) {
   const [payBusinessId,   setPayBusinessId]   = useState<string>("")
   const [payInvoices,     setPayInvoices]     = useState<InvoiceRow[]>([])
 
-  // Email sending state per row
-  const [emailingId, setEmailingId] = useState<string | null>(null)
+  // Email/download state per row
+  const [emailingId,    setEmailingId]    = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -104,8 +105,30 @@ export function InvoicesTab({ onViewAccount }: Props) {
     setPreviewOpen(true)
   }
 
-  const downloadPdf = (inv: InvoiceRow) => {
-    window.open(`/api/admin/account-billing/${inv.businessId}/invoices/${inv.id}/pdf`, "_blank")
+  const downloadPdf = async (inv: InvoiceRow) => {
+    setDownloadingId(inv.id)
+    try {
+      const url = `/api/admin/account-billing/${inv.businessId}/invoices/${inv.id}/pdf`
+      const res = await fetch(url, { headers: getAuthHeaders() })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        toast.error((json as { error?: string }).error ?? `PDF generation failed (${res.status})`)
+        return
+      }
+      const blob      = await res.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const a         = document.createElement("a")
+      a.href          = objectUrl
+      a.download      = `invoice-${inv.invoiceNumber.replace(/\//g, "-")}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(objectUrl)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to download PDF")
+    } finally {
+      setDownloadingId(null)
+    }
   }
 
   const sendEmail = async (inv: InvoiceRow) => {
@@ -261,8 +284,16 @@ export function InvoicesTab({ onViewAccount }: Props) {
                               <Eye className="h-3.5 w-3.5" />
                             </Button>
                             {/* Download PDF */}
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-violet-600" title="Download PDF" onClick={() => downloadPdf(r)}>
-                              <Download className="h-3.5 w-3.5" />
+                            <Button
+                              size="sm" variant="ghost"
+                              className="h-7 w-7 p-0 text-violet-600"
+                              title="Download PDF"
+                              disabled={downloadingId === r.id}
+                              onClick={() => downloadPdf(r)}
+                            >
+                              {downloadingId === r.id
+                                ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                : <Download className="h-3.5 w-3.5" />}
                             </Button>
                             {/* Email */}
                             <Button

@@ -197,10 +197,33 @@ export function InvoicePreviewPanel({
     finally { setActing(false) }
   }
 
-  const downloadPdf = () => {
+  const [downloading, setDownloading] = useState(false)
+
+  const downloadPdf = async () => {
     if (!invoice) return
-    const url = `/api/admin/account-billing/${businessId}/invoices/${invoice.id}/pdf`
-    window.open(url, "_blank")
+    setDownloading(true)
+    try {
+      const url = `/api/admin/account-billing/${businessId}/invoices/${invoice.id}/pdf`
+      const res = await fetch(url, { headers: getAuthHeaders() })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        toast.error((json as { error?: string }).error ?? `PDF generation failed (${res.status})`)
+        return
+      }
+      const blob      = await res.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const a         = document.createElement("a")
+      a.href          = objectUrl
+      a.download      = `invoice-${invoice.invoiceNumber.replace(/\//g, "-")}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(objectUrl)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to download PDF")
+    } finally {
+      setDownloading(false)
+    }
   }
 
   const sendEmail = async () => {
@@ -594,9 +617,12 @@ export function InvoicePreviewPanel({
                 size="sm" variant="default"
                 className="text-xs h-8 gap-1.5 bg-violet-600 hover:bg-violet-700"
                 onClick={downloadPdf}
+                disabled={downloading}
               >
-                <Download className="h-3.5 w-3.5" />
-                Download PDF
+                {downloading
+                  ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  : <Download className="h-3.5 w-3.5" />}
+                {downloading ? "Generating…" : "Download PDF"}
               </Button>
 
               {/* Email */}
