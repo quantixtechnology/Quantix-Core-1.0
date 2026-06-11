@@ -96,16 +96,16 @@ export function buildInvoiceHtml(opts: InvoiceRenderOpts): string {
   const coPhone   = ps.invoicePhone     || ps.companyPhone || ''
   const coWebsite = ps.invoiceWebsite   || ps.companyWebsite || ''
 
-  // Address
-  const addrLine1 = ps.invoiceAddress || ps.companyAddress || ''
-  const addrLine2 = [
+  // Address — single compact line
+  const addrCity = [
     ps.invoiceCity,
     ps.invoiceState,
     ps.invoicePincode ? `– ${ps.invoicePincode}` : null,
   ].filter(Boolean).join(', ')
-  const addrFull = [addrLine1, addrLine2].filter(Boolean).join(', ')
+  const addrFull = [ps.invoiceAddress || ps.companyAddress || '', addrCity].filter(Boolean).join(', ')
 
-  // Registration numbers — only show populated, non-placeholder values
+  // Registration numbers — only populated, non-placeholder values
+  // Moved to footer so they appear on the last page only, not taking header space
   const regs = [
     ps.companyGst && ps.companyGst !== 'APPLIED FOR' ? `GSTIN: ${ps.companyGst}` : null,
     ps.companyPan     ? `PAN: ${ps.companyPan}`       : null,
@@ -115,249 +115,277 @@ export function buildInvoiceHtml(opts: InvoiceRenderOpts): string {
     ps.companyCin     ? `CIN: ${ps.companyCin}`        : null,
   ].filter(Boolean) as string[]
 
-  // Banking details (unpaid invoices only)
-  const hasBanking = !isPaid && (ps.bankAccountNumber || ps.bankUpiId || ps.bankIfsc)
-  const bankBlock  = hasBanking ? `
-  <div class="bank-box">
-    <div class="bank-title">Bank Transfer Details</div>
-    <div class="bank-grid">
-      ${ps.bankAccountName   ? `<span class="bank-label">Account Name</span><span class="bank-val">${ps.bankAccountName}</span>` : ''}
-      ${ps.bankName          ? `<span class="bank-label">Bank</span><span class="bank-val">${ps.bankName}</span>` : ''}
-      ${ps.bankAccountNumber ? `<span class="bank-label">Account No.</span><span class="bank-val mono">${ps.bankAccountNumber}</span>` : ''}
-      ${ps.bankIfsc          ? `<span class="bank-label">IFSC</span><span class="bank-val mono">${ps.bankIfsc}</span>` : ''}
-      ${ps.bankUpiId         ? `<span class="bank-label">UPI ID</span><span class="bank-val mono">${ps.bankUpiId}</span>` : ''}
-    </div>
-  </div>` : ''
+  // The first registration (GSTIN) shown in Bill From for GST compliance
+  const primaryReg = regs[0] ?? null
 
-  const notesText   = [ps.invoiceDefaultNotes, invoice.notes as string | undefined].filter(Boolean).join('\n\n')
-  const footerRight = [coName, coEmail, coWebsite, `SAC/HSN: ${ps.sacCode}`].filter(Boolean).join(' · ')
-
+  // ── Line item rows ─────────────────────────────────────────────────────────
   const lineRows = lineItems.map(li => `
     <tr>
-      <td class="item-cell">
-        <strong>${li.name}</strong>
-        ${li.description ? `<br/><small>${li.description}</small>` : ''}
+      <td class="td-desc">
+        <span class="item-name">${li.name}</span>
+        ${li.description ? `<br/><span class="item-sub">${li.description}</span>` : ''}
       </td>
-      <td class="num-center">${li.quantity}</td>
-      <td class="num-right mono">${fmt(li.unitPrice)}</td>
-      <td class="num-right mono bold">${fmt(li.amount)}</td>
+      <td class="td-c">${li.quantity}</td>
+      <td class="td-r mono">${fmt(li.unitPrice)}</td>
+      <td class="td-r mono bold">${fmt(li.amount)}</td>
     </tr>`).join('')
 
+  // ── Totals table rows ──────────────────────────────────────────────────────
   const taxRows = [
     (invoice.cgstAmount as number) > 0
-      ? `<tr><td style="color:#6b7280;">CGST (${invoice.cgstRate}%)</td><td class="mono" style="text-align:right;">${fmt(invoice.cgstAmount as number)}</td></tr>` : '',
+      ? `<tr class="t-muted"><td>CGST (${invoice.cgstRate}%)</td><td class="mono td-r">${fmt(invoice.cgstAmount as number)}</td></tr>` : '',
     (invoice.sgstAmount as number) > 0
-      ? `<tr><td style="color:#6b7280;">SGST (${invoice.sgstRate}%)</td><td class="mono" style="text-align:right;">${fmt(invoice.sgstAmount as number)}</td></tr>` : '',
+      ? `<tr class="t-muted"><td>SGST (${invoice.sgstRate}%)</td><td class="mono td-r">${fmt(invoice.sgstAmount as number)}</td></tr>` : '',
     (invoice.igstAmount as number) > 0
-      ? `<tr><td style="color:#6b7280;">IGST (${invoice.igstRate}%)</td><td class="mono" style="text-align:right;">${fmt(invoice.igstAmount as number)}</td></tr>` : '',
+      ? `<tr class="t-muted"><td>IGST (${invoice.igstRate}%)</td><td class="mono td-r">${fmt(invoice.igstAmount as number)}</td></tr>` : '',
   ].join('')
 
+  // ── Payment history rows ───────────────────────────────────────────────────
   const paymentRows = payments.map(p => `
     <div class="pay-row">
       <span>${fmt(p.amount)}${p.paymentMode ? ` · ${p.paymentMode.replace(/_/g, ' ')}` : ''}${p.transactionId ? ` · <span class="mono">${p.transactionId}</span>` : ''}</span>
-      <span style="color:#6b7280;">${fmtDate(p.paidAt)}</span>
+      <span class="muted">${fmtDate(p.paidAt)}</span>
     </div>`).join('')
 
-  const wmColor = isPaid ? 'rgba(5,150,105,0.07)' : 'rgba(217,119,6,0.06)'
+  // ── Banking block (unpaid invoices, last-page summary only) ───────────────
+  const hasBanking = !isPaid && (ps.bankAccountNumber || ps.bankUpiId || ps.bankIfsc)
+  const bankBlock  = hasBanking ? `
+    <div class="bank-box">
+      <div class="sec-label">Bank Transfer Details</div>
+      <div class="bank-grid">
+        ${ps.bankAccountName   ? `<span class="bank-k">Account Name</span><span class="bank-v">${ps.bankAccountName}</span>` : ''}
+        ${ps.bankName          ? `<span class="bank-k">Bank</span><span class="bank-v">${ps.bankName}</span>` : ''}
+        ${ps.bankAccountNumber ? `<span class="bank-k">Account No.</span><span class="bank-v mono">${ps.bankAccountNumber}</span>` : ''}
+        ${ps.bankIfsc          ? `<span class="bank-k">IFSC</span><span class="bank-v mono">${ps.bankIfsc}</span>` : ''}
+        ${ps.bankUpiId         ? `<span class="bank-k">UPI</span><span class="bank-v mono">${ps.bankUpiId}</span>` : ''}
+      </div>
+    </div>` : ''
+
+  // ── Notes ─────────────────────────────────────────────────────────────────
+  const notesText = [ps.invoiceDefaultNotes, invoice.notes as string | undefined].filter(Boolean).join('\n\n')
+
+  // ── Watermark ─────────────────────────────────────────────────────────────
+  const wmColor = isPaid ? 'rgba(5,150,105,0.06)' : 'rgba(217,119,6,0.05)'
   const wmText  = isPaid ? 'PAID' : (invoice.status === 'OVERDUE' ? 'OVERDUE' : 'PAYMENT DUE')
 
-  // Print-specific CSS and script (only injected when forPrint: true)
+  // ── Balance Due row label ──────────────────────────────────────────────────
+  const dueLabel = isPaid ? '&#10003;&nbsp;Paid in Full' : 'Balance Due'
+  const dueColor = st.color
+
+  // ── Print CSS + script ────────────────────────────────────────────────────
   const printExtras = forPrint ? `
-  @page { size: A4; margin: 10mm 8mm; }
+  @page { size: A4; margin: 12mm 10mm; }
   @media print {
-    .watermark { color: ${isPaid ? 'rgba(5,150,105,0.05)' : 'rgba(217,119,6,0.04)'}; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .watermark { color: ${isPaid ? 'rgba(5,150,105,0.04)' : 'rgba(217,119,6,0.03)'}; }
+    .page { padding: 0; }
   }` : ''
 
   const printScript = forPrint
-    ? `<script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 250); });</script>`
+    ? `<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},250);});</script>`
     : ''
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Invoice ${invoice.invoiceNumber}</title>
 ${printScript}
 <style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;background:#fff;font-size:13px;line-height:1.5;}
-  .page{max-width:780px;margin:0 auto;padding:48px 40px;}
-  /* header */
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:28px;border-bottom:2px solid #e5e7eb;margin-bottom:28px;}
-  .co-logo{height:44px;width:auto;object-fit:contain;display:block;margin-bottom:10px;}
-  .co-name{font-size:20px;font-weight:800;color:#111827;letter-spacing:-0.3px;}
-  .co-meta{font-size:11px;color:#6b7280;line-height:1.9;margin-top:4px;}
-  .co-regs{font-size:10px;color:#9ca3af;line-height:1.8;margin-top:4px;}
-  .inv-right{text-align:right;}
-  .inv-type{font-size:22px;font-weight:800;color:#7c3aed;letter-spacing:-0.5px;}
-  .inv-num{font-size:15px;font-weight:700;font-family:monospace;margin-top:6px;color:#111827;}
-  .inv-dates{font-size:11px;color:#6b7280;margin-top:6px;line-height:1.9;}
-  .stamp{display:inline-block;border:2.5px solid ${st.color};border-radius:6px;padding:5px 14px;font-size:14px;font-weight:800;color:${st.color};letter-spacing:0.14em;text-transform:uppercase;margin-top:10px;transform:rotate(-5deg);}
-  /* billing */
-  .billing{display:flex;gap:32px;margin-bottom:28px;}
-  .bsec{flex:1;}
-  .bsec-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:6px;}
-  .bsec-name{font-size:14px;font-weight:700;color:#111827;}
-  .bsec-meta{font-size:11px;color:#6b7280;line-height:1.9;margin-top:3px;}
-  /* items table */
-  table.items{width:100%;border-collapse:collapse;margin-bottom:20px;}
-  table.items thead tr{background:#f9fafb;}
-  table.items thead th{padding:9px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#9ca3af;text-align:left;border-bottom:2px solid #e5e7eb;}
-  table.items tbody td{border-bottom:1px solid #f3f4f6;padding:10px 14px;vertical-align:top;}
-  .item-cell strong{font-weight:600;color:#111827;}
-  .item-cell small{font-size:11px;color:#9ca3af;}
-  .num-center{text-align:center;}
-  .num-right{text-align:right;}
-  .mono{font-family:monospace;}
-  .bold{font-weight:700;}
-  /* totals */
-  .totals-wrap{display:flex;justify-content:flex-end;margin-bottom:24px;}
-  .totals-tbl{width:260px;}
-  .totals-tbl td{padding:5px 14px;font-size:12px;}
-  .totals-tbl .grand td{font-size:15px;font-weight:800;color:#7c3aed;border-top:2px solid #e5e7eb;padding-top:10px;}
-  /* payment box */
-  .pay-box{background:${st.bg};border:1px solid ${st.border};border-radius:10px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
-  .pay-box-label{font-size:13px;font-weight:700;color:${st.color};}
-  .pay-box-sub{font-size:11px;color:#6b7280;margin-top:3px;}
-  .pay-box-amt{font-size:22px;font-weight:800;color:${st.color};font-family:monospace;}
-  /* payment history */
-  .pay-history-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:8px;}
-  .pay-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:12px;}
-  /* banking */
-  .bank-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 18px;margin-bottom:20px;}
-  .bank-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:10px;}
-  .bank-grid{display:grid;grid-template-columns:120px 1fr;gap:4px 16px;font-size:12px;}
-  .bank-label{color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;}
-  .bank-val{color:#374151;font-weight:500;}
-  /* notes */
-  .notes{background:#f9fafb;border-radius:8px;padding:12px 16px;font-size:12px;color:#6b7280;margin-bottom:20px;white-space:pre-wrap;}
-  /* footer */
-  .footer{margin-top:32px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:11px;color:#9ca3af;}
-  .footer-notes{margin-bottom:6px;}
-  .footer-disclaimer{font-size:10px;color:#d1d5db;font-style:italic;}
-  .footer-bottom{display:flex;justify-content:space-between;margin-top:8px;}
-  /* watermark */
-  .watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:80px;font-weight:900;letter-spacing:8px;white-space:nowrap;pointer-events:none;z-index:-1;color:${wmColor};}
-  ${printExtras}
+/* ── Reset ── */
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;background:#fff;font-size:11.5px;line-height:1.45;}
+.page{max-width:760px;margin:0 auto;padding:22px 28px 28px;}
+
+/* ── Watermark ── */
+.watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:90px;font-weight:900;letter-spacing:10px;white-space:nowrap;pointer-events:none;z-index:-1;color:${wmColor};}
+
+/* ── Header — compact band ── */
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:10px;border-bottom:2px solid #7c3aed;margin-bottom:10px;}
+.hdr-left{display:flex;align-items:flex-start;gap:10px;min-width:0;}
+.co-logo{height:30px;width:auto;object-fit:contain;flex-shrink:0;margin-top:1px;}
+.co-info{min-width:0;}
+.co-name{font-size:14px;font-weight:800;color:#111827;letter-spacing:-0.2px;line-height:1.2;}
+.co-trade{font-size:10px;color:#6b7280;margin-top:1px;}
+.co-meta{font-size:10px;color:#6b7280;margin-top:3px;line-height:1.65;}
+.hdr-right{text-align:right;flex-shrink:0;}
+.inv-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#7c3aed;}
+.inv-num{font-size:16px;font-weight:800;font-family:monospace;color:#111827;margin-top:1px;line-height:1.15;}
+.inv-meta{font-size:10px;color:#6b7280;margin-top:4px;line-height:1.7;}
+.inv-badge{display:inline-block;border:2px solid ${st.color};border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800;color:${st.color};letter-spacing:0.1em;text-transform:uppercase;margin-top:5px;transform:rotate(-4deg);}
+
+/* ── Bill From / To — compact horizontal strip ── */
+.billing{display:flex;gap:10px;margin-bottom:10px;}
+.bsec{flex:1;border:1px solid #f3f4f6;border-radius:5px;padding:7px 10px;}
+.bsec-lbl{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:3px;}
+.bsec-name{font-size:11.5px;font-weight:700;color:#111827;}
+.bsec-meta{font-size:10px;color:#6b7280;line-height:1.6;margin-top:2px;}
+
+/* ── Items table ── */
+table.items{width:100%;border-collapse:collapse;font-size:11px;}
+/* thead repeats on each printed page automatically */
+table.items thead{display:table-header-group;}
+table.items thead tr{background:#7c3aed;}
+table.items thead th{padding:6px 8px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#fff;text-align:left;}
+table.items thead th.th-r{text-align:right;}
+table.items thead th.th-c{text-align:center;}
+table.items tbody td{border-bottom:1px solid #f3f4f6;padding:6px 8px;vertical-align:top;}
+table.items tbody tr:nth-child(even){background:#fafafa;}
+.item-name{font-weight:600;color:#111827;}
+.item-sub{font-size:9.5px;color:#9ca3af;}
+.td-c{text-align:center;width:46px;}
+.td-r{text-align:right;}
+.td-desc{width:auto;}
+.mono{font-family:monospace;}
+.bold{font-weight:700;}
+.muted{color:#6b7280;}
+
+/* ── Summary block — always on final page, never split across pages ── */
+.summary{page-break-inside:avoid;break-inside:avoid;margin-top:12px;}
+
+/* ── Totals ── */
+.totals-row{display:flex;justify-content:flex-end;margin-bottom:10px;}
+.totals-tbl{width:250px;border-collapse:collapse;font-size:11px;}
+.totals-tbl td{padding:3px 8px;}
+.t-muted td{color:#6b7280;}
+.t-sep td{border-top:1px solid #e5e7eb;padding-top:6px;}
+.t-total td{font-size:13px;font-weight:800;color:#7c3aed;}
+.t-paid td{color:#059669;font-weight:600;}
+.t-due td{font-size:14px;font-weight:800;color:${dueColor};border-top:2px solid ${st.border};padding-top:7px;}
+
+/* ── Payment history ── */
+.pay-section{margin-bottom:10px;}
+.sec-label{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:6px;}
+.pay-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:11px;}
+
+/* ── Bank + Notes side by side (or stacked if only one present) ── */
+.bottom-cols{display:flex;gap:12px;margin-bottom:10px;}
+.bottom-cols .col{flex:1;}
+.bank-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:8px 10px;}
+.bank-grid{display:grid;grid-template-columns:90px 1fr;gap:3px 10px;font-size:10px;}
+.bank-k{color:#9ca3af;font-size:9px;font-weight:600;text-transform:uppercase;display:flex;align-items:center;}
+.bank-v{color:#374151;font-weight:500;}
+.notes-box{background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:8px 10px;font-size:10.5px;color:#6b7280;white-space:pre-wrap;line-height:1.55;}
+.notes-box strong{color:#374151;}
+
+/* ── Footer — registrations + legal + company info ── */
+.footer{margin-top:10px;padding-top:8px;border-top:1px solid #f3f4f6;font-size:9.5px;color:#9ca3af;line-height:1.6;}
+.footer-top{margin-bottom:3px;}
+.footer-regs{font-size:9px;color:#b0b8c4;margin-bottom:3px;}
+.footer-disclaimer{font-size:8.5px;color:#d1d5db;font-style:italic;margin-bottom:3px;}
+.footer-bottom{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;}
+.footer-left{line-height:1.55;}
+.footer-right{text-align:right;flex-shrink:0;}
+
+${printExtras}
 </style>
 </head>
 <body>
 <div class="watermark">${wmText}</div>
 <div class="page">
 
-  <!-- Letterhead -->
+  <!-- ── Compact Letterhead ── -->
   <div class="hdr">
-    <div>
+    <div class="hdr-left">
       ${logoSrc ? `<img src="${logoSrc}" alt="${coName}" class="co-logo"/>` : ''}
-      <div class="co-name">${coName}</div>
-      ${ps.invoiceBusinessName && ps.invoiceLegalName ? `<div style="font-size:12px;color:#6b7280;">${ps.invoiceBusinessName}</div>` : ''}
-      <div class="co-meta">
-        ${addrFull ? `${addrFull}<br/>` : ''}
-        ${coEmail}${coPhone ? ` &nbsp;·&nbsp; ${coPhone}` : ''}${coWebsite ? `<br/>${coWebsite}` : ''}
+      <div class="co-info">
+        <div class="co-name">${coName}</div>
+        ${ps.invoiceBusinessName && ps.invoiceLegalName ? `<div class="co-trade">${ps.invoiceBusinessName}</div>` : ''}
+        <div class="co-meta">${[addrFull, coEmail, coPhone ? coPhone : null, coWebsite ? coWebsite : null].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>
       </div>
-      ${regs.length > 0 ? `<div class="co-regs">${regs.join(' &nbsp;|&nbsp; ')}</div>` : ''}
     </div>
-    <div class="inv-right">
-      <div class="inv-type">TAX INVOICE</div>
+    <div class="hdr-right">
+      <div class="inv-label">Tax Invoice</div>
       <div class="inv-num">${invoice.invoiceNumber}</div>
-      <div class="inv-dates">
-        Issued: ${fmtDate(invoice.issuedDate as string | null)}<br/>
-        ${invoice.dueDate ? `Due: ${fmtDate(invoice.dueDate as string | null)}<br/>` : ''}
-        ${invoice.billingPeriod ? `Period: ${invoice.billingPeriod}` : ''}
+      <div class="inv-meta">
+        Issued: ${fmtDate(invoice.issuedDate as string | null)}
+        ${invoice.dueDate ? `<br/>Due: ${fmtDate(invoice.dueDate as string | null)}` : ''}
+        ${invoice.billingPeriod ? `<br/>${invoice.billingPeriod}` : ''}
       </div>
-      <div><span class="stamp">${st.label}</span></div>
+      <div><span class="inv-badge">${st.label}</span></div>
     </div>
   </div>
 
-  <!-- Bill From / Bill To -->
+  <!-- ── Bill From / Bill To ── -->
   <div class="billing">
     <div class="bsec">
-      <div class="bsec-label">Bill From</div>
+      <div class="bsec-lbl">Bill From</div>
       <div class="bsec-name">${coName}</div>
-      <div class="bsec-meta">
-        ${addrFull ? `${addrFull}<br/>` : ''}
-        ${coEmail}
-        ${regs.length > 0 ? `<br/>${regs[0]}` : ''}
-      </div>
+      <div class="bsec-meta">${[addrFull || null, coEmail, primaryReg].filter(Boolean).join('<br/>')}</div>
     </div>
     <div class="bsec">
-      <div class="bsec-label">Bill To</div>
+      <div class="bsec-lbl">Bill To</div>
       <div class="bsec-name">${business.name}</div>
-      <div class="bsec-meta">
-        ${business.contactEmail ?? ''}
-        ${business.contactPhone ? `<br/>${business.contactPhone}` : ''}
-        ${business.address ? `<br/>${business.address}` : ''}
-        ${business.city ? `${business.city}${business.state ? ', ' + business.state : ''}${(business as Record<string, unknown>).pincode ? ' – ' + (business as Record<string, unknown>).pincode : ''}` : ''}
-        ${business.gstNumber ? `<br/>GSTIN: ${business.gstNumber}` : ''}
-      </div>
+      <div class="bsec-meta">${[
+        business.contactEmail ?? null,
+        business.contactPhone ?? null,
+        [business.address, business.city, business.state].filter(Boolean).join(', ') || null,
+        (business as Record<string,unknown>).pincode ? `– ${(business as Record<string,unknown>).pincode}` : null,
+        business.gstNumber ? `GSTIN: ${business.gstNumber}` : null,
+      ].filter(Boolean).join('<br/>')}</div>
     </div>
   </div>
 
-  <!-- Line Items -->
+  <!-- ── Service / Line Items — thead repeats on each printed page ── -->
   <table class="items">
     <thead>
       <tr>
-        <th>Service / Description</th>
-        <th style="width:60px;text-align:center;">Qty</th>
-        <th style="width:130px;text-align:right;">Unit Price</th>
-        <th style="width:130px;text-align:right;">Amount</th>
+        <th class="td-desc">Service / Description</th>
+        <th class="th-c" style="width:46px;">Qty</th>
+        <th class="th-r" style="width:110px;">Unit Price</th>
+        <th class="th-r" style="width:110px;">Amount</th>
       </tr>
     </thead>
     <tbody>${lineRows}</tbody>
   </table>
 
-  <!-- Totals -->
-  <div class="totals-wrap">
-    <table class="totals-tbl">
-      <tr><td style="color:#6b7280;">Subtotal</td><td class="mono" style="text-align:right;">${fmt(invoice.subtotal as number)}</td></tr>
-      ${taxRows}
-      <tr class="grand">
-        <td>Total</td>
-        <td class="mono" style="text-align:right;">${fmt(invoice.totalAmount as number)}</td>
-      </tr>
-      ${(invoice.paidAmount as number) > 0 ? `
-      <tr>
-        <td style="color:#059669;font-weight:600;">Paid</td>
-        <td class="mono" style="text-align:right;color:#059669;font-weight:600;">${fmt(invoice.paidAmount as number)}</td>
-      </tr>` : ''}
-    </table>
-  </div>
+  <!-- ── Summary (page-break-inside: avoid — stays together on final page) ── -->
+  <div class="summary">
 
-  <!-- Payment Status Box -->
-  <div class="pay-box">
-    <div>
-      <div class="pay-box-label">${isPaid ? '&#10003; Payment Received' : 'Amount Due'}</div>
-      ${isPaid && payments.length > 0 ? `<div class="pay-box-sub">Payment received on ${fmtDate(payments[0].paidAt)}</div>` : ''}
+    <!-- Totals — right-aligned, Balance Due replaces standalone banner -->
+    <div class="totals-row">
+      <table class="totals-tbl">
+        <tr class="t-muted"><td>Subtotal</td><td class="mono td-r">${fmt(invoice.subtotal as number)}</td></tr>
+        ${taxRows}
+        <tr class="t-sep t-total"><td>Total</td><td class="mono td-r">${fmt(invoice.totalAmount as number)}</td></tr>
+        ${(invoice.paidAmount as number) > 0 ? `<tr class="t-paid"><td>Paid</td><td class="mono td-r">${fmt(invoice.paidAmount as number)}</td></tr>` : ''}
+        <tr class="t-due"><td>${dueLabel}</td><td class="mono td-r">${fmt(isPaid ? 0 : balance)}</td></tr>
+      </table>
     </div>
-    <div class="pay-box-amt">${fmt(isPaid ? 0 : balance)}</div>
-  </div>
 
-  <!-- Payment History -->
-  ${payments.length > 0 ? `
-  <div style="margin-bottom:20px;">
-    <div class="pay-history-label">Payment History</div>
-    ${paymentRows}
-  </div>` : ''}
+    <!-- Payment History (if any) -->
+    ${payments.length > 0 ? `
+    <div class="pay-section">
+      <div class="sec-label">Payment History</div>
+      ${paymentRows}
+    </div>` : ''}
 
-  <!-- Banking Details (unpaid only) -->
-  ${bankBlock}
+    <!-- Bank Details + Notes — side by side when both present, full-width otherwise -->
+    ${hasBanking || notesText ? `
+    <div class="bottom-cols">
+      ${hasBanking ? `<div class="col">${bankBlock}</div>` : ''}
+      ${notesText  ? `<div class="col"><div class="notes-box"><strong>Notes:</strong> ${notesText}</div></div>` : ''}
+    </div>` : ''}
 
-  <!-- Notes -->
-  ${notesText ? `<div class="notes"><strong style="color:#374151;">Notes:</strong> ${notesText}</div>` : ''}
-
-  <!-- Footer -->
-  <div class="footer">
-    ${ps.invoiceFooterNotes ? `<div class="footer-notes">${ps.invoiceFooterNotes}</div>` : ''}
-    ${ps.invoiceLegalDisclaimer ? `<div class="footer-disclaimer">${ps.invoiceLegalDisclaimer}</div>` : ''}
-    <div class="footer-bottom">
-      <span>Thank you for your business!</span>
-      <span>${footerRight}</span>
+    <!-- Footer — registrations (GSTIN, PAN, MSME, S&E, IEC, CIN) + legal + company meta -->
+    <div class="footer">
+      ${ps.invoiceFooterNotes ? `<div class="footer-top">${ps.invoiceFooterNotes}</div>` : ''}
+      ${regs.length > 0 ? `<div class="footer-regs">${regs.join(' &nbsp;|&nbsp; ')}</div>` : ''}
+      ${ps.invoiceLegalDisclaimer ? `<div class="footer-disclaimer">${ps.invoiceLegalDisclaimer}</div>` : ''}
+      <div class="footer-bottom">
+        <div class="footer-left">
+          ${coName} &nbsp;·&nbsp; ${coEmail}${coWebsite ? ` &nbsp;·&nbsp; ${coWebsite}` : ''}
+        </div>
+        <div class="footer-right">
+          SAC/HSN: ${ps.sacCode ?? '998314'} &nbsp;·&nbsp; Thank you for your business!
+        </div>
+      </div>
     </div>
-  </div>
 
-</div>
+  </div><!-- /summary -->
+
+</div><!-- /page -->
 </body>
 </html>`
 }
