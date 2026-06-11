@@ -393,25 +393,10 @@ html, body {
     background: #f8fafc;
     border-top: 1px solid #e2e8f0;
   }
-  .footer-inner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .footer-text { text-align: left; }
-  .footer-page {
-    display: block;
-    font-size: 7.5pt;
-    font-weight: 600;
-    color: #64748b;
-    white-space: nowrap;
-  }
-  /* counter(pages) is unreliable for fixed elements outside @page context —
-     use only counter(page) for browser print. Puppeteer PDF has accurate
-     "Page X of Y" via its injected pageNumber / totalPages spans. */
-  .footer-page::after {
-    content: "Page " counter(page);
-  }
+  /* CSS page counters are unreliable for position:fixed elements when
+     mixed @page margin rules are in use. Page X of Y is accurate in the
+     Puppeteer PDF (Download PDF button) via injected pageNumber/totalPages. */
+  .footer-page { display: none; }
   /* Accent bar fixed at very bottom of every page */
   .accent-bar-bottom {
     position: fixed;
