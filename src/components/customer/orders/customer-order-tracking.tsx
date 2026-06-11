@@ -58,6 +58,7 @@ export function CustomerOrderTracking() {
     id: string; invoiceNumber: string; status: string;
     totalAmount: number; paidAmount: number;
     dueDate: string | null; paidAt: string | null;
+    order?: { id: string; orderNumber: string } | null;
   } | null>(null)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
 
@@ -73,6 +74,10 @@ export function CustomerOrderTracking() {
     } catch { /* invoice may not exist yet */ }
     finally { setInvoiceLoading(false) }
   }, [token])
+
+  const handleDownloadPdf = useCallback((orderId: string) => {
+    window.open(`/api/core/storefront/orders/${orderId}/invoice/pdf`, '_blank')
+  }, [])
 
   // Fetch order details
   const { data: orderData, isLoading: orderLoading, error: orderError, refetch } = useOrder(selectedOrderId || "")
@@ -412,7 +417,7 @@ export function CustomerOrderTracking() {
         </div>
       </div>
 
-      {/* Invoice Section — visible for all order stages */}
+      {/* Invoice Card — visible at every order stage */}
       <div className="px-4 mb-2">
         {invoiceLoading ? (
           <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-2 text-gray-400">
@@ -421,35 +426,61 @@ export function CustomerOrderTracking() {
           </div>
         ) : invoice ? (
           <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
+            {/* Header row */}
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Receipt className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
                 <span className="text-sm font-bold text-gray-900">Invoice</span>
               </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                invoice.status === "PAID"
+              {/* Payment status badge */}
+              {(() => {
+                const isPartial = invoice.paidAmount > 0 && invoice.paidAmount < invoice.totalAmount
+                const label = invoice.status === "PAID"
+                  ? "PAID"
+                  : isPartial
+                  ? "PARTIALLY PAID"
+                  : invoice.status === "PAYMENT_DUE"
+                  ? "PAYMENT DUE"
+                  : "DRAFT"
+                const cls = invoice.status === "PAID"
                   ? "bg-emerald-100 text-emerald-700"
+                  : isPartial
+                  ? "bg-blue-100 text-blue-700"
                   : invoice.status === "PAYMENT_DUE"
                   ? "bg-amber-100 text-amber-700"
                   : "bg-gray-100 text-gray-500"
-              }`}>
-                {invoice.status === "DRAFT" ? "DRAFT" : invoice.status === "PAYMENT_DUE" ? "PAYMENT DUE" : "PAID"}
-              </span>
+                return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>
+              })()}
             </div>
 
-            <div className="flex items-center justify-between text-xs mb-3">
-              <span className="text-gray-500 font-mono">{invoice.invoiceNumber}</span>
+            {/* Invoice number + amount */}
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-gray-500 font-mono text-[11px]">{invoice.invoiceNumber}</span>
               <span className="font-bold text-gray-900">{formatPrice(invoice.totalAmount)}</span>
             </div>
 
-            {invoice.status === "PAYMENT_DUE" && invoice.dueDate && (
-              <p className="text-[10px] text-amber-600 mb-3">Due: {new Date(invoice.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
-            )}
-            {invoice.status === "PAID" && invoice.paidAt && (
-              <p className="text-[10px] text-emerald-600 mb-3">Paid on {new Date(invoice.paidAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+            {/* Partially paid amount row */}
+            {invoice.paidAmount > 0 && invoice.paidAmount < invoice.totalAmount && (
+              <div className="flex items-center justify-between text-[10px] mb-1">
+                <span className="text-blue-600">Paid so far</span>
+                <span className="text-blue-700 font-semibold">{formatPrice(invoice.paidAmount)}</span>
+              </div>
             )}
 
-            <div className="flex gap-2">
+            {/* Due / Paid date */}
+            {invoice.status === "PAYMENT_DUE" && invoice.dueDate && (
+              <p className="text-[10px] text-amber-600 mb-2">
+                Due: {new Date(invoice.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
+            )}
+            {invoice.status === "PAID" && invoice.paidAt && (
+              <p className="text-[10px] text-emerald-600 mb-2">
+                Paid on {new Date(invoice.paidAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 mt-3">
               <button
                 onClick={() => {
                   setSelectedInvoiceId(invoice.id)
@@ -461,6 +492,15 @@ export function CustomerOrderTracking() {
                 <FileText className="w-3.5 h-3.5" />
                 View Invoice
               </button>
+              {selectedOrderId && (
+                <button
+                  onClick={() => handleDownloadPdf(selectedOrderId)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download PDF
+                </button>
+              )}
             </div>
           </div>
         ) : null}

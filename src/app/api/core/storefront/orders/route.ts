@@ -464,15 +464,33 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
 
       // Create DRAFT invoice — linked to this order from the start so it's always discoverable
       try {
-        const invoiceNumber = orderNumber.replace(/^ORD-/, 'INV-')
-        const auditLog = JSON.stringify([{ event: 'CREATED', ts: now.toISOString() }])
+        // Invoice number: BIZSLUG/STORECODE/FY/NNNN
+        const invoiceStoreData = await db.store.findUnique({
+          where: { id: body.storeId as string },
+          select: { code: true },
+        })
+        const invoiceBizData = await db.business.findUnique({
+          where: { id: businessId },
+          select: { slug: true },
+        })
+        const fy      = (() => { const m = now.getMonth(); const y = now.getFullYear(); const s = m >= 3 ? y : y - 1; return `${s}-${String((s + 1) % 100).padStart(2, '0')}` })()
+        const seqKey  = `${businessId}:${body.storeId}:${fy}`
+        const seq     = await db.invoiceSequence.upsert({
+          where:  { financialYear: seqKey },
+          update: { nextVal: { increment: 1 } },
+          create: { financialYear: seqKey, nextVal: 2, updatedAt: now },
+        })
+        const bizPart   = (invoiceBizData?.slug ?? businessId).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+        const storePart = (invoiceStoreData?.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'MAIN'
+        const invoiceNumber = `${bizPart}/${storePart}/${fy}/${String(seq.nextVal - 1).padStart(4, '0')}`
+
         await db.invoice.create({
           data: {
             businessId,
-            orderId: order.id,
-            customerId: customer.id,
+            orderId:      order.id,
+            customerId:   customer.id,
             invoiceNumber,
-            invoiceType: 'TAX_INVOICE',
+            invoiceType:  'TAX_INVOICE',
             subtotal:      order.subtotal,
             totalTax:      order.totalTax,
             totalDiscount: order.totalDiscount,
@@ -482,7 +500,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
             igstAmount:    0,
             paidAmount:    0,
             status:        'DRAFT',
-            metadata:      JSON.stringify({ auditLog: JSON.parse(auditLog) }),
+            metadata:      JSON.stringify({ auditLog: [{ event: 'CREATED', ts: now.toISOString() }] }),
           },
         })
       } catch { /* non-critical — order committed, invoice can be created later */ }

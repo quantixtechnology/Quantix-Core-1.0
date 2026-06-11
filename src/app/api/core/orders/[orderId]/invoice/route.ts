@@ -17,16 +17,22 @@ function getFinancialYear(date: Date): string {
   return `${s}-${String((s + 1) % 100).padStart(2, '0')}`
 }
 
-async function nextOrderInvoiceNumber(businessId: string, fy: string): Promise<string> {
-  const key = `${businessId}:${fy}`
+async function nextOrderInvoiceNumber(
+  businessId: string,
+  storeId:    string,
+  bizSlug:    string,
+  storeCode:  string | null,
+  fy:         string,
+): Promise<string> {
+  const key = `${businessId}:${storeId}:${fy}`
   const seq = await db.invoiceSequence.upsert({
-    where: { financialYear: key },
+    where:  { financialYear: key },
     update: { nextVal: { increment: 1 } },
     create: { financialYear: key, nextVal: 2, updatedAt: new Date() },
   })
-  const now = new Date()
-  const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
-  return `INV-${dateStr}-${String(seq.nextVal - 1).padStart(3, '0')}`
+  const bizPart   = bizSlug.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+  const storePart = (storeCode ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'MAIN'
+  return `${bizPart}/${storePart}/${fy}/${String(seq.nextVal - 1).padStart(4, '0')}`
 }
 
 function appendAudit(existing: string, event: string, by?: string): string {
@@ -53,8 +59,12 @@ export const POST = withMiddleware({
     const user = req.user!
 
     const order = await db.order.findFirst({
-      where: { id: orderId },
-      include: { customer: true },
+      where:   { id: orderId },
+      include: {
+        customer: true,
+        store:    { select: { id: true, code: true } },
+        business: { select: { id: true, slug: true } },
+      },
     })
 
     if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
@@ -101,7 +111,13 @@ export const POST = withMiddleware({
 
     // No existing invoice (legacy order) — create one now
     const fy = getFinancialYear(now)
-    const invoiceNumber = await nextOrderInvoiceNumber(order.businessId, fy)
+    const invoiceNumber = await nextOrderInvoiceNumber(
+      order.businessId,
+      order.storeId,
+      order.business?.slug ?? order.businessId,
+      order.store?.code ?? null,
+      fy,
+    )
     const meta = appendAudit('{}', 'CREATED')
     const metaWithStatus = appendAudit(meta, newStatus, adminName)
 

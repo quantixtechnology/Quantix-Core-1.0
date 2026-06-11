@@ -389,3 +389,241 @@ ${printExtras}
 </body>
 </html>`
 }
+
+// ── Order Invoice renderer (Tenant → Customer) ────────────────────────────────
+// Renders a B2C tax invoice for a store order.
+// "Bill From" = the tenant business. "Bill To" = the end customer.
+
+export interface OrderCustomer {
+  name:    string
+  phone?:  string | null
+  email?:  string | null
+  address?: string | null
+}
+
+export interface OrderInvoiceBusiness {
+  name:         string
+  slug:         string
+  logo?:        string | null
+  primaryColor?: string | null
+  gstNumber?:   string | null
+  panNumber?:   string | null
+  address?:     string | null
+  city?:        string | null
+  state?:       string | null
+  pincode?:     string | null
+  contactEmail?: string | null
+  contactPhone?: string | null
+}
+
+export interface OrderInvoiceRenderOpts {
+  invoice:    Record<string, unknown>
+  business:   OrderInvoiceBusiness
+  storeName:  string
+  customer:   OrderCustomer
+  lineItems:  LineItem[]
+  logoSrc:    string | null
+  forPrint?:  boolean
+}
+
+export function buildOrderInvoiceHtml(opts: OrderInvoiceRenderOpts): string {
+  const { invoice, business, storeName, customer, lineItems, logoSrc, forPrint = false } = opts
+
+  const isPaid        = invoice.status === 'PAID'
+  const isPartialPaid = !isPaid && (invoice.paidAmount as number) > 0
+  const balance       = Math.max(0, (invoice.totalAmount as number) - (invoice.paidAmount as number))
+
+  const statusInfo = isPaid
+    ? { label: 'PAID',           color: '#059669', border: '#86efac' }
+    : isPartialPaid
+    ? { label: 'PARTIALLY PAID', color: '#d97706', border: '#fde68a' }
+    : invoice.status === 'PAYMENT_DUE'
+    ? { label: 'PAYMENT DUE',    color: '#d97706', border: '#fde68a' }
+    : { label: 'DRAFT',          color: '#9ca3af', border: '#e5e7eb' }
+
+  const accentColor = business.primaryColor || '#7c3aed'
+  const dueLabel    = isPaid ? '&#10003;&nbsp;Paid in Full' : 'Balance Due'
+
+  const sellerAddr = [
+    business.address,
+    business.city,
+    business.state,
+    business.pincode ? `– ${business.pincode}` : null,
+  ].filter(Boolean).join(', ')
+
+  const lineRows = lineItems.map(li => `
+    <tr>
+      <td class="td-desc">
+        <span class="item-name">${li.name}</span>
+        ${li.description ? `<br/><span class="item-sub">${li.description}</span>` : ''}
+      </td>
+      <td class="td-c">${li.quantity}</td>
+      <td class="td-r mono">${fmt(li.unitPrice)}</td>
+      <td class="td-r mono bold">${fmt(li.amount)}</td>
+    </tr>`).join('')
+
+  const taxRows = [
+    (invoice.cgstAmount as number) > 0
+      ? `<tr class="t-muted"><td>CGST</td><td class="mono td-r">${fmt(invoice.cgstAmount as number)}</td></tr>` : '',
+    (invoice.sgstAmount as number) > 0
+      ? `<tr class="t-muted"><td>SGST</td><td class="mono td-r">${fmt(invoice.sgstAmount as number)}</td></tr>` : '',
+    (invoice.igstAmount as number) > 0
+      ? `<tr class="t-muted"><td>IGST</td><td class="mono td-r">${fmt(invoice.igstAmount as number)}</td></tr>` : '',
+  ].join('')
+
+  const wmText  = isPaid ? 'PAID' : 'PAYMENT DUE'
+  const wmColor = isPaid ? 'rgba(5,150,105,0.06)' : 'rgba(217,119,6,0.05)'
+
+  const notesText = invoice.notes as string | null
+
+  const printExtras = forPrint ? `
+  @page { size: A4; margin: 12mm 10mm; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .watermark { color: ${isPaid ? 'rgba(5,150,105,0.04)' : 'rgba(217,119,6,0.03)'}; }
+    .page { padding: 0; }
+  }` : ''
+
+  const printScript = forPrint
+    ? `<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},250);});</script>`
+    : ''
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Invoice ${invoice.invoiceNumber} — ${business.name}</title>
+${printScript}
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;background:#fff;font-size:11.5px;line-height:1.45;}
+.page{max-width:760px;margin:0 auto;padding:22px 28px 28px;}
+.watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:90px;font-weight:900;letter-spacing:10px;white-space:nowrap;pointer-events:none;z-index:-1;color:${wmColor};}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:10px;border-bottom:2px solid ${accentColor};margin-bottom:10px;}
+.hdr-left{display:flex;align-items:flex-start;gap:10px;min-width:0;}
+.co-logo{height:30px;width:auto;object-fit:contain;flex-shrink:0;margin-top:1px;}
+.co-info{min-width:0;}
+.co-name{font-size:14px;font-weight:800;color:#111827;letter-spacing:-0.2px;line-height:1.2;}
+.co-meta{font-size:10px;color:#6b7280;margin-top:3px;line-height:1.65;}
+.hdr-right{text-align:right;flex-shrink:0;}
+.inv-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:${accentColor};}
+.inv-num{font-size:16px;font-weight:800;font-family:monospace;color:#111827;margin-top:1px;line-height:1.15;}
+.inv-meta{font-size:10px;color:#6b7280;margin-top:4px;line-height:1.7;}
+.inv-badge{display:inline-block;border:2px solid ${statusInfo.color};border-radius:4px;padding:2px 9px;font-size:10px;font-weight:800;color:${statusInfo.color};letter-spacing:0.1em;text-transform:uppercase;margin-top:5px;transform:rotate(-4deg);}
+.billing{display:flex;gap:10px;margin-bottom:10px;}
+.bsec{flex:1;border:1px solid #f3f4f6;border-radius:5px;padding:7px 10px;}
+.bsec-lbl{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:3px;}
+.bsec-name{font-size:11.5px;font-weight:700;color:#111827;}
+.bsec-meta{font-size:10px;color:#6b7280;line-height:1.6;margin-top:2px;}
+table.items{width:100%;border-collapse:collapse;font-size:11px;}
+table.items thead{display:table-header-group;}
+table.items thead tr{background:${accentColor};}
+table.items thead th{padding:6px 8px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#fff;text-align:left;}
+table.items thead th.th-r{text-align:right;}
+table.items thead th.th-c{text-align:center;}
+table.items tbody td{border-bottom:1px solid #f3f4f6;padding:6px 8px;vertical-align:top;}
+table.items tbody tr:nth-child(even){background:#fafafa;}
+.item-name{font-weight:600;color:#111827;}
+.item-sub{font-size:9.5px;color:#9ca3af;}
+.td-c{text-align:center;width:46px;}
+.td-r{text-align:right;}
+.td-desc{width:auto;}
+.mono{font-family:monospace;}
+.bold{font-weight:700;}
+.muted{color:#6b7280;}
+.summary{page-break-inside:avoid;break-inside:avoid;margin-top:12px;}
+.totals-row{display:flex;justify-content:flex-end;margin-bottom:10px;}
+.totals-tbl{width:250px;border-collapse:collapse;font-size:11px;}
+.totals-tbl td{padding:3px 8px;}
+.t-muted td{color:#6b7280;}
+.t-sep td{border-top:1px solid #e5e7eb;padding-top:6px;}
+.t-total td{font-size:13px;font-weight:800;color:${accentColor};}
+.t-paid td{color:#059669;font-weight:600;}
+.t-due td{font-size:14px;font-weight:800;color:${statusInfo.color};border-top:2px solid ${statusInfo.border};padding-top:7px;}
+.order-ref{font-size:9.5px;color:#9ca3af;margin-bottom:8px;padding:4px 0;border-bottom:1px dashed #f3f4f6;}
+.notes-box{background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:8px 10px;font-size:10.5px;color:#6b7280;white-space:pre-wrap;line-height:1.55;margin-bottom:10px;}
+.footer{margin-top:10px;padding-top:8px;border-top:1px solid #f3f4f6;font-size:9.5px;color:#9ca3af;line-height:1.6;}
+.footer-bottom{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;}
+${printExtras}
+</style>
+</head>
+<body>
+<div class="watermark">${wmText}</div>
+<div class="page">
+
+  <div class="hdr">
+    <div class="hdr-left">
+      ${logoSrc ? `<img src="${logoSrc}" alt="${business.name}" class="co-logo"/>` : ''}
+      <div class="co-info">
+        <div class="co-name">${business.name}</div>
+        <div class="co-meta">${[storeName !== business.name ? storeName : null, sellerAddr, business.contactEmail, business.contactPhone].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>
+      </div>
+    </div>
+    <div class="hdr-right">
+      <div class="inv-label">Tax Invoice</div>
+      <div class="inv-num">${invoice.invoiceNumber}</div>
+      <div class="inv-meta">
+        Issued: ${fmtDate(invoice.createdAt as string | null)}
+        ${invoice.dueDate ? `<br/>Due: ${fmtDate(invoice.dueDate as string | null)}` : ''}
+        ${invoice.paidAt  ? `<br/>Paid: ${fmtDate(invoice.paidAt  as string | null)}` : ''}
+      </div>
+      <div><span class="inv-badge">${statusInfo.label}</span></div>
+    </div>
+  </div>
+
+  ${(invoice.order as Record<string,unknown>)?.orderNumber
+    ? `<div class="order-ref">Order Reference: <span style="font-family:monospace;color:#374151;font-weight:600;">${(invoice.order as Record<string,unknown>).orderNumber}</span></div>`
+    : ''}
+
+  <div class="billing">
+    <div class="bsec">
+      <div class="bsec-lbl">From</div>
+      <div class="bsec-name">${business.name}</div>
+      <div class="bsec-meta">${[sellerAddr || null, business.contactEmail, business.gstNumber ? `GSTIN: ${business.gstNumber}` : null].filter(Boolean).join('<br/>')}</div>
+    </div>
+    <div class="bsec">
+      <div class="bsec-lbl">Bill To</div>
+      <div class="bsec-name">${customer.name}</div>
+      <div class="bsec-meta">${[customer.phone, customer.email, customer.address].filter(Boolean).join('<br/>')}</div>
+    </div>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th class="td-desc">Item</th>
+        <th class="th-c" style="width:46px;">Qty</th>
+        <th class="th-r" style="width:110px;">Unit Price</th>
+        <th class="th-r" style="width:110px;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>${lineRows}</tbody>
+  </table>
+
+  <div class="summary">
+    <div class="totals-row">
+      <table class="totals-tbl">
+        <tr class="t-muted"><td>Subtotal</td><td class="mono td-r">${fmt(invoice.subtotal as number)}</td></tr>
+        ${(invoice.totalDiscount as number) > 0 ? `<tr class="t-muted"><td>Discount</td><td class="mono td-r">−${fmt(invoice.totalDiscount as number)}</td></tr>` : ''}
+        ${taxRows}
+        <tr class="t-sep t-total"><td>Total</td><td class="mono td-r">${fmt(invoice.totalAmount as number)}</td></tr>
+        ${(invoice.paidAmount as number) > 0 ? `<tr class="t-paid"><td>Paid</td><td class="mono td-r">${fmt(invoice.paidAmount as number)}</td></tr>` : ''}
+        <tr class="t-due"><td>${dueLabel}</td><td class="mono td-r">${fmt(isPaid ? 0 : balance)}</td></tr>
+      </table>
+    </div>
+
+    ${notesText ? `<div class="notes-box"><strong>Notes:</strong> ${notesText}</div>` : ''}
+
+    <div class="footer">
+      <div class="footer-bottom">
+        <div>${business.name} &nbsp;·&nbsp; ${business.contactEmail || ''}</div>
+        <div>${business.gstNumber ? `GSTIN: ${business.gstNumber}` : ''}</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>`
+}

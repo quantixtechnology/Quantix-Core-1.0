@@ -1,41 +1,48 @@
 // GET /api/core/storefront/orders/[orderId]/invoice
 // Returns the invoice for a specific order, visible to the order's customer.
+// Admin roles (CLIENT_OWNER, STORE_MANAGER) may access without customer-ownership check.
 
 import { NextResponse } from 'next/server'
 import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
 export const GET = withMiddleware({
-  requireAuth: true,
+  requireAuth:   true,
   requiredRoles: ['CUSTOMER', 'CLIENT_OWNER', 'STORE_MANAGER'],
 })(async (req, context) => {
   try {
-    const params = await context?.params
+    const params  = await context?.params
     const orderId = params?.orderId as string
     if (!orderId) return NextResponse.json({ success: false, error: 'orderId required' }, { status: 400 })
 
-    const user = req.user!
+    const user       = req.user!
     const businessId = user.businessId!
 
-    // Verify the order belongs to this customer
-    const customer = await db.customer.findFirst({
-      where: { userId: user.id, businessId },
-    })
-    if (!customer) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 })
+    const isAdmin = user.isPlatformAdmin || ['CLIENT_OWNER', 'STORE_MANAGER'].includes(user.role as string)
 
-    const order = await db.order.findFirst({
-      where: { id: orderId, customerId: customer.id, businessId },
-      select: { id: true },
-    })
-    if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
+    if (!isAdmin) {
+      // Customer: verify the order belongs to them
+      const customer = await db.customer.findFirst({
+        where: { userId: user.id, businessId },
+        select: { id: true },
+      })
+      if (!customer) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 })
+
+      const order = await db.order.findFirst({
+        where: { id: orderId, customerId: customer.id, businessId },
+        select: { id: true },
+      })
+      if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
+    }
 
     const invoice = await db.invoice.findUnique({
       where: { orderId },
       select: {
         id: true, invoiceNumber: true, status: true,
-        totalAmount: true, paidAmount: true, dueDate: true, paidAt: true,
-        notes: true, createdAt: true,
-        order: { select: { orderNumber: true } },
+        totalAmount: true, paidAmount: true, subtotal: true,
+        totalTax: true, totalDiscount: true,
+        dueDate: true, paidAt: true, createdAt: true, notes: true,
+        order: { select: { id: true, orderNumber: true } },
       },
     })
 
