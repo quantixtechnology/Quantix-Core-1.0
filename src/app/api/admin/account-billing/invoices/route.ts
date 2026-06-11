@@ -38,7 +38,7 @@ export const GET = withMiddleware({
         take: limit,
         include: {
           account: {
-            include: { business: { select: { name: true, slug: true } } },
+            include: { business: { select: { name: true, slug: true, contactPhone: true, contactEmail: true } } },
           },
         },
       }),
@@ -51,6 +51,8 @@ export const GET = withMiddleware({
       businessId:     inv.businessId,
       businessName:   inv.account.business.name,
       businessSlug:   inv.account.business.slug,
+      businessPhone:  inv.account.business.contactPhone,
+      businessEmail:  inv.account.business.contactEmail,
       status:         inv.status,
       billingPeriod:  inv.billingPeriod,
       totalAmount:    inv.totalAmount,

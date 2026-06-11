@@ -2,22 +2,36 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Send, CheckCircle, XCircle, RefreshCw, Building2 } from "lucide-react"
+import {
+  Download, Mail, MessageCircle, CreditCard,
+  Send, XCircle, RefreshCw, Clock, CheckCircle2,
+  Building2, FileText,
+} from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 interface LineItem {
-  serviceId?:  string | null
-  name:        string
+  serviceId?:   string | null
+  name:         string
   description?: string | null
-  quantity:    number
-  unitPrice:   number
-  amount:      number
+  quantity:     number
+  unitPrice:    number
+  amount:       number
+}
+
+interface Payment {
+  id:            string
+  amount:        number
+  paidAt:        string
+  paymentMode:   string | null
+  status:        string
+  transactionId: string | null
 }
 
 interface Invoice {
@@ -27,7 +41,7 @@ interface Invoice {
   billingPeriod: string | null
   periodStart:   string | null
   periodEnd:     string | null
-  lineItems:     string       // JSON
+  lineItems:     string
   subtotal:      number
   taxRate:       number
   cgstRate:      number
@@ -52,28 +66,15 @@ interface Invoice {
       address:      string | null
       city:         string | null
       state:        string | null
+      pincode:      string | null
       gstNumber:    string | null
       logo:         string | null
     }
   }
-  payments: Array<{
-    id:            string
-    amount:        number
-    paidAt:        string
-    paymentMode:   string | null
-    status:        string
-    transactionId: string | null
-  }>
+  payments: Payment[]
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT:            "bg-slate-100 text-slate-700",
-  SENT:             "bg-sky-100 text-sky-700",
-  PAID:             "bg-emerald-100 text-emerald-700",
-  PARTIALLY_PAID:   "bg-amber-100 text-amber-700",
-  OVERDUE:          "bg-red-100 text-red-700",
-  CANCELLED:        "bg-rose-100 text-rose-700",
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
   return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -83,19 +84,36 @@ function fmtDate(s: string | null) {
   return new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
 }
 
-interface Props {
-  open:         boolean
-  invoiceId:    string | null
-  businessId:   string
-  onClose:      () => void
-  onStatusChange?: () => void
+type PaymentDisplay = { label: string; color: string; bg: string; border: string; badgeCls: string }
+
+function getPaymentDisplay(status: string): PaymentDisplay {
+  if (status === "PAID")      return { label: "PAID",         color: "#059669", bg: "bg-emerald-50", border: "border-emerald-200", badgeCls: "bg-emerald-100 text-emerald-700" }
+  if (status === "CANCELLED") return { label: "CANCELLED",    color: "#6b7280", bg: "bg-slate-50",   border: "border-slate-200",   badgeCls: "bg-slate-100 text-slate-600" }
+  if (status === "OVERDUE")   return { label: "PAYMENT DUE",  color: "#dc2626", bg: "bg-red-50",     border: "border-red-200",     badgeCls: "bg-red-100 text-red-700" }
+  return                             { label: "PAYMENT DUE",  color: "#d97706", bg: "bg-amber-50",   border: "border-amber-200",   badgeCls: "bg-amber-100 text-amber-700" }
 }
 
-export function InvoicePreviewPanel({ open, invoiceId, businessId, onClose, onStatusChange }: Props) {
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+interface Props {
+  open:              boolean
+  invoiceId:         string | null
+  businessId:        string
+  onClose:           () => void
+  onStatusChange?:   () => void
+  onRecordPayment?:  (invoiceId: string) => void
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function InvoicePreviewPanel({
+  open, invoiceId, businessId, onClose, onStatusChange, onRecordPayment,
+}: Props) {
   const { user } = useAuthStore()
-  const [invoice, setInvoice]   = useState<Invoice | null>(null)
-  const [loading, setLoading]   = useState(false)
-  const [acting,  setActing]    = useState(false)
+  const [invoice,   setInvoice]   = useState<Invoice | null>(null)
+  const [loading,   setLoading]   = useState(false)
+  const [acting,    setActing]    = useState(false)
+  const [emailing,  setEmailing]  = useState(false)
 
   const load = useCallback(async () => {
     if (!invoiceId) return
@@ -104,11 +122,16 @@ export function InvoicePreviewPanel({ open, invoiceId, businessId, onClose, onSt
       const res  = await fetch(`/api/admin/account-billing/${businessId}/invoices/${invoiceId}`, { headers: getAuthHeaders() })
       const json = await res.json()
       if (json.success) setInvoice(json.data)
+      else toast.error("Failed to load invoice")
     } catch { toast.error("Failed to load invoice") }
     finally { setLoading(false) }
   }, [invoiceId, businessId])
 
-  useEffect(() => { if (open && invoiceId) load() }, [open, invoiceId, load])
+  useEffect(() => {
+    if (open && invoiceId) { setInvoice(null); load() }
+  }, [open, invoiceId]) // eslint-disable-line
+
+  // ── Actions ────────────────────────────────────────────────────────────────
 
   const transition = async (status: string) => {
     if (!invoice) return
@@ -121,160 +144,386 @@ export function InvoicePreviewPanel({ open, invoiceId, businessId, onClose, onSt
       })
       const json = await res.json()
       if (!json.success) { toast.error(json.error ?? "Failed to update invoice"); return }
-      toast.success(`Invoice ${status.toLowerCase()}`)
+      toast.success(`Invoice marked ${status.toLowerCase()}`)
       await load()
       onStatusChange?.()
     } catch { toast.error("Failed to update invoice") }
     finally { setActing(false) }
   }
 
-  const lineItems: LineItem[] = invoice ? (() => { try { return JSON.parse(invoice.lineItems) } catch { return [] } })() : []
-  const biz = invoice?.account?.business
+  const downloadPdf = () => {
+    if (!invoice) return
+    const url = `/api/admin/account-billing/${businessId}/invoices/${invoice.id}/pdf`
+    window.open(url, "_blank")
+  }
+
+  const sendEmail = async () => {
+    if (!invoice) return
+    const biz = invoice.account.business
+    if (!biz.contactEmail) { toast.error("Business has no contact email"); return }
+    setEmailing(true)
+    try {
+      const res  = await fetch(`/api/admin/account-billing/${businessId}/invoices/${invoice.id}/email`, {
+        method:  "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body:    JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!json.success) { toast.error(json.error ?? "Failed to send email"); return }
+      toast.success(json.message ?? "Invoice emailed")
+      await load(); onStatusChange?.()
+    } catch { toast.error("Failed to send email") }
+    finally { setEmailing(false) }
+  }
+
+  const sendWhatsApp = () => {
+    if (!invoice) return
+    const biz     = invoice.account.business
+    const phone   = biz.contactPhone?.replace(/\D/g, "")
+    if (!phone) { toast.error("Business has no phone number for WhatsApp"); return }
+    const pd      = getPaymentDisplay(invoice.status)
+    const balance = Math.max(0, invoice.totalAmount - invoice.paidAmount)
+    const msg = [
+      `Hi ${biz.name},`,
+      ``,
+      pd.label === "PAID"
+        ? `Your invoice ${invoice.invoiceNumber} has been marked as PAID. Thank you!`
+        : `Your invoice ${invoice.invoiceNumber} for ${fmt(invoice.totalAmount)} is pending.`,
+      ``,
+      `Invoice: ${invoice.invoiceNumber}`,
+      invoice.billingPeriod ? `Period: ${invoice.billingPeriod}` : null,
+      invoice.dueDate ? `Due Date: ${fmtDate(invoice.dueDate)}` : null,
+      pd.label !== "PAID" ? `Amount Due: ${fmt(balance)}` : `Amount: ${fmt(invoice.totalAmount)} (PAID)`,
+      ``,
+      `For queries, contact billing@quantixtechnology.in`,
+    ].filter(l => l !== null).join("\n")
+    const wa = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+    window.open(wa, "_blank")
+  }
+
+  // ── Derived state ──────────────────────────────────────────────────────────
+
+  const lineItems: LineItem[] = invoice
+    ? (() => { try { return JSON.parse(invoice.lineItems) } catch { return [] } })()
+    : []
+  const biz     = invoice?.account?.business
+  const pd      = invoice ? getPaymentDisplay(invoice.status) : null
+  const balance = invoice ? Math.max(0, invoice.totalAmount - invoice.paidAmount) : 0
+  const isPaid  = invoice?.status === "PAID"
+  const canPay  = invoice && !["PAID", "CANCELLED"].includes(invoice.status)
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) onClose() }}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-0">
-        <SheetHeader className="px-6 pt-6 pb-4 border-b">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="text-base font-semibold">
-              {loading ? "Loading…" : invoice?.invoiceNumber ?? "Invoice"}
-            </SheetTitle>
-            {invoice && (
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[invoice.status] ?? "bg-muted text-muted-foreground"}`}>
-                {invoice.status}
+      <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col overflow-hidden">
+
+        {/* Sheet Header */}
+        <SheetHeader className="px-6 pt-5 pb-4 border-b shrink-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="rounded-lg bg-violet-100 p-1.5 shrink-0">
+                <FileText className="h-4 w-4 text-violet-700" />
+              </div>
+              <div className="min-w-0">
+                <SheetTitle className="text-sm font-semibold truncate">
+                  {loading ? "Loading…" : (invoice?.invoiceNumber ?? "Invoice")}
+                </SheetTitle>
+                {invoice?.billingPeriod && (
+                  <p className="text-[11px] text-muted-foreground">{invoice.billingPeriod}</p>
+                )}
+              </div>
+            </div>
+            {invoice && pd && (
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0 tracking-wide ${pd.badgeCls}`}>
+                {pd.label}
               </span>
             )}
           </div>
         </SheetHeader>
 
-        {loading && (
-          <div className="p-6 space-y-4">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-        )}
-
-        {!loading && invoice && (
-          <div className="p-6 space-y-6">
-            {/* Business header */}
-            <div className="flex justify-between items-start gap-6">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-violet-600" />
-                  <span className="font-semibold text-sm">{biz?.name}</span>
-                </div>
-                {biz?.contactEmail && <p className="text-xs text-muted-foreground">{biz.contactEmail}</p>}
-                {biz?.contactPhone && <p className="text-xs text-muted-foreground">{biz.contactPhone}</p>}
-                {(biz?.address || biz?.city) && (
-                  <p className="text-xs text-muted-foreground">
-                    {[biz.address, biz.city, biz.state].filter(Boolean).join(", ")}
-                  </p>
-                )}
-                {biz?.gstNumber && <p className="text-xs text-muted-foreground">GST: {biz.gstNumber}</p>}
-              </div>
-
-              <div className="text-right space-y-0.5 text-xs">
-                <p className="font-mono font-semibold text-sm">{invoice.invoiceNumber}</p>
-                {invoice.billingPeriod && <p className="text-muted-foreground">{invoice.billingPeriod}</p>}
-                <p className="text-muted-foreground">Issued: {fmtDate(invoice.issuedDate)}</p>
-                {invoice.dueDate && <p className={`font-medium ${invoice.status === "OVERDUE" ? "text-red-600" : ""}`}>Due: {fmtDate(invoice.dueDate)}</p>}
-              </div>
+        {/* Scrollable invoice body */}
+        <div className="flex-1 overflow-y-auto">
+          {loading && (
+            <div className="p-6 space-y-4">
+              {[0,1,2,3].map(i => <Skeleton key={i} className="h-6 w-full" />)}
             </div>
+          )}
 
-            <Separator />
+          {!loading && invoice && biz && pd && (
+            <div className="p-6 space-y-5">
 
-            {/* Line items */}
-            <div>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-muted-foreground">
-                    <th className="pb-2 text-left font-medium">Service</th>
-                    <th className="pb-2 text-right font-medium w-12">Qty</th>
-                    <th className="pb-2 text-right font-medium w-24">Unit Price</th>
-                    <th className="pb-2 text-right font-medium w-24">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {lineItems.map((item, i) => (
-                    <tr key={i} className="py-1">
-                      <td className="py-2">
-                        <p className="font-medium">{item.name}</p>
-                        {item.description && <p className="text-muted-foreground text-[10px]">{item.description}</p>}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">{item.quantity}</td>
-                      <td className="py-2 text-right tabular-nums font-mono">{fmt(item.unitPrice)}</td>
-                      <td className="py-2 text-right tabular-nums font-mono">{fmt(item.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <Separator />
-
-            {/* Totals */}
-            <div className="space-y-1.5 text-xs max-w-xs ml-auto">
-              <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span className="font-mono">{fmt(invoice.subtotal)}</span></div>
-              {invoice.cgstAmount > 0 && <div className="flex justify-between text-muted-foreground"><span>CGST ({invoice.cgstRate}%)</span><span className="font-mono">{fmt(invoice.cgstAmount)}</span></div>}
-              {invoice.sgstAmount > 0 && <div className="flex justify-between text-muted-foreground"><span>SGST ({invoice.sgstRate}%)</span><span className="font-mono">{fmt(invoice.sgstAmount)}</span></div>}
-              {invoice.igstAmount > 0 && <div className="flex justify-between text-muted-foreground"><span>IGST ({invoice.igstRate}%)</span><span className="font-mono">{fmt(invoice.igstAmount)}</span></div>}
-              <div className="flex justify-between font-semibold border-t pt-1.5 text-sm"><span>Total</span><span className="font-mono text-violet-700">{fmt(invoice.totalAmount)}</span></div>
-              {invoice.paidAmount > 0 && (
-                <>
-                  <div className="flex justify-between text-emerald-600"><span>Paid</span><span className="font-mono">{fmt(invoice.paidAmount)}</span></div>
-                  <div className="flex justify-between font-semibold text-red-600"><span>Balance Due</span><span className="font-mono">{fmt(Math.max(0, invoice.totalAmount - invoice.paidAmount))}</span></div>
-                </>
-              )}
-            </div>
-
-            {/* Payments received */}
-            {invoice.payments.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Payments</p>
-                {invoice.payments.map(p => (
-                  <div key={p.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-xs">
-                    <div>
-                      <p className="font-medium">{fmt(p.amount)}</p>
-                      <p className="text-muted-foreground">{p.paymentMode ?? "—"}{p.transactionId ? ` · ${p.transactionId}` : ""}</p>
+              {/* ── Quantix Technology Letterhead ── */}
+              <div className="rounded-xl border bg-gradient-to-br from-violet-50 to-indigo-50 p-5">
+                <div className="flex items-start justify-between gap-4">
+                  {/* Company */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="rounded-lg bg-violet-600 p-1.5">
+                        <Building2 className="h-4 w-4 text-white" />
+                      </div>
+                      <span className="font-bold text-base text-violet-900">Quantix Technology</span>
                     </div>
-                    <div className="text-right">
-                      <p>{fmtDate(p.paidAt)}</p>
-                      <Badge variant={p.status === "COMPLETED" ? "default" : "secondary"} className="text-[9px] h-4">{p.status}</Badge>
+                    <p className="text-[11px] text-violet-700/80">Bangalore, Karnataka, India</p>
+                    <p className="text-[11px] text-violet-700/80">billing@quantixtechnology.in</p>
+                    <p className="text-[10px] text-violet-600/60 font-mono mt-1">HSN/SAC: 998314</p>
+                  </div>
+
+                  {/* Invoice meta */}
+                  <div className="text-right space-y-1">
+                    <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">Tax Invoice</p>
+                    <p className="font-mono font-bold text-sm text-violet-900">{invoice.invoiceNumber}</p>
+                    <p className="text-[11px] text-violet-700/80">Issued: {fmtDate(invoice.issuedDate)}</p>
+                    {invoice.dueDate && (
+                      <p className={`text-[11px] font-semibold ${invoice.status === "OVERDUE" ? "text-red-600" : "text-violet-700/80"}`}>
+                        Due: {fmtDate(invoice.dueDate)}
+                      </p>
+                    )}
+                    {/* Status stamp */}
+                    <div className="mt-2">
+                      <span
+                        className={`inline-block text-[11px] font-black px-3 py-1 rounded border-2 tracking-widest uppercase`}
+                        style={{
+                          color:            pd.color,
+                          borderColor:      pd.color,
+                          transform:        "rotate(-4deg)",
+                          display:          "inline-block",
+                          transformOrigin:  "center",
+                        }}
+                      >
+                        {pd.label}
+                      </span>
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
-            )}
 
-            {invoice.notes && (
-              <div className="rounded-lg bg-muted/30 border p-3 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Notes:</span> {invoice.notes}
+              {/* ── Bill From / Bill To ── */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-xl border p-4 space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Bill From</p>
+                  <p className="text-sm font-semibold">Quantix Technology</p>
+                  <p className="text-[11px] text-muted-foreground">Bangalore, Karnataka, India</p>
+                  <p className="text-[11px] text-muted-foreground">billing@quantixtechnology.in</p>
+                </div>
+                <div className="rounded-xl border p-4 space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Bill To</p>
+                  <p className="text-sm font-semibold">{biz.name}</p>
+                  {biz.contactEmail  && <p className="text-[11px] text-muted-foreground">{biz.contactEmail}</p>}
+                  {biz.contactPhone  && <p className="text-[11px] text-muted-foreground">{biz.contactPhone}</p>}
+                  {(biz.address || biz.city) && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {[biz.address, biz.city, biz.state].filter(Boolean).join(", ")}
+                      {biz.pincode ? ` – ${biz.pincode}` : ""}
+                    </p>
+                  )}
+                  {biz.gstNumber && <p className="text-[11px] text-muted-foreground font-mono">GSTIN: {biz.gstNumber}</p>}
+                </div>
               </div>
-            )}
 
-            {/* Actions */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t">
-              {invoice.status === "DRAFT" && (
-                <Button size="sm" className="text-xs h-8 gap-1.5" onClick={() => transition("SENT")} disabled={acting}>
-                  {acting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Mark Sent
-                </Button>
+              <Separator />
+
+              {/* ── Line Items ── */}
+              <div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="pb-2 text-left font-semibold text-muted-foreground text-[10px] uppercase tracking-wide">Service / Description</th>
+                      <th className="pb-2 w-10 text-center font-semibold text-muted-foreground text-[10px] uppercase tracking-wide">Qty</th>
+                      <th className="pb-2 w-28 text-right font-semibold text-muted-foreground text-[10px] uppercase tracking-wide">Unit Price</th>
+                      <th className="pb-2 w-28 text-right font-semibold text-muted-foreground text-[10px] uppercase tracking-wide">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {lineItems.map((item, i) => (
+                      <tr key={i}>
+                        <td className="py-2.5">
+                          <p className="font-semibold text-foreground">{item.name}</p>
+                          {item.description && <p className="text-[10px] text-muted-foreground mt-0.5">{item.description}</p>}
+                        </td>
+                        <td className="py-2.5 text-center tabular-nums">{item.quantity}</td>
+                        <td className="py-2.5 text-right tabular-nums font-mono">{fmt(item.unitPrice)}</td>
+                        <td className="py-2.5 text-right tabular-nums font-mono font-semibold">{fmt(item.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <Separator />
+
+              {/* ── Totals ── */}
+              <div className="flex justify-end">
+                <div className="w-60 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span className="font-mono">{fmt(invoice.subtotal)}</span>
+                  </div>
+                  {invoice.cgstAmount > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>CGST ({invoice.cgstRate}%)</span>
+                      <span className="font-mono">{fmt(invoice.cgstAmount)}</span>
+                    </div>
+                  )}
+                  {invoice.sgstAmount > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>SGST ({invoice.sgstRate}%)</span>
+                      <span className="font-mono">{fmt(invoice.sgstAmount)}</span>
+                    </div>
+                  )}
+                  {invoice.igstAmount > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>IGST ({invoice.igstRate}%)</span>
+                      <span className="font-mono">{fmt(invoice.igstAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold border-t pt-2 text-sm">
+                    <span>Total</span>
+                    <span className="font-mono text-violet-700">{fmt(invoice.totalAmount)}</span>
+                  </div>
+                  {invoice.paidAmount > 0 && (
+                    <div className="flex justify-between text-emerald-600 font-semibold">
+                      <span>Paid</span>
+                      <span className="font-mono">{fmt(invoice.paidAmount)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Payment Status Box ── */}
+              <div className={`rounded-xl border-2 p-4 flex items-center justify-between ${pd.bg} ${pd.border}`}>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: pd.color }}>
+                    {isPaid ? "✓ Payment Received" : "Amount Due"}
+                  </p>
+                  {isPaid && invoice.payments.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Received on {fmtDate(invoice.payments[0].paidAt)}
+                    </p>
+                  )}
+                  {!isPaid && invoice.dueDate && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Please pay by {fmtDate(invoice.dueDate)}
+                    </p>
+                  )}
+                </div>
+                <div className="text-2xl font-black font-mono" style={{ color: pd.color }}>
+                  {fmt(isPaid ? 0 : balance)}
+                </div>
+              </div>
+
+              {/* ── Payment History ── */}
+              {invoice.payments.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Payment History</p>
+                  {invoice.payments.map(p => (
+                    <div key={p.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5 text-xs">
+                      <div className="space-y-0.5">
+                        <p className="font-semibold">{fmt(p.amount)}</p>
+                        <p className="text-muted-foreground text-[10px]">
+                          {[p.paymentMode, p.transactionId].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <div className="text-right space-y-0.5">
+                        <p>{fmtDate(p.paidAt)}</p>
+                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${p.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                          {p.status === "PENDING_VERIFICATION" ? "Pending" : p.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
-              {["SENT", "PARTIALLY_PAID", "OVERDUE"].includes(invoice.status) && (
-                <Button size="sm" variant="default" className="text-xs h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={() => transition("PAID")} disabled={acting}>
-                  {acting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />} Mark Paid
-                </Button>
+
+              {/* ── Notes ── */}
+              {invoice.notes && (
+                <div className="rounded-xl bg-muted/40 border px-4 py-3 text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">Notes: </span>{invoice.notes}
+                </div>
               )}
-              {invoice.status === "SENT" && (
-                <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => transition("OVERDUE")} disabled={acting}>
-                  Mark Overdue
-                </Button>
-              )}
+
+              {/* ── Status transition actions (admin only) ── */}
               {!["PAID", "CANCELLED"].includes(invoice.status) && (
-                <Button size="sm" variant="outline" className="text-xs h-8 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5" onClick={() => transition("CANCELLED")} disabled={acting}>
-                  <XCircle className="h-3 w-3" /> Cancel
-                </Button>
+                <div className="rounded-xl border p-4 space-y-2">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Admin Actions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {invoice.status === "DRAFT" && (
+                      <Button size="sm" variant="outline" className="text-xs h-8 gap-1.5" onClick={() => transition("SENT")} disabled={acting}>
+                        {acting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Mark Sent
+                      </Button>
+                    )}
+                    {["SENT", "OVERDUE"].includes(invoice.status) && (
+                      <Button size="sm" variant="outline" className="text-xs h-8 gap-1.5" onClick={() => transition("OVERDUE")} disabled={acting || invoice.status === "OVERDUE"}>
+                        <Clock className="h-3 w-3" /> Mark Overdue
+                      </Button>
+                    )}
+                    {["SENT", "PARTIALLY_PAID", "OVERDUE"].includes(invoice.status) && (
+                      <Button size="sm" className="text-xs h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => transition("PAID")} disabled={acting}>
+                        {acting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />} Mark Paid
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" className="text-xs h-8 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5" onClick={() => transition("CANCELLED")} disabled={acting}>
+                      <XCircle className="h-3 w-3" /> Cancel Invoice
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+        </div>
+
+        {/* ── Sticky Action Bar ── */}
+        {invoice && (
+          <div className="border-t bg-background px-6 py-4 shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Download PDF */}
+              <Button
+                size="sm" variant="default"
+                className="text-xs h-8 gap-1.5 bg-violet-600 hover:bg-violet-700"
+                onClick={downloadPdf}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download PDF
+              </Button>
+
+              {/* Email */}
+              <Button
+                size="sm" variant="outline"
+                className="text-xs h-8 gap-1.5"
+                onClick={sendEmail}
+                disabled={emailing || !biz?.contactEmail}
+                title={!biz?.contactEmail ? "No contact email" : undefined}
+              >
+                {emailing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                {emailing ? "Sending…" : "Email Invoice"}
+              </Button>
+
+              {/* WhatsApp */}
+              <Button
+                size="sm" variant="outline"
+                className="text-xs h-8 gap-1.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                onClick={sendWhatsApp}
+                disabled={!biz?.contactPhone}
+                title={!biz?.contactPhone ? "No phone number" : undefined}
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                WhatsApp
+              </Button>
+
+              {/* Record Payment */}
+              {canPay && onRecordPayment && (
+                <>
+                  <div className="h-5 w-px bg-border mx-1" />
+                  <Button
+                    size="sm"
+                    className="text-xs h-8 gap-1.5"
+                    onClick={() => onRecordPayment(invoice.id)}
+                  >
+                    <CreditCard className="h-3.5 w-3.5" />
+                    Record Payment
+                  </Button>
+                </>
               )}
             </div>
           </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -32,20 +32,21 @@ const PAYMENT_MODES = [
 ]
 
 interface Props {
-  open:         boolean
-  onOpenChange: (v: boolean) => void
-  businessId:   string
-  invoices:     BillingInvoice[]
-  onSuccess:    () => void
+  open:             boolean
+  onOpenChange:     (v: boolean) => void
+  businessId:       string
+  invoices:         BillingInvoice[]
+  defaultInvoiceId?: string
+  onSuccess:        () => void
 }
 
-export function RecordPaymentDialog({ open, onOpenChange, businessId, invoices, onSuccess }: Props) {
+export function RecordPaymentDialog({ open, onOpenChange, businessId, invoices, defaultInvoiceId, onSuccess }: Props) {
   const { user } = useAuthStore()
   const [saving, setSaving] = useState(false)
 
   const unpaidInvoices = invoices.filter(inv => !["PAID", "CANCELLED"].includes(inv.status))
 
-  const [invoiceId,       setInvoiceId]       = useState("")
+  const [invoiceId,       setInvoiceId]       = useState(defaultInvoiceId ?? "")
   const [amount,          setAmount]          = useState("")
   const [paymentMode,     setPaymentMode]     = useState("BANK_TRANSFER")
   const [transactionId,   setTransactionId]   = useState("")
@@ -54,6 +55,18 @@ export function RecordPaymentDialog({ open, onOpenChange, businessId, invoices, 
   const [paidAt,          setPaidAt]          = useState(() => new Date().toISOString().slice(0, 10))
   const [status,          setStatus]          = useState("COMPLETED")
   const [notes,           setNotes]           = useState("")
+
+  // When dialog opens with a defaultInvoiceId, pre-select and auto-fill the outstanding amount
+  useEffect(() => {
+    if (!open) return
+    const id = defaultInvoiceId ?? ""
+    setInvoiceId(id)
+    if (id) {
+      const inv = unpaidInvoices.find(i => i.id === id)
+      if (inv) setAmount(String(Math.max(0, inv.totalAmount - inv.paidAmount)))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultInvoiceId])
 
   const selectedInvoice = unpaidInvoices.find(inv => inv.id === invoiceId)
   const outstanding = selectedInvoice

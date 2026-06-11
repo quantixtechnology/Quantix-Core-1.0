@@ -160,6 +160,7 @@ export function AccountDrawer({ open, businessId, onOpenChange, onRefreshSummary
   const [addServiceOpen,    setAddServiceOpen]    = useState(false)
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false)
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
+  const [recordPaymentDefaultId, setRecordPaymentDefaultId] = useState<string | undefined>(undefined)
 
   const [previewId,   setPreviewId]   = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -579,9 +580,10 @@ export function AccountDrawer({ open, businessId, onOpenChange, onRefreshSummary
             onSuccess={afterInvoice}
           />
           <RecordPaymentDialog
-            open={recordPaymentOpen} onOpenChange={setRecordPaymentOpen}
+            open={recordPaymentOpen} onOpenChange={(v) => { setRecordPaymentOpen(v); if (!v) setRecordPaymentDefaultId(undefined) }}
             businessId={businessId}
             invoices={invoices ?? detail?.recentInvoices ?? []}
+            defaultInvoiceId={recordPaymentDefaultId}
             onSuccess={afterPayment}
           />
           <InvoicePreviewPanel
@@ -589,6 +591,11 @@ export function AccountDrawer({ open, businessId, onOpenChange, onRefreshSummary
             businessId={businessId}
             onClose={() => setPreviewOpen(false)}
             onStatusChange={afterInvoiceStatus}
+            onRecordPayment={(invoiceId) => {
+              setPreviewOpen(false)
+              setRecordPaymentDefaultId(invoiceId)
+              setRecordPaymentOpen(true)
+            }}
           />
         </>
       )}
