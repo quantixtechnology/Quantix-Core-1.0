@@ -403,9 +403,11 @@ html, body {
     color: #64748b;
     white-space: nowrap;
   }
-  /* counter(page) / counter(pages) are supported by Chrome/Edge in print */
+  /* counter(pages) is unreliable for fixed elements outside @page context —
+     use only counter(page) for browser print. Puppeteer PDF has accurate
+     "Page X of Y" via its injected pageNumber / totalPages spans. */
   .footer-page::after {
-    content: "Page " counter(page) " of " counter(pages);
+    content: "Page " counter(page);
   }
   /* Accent bar fixed at very bottom of every page */
   .accent-bar-bottom {
@@ -526,7 +528,7 @@ html, body {
                 {footerAddress && <div className="footer-addr">{footerAddress}</div>}
                 {footerContact && <div className="footer-contact">{footerContact}</div>}
               </div>
-              {/* Populated by CSS counter(page)/counter(pages) in @media print */}
+              {/* "Page N" — populated by CSS counter(page) in @media print */}
               <div className="footer-page" />
             </div>
           </footer>
