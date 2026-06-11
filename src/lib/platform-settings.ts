@@ -25,12 +25,12 @@ export interface PlatformSettingsData {
   companyWebsite: string | null
   companyGst: string
 
-  logoUrl: string | null            // /uploads/platform/shared/xxx.png  (null → static fallback)
+  logoUrl: string | null
   darkLogoUrl: string | null
   compactLogoUrl: string | null
   faviconUrl: string | null
   emailLogoUrl: string | null
-  loginScreenLogoUrl: string | null // login page logo; falls back to logoUrl when null
+  loginScreenLogoUrl: string | null
 
   primaryColor: string
   secondaryColor: string | null
@@ -53,6 +53,40 @@ export interface PlatformSettingsData {
   gstRate: number
   cgstRate: number
   sgstRate: number
+
+  // Zone 5 — Invoice Settings
+  invoiceLogoUrl: string | null
+
+  // Invoice company identity
+  invoiceLegalName: string | null
+  invoiceBusinessName: string | null
+  invoiceAddress: string | null
+  invoiceCity: string | null
+  invoiceState: string | null
+  invoicePincode: string | null
+  invoiceCountry: string
+  invoicePhone: string | null
+  invoiceEmail: string | null
+  invoiceWebsite: string | null
+
+  // Tax & registration numbers (null / empty = hidden on invoices)
+  companyPan: string | null
+  companyMsme: string | null
+  companyShopEst: string | null
+  companyIec: string | null
+  companyCin: string | null
+
+  // Banking details (shown only on unpaid invoices)
+  bankAccountName: string | null
+  bankName: string | null
+  bankAccountNumber: string | null
+  bankIfsc: string | null
+  bankUpiId: string | null
+
+  // Invoice footer / notes
+  invoiceFooterNotes: string | null
+  invoiceLegalDisclaimer: string | null
+  invoiceDefaultNotes: string | null
 }
 
 const DEFAULTS: Omit<PlatformSettingsData, 'id'> = {
@@ -89,6 +123,32 @@ const DEFAULTS: Omit<PlatformSettingsData, 'id'> = {
   gstRate:  18,
   cgstRate: 9,
   sgstRate: 9,
+
+  // Zone 5 defaults
+  invoiceLogoUrl:         null,
+  invoiceLegalName:       null,
+  invoiceBusinessName:    null,
+  invoiceAddress:         null,
+  invoiceCity:            null,
+  invoiceState:           null,
+  invoicePincode:         null,
+  invoiceCountry:         'India',
+  invoicePhone:           null,
+  invoiceEmail:           null,
+  invoiceWebsite:         null,
+  companyPan:             null,
+  companyMsme:            null,
+  companyShopEst:         null,
+  companyIec:             null,
+  companyCin:             null,
+  bankAccountName:        null,
+  bankName:               null,
+  bankAccountNumber:      null,
+  bankIfsc:               null,
+  bankUpiId:              null,
+  invoiceFooterNotes:     null,
+  invoiceLegalDisclaimer: null,
+  invoiceDefaultNotes:    null,
 }
 
 let _cache: PlatformSettingsData | null = null
@@ -144,20 +204,45 @@ export async function getPlatformSettings(): Promise<PlatformSettingsData> {
       gstRate:  row.gstRate  ?? DEFAULTS.gstRate,
       cgstRate: row.cgstRate ?? DEFAULTS.cgstRate,
       sgstRate: row.sgstRate ?? DEFAULTS.sgstRate,
+
+      // Zone 5 — Invoice Settings
+      invoiceLogoUrl:         row.invoiceLogoUrl         ?? null,
+      invoiceLegalName:       row.invoiceLegalName       ?? null,
+      invoiceBusinessName:    row.invoiceBusinessName    ?? null,
+      invoiceAddress:         row.invoiceAddress         ?? null,
+      invoiceCity:            row.invoiceCity            ?? null,
+      invoiceState:           row.invoiceState           ?? null,
+      invoicePincode:         row.invoicePincode         ?? null,
+      invoiceCountry:         row.invoiceCountry         ?? DEFAULTS.invoiceCountry,
+      invoicePhone:           row.invoicePhone           ?? null,
+      invoiceEmail:           row.invoiceEmail           ?? null,
+      invoiceWebsite:         row.invoiceWebsite         ?? null,
+      companyPan:             row.companyPan             ?? null,
+      companyMsme:            row.companyMsme            ?? null,
+      companyShopEst:         row.companyShopEst         ?? null,
+      companyIec:             row.companyIec             ?? null,
+      companyCin:             row.companyCin             ?? null,
+      bankAccountName:        row.bankAccountName        ?? null,
+      bankName:               row.bankName               ?? null,
+      bankAccountNumber:      row.bankAccountNumber      ?? null,
+      bankIfsc:               row.bankIfsc               ?? null,
+      bankUpiId:              row.bankUpiId              ?? null,
+      invoiceFooterNotes:     row.invoiceFooterNotes     ?? null,
+      invoiceLegalDisclaimer: row.invoiceLegalDisclaimer ?? null,
+      invoiceDefaultNotes:    row.invoiceDefaultNotes    ?? null,
     }
 
     _cache = resolved
     _cacheAt = Date.now()
     return resolved
   } catch {
-    // Table not yet migrated — return defaults so existing code keeps working
     return { id: 'singleton', ...DEFAULTS }
   }
 }
 
 // Helpers used by invoice renderers -------------------------------------------
 
-/** Absolute logo URL for use in emails (where relative paths don't work). */
+/** Absolute logo URL for use in emails. */
 export function emailLogoUrl(settings: PlatformSettingsData, baseUrl: string): string {
   const base = baseUrl.replace(/\/$/, '')
   const raw  = settings.emailLogoUrl ?? settings.logoUrl
@@ -165,23 +250,49 @@ export function emailLogoUrl(settings: PlatformSettingsData, baseUrl: string): s
   return `${base}/api/assets/logo`
 }
 
-/** Relative logo URL for browser-rendered HTML (invoice download / proposals). */
+/** Relative logo URL for browser-rendered HTML. */
 export function browserLogoUrl(settings: PlatformSettingsData): string {
   return settings.logoUrl ?? '/api/assets/logo'
 }
 
 /**
- * Absolute logo URL for sales documents (proposals, invoices).
- * Priority: salesLogoUrl → logoUrl. Returns null when no logo is configured
- * so callers can render a text fallback instead of a broken image.
+ * Invoice logo URL (priority: invoiceLogoUrl → salesLogoUrl → logoUrl).
+ * Returns null if nothing is configured.
  */
-export function salesDocLogoUrl(settings: PlatformSettingsData, baseUrl: string): string | null {
-  const raw = settings.salesLogoUrl ?? settings.logoUrl
+export function invoiceLogoUrl(settings: PlatformSettingsData, baseUrl?: string): string | null {
+  const raw = settings.invoiceLogoUrl ?? settings.salesLogoUrl ?? settings.logoUrl
   if (!raw) return null
+  if (!baseUrl) return raw
   return raw.startsWith('http') ? raw : `${baseUrl}${raw}`
 }
 
-/** Brand accent color for sales documents (invoices, proposals). */
+/** Invoice company display name (priority: legalName → companyName). */
+export function invoiceCompanyName(settings: PlatformSettingsData): string {
+  return settings.invoiceLegalName ?? settings.companyName
+}
+
+/** Invoice address formatted for display (city + state + pincode). */
+export function invoiceFullAddress(settings: PlatformSettingsData): string {
+  const parts = [
+    settings.invoiceAddress ?? settings.companyAddress,
+    [settings.invoiceCity, settings.invoiceState].filter(Boolean).join(', '),
+    settings.invoicePincode ? `– ${settings.invoicePincode}` : '',
+    settings.invoiceCountry !== 'India' ? settings.invoiceCountry : '',
+  ].filter(Boolean)
+  return parts.join('\n')
+}
+
+/** Invoice contact email (priority: invoiceEmail → companyEmail). */
+export function invoiceContactEmail(settings: PlatformSettingsData): string {
+  return settings.invoiceEmail ?? settings.companyEmail
+}
+
+/** Accent color for billing documents. */
 export function salesDocAccentColor(settings: PlatformSettingsData): string {
   return settings.salesAccentColor ?? settings.primaryColor ?? '#10B981'
+}
+
+/** @deprecated use invoiceLogoUrl() */
+export function salesDocLogoUrl(settings: PlatformSettingsData, baseUrl: string): string | null {
+  return invoiceLogoUrl(settings, baseUrl)
 }

@@ -33,6 +33,8 @@ const ALLOWED_FIELDS = new Set([
   'signatorySignUrl', 'signatoryStampUrl',
   // Zone 4 — Sidebar
   'sidebarLogoUrl',
+  // Zone 5 — Invoice
+  'invoiceLogoUrl',
 ])
 
 export const POST = withMiddleware({

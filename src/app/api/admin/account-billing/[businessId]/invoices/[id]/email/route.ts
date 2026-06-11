@@ -6,7 +6,8 @@ import { db }                        from '@/lib/db'
 import { NextResponse }              from 'next/server'
 import { withMiddleware }            from '@/lib/middleware'
 import { sendTransactionalEmail }    from '@/lib/email-service'
-import { getPlatformSettings }       from '@/lib/platform-settings'
+import { getPlatformSettings, invoiceLogoUrl as resolveInvoiceLogoUrl } from '@/lib/platform-settings'
+import type { PlatformSettingsData } from '@/lib/platform-settings'
 import type { NextRequest }          from 'next/server'
 
 interface LineItem { name: string; description?: string | null; quantity: number; unitPrice: number; amount: number }
@@ -22,16 +23,41 @@ function fmtDate(d: Date | string | null): string {
 function buildEmailHtml(opts: {
   invoice:     Record<string, unknown>
   business:    Record<string, unknown>
-  ps:          { companyName: string; companyAddress: string; companyEmail: string; companyPhone: string | null; companyGst: string; sacCode: string }
+  ps:          PlatformSettingsData
   lineItems:   LineItem[]
   accentColor: string
   logoUrl:     string | null
   baseUrl:     string
 }): string {
-  const { invoice, business, ps, lineItems, accentColor, logoUrl, baseUrl } = opts
+  const { invoice, business, ps, lineItems, accentColor, logoUrl } = opts
   const isPaid   = invoice.status === 'PAID'
   const balance  = Math.max(0, (invoice.totalAmount as number) - (invoice.paidAmount as number))
   const subject  = isPaid ? 'Payment Receipt' : 'Invoice'
+
+  const coName   = ps.invoiceLegalName || ps.invoiceBusinessName || ps.companyName
+  const coEmail  = ps.invoiceEmail     || ps.companyEmail
+  const addrFull = [
+    ps.invoiceAddress || ps.companyAddress,
+    [ps.invoiceCity, ps.invoiceState, ps.invoicePincode].filter(Boolean).join(', '),
+  ].filter(Boolean).join(', ')
+
+  const regs = [
+    ps.companyGst && ps.companyGst !== 'APPLIED FOR' ? `GSTIN: ${ps.companyGst}` : null,
+    ps.companyPan  ? `PAN: ${ps.companyPan}`         : null,
+  ].filter(Boolean).join(' &nbsp;|&nbsp; ')
+
+  const hasBanking = !isPaid && (ps.bankAccountNumber || ps.bankUpiId || ps.bankIfsc)
+  const bankBlock  = hasBanking ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;margin-bottom:20px;">
+      <tr><td colspan="2" style="padding-bottom:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;">Bank Transfer Details</td></tr>
+      ${ps.bankAccountName   ? `<tr><td style="font-size:11px;color:#9ca3af;padding:2px 0;width:120px;">Account Name</td><td style="font-size:12px;color:#374151;">${ps.bankAccountName}</td></tr>` : ''}
+      ${ps.bankName          ? `<tr><td style="font-size:11px;color:#9ca3af;padding:2px 0;">Bank</td><td style="font-size:12px;color:#374151;">${ps.bankName}</td></tr>` : ''}
+      ${ps.bankAccountNumber ? `<tr><td style="font-size:11px;color:#9ca3af;padding:2px 0;">Account No.</td><td style="font-family:monospace;font-size:12px;color:#374151;">${ps.bankAccountNumber}</td></tr>` : ''}
+      ${ps.bankIfsc          ? `<tr><td style="font-size:11px;color:#9ca3af;padding:2px 0;">IFSC</td><td style="font-family:monospace;font-size:12px;color:#374151;">${ps.bankIfsc}</td></tr>` : ''}
+      ${ps.bankUpiId         ? `<tr><td style="font-size:11px;color:#9ca3af;padding:2px 0;">UPI ID</td><td style="font-family:monospace;font-size:12px;color:#374151;">${ps.bankUpiId}</td></tr>` : ''}
+    </table>` : ''
+
+  const notesText = [ps.invoiceDefaultNotes, invoice.notes as string | undefined].filter(Boolean).join('\n\n')
 
   const lineRows = lineItems.map(li => `
     <tr>
@@ -60,12 +86,13 @@ function buildEmailHtml(opts: {
   <!-- Header -->
   <tr><td style="background:${accentColor};padding:28px 32px;">
     ${logoUrl ? `<div style="background:#fff;border-radius:10px;padding:8px 16px;display:inline-block;margin-bottom:12px;">
-      <img src="${logoUrl}" alt="${ps.companyName}" style="max-height:40px;width:auto;display:block;"/>
+      <img src="${logoUrl}" alt="${coName}" style="max-height:40px;width:auto;display:block;"/>
     </div><br/>` : ''}
-    <span style="color:#fff;font-size:20px;font-weight:800;">${ps.companyName}</span>
+    <span style="color:#fff;font-size:20px;font-weight:800;">${coName}</span>
     <p style="margin:4px 0 0;color:rgba(255,255,255,0.75);font-size:13px;">
       ${isPaid ? 'Payment Receipt' : 'Tax Invoice'}
     </p>
+    ${regs ? `<p style="margin:6px 0 0;color:rgba(255,255,255,0.6);font-size:11px;">${regs}</p>` : ''}
   </td></tr>
 
   <!-- Body -->
@@ -131,15 +158,19 @@ function buildEmailHtml(opts: {
       </tr>
     </table>
 
-    ${invoice.notes ? `<p style="margin:0 0 20px;font-size:13px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:12px 16px;"><strong style="color:#374151;">Note:</strong> ${invoice.notes}</p>` : ''}
+    <!-- Banking Details (unpaid only) -->
+    ${bankBlock}
+
+    ${notesText ? `<p style="margin:0 0 20px;font-size:13px;color:#6b7280;background:#f9fafb;border-radius:8px;padding:12px 16px;white-space:pre-wrap;"><strong style="color:#374151;">Note:</strong> ${notesText}</p>` : ''}
 
     <p style="margin:0 0 16px;font-size:13px;color:#374151;">
-      For queries: <a href="mailto:${ps.companyEmail}" style="color:${accentColor};">${ps.companyEmail}</a>
+      For billing queries: <a href="mailto:${coEmail}" style="color:${accentColor};">${coEmail}</a>
     </p>
     <p style="margin:20px 0 0;font-size:11px;color:#9ca3af;line-height:1.7;">
-      Computer-generated invoice — ${ps.companyName}. HSN/SAC: ${ps.sacCode}.<br/>
-      ${ps.companyAddress}
+      ${ps.invoiceFooterNotes || `Computer-generated invoice — ${coName}. SAC/HSN: ${ps.sacCode}.`}<br/>
+      ${addrFull}
     </p>
+    ${ps.invoiceLegalDisclaimer ? `<p style="margin:8px 0 0;font-size:10px;color:#d1d5db;font-style:italic;">${ps.invoiceLegalDisclaimer}</p>` : ''}
   </td></tr>
 </table>
 </td></tr>
@@ -180,10 +211,8 @@ export const POST = withMiddleware({
     const ps = await getPlatformSettings()
     const baseUrl     = (process.env.DEPLOY_APP_URL ?? 'https://app.quantixtechnology.in').replace(/\/$/, '')
     const accentColor = ps.salesAccentColor ?? ps.primaryColor ?? '#7c3aed'
-    const logoUrl     = ps.salesLogoUrl ?? ps.emailLogoUrl ?? ps.logoUrl ?? null
-    const absoluteLogo = logoUrl
-      ? (logoUrl.startsWith('http') ? logoUrl : `${baseUrl}${logoUrl}`)
-      : null
+    const logoUrl     = resolveInvoiceLogoUrl(ps, baseUrl)
+    const absoluteLogo = logoUrl ?? null
 
     let lineItems: LineItem[] = []
     try { lineItems = JSON.parse(invoice.lineItems) } catch {
@@ -202,9 +231,10 @@ export const POST = withMiddleware({
     })
 
     const isPaid   = invoice.status === 'PAID'
+    const coName   = ps.invoiceLegalName || ps.invoiceBusinessName || ps.companyName
     const subject  = isPaid
-      ? `Payment Receipt — ${invoice.invoiceNumber} — ${ps.companyName}`
-      : `Invoice — ${invoice.invoiceNumber} — ${ps.companyName}`
+      ? `Payment Receipt — ${invoice.invoiceNumber} — ${coName}`
+      : `Invoice — ${invoice.invoiceNumber} — ${coName}`
 
     const result = await sendTransactionalEmail(toEmail, subject, html)
 

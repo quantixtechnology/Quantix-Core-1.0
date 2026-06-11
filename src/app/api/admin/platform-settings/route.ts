@@ -33,6 +33,13 @@ const PATCHABLE = new Set([
   // Billing
   'invoicePrefix', 'sacCode',
   'gstRate', 'cgstRate', 'sgstRate',
+  // Zone 5 — Invoice Settings
+  'invoiceLegalName', 'invoiceBusinessName',
+  'invoiceAddress', 'invoiceCity', 'invoiceState', 'invoicePincode', 'invoiceCountry',
+  'invoicePhone', 'invoiceEmail', 'invoiceWebsite',
+  'companyPan', 'companyMsme', 'companyShopEst', 'companyIec', 'companyCin',
+  'bankAccountName', 'bankName', 'bankAccountNumber', 'bankIfsc', 'bankUpiId',
+  'invoiceFooterNotes', 'invoiceLegalDisclaimer', 'invoiceDefaultNotes',
 ])
 
 export const GET = withMiddleware({

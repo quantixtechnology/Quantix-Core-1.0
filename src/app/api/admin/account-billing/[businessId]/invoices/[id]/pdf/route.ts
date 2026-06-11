@@ -8,7 +8,8 @@ import { join } from 'path'
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { withMiddleware } from '@/lib/middleware'
-import { getPlatformSettings } from '@/lib/platform-settings'
+import { getPlatformSettings, invoiceLogoUrl as resolveInvoiceLogoUrl } from '@/lib/platform-settings'
+import type { PlatformSettingsData } from '@/lib/platform-settings'
 import { UPLOAD_ROOT } from '@/lib/upload-root'
 import type { NextRequest } from 'next/server'
 
@@ -58,15 +59,61 @@ async function logoToBase64(url: string | null): Promise<string | null> {
 function buildHtml(opts: {
   invoice:   Record<string, unknown>
   business:  Record<string, unknown>
-  ps:        { companyName: string; companyAddress: string; companyEmail: string; companyPhone: string | null; companyGst: string; sacCode: string }
+  ps:        PlatformSettingsData
   lineItems: LineItem[]
   payments:  Payment[]
   logoSrc:   string | null
 }): string {
   const { invoice, business, ps, lineItems, payments, logoSrc } = opts
-  const st       = paymentStatus(invoice.status as string)
-  const isPaid   = invoice.status === 'PAID'
-  const balance  = Math.max(0, (invoice.totalAmount as number) - (invoice.paidAmount as number))
+  const st      = paymentStatus(invoice.status as string)
+  const isPaid  = invoice.status === 'PAID'
+  const balance = Math.max(0, (invoice.totalAmount as number) - (invoice.paidAmount as number))
+
+  // Company identity from invoice settings (fallback chain)
+  const coName    = ps.invoiceLegalName || ps.invoiceBusinessName || ps.companyName
+  const coEmail   = ps.invoiceEmail     || ps.companyEmail
+  const coPhone   = ps.invoicePhone     || ps.companyPhone || ''
+  const coWebsite = ps.invoiceWebsite   || ps.companyWebsite || ''
+
+  // Address
+  const addrLine1 = ps.invoiceAddress   || ps.companyAddress || ''
+  const addrLine2 = [
+    ps.invoiceCity,
+    ps.invoiceState,
+    ps.invoicePincode ? `– ${ps.invoicePincode}` : null,
+  ].filter(Boolean).join(', ')
+  const addrFull  = [addrLine1, addrLine2].filter(Boolean).join(', ')
+
+  // Registration numbers (hide blank ones)
+  const regs = [
+    ps.companyGst && ps.companyGst !== 'APPLIED FOR' ? `GSTIN: ${ps.companyGst}` : null,
+    ps.companyPan   ? `PAN: ${ps.companyPan}`         : null,
+    ps.companyMsme  ? `MSME: ${ps.companyMsme}`        : null,
+    ps.companyShopEst ? `S&E: ${ps.companyShopEst}`   : null,
+    ps.companyIec   ? `IEC: ${ps.companyIec}`          : null,
+    ps.companyCin   ? `CIN: ${ps.companyCin}`          : null,
+  ].filter(Boolean)
+
+  // Banking (only on unpaid)
+  const hasBanking = !isPaid && (ps.bankAccountNumber || ps.bankUpiId || ps.bankIfsc)
+  const bankBlock  = hasBanking ? `
+  <div class="bank-box">
+    <div class="bank-title">Bank Transfer Details</div>
+    <div class="bank-grid">
+      ${ps.bankAccountName   ? `<span class="bank-label">Account Name</span><span class="bank-val">${ps.bankAccountName}</span>` : ''}
+      ${ps.bankName          ? `<span class="bank-label">Bank</span><span class="bank-val">${ps.bankName}</span>` : ''}
+      ${ps.bankAccountNumber ? `<span class="bank-label">Account No.</span><span class="bank-val mono">${ps.bankAccountNumber}</span>` : ''}
+      ${ps.bankIfsc          ? `<span class="bank-label">IFSC</span><span class="bank-val mono">${ps.bankIfsc}</span>` : ''}
+      ${ps.bankUpiId         ? `<span class="bank-label">UPI ID</span><span class="bank-val mono">${ps.bankUpiId}</span>` : ''}
+    </div>
+  </div>` : ''
+
+  // Notes: default notes + per-invoice notes
+  const notesText = [ps.invoiceDefaultNotes, invoice.notes as string | undefined].filter(Boolean).join('\n\n')
+
+  // Footer
+  const footerLeft  = ps.invoiceFooterNotes || `Thank you for your business!`
+  const footerRight = [coName, coEmail, coWebsite, `SAC/HSN: ${ps.sacCode}`].filter(Boolean).join(' · ')
 
   const lineRows = lineItems.map(li => `
     <tr>
@@ -91,6 +138,9 @@ function buildHtml(opts: {
       <span style="color:#6b7280;">${fmtDate(p.paidAt)}</span>
     </div>`).join('')
 
+  const wmColor = isPaid ? 'rgba(5,150,105,0.07)' : 'rgba(217,119,6,0.06)'
+  const wmText  = isPaid ? 'PAID' : (invoice.status === 'OVERDUE' ? 'OVERDUE' : 'PAYMENT DUE')
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -105,6 +155,7 @@ function buildHtml(opts: {
   .co-logo{height:44px;width:auto;object-fit:contain;display:block;margin-bottom:10px;}
   .co-name{font-size:20px;font-weight:800;color:#111827;letter-spacing:-0.3px;}
   .co-meta{font-size:11px;color:#6b7280;line-height:1.9;margin-top:4px;}
+  .co-regs{font-size:10px;color:#9ca3af;line-height:1.8;margin-top:4px;}
   .inv-right{text-align:right;}
   .inv-type{font-size:22px;font-weight:800;color:#7c3aed;letter-spacing:-0.5px;}
   .inv-num{font-size:15px;font-weight:700;font-family:monospace;margin-top:6px;color:#111827;}
@@ -141,28 +192,38 @@ function buildHtml(opts: {
   /* payment history */
   .pay-history-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:8px;}
   .pay-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:12px;}
+  /* banking */
+  .bank-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 18px;margin-bottom:20px;}
+  .bank-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;margin-bottom:10px;}
+  .bank-grid{display:grid;grid-template-columns:120px 1fr;gap:4px 16px;font-size:12px;}
+  .bank-label{color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;}
+  .bank-val{color:#374151;font-weight:500;}
   /* notes */
-  .notes{background:#f9fafb;border-radius:8px;padding:12px 16px;font-size:12px;color:#6b7280;margin-bottom:20px;}
+  .notes{background:#f9fafb;border-radius:8px;padding:12px 16px;font-size:12px;color:#6b7280;margin-bottom:20px;white-space:pre-wrap;}
   /* footer */
-  .footer{margin-top:32px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:11px;color:#9ca3af;display:flex;justify-content:space-between;}
+  .footer{margin-top:32px;padding-top:16px;border-top:1px solid #f3f4f6;font-size:11px;color:#9ca3af;}
+  .footer-notes{margin-bottom:6px;}
+  .footer-disclaimer{font-size:10px;color:#d1d5db;font-style:italic;}
+  .footer-bottom{display:flex;justify-content:space-between;margin-top:8px;}
   /* watermark */
-  .watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:80px;font-weight:900;letter-spacing:8px;white-space:nowrap;pointer-events:none;z-index:-1;${isPaid ? 'color:rgba(5,150,105,0.07);' : 'display:none;'}}
+  .watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:80px;font-weight:900;letter-spacing:8px;white-space:nowrap;pointer-events:none;z-index:-1;color:${wmColor};}
 </style>
 </head>
 <body>
-<div class="watermark">${isPaid ? 'PAID' : ''}</div>
+<div class="watermark">${wmText}</div>
 <div class="page">
 
   <!-- Letterhead -->
   <div class="hdr">
     <div>
-      ${logoSrc ? `<img src="${logoSrc}" alt="${ps.companyName}" class="co-logo"/>` : ''}
-      <div class="co-name">${ps.companyName}</div>
+      ${logoSrc ? `<img src="${logoSrc}" alt="${coName}" class="co-logo"/>` : ''}
+      <div class="co-name">${coName}</div>
+      ${ps.invoiceBusinessName && ps.invoiceLegalName ? `<div style="font-size:12px;color:#6b7280;">${ps.invoiceBusinessName}</div>` : ''}
       <div class="co-meta">
-        ${ps.companyAddress}<br/>
-        ${ps.companyEmail}${ps.companyPhone ? ` &nbsp;·&nbsp; ${ps.companyPhone}` : ''}
-        ${ps.companyGst !== 'APPLIED FOR' ? `<br/>GSTIN: ${ps.companyGst}` : ''}
+        ${addrFull ? `${addrFull}<br/>` : ''}
+        ${coEmail}${coPhone ? ` &nbsp;·&nbsp; ${coPhone}` : ''}${coWebsite ? `<br/>${coWebsite}` : ''}
       </div>
+      ${regs.length > 0 ? `<div class="co-regs">${regs.join(' &nbsp;|&nbsp; ')}</div>` : ''}
     </div>
     <div class="inv-right">
       <div class="inv-type">TAX INVOICE</div>
@@ -180,11 +241,11 @@ function buildHtml(opts: {
   <div class="billing">
     <div class="bsec">
       <div class="bsec-label">Bill From</div>
-      <div class="bsec-name">${ps.companyName}</div>
+      <div class="bsec-name">${coName}</div>
       <div class="bsec-meta">
-        ${ps.companyAddress}<br/>
-        ${ps.companyEmail}
-        ${ps.companyGst !== 'APPLIED FOR' ? `<br/>GSTIN: ${ps.companyGst}` : ''}
+        ${addrFull ? `${addrFull}<br/>` : ''}
+        ${coEmail}
+        ${regs.length > 0 ? `<br/>${regs[0]}` : ''}
       </div>
     </div>
     <div class="bsec">
@@ -246,13 +307,20 @@ function buildHtml(opts: {
     ${paymentRows}
   </div>` : ''}
 
+  <!-- Banking Details (unpaid only) -->
+  ${bankBlock}
+
   <!-- Notes -->
-  ${invoice.notes ? `<div class="notes"><strong style="color:#374151;">Notes:</strong> ${invoice.notes}</div>` : ''}
+  ${notesText ? `<div class="notes"><strong style="color:#374151;">Notes:</strong> ${notesText}</div>` : ''}
 
   <!-- Footer -->
   <div class="footer">
-    <span>Thank you for your business!</span>
-    <span>${ps.companyName} &nbsp;·&nbsp; ${ps.companyEmail} &nbsp;·&nbsp; HSN/SAC: ${ps.sacCode}</span>
+    ${ps.invoiceFooterNotes ? `<div class="footer-notes">${ps.invoiceFooterNotes}</div>` : ''}
+    ${ps.invoiceLegalDisclaimer ? `<div class="footer-disclaimer">${ps.invoiceLegalDisclaimer}</div>` : ''}
+    <div class="footer-bottom">
+      <span>Thank you for your business!</span>
+      <span>${footerRight}</span>
+    </div>
   </div>
 
 </div>
@@ -301,7 +369,7 @@ export const GET = withMiddleware({
     lineItems = items.map(i => ({ name: i.name, description: i.description, quantity: i.quantity, unitPrice: i.unitPrice, amount: i.amount }))
   }
 
-  const logoUrl = ps.salesLogoUrl ?? ps.logoUrl ?? ps.emailLogoUrl ?? null
+  const logoUrl = resolveInvoiceLogoUrl(ps)
   const logoSrc = await logoToBase64(logoUrl)
 
   const html = buildHtml({

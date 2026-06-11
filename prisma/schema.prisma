@@ -84,6 +84,40 @@ model PlatformSettings {
   cgstRate       Float?  @default(9)
   sgstRate       Float?  @default(9)
 
+  // Zone 5 — Invoice Settings
+  invoiceLogoUrl         String?  // dedicated invoice / billing logo
+
+  // Invoice company identity (may differ from platform companyName)
+  invoiceLegalName       String?  // Legal company name
+  invoiceBusinessName    String?  // Trade / business name
+  invoiceAddress         String?  // Full address line
+  invoiceCity            String?
+  invoiceState           String?
+  invoicePincode         String?
+  invoiceCountry         String?  @default("India")
+  invoicePhone           String?
+  invoiceEmail           String?
+  invoiceWebsite         String?
+
+  // Tax & registration numbers (all optional; blank = hidden on invoices)
+  companyPan             String?  // PAN
+  companyMsme            String?  // MSME / Udyam registration
+  companyShopEst         String?  // Shop & Establishment number
+  companyIec             String?  // IEC number
+  companyCin             String?  // CIN number
+
+  // Banking details (displayed on unpaid invoices only)
+  bankAccountName        String?
+  bankName               String?
+  bankAccountNumber      String?
+  bankIfsc               String?
+  bankUpiId              String?
+
+  // Invoice footer / notes
+  invoiceFooterNotes     String?  // SAC/HSN notes shown in footer
+  invoiceLegalDisclaimer String?  // Legal disclaimer text
+  invoiceDefaultNotes    String?  // Default notes on every invoice
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
