@@ -16,6 +16,47 @@ import { useAuthStore } from "@/stores/auth-store"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+interface InvoiceSettings {
+  // Logo (priority: invoiceLogoUrl → salesLogoUrl → logoUrl)
+  invoiceLogoUrl:    string | null
+  salesLogoUrl:      string | null
+  logoUrl:           string | null
+  // Company identity
+  companyName:       string
+  companyAddress:    string
+  companyEmail:      string
+  companyPhone:      string | null
+  companyGst:        string
+  sacCode:           string
+  // Invoice overrides
+  invoiceLegalName:    string | null
+  invoiceBusinessName: string | null
+  invoiceAddress:      string | null
+  invoiceCity:         string | null
+  invoiceState:        string | null
+  invoicePincode:      string | null
+  invoiceCountry:      string | null
+  invoicePhone:        string | null
+  invoiceEmail:        string | null
+  invoiceWebsite:      string | null
+  // Tax & registration
+  companyPan:    string | null
+  companyMsme:   string | null
+  companyShopEst: string | null
+  companyIec:    string | null
+  companyCin:    string | null
+  // Banking
+  bankAccountName:   string | null
+  bankName:          string | null
+  bankAccountNumber: string | null
+  bankIfsc:          string | null
+  bankUpiId:         string | null
+  // Footer
+  invoiceFooterNotes:     string | null
+  invoiceLegalDisclaimer: string | null
+  invoiceDefaultNotes:    string | null
+}
+
 interface LineItem {
   serviceId?:   string | null
   name:         string
@@ -111,6 +152,7 @@ export function InvoicePreviewPanel({
 }: Props) {
   const { user } = useAuthStore()
   const [invoice,   setInvoice]   = useState<Invoice | null>(null)
+  const [ps,        setPs]        = useState<InvoiceSettings | null>(null)
   const [loading,   setLoading]   = useState(false)
   const [acting,    setActing]    = useState(false)
   const [emailing,  setEmailing]  = useState(false)
@@ -119,10 +161,14 @@ export function InvoicePreviewPanel({
     if (!invoiceId) return
     setLoading(true)
     try {
-      const res  = await fetch(`/api/admin/account-billing/${businessId}/invoices/${invoiceId}`, { headers: getAuthHeaders() })
-      const json = await res.json()
-      if (json.success) setInvoice(json.data)
+      const [invRes, psRes] = await Promise.all([
+        fetch(`/api/admin/account-billing/${businessId}/invoices/${invoiceId}`, { headers: getAuthHeaders() }),
+        fetch(`/api/admin/platform-settings`, { headers: getAuthHeaders() }),
+      ])
+      const [invJson, psJson] = await Promise.all([invRes.json(), psRes.json()])
+      if (invJson.success) setInvoice(invJson.data)
       else toast.error("Failed to load invoice")
+      if (psJson.success) setPs(psJson.data as InvoiceSettings)
     } catch { toast.error("Failed to load invoice") }
     finally { setLoading(false) }
   }, [invoiceId, businessId])
@@ -195,7 +241,7 @@ export function InvoicePreviewPanel({
       invoice.dueDate ? `Due Date: ${fmtDate(invoice.dueDate)}` : null,
       pd.label !== "PAID" ? `Amount Due: ${fmt(balance)}` : `Amount: ${fmt(invoice.totalAmount)} (PAID)`,
       ``,
-      `For queries, contact billing@quantixtechnology.in`,
+      `For queries, contact ${coEmail}`,
     ].filter(l => l !== null).join("\n")
     const wa = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
     window.open(wa, "_blank")
@@ -211,6 +257,29 @@ export function InvoicePreviewPanel({
   const balance = invoice ? Math.max(0, invoice.totalAmount - invoice.paidAmount) : 0
   const isPaid  = invoice?.status === "PAID"
   const canPay  = invoice && !["PAID", "CANCELLED"].includes(invoice.status)
+
+  // Platform settings — derived display values (mirrors PDF route fallback chain)
+  const coName    = ps?.invoiceLegalName  || ps?.invoiceBusinessName || ps?.companyName || "Quantix Technology"
+  const coEmail   = ps?.invoiceEmail      || ps?.companyEmail         || "billing@quantixtechnology.in"
+  const coPhone   = ps?.invoicePhone      || ps?.companyPhone         || null
+  const coWebsite = ps?.invoiceWebsite    || null
+  const addrLine1 = ps?.invoiceAddress    || ps?.companyAddress       || ""
+  const addrLine2 = [ps?.invoiceCity, ps?.invoiceState, ps?.invoicePincode ? `– ${ps.invoicePincode}` : null].filter(Boolean).join(", ")
+  const addrFull  = [addrLine1, addrLine2].filter(Boolean).join(", ")
+  const gstin     = ps?.companyGst && ps.companyGst !== "APPLIED FOR" ? ps.companyGst : null
+  const sacCode   = ps?.sacCode || "998314"
+  const logoSrc   = ps?.invoiceLogoUrl || ps?.salesLogoUrl || ps?.logoUrl || null
+
+  const registrations = [
+    gstin             ? `GSTIN: ${gstin}`              : null,
+    ps?.companyPan    ? `PAN: ${ps.companyPan}`         : null,
+    ps?.companyMsme   ? `MSME: ${ps.companyMsme}`       : null,
+    ps?.companyShopEst ? `S&E: ${ps.companyShopEst}`   : null,
+    ps?.companyIec    ? `IEC: ${ps.companyIec}`         : null,
+    ps?.companyCin    ? `CIN: ${ps.companyCin}`         : null,
+  ].filter(Boolean) as string[]
+
+  const hasBanking = !isPaid && (ps?.bankAccountNumber || ps?.bankIfsc || ps?.bankUpiId)
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -253,24 +322,39 @@ export function InvoicePreviewPanel({
           {!loading && invoice && biz && pd && (
             <div className="p-6 space-y-5">
 
-              {/* ── Quantix Technology Letterhead ── */}
+              {/* ── Letterhead ── */}
               <div className="rounded-xl border bg-gradient-to-br from-violet-50 to-indigo-50 p-5">
                 <div className="flex items-start justify-between gap-4">
                   {/* Company */}
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="rounded-lg bg-violet-600 p-1.5">
-                        <Building2 className="h-4 w-4 text-white" />
+                  <div className="space-y-1 min-w-0">
+                    {logoSrc ? (
+                      <img src={logoSrc} alt={coName} className="h-10 object-contain mb-2 max-w-[180px]" />
+                    ) : (
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="rounded-lg bg-violet-600 p-1.5 shrink-0">
+                          <Building2 className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="font-bold text-base text-violet-900 truncate">{coName}</span>
                       </div>
-                      <span className="font-bold text-base text-violet-900">Quantix Technology</span>
-                    </div>
-                    <p className="text-[11px] text-violet-700/80">Bangalore, Karnataka, India</p>
-                    <p className="text-[11px] text-violet-700/80">billing@quantixtechnology.in</p>
-                    <p className="text-[10px] text-violet-600/60 font-mono mt-1">HSN/SAC: 998314</p>
+                    )}
+                    {logoSrc && <p className="font-bold text-sm text-violet-900">{coName}</p>}
+                    {ps?.invoiceBusinessName && ps.invoiceLegalName && (
+                      <p className="text-[11px] text-violet-700/80">{ps.invoiceBusinessName}</p>
+                    )}
+                    {addrFull && <p className="text-[11px] text-violet-700/80">{addrFull}</p>}
+                    <p className="text-[11px] text-violet-700/80">{coEmail}</p>
+                    {coPhone   && <p className="text-[11px] text-violet-700/80">{coPhone}</p>}
+                    {coWebsite && <p className="text-[11px] text-violet-700/80">{coWebsite}</p>}
+                    {registrations.length > 0 && (
+                      <p className="text-[10px] text-violet-600/60 font-mono mt-1">
+                        {registrations.join(" · ")}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-violet-600/60 font-mono">SAC/HSN: {sacCode}</p>
                   </div>
 
                   {/* Invoice meta */}
-                  <div className="text-right space-y-1">
+                  <div className="text-right space-y-1 shrink-0">
                     <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">Tax Invoice</p>
                     <p className="font-mono font-bold text-sm text-violet-900">{invoice.invoiceNumber}</p>
                     <p className="text-[11px] text-violet-700/80">Issued: {fmtDate(invoice.issuedDate)}</p>
@@ -279,16 +363,15 @@ export function InvoicePreviewPanel({
                         Due: {fmtDate(invoice.dueDate)}
                       </p>
                     )}
-                    {/* Status stamp */}
                     <div className="mt-2">
                       <span
-                        className={`inline-block text-[11px] font-black px-3 py-1 rounded border-2 tracking-widest uppercase`}
+                        className="inline-block text-[11px] font-black px-3 py-1 rounded border-2 tracking-widest uppercase"
                         style={{
-                          color:            pd.color,
-                          borderColor:      pd.color,
-                          transform:        "rotate(-4deg)",
-                          display:          "inline-block",
-                          transformOrigin:  "center",
+                          color:           pd.color,
+                          borderColor:     pd.color,
+                          transform:       "rotate(-4deg)",
+                          display:         "inline-block",
+                          transformOrigin: "center",
                         }}
                       >
                         {pd.label}
@@ -302,9 +385,11 @@ export function InvoicePreviewPanel({
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-xl border p-4 space-y-1">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Bill From</p>
-                  <p className="text-sm font-semibold">Quantix Technology</p>
-                  <p className="text-[11px] text-muted-foreground">Bangalore, Karnataka, India</p>
-                  <p className="text-[11px] text-muted-foreground">billing@quantixtechnology.in</p>
+                  <p className="text-sm font-semibold">{coName}</p>
+                  {addrFull && <p className="text-[11px] text-muted-foreground">{addrFull}</p>}
+                  <p className="text-[11px] text-muted-foreground">{coEmail}</p>
+                  {coPhone && <p className="text-[11px] text-muted-foreground">{coPhone}</p>}
+                  {gstin && <p className="text-[11px] text-muted-foreground font-mono">GSTIN: {gstin}</p>}
                 </div>
                 <div className="rounded-xl border p-4 space-y-1">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Bill To</p>
@@ -435,10 +520,37 @@ export function InvoicePreviewPanel({
                 </div>
               )}
 
+              {/* ── Banking Details (unpaid only) ── */}
+              {hasBanking && ps && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 space-y-2">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Bank Transfer Details</p>
+                  <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+                    {ps.bankAccountName   && <><span className="text-muted-foreground">Account Name</span><span className="font-medium">{ps.bankAccountName}</span></>}
+                    {ps.bankName          && <><span className="text-muted-foreground">Bank</span><span className="font-medium">{ps.bankName}</span></>}
+                    {ps.bankAccountNumber && <><span className="text-muted-foreground">Account No.</span><span className="font-mono font-medium">{ps.bankAccountNumber}</span></>}
+                    {ps.bankIfsc          && <><span className="text-muted-foreground">IFSC</span><span className="font-mono font-medium">{ps.bankIfsc}</span></>}
+                    {ps.bankUpiId         && <><span className="text-muted-foreground">UPI ID</span><span className="font-mono font-medium">{ps.bankUpiId}</span></>}
+                  </div>
+                </div>
+              )}
+
               {/* ── Notes ── */}
-              {invoice.notes && (
+              {(invoice.notes || ps?.invoiceDefaultNotes) && (
                 <div className="rounded-xl bg-muted/40 border px-4 py-3 text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">Notes: </span>{invoice.notes}
+                  <span className="font-semibold text-foreground">Notes: </span>
+                  {[ps?.invoiceDefaultNotes, invoice.notes].filter(Boolean).join("\n\n")}
+                </div>
+              )}
+
+              {/* ── Footer Notes ── */}
+              {(ps?.invoiceFooterNotes || ps?.invoiceLegalDisclaimer) && (
+                <div className="border-t pt-3 space-y-1">
+                  {ps?.invoiceFooterNotes && (
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">{ps.invoiceFooterNotes}</p>
+                  )}
+                  {ps?.invoiceLegalDisclaimer && (
+                    <p className="text-[10px] text-muted-foreground/60 italic">{ps.invoiceLegalDisclaimer}</p>
+                  )}
                 </div>
               )}
 
