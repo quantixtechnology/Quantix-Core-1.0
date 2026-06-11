@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Loader2, Palette, Save, RefreshCw } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, Palette, Save, RefreshCw, Smartphone } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { PageHeader } from "@/components/admin/shared/page-header"
 import { resolveImageUrl } from "@/lib/image-url"
+import { type PwaAppearance, PWA_APPEARANCE_DEFAULTS } from "@/lib/pwa-appearance"
 
 interface BrandingData {
   primaryColor: string
@@ -42,16 +44,26 @@ export function BrandingView() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  // PWA Appearance state
+  const [pwaData, setPwaData] = useState<PwaAppearance>({ ...PWA_APPEARANCE_DEFAULTS })
+  const [pwaSaving, setPwaSaving] = useState(false)
+  const [pwaSaved,  setPwaSaved]  = useState(false)
+
   const load = useCallback(async () => {
     if (!businessId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/core/businesses/${businessId}/branding`, {
-        headers: { "x-business-id": businessId },
-      })
-      const json = await res.json()
-      if (json.success && json.data) {
-        const b = json.data
+      const [brandingRes, pwaRes] = await Promise.all([
+        fetch(`/api/core/businesses/${businessId}/branding`, {
+          headers: { "x-business-id": businessId },
+        }),
+        fetch(`/api/core/businesses/${businessId}/pwa-appearance`, {
+          headers: { "x-business-id": businessId },
+        }),
+      ])
+      const brandingJson = await brandingRes.json()
+      if (brandingJson.success && brandingJson.data) {
+        const b = brandingJson.data
         setData({
           primaryColor:   b.primaryColor   ?? defaults.primaryColor,
           secondaryColor: b.secondaryColor ?? "",
@@ -65,6 +77,10 @@ export function BrandingView() {
           darkMode:       b.darkMode       ?? false,
           customCss:      b.customCss      ?? "",
         })
+      }
+      const pwaJson = await pwaRes.json()
+      if (pwaJson.success && pwaJson.data) {
+        setPwaData({ ...PWA_APPEARANCE_DEFAULTS, ...pwaJson.data })
       }
     } finally {
       setLoading(false)
@@ -95,6 +111,20 @@ export function BrandingView() {
       if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000) }
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSavePwa = async () => {
+    setPwaSaving(true)
+    try {
+      const res = await fetch(`/api/core/businesses/${businessId}/pwa-appearance`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-business-id": businessId },
+        body: JSON.stringify(pwaData),
+      })
+      if (res.ok) { setPwaSaved(true); setTimeout(() => setPwaSaved(false), 2000) }
+    } finally {
+      setPwaSaving(false)
     }
   }
 
@@ -211,6 +241,95 @@ export function BrandingView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── PWA Appearance ─────────────────────────────────────────────────── */}
+      <Card className="shadow-none">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Smartphone className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <CardTitle className="text-sm">PWA Appearance</CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  Applied only to the installed PWA / Customer App. Does not affect the desktop website or mobile browser.
+                </CardDescription>
+              </div>
+            </div>
+            <Button size="sm" onClick={handleSavePwa} disabled={pwaSaving} className="gap-1.5 shrink-0">
+              {pwaSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {pwaSaved ? "Saved!" : "Save"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-5 sm:grid-cols-3">
+            {/* Header Theme */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Header Theme</Label>
+              <Select
+                value={pwaData.headerTheme}
+                onValueChange={v => setPwaData(d => ({ ...d, headerTheme: v as PwaAppearance["headerTheme"] }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="brandTint">Brand Tint (Recommended)</SelectItem>
+                  <SelectItem value="white">White</SelectItem>
+                  <SelectItem value="brandColor">Brand Color</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                {pwaData.headerTheme === "white"      && "Pure white app bar."}
+                {pwaData.headerTheme === "brandTint"  && "Soft brand color wash (5–6% opacity)."}
+                {pwaData.headerTheme === "brandColor" && "Full brand color background with white text."}
+              </p>
+            </div>
+
+            {/* Category Style */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category Style</Label>
+              <Select
+                value={pwaData.categoryStyle}
+                onValueChange={v => setPwaData(d => ({ ...d, categoryStyle: v as PwaAppearance["categoryStyle"] }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rounded">Rounded</SelectItem>
+                  <SelectItem value="circle">Circle</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                {pwaData.categoryStyle === "rounded" && "Modern rounded-square category tiles."}
+                {pwaData.categoryStyle === "circle"  && "Traditional circular category icons."}
+              </p>
+            </div>
+
+            {/* Product Card Style */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Product Card Style</Label>
+              <Select
+                value={pwaData.productCardStyle}
+                onValueChange={v => setPwaData(d => ({ ...d, productCardStyle: v as PwaAppearance["productCardStyle"] }))}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="modern">Modern (Recommended)</SelectItem>
+                  <SelectItem value="standard">Standard</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                {pwaData.productCardStyle === "modern"   && "Larger image, outlined ADD button, modern spacing."}
+                {pwaData.productCardStyle === "standard" && "Classic product card layout."}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex justify-end">
         <div className="flex gap-2">

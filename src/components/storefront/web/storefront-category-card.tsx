@@ -16,6 +16,7 @@
 import { resolveImageUrl } from "@/lib/image-url"
 import { getCategoryIcon } from "@/lib/business-type-config"
 import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
+import { usePwaAppearance } from "@/contexts/pwa-appearance-context"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ export function StorefrontCategoryCard({
   showCount = false,
 }: StorefrontCategoryCardProps) {
   const isPwa = usePwaModeCtx()
+  const { categoryStyle } = usePwaAppearance()
 
   const tileColor   = category.color ? `${category.color}1a` : `${brandColor}12`
   const iconFallback = category.icon || getCategoryIcon(businessType, category.name)
@@ -56,6 +58,8 @@ export function StorefrontCategoryCard({
   if (isPwa) {
     const pwaTileBg    = imgSrc ? "transparent" : "white"
     const pwaBorderClr = category.color ? `${category.color}80` : `${brandColor}60`
+    // categoryStyle: "rounded" = rounded-xl (default), "circle" = rounded-full
+    const tileRadius = categoryStyle === "circle" ? "rounded-full" : "rounded-xl"
 
     return (
       <button
@@ -63,7 +67,7 @@ export function StorefrontCategoryCard({
         className="flex flex-col items-center gap-1.5 shrink-0 active:scale-[0.91] transition-transform duration-100 group"
       >
         <div
-          className="rounded-xl flex items-center justify-center overflow-hidden border-[1.5px] transition-colors"
+          className={`${tileRadius} flex items-center justify-center overflow-hidden border-[1.5px] transition-colors`}
           style={{ backgroundColor: pwaTileBg, borderColor: pwaBorderClr, width: 72, height: 72 }}
         >
           {imgSrc ? (

@@ -17,6 +17,10 @@ import { resolveImageUrl } from "@/lib/image-url"
 import { InstallAppButton } from "@/components/storefront/install-app-button"
 import { usePwaMode } from "@/hooks/use-pwa-mode"
 import { PwaModeContext } from "@/contexts/pwa-mode-context"
+import { PwaAppearanceContext } from "@/contexts/pwa-appearance-context"
+import {
+  getPwaHeaderBg, getPwaHeaderFg, getPwaHeaderMuted, getPwaHeaderIcon,
+} from "@/lib/pwa-appearance"
 
 interface Category { id: string; name: string; slug: string; image: string | null }
 
@@ -35,7 +39,7 @@ export function StorefrontLayout({
   currentStore,
   onOpenStorePicker,
 }: StorefrontLayoutProps) {
-  const { currentBusinessId, currentBusinessName, currentBusinessLogo } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance } = useAdminStore()
   const { items, totalItems, subtotal, updateQuantity, removeItem } = useCartStore()
   const { isAuthenticated, user } = useAuthStore()
   const isPwa = usePwaMode()
@@ -218,58 +222,74 @@ export function StorefrontLayout({
   // Compact app bar + bottom navigation + floating cart
   // ══════════════════════════════════════════════════════════════════════════
   if (isPwa) {
+    // ── Header theme derived colors (only affect PWA mode) ──────────────────
+    const hTheme   = currentPwaAppearance.headerTheme
+    const hBg      = getPwaHeaderBg(hTheme, brandColor)
+    const hFg      = getPwaHeaderFg(hTheme)
+    const hMuted   = getPwaHeaderMuted(hTheme, brandColor)
+    const hIcon    = getPwaHeaderIcon(hTheme)
+    const hHover   = hTheme === "brandColor" ? "hover:bg-white/20" : "hover:bg-gray-100"
+    const logoBorder = hTheme === "brandColor" ? "border-white/30" : "border-gray-100"
+    const cartBadgeBg   = hTheme === "brandColor" ? "#FFFFFF" : brandColor
+    const cartBadgeText = hTheme === "brandColor" ? brandColor  : "#FFFFFF"
+
     return (
+      <PwaAppearanceContext.Provider value={currentPwaAppearance}>
       <PwaModeContext.Provider value={isPwa}>
       <div className="min-h-screen flex flex-col bg-gray-50">
-        {/* PWA App Bar — a dedicated spacer div fills the status-bar zone so
-             toolbar content always starts below it. Using a spacer (instead of
-             paddingTop) is more reliable on Android where env(safe-area-inset-top)
-             can return 0; max(env(...), 24px) guarantees the minimum Android
-             status-bar clearance even when the env() value is not provided. */}
-        <header className="sticky top-0 z-40 bg-white shadow-sm">
-          {/* Status-bar spacer: white bg fills behind the system status bar */}
+        {/* PWA App Bar — dedicated spacer + themed header background.
+             The spacer ensures content sits below the device status bar on all
+             Android/iOS variants (max guards against env() returning 0). */}
+        <header className="sticky top-0 z-40 shadow-sm" style={{ backgroundColor: hBg }}>
+          {/* Status-bar spacer: header background fills behind system status bar */}
           <div aria-hidden="true" style={{ height: "max(env(safe-area-inset-top, 0px), 24px)" }} />
           <div className="flex items-center gap-3 px-4" style={{ height: 56 }}>
             {showBackInPwa ? (
               <>
                 <button
                   onClick={() => nav.goBack()}
-                  className="w-9 h-9 -ml-1 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors shrink-0"
+                  className={`w-9 h-9 -ml-1 flex items-center justify-center rounded-full transition-colors shrink-0 ${hHover}`}
                 >
-                  <ArrowLeft className="w-5 h-5 text-gray-800" />
+                  <ArrowLeft className="w-5 h-5" style={{ color: hFg }} />
                 </button>
-                <h1 className="flex-1 min-w-0 text-[15px] font-bold text-gray-900 truncate">{pwaPageTitle}</h1>
+                <h1
+                  className="flex-1 min-w-0 text-[15px] font-bold truncate"
+                  style={{ color: hFg }}
+                >
+                  {pwaPageTitle}
+                </h1>
               </>
             ) : (
               <>
-                {/* Logo — plain img, no wrapping button to avoid default browser styles */}
+                {/* Logo */}
                 <img
                   src={currentBusinessLogo || "/placeholder-logo.svg"}
                   alt={currentBusinessName || "Store"}
-                  className="w-9 h-9 rounded-xl object-contain border border-gray-100 block shrink-0 cursor-pointer active:opacity-70"
+                  className={`w-9 h-9 rounded-xl object-contain border block shrink-0 cursor-pointer active:opacity-70 ${logoBorder}`}
                   onClick={() => nav.go("home")}
                   onError={(e) => {
                     const img = e.currentTarget
                     if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
                   }}
                 />
-                {/* Name + store — flex-1 fills space between logo and actions.
-                     Using span+button (not button+button) removes all browser
-                     default button padding that was pushing the name off-screen. */}
+                {/* Name + store */}
                 <div
                   className="flex-1 min-w-0 flex flex-col gap-[3px] cursor-pointer"
                   onClick={() => nav.go("home")}
                   role="button"
                   tabIndex={0}
                 >
-                  <span className="text-[14px] font-bold text-gray-900 leading-[18px] truncate block">
+                  <span
+                    className="text-[14px] font-bold leading-[18px] truncate block"
+                    style={{ color: hFg }}
+                  >
                     {currentBusinessName || "Store"}
                   </span>
                   {currentStore && (
                     <button
                       onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
                       className="flex items-center gap-0.5 p-0 border-0 bg-transparent active:opacity-70 w-fit"
-                      style={{ color: brandColor }}
+                      style={{ color: hMuted }}
                     >
                       <MapPin className="w-2.5 h-2.5 shrink-0" />
                       <span className="text-[11px] leading-[14px] truncate max-w-[140px]">{currentStore.name}</span>
@@ -283,19 +303,19 @@ export function StorefrontLayout({
             <div className="flex items-center gap-0.5 shrink-0">
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+                className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${hHover}`}
               >
-                <Search className="w-[18px] h-[18px] text-gray-700" />
+                <Search className="w-[18px] h-[18px]" style={{ color: hIcon }} />
               </button>
               <button
                 onClick={() => setCartOpen(true)}
-                className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+                className={`relative w-9 h-9 flex items-center justify-center rounded-full transition-colors ${hHover}`}
               >
-                <ShoppingCart className="w-[18px] h-[18px] text-gray-700" />
+                <ShoppingCart className="w-[18px] h-[18px]" style={{ color: hIcon }} />
                 {cartCount > 0 && (
                   <span
-                    className="absolute top-0.5 right-0.5 w-[15px] h-[15px] text-white text-[9px] font-bold rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: brandColor }}
+                    className="absolute top-0.5 right-0.5 w-[15px] h-[15px] text-[9px] font-bold rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: cartBadgeBg, color: cartBadgeText }}
                   >
                     {cartCount > 9 ? "9+" : cartCount}
                   </span>
@@ -402,6 +422,7 @@ export function StorefrontLayout({
         {CartDrawer}
       </div>
       </PwaModeContext.Provider>
+      </PwaAppearanceContext.Provider>
     )
   }
 

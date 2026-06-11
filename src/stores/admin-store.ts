@@ -3,6 +3,7 @@
 import { create } from "zustand"
 import { PLATFORM_IMAGE_DEFAULTS } from "@/config/product-image-config"
 import type { CardStyle } from "@/design-system"
+import { type PwaAppearance, PWA_APPEARANCE_DEFAULTS } from "@/lib/pwa-appearance"
 
 // ── Business theme (overrides from ecommerceConfig.theme) ──────────────────
 export interface BusinessTheme {
@@ -448,6 +449,10 @@ interface AdminState {
   setStorefrontWhyChooseUs: (items: Array<{ emoji: string; title: string; desc: string }>) => void
   storefrontPromiseBar: Array<{ emoji: string; label: string; sub: string }>
   setStorefrontPromiseBar: (items: Array<{ emoji: string; label: string; sub: string }>) => void
+
+  // ── PWA appearance settings (hydrated from ecommerceConfig.pwaAppearance) ─
+  currentPwaAppearance: PwaAppearance
+  setPwaAppearance: (appearance: Partial<PwaAppearance>) => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
@@ -591,4 +596,9 @@ export const useAdminStore = create<AdminState>((set) => ({
   setStorefrontWhyChooseUs: (items) => set({ storefrontWhyChooseUs: items }),
   storefrontPromiseBar: [],
   setStorefrontPromiseBar: (items) => set({ storefrontPromiseBar: items }),
+
+  currentPwaAppearance: PWA_APPEARANCE_DEFAULTS,
+  setPwaAppearance: (appearance) => set((s) => ({
+    currentPwaAppearance: { ...s.currentPwaAppearance, ...appearance },
+  })),
 }))

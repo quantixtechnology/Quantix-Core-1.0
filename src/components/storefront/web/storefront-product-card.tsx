@@ -20,6 +20,7 @@ import { ProductImage } from "./product-image"
 import type { WebNav } from "./storefront-website"
 import { getCardClasses, TYPE } from "@/design-system"
 import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
+import { usePwaAppearance } from "@/contexts/pwa-appearance-context"
 
 // ── Shared types ───────────────────────────────────────────────────────────
 
@@ -99,6 +100,7 @@ export function StorefrontProductCard({
   storeClosed = false,
 }: StorefrontProductCardProps) {
   const isPwa = usePwaModeCtx()
+  const { productCardStyle } = usePwaAppearance()
   const { addItem, items, updateQuantity, removeItem } = useCartStore()
   const { currentImageConfig, currentBusinessTheme } = useAdminStore()
   const btConfig = getBusinessTypeConfig(businessType)
@@ -152,8 +154,9 @@ export function StorefrontProductCard({
     else updateQuantity(product.id, defaultVariant.id, cartItem.quantity - 1)
   }
 
-  // ── PWA: Blinkit-style card ─────────────────────────────────────────────
-  if (isPwa) {
+  // ── PWA: Blinkit-style modern card (only when productCardStyle = "modern") ──
+  // "standard" falls through to the web card layout below.
+  if (isPwa && productCardStyle === "modern") {
     return (
       <div
         className="bg-white rounded-2xl overflow-hidden cursor-pointer border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.04)] active:scale-[0.985] transition-transform duration-150 flex flex-col"
