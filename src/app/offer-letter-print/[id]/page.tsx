@@ -629,10 +629,9 @@ html, body {
    * by {{PAGE_BREAK}}. doc-body padding-bottom reserves clearance.
    * Use "Download PDF" for the Puppeteer-rendered PDF with Page X of Y.
    */
-  /* Page 1: margin 0 so the accent bar + header sit flush at the top edge.
-     Page 2+: 12mm top margin gives breathing room after a {{PAGE_BREAK}}. */
-  @page       { size: A4; margin: 12mm 0 0 0; }
-  @page :first { margin: 0; }
+  /* Uniform margin: 0 keeps position:fixed footer identical on every page.
+     Top breathing room on page 2+ comes from .page-break { margin-bottom: 12mm } below. */
+  @page { size: A4; margin: 0; }
 
   html, body {
     background: #fff !important;
@@ -669,9 +668,8 @@ html, body {
     background: #f8fafc;
     border-top: 1px solid #e2e8f0;
   }
-  /* CSS page counters are unreliable for position:fixed elements when
-     mixed @page margin rules are in use. Page X of Y is accurate in the
-     Puppeteer PDF (Download PDF button) via injected pageNumber/totalPages. */
+  /* CSS page counters are unreliable for position:fixed elements in paged media.
+     Page X of Y is accurate in the Puppeteer PDF (Download PDF button). */
   .footer-page { display: none; }
   /* Accent bar fixed at very bottom of every page */
   .accent-bar-bottom {
@@ -680,6 +678,10 @@ html, body {
     height: 4px;
     z-index: 9999;
   }
+
+  /* Give page 2+ a 12mm breathing room at the top after each {{PAGE_BREAK}}.
+     Done here (not via @page margin) to keep position:fixed footer consistent. */
+  .page-break { margin-bottom: 12mm; }
 
   /* Logo sharp in PDF */
   .brand-logo { max-width: 210px; min-width: 140px; height: auto; image-rendering: auto; }
