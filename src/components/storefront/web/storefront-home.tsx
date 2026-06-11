@@ -356,76 +356,68 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
 
   // ══════════════════════════════════════════════════════════════════════
   // WEB HOME — desktop website + mobile browser
-  // Hero section + promise bar + banner carousel + category grid +
-  // featured products grid + best sellers grid + why choose us
+  // Compact hero strip → promise bar → categories (primary, above fold) →
+  // banner carousel → featured products → best sellers → why choose us
   // ══════════════════════════════════════════════════════════════════════
   return (
     <div>
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
+      {/* ── Hero — compact brand strip (~50% of previous height) ───────── */}
       <section
         className="relative overflow-hidden"
-        style={{ background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}cc 60%, #1B1B1B 100%)` }}
+        style={{ background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}bb 55%, #0f172a 100%)` }}
       >
-        <div className="absolute inset-0 opacity-10 pointer-events-none">
-          <div className="absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl bg-white" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full blur-3xl bg-white" />
+        {/* Subtle glow — no tall decorative circles */}
+        <div className="absolute inset-0 opacity-[0.06] pointer-events-none">
+          <div className="absolute -top-8 right-0 w-72 h-72 rounded-full blur-3xl bg-white" />
         </div>
-        <div className={`relative max-w-7xl mx-auto ${PAGE_X} py-16 sm:py-24`}>
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-xl border-2 border-white/30"
-                style={{ backgroundColor: `${brandColor}80` }}
-              >
-                {initial}
-              </div>
-              <div>
-                <p className="text-white/70 text-sm font-medium">Welcome to</p>
-                <h1 className="text-white font-bold text-xl">{currentBusinessName || "Our Store"}</h1>
-              </div>
+
+        <div className={`relative max-w-7xl mx-auto ${PAGE_X} py-5 sm:py-7`}>
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Brand avatar */}
+            <div
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center text-white font-black text-base sm:text-lg border-2 border-white/20 shrink-0"
+              style={{ backgroundColor: `${brandColor}70` }}
+            >
+              {initial}
             </div>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4 whitespace-pre-line">
-              {heroContent.headline}
-            </h2>
-            <p className="text-white/80 text-base sm:text-lg mb-8 max-w-lg">{heroContent.sub}</p>
-            <div className="flex flex-wrap gap-3">
+
+            {/* Headline copy */}
+            <div className="flex-1 min-w-0">
+              <p className="text-white/60 text-[11px] font-medium leading-none mb-0.5 hidden sm:block">
+                {currentBusinessName || "Our Store"}
+              </p>
+              <h1 className="text-white font-extrabold text-base sm:text-xl leading-snug">
+                {heroContent.headline.replace(/\n/g, " ")}
+              </h1>
+              <p className="text-white/60 text-[11px] sm:text-xs mt-0.5 line-clamp-1 hidden sm:block">
+                {heroContent.sub}
+              </p>
+            </div>
+
+            {/* CTA */}
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                className={`${BTN_LG} bg-white hover:bg-gray-50 gap-2`}
+                className="flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-sm"
                 style={{ color: brandColor }}
               >
-                {heroContent.cta} <ChevronRight className="w-4 h-4" />
-              </button>
-              <button onClick={() => nav.go("orders")} className={BTN_GHOST}>
-                My Orders
+                {heroContent.cta} <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Delivery promise bar ─────────────────────────────────────── */}
+      {/* ── Delivery promise bar — compact single row ───────────────────── */}
       <section className="bg-gray-900 text-white">
-        <div className={`max-w-7xl mx-auto ${PAGE_X} py-4`}>
-          <div
-            className={`grid gap-4 ${
-              promiseItems.length === 1 ? "grid-cols-1 max-w-xs"
-              : promiseItems.length === 2 ? "grid-cols-2"
-              : promiseItems.length === 3 ? "grid-cols-3"
-              : "grid-cols-2 md:grid-cols-4"
-            }`}
-          >
+        <div className={`max-w-7xl mx-auto ${PAGE_X} py-2.5`}>
+          <div className="flex items-center gap-4 sm:gap-8 overflow-x-auto scrollbar-none">
             {promiseItems.map(({ emoji, label, sub }) => (
-              <div key={label} className="flex items-center gap-3">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
-                  style={{ backgroundColor: `${brandColor}30` }}
-                >
-                  {emoji}
-                </div>
+              <div key={label} className="flex items-center gap-2 shrink-0">
+                <span className="text-base leading-none">{emoji}</span>
                 <div>
-                  <p className="text-xs font-semibold text-white leading-tight">{label}</p>
-                  <p className="text-[11px] text-gray-400">{sub}</p>
+                  <p className="text-[11px] sm:text-xs font-semibold text-white leading-tight">{label}</p>
+                  {sub && <p className="text-[10px] text-gray-500 hidden sm:block">{sub}</p>}
                 </div>
               </div>
             ))}
@@ -438,25 +430,14 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
         {/* ── PWA install prompt ───────────────────────────────────────── */}
         <PwaInstallBanner brandColor={brandColor} />
 
-        {/* ── Banner carousel ──────────────────────────────────────────── */}
-        {currentBusinessId && (
-          <section className={SECTION_Y}>
-            <StorefrontBanner
-              businessId={currentBusinessId}
-              storeId={currentStoreId || null}
-              brandColor={brandColor}
-              variant="carousel"
-            />
-          </section>
-        )}
-
-        {/* ── Categories — full grid ────────────────────────────────────── */}
-        <section className={SECTION_Y}>
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className={TYPE.SECTION_TITLE}>{labels.categoryHeading}</h2>
-              <p className={TYPE.SECTION_SUB}>Browse our selections</p>
-            </div>
+        {/* ═══════════════════════════════════════════════════════════════
+            Categories — PRIMARY browsing element, immediately above fold.
+            Blinkit-style: large square image cards, 4→10 cols responsive.
+            Placed BEFORE the banner so they are always visible on load.
+        ════════════════════════════════════════════════════════════════ */}
+        <section className="pt-5 pb-4 sm:pt-6 sm:pb-5">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h2 className="text-base sm:text-lg font-bold text-gray-900">{labels.categoryHeading}</h2>
             <button
               onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
               className={TYPE.VIEW_ALL}
@@ -465,9 +446,10 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
               View all <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+
           {catLoading ? (
             <div className={`${CATEGORY_GRID} ${CAT_GAP}`}>
-              {Array.from({ length: 8 }).map((_, i) => <StorefrontCategoryCardSkeleton key={i} />)}
+              {Array.from({ length: 10 }).map((_, i) => <StorefrontCategoryCardSkeleton key={i} />)}
             </div>
           ) : categories.length === 0 ? (
             <p className="text-center py-8 text-sm text-gray-400">No categories added yet</p>
@@ -486,9 +468,21 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
           )}
         </section>
 
-        {/* ── Featured products — full multi-col grid ───────────────────── */}
-        <section className="pb-10">
-          <div className="flex items-center justify-between mb-6">
+        {/* ── Banner carousel — secondary, after categories ──────────────── */}
+        {currentBusinessId && (
+          <section className="pb-6 sm:pb-8">
+            <StorefrontBanner
+              businessId={currentBusinessId}
+              storeId={currentStoreId || null}
+              brandColor={brandColor}
+              variant="carousel"
+            />
+          </section>
+        )}
+
+        {/* ── Featured products ─────────────────────────────────────────── */}
+        <section className="pb-8">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className={TYPE.SECTION_TITLE}>{labels.featuredHeading}</h2>
               <p className={TYPE.SECTION_SUB}>Fresh stock, updated daily</p>
@@ -529,8 +523,8 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
 
         {/* ── Best sellers ─────────────────────────────────────────────── */}
         {!prodsLoading && moreProducts.length > 0 && (
-          <section className="pb-12">
-            <div className="flex items-center justify-between mb-6">
+          <section className="pb-10">
+            <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className={TYPE.SECTION_TITLE}>{labels.bestSellersHeading}</h2>
                 <p className={TYPE.SECTION_SUB}>Customer favourites</p>
@@ -560,10 +554,10 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
 
         {/* ── Why choose us ─────────────────────────────────────────────── */}
         {storefrontWhyChooseUs.length > 0 && (
-          <section className="py-10 border-t border-gray-100">
-            <h2 className={`${TYPE.SECTION_TITLE} mb-8 text-center`}>Why Choose Us?</h2>
+          <section className="py-8 border-t border-gray-100">
+            <h2 className={`${TYPE.SECTION_TITLE} mb-6 text-center`}>Why Choose Us?</h2>
             <div
-              className={`grid gap-6 ${
+              className={`grid gap-5 ${
                 storefrontWhyChooseUs.length <= 3
                   ? `grid-cols-${storefrontWhyChooseUs.length}`
                   : "grid-cols-2 md:grid-cols-4"
@@ -571,7 +565,7 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
             >
               {storefrontWhyChooseUs.map(({ emoji, title, desc }) => (
                 <div key={title} className="text-center">
-                  <div className="text-4xl mb-3">{emoji}</div>
+                  <div className="text-3xl mb-2">{emoji}</div>
                   <h3 className="text-sm font-bold text-gray-900 mb-1">{title}</h3>
                   <p className="text-xs text-gray-500">{desc}</p>
                 </div>

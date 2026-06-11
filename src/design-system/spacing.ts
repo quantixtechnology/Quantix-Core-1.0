@@ -35,13 +35,16 @@ export const SECTION_Y = "py-10"
 export const GRID_GAP = "gap-2"
 
 /** Gap between category tiles */
-export const CAT_GAP = "gap-4"
+export const CAT_GAP = "gap-2 sm:gap-3"
 
 /** Responsive product grid column counts */
 export const PRODUCT_GRID = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
 
-/** Responsive category grid */
-export const CATEGORY_GRID = "grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8"
+/**
+ * Responsive category grid — Blinkit-style large square cards.
+ * Mobile: 4 cols (~80px images), Desktop: up to 10 cols (~110px images).
+ */
+export const CATEGORY_GRID = "grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10"
 
 // ── Mobile PWA tokens ────────────────────────────────────────────────────
 
