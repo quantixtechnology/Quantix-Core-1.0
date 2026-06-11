@@ -332,97 +332,172 @@ export const GET = withMiddleware({
   requireAuth:         true,
   requiredPermission:  'subscriptions:view',
 })(async (req: NextRequest, context) => {
-  const params = await context?.params
+  const params     = await context?.params
   const businessId = params?.businessId as string
   const id         = params?.id         as string
 
-  const invoice = await db.billingInvoice.findFirst({
-    where:   { id, businessId },
-    include: {
-      payments: {
-        where:   { status: 'COMPLETED' },
-        orderBy: { paidAt: 'desc' },
-        select:  { id: true, amount: true, paidAt: true, paymentMode: true, transactionId: true, status: true },
-      },
-      account: {
-        include: {
-          business: {
-            select: {
-              name: true, contactEmail: true, contactPhone: true,
-              address: true, city: true, state: true, pincode: true,
-              gstNumber: true,
+  const tag = `[PDF] invoice=${id} business=${businessId}`
+
+  try {
+    // ── 1. Load invoice ──────────────────────────────────────────────────────
+    console.log(`${tag} step=db_query`)
+    const invoice = await db.billingInvoice.findFirst({
+      where:   { id, businessId },
+      include: {
+        payments: {
+          where:   { status: 'COMPLETED' },
+          orderBy: { paidAt: 'desc' },
+          select:  { id: true, amount: true, paidAt: true, paymentMode: true, transactionId: true, status: true },
+        },
+        account: {
+          include: {
+            business: {
+              select: {
+                name: true, contactEmail: true, contactPhone: true,
+                address: true, city: true, state: true, pincode: true,
+                gstNumber: true,
+              },
             },
           },
         },
       },
-    },
-  })
-
-  if (!invoice) return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 })
-
-  const business = invoice.account.business
-  const ps       = await getPlatformSettings()
-
-  let lineItems: LineItem[] = []
-  try { lineItems = JSON.parse(invoice.lineItems) } catch {
-    const items = await db.billingInvoiceItem.findMany({ where: { invoiceId: id } })
-    lineItems = items.map(i => ({ name: i.name, description: i.description, quantity: i.quantity, unitPrice: i.unitPrice, amount: i.amount }))
-  }
-
-  const logoUrl = resolveInvoiceLogoUrl(ps)
-  const logoSrc = await logoToBase64(logoUrl)
-
-  const html = buildHtml({
-    invoice:   invoice as unknown as Record<string, unknown>,
-    business:  business as unknown as Record<string, unknown>,
-    ps,
-    lineItems,
-    payments:  invoice.payments as unknown as Payment[],
-    logoSrc,
-  })
-
-  let pdfBytes: Uint8Array
-  let browser: Browser | null = null
-  try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args:     ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
     })
-    const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: 'load', timeout: 30000 })
-    pdfBytes = await page.pdf({
-      format:          'A4',
-      printBackground: true,
-      margin:          { top: '0', right: '0', bottom: '0', left: '0' },
-    })
-  } finally {
-    if (browser) await (browser as Browser).close().catch(() => {})
-  }
 
-  // Audit (non-blocking)
-  const performedById   = req.headers.get('x-user-id')   ?? null
-  const performedByName = req.headers.get('x-user-name') ?? null
-  db.billingAudit.create({
-    data: {
-      accountId:       invoice.accountId,
+    if (!invoice) {
+      console.log(`${tag} step=not_found`)
+      return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 })
+    }
+    console.log(`${tag} step=invoice_loaded invoiceNumber=${invoice.invoiceNumber} status=${invoice.status}`)
+
+    // ── 2. Platform settings ─────────────────────────────────────────────────
+    console.log(`${tag} step=platform_settings`)
+    const business = invoice.account.business
+    const ps       = await getPlatformSettings()
+    console.log(`${tag} step=platform_settings_ok companyName=${ps.companyName}`)
+
+    // ── 3. Line items ────────────────────────────────────────────────────────
+    console.log(`${tag} step=line_items raw=${typeof invoice.lineItems}`)
+    let lineItems: LineItem[] = []
+    try {
+      lineItems = JSON.parse(invoice.lineItems as string)
+      console.log(`${tag} step=line_items_parsed count=${lineItems.length}`)
+    } catch (parseErr) {
+      console.warn(`${tag} step=line_items_json_fallback err=${String(parseErr)}`)
+      const items = await db.billingInvoiceItem.findMany({ where: { invoiceId: id } })
+      lineItems = items.map(i => ({ name: i.name, description: i.description, quantity: i.quantity, unitPrice: i.unitPrice, amount: i.amount }))
+      console.log(`${tag} step=line_items_db count=${lineItems.length}`)
+    }
+
+    // ── 4. Logo ──────────────────────────────────────────────────────────────
+    console.log(`${tag} step=logo`)
+    const logoUrl = resolveInvoiceLogoUrl(ps)
+    console.log(`${tag} step=logo_url url=${logoUrl ?? 'null'}`)
+    const logoSrc = await logoToBase64(logoUrl)
+    console.log(`${tag} step=logo_src resolved=${logoSrc ? 'base64' : 'null'}`)
+
+    // ── 5. Build HTML ────────────────────────────────────────────────────────
+    console.log(`${tag} step=build_html`)
+    let html: string
+    try {
+      html = buildHtml({
+        invoice:   invoice as unknown as Record<string, unknown>,
+        business:  business as unknown as Record<string, unknown>,
+        ps,
+        lineItems,
+        payments:  invoice.payments as unknown as Payment[],
+        logoSrc,
+      })
+      console.log(`${tag} step=html_ok length=${html.length}`)
+    } catch (htmlErr) {
+      console.error(`${tag} step=html_error`, { error: htmlErr, stack: (htmlErr as Error)?.stack })
+      return NextResponse.json({
+        success: false,
+        error:   `HTML build failed: ${(htmlErr as Error)?.message ?? String(htmlErr)}`,
+      }, { status: 500 })
+    }
+
+    // ── 6. Puppeteer ─────────────────────────────────────────────────────────
+    console.log(`${tag} step=puppeteer_launch`)
+    let pdfBytes: Uint8Array | undefined
+    let browser: Browser | null = null
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args:     ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+      })
+      console.log(`${tag} step=browser_ok pid=${browser.process()?.pid ?? 'unknown'}`)
+
+      const page = await browser.newPage()
+      console.log(`${tag} step=new_page_ok`)
+
+      await page.setContent(html, { waitUntil: 'load', timeout: 30000 })
+      console.log(`${tag} step=set_content_ok`)
+
+      pdfBytes = await page.pdf({
+        format:          'A4',
+        printBackground: true,
+        margin:          { top: '0', right: '0', bottom: '0', left: '0' },
+      })
+      console.log(`${tag} step=pdf_ok bytes=${pdfBytes.length}`)
+    } catch (puppeteerErr) {
+      console.error(`${tag} step=puppeteer_error`, {
+        invoiceId:   id,
+        businessId,
+        htmlLength:  html.length,
+        error:       (puppeteerErr as Error)?.message ?? String(puppeteerErr),
+        stack:       (puppeteerErr as Error)?.stack,
+      })
+      return NextResponse.json({
+        success: false,
+        error:   `PDF generation failed: ${(puppeteerErr as Error)?.message ?? String(puppeteerErr)}`,
+      }, { status: 500 })
+    } finally {
+      if (browser) await (browser as Browser).close().catch(() => {})
+    }
+
+    // ── 7. Build response ─────────────────────────────────────────────────────
+    if (!pdfBytes || pdfBytes.length === 0) {
+      console.error(`${tag} step=empty_pdf`)
+      return NextResponse.json({ success: false, error: 'PDF generation produced empty output' }, { status: 500 })
+    }
+
+    // Audit (non-blocking)
+    const performedById   = req.headers.get('x-user-id')   ?? null
+    const performedByName = req.headers.get('x-user-name') ?? null
+    db.billingAudit.create({
+      data: {
+        accountId:       invoice.accountId,
+        businessId,
+        action:          'INVOICE_DOWNLOADED',
+        entityType:      'INVOICE',
+        entityId:        id,
+        description:     `Invoice ${invoice.invoiceNumber} downloaded as PDF`,
+        performedById,
+        performedByName,
+      },
+    }).catch(() => {})
+
+    const filename = `invoice-${invoice.invoiceNumber.replace(/\//g, '-')}.pdf`
+    const pdfBuf   = Buffer.from(pdfBytes)
+    console.log(`${tag} step=done filename=${filename} size=${pdfBuf.length}`)
+
+    return new NextResponse(pdfBuf as unknown as BodyInit, {
+      headers: {
+        'Content-Type':        'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length':      String(pdfBuf.length),
+      },
+    })
+  } catch (outerErr) {
+    console.error(`${tag} step=unhandled_error`, {
+      invoiceId:  id,
       businessId,
-      action:          'INVOICE_DOWNLOADED',
-      entityType:      'INVOICE',
-      entityId:        id,
-      description:     `Invoice ${invoice.invoiceNumber} downloaded as PDF`,
-      performedById,
-      performedByName,
-    },
-  }).catch(() => {})
-
-  const filename = `invoice-${(invoice.invoiceNumber as string).replace(/\//g, '-')}.pdf`
-  const pdfBuf   = Buffer.from(pdfBytes!)
-
-  return new NextResponse(pdfBuf as unknown as BodyInit, {
-    headers: {
-      'Content-Type':        'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Length':      String(pdfBuf.length),
-    },
-  })
+      error:      (outerErr as Error)?.message ?? String(outerErr),
+      stack:      (outerErr as Error)?.stack,
+    })
+    return NextResponse.json({
+      success: false,
+      error:   `Unexpected error: ${(outerErr as Error)?.message ?? String(outerErr)}`,
+    }, { status: 500 })
+  }
 })
