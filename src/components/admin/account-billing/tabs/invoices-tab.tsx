@@ -112,20 +112,19 @@ export function InvoicesTab({ onViewAccount }: Props) {
       const res = await fetch(url, { headers: getAuthHeaders() })
       if (!res.ok) {
         const json = await res.json().catch(() => ({}))
-        toast.error((json as { error?: string }).error ?? `PDF generation failed (${res.status})`)
+        toast.error((json as { error?: string }).error ?? `Failed to load invoice (${res.status})`)
         return
       }
-      const blob      = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
-      const a         = document.createElement("a")
-      a.href          = objectUrl
-      a.download      = `invoice-${inv.invoiceNumber.replace(/\//g, "-")}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(objectUrl)
+      const html = await res.text()
+      const win  = window.open("", "_blank", "width=900,height=700,scrollbars=yes")
+      if (!win) {
+        toast.error("Allow pop-ups to open the invoice for printing")
+        return
+      }
+      win.document.write(html)
+      win.document.close()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to download PDF")
+      toast.error(e instanceof Error ? e.message : "Failed to open invoice")
     } finally {
       setDownloadingId(null)
     }
