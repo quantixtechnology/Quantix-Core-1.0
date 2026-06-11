@@ -629,7 +629,10 @@ html, body {
    * by {{PAGE_BREAK}}. doc-body padding-bottom reserves clearance.
    * Use "Download PDF" for the Puppeteer-rendered PDF with Page X of Y.
    */
-  @page { size: A4; margin: 0; }
+  /* Page 1: margin 0 so the accent bar + header sit flush at the top edge.
+     Page 2+: 12mm top margin gives breathing room after a {{PAGE_BREAK}}. */
+  @page       { size: A4; margin: 12mm 0 0 0; }
+  @page :first { margin: 0; }
 
   html, body {
     background: #fff !important;
