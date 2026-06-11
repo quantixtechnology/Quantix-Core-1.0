@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import {
   ChevronRight, Package, MapPin, Heart, HeadphonesIcon, Info,
-  LogOut, User, Shield, Store, Settings, Edit2, Check, X, Loader2, Tag,
+  LogOut, User, Shield, Store, Settings, Edit2, Check, X, Loader2, Tag, FileText,
 } from "lucide-react"
 
 interface CustomerProfile {
@@ -22,6 +22,8 @@ interface CustomerProfile {
   loyaltyPoints: number
   totalOrders: number
   totalSpent: number
+  accountType?: string
+  outstandingBalance?: number
 }
 
 export function CustomerProfile() {
@@ -119,6 +121,8 @@ export function CustomerProfile() {
   const loyaltyTier = profile?.loyaltyTier || "BRONZE"
   const loyaltyPoints = profile?.loyaltyPoints ?? 0
 
+  const isBusinessAccount = profile?.accountType === "BUSINESS"
+
   const menuItems = [
     {
       id: "orders",
@@ -127,6 +131,13 @@ export function CustomerProfile() {
       icon: Package,
       action: () => setCustomerPage("orders"),
     },
+    ...(isBusinessAccount ? [{
+      id: "invoices",
+      label: "My Invoices",
+      desc: "View invoices and payment history",
+      icon: FileText,
+      action: () => setCustomerPage("invoices"),
+    }] : []),
     {
       id: "addresses",
       label: "Saved Addresses",

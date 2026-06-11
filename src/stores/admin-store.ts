@@ -136,6 +136,8 @@ export type CustomerPage =
   | "wishlist"
   | "review"
   | "coupons"
+  | "invoices"
+  | "invoice-detail"
 
 export type DeliveryPage =
   | "login"
@@ -453,6 +455,10 @@ interface AdminState {
   // ── PWA appearance settings (hydrated from ecommerceConfig.pwaAppearance) ─
   currentPwaAppearance: PwaAppearance
   setPwaAppearance: (appearance: Partial<PwaAppearance>) => void
+
+  // ── Customer invoice navigation ─────────────────────────────────────────
+  selectedInvoiceId: string | null
+  setSelectedInvoiceId: (id: string | null) => void
 }
 
 export const useAdminStore = create<AdminState>((set) => ({
@@ -601,4 +607,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   setPwaAppearance: (appearance) => set((s) => ({
     currentPwaAppearance: { ...s.currentPwaAppearance, ...appearance },
   })),
+
+  // Customer invoice navigation
+  selectedInvoiceId: null,
+  setSelectedInvoiceId: (id) => set({ selectedInvoiceId: id }),
 }))

@@ -54,6 +54,7 @@ import { useAdminStore, WORKFLOW_CONFIGS } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { CreateOrderDialog } from "./create-order-dialog"
+import { InvoiceOnDeliveryDialog } from "./invoice-on-delivery-dialog"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -311,6 +312,10 @@ export function OrdersView() {
   } | null>(null)
   const [statusNotes, setStatusNotes] = useState("")
 
+  // Invoice on delivery dialog
+  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
+  const [invoiceDialogOrder, setInvoiceDialogOrder] = useState<Order | null>(null)
+
   // Create order dialog
   const [createOrderOpen, setCreateOrderOpen] = useState(false)
 
@@ -391,9 +396,33 @@ export function OrdersView() {
   }
 
   function requestStatusUpdate(order: Order, newStatus: OrderStatus) {
+    if (newStatus === "DELIVERED") {
+      setInvoiceDialogOrder(order)
+      setInvoiceDialogOpen(true)
+      return
+    }
     setPendingStatusUpdate({ order, newStatus })
     setStatusNotes("")
     setStatusDialogOpen(true)
+  }
+
+  async function handleInvoiceAndDeliver(paymentStatus: "paid" | "pending", notes: string) {
+    if (!invoiceDialogOrder) return
+    // First create the invoice
+    await fetch(`/api/core/orders/${invoiceDialogOrder.id}/invoice`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentStatus, notes: notes || undefined }),
+    })
+    // Then mark order DELIVERED
+    await updateStatusMutation.mutateAsync({
+      orderId: invoiceDialogOrder.id,
+      status: "DELIVERED",
+      note: notes || undefined,
+    })
+    showSuccess(`Order ${invoiceDialogOrder.orderNumber} delivered — invoice created`)
+    setInvoiceDialogOpen(false)
+    setInvoiceDialogOrder(null)
   }
 
   async function openAssignPartner(order: Order) {
@@ -1138,6 +1167,18 @@ export function OrdersView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ===== Invoice on Delivery Dialog ===== */}
+      <InvoiceOnDeliveryDialog
+        open={invoiceDialogOpen}
+        onOpenChange={setInvoiceDialogOpen}
+        order={invoiceDialogOrder ? {
+          id: invoiceDialogOrder.id,
+          orderNumber: invoiceDialogOrder.orderNumber,
+          total: invoiceDialogOrder.total,
+        } : null}
+        onConfirm={handleInvoiceAndDeliver}
+      />
 
       {/* ===== Create Order Dialog ===== */}
       <CreateOrderDialog

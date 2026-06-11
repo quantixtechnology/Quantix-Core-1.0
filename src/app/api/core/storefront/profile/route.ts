@@ -16,6 +16,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOMER
           id: true, name: true, email: true, phone: true, avatar: true,
           gstNumber: true, loyaltyTier: true, loyaltyPoints: true,
           totalOrders: true, totalSpent: true,
+          accountType: true, creditLimit: true, outstandingBalance: true,
         },
       })
 

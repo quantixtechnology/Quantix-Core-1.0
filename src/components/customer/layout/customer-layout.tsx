@@ -58,7 +58,8 @@ export function CustomerLayout({ children }: { children: React.ReactNode }) {
     if (
       customerPage === "profile" || customerPage === "addresses" ||
       customerPage === "support" || customerPage === "notifications" ||
-      customerPage === "wishlist" || customerPage === "coupons"
+      customerPage === "wishlist" || customerPage === "coupons" ||
+      customerPage === "invoices" || customerPage === "invoice-detail"
     ) return "profile"
     return "" // cart, checkout — no tab highlighted; floating bar is the CTA
   }

@@ -1459,6 +1459,9 @@ model Customer {
   emailVerified    Boolean                @default(false)
   phoneVerified    Boolean                @default(false)
   walletBalance    Float                  @default(0)
+  accountType      String                 @default("RETAIL")
+  creditLimit      Float                  @default(0)
+  outstandingBalance Float                @default(0)
   lastLoginAt      DateTime?
   // ── Customer-owned credentials (isolated from BusinessUser/Staff system) ──
   passwordHash           String?
@@ -1591,6 +1594,8 @@ model Invoice {
   dueDate       DateTime?
   paidAt        DateTime?
   status        String      @default("pending")
+  paidAmount    Float       @default(0)
+  notes         String?
   pdfUrl        String?
   metadata      String      @default("{}")
   createdAt     DateTime    @default(now())
