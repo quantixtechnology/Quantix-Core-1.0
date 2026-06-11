@@ -59,6 +59,12 @@ function groupHtmlSections(html: string): string {
   }).join('\n')
 }
 
+function processPageBreaks(html: string): string {
+  return html
+    .replace(/<p[^>]*>\s*\{\{PAGE_BREAK\}\}\s*<\/p>/gi, '<div class="page-break"></div>')
+    .replace(/\{\{PAGE_BREAK\}\}/g, '<div class="page-break"></div>')
+}
+
 function escHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -68,11 +74,14 @@ function escHtml(s: string): string {
 
 function renderContent(content: string): string {
   if (!content) return ''
-  if (content.trimStart().startsWith('<')) return groupHtmlSections(content)
+  if (content.trimStart().startsWith('<')) return processPageBreaks(groupHtmlSections(content))
   return content
     .split('\n')
     .filter((l) => l.trim())
-    .map((l) => `<p class="body-p">${escHtml(l)}</p>`)
+    .map((l) => l.trim() === '{{PAGE_BREAK}}'
+      ? '<div class="page-break"></div>'
+      : `<p class="body-p">${escHtml(l)}</p>`,
+    )
     .join('\n')
 }
 
@@ -306,6 +315,9 @@ html, body {
 .sig-desig { font-size: 8.5pt; color: #374151; margin-bottom: 3px; }
 .sig-auth  { font-size: 7pt; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-top: 2px; }
 
+/* ─── Page break token ───────────────────────────────────── */
+.page-break { page-break-before: always; break-before: page; display: block; height: 0; margin: 0; padding: 0; }
+
 /* ─── Footer: in flex flow — doc-body(flex:1) pushes it to the bottom ─── */
 .doc-footer {
   background: #f8fafc; border-top: 1px solid #e2e8f0;
@@ -316,6 +328,7 @@ html, body {
 .footer-co      { font-weight: 700; color: #64748b; font-size: 7.5pt; }
 .footer-addr    { color: #6b7280; }
 .footer-contact { color: #9ca3af; }
+.footer-page    { display: none; }
 
 /* ─── Floating action buttons (screen only) ──────────────── */
 .fab-group {
@@ -337,9 +350,10 @@ html, body {
 /* ─── Print / Chrome Save as PDF ────────────────────────── */
 @media print {
   /*
-   * @page margin: 0 removes the browser URL, date, and page number.
-   * Use "Download PDF" for server-side Puppeteer PDF which adds
-   * the footer on every page via footerTemplate.
+   * margin: 0 removes browser URL/date/page-number from top, left, right.
+   * The footer is fixed at bottom: 0 on every page via position:fixed,
+   * repeating automatically across all pages including {{PAGE_BREAK}} pages.
+   * Use "Download PDF" for the Puppeteer-rendered PDF with Page X of Y.
    */
   @page { size: A4; margin: 0; }
 
@@ -353,17 +367,53 @@ html, body {
   .page-shell { max-width: 100%; margin: 0; box-shadow: none; }
   .fab-group  { display: none !important; }
 
-  /*
-   * min-height: 297mm keeps footer at the bottom of an A4 page.
-   * Content flows naturally — no position:fixed or position:absolute.
-   */
+  /* min-height: 297mm fills an A4 page for single-page documents */
   .doc { min-height: 297mm; }
 
   /* Tighter padding for A4 */
   .doc-header { padding: 11px 36px 10px; }
   .title-band { padding: 7px 36px 9px; }
-  .doc-body   { padding: 12px 36px 16px; }
-  .doc-footer { padding: 6px 36px; }
+
+  /*
+   * padding-bottom: 24mm reserves space above the fixed footer so content
+   * never flows behind it on any page.
+   */
+  .doc-body { padding: 12px 36px 24mm; }
+
+  /* ── Footer: fixed at bottom of EVERY printed page ────── */
+  .doc-footer {
+    position: fixed;
+    bottom: 4px; /* sits above the 4px accent bar */
+    left: 0; right: 0;
+    padding: 5px 36px 3px;
+    z-index: 9999;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+  }
+  .footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .footer-text { text-align: left; }
+  .footer-page {
+    display: block;
+    font-size: 7.5pt;
+    font-weight: 600;
+    color: #64748b;
+    white-space: nowrap;
+  }
+  /* counter(page) / counter(pages) are supported by Chrome/Edge in print */
+  .footer-page::after {
+    content: "Page " counter(page) " of " counter(pages);
+  }
+  /* Accent bar fixed at very bottom of every page */
+  .accent-bar-bottom {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 4px;
+    z-index: 9999;
+  }
 
   .brand-logo { max-width: 210px; min-width: 140px; height: auto; image-rendering: auto; }
   .doc-section       { break-inside: avoid; page-break-inside: avoid; }
@@ -468,11 +518,17 @@ html, body {
             </div>
           </main>
 
-          {/* Footer: in flex flow — stays at the bottom via doc-body flex:1 */}
+          {/* Footer: in flex flow on screen; fixed at bottom of every page in print */}
           <footer className="doc-footer">
-            <div className="footer-co">{company}</div>
-            {footerAddress && <div className="footer-addr">{footerAddress}</div>}
-            {footerContact && <div className="footer-contact">{footerContact}</div>}
+            <div className="footer-inner">
+              <div className="footer-text">
+                <div className="footer-co">{company}</div>
+                {footerAddress && <div className="footer-addr">{footerAddress}</div>}
+                {footerContact && <div className="footer-contact">{footerContact}</div>}
+              </div>
+              {/* Populated by CSS counter(page)/counter(pages) in @media print */}
+              <div className="footer-page" />
+            </div>
           </footer>
           <div className="accent-bar-bottom" />
 

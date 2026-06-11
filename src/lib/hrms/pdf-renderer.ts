@@ -68,6 +68,12 @@ function esc(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
+function processPageBreaks(html: string): string {
+  return html
+    .replace(/<p[^>]*>\s*\{\{PAGE_BREAK\}\}\s*<\/p>/gi, '<div class="page-break"></div>')
+    .replace(/\{\{PAGE_BREAK\}\}/g, '<div class="page-break"></div>')
+}
+
 function brand(hrms: HrmsForPdf, platform: PlatformForPdf): BrandVars {
   const footerAddress = (hrms.registeredAddress || '').replace(/\n+/g, ', ').trim()
   const footerContact = [hrms.companyPhone, hrms.companyEmail, hrms.website || platform.companyWebsite]
@@ -88,7 +94,7 @@ function brand(hrms: HrmsForPdf, platform: PlatformForPdf): BrandVars {
 
 function parseContent(content: string): string {
   if (!content) return ''
-  if (content.trimStart().startsWith('<')) return content
+  if (content.trimStart().startsWith('<')) return processPageBreaks(content)
 
   const lines = content.split('\n')
   const segments: string[] = []
@@ -125,6 +131,7 @@ function parseContent(content: string): string {
   for (let i = startAt; i < stopAt; i++) {
     const line = lines[i].trim()
     if (!line) { flushList(); continue }
+    if (line === '{{PAGE_BREAK}}') { flushSection(); segments.push('<div class="page-break"></div>'); continue }
     if (line === '---') { flushSection(); segments.push('<hr style="border:none;border-top:1px solid #e5e7eb;margin:8px 0;">'); continue }
     if (line.startsWith('•')) { inList = true; listItems.push(esc(line.slice(1).trim())); continue }
     flushList()
@@ -197,6 +204,7 @@ function css(b: BrandVars): string {
     .sig-date      { margin-top: 12px; font-size: 8pt; color: #374151; }
     .watermark     { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 0; pointer-events: none; opacity: 0.05; max-width: 55%; }
     .above-wm      { position: relative; z-index: 1; }
+    .page-break    { page-break-before: always; break-before: page; display: block; height: 0; margin: 0; padding: 0; }
   `
 }
 
@@ -205,6 +213,7 @@ function css(b: BrandVars): string {
 function footerTpl(b: BrandVars): string {
   // Puppeteer injects this HTML into the bottom margin area of every page.
   // font-size must be set inline as Puppeteer footerTemplate ignores body styles.
+  // <span class="pageNumber"> and <span class="totalPages"> are Puppeteer magic spans.
   const lines = [
     `<span style="font-weight:700;color:#64748b;font-size:7.5pt;">${esc(b.company)}</span>`,
     b.footerAddress ? `<span style="color:#6b7280;font-size:7pt;">${esc(b.footerAddress)}</span>` : '',
@@ -212,8 +221,13 @@ function footerTpl(b: BrandVars): string {
   ].filter(Boolean).join('<br>')
 
   return `
-    <div style="width:100%;text-align:center;padding:5px 36px 2px;font-family:Arial,sans-serif;line-height:1.5;background:#f8fafc;border-top:1px solid #e2e8f0;">
-      ${lines}
+    <div style="width:100%;font-family:Arial,sans-serif;line-height:1.5;background:#f8fafc;border-top:1px solid #e2e8f0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 36px 2px;">
+        <div>${lines}</div>
+        <div style="font-size:7.5pt;font-weight:600;color:#64748b;white-space:nowrap;">
+          Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+        </div>
+      </div>
     </div>
     <div style="height:4px;background:${b.accent};width:100%;"></div>
   `
@@ -312,9 +326,12 @@ export function buildAnnexureHtml(
 
   function renderContent(content: string): string {
     if (!content) return ''
-    if (content.trimStart().startsWith('<')) return content
+    if (content.trimStart().startsWith('<')) return processPageBreaks(content)
     return content.split('\n').filter(l => l.trim())
-      .map(l => `<p style="margin-bottom:5px;">${esc(l)}</p>`).join('\n')
+      .map(l => l.trim() === '{{PAGE_BREAK}}'
+        ? '<div class="page-break"></div>'
+        : `<p style="margin-bottom:5px;">${esc(l)}</p>`,
+      ).join('\n')
   }
 
   return `<!DOCTYPE html>

@@ -7,7 +7,7 @@ import Underline from "@tiptap/extension-underline"
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table"
 import {
   Bold, Italic, Underline as UnderlineIcon, Heading1, Heading2, Heading3,
-  List, ListOrdered, Minus, TableIcon, Tag,
+  List, ListOrdered, Minus, TableIcon, Tag, Scissors,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -182,6 +182,12 @@ export function RichTextEditor({ value, onChange, placeholder, className }: Rich
           onClick={insertTable}
         >
           <TableIcon className="h-3.5 w-3.5" />
+        </ToolBtn>
+        <ToolBtn
+          title="Insert Page Break — renders as a new page in Preview, Print and PDF"
+          onClick={() => editor.chain().focus().insertContent('<p>{{PAGE_BREAK}}</p>').run()}
+        >
+          <Scissors className="h-3.5 w-3.5" />
         </ToolBtn>
 
         <Sep />
