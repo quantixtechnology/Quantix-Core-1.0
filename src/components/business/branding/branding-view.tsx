@@ -274,8 +274,8 @@ export function BrandingView() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="brandTint">Brand Tint (Recommended)</SelectItem>
-                  <SelectItem value="white">White</SelectItem>
+                  <SelectItem value="white">White (Default)</SelectItem>
+                  <SelectItem value="brandTint">Brand Tint</SelectItem>
                   <SelectItem value="brandColor">Brand Color</SelectItem>
                 </SelectContent>
               </Select>

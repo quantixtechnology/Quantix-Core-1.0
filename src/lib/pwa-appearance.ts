@@ -27,7 +27,7 @@ export interface PwaAppearance {
 // ── Defaults ─────────────────────────────────────────────────────────────────
 
 export const PWA_APPEARANCE_DEFAULTS: PwaAppearance = {
-  headerTheme:      "brandTint",
+  headerTheme:      "white",    // white until business explicitly configures otherwise
   categoryStyle:    "rounded",
   productCardStyle: "modern",
 }
