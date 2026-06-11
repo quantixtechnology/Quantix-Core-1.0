@@ -37,6 +37,9 @@ import {
   Wifi,
   WifiOff,
   Pencil,
+  Receipt,
+  Download,
+  CreditCard,
 } from "lucide-react"
 import {
   useOrders,
@@ -316,6 +319,18 @@ export function OrdersView() {
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
   const [invoiceDialogOrder, setInvoiceDialogOrder] = useState<Order | null>(null)
 
+  // Invoice panel in order detail sheet
+  const [orderInvoice, setOrderInvoice] = useState<{
+    id: string; invoiceNumber: string; status: string;
+    totalAmount: number; paidAmount: number; notes: string | null;
+    paidAt: string | null; dueDate: string | null; createdAt: string;
+  } | null>(null)
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false)
+  const [recordPaymentAmount, setRecordPaymentAmount] = useState("")
+  const [recordPaymentNotes, setRecordPaymentNotes] = useState("")
+  const [recordingPayment, setRecordingPayment] = useState(false)
+
   // Create order dialog
   const [createOrderOpen, setCreateOrderOpen] = useState(false)
 
@@ -390,9 +405,22 @@ export function OrdersView() {
   }, [allOrders, activeTab, searchQuery, typeFilter, paymentFilter, dateFilter])
 
   // ---- Handlers ----
+  async function loadOrderInvoice(orderId: string) {
+    setInvoiceLoading(true)
+    setOrderInvoice(null)
+    try {
+      const res = await fetch(`/api/core/orders/${orderId}/invoice`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) setOrderInvoice(json.data)
+    } catch { /* invoice may not exist yet */ }
+    finally { setInvoiceLoading(false) }
+  }
+
   function openDetail(order: Order) {
     setSelectedOrder(order)
     setSheetOpen(true)
+    setOrderInvoice(null)
+    loadOrderInvoice(order.id)
   }
 
   function requestStatusUpdate(order: Order, newStatus: OrderStatus) {
@@ -408,21 +436,27 @@ export function OrdersView() {
 
   async function handleInvoiceAndDeliver(paymentStatus: "paid" | "pending", notes: string) {
     if (!invoiceDialogOrder) return
-    // First create the invoice
+    const adminName = user?.name || undefined
+    // Transition DRAFT invoice → PAID or PAYMENT_DUE
     await fetch(`/api/core/orders/${invoiceDialogOrder.id}/invoice`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ paymentStatus, notes: notes || undefined }),
+      body: JSON.stringify({ paymentStatus, notes: notes || undefined, adminName }),
     })
-    // Then mark order DELIVERED
+    // Mark order DELIVERED
     await updateStatusMutation.mutateAsync({
       orderId: invoiceDialogOrder.id,
       status: "DELIVERED",
       note: notes || undefined,
     })
-    showSuccess(`Order ${invoiceDialogOrder.orderNumber} delivered — invoice created`)
+    const label = paymentStatus === "paid" ? "Invoice PAID" : "Invoice PAYMENT_DUE"
+    showSuccess(`Order ${invoiceDialogOrder.orderNumber} delivered — ${label}`)
     setInvoiceDialogOpen(false)
     setInvoiceDialogOrder(null)
+    // Reload invoice panel if this order is open in the detail sheet
+    if (selectedOrder?.id === invoiceDialogOrder.id) {
+      loadOrderInvoice(invoiceDialogOrder.id)
+    }
   }
 
   async function openAssignPartner(order: Order) {
@@ -1091,6 +1125,109 @@ export function OrdersView() {
                     </Card>
                   </div>
 
+                  {/* Payment & Invoice */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                      Payment &amp; Invoice
+                    </h4>
+                    {invoiceLoading ? (
+                      <Card>
+                        <CardContent className="p-4 flex items-center gap-2 text-muted-foreground">
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          <span className="text-xs">Loading invoice…</span>
+                        </CardContent>
+                      </Card>
+                    ) : orderInvoice ? (
+                      <Card>
+                        <CardContent className="p-4 space-y-3">
+                          {/* Invoice header row */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Receipt className="h-4 w-4 text-emerald-600 shrink-0" />
+                              <span className="text-sm font-semibold font-mono">{orderInvoice.invoiceNumber}</span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              orderInvoice.status === "PAID"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : orderInvoice.status === "PAYMENT_DUE"
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-gray-100 text-gray-600"
+                            }`}>
+                              {orderInvoice.status}
+                            </span>
+                          </div>
+
+                          {/* Amounts */}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Invoice Amount</p>
+                              <p className="font-semibold">₹{orderInvoice.totalAmount.toLocaleString("en-IN")}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Amount Paid</p>
+                              <p className="font-semibold">₹{orderInvoice.paidAmount.toLocaleString("en-IN")}</p>
+                            </div>
+                          </div>
+
+                          {/* Dates */}
+                          <div className="text-xs text-muted-foreground">
+                            Created: {new Date(orderInvoice.createdAt).toLocaleDateString("en-IN")}
+                            {orderInvoice.status === "PAYMENT_DUE" && orderInvoice.dueDate && (
+                              <span className="ml-3 text-amber-600">
+                                Due: {new Date(orderInvoice.dueDate).toLocaleDateString("en-IN")}
+                              </span>
+                            )}
+                            {orderInvoice.status === "PAID" && orderInvoice.paidAt && (
+                              <span className="ml-3 text-emerald-600">
+                                Paid: {new Date(orderInvoice.paidAt).toLocaleDateString("en-IN")}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1"
+                              onClick={() => {
+                                window.open(`/api/core/businesses/${businessId}/invoices/${orderInvoice.id}/pdf`, "_blank")
+                              }}
+                            >
+                              <Download className="h-3 w-3" />
+                              Download PDF
+                            </Button>
+                            {orderInvoice.status === "PAYMENT_DUE" && (
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => {
+                                  setRecordPaymentAmount(String(orderInvoice.totalAmount - orderInvoice.paidAmount))
+                                  setRecordPaymentNotes("")
+                                  setRecordPaymentOpen(true)
+                                }}
+                              >
+                                <CreditCard className="h-3 w-3" />
+                                Record Payment
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card className="border-dashed">
+                        <CardContent className="p-4 flex items-center gap-3 text-muted-foreground">
+                          <Receipt className="h-4 w-4" />
+                          <span className="text-xs">
+                            {selectedOrder.status === "DELIVERED"
+                              ? "No invoice found for this order"
+                              : "Invoice will be created when order is delivered"}
+                          </span>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+
                   {/* Action Buttons */}
                   {selectedOrder.status !== "DELIVERED" &&
                     selectedOrder.status !== "CANCELLED" && (
@@ -1163,6 +1300,73 @@ export function OrdersView() {
             <Button variant="outline" onClick={() => setPartnerDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleAssignPartner} disabled={assigningPartner || partnerOptions.length === 0}>
               {assigningPartner ? "Assigning…" : selectedPartnerId ? "Assign Partner" : "Unassign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== Record Payment Dialog ===== */}
+      <Dialog open={recordPaymentOpen} onOpenChange={setRecordPaymentOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              {orderInvoice ? `Invoice ${orderInvoice.invoiceNumber} — Balance: ₹${(orderInvoice.totalAmount - orderInvoice.paidAmount).toLocaleString("en-IN")}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="payment-amount">Amount (₹)</Label>
+              <Input
+                id="payment-amount"
+                type="number"
+                value={recordPaymentAmount}
+                onChange={(e) => setRecordPaymentAmount(e.target.value)}
+                placeholder="Enter amount"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="payment-notes">Notes (optional)</Label>
+              <Textarea
+                id="payment-notes"
+                value={recordPaymentNotes}
+                onChange={(e) => setRecordPaymentNotes(e.target.value)}
+                rows={2}
+                placeholder="Payment mode, reference..."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRecordPaymentOpen(false)} disabled={recordingPayment}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={recordingPayment || !recordPaymentAmount || Number(recordPaymentAmount) <= 0}
+              onClick={async () => {
+                if (!selectedOrder || !orderInvoice) return
+                setRecordingPayment(true)
+                try {
+                  const res = await fetch(`/api/core/orders/${selectedOrder.id}/invoice`, {
+                    method: "PATCH",
+                    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      paidAmount: orderInvoice.paidAmount + Number(recordPaymentAmount),
+                      notes: recordPaymentNotes || undefined,
+                      adminName: user?.name,
+                    }),
+                  })
+                  const json = await res.json()
+                  if (json.success) {
+                    setOrderInvoice(json.data)
+                    showSuccess("Payment recorded")
+                    setRecordPaymentOpen(false)
+                  } else {
+                    showError(json.error || "Failed to record payment")
+                  }
+                } catch { showError("Failed to record payment") }
+                finally { setRecordingPayment(false) }
+              }}
+            >
+              {recordingPayment ? "Recording…" : "Record Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

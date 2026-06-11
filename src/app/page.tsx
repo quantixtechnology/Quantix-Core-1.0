@@ -196,6 +196,7 @@ const RevenueCommissionProcessingView = dynamic(() => import("@/components/admin
 
 // ── Business Owner pages (lazy) ───────────────────────────────────────────
 const BusinessDashboard = dynamic(() => import("@/components/business/dashboard/business-dashboard").then(m => ({ default: m.BusinessDashboard })), { loading: () => <PageLoader /> })
+const BusinessInvoicesView = dynamic(() => import("@/components/business/invoices/business-invoices-view").then(m => ({ default: m.BusinessInvoicesView })), { loading: () => <PageLoader /> })
 const OrdersView = dynamic(() => import("@/components/business/orders/orders-view").then(m => ({ default: m.OrdersView })), { loading: () => <PageLoader /> })
 const ProductsView = dynamic(() => import("@/components/business/products/products-view").then(m => ({ default: m.ProductsView })), { loading: () => <PageLoader /> })
 const CustomersView = dynamic(() => import("@/components/business/customers/customers-view").then(m => ({ default: m.CustomersView })), { loading: () => <PageLoader /> })
@@ -519,6 +520,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "admin-app": return <AppsView />
       case "website": return <AppsView />
       case "onboarding-progress": return <WorkspaceOverview />
+      case "invoices": return <BusinessInvoicesView />
       default: return <BusinessDashboard />
     }
   }

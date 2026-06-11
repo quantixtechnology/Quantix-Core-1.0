@@ -119,6 +119,7 @@ export type BusinessPage =
   | "admin-app"
   | "website"
   | "onboarding-progress"
+  | "invoices"
 
 export type CustomerPage =
   | "auth"

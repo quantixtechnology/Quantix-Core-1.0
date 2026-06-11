@@ -462,6 +462,31 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CUSTOME
         },
       });
 
+      // Create DRAFT invoice — linked to this order from the start so it's always discoverable
+      try {
+        const invoiceNumber = orderNumber.replace(/^ORD-/, 'INV-')
+        const auditLog = JSON.stringify([{ event: 'CREATED', ts: now.toISOString() }])
+        await db.invoice.create({
+          data: {
+            businessId,
+            orderId: order.id,
+            customerId: customer.id,
+            invoiceNumber,
+            invoiceType: 'TAX_INVOICE',
+            subtotal:      order.subtotal,
+            totalTax:      order.totalTax,
+            totalDiscount: order.totalDiscount,
+            totalAmount:   order.totalAmount,
+            cgstAmount:    order.cgstAmount,
+            sgstAmount:    order.sgstAmount,
+            igstAmount:    0,
+            paidAmount:    0,
+            status:        'DRAFT',
+            metadata:      JSON.stringify({ auditLog: JSON.parse(auditLog) }),
+          },
+        })
+      } catch { /* non-critical — order committed, invoice can be created later */ }
+
       // Update customer aggregate stats
       try {
         await db.customer.update({

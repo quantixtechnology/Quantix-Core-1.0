@@ -78,6 +78,7 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   { key: "user-management",     label: "User Management",      icon: Shield },
   { key: "tax",                 label: "Tax & GST",            icon: Receipt },
   { key: "gateway-config",      label: "Payment Gateways",     icon: CreditCard },
+  { key: "invoices",            label: "Invoices",             icon: Receipt },
   { key: "reports",             label: "Reports",              icon: BarChart3 },
   { key: "settings",            label: "Settings",             icon: Settings },
 ]

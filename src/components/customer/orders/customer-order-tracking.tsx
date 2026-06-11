@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useState, useEffect, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { buildLabelMap, getLabel } from "@/lib/order-stages"
 import { useOrder, useTrackOrder } from "@/hooks/use-api"
@@ -24,7 +24,10 @@ import {
   ChevronUp,
   MessageCircle,
   Loader2,
+  Receipt,
+  FileText,
 } from "lucide-react"
+import { useAuthStore } from "@/stores/auth-store"
 
 const statusSteps = [
   { key: "PENDING", label: "Order Placed", icon: Package },
@@ -44,10 +47,32 @@ const statusColors: Record<string, string> = {
 }
 
 export function CustomerOrderTracking() {
-  const { selectedOrderId, setCustomerPage, currentBusinessPrimaryColor, orderStages } = useAdminStore()
+  const { selectedOrderId, setCustomerPage, currentBusinessPrimaryColor, orderStages, pushCustomerPage, setSelectedInvoiceId } = useAdminStore()
+  const { token } = useAuthStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
   const [showDetails, setShowDetails] = useState(false)
+
+  // Invoice data
+  const [invoice, setInvoice] = useState<{
+    id: string; invoiceNumber: string; status: string;
+    totalAmount: number; paidAmount: number;
+    dueDate: string | null; paidAt: string | null;
+  } | null>(null)
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+
+  const fetchInvoice = useCallback(async (orderId: string) => {
+    if (!token || !orderId) return
+    setInvoiceLoading(true)
+    try {
+      const res = await fetch(`/api/core/storefront/orders/${orderId}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await res.json()
+      if (json.success) setInvoice(json.data)
+    } catch { /* invoice may not exist yet */ }
+    finally { setInvoiceLoading(false) }
+  }, [token])
 
   // Fetch order details
   const { data: orderData, isLoading: orderLoading, error: orderError, refetch } = useOrder(selectedOrderId || "")
@@ -95,6 +120,11 @@ export function CustomerOrderTracking() {
     const trackPartner = (td?.delivery as Record<string, unknown> | null | undefined)?.partner as PartnerShape | null | undefined
     return trackPartner ?? order?.deliveryPartner ?? null
   }, [trackingData, order])
+
+  // Load invoice whenever order ID is known
+  useEffect(() => {
+    if (selectedOrderId) fetchInvoice(selectedOrderId)
+  }, [selectedOrderId, fetchInvoice])
 
   // Merge real-time updates into tracking
   const currentStatus = latestUpdate?.status || order?.status || "PENDING"
@@ -382,38 +412,59 @@ export function CustomerOrderTracking() {
         </div>
       </div>
 
-      {/* Invoice Button */}
-      {currentStatus === "DELIVERED" && (
-        <div className="px-4">
-          <Button
-            variant="outline"
-            className="w-full h-10 rounded-xl text-xs"
-            style={{ borderColor: `${brandColor}50`, color: brandColor }}
-            onClick={() => {
-              const lines = order.items.map(
-                (i) => `${i.name} × ${i.qty}  ₹${(i.price * i.qty).toLocaleString("en-IN")}`
-              ).join("\n")
-              const win = window.open("", "_blank", "width=480,height=680")
-              if (!win) return
-              win.document.write(`<html><head><title>Invoice ${order.orderNumber}</title>
-              <style>body{font-family:sans-serif;padding:24px;max-width:420px;margin:auto}
-              h2{margin:0 0 4px}pre{font-size:13px;white-space:pre-wrap}hr{border:none;border-top:1px dashed #ccc;margin:12px 0}
-              .row{display:flex;justify-content:space-between;font-size:13px;margin:4px 0}
-              .bold{font-weight:700}.total{font-size:16px;font-weight:700}</style></head><body>
-              <h2>Invoice</h2><p style="color:#666;font-size:12px">${order.orderNumber} · ${formatDate(order.createdAt)}</p>
-              <hr/><pre>${lines}</pre><hr/>
-              <div class="row"><span>Total</span><span class="total">₹${order.totalAmount.toLocaleString("en-IN")}</span></div>
-              <div class="row"><span>Payment</span><span>${order.paymentMethod || "UPI"}</span></div>
-              <hr/><p style="font-size:11px;color:#999;text-align:center">Thank you for your order!</p>
-              <script>window.onload=()=>{window.print();window.close()}</script></body></html>`)
-              win.document.close()
-            }}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download Invoice
-          </Button>
-        </div>
-      )}
+      {/* Invoice Section — visible for all order stages */}
+      <div className="px-4 mb-2">
+        {invoiceLoading ? (
+          <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-2 text-gray-400">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-xs">Loading invoice…</span>
+          </div>
+        ) : invoice ? (
+          <div className="bg-white border border-gray-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
+                <span className="text-sm font-bold text-gray-900">Invoice</span>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                invoice.status === "PAID"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : invoice.status === "PAYMENT_DUE"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-gray-100 text-gray-500"
+              }`}>
+                {invoice.status === "DRAFT" ? "DRAFT" : invoice.status === "PAYMENT_DUE" ? "PAYMENT DUE" : "PAID"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs mb-3">
+              <span className="text-gray-500 font-mono">{invoice.invoiceNumber}</span>
+              <span className="font-bold text-gray-900">{formatPrice(invoice.totalAmount)}</span>
+            </div>
+
+            {invoice.status === "PAYMENT_DUE" && invoice.dueDate && (
+              <p className="text-[10px] text-amber-600 mb-3">Due: {new Date(invoice.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+            )}
+            {invoice.status === "PAID" && invoice.paidAt && (
+              <p className="text-[10px] text-emerald-600 mb-3">Paid on {new Date(invoice.paidAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setSelectedInvoiceId(invoice.id)
+                  pushCustomerPage("invoice-detail")
+                }}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ borderColor: `${brandColor}50`, color: brandColor }}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                View Invoice
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

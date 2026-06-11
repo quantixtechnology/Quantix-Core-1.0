@@ -47,6 +47,7 @@ const pageTitles: Record<string, string> = {
   "admin-app": "Admin App",
   website: "Website",
   "onboarding-progress": "Onboarding",
+  invoices: "Invoices",
 }
 
 interface BusinessHeaderProps {
