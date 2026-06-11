@@ -243,17 +243,19 @@ export function StorefrontLayout({
         <header className="sticky top-0 z-40 shadow-sm" style={{ backgroundColor: hBg }}>
           {/* Status-bar spacer: header background fills behind system status bar */}
           <div aria-hidden="true" style={{ height: "max(env(safe-area-inset-top, 0px), 24px)" }} />
-          <div className="flex items-center gap-3 px-4" style={{ height: 56 }}>
+          {/* Toolbar: 60px gives comfortable vertical room for 20px name + 13px store */}
+          <div className="flex items-center gap-3 px-4" style={{ height: 60 }}>
             {showBackInPwa ? (
               <>
+                {/* Back button — 44px touch target */}
                 <button
                   onClick={() => nav.goBack()}
-                  className={`w-9 h-9 -ml-1 flex items-center justify-center rounded-full transition-colors shrink-0 ${hHover}`}
+                  className={`w-11 h-11 -ml-2 flex items-center justify-center rounded-full transition-colors shrink-0 ${hHover}`}
                 >
                   <ArrowLeft className="w-5 h-5" style={{ color: hFg }} />
                 </button>
                 <h1
-                  className="flex-1 min-w-0 text-[15px] font-bold truncate"
+                  className="flex-1 min-w-0 text-[17px] font-semibold truncate"
                   style={{ color: hFg }}
                 >
                   {pwaPageTitle}
@@ -261,26 +263,28 @@ export function StorefrontLayout({
               </>
             ) : (
               <>
-                {/* Logo */}
+                {/* Logo — 40×40, never stretches header */}
                 <img
                   src={currentBusinessLogo || "/placeholder-logo.svg"}
                   alt={currentBusinessName || "Store"}
-                  className={`w-9 h-9 rounded-xl object-contain border block shrink-0 cursor-pointer active:opacity-70 ${logoBorder}`}
+                  className={`rounded-xl object-contain border block shrink-0 cursor-pointer active:opacity-70 ${logoBorder}`}
+                  style={{ width: 40, height: 40 }}
                   onClick={() => nav.go("home")}
                   onError={(e) => {
                     const img = e.currentTarget
                     if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
                   }}
                 />
-                {/* Name + store */}
+                {/* Business name + store selector — centered as a unit with logo */}
                 <div
                   className="flex-1 min-w-0 flex flex-col gap-[3px] cursor-pointer"
                   onClick={() => nav.go("home")}
                   role="button"
                   tabIndex={0}
                 >
+                  {/* 20px bold — premium native-app feel */}
                   <span
-                    className="text-[14px] font-bold leading-[18px] truncate block"
+                    className="text-[20px] font-bold leading-none truncate block"
                     style={{ color: hFg }}
                   >
                     {currentBusinessName || "Store"}
@@ -288,33 +292,34 @@ export function StorefrontLayout({
                   {currentStore && (
                     <button
                       onClick={(e) => { e.stopPropagation(); onOpenStorePicker?.() }}
-                      className="flex items-center gap-0.5 p-0 border-0 bg-transparent active:opacity-70 w-fit"
+                      className="flex items-center gap-1 p-0 border-0 bg-transparent active:opacity-70 w-fit"
                       style={{ color: hMuted }}
                     >
-                      <MapPin className="w-2.5 h-2.5 shrink-0" />
-                      <span className="text-[11px] leading-[14px] truncate max-w-[140px]">{currentStore.name}</span>
-                      <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span className="text-[13px] leading-none truncate max-w-[160px]">{currentStore.name}</span>
+                      <ChevronDown className="w-3 h-3 shrink-0" />
                     </button>
                   )}
                 </div>
               </>
             )}
 
+            {/* Action icons — 44px touch targets, equal spacing */}
             <div className="flex items-center gap-0.5 shrink-0">
               <button
                 onClick={() => nav.go("category", { categoryId: undefined, categoryName: "All Products" })}
-                className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors ${hHover}`}
+                className={`w-11 h-11 flex items-center justify-center rounded-full transition-colors ${hHover}`}
               >
-                <Search className="w-[18px] h-[18px]" style={{ color: hIcon }} />
+                <Search className="w-5 h-5" style={{ color: hIcon }} />
               </button>
               <button
                 onClick={() => setCartOpen(true)}
-                className={`relative w-9 h-9 flex items-center justify-center rounded-full transition-colors ${hHover}`}
+                className={`relative w-11 h-11 flex items-center justify-center rounded-full transition-colors ${hHover}`}
               >
-                <ShoppingCart className="w-[18px] h-[18px]" style={{ color: hIcon }} />
+                <ShoppingCart className="w-5 h-5" style={{ color: hIcon }} />
                 {cartCount > 0 && (
                   <span
-                    className="absolute top-0.5 right-0.5 w-[15px] h-[15px] text-[9px] font-bold rounded-full flex items-center justify-center"
+                    className="absolute top-[7px] right-[7px] w-[15px] h-[15px] text-[9px] font-bold rounded-full flex items-center justify-center"
                     style={{ backgroundColor: cartBadgeBg, color: cartBadgeText }}
                   >
                     {cartCount > 9 ? "9+" : cartCount}
