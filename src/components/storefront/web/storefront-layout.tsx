@@ -221,14 +221,15 @@ export function StorefrontLayout({
     return (
       <PwaModeContext.Provider value={isPwa}>
       <div className="min-h-screen flex flex-col bg-gray-50">
-        {/* PWA App Bar — paddingTop pushes content below the device status bar.
-             viewport-fit=cover + black-translucent means the WebView extends
-             edge-to-edge; safe-area-inset-top is the status bar height (24–44px). */}
-        <header
-          className="sticky top-0 z-40 bg-white shadow-sm"
-          style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-        >
-          <div className="flex items-center gap-3 px-4 overflow-hidden" style={{ height: 56 }}>
+        {/* PWA App Bar — a dedicated spacer div fills the status-bar zone so
+             toolbar content always starts below it. Using a spacer (instead of
+             paddingTop) is more reliable on Android where env(safe-area-inset-top)
+             can return 0; max(env(...), 24px) guarantees the minimum Android
+             status-bar clearance even when the env() value is not provided. */}
+        <header className="sticky top-0 z-40 bg-white shadow-sm">
+          {/* Status-bar spacer: white bg fills behind the system status bar */}
+          <div aria-hidden="true" style={{ height: "max(env(safe-area-inset-top, 0px), 24px)" }} />
+          <div className="flex items-center gap-3 px-4" style={{ height: 56 }}>
             {showBackInPwa ? (
               <>
                 <button
