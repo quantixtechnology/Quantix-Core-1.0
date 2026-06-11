@@ -417,25 +417,29 @@ export function OrdersView() {
   }
 
   async function downloadInvoicePdf(invoiceId: string, invoiceNumber: string) {
+    const url = `/api/core/businesses/${businessId}/invoices/${invoiceId}/pdf`
+    console.log('[PDF DOWNLOAD]', { invoiceId, businessId, url })
     try {
-      const res = await fetch(
-        `/api/core/businesses/${businessId}/invoices/${invoiceId}/pdf`,
-        { headers: getAuthHeaders() },
-      )
+      const res = await fetch(url, { headers: getAuthHeaders() })
+      console.log('[PDF DOWNLOAD] response', { status: res.status, ok: res.ok, contentType: res.headers.get('content-type') })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        console.error('[DownloadPDF] error', res.status, err)
+        const body = await res.text()
+        console.error('[PDF DOWNLOAD] failed body:', body)
+        let msg = `PDF download failed (${res.status})`
+        try { msg = JSON.parse(body).error || msg } catch { /* body was not JSON */ }
+        showError(msg)
         return
       }
+      // Fetch returns HTML with embedded auto-print script.
+      // Open as blob URL in a new tab — the print dialog fires automatically.
       const blob = await res.blob()
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href     = url
-      a.download = `${invoiceNumber}.pdf`
-      a.click()
-      URL.revokeObjectURL(url)
+      const blobUrl = URL.createObjectURL(blob)
+      window.open(blobUrl, '_blank')
+      // Revoke after 60s so the tab has time to load
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
     } catch (e) {
-      console.error('[DownloadPDF] fetch failed', e)
+      console.error('[PDF DOWNLOAD] fetch error', e)
+      showError('Could not download invoice PDF. Check console for details.')
     }
   }
 

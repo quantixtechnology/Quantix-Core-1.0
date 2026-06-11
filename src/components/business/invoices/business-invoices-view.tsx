@@ -128,21 +128,23 @@ export function BusinessInvoicesView() {
   }
 
   const downloadInvoicePdf = async (inv: InvoiceRow) => {
+    const url = `/api/core/businesses/${businessId}/invoices/${inv.id}/pdf`
     try {
-      const res = await fetch(
-        `/api/core/businesses/${businessId}/invoices/${inv.id}/pdf`,
-        { headers: getAuthHeaders() },
-      )
-      if (!res.ok) { showError("Failed to download PDF"); return }
-      const blob = await res.blob()
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement("a")
-      a.href     = url
-      a.download = `${inv.invoiceNumber}.pdf`
-      a.click()
-      URL.revokeObjectURL(url)
+      const res = await fetch(url, { headers: getAuthHeaders() })
+      if (!res.ok) {
+        const body = await res.text()
+        let msg = `PDF failed (${res.status})`
+        try { msg = JSON.parse(body).error || msg } catch { /* not JSON */ }
+        showError(msg)
+        return
+      }
+      // Open HTML blob in new tab — auto-print script triggers print dialog
+      const blob   = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      window.open(blobUrl, "_blank")
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
     } catch {
-      showError("Failed to download PDF")
+      showError("Failed to download invoice PDF")
     }
   }
 

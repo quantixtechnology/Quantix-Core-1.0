@@ -47,7 +47,7 @@ const statusColors: Record<string, string> = {
 }
 
 export function CustomerOrderTracking() {
-  const { selectedOrderId, setCustomerPage, currentBusinessPrimaryColor, orderStages, pushCustomerPage, setSelectedInvoiceId } = useAdminStore()
+  const { selectedOrderId, setCustomerPage, currentBusinessPrimaryColor, orderStages, pushCustomerPage, setSelectedInvoiceId, currentBusinessId } = useAdminStore()
   const { token } = useAuthStore()
   const brandColor = currentBusinessPrimaryColor || "#10B981"
   const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
@@ -66,30 +66,38 @@ export function CustomerOrderTracking() {
     if (!token || !orderId) return
     setInvoiceLoading(true)
     try {
-      const res = await fetch(`/api/core/storefront/orders/${orderId}/invoice`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+      if (currentBusinessId) headers['x-business-id'] = currentBusinessId
+      const res  = await fetch(`/api/core/storefront/orders/${orderId}/invoice`, { headers })
       const json = await res.json()
       if (json.success) setInvoice(json.data)
-    } catch { /* invoice may not exist yet */ }
-    finally { setInvoiceLoading(false) }
-  }, [token])
+      else console.warn('[Invoice] fetch failed:', json.error, res.status)
+    } catch (e) {
+      console.warn('[Invoice] fetch error:', e)
+    } finally {
+      setInvoiceLoading(false)
+    }
+  }, [token, currentBusinessId])
 
-  const handleDownloadPdf = useCallback(async (orderId: string, invoiceNumber: string) => {
+  const handleDownloadPdf = useCallback(async (orderId: string) => {
+    if (!token) return
     try {
-      const res = await fetch(`/api/core/storefront/orders/${orderId}/invoice/pdf`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) return
-      const blob = await res.blob()
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href     = url
-      a.download = `${invoiceNumber}.pdf`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch { /* silent — user can retry */ }
-  }, [token])
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+      if (currentBusinessId) headers['x-business-id'] = currentBusinessId
+      const res = await fetch(`/api/core/storefront/orders/${orderId}/invoice/pdf`, { headers })
+      if (!res.ok) {
+        console.warn('[InvoicePDF] failed:', res.status)
+        return
+      }
+      // HTML blob with embedded auto-print — open in new tab, print dialog fires
+      const blob    = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      window.open(blobUrl, '_blank')
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+    } catch (e) {
+      console.warn('[InvoicePDF] error:', e)
+    }
+  }, [token, currentBusinessId])
 
   // Fetch order details
   const { data: orderData, isLoading: orderLoading, error: orderError, refetch } = useOrder(selectedOrderId || "")
@@ -506,7 +514,7 @@ export function CustomerOrderTracking() {
               </button>
               {selectedOrderId && (
                 <button
-                  onClick={() => handleDownloadPdf(selectedOrderId, invoice.invoiceNumber)}
+                  onClick={() => handleDownloadPdf(selectedOrderId)}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50"
                 >
                   <Download className="w-3.5 h-3.5" />
