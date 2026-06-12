@@ -15,10 +15,13 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
     try {
       const user = req.user!;
 
-      // Find the delivery partner profile
+      // Find the delivery partner profile.
+      // SECURITY: scoped by businessId so earnings can never resolve to a
+      // partner profile from a different business the user also belongs to.
       const deliveryPartner = await db.deliveryPartner.findFirst({
         where: {
           userId: user.id,
+          ...(user.businessId ? { businessId: user.businessId } : {}),
           isActive: true,
         },
       });

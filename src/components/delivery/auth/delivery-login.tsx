@@ -48,10 +48,13 @@ export function DeliveryLogin() {
     setError("")
     // Use the auth store's loginWithOtp which handles the full flow
     loginWithOtp(phone, otp).then(() => {
-      // Set business context
-      setBusinessContext("biz_1")
-
       const authState = useAuthStore.getState()
+
+      // SECURITY: business context from the verified session — never hardcoded.
+      // currentBusinessId is resolved from the user's own BusinessUser record.
+      const bizId = authState.currentBusinessId || authState.user?.businessId
+      if (bizId) setBusinessContext(bizId)
+
       const partnerName = authState.user?.name || authState.user?.phone || "Delivery Partner"
 
       setDeliveryLoggedIn(true)

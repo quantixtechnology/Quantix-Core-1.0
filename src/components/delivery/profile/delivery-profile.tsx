@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useDeliveryEarnings } from "@/hooks/use-api"
+import { useBusinessContext } from "@/hooks/use-business-context"
 import { setBusinessContext } from "@/lib/api-client"
 import { showSuccess, showInfo } from "@/lib/toast-utils"
 import { SkeletonCard } from "@/components/ui/loading-states"
@@ -45,11 +46,12 @@ export function DeliveryProfile() {
   const [notifPromos, setNotifPromos] = useState(false)
   const [showBankDetails, setShowBankDetails] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const { businessId } = useBusinessContext()
 
-  // Set business context
+  // SECURITY: business context from the authenticated session (was hardcoded "biz_1")
   useEffect(() => {
-    setBusinessContext("biz_1")
-  }, [])
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
 
   // Fetch earnings to get partner data
   const { data: earningsData, isLoading: isLoadingEarnings } = useDeliveryEarnings()

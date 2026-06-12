@@ -4,8 +4,10 @@ import { useState, useEffect, useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useDeliveryOrders, useUpdateDeliveryStatus, useVerifyDeliveryOtp } from "@/hooks/use-api"
 import { useDeliveryUpdates } from "@/hooks/use-realtime"
+import { useBusinessContext } from "@/hooks/use-business-context"
 import { setBusinessContext } from "@/lib/api-client"
-import { showSuccess, showError, showApiError, showInfo } from "@/lib/toast-utils"
+import { callPhone, openWhatsApp, navigateToLocation } from "@/lib/delivery-actions"
+import { showSuccess, showError, showApiError } from "@/lib/toast-utils"
 import { SectionLoader, ErrorState } from "@/components/ui/loading-states"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -30,6 +32,7 @@ import {
   Copy,
   Check,
   Loader2,
+  MessageCircle,
 } from "lucide-react"
 
 const statusSteps = [
@@ -51,16 +54,18 @@ const paymentIcons: Record<string, React.ElementType> = {
 
 export function DeliveryOrderDetail() {
   const { selectedOrderId, setDeliveryPage } = useAdminStore()
+  const { businessId } = useBusinessContext()
   const [otpInput, setOtpInput] = useState("")
   const [otpVerified, setOtpVerified] = useState(false)
   const [otpError, setOtpError] = useState("")
   const [copied, setCopied] = useState(false)
   const [showReportDialog, setShowReportDialog] = useState(false)
 
-  // Set business context
+  // SECURITY: business context comes from the authenticated session
+  // (was a hardcoded "biz_1" placeholder before)
   useEffect(() => {
-    setBusinessContext("biz_1")
-  }, [])
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
 
   // Fetch active and completed orders to find the selected one
   const { data: activeData, isLoading: isLoadingActive } = useDeliveryOrders("active")
@@ -123,6 +128,11 @@ export function DeliveryOrderDetail() {
       deliveryAddress: (raw.dropAddress || orderData.deliveryAddress || "") as string,
       deliveryInstructions: (orderData.deliveryInstructions || "") as string,
       pickupAddress: (raw.pickupAddress || storeData.address || "") as string,
+      // Coordinates from the Delivery record (drop/pickup) with store GPS fallback
+      dropLat: (raw.dropLat ?? null) as number | null,
+      dropLng: (raw.dropLng ?? null) as number | null,
+      pickupLat: (raw.pickupLat ?? storeData.latitude ?? null) as number | null,
+      pickupLng: (raw.pickupLng ?? storeData.longitude ?? null) as number | null,
       storeName: (storeData.name || "Store") as string,
       storeAddress: (storeData.address || raw.pickupAddress || "") as string,
       storePhone: (storeData.phone || "") as string,
@@ -281,9 +291,10 @@ export function DeliveryOrderDetail() {
               variant="outline"
               size="icon"
               className="h-9 w-9 rounded-full border-teal-200 text-teal-600 hover:bg-teal-50 shrink-0"
+              disabled={!order.storePhone}
               onClick={() => {
-                if (order.storePhone) {
-                  showInfo("Calling Store", `Dialing ${order.storePhone}...`)
+                if (!callPhone(order.storePhone)) {
+                  showError("No Phone Number", "Store phone number is not available")
                 }
               }}
             >
@@ -296,7 +307,9 @@ export function DeliveryOrderDetail() {
               size="sm"
               className="h-8 text-xs border-teal-200 text-teal-600 hover:bg-teal-50"
               onClick={() => {
-                showInfo("Navigation", "Opening navigation to store...")
+                if (!navigateToLocation(order.pickupLat, order.pickupLng, order.storeAddress)) {
+                  showError("No Location", "Store location is not available")
+                }
               }}
             >
               <Navigation className="h-3 w-3 mr-1" />
@@ -325,30 +338,60 @@ export function DeliveryOrderDetail() {
               variant="outline"
               size="icon"
               className="h-9 w-9 rounded-full border-teal-200 text-teal-600 hover:bg-teal-50 shrink-0"
+              disabled={!order.customerPhone}
               onClick={() => {
-                if (order.customerPhone) {
-                  showInfo("Calling Customer", `Dialing ${order.customerPhone}...`)
+                if (!callPhone(order.customerPhone)) {
+                  showError("No Phone Number", "Customer phone number is not available")
                 }
               }}
             >
               <Phone className="h-4 w-4" />
             </Button>
           </div>
-          <div className="flex items-center gap-2 mt-2">
+          {/* Quick actions: Navigate / Call / WhatsApp — thumb-sized for one-hand use */}
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            <Button
+              size="sm"
+              className="h-10 text-xs rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold"
+              onClick={() => {
+                if (!navigateToLocation(order.dropLat, order.dropLng, order.deliveryAddress)) {
+                  showError("No Location", "Delivery address is not available")
+                }
+              }}
+            >
+              <Navigation className="h-4 w-4 mr-1" />
+              Navigate
+            </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs border-teal-200 text-teal-600 hover:bg-teal-50"
+              className="h-10 text-xs rounded-xl border-teal-200 text-teal-700 hover:bg-teal-50 font-semibold"
+              disabled={!order.customerPhone}
+              onClick={() => callPhone(order.customerPhone)}
+            >
+              <Phone className="h-4 w-4 mr-1" />
+              Call
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 text-xs rounded-xl border-green-200 text-green-700 hover:bg-green-50 font-semibold"
+              disabled={!order.customerPhone}
               onClick={() => {
-                showInfo("Navigation", "Opening directions to delivery address...")
+                openWhatsApp(
+                  order.customerPhone,
+                  `Hi ${order.customerName}, I'm your delivery partner from ${order.storeName}. I'm on my way with your order ${order.orderNumber}.`,
+                )
               }}
             >
-              <Navigation className="h-3 w-3 mr-1" />
-              Get Directions
+              <MessageCircle className="h-4 w-4 mr-1" />
+              WhatsApp
             </Button>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
             <span className="text-xs text-gray-400 flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {order.estimatedDeliveryTime}
+              ETA {order.estimatedDeliveryTime}
             </span>
           </div>
         </CardContent>
@@ -497,7 +540,11 @@ export function DeliveryOrderDetail() {
           <Button
             className="w-full h-12 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold text-base shadow-lg shadow-blue-500/20"
             disabled={updateStatusMutation.isPending}
-            onClick={() => handleStatusUpdate("ON_THE_WAY")}
+            onClick={() => {
+              handleStatusUpdate("ON_THE_WAY")
+              // Launch turn-by-turn directions alongside the status change
+              navigateToLocation(order.dropLat, order.dropLng, order.deliveryAddress)
+            }}
           >
             {updateStatusMutation.isPending ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Navigation className="h-5 w-5 mr-2" />}
             Start Navigation

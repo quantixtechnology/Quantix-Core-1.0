@@ -219,6 +219,7 @@ const BrandingView = dynamic(() => import("@/components/business/branding/brandi
 const FeatureFlagsView = dynamic(() => import("@/components/business/feature-flags/feature-flags-view").then(m => ({ default: m.FeatureFlagsView })), { loading: () => <PageLoader /> })
 const SubscriptionView = dynamic(() => import("@/components/business/subscription/subscription-view").then(m => ({ default: m.SubscriptionView })), { loading: () => <PageLoader /> })
 const AppsView = dynamic(() => import("@/components/business/apps/apps-view").then(m => ({ default: m.AppsView })), { loading: () => <PageLoader /> })
+const DeliveryAppView = dynamic(() => import("@/components/business/apps/delivery-app-view").then(m => ({ default: m.DeliveryAppView })), { loading: () => <PageLoader /> })
 const WorkspaceOverview = dynamic(() => import("@/components/business/workspace/workspace-overview").then(m => ({ default: m.WorkspaceOverview })), { loading: () => <PageLoader /> })
 
 // ── Customer App (lazy) ───────────────────────────────────────────────────
@@ -333,9 +334,23 @@ function detectStorefrontSlug(searchParams: ReturnType<typeof useSearchParams>):
   return null
 }
 
+// Detect the Delivery PWA entry point ({slug}.domain/delivery) from both
+// sources, mirroring detectStorefrontSlug:
+//   Server (SSR):  proxy.ts rewrites /delivery → /?_storefront=slug&_delivery=1
+//   Client:        browser URL keeps /delivery as the visible pathname
+function detectDeliveryEntry(searchParams: ReturnType<typeof useSearchParams>): boolean {
+  if (searchParams.get("_delivery") === "1") return true
+  if (typeof window !== "undefined") {
+    const p = window.location.pathname
+    return p === "/delivery" || p.startsWith("/delivery/")
+  }
+  return false
+}
+
 function AppRouter() {
   const searchParams = useSearchParams()
   const storefrontSlug = detectStorefrontSlug(searchParams)
+  const deliveryEntry = detectDeliveryEntry(searchParams)
   if (typeof window !== "undefined") {
     const host = window.location.hostname
     console.log(
@@ -343,15 +358,16 @@ function AppRouter() {
       "| isPlatformHost=", PLATFORM_HOSTS.has(host),
       "| storefrontSlug=", storefrontSlug,
       "| _storefront param=", searchParams.get("_storefront"),
+      "| deliveryEntry=", deliveryEntry,
     )
   }
-  return <AppContent storefrontSlug={storefrontSlug} />
+  return <AppContent storefrontSlug={storefrontSlug} deliveryEntry={deliveryEntry} />
 }
 
 const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF"])
 
-function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
-  const { viewMode, activePage, businessPage, customerPage, deliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
+function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string | null; deliveryEntry?: boolean }) {
+  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
@@ -372,6 +388,14 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
     if (viewMode === "customer") setViewMode("super_admin")
     if (viewMode === "delivery_partner") setViewMode("super_admin")
   }, [storefrontSlug, viewMode, _isHydrated, setViewMode])
+
+  // Delivery PWA entry: {slug}.domain/delivery boots straight into delivery
+  // mode (login screen when unauthenticated) instead of the customer storefront.
+  useEffect(() => {
+    if (!storefrontSlug || !deliveryEntry || !_isHydrated) return
+    if (viewMode !== "delivery_partner") setViewMode("delivery_partner")
+    if (!deliveryLoggedIn && deliveryPage !== "login") setDeliveryPage("login")
+  }, [storefrontSlug, deliveryEntry, _isHydrated, viewMode, deliveryLoggedIn, deliveryPage, setViewMode, setDeliveryPage])
 
   // Sync viewMode from auth session on mount / auth change
   useEffect(() => {
@@ -516,7 +540,7 @@ function AppContent({ storefrontSlug }: { storefrontSlug?: string | null }) {
       case "feature-flags": return <FeatureFlagsView />
       case "subscription-view": return <SubscriptionView />
       case "customer-app": return <AppsView />
-      case "delivery-app": return <AppsView />
+      case "delivery-app": return <DeliveryAppView />
       case "admin-app": return <AppsView />
       case "website": return <AppsView />
       case "onboarding-progress": return <WorkspaceOverview />

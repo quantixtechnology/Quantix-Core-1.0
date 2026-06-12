@@ -5,6 +5,8 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useDeliveryOrders, useUpdateDeliveryStatus, queryKeys } from "@/hooks/use-api"
 import { useDeliveryUpdates } from "@/hooks/use-realtime"
 import { useBusinessContext } from "@/hooks/use-business-context"
+import { setBusinessContext } from "@/lib/api-client"
+import { callPhone, openWhatsApp, navigateToLocation } from "@/lib/delivery-actions"
 import { showSuccess, showError, showApiError } from "@/lib/toast-utils"
 import { SkeletonList, EmptyState, ErrorState } from "@/components/ui/loading-states"
 import { ConnectionStatusBadge } from "@/components/ui/connection-status"
@@ -38,6 +40,7 @@ const statusConfig: Record<string, { label: string; color: string; bgColor: stri
   ARRIVED: { label: "Arrived", color: "text-cyan-700", bgColor: "bg-cyan-50 border-cyan-200", icon: MapPin },
   DELIVERED: { label: "Delivered", color: "text-green-700", bgColor: "bg-green-50 border-green-200", icon: CheckCircle2 },
   CANCELLED: { label: "Cancelled", color: "text-red-700", bgColor: "bg-red-50 border-red-200", icon: AlertCircle },
+  FAILED: { label: "Failed", color: "text-red-700", bgColor: "bg-red-50 border-red-200", icon: AlertCircle },
 }
 
 const paymentIcons: Record<string, React.ElementType> = {
@@ -58,12 +61,15 @@ interface NormalizedDeliveryOrder {
   customerName: string
   customerPhone: string
   deliveryAddress: string
+  dropLat: number | null
+  dropLng: number | null
   totalAmount: number
   paymentMethod: string
   storeName: string
   storeAddress: string
   deliveryOtp: string
   estimatedDelivery: string
+  actualDeliveryTime: string | null
   distance: string
   itemsCount: number
 }
@@ -80,6 +86,8 @@ function normalizeOrder(raw: Record<string, unknown>): NormalizedDeliveryOrder {
     customerName: (order.customerName || "Customer") as string,
     customerPhone: (order.customerPhone || "") as string,
     deliveryAddress: (raw.dropAddress || order.deliveryAddress || "") as string,
+    dropLat: (raw.dropLat ?? null) as number | null,
+    dropLng: (raw.dropLng ?? null) as number | null,
     totalAmount: Number(order.totalAmount || 0),
     paymentMethod: (order.paymentMethod || "COD") as string,
     storeName: (store.name || "Store") as string,
@@ -88,6 +96,7 @@ function normalizeOrder(raw: Record<string, unknown>): NormalizedDeliveryOrder {
     estimatedDelivery: raw.estimatedDeliveryTime
       ? new Date(raw.estimatedDeliveryTime as string).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       : (order.estimatedDelivery || "30 min") as string,
+    actualDeliveryTime: (raw.actualDeliveryTime || null) as string | null,
     distance: (raw.distance || "") as string,
     itemsCount: Number(order.itemsCount || 0),
   }
@@ -97,8 +106,12 @@ export function DeliveryDashboard() {
   const { setDeliveryPage, setSelectedOrderId } = useAdminStore()
   const [activeTab, setActiveTab] = useState<"active" | "completed">("active")
 
-  // Resolve business context from auth/store
+  // Resolve business context from auth/store and apply it to the API client
+  // so every request carries the correct x-business-id header.
   const { businessId } = useBusinessContext()
+  useEffect(() => {
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
 
   // Fetch orders using React Query
   const { data: activeData, isLoading: isLoadingActive, error: activeError, refetch: refetchActive } = useDeliveryOrders("active")
@@ -138,6 +151,18 @@ export function DeliveryDashboard() {
   const todayEarnings = useMemo(() => {
     return activeOrders.reduce((sum, o) => sum + o.totalAmount, 0)
   }, [activeOrders])
+
+  // Stat tiles: assigned / out-for-delivery / delivered today / failed
+  const stats = useMemo(() => {
+    const assigned = activeOrders.filter(o => o.status === "ASSIGNED" || o.status === "PICKUP").length
+    const outForDelivery = activeOrders.filter(o =>
+      o.status === "PICKED_UP" || o.status === "ON_THE_WAY" || o.status === "ARRIVED").length
+    const today = new Date().toDateString()
+    const deliveredToday = completedOrders.filter(o =>
+      o.status === "DELIVERED" && o.actualDeliveryTime && new Date(o.actualDeliveryTime).toDateString() === today).length
+    const failed = completedOrders.filter(o => o.status === "FAILED" || o.status === "CANCELLED").length
+    return { assigned, outForDelivery, deliveredToday, failed }
+  }, [activeOrders, completedOrders])
 
   const handleOrderClick = (orderId: string) => {
     setSelectedOrderId(orderId)
@@ -183,26 +208,24 @@ export function DeliveryDashboard() {
         </Card>
       </div>
 
-      {/* Quick Stats */}
-      <div className="flex gap-2">
-        <div className="flex-1 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2.5 flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-teal-100 flex items-center justify-center">
-            <Bike className="h-4 w-4 text-teal-600" />
+      {/* Delivery Stats */}
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { label: "Assigned Orders",   value: stats.assigned,        icon: Clock,        card: "bg-amber-50 border-amber-100", iconBox: "bg-amber-100", iconClr: "text-amber-600", labelClr: "text-amber-600", valueClr: "text-amber-700" },
+          { label: "Out For Delivery",  value: stats.outForDelivery,  icon: Bike,         card: "bg-teal-50 border-teal-100",   iconBox: "bg-teal-100",  iconClr: "text-teal-600",  labelClr: "text-teal-600",  valueClr: "text-teal-700"  },
+          { label: "Delivered Today",   value: stats.deliveredToday,  icon: CheckCircle2, card: "bg-green-50 border-green-100", iconBox: "bg-green-100", iconClr: "text-green-600", labelClr: "text-green-600", valueClr: "text-green-700" },
+          { label: "Failed Deliveries", value: stats.failed,          icon: AlertCircle,  card: "bg-red-50 border-red-100",     iconBox: "bg-red-100",   iconClr: "text-red-600",   labelClr: "text-red-600",   valueClr: "text-red-700"   },
+        ].map(({ label, value, icon: Icon, card, iconBox, iconClr, labelClr, valueClr }) => (
+          <div key={label} className={`${card} border rounded-xl px-3 py-2.5 flex items-center gap-2`}>
+            <div className={`h-8 w-8 rounded-lg ${iconBox} flex items-center justify-center shrink-0`}>
+              <Icon className={`h-4 w-4 ${iconClr}`} />
+            </div>
+            <div className="min-w-0">
+              <p className={`text-[11px] ${labelClr} font-medium truncate`}>{label}</p>
+              <p className={`text-lg font-bold ${valueClr} leading-tight`}>{value}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-teal-600 font-medium">Active Orders</p>
-            <p className="text-lg font-bold text-teal-700">{activeOrders.length}</p>
-          </div>
-        </div>
-        <div className="flex-1 bg-green-50 border border-green-100 rounded-xl px-3 py-2.5 flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
-          </div>
-          <div>
-            <p className="text-xs text-green-600 font-medium">Completed</p>
-            <p className="text-lg font-bold text-green-700">{completedOrders.length}</p>
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* Map Placeholder */}
@@ -344,9 +367,50 @@ export function DeliveryDashboard() {
                     </div>
                   </div>
 
-                  {/* Action button */}
-                  {order.status !== "DELIVERED" && order.status !== "CANCELLED" && (
-                    <div className="px-4 pb-3">
+                  {/* Quick actions + status action */}
+                  {order.status !== "DELIVERED" && order.status !== "CANCELLED" && order.status !== "FAILED" && (
+                    <div className="px-4 pb-3 space-y-2">
+                      {/* Quick actions: Navigate / Call / WhatsApp */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <Button
+                          variant="outline"
+                          className="h-9 rounded-xl text-xs font-semibold border-teal-200 text-teal-700 hover:bg-teal-50"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (!navigateToLocation(order.dropLat, order.dropLng, order.deliveryAddress)) {
+                              showError("No Location", "Delivery address is not available")
+                            }
+                          }}
+                        >
+                          <Navigation className="h-3.5 w-3.5 mr-1" />
+                          Navigate
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="h-9 rounded-xl text-xs font-semibold border-blue-200 text-blue-700 hover:bg-blue-50"
+                          disabled={!order.customerPhone}
+                          onClick={(e) => { e.stopPropagation(); callPhone(order.customerPhone) }}
+                        >
+                          <Phone className="h-3.5 w-3.5 mr-1" />
+                          Call
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="h-9 rounded-xl text-xs font-semibold border-green-200 text-green-700 hover:bg-green-50"
+                          disabled={!order.customerPhone}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openWhatsApp(
+                              order.customerPhone,
+                              `Hi ${order.customerName}, I'm your delivery partner from ${order.storeName}. I'm on my way with your order ${order.orderNumber}.`,
+                            )
+                          }}
+                        >
+                          <Smartphone className="h-3.5 w-3.5 mr-1" />
+                          WhatsApp
+                        </Button>
+                      </div>
+
                       <Button
                         className={`w-full h-10 rounded-xl font-semibold text-sm ${
                           order.status === "ASSIGNED" || order.status === "PICKUP"
@@ -361,6 +425,8 @@ export function DeliveryDashboard() {
                             handleStatusUpdate(order.deliveryId, "PICKED_UP", e)
                           } else if (order.status === "PICKED_UP") {
                             handleStatusUpdate(order.deliveryId, "ON_THE_WAY", e)
+                            // Launch directions alongside the status change
+                            navigateToLocation(order.dropLat, order.dropLng, order.deliveryAddress)
                           } else {
                             handleOrderClick(order.id)
                           }
@@ -383,8 +449,8 @@ export function DeliveryDashboard() {
                         )}
                         {(order.status === "ON_THE_WAY" || order.status === "ARRIVED") && (
                           <>
-                            <Phone className="h-4 w-4 mr-2" />
-                            Call Customer
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Complete Delivery
                           </>
                         )}
                       </Button>

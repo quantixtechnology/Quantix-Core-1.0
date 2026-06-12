@@ -47,6 +47,31 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
       );
     }
 
+    // SECURITY: ownership / tenant enforcement.
+    // Previously any authenticated DELIVERY_STAFF (from ANY business) could
+    // update ANY delivery by guessing a deliveryId. Now:
+    //   - DELIVERY_STAFF must be the partner assigned to this delivery,
+    //     resolved within the delivery's own business.
+    //   - CLIENT_OWNER / STORE_MANAGER must belong to the same business.
+    //   - Platform admins (QUANTIX_SUPER_ADMIN) are unrestricted.
+    const user = req.user!;
+    if (user.role === 'DELIVERY_STAFF') {
+      const partner = await db.deliveryPartner.findFirst({
+        where: { userId: user.id, businessId: delivery.order.businessId, isActive: true },
+      });
+      if (!partner || delivery.deliveryPartnerId !== partner.id) {
+        return NextResponse.json(
+          { success: false, error: 'Not authorized for this delivery' },
+          { status: 403 }
+        );
+      }
+    } else if (!user.isPlatformAdmin && user.businessId !== delivery.order.businessId) {
+      return NextResponse.json(
+        { success: false, error: 'Not authorized for this delivery' },
+        { status: 403 }
+      );
+    }
+
     // OTP verification for DELIVERED status
     if (body.status === 'DELIVERED') {
       if (delivery.deliveryOtp) {

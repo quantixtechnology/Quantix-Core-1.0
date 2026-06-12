@@ -49,6 +49,12 @@ export default function proxy(request: NextRequest) {
           url.pathname = '/'
         }
         url.searchParams.set('_storefront', slug)
+        // /delivery on a storefront host is the Delivery PWA entry point
+        // (login + agent dashboard). The flag survives the rewrite so the
+        // SPA can boot straight into delivery mode instead of the storefront.
+        if (pathname === '/delivery' || pathname.startsWith('/delivery/')) {
+          url.searchParams.set('_delivery', '1')
+        }
         console.log(`[proxy] REWRITE slug=${slug} → ${url.toString()}`)
         return withSecurityHeaders(NextResponse.rewrite(url))
       }

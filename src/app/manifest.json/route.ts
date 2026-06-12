@@ -29,6 +29,12 @@ function shortName(name: string): string {
 }
 
 export async function GET(request: Request) {
+  // ── App flavor ─────────────────────────────────────────────────────────────
+  // ?app=delivery → Delivery PWA manifest ("{Business} Delivery", start_url
+  // /delivery). The DeliveryLayout swaps the <link rel="manifest"> href to
+  // this URL so agents install the workforce app, not the storefront.
+  const isDelivery = new URL(request.url).searchParams.get('app') === 'delivery'
+
   // ── Resolve tenant from Host header ───────────────────────────────────────
   const host = (request.headers.get('host') ?? '').toLowerCase().split(':')[0]
 
@@ -69,40 +75,74 @@ export async function GET(request: Request) {
     ? `/api/core/pwa-icon/${slug}/512.png`
     : '/quantix-logo.png'
 
-  const manifest = {
-    id:               '/',
-    name,
-    short_name:       shortName(name),
-    description,
-    start_url:        '/?source=pwa',
-    display:          'standalone',
-    display_override: ['standalone', 'minimal-ui'],
-    background_color: '#ffffff',
-    theme_color:      theme,
-    orientation:      'portrait-primary',
-    lang:             'en-IN',
-    scope:            '/',
-    categories:       ['shopping', 'lifestyle'],
-    icons: [
-      // Chrome requires at least one 192×192 and one 512×512 PNG icon.
-      // The 'maskable' purpose enables adaptive icons on Android — the image
-      // must have safe-zone padding. The pwa-icon route adds white padding
-      // via sharp's 'contain' fit, which satisfies the maskable requirement.
-      { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-    ],
-    shortcuts: [
-      {
-        name:        'My Orders',
-        short_name:  'Orders',
-        description: 'View your order history',
-        url:         '/?source=pwa',
-        icons:       [{ src: icon192, sizes: '192x192', type: 'image/png' }],
-      },
-    ],
-    prefer_related_applications: false,
-  }
+  // Icons are shared between flavors (tenant logo); name/start_url/identity
+  // differ so Android/iOS/desktop treat the Delivery PWA as a separate app
+  // that can be installed alongside the customer storefront.
+  const manifest = isDelivery
+    ? {
+        id:               '/delivery',
+        name:             `${name} Delivery`,
+        short_name:       'Delivery',
+        description:      'Delivery workforce application',
+        start_url:        '/delivery?source=pwa',
+        display:          'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        background_color: '#ffffff',
+        theme_color:      theme,
+        orientation:      'portrait-primary',
+        lang:             'en-IN',
+        scope:            '/',
+        categories:       ['business', 'productivity'],
+        icons: [
+          { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        shortcuts: [
+          {
+            name:        'My Deliveries',
+            short_name:  'Deliveries',
+            description: 'View assigned delivery orders',
+            url:         '/delivery?source=pwa',
+            icons:       [{ src: icon192, sizes: '192x192', type: 'image/png' }],
+          },
+        ],
+        prefer_related_applications: false,
+      }
+    : {
+        id:               '/',
+        name,
+        short_name:       shortName(name),
+        description,
+        start_url:        '/?source=pwa',
+        display:          'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        background_color: '#ffffff',
+        theme_color:      theme,
+        orientation:      'portrait-primary',
+        lang:             'en-IN',
+        scope:            '/',
+        categories:       ['shopping', 'lifestyle'],
+        icons: [
+          // Chrome requires at least one 192×192 and one 512×512 PNG icon.
+          // The 'maskable' purpose enables adaptive icons on Android — the image
+          // must have safe-zone padding. The pwa-icon route adds white padding
+          // via sharp's 'contain' fit, which satisfies the maskable requirement.
+          { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        shortcuts: [
+          {
+            name:        'My Orders',
+            short_name:  'Orders',
+            description: 'View your order history',
+            url:         '/?source=pwa',
+            icons:       [{ src: icon192, sizes: '192x192', type: 'image/png' }],
+          },
+        ],
+        prefer_related_applications: false,
+      }
 
   return new Response(JSON.stringify(manifest, null, 2), {
     status: 200,

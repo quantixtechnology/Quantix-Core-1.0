@@ -31,10 +31,14 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVER
         );
       }
 
-      // Find the delivery partner profile
+      // Find the delivery partner profile.
+      // SECURITY: scoped by businessId — without this, a user who is a
+      // delivery partner in two businesses could resolve to the wrong
+      // profile and the assignment check below would compare wrong IDs.
       const deliveryPartner = await db.deliveryPartner.findFirst({
         where: {
           userId: user.id,
+          ...(user.businessId ? { businessId: user.businessId } : {}),
           isActive: true,
         },
       });

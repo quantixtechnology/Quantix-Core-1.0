@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useDeliveryEarnings } from "@/hooks/use-api"
+import { useBusinessContext } from "@/hooks/use-business-context"
 import { setBusinessContext } from "@/lib/api-client"
 import { SkeletonCard, ErrorState } from "@/components/ui/loading-states"
 import { Card, CardContent } from "@/components/ui/card"
@@ -29,11 +30,12 @@ interface EarningsBreakdown {
 
 export function DeliveryEarnings() {
   const [activeTab, setActiveTab] = useState<EarningsTab>("daily")
+  const { businessId } = useBusinessContext()
 
-  // Set business context
+  // SECURITY: business context from the authenticated session (was hardcoded "biz_1")
   useEffect(() => {
-    setBusinessContext("biz_1")
-  }, [])
+    if (businessId) setBusinessContext(businessId)
+  }, [businessId])
 
   // Fetch earnings from API
   const { data, isLoading, error, refetch } = useDeliveryEarnings()

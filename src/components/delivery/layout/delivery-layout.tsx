@@ -1,7 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
+import { usePwaInstall } from "@/hooks/use-pwa-install"
 import { partnerProfile, notifications } from "@/components/delivery/data"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
@@ -14,12 +16,59 @@ import {
   Wifi,
   WifiOff,
   ChevronLeft,
+  Download,
+  X,
 } from "lucide-react"
+
+// "Install Delivery App" banner — Android/desktop get the native prompt,
+// iOS Safari gets Add-to-Home-Screen instructions (no beforeinstallprompt).
+function DeliveryInstallBanner({ businessName }: { businessName?: string | null }) {
+  const { canInstall, isIos, install, dismiss } = usePwaInstall()
+  if (!canInstall) return null
+  return (
+    <div className="bg-teal-50 border-b border-teal-200 px-4 py-2.5 flex items-center gap-3">
+      <Download className="h-4 w-4 text-teal-600 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-teal-800">Install Delivery App</p>
+        <p className="text-[11px] text-teal-600 truncate">
+          {isIos
+            ? "Tap Share, then “Add to Home Screen”"
+            : `Add ${businessName ? `${businessName} Delivery` : "the delivery app"} to your home screen`}
+        </p>
+      </div>
+      {!isIos && (
+        <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-700 text-white shrink-0" onClick={install}>
+          Install
+        </Button>
+      )}
+      <button onClick={dismiss} className="text-teal-400 hover:text-teal-600 shrink-0" aria-label="Dismiss install banner">
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
 
 export function DeliveryLayout({ children }: { children: React.ReactNode }) {
   const { deliveryPage, setDeliveryPage, deliveryLoggedIn, deliveryPartnerName } = useAdminStore()
+  const { currentBusinessName } = useAuthStore()
   const [isOnline, setIsOnline] = useState(true)
   const [showNotifications, setShowNotifications] = useState(false)
+
+  // Delivery PWA identity — swap the manifest to the delivery flavor and
+  // retitle the tab ("{Business} Delivery") while the delivery UI is mounted.
+  // The browser reads the manifest at install time, so installs from any
+  // delivery screen get the workforce app, not the customer storefront.
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')
+    const prevHref = link?.getAttribute("href") ?? null
+    link?.setAttribute("href", "/manifest.json?app=delivery")
+    const prevTitle = document.title
+    document.title = currentBusinessName ? `${currentBusinessName} Delivery` : "Delivery App"
+    return () => {
+      if (link && prevHref) link.setAttribute("href", prevHref)
+      document.title = prevTitle
+    }
+  }, [currentBusinessName])
 
   const unreadCount = notifications.filter((n) => !n.read).length
 
@@ -35,6 +84,7 @@ export function DeliveryLayout({ children }: { children: React.ReactNode }) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="w-full max-w-md mx-auto min-h-screen bg-white">
+          <DeliveryInstallBanner businessName={currentBusinessName} />
           {children}
         </div>
       </div>
@@ -147,6 +197,9 @@ export function DeliveryLayout({ children }: { children: React.ReactNode }) {
             ))}
           </div>
         )}
+
+        {/* Install banner */}
+        <DeliveryInstallBanner businessName={currentBusinessName} />
 
         {/* Offline Banner */}
         {!isOnline && (

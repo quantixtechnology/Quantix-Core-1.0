@@ -17,10 +17,14 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
       const { searchParams } = new URL(req.url);
       const statusFilter = searchParams.get('status') || 'active';
 
-      // Find the delivery partner profile for this user
+      // Find the delivery partner profile for this user.
+      // SECURITY: scoped by businessId — a user who is a delivery partner in
+      // multiple businesses must only ever resolve to the profile of the
+      // business they are logged into, never an arbitrary first match.
       const deliveryPartner = await db.deliveryPartner.findFirst({
         where: {
           userId: user.id,
+          ...(user.businessId ? { businessId: user.businessId } : {}),
           isActive: true,
         },
       });
@@ -39,8 +43,10 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
           status: { in: ['ASSIGNED', 'PICKED_UP', 'ON_THE_WAY', 'ARRIVED'] },
         };
       } else if (statusFilter === 'completed') {
+        // Includes FAILED/CANCELLED so the app can show delivery history
+        // and count failed deliveries (dashboard stat tiles).
         deliveryStatusFilter = {
-          status: { in: ['DELIVERED'] },
+          status: { in: ['DELIVERED', 'FAILED', 'CANCELLED'] },
         };
       } else {
         deliveryStatusFilter = {};
@@ -97,6 +103,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
         dropLat: delivery.dropLat,
         dropLng: delivery.dropLng,
         estimatedDeliveryTime: delivery.estimatedDeliveryTime,
+        actualDeliveryTime: delivery.actualDeliveryTime,
         distance: delivery.distance,
         order: {
           ...delivery.order,
