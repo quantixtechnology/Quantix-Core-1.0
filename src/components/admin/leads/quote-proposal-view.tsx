@@ -12,7 +12,8 @@ import { FileText, Sparkles, RefreshCw, Save, Eye, CheckCircle2, Loader2 } from 
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
 import { useAuthStore } from "@/stores/auth-store"
-import { getCachedBranding, setCachedBranding, urlToDataUrl } from "@/lib/branding-cache"
+import { getCachedBranding, setCachedBranding, urlToDataUrl, DEFAULT_QUOTE_SETTINGS } from "@/lib/branding-cache"
+import type { QuoteBrandingSettings } from "@/lib/branding-cache"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -141,6 +142,7 @@ interface ProposalBranding {
   companyName: string
   companyWebsite: string
   accentColor: string
+  quote: QuoteBrandingSettings
 }
 
 const DEFAULT_BRANDING: ProposalBranding = {
@@ -148,6 +150,7 @@ const DEFAULT_BRANDING: ProposalBranding = {
   companyName: 'Quantix Technology',
   companyWebsite: 'www.quantixtechnology.in',
   accentColor: '#2563EB',
+  quote: DEFAULT_QUOTE_SETTINGS,
 }
 
 export function ProposalDocument({
@@ -167,6 +170,7 @@ export function ProposalDocument({
       companyName:    cached.companyName,
       companyWebsite: cached.companyWebsite,
       accentColor:    cached.accentColor,
+      quote:          cached.quote ?? DEFAULT_QUOTE_SETTINGS,
     }
   })
 
@@ -189,18 +193,45 @@ export function ProposalDocument({
         const j = r.ok ? await r.json() : null
         const d = j?.success ? j.data : null
 
-        const rawLogoUrl     = (d?.salesLogoUrl || d?.logoUrl) ?? null
+        const rawLogoUrl     = (d?.quoteLogoUrl || d?.salesLogoUrl || d?.logoUrl) ?? null
         const companyName    = d?.companyName || DEFAULT_BRANDING.companyName
         const companyWebsite = (d?.companyWebsite || 'https://quantixtechnology.in').replace(/^https?:\/\//, '')
-        const accentColor    = d?.salesAccentColor || d?.primaryColor || DEFAULT_BRANDING.accentColor
+        const accentColor    = d?.quoteAccentColor || d?.salesAccentColor || d?.primaryColor || DEFAULT_BRANDING.accentColor
+
+        const quote: QuoteBrandingSettings = {
+          companyAddress: d?.companyAddress ?? null,
+          companyPhone:   d?.companyPhone   ?? null,
+          companyEmail:   d?.companyEmail   ?? null,
+          companyGst:     d?.companyGst     ?? null,
+          companyPan:     d?.companyPan     ?? null,
+          companyMsme:    d?.companyMsme    ?? null,
+          companyShopEst: d?.companyShopEst ?? null,
+          companyIec:     d?.companyIec     ?? null,
+          companyCin:     d?.companyCin     ?? null,
+          footerText:     d?.quoteFooterText ?? d?.salesFooterText ?? null,
+          footerColor:    d?.quoteFooterColor ?? null,
+          showPageNumber: d?.quoteShowPageNumber  ?? true,
+          showLogo:        d?.quoteShowLogo        ?? true,
+          showCompanyName: d?.quoteShowCompanyName ?? true,
+          showAddress:     d?.quoteShowAddress     ?? false,
+          showPhone:       d?.quoteShowPhone       ?? false,
+          showEmail:       d?.quoteShowEmail       ?? false,
+          showWebsite:     d?.quoteShowWebsite     ?? true,
+          showGST:     d?.quoteShowGST     ?? true,
+          showPAN:     d?.quoteShowPAN     ?? true,
+          showMSME:    d?.quoteShowMSME    ?? true,
+          showShopAct: d?.quoteShowShopAct ?? true,
+          showCIN:     d?.quoteShowCIN     ?? true,
+          showIEC:     d?.quoteShowIEC     ?? true,
+        }
 
         // Convert to base64 data URL — logo embeds directly in print window HTML,
         // eliminating the blank-logo-in-PDF problem caused by the 400ms timeout.
         const logoDataUrl = rawLogoUrl ? await urlToDataUrl(rawLogoUrl) : null
         if (cancelled) return
 
-        setCachedBranding({ logoUrl: rawLogoUrl, logoDataUrl, companyName, companyWebsite, accentColor })
-        setBranding({ logoUrl: logoDataUrl ?? rawLogoUrl, companyName, companyWebsite, accentColor })
+        setCachedBranding({ logoUrl: rawLogoUrl, logoDataUrl, companyName, companyWebsite, accentColor, quote })
+        setBranding({ logoUrl: logoDataUrl ?? rawLogoUrl, companyName, companyWebsite, accentColor, quote })
       } catch {
         // Keep defaults on any error — don't block the user
       } finally {
@@ -226,10 +257,13 @@ export function ProposalDocument({
     { name: "Add-ons",        amount: form.addOnsAmount,         cycle: form.addOnsCycle,         notes: form.addOnsDescription || form.addOnsNotes },
   ].filter(s => parseFloat(s.amount) > 0)
 
+  const q = branding.quote
   const headerBg   = "#0f1729"
   const accentBlue = branding.accentColor
   const companyName    = branding.companyName
   const companyWebsite = branding.companyWebsite
+  const footerText = q.footerText || companyWebsite
+  const footerColor = q.footerColor || accentBlue
   const confirmDate = formatDateDDMMMYYYY(new Date())
   const showBank   = !!(bankDetails?.active && bankDetails?.bankName)
   const qrUrl      = bankDetails?.active && bankDetails?.qrUrl ? bankDetails.qrUrl : null
@@ -251,16 +285,27 @@ export function ProposalDocument({
       }}>
 
         {/* ── HEADER ──────────────────────────────────────────────────── */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "32px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "32px" }}>
           <div style={{
             background: "#fff", border: "1px solid #e5e7eb",
             borderRadius: "10px", padding: "8px 16px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           }}>
-            {branding.logoUrl
+            {q.showLogo && branding.logoUrl
               ? <img src={branding.logoUrl} alt={companyName} style={{ maxHeight: "50px", width: "auto", objectFit: "contain", display: "block" }} onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
-              : <span style={{ fontWeight: 800, fontSize: "15px", color: "#111827", letterSpacing: "-0.3px" }}>{companyName}</span>
+              : (q.showCompanyName
+                  ? <span style={{ fontWeight: 800, fontSize: "15px", color: "#111827", letterSpacing: "-0.3px" }}>{companyName}</span>
+                  : null)
             }
+            {(q.showAddress && q.companyAddress) || (q.showPhone && q.companyPhone) || (q.showEmail && q.companyEmail) || (q.showWebsite) ? (
+              <div style={{ marginTop: "5px", fontSize: "9.5px", color: "#6b7280", lineHeight: 1.5 }}>
+                {q.showCompanyName && branding.logoUrl && <div style={{ fontWeight: 700, color: "#374151", marginBottom: "2px" }}>{companyName}</div>}
+                {q.showAddress && q.companyAddress && <div>{q.companyAddress}</div>}
+                {q.showPhone   && q.companyPhone   && <div>{q.companyPhone}</div>}
+                {q.showEmail   && q.companyEmail   && <div>{q.companyEmail}</div>}
+                {q.showWebsite && companyWebsite   && <div style={{ color: accentBlue, fontWeight: 600 }}>{companyWebsite}</div>}
+              </div>
+            ) : null}
           </div>
           <div style={{ textAlign: "right" as const }}>
             <div style={{ fontSize: "22px", fontWeight: 800, color: headerBg, letterSpacing: "-0.5px", lineHeight: 1 }}>
@@ -440,8 +485,8 @@ export function ProposalDocument({
           display: "flex", justifyContent: "space-between", alignItems: "center",
           fontSize: "10px", color: "#9ca3af",
         }}>
-          <span>{companyName} · {companyWebsite}</span>
-          <span style={{ fontWeight: 600, color: "#6b7280" }}>Page 1 of 2</span>
+          <span style={{ color: footerColor }}>{footerText || `${companyName} · ${companyWebsite}`}</span>
+          {q.showPageNumber && <span style={{ fontWeight: 600, color: "#6b7280" }}>Page 1 of 2</span>}
           <span>© {new Date().getFullYear()} {companyName}</span>
         </div>
       </div>
@@ -470,8 +515,7 @@ export function ProposalDocument({
           </div>
           <div style={{ fontSize: "11px", color: "#6b7280" }}>
             <span style={{ fontWeight: 600, color: "#374151" }}>Proposal No:</span> {proposalId || "QX-000000-000"}
-            &nbsp;&nbsp;·&nbsp;&nbsp;
-            <span style={{ fontWeight: 600, color: "#374151" }}>Page 2 of 2</span>
+            {q.showPageNumber && <>&nbsp;&nbsp;·&nbsp;&nbsp;<span style={{ fontWeight: 600, color: "#374151" }}>Page 2 of 2</span></>}
           </div>
         </div>
 
@@ -592,6 +636,35 @@ export function ProposalDocument({
           </div>
         )}
 
+        {/* ── COMPANY REGISTRATION ─────────────────────────────────────── */}
+        {(() => {
+          const items = [
+            q.showGST     && q.companyGst     ? { label: "GSTIN",         value: q.companyGst     } : null,
+            q.showPAN     && q.companyPan     ? { label: "PAN",            value: q.companyPan     } : null,
+            q.showMSME    && q.companyMsme    ? { label: "MSME/Udyam",    value: q.companyMsme    } : null,
+            q.showShopAct && q.companyShopEst ? { label: "Shop & Estbl.", value: q.companyShopEst } : null,
+            q.showCIN     && q.companyCin     ? { label: "CIN",            value: q.companyCin     } : null,
+            q.showIEC     && q.companyIec     ? { label: "IEC",            value: q.companyIec     } : null,
+          ].filter(Boolean) as { label: string; value: string }[]
+          if (!items.length) return null
+          return (
+            <div style={{ marginBottom: "10px" }}>
+              {sectionLabel("COMPANY REGISTRATION", "7px")}
+              <div style={{
+                border: "1px solid #e5e7eb", borderRadius: "8px", padding: "9px 14px",
+                background: "#f9fafb", display: "flex", flexWrap: "wrap" as const, gap: "5px 20px",
+              }}>
+                {items.map(item => (
+                  <div key={item.label} style={{ display: "flex", alignItems: "baseline", gap: "5px" }}>
+                    <span style={{ fontSize: "9px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.07em", whiteSpace: "nowrap" as const }}>{item.label}:</span>
+                    <span style={{ fontWeight: 700, color: "#111827", fontSize: "11px" }}>{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* ── FOOTER: left=website · center=system note · right=QR ─────── */}
         {/* Absolute at bottom:40px. Footer height ≈ 139px (QR 120px + label 14px + gap 5px). */}
         <div style={{
@@ -600,7 +673,7 @@ export function ProposalDocument({
         }}>
           {/* LEFT — branding */}
           <div style={{ flex: "0 0 auto" }}>
-            <div style={{ fontWeight: 700, color: accentBlue, fontSize: "12px", marginBottom: "3px" }}>{companyWebsite}</div>
+            <div style={{ fontWeight: 700, color: footerColor, fontSize: "12px", marginBottom: "3px" }}>{footerText}</div>
             <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>{companyName} · Enterprise SaaS Platform</div>
             <div style={{ fontSize: "9.5px", color: "#9ca3af" }}>© {new Date().getFullYear()} {companyName}. All rights reserved.</div>
           </div>

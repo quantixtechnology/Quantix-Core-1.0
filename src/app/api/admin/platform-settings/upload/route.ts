@@ -35,6 +35,8 @@ const ALLOWED_FIELDS = new Set([
   'sidebarLogoUrl',
   // Zone 5 — Invoice
   'invoiceLogoUrl',
+  // Zone 6 — Quote
+  'quoteLogoUrl',
 ])
 
 export const POST = withMiddleware({

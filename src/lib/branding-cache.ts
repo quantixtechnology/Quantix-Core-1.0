@@ -7,6 +7,50 @@
 // in the proposal print HTML — no second network round-trip from the print
 // window, which is the main cause of blank logos in PDFs.
 
+export interface QuoteBrandingSettings {
+  // Company contact fields (from companyX in PlatformSettings)
+  companyAddress: string | null
+  companyPhone:   string | null
+  companyEmail:   string | null
+  // Legal registration numbers
+  companyGst:     string | null
+  companyPan:     string | null
+  companyMsme:    string | null
+  companyShopEst: string | null
+  companyIec:     string | null
+  companyCin:     string | null
+  // Footer config
+  footerText:     string | null
+  footerColor:    string | null
+  showPageNumber: boolean
+  // Header visibility
+  showLogo:        boolean
+  showCompanyName: boolean
+  showAddress:     boolean
+  showPhone:       boolean
+  showEmail:       boolean
+  showWebsite:     boolean
+  // Last page legal visibility
+  showGST:     boolean
+  showPAN:     boolean
+  showMSME:    boolean
+  showShopAct: boolean
+  showCIN:     boolean
+  showIEC:     boolean
+}
+
+export const DEFAULT_QUOTE_SETTINGS: QuoteBrandingSettings = {
+  companyAddress: null, companyPhone: null, companyEmail: null,
+  companyGst: null, companyPan: null, companyMsme: null,
+  companyShopEst: null, companyIec: null, companyCin: null,
+  footerText: null, footerColor: null,
+  showPageNumber: true,
+  showLogo: true, showCompanyName: true,
+  showAddress: false, showPhone: false, showEmail: false, showWebsite: true,
+  showGST: true, showPAN: true, showMSME: true,
+  showShopAct: true, showCIN: true, showIEC: true,
+}
+
 export interface CachedBranding {
   logoUrl:        string | null
   logoDataUrl:    string | null  // base64 — safe to embed in outerHTML for printing
@@ -14,6 +58,7 @@ export interface CachedBranding {
   companyWebsite: string
   accentColor:    string
   cachedAt:       number
+  quote?:         QuoteBrandingSettings  // undefined on old cached entries — use DEFAULT_QUOTE_SETTINGS
 }
 
 const TTL = 5 * 60 * 1000  // 5 minutes

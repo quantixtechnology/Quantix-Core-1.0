@@ -40,6 +40,11 @@ const PATCHABLE = new Set([
   'companyPan', 'companyMsme', 'companyShopEst', 'companyIec', 'companyCin',
   'bankAccountName', 'bankName', 'bankAccountNumber', 'bankIfsc', 'bankUpiId',
   'invoiceFooterNotes', 'invoiceLegalDisclaimer', 'invoiceDefaultNotes',
+  // Zone 6 — Quote Settings
+  'quoteAccentColor', 'quoteFooterText', 'quoteFooterColor', 'quoteShowPageNumber',
+  'quoteShowLogo', 'quoteShowCompanyName', 'quoteShowAddress', 'quoteShowPhone',
+  'quoteShowEmail', 'quoteShowWebsite',
+  'quoteShowGST', 'quoteShowPAN', 'quoteShowMSME', 'quoteShowShopAct', 'quoteShowCIN', 'quoteShowIEC',
 ])
 
 export const GET = withMiddleware({

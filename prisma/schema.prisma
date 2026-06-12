@@ -118,6 +118,27 @@ model PlatformSettings {
   invoiceLegalDisclaimer String?  // Legal disclaimer text
   invoiceDefaultNotes    String?  // Default notes on every invoice
 
+  // Zone 6 — Quote / Proposal Settings (independent of Invoice Settings)
+  quoteLogoUrl         String?   // overrides salesLogoUrl for quote PDFs
+  quoteAccentColor     String?   // overrides salesAccentColor for quote PDFs
+  quoteFooterText      String?   // overrides salesFooterText for quote PDFs
+  quoteFooterColor     String?   // hex colour for quote footer text/line
+  quoteShowPageNumber  Boolean?  // show "Page N of N"; null = true
+  // Header visibility toggles (null = default shown/hidden per field)
+  quoteShowLogo        Boolean?  // show logo in header; null = true
+  quoteShowCompanyName Boolean?  // show company name; null = true
+  quoteShowAddress     Boolean?  // show registered address; null = false
+  quoteShowPhone       Boolean?  // show phone; null = false
+  quoteShowEmail       Boolean?  // show email; null = false
+  quoteShowWebsite     Boolean?  // show website; null = true
+  // Last page legal info visibility (null = true — show if value exists)
+  quoteShowGST         Boolean?
+  quoteShowPAN         Boolean?
+  quoteShowMSME        Boolean?
+  quoteShowShopAct     Boolean?
+  quoteShowCIN         Boolean?
+  quoteShowIEC         Boolean?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

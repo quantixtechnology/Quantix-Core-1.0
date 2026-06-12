@@ -12,7 +12,7 @@ import {
   Monitor, FileText, Users, Upload, X, Save, Loader2,
   ImageIcon, Palette, CheckCircle2, PanelLeft, Crop,
   Receipt, Building2, Landmark, CreditCard, StickyNote,
-  ShieldCheck,
+  ShieldCheck, Quote,
 } from "lucide-react"
 import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
@@ -71,6 +71,25 @@ interface BrandSettings {
   sidebarHeadingColor: string
   sidebarLogoUrl:      string | null
 
+  // Zone 6 — Quote Settings
+  quoteLogoUrl:         string | null
+  quoteAccentColor:     string
+  quoteFooterText:      string
+  quoteFooterColor:     string
+  quoteShowPageNumber:  boolean
+  quoteShowLogo:        boolean
+  quoteShowCompanyName: boolean
+  quoteShowAddress:     boolean
+  quoteShowPhone:       boolean
+  quoteShowEmail:       boolean
+  quoteShowWebsite:     boolean
+  quoteShowGST:         boolean
+  quoteShowPAN:         boolean
+  quoteShowMSME:        boolean
+  quoteShowShopAct:     boolean
+  quoteShowCIN:         boolean
+  quoteShowIEC:         boolean
+
   // Zone 5 — Invoice Settings
   invoiceLogoUrl:         string | null
   invoiceLegalName:       string
@@ -113,6 +132,14 @@ const DEFAULTS: BrandSettings = {
   sidebarBg: "#04132E", sidebarActiveColor: "#2563EB",
   sidebarTextColor: "#FFFFFF", sidebarHeadingColor: "#38BDF8",
   sidebarLogoUrl: null,
+  // Zone 6
+  quoteLogoUrl: null,
+  quoteAccentColor: "#2563EB", quoteFooterText: "", quoteFooterColor: "",
+  quoteShowPageNumber: true,
+  quoteShowLogo: true, quoteShowCompanyName: true,
+  quoteShowAddress: false, quoteShowPhone: false, quoteShowEmail: false, quoteShowWebsite: true,
+  quoteShowGST: true, quoteShowPAN: true, quoteShowMSME: true,
+  quoteShowShopAct: true, quoteShowCIN: true, quoteShowIEC: true,
   // Zone 5
   invoiceLogoUrl: null,
   invoiceLegalName: "", invoiceBusinessName: "", invoiceAddress: "",
@@ -506,6 +533,26 @@ export function BrandStudioView() {
           sidebarHeadingColor: settings.sidebarHeadingColor,
         })
       }
+      if (zone === "quote" || zone === "all") {
+        Object.assign(payload, {
+          quoteAccentColor:     settings.quoteAccentColor,
+          quoteFooterText:      settings.quoteFooterText,
+          quoteFooterColor:     settings.quoteFooterColor,
+          quoteShowPageNumber:  settings.quoteShowPageNumber,
+          quoteShowLogo:        settings.quoteShowLogo,
+          quoteShowCompanyName: settings.quoteShowCompanyName,
+          quoteShowAddress:     settings.quoteShowAddress,
+          quoteShowPhone:       settings.quoteShowPhone,
+          quoteShowEmail:       settings.quoteShowEmail,
+          quoteShowWebsite:     settings.quoteShowWebsite,
+          quoteShowGST:         settings.quoteShowGST,
+          quoteShowPAN:         settings.quoteShowPAN,
+          quoteShowMSME:        settings.quoteShowMSME,
+          quoteShowShopAct:     settings.quoteShowShopAct,
+          quoteShowCIN:         settings.quoteShowCIN,
+          quoteShowIEC:         settings.quoteShowIEC,
+        })
+      }
       if (zone === "invoice" || zone === "all") {
         Object.assign(payload, {
           invoiceLegalName:       settings.invoiceLegalName,
@@ -578,12 +625,13 @@ export function BrandStudioView() {
 
       {/* Zones */}
       <Tabs defaultValue="core" className="space-y-6">
-        <TabsList className="grid grid-cols-5 w-full max-w-3xl h-10">
+        <TabsList className="grid grid-cols-6 w-full max-w-4xl h-10">
           <TabsTrigger value="core"    className="gap-1.5 text-xs"><Monitor    className="h-3.5 w-3.5" />Core Platform</TabsTrigger>
           <TabsTrigger value="sales"   className="gap-1.5 text-xs"><FileText   className="h-3.5 w-3.5" />Sales Documents</TabsTrigger>
           <TabsTrigger value="hrms"    className="gap-1.5 text-xs"><Users      className="h-3.5 w-3.5" />HRMS</TabsTrigger>
           <TabsTrigger value="sidebar" className="gap-1.5 text-xs"><PanelLeft  className="h-3.5 w-3.5" />Sidebar Theme</TabsTrigger>
           <TabsTrigger value="invoice" className="gap-1.5 text-xs"><Receipt    className="h-3.5 w-3.5" />Invoice Settings</TabsTrigger>
+          <TabsTrigger value="quote"   className="gap-1.5 text-xs"><Quote      className="h-3.5 w-3.5" />Quote Settings</TabsTrigger>
         </TabsList>
 
         {/* ── ZONE 1: Core Platform ── */}
@@ -1169,7 +1217,193 @@ export function BrandStudioView() {
           </div>
         </TabsContent>
 
+        {/* ── ZONE 6: Quote Settings ── */}
+        <TabsContent value="quote">
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-6 items-start">
+            <div className="space-y-6">
+
+              {/* Document Branding */}
+              <Card>
+                <CardContent className="pt-5 pb-6 space-y-5">
+                  <SectionHeader icon={<Quote className="h-4 w-4" />} title="Document Branding" />
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    Quote-specific logo and colour — overrides Sales Documents settings. Leave blank to inherit from Sales Documents.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <AssetUpload label="Quote Logo" hint="Upload quote/proposal logo" field="quoteLogoUrl" url={settings.quoteLogoUrl} onUploaded={handleUploaded} onDeleted={handleDeleted} />
+                    <ColorSwatch label="Accent Colour" field="quoteAccentColor" value={settings.quoteAccentColor} onChange={handleColor} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Header Settings */}
+              <Card>
+                <CardContent className="pt-5 pb-6 space-y-4">
+                  <SectionHeader icon={<Building2 className="h-4 w-4" />} title="Header Settings" />
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    Control which company details appear in the proposal header. Values are pulled from Company Identity settings.
+                  </p>
+                  <div className="divide-y divide-border/50">
+                    <ToggleField label="Show Logo"          hint="Logo or company name in top-left"       field="quoteShowLogo"        value={settings.quoteShowLogo}        onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="Show Company Name"  hint="Company name text in header"             field="quoteShowCompanyName" value={settings.quoteShowCompanyName} onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="Show Registered Address" hint="Full address below the logo"       field="quoteShowAddress"     value={settings.quoteShowAddress}     onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="Show Phone"         hint="Contact phone in header"                 field="quoteShowPhone"       value={settings.quoteShowPhone}       onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="Show Email"         hint="Contact email in header"                 field="quoteShowEmail"       value={settings.quoteShowEmail}       onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="Show Website"       hint="Company website URL in header"           field="quoteShowWebsite"     value={settings.quoteShowWebsite}     onChange={(f, v) => set(f, v)} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Footer Settings */}
+              <Card>
+                <CardContent className="pt-5 pb-6 space-y-5">
+                  <SectionHeader icon={<StickyNote className="h-4 w-4" />} title="Footer Settings" />
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label>Footer Text <span className="text-xs text-muted-foreground font-normal">(leave blank to use website URL)</span></Label>
+                      <Input placeholder="e.g. www.quantixtechnology.in  or  Quantix Technology • GSTIN: 29ABCDE1234F" {...txt("quoteFooterText")} />
+                    </div>
+                    <ColorSwatch label="Footer Text Colour" field="quoteFooterColor" value={settings.quoteFooterColor || settings.quoteAccentColor} onChange={handleColor} />
+                    <div className="pt-1">
+                      <ToggleField label="Show Page Number" hint='Show "Page 1 of 2" in document footer' field="quoteShowPageNumber" value={settings.quoteShowPageNumber} onChange={(f, v) => set(f, v)} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Last Page Legal Info */}
+              <Card>
+                <CardContent className="pt-5 pb-6 space-y-4">
+                  <SectionHeader icon={<ShieldCheck className="h-4 w-4" />} title="Last Page — Legal Information" />
+                  <p className="text-xs text-muted-foreground -mt-2">
+                    Toggle which registration numbers appear on page 2 of the proposal. Values are pulled from Invoice Settings → Tax & Registration.
+                  </p>
+                  <div className="divide-y divide-border/50">
+                    <ToggleField label="GSTIN"                  hint="GST registration number"           field="quoteShowGST"     value={settings.quoteShowGST}     onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="PAN"                    hint="Permanent Account Number"          field="quoteShowPAN"     value={settings.quoteShowPAN}     onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="MSME / Udyam"           hint="MSME/Udyam registration number"   field="quoteShowMSME"    value={settings.quoteShowMSME}    onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="Shop & Establishment"   hint="Shop Act license number"           field="quoteShowShopAct" value={settings.quoteShowShopAct} onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="CIN"                    hint="Corporate Identification Number"   field="quoteShowCIN"     value={settings.quoteShowCIN}     onChange={(f, v) => set(f, v)} />
+                    <ToggleField label="IEC"                    hint="Import Export Code"                field="quoteShowIEC"     value={settings.quoteShowIEC}     onChange={(f, v) => set(f, v)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Fields with no value in Invoice Settings are always hidden regardless of these toggles.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end">
+                <Button onClick={() => handleSave("quote")} disabled={saving} className="gap-2 min-w-[140px]">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save Quote Settings
+                </Button>
+              </div>
+            </div>
+
+            {/* Sticky preview */}
+            <div className="xl:sticky xl:top-6">
+              <Card>
+                <CardContent className="pt-5 pb-5">
+                  <QuoteDocumentPreview s={settings} />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
       </Tabs>
+    </div>
+  )
+}
+
+// ─── Toggle Field ─────────────────────────────────────────────────────────────
+
+function ToggleField({ label, hint, field, value, onChange }: {
+  label: string
+  hint?: string
+  field: string
+  value: boolean
+  onChange: (field: string, v: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between py-2.5">
+      <div className="pr-4">
+        <span className="text-sm font-medium">{label}</span>
+        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={value}
+        onClick={() => onChange(field, !value)}
+        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          value ? "bg-primary" : "bg-input"
+        }`}
+      >
+        <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform ${
+          value ? "translate-x-4" : "translate-x-0"
+        }`} />
+      </button>
+    </div>
+  )
+}
+
+// ─── Quote Document Preview ───────────────────────────────────────────────────
+
+function QuoteDocumentPreview({ s }: { s: BrandSettings }) {
+  const accent = s.quoteAccentColor || s.salesAccentColor || s.primaryColor || "#2563EB"
+  const footerTxt = s.quoteFooterText || s.companyWebsite || "quantixtechnology.in"
+  const footerClr = s.quoteFooterColor || accent
+
+  const legalItems = [
+    s.quoteShowGST     ? "GSTIN: 29ABCDE1234F1Z5"    : null,
+    s.quoteShowPAN     ? "PAN: ABCDE1234F"             : null,
+    s.quoteShowMSME    ? "MSME: UDYAM-KR-03-0000001" : null,
+  ].filter(Boolean) as string[]
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Quote Preview</p>
+      <div className="rounded-xl border border-border/40 overflow-hidden shadow-sm bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+        {/* Accent gradient bar */}
+        <div className="h-1.5 w-full" style={{ background: `linear-gradient(90deg, ${accent}, #06b6d4)` }} />
+        {/* Header */}
+        <div className="flex items-start justify-between px-4 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
+          <div className="space-y-0.5">
+            {s.quoteShowLogo && (s.quoteLogoUrl || s.salesLogoUrl)
+              ? <img src={(s.quoteLogoUrl || s.salesLogoUrl)!} alt="Quote Logo" className="h-8 object-contain" />
+              : <div className="h-7 w-20 rounded bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center"><ImageIcon className="h-3 w-3 text-zinc-400" /></div>}
+            {s.quoteShowCompanyName && <p className="text-[9px] text-zinc-500 font-semibold mt-1">{s.companyName || "Quantix Technology"}</p>}
+            {s.quoteShowAddress && s.companyAddress && <p className="text-[8px] text-zinc-400 leading-tight">{s.companyAddress.slice(0, 40)}</p>}
+            {s.quoteShowPhone && s.companyPhone && <p className="text-[8px] text-zinc-400">{s.companyPhone}</p>}
+          </div>
+          <div className="text-right">
+            <p className="text-[11px] font-bold tracking-wider uppercase" style={{ color: accent }}>Implementation Proposal</p>
+            <p className="text-[9px] text-zinc-400">QTX-2026-0001</p>
+            <p className="text-[9px] text-zinc-400">01 Jun 2026</p>
+          </div>
+        </div>
+        {/* Body stub */}
+        <div className="px-4 py-3 space-y-1.5">
+          <div className="h-[5px] w-16 rounded bg-zinc-100 dark:bg-zinc-800" />
+          <div className="h-[5px] w-full rounded bg-zinc-100 dark:bg-zinc-800" />
+          <div className="h-[5px] w-4/5 rounded bg-zinc-100 dark:bg-zinc-800" />
+        </div>
+        {/* Legal strip (if enabled) */}
+        {legalItems.length > 0 && (
+          <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800">
+            <p className="text-[7.5px] text-zinc-400 uppercase tracking-wide mb-0.5">Company Registration</p>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+              {legalItems.map(it => <span key={it} className="text-[8px] text-zinc-600 dark:text-zinc-400 font-medium">{it}</span>)}
+            </div>
+          </div>
+        )}
+        {/* Footer */}
+        <div className="px-4 py-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+          <p className="text-[8px] truncate font-semibold" style={{ color: footerClr }}>{footerTxt.slice(0, 40)}</p>
+          {s.quoteShowPageNumber && <p className="text-[7.5px] text-zinc-400 shrink-0">Page 1 of 2</p>}
+        </div>
+      </div>
     </div>
   )
 }
