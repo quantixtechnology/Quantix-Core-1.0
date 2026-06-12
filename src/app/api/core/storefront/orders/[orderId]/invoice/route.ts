@@ -41,6 +41,7 @@ export const GET = withMiddleware({
         id: true, invoiceNumber: true, status: true,
         totalAmount: true, paidAmount: true, subtotal: true,
         totalTax: true, totalDiscount: true,
+        pdfUrl: true,
         dueDate: true, paidAt: true, createdAt: true, notes: true,
         order: { select: { id: true, orderNumber: true } },
       },

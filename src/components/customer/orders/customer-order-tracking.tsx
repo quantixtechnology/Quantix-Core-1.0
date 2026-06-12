@@ -27,6 +27,7 @@ import {
   Receipt,
   FileText,
 } from "lucide-react"
+import { resolveInvoiceStatus, invoiceStatusColors } from "@/lib/invoice-utils"
 import { useAuthStore } from "@/stores/auth-store"
 
 const statusSteps = [
@@ -57,6 +58,7 @@ export function CustomerOrderTracking() {
   const [invoice, setInvoice] = useState<{
     id: string; invoiceNumber: string; status: string;
     totalAmount: number; paidAmount: number;
+    pdfUrl?: string | null;
     dueDate: string | null; paidAt: string | null;
     order?: { id: string; orderNumber: string } | null;
   } | null>(null)
@@ -437,93 +439,89 @@ export function CustomerOrderTracking() {
         </div>
       </div>
 
-      {/* Invoice Card — visible at every order stage */}
+      {/* Payment & Invoice — visible at every order stage */}
       <div className="px-4 mb-2">
         {invoiceLoading ? (
           <div className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-2 text-gray-400">
             <Loader2 className="w-4 h-4 animate-spin" />
             <span className="text-xs">Loading invoice…</span>
           </div>
-        ) : invoice ? (
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            {/* Header row */}
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
-                <span className="text-sm font-bold text-gray-900">Invoice</span>
+        ) : invoice ? (() => {
+          const statusLabel = resolveInvoiceStatus(invoice.status, invoice.totalAmount, invoice.paidAmount)
+          const colors = invoiceStatusColors(statusLabel)
+          const balanceAmount = Math.max(0, invoice.totalAmount - invoice.paidAmount)
+          return (
+            <div className="bg-white border border-gray-100 rounded-xl p-4">
+              {/* Header row */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Receipt className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
+                  <span className="text-sm font-bold text-gray-900">Payment &amp; Invoice</span>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+                  {statusLabel}
+                </span>
               </div>
-              {/* Payment status badge */}
-              {(() => {
-                const isPartial = invoice.paidAmount > 0 && invoice.paidAmount < invoice.totalAmount
-                const label = invoice.status === "PAID"
-                  ? "PAID"
-                  : isPartial
-                  ? "PARTIALLY PAID"
-                  : invoice.status === "PAYMENT_DUE"
-                  ? "PAYMENT DUE"
-                  : "DRAFT"
-                const cls = invoice.status === "PAID"
-                  ? "bg-emerald-100 text-emerald-700"
-                  : isPartial
-                  ? "bg-blue-100 text-blue-700"
-                  : invoice.status === "PAYMENT_DUE"
-                  ? "bg-amber-100 text-amber-700"
-                  : "bg-gray-100 text-gray-500"
-                return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>
-              })()}
-            </div>
 
-            {/* Invoice number + amount */}
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-gray-500 font-mono text-[11px]">{invoice.invoiceNumber}</span>
-              <span className="font-bold text-gray-900">{formatPrice(invoice.totalAmount)}</span>
-            </div>
+              {/* Invoice number */}
+              <p className="text-[11px] font-mono text-gray-500 mb-3">{invoice.invoiceNumber}</p>
 
-            {/* Partially paid amount row */}
-            {invoice.paidAmount > 0 && invoice.paidAmount < invoice.totalAmount && (
-              <div className="flex items-center justify-between text-[10px] mb-1">
-                <span className="text-blue-600">Paid so far</span>
-                <span className="text-blue-700 font-semibold">{formatPrice(invoice.paidAmount)}</span>
+              {/* Amounts grid */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-0.5">Invoice Amount</p>
+                  <p className="text-xs font-bold text-gray-900">{formatPrice(invoice.totalAmount)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-0.5">Paid Amount</p>
+                  <p className="text-xs font-bold text-gray-900">{formatPrice(invoice.paidAmount)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-0.5">Balance Due</p>
+                  <p className={`text-xs font-bold ${balanceAmount > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                    {formatPrice(balanceAmount)}
+                  </p>
+                </div>
               </div>
-            )}
 
-            {/* Due / Paid date */}
-            {invoice.status === "PAYMENT_DUE" && invoice.dueDate && (
-              <p className="text-[10px] text-amber-600 mb-2">
-                Due: {new Date(invoice.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-              </p>
-            )}
-            {invoice.status === "PAID" && invoice.paidAt && (
-              <p className="text-[10px] text-emerald-600 mb-2">
-                Paid on {new Date(invoice.paidAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-              </p>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => {
-                  setSelectedInvoiceId(invoice.id)
-                  pushCustomerPage("invoice-detail")
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border transition-colors"
-                style={{ borderColor: `${brandColor}50`, color: brandColor }}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                View Invoice
-              </button>
-              {selectedOrderId && (
-                <button
-                  onClick={() => handleDownloadPdf(selectedOrderId)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download PDF
-                </button>
+              {/* Due / Paid date */}
+              {statusLabel === "PAYMENT DUE" && invoice.dueDate && (
+                <p className="text-[10px] text-amber-600 mb-2">
+                  Due: {new Date(invoice.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </p>
               )}
+              {statusLabel === "PAID" && invoice.paidAt && (
+                <p className="text-[10px] text-emerald-600 mb-2">
+                  Paid on {new Date(invoice.paidAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </p>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => {
+                    setSelectedInvoiceId(invoice.id)
+                    pushCustomerPage("invoice-detail")
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border transition-colors"
+                  style={{ borderColor: `${brandColor}50`, color: brandColor }}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  View Invoice
+                </button>
+                {selectedOrderId && (
+                  <button
+                    onClick={() => handleDownloadPdf(selectedOrderId)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download PDF
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ) : null}
+          )
+        })() : null}
       </div>
     </div>
   )

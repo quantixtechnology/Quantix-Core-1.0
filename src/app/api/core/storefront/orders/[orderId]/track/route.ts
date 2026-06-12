@@ -128,6 +128,18 @@ export async function GET(
             paidAt: true,
           },
         },
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            status: true,
+            totalAmount: true,
+            paidAmount: true,
+            pdfUrl: true,
+            dueDate: true,
+            paidAt: true,
+          },
+        },
       },
     });
 
@@ -214,6 +226,17 @@ export async function GET(
       })),
       items: order.items,
       payments: isOwner ? order.payments : [],
+      invoice: isOwner && order.invoice ? {
+        id: order.invoice.id,
+        invoiceNumber: order.invoice.invoiceNumber,
+        invoiceStatus: order.invoice.status,
+        invoiceAmount: order.invoice.totalAmount,
+        paidAmount: order.invoice.paidAmount,
+        balanceAmount: Math.max(0, order.invoice.totalAmount - order.invoice.paidAmount),
+        pdfUrl: order.invoice.pdfUrl,
+        dueDate: order.invoice.dueDate,
+        paidAt: order.invoice.paidAt,
+      } : null,
     };
 
     return NextResponse.json({ success: true, data: trackingData });

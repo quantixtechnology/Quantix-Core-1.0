@@ -3,12 +3,26 @@
 import { useState, useEffect, useMemo } from "react"
 import {
   ArrowLeft, Loader2, Package, CheckCircle2, Clock, Truck,
-  XCircle, MapPin, Phone, RefreshCw,
+  XCircle, MapPin, Phone, RefreshCw, Receipt, Download, FileText,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 import { buildLabelMap, getLabel } from "@/lib/order-stages"
+import { resolveInvoiceStatus, invoiceStatusColors } from "@/lib/invoice-utils"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import type { WebNav } from "./storefront-website"
+
+interface InvoiceData {
+  id: string
+  invoiceNumber: string
+  invoiceStatus: string
+  invoiceAmount: number
+  paidAmount: number
+  balanceAmount: number
+  pdfUrl?: string | null
+  dueDate?: string | null
+  paidAt?: string | null
+}
 
 interface TrackingData {
   id: string
@@ -28,6 +42,7 @@ interface TrackingData {
   } | null
   statusHistory: Array<{ status: string; note?: string | null; timestamp: string }>
   items: Array<{ itemName: string; variantName?: string | null; quantity: number; unitPrice: number; totalPrice: number; isVeg?: boolean | null }>
+  invoice?: InvoiceData | null
 }
 
 const STATUS_STEPS = ["PENDING", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED"]
@@ -39,16 +54,24 @@ interface StorefrontOrderTrackingProps {
 
 export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrackingProps) {
   const orderId = nav.orderId
-  const { orderStages } = useAdminStore()
+  const { orderStages, currentBusinessId } = useAdminStore()
+  const { token } = useAuthStore()
   const labelMap = useMemo(() => buildLabelMap(orderStages), [orderStages])
 
   const [data, setData] = useState<TrackingData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
+  function buildAuthHeaders(): Record<string, string> {
+    const h: Record<string, string> = {}
+    if (token) h["Authorization"] = `Bearer ${token}`
+    if (currentBusinessId) h["x-business-id"] = currentBusinessId
+    return h
+  }
+
   useEffect(() => {
     if (!orderId) { setError("No order ID"); setLoading(false); return }
-    fetch(`/api/core/storefront/orders/${orderId}/track`)
+    fetch(`/api/core/storefront/orders/${orderId}/track`, { headers: buildAuthHeaders() })
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setData(json.data)
@@ -56,16 +79,44 @@ export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrac
       })
       .catch(() => setError("Network error"))
       .finally(() => setLoading(false))
-  }, [orderId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, token])
 
   function refresh() {
     if (!orderId) return
     setLoading(true)
-    fetch(`/api/core/storefront/orders/${orderId}/track`)
+    fetch(`/api/core/storefront/orders/${orderId}/track`, { headers: buildAuthHeaders() })
       .then((r) => r.json())
       .then((json) => { if (json.success) setData(json.data) })
       .catch(() => {})
       .finally(() => setLoading(false))
+  }
+
+  async function handleViewInvoice() {
+    if (!orderId) return
+    try {
+      const res = await fetch(`/api/core/storefront/orders/${orderId}/invoice/pdf`, { headers: buildAuthHeaders() })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, "_blank")
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch { /* silent */ }
+  }
+
+  async function handleDownloadPdf() {
+    if (!orderId) return
+    try {
+      const res = await fetch(`/api/core/storefront/orders/${orderId}/invoice/pdf`, { headers: buildAuthHeaders() })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `invoice-${data?.invoice?.invoiceNumber ?? orderId}.html`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch { /* silent */ }
   }
 
   return (
@@ -259,6 +310,78 @@ export function StorefrontOrderTracking({ brandColor, nav }: StorefrontOrderTrac
               </div>
             </div>
           )}
+
+          {/* Payment & Invoice */}
+          {data.invoice && (() => {
+            const inv = data.invoice!
+            const statusLabel = resolveInvoiceStatus(inv.invoiceStatus, inv.invoiceAmount, inv.paidAmount)
+            const colors = invoiceStatusColors(statusLabel)
+            return (
+              <div className="bg-white border border-gray-200 rounded-2xl p-5">
+                <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Receipt className="w-4 h-4" style={{ color: brandColor }} />
+                  Payment &amp; Invoice
+                </h3>
+
+                {/* Invoice number + status */}
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-mono text-gray-600">{inv.invoiceNumber}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+                    {statusLabel}
+                  </span>
+                </div>
+
+                {/* Amounts grid */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div>
+                    <p className="text-[11px] text-gray-500 mb-0.5">Invoice Amount</p>
+                    <p className="text-sm font-bold text-gray-900">{formatINR(inv.invoiceAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-gray-500 mb-0.5">Paid Amount</p>
+                    <p className="text-sm font-bold text-gray-900">{formatINR(inv.paidAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-gray-500 mb-0.5">Balance Due</p>
+                    <p className={`text-sm font-bold ${inv.balanceAmount > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                      {formatINR(inv.balanceAmount)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Due / paid date */}
+                {statusLabel === "PAYMENT DUE" && inv.dueDate && (
+                  <p className="text-xs text-amber-600 mb-3">
+                    Due: {new Date(inv.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                )}
+                {statusLabel === "PAID" && inv.paidAt && (
+                  <p className="text-xs text-emerald-600 mb-3">
+                    Paid on {new Date(inv.paidAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleViewInvoice}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-colors hover:opacity-90"
+                    style={{ borderColor: `${brandColor}50`, color: brandColor, backgroundColor: `${brandColor}08` }}
+                  >
+                    <FileText className="w-4 h-4" />
+                    View Invoice
+                  </button>
+                  <button
+                    onClick={handleDownloadPdf}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 transition-colors hover:bg-gray-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download PDF
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       ) : null}
     </div>
