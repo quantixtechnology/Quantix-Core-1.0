@@ -589,6 +589,19 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
   // against the DB before StorefrontWebsite is allowed to render — no flash of
   // customer UI for deleted or invalid subdomains.
   if (storefrontSlug) {
+    // Delivery PWA entry ({slug}.domain/delivery) MUST be handled before
+    // StorefrontContextLoader runs. StorefrontContextLoader calls setViewMode("customer")
+    // after its API fetch completes, which permanently overrides delivery_partner mode —
+    // the storefront wins every time because storefrontContextLoaded stays true even
+    // after the delivery entry effect fires. Skip the storefront path entirely here.
+    if (deliveryEntry) {
+      return (
+        <DeliveryLayout>
+          {deliveryLoggedIn ? renderDeliveryPage() : <DeliveryLogin />}
+        </DeliveryLayout>
+      )
+    }
+
     const isAdminSession = _isHydrated && isAuthenticated && currentRole &&
       !['CUSTOMER', 'DELIVERY_STAFF'].includes(currentRole)
 
