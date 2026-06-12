@@ -28,15 +28,40 @@ const WORKFLOW_OPTIONS = [
 
 const BILLING_CYCLES = ["Monthly", "Quarterly", "Half Yearly", "Yearly"]
 
-const SUBSCRIPTION_INCLUDES = [
-  "Customer Android App",
-  "Delivery Mobile App",
-  "Android Admin App",
-  "Ecommerce Website",
-  "Admin Panel",
-  "POS (Point Of Sale)",
-  "Server & Hosting",
-]
+const OFFERINGS: Record<string, { name: string; features: string[] }> = {
+  starter: {
+    name: "Starter",
+    features: [
+      "Customer Website",
+      "Progressive Web App (PWA)",
+      "Admin Panel",
+      "POS System",
+      "Product Management",
+      "Inventory Management",
+      "Order Management",
+      "Customer Management",
+      "Basic Reports",
+    ],
+  },
+  business: {
+    name: "Business",
+    features: [
+      "Customer Website",
+      "Progressive Web App (PWA)",
+      "Admin Panel",
+      "POS System",
+      "Product Management",
+      "Inventory Management",
+      "Order Management",
+      "Customer Management",
+      "Basic Reports",
+      "Customer Android App",
+      "Delivery Android App",
+      "Delivery Management",
+      "1 Store Included",
+    ],
+  },
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -66,6 +91,8 @@ export interface ProposalForm {
   salesTeamMember: string
   salesTeamEmail: string
   executiveSummary: string
+  offering: string
+  offeringFeatures: string[]
 }
 
 export interface BankDetails {
@@ -90,6 +117,8 @@ const EMPTY_FORM: ProposalForm = {
   enabledWorkflows: ["ECOMMERCE"],
   salesTeamMember: "", salesTeamEmail: "",
   executiveSummary: "",
+  offering: "business",
+  offeringFeatures: OFFERINGS.business.features,
 }
 
 function formatINR(val: string): string {
@@ -205,7 +234,7 @@ export function ProposalDocument({
   const showBank   = !!(bankDetails?.active && bankDetails?.bankName)
   const qrUrl      = bankDetails?.active && bankDetails?.qrUrl ? bankDetails.qrUrl : null
 
-  const sectionLabel = (text: string, mb = "10px") => (
+  const sectionLabel = (text: string, mb = "6px") => (
     <div style={{
       fontSize: "10px", fontWeight: 700, letterSpacing: "0.16em",
       textTransform: "uppercase" as const, color: accentBlue, marginBottom: mb,
@@ -218,7 +247,7 @@ export function ProposalDocument({
       {/* ═══════════════════════════ PAGE 1 ═══════════════════════════════ */}
       <div style={{
         width: "794px", minHeight: "1123px", background: "#ffffff",
-        fontSize: "13px", padding: "48px 52px", boxSizing: "border-box" as const, position: "relative" as const,
+        fontSize: "13px", padding: "36px 52px", boxSizing: "border-box" as const, position: "relative" as const,
       }}>
 
         {/* ── HEADER ──────────────────────────────────────────────────── */}
@@ -245,15 +274,15 @@ export function ProposalDocument({
         </div>
 
         {/* thin accent line */}
-        <div style={{ height: "3px", background: `linear-gradient(90deg, ${accentBlue}, #06b6d4)`, borderRadius: "2px", marginBottom: "28px" }} />
+        <div style={{ height: "3px", background: `linear-gradient(90deg, ${accentBlue}, #06b6d4)`, borderRadius: "2px", marginBottom: "16px" }} />
 
         {/* ── CLIENT SECTION ──────────────────────────────────────────── */}
-        <div style={{ marginBottom: "28px" }}>
+        <div style={{ marginBottom: "14px" }}>
           {sectionLabel("PREPARED FOR")}
           <div style={{
             border: "1px solid #e5e7eb", borderRadius: "10px",
-            padding: "16px 20px", background: "#f9fafb",
-            display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px",
+            padding: "10px 16px", background: "#f9fafb",
+            display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px",
           }}>
             {[
               { label: "Client Name",   value: form.clientName    || "—" },
@@ -271,22 +300,22 @@ export function ProposalDocument({
 
         {/* ── EXECUTIVE SUMMARY ───────────────────────────────────────── */}
         {form.executiveSummary && (
-          <div style={{ marginBottom: "28px" }}>
+          <div style={{ marginBottom: "12px" }}>
             {sectionLabel("EXECUTIVE SUMMARY")}
             <p style={{ color: "#374151", lineHeight: 1.7, margin: 0 }}>{form.executiveSummary}</p>
           </div>
         )}
 
         {/* ── COMMERCIALS TABLE ────────────────────────────────────────── */}
-        <div style={{ marginBottom: "28px" }}>
+        <div style={{ marginBottom: "16px" }}>
           {sectionLabel("COMMERCIALS")}
           <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: "12.5px" }}>
             <thead>
               <tr style={{ background: headerBg }}>
                 {["SERVICE", "AMOUNT", "BILLING CYCLE", "NOTES"].map((h, i) => (
                   <th key={h} style={{
-                    padding: "10px 14px", color: "#fff", fontWeight: 700,
-                    fontSize: "10.5px", letterSpacing: "0.1em", textTransform: "uppercase" as const,
+                    padding: "7px 12px", color: "#fff", fontWeight: 700,
+                    fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase" as const,
                     textAlign: (i === 0 ? "left" : i === 1 ? "right" : "center") as "left" | "right" | "center",
                     borderRight: i < 3 ? "1px solid rgba(255,255,255,0.08)" : undefined,
                   }}>{h}</th>
@@ -296,42 +325,42 @@ export function ProposalDocument({
             <tbody>
               {services.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ padding: "18px 14px", textAlign: "center" as const, color: "#9ca3af", fontStyle: "italic" }}>
+                  <td colSpan={4} style={{ padding: "14px", textAlign: "center" as const, color: "#9ca3af", fontStyle: "italic" }}>
                     No services added yet
                   </td>
                 </tr>
               ) : services.map((svc, idx) => (
                 <tr key={svc.name} style={{ background: idx % 2 === 0 ? "#ffffff" : "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
-                  <td style={{ padding: "11px 14px", fontWeight: 600, color: "#111827" }}>{svc.name}</td>
-                  <td style={{ padding: "11px 14px", textAlign: "right" as const, fontWeight: 700, color: "#111827" }}>
+                  <td style={{ padding: "7px 10px", fontWeight: 600, color: "#111827" }}>{svc.name}</td>
+                  <td style={{ padding: "7px 10px", textAlign: "right" as const, fontWeight: 700, color: "#111827" }}>
                     {formatINR(svc.amount)}
                   </td>
-                  <td style={{ padding: "11px 14px", textAlign: "center" as const, color: "#6b7280" }}>{svc.cycle}</td>
-                  <td style={{ padding: "11px 14px", color: "#6b7280", maxWidth: "180px" }}>{svc.notes || "—"}</td>
+                  <td style={{ padding: "7px 10px", textAlign: "center" as const, color: "#6b7280" }}>{svc.cycle}</td>
+                  <td style={{ padding: "7px 10px", color: "#6b7280", maxWidth: "180px" }}>{svc.notes || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
 
           {/* Totals */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
             <div style={{ minWidth: "260px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #e5e7eb", color: "#6b7280" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #e5e7eb", color: "#6b7280" }}>
                 <span>Subtotal</span>
                 <span style={{ fontWeight: 600, color: "#374151" }}>{subtotal > 0 ? `₹${subtotal.toLocaleString("en-IN")}` : "—"}</span>
               </div>
               {disc > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #e5e7eb", color: "#dc2626" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #e5e7eb", color: "#dc2626" }}>
                   <span>Discount</span>
                   <span style={{ fontWeight: 600 }}>−₹{disc.toLocaleString("en-IN")}</span>
                 </div>
               )}
               <div style={{
-                display: "flex", justifyContent: "space-between", padding: "10px 14px",
-                marginTop: "6px", background: headerBg, borderRadius: "8px",
+                display: "flex", justifyContent: "space-between", padding: "7px 12px",
+                marginTop: "4px", background: headerBg, borderRadius: "8px",
               }}>
-                <span style={{ fontWeight: 700, color: "#fff", fontSize: "14px" }}>TOTAL PROPOSAL VALUE</span>
-                <span style={{ fontWeight: 800, color: "#4ade80", fontSize: "15px" }}>
+                <span style={{ fontWeight: 700, color: "#fff", fontSize: "13px" }}>TOTAL PROPOSAL VALUE</span>
+                <span style={{ fontWeight: 800, color: "#4ade80", fontSize: "14px" }}>
                   {total > 0 ? `₹${total.toLocaleString("en-IN")}` : "—"}
                 </span>
               </div>
@@ -340,62 +369,66 @@ export function ProposalDocument({
         </div>
 
         {/* ── PLAN OVERVIEW ────────────────────────────────────────────── */}
-        <div style={{ marginBottom: "28px" }}>
+        <div style={{ marginBottom: "12px" }}>
           {sectionLabel("PLAN OVERVIEW")}
           <div style={{
-            border: "1px solid #e5e7eb", borderRadius: "10px", padding: "14px 20px",
-            background: "#f9fafb", display: "flex", alignItems: "center", gap: "20px",
+            border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 14px",
+            background: "#f9fafb", display: "flex", alignItems: "center", flexWrap: "wrap" as const, gap: "8px 16px",
           }}>
-            <div style={{
-              padding: "6px 18px", borderRadius: "8px", fontWeight: 800, fontSize: "14px",
+            <span style={{
+              padding: "3px 12px", borderRadius: "6px", fontWeight: 800, fontSize: "11px",
               background: form.planTier === "PRO" ? accentBlue : "#6b7280",
               color: "#fff", whiteSpace: "nowrap" as const, letterSpacing: "0.06em", flexShrink: 0,
-            }}>
-              {form.planTier}
-            </div>
-            <div style={{ display: "flex", gap: "28px" }}>
-              <div>
-                <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Stores</div>
-                <div style={{ fontWeight: 700, color: "#111827", marginTop: "2px" }}>{form.storeCount || "1"}</div>
-              </div>
-              {form.enabledWorkflows.length > 0 && (
-                <div>
-                  <div style={{ fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: "4px" }}>Workflows</div>
-                  <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "5px" }}>
-                    {form.enabledWorkflows.map(wf => {
-                      const opt = WORKFLOW_OPTIONS.find(w => w.id === wf)
-                      return (
-                        <span key={wf} style={{
-                          padding: "2px 8px", borderRadius: "20px", fontSize: "10px", fontWeight: 600,
-                          background: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe",
-                        }}>{opt?.label ?? wf}</span>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            }}>{form.planTier}</span>
+
+            {form.offering && (
+              <>
+                <span style={{ color: "#d1d5db", fontSize: "12px" }}>|</span>
+                <span style={{ fontSize: "11px", color: "#374151" }}>
+                  <span style={{ color: "#9ca3af", fontWeight: 600 }}>Offering: </span>
+                  <span style={{ fontWeight: 700 }}>{OFFERINGS[form.offering]?.name ?? form.offering}</span>
+                </span>
+              </>
+            )}
+
+            <span style={{ color: "#d1d5db", fontSize: "12px" }}>|</span>
+            <span style={{ fontSize: "11px", color: "#374151" }}>
+              <span style={{ color: "#9ca3af", fontWeight: 600 }}>Stores: </span>
+              <span style={{ fontWeight: 700 }}>{form.storeCount || "1"}</span>
+            </span>
+
+            {form.enabledWorkflows.length > 0 && (
+              <>
+                <span style={{ color: "#d1d5db", fontSize: "12px" }}>|</span>
+                <span style={{ fontSize: "11px", color: "#374151" }}>
+                  <span style={{ color: "#9ca3af", fontWeight: 600 }}>Workflow: </span>
+                  <span style={{ fontWeight: 700 }}>
+                    {form.enabledWorkflows.map(wf => WORKFLOW_OPTIONS.find(w => w.id === wf)?.label ?? wf).join(", ")}
+                  </span>
+                </span>
+              </>
+            )}
           </div>
         </div>
 
         {/* ── SUBSCRIPTION INCLUDES ────────────────────────────────────── */}
-        <div style={{ marginBottom: "36px" }}>
+        <div style={{ marginBottom: "16px" }}>
           {sectionLabel("SUBSCRIPTION INCLUDES")}
           <div style={{
             border: "1px solid #e5e7eb", borderRadius: "10px",
-            padding: "20px 24px", background: "#f0fdf4",
-            display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 32px",
+            padding: "12px 16px", background: "#f0fdf4",
+            display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px",
           }}>
-            {SUBSCRIPTION_INCLUDES.map(item => (
-              <div key={item} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {(form.offeringFeatures?.length ? form.offeringFeatures : OFFERINGS.business.features).map(item => (
+              <div key={item} style={{ display: "flex", alignItems: "center", gap: "7px" }}>
                 <div style={{
-                  width: "20px", height: "20px", borderRadius: "50%",
+                  width: "14px", height: "14px", borderRadius: "50%",
                   background: "#16a34a", display: "flex", alignItems: "center",
                   justifyContent: "center", flexShrink: 0,
                 }}>
-                  <span style={{ color: "#fff", fontSize: "12px", fontWeight: 800 }}>✓</span>
+                  <span style={{ color: "#fff", fontSize: "9px", fontWeight: 800 }}>✓</span>
                 </div>
-                <span style={{ fontWeight: 600, color: "#166534", fontSize: "12.5px" }}>{item}</span>
+                <span style={{ fontWeight: 600, color: "#166534", fontSize: "11px" }}>{item}</span>
               </div>
             ))}
           </div>
@@ -958,6 +991,20 @@ export function QuoteProposalView() {
               <section>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600 mb-3">Plan & Features</p>
                 <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Offering</Label>
+                    <Select value={form.offering} onValueChange={v => {
+                      const off = OFFERINGS[v]
+                      setForm(prev => ({ ...prev, offering: v, offeringFeatures: off?.features ?? [] }))
+                    }}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select offering" /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(OFFERINGS).map(([key, val]) => (
+                          <SelectItem key={key} value={key} className="text-xs">{val.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
                       <Label className="text-xs">Plan Tier</Label>
