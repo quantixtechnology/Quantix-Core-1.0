@@ -26,7 +26,7 @@ const WORKFLOW_OPTIONS = [
   { id: "POST_SERVICE_BILLING", label: "Post-Service Billing" },
 ]
 
-const BILLING_CYCLES = ["Monthly", "Quarterly", "Half Yearly", "Yearly"]
+const BILLING_CYCLES = ["One Time", "Monthly", "Quarterly", "Half Yearly", "Yearly"]
 
 const OFFERINGS: Record<string, { name: string; features: string[] }> = {
   starter: {
@@ -110,15 +110,15 @@ const EMPTY_FORM: ProposalForm = {
   clientName: "", businessName: "", mobile: "", email: "",
   subscriptionAmount: "", subscriptionCycle: "Monthly", subscriptionNotes: "",
   implementationAmount: "", implementationNotes: "",
-  iosAppAmount: "", iosAppCycle: "One-time", iosAppNotes: "",
+  iosAppAmount: "", iosAppCycle: "One Time", iosAppNotes: "",
   addOnsAmount: "", addOnsCycle: "Monthly", addOnsDescription: "", addOnsNotes: "",
   discountAmount: "",
-  planTier: "PRO", storeCount: "1",
+  planTier: "STANDARD", storeCount: "1",
   enabledWorkflows: ["ECOMMERCE"],
   salesTeamMember: "", salesTeamEmail: "",
   executiveSummary: "",
-  offering: "business",
-  offeringFeatures: OFFERINGS.business.features,
+  offering: "starter",
+  offeringFeatures: OFFERINGS.starter.features,
 }
 
 function formatINR(val: string): string {
@@ -947,7 +947,7 @@ export function QuoteProposalView() {
                         <Select value={form.iosAppCycle} onValueChange={v => set("iosAppCycle", v)}>
                           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {["One-time", ...BILLING_CYCLES].map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                            {BILLING_CYCLES.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
@@ -1015,6 +1015,9 @@ export function QuoteProposalView() {
                           <SelectItem value="PRO" className="text-xs">Pro</SelectItem>
                         </SelectContent>
                       </Select>
+                      {form.offering === "business" && form.planTier === "STANDARD" && (
+                        <p className="text-[10px] text-amber-600 font-medium">Recommended: PRO Plan</p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Store Count</Label>
