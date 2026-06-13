@@ -35,6 +35,13 @@ type PartnerAvailability = "ONLINE" | "OFFLINE" | "BUSY"
 interface StoreOption {
   id: string
   name: string
+  code: string | null   // human-readable Store ID (storeCode, e.g. STR-BUS-202605-0001-001)
+}
+
+// Build the "STORE ID | Name" label used across the dropdown, list and details.
+function storeLabel(code: string | null | undefined, name: string | null | undefined): string {
+  const n = name || "Store"
+  return code ? `${code} | ${n}` : n
 }
 
 interface DeliveryPartner {
@@ -42,7 +49,7 @@ interface DeliveryPartner {
   businessId: string
   userId: string | null
   storeId: string | null
-  store?: { id: string; name: string } | null
+  store?: { id: string; name: string; storeCode?: string | null; code?: string | null } | null
   name: string
   phone: string
   email: string | null
@@ -191,7 +198,12 @@ export function DeliveryPartnersView() {
       const res = await fetch(`/api/core/stores?businessId=${businessId}`, { headers: getAuthHeaders() })
       const json = await res.json()
       if (json.success) {
-        setStores((json.data || []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })))
+        setStores((json.data || []).map((s: { id: string; name: string; storeCode?: string | null; code?: string | null }) => ({
+          id: s.id,
+          name: s.name,
+          // Prefer the formatted storeCode (STR-BUS-…); fall back to legacy `code`.
+          code: s.storeCode || s.code || null,
+        })))
       }
     } catch {
       // non-fatal — the dropdown will show empty and block save with a clear error
@@ -522,7 +534,12 @@ export function DeliveryPartnersView() {
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{p.phone}</span>
                       {p.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{p.email}</span>}
-                      {p.store?.name && <span className="flex items-center gap-1"><StoreIcon className="h-3 w-3" />{p.store.name}</span>}
+                      {p.store?.name && (
+                        <span className="flex items-center gap-1">
+                          <StoreIcon className="h-3 w-3" />
+                          {storeLabel(p.store.storeCode || p.store.code, p.store.name)}
+                        </span>
+                      )}
                       {p.vehicleType && <span className="flex items-center gap-1"><Car className="h-3 w-3" />{p.vehicleType}</span>}
                     </div>
                   </div>
@@ -591,7 +608,16 @@ export function DeliveryPartnersView() {
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-0.5">Assigned Store</p>
-                        <p className="font-medium">{p.store?.name || <span className="text-muted-foreground">—</span>}</p>
+                        {p.store?.name ? (
+                          <p className="font-medium">
+                            {(p.store.storeCode || p.store.code) && (
+                              <span className="font-mono text-xs text-muted-foreground mr-1">{p.store.storeCode || p.store.code} |</span>
+                            )}
+                            {p.store.name}
+                          </p>
+                        ) : (
+                          <p className="font-medium text-muted-foreground">—</p>
+                        )}
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-0.5">Joined</p>
@@ -663,7 +689,11 @@ export function DeliveryPartnersView() {
                     </SelectTrigger>
                     <SelectContent>
                       {stores.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.code
+                            ? <span className="flex items-center gap-2"><span className="font-mono text-xs text-muted-foreground">{s.code}</span><span>|</span><span>{s.name}</span></span>
+                            : s.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

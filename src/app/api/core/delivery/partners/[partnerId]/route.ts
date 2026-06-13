@@ -22,7 +22,7 @@ export const GET = withMiddleware({ requireAuth: true })(async (req, context) =>
     const user = req.user!;
     const partner = await db.deliveryPartner.findUnique({
       where: { id: partnerId },
-      include: { store: { select: { id: true, name: true } } },
+      include: { store: { select: { id: true, name: true, storeCode: true, code: true } } },
     });
 
     if (!partner) {

@@ -47,7 +47,7 @@ export const GET = withMiddleware({ requireAuth: true })(async (req) => {
 
     const partners = await db.deliveryPartner.findMany({
       where,
-      include: { store: { select: { id: true, name: true } } },
+      include: { store: { select: { id: true, name: true, storeCode: true, code: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
