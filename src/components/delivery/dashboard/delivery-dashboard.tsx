@@ -43,6 +43,19 @@ const statusConfig: Record<string, { label: string; color: string; bgColor: stri
   FAILED: { label: "Failed", color: "text-red-700", bgColor: "bg-red-50 border-red-200", icon: AlertCircle },
 }
 
+// Badge config keyed by the server-derived `stage` (upcoming-aware). Falls back
+// to statusConfig for any unmapped value.
+const stageConfig: Record<string, { label: string; color: string; bgColor: string; icon: React.ElementType }> = {
+  "Assigned": { label: "Assigned", color: "text-indigo-700", bgColor: "bg-indigo-50 border-indigo-200", icon: Clock },
+  "Preparing": { label: "Preparing", color: "text-amber-700", bgColor: "bg-amber-50 border-amber-200", icon: Package },
+  "Ready for Pickup": { label: "Ready for Pickup", color: "text-orange-700", bgColor: "bg-orange-50 border-orange-200", icon: Clock },
+  "Picked Up": { label: "Picked Up", color: "text-blue-700", bgColor: "bg-blue-50 border-blue-200", icon: Package },
+  "Out for Delivery": { label: "Out for Delivery", color: "text-teal-700", bgColor: "bg-teal-50 border-teal-200", icon: Truck },
+  "Delivered": { label: "Delivered", color: "text-green-700", bgColor: "bg-green-50 border-green-200", icon: CheckCircle2 },
+  "Failed": { label: "Failed", color: "text-red-700", bgColor: "bg-red-50 border-red-200", icon: AlertCircle },
+  "Cancelled": { label: "Cancelled", color: "text-red-700", bgColor: "bg-red-50 border-red-200", icon: AlertCircle },
+}
+
 const paymentIcons: Record<string, React.ElementType> = {
   UPI: Smartphone,
   CARD: CreditCard,
@@ -58,6 +71,8 @@ interface NormalizedDeliveryOrder {
   deliveryId: string
   orderNumber: string
   status: string
+  stage: string
+  orderStatus: string
   customerName: string
   customerPhone: string
   deliveryAddress: string
@@ -83,6 +98,8 @@ function normalizeOrder(raw: Record<string, unknown>): NormalizedDeliveryOrder {
     deliveryId: (raw.deliveryId || "") as string,
     orderNumber: (order.orderNumber || "") as string,
     status: (raw.deliveryStatus || order.status || "") as string,
+    stage: (raw.stage || "") as string,
+    orderStatus: (order.status || "") as string,
     customerName: (order.customerName || "Customer") as string,
     customerPhone: (order.customerPhone || "") as string,
     deliveryAddress: (raw.dropAddress || order.deliveryAddress || "") as string,
@@ -154,8 +171,12 @@ export function DeliveryDashboard() {
 
   // Stat tiles: assigned / out-for-delivery / delivered today / failed
   const stats = useMemo(() => {
-    const assigned = activeOrders.filter(o => o.status === "ASSIGNED" || o.status === "PICKUP").length
+    // "Upcoming" = assigned but not yet picked up (incl. ASSIGNING/preparing/ready).
+    const assigned = activeOrders.filter(o =>
+      ["Assigned", "Preparing", "Ready for Pickup"].includes(o.stage) ||
+      o.status === "ASSIGNED" || o.status === "ASSIGNING" || o.status === "PICKUP").length
     const outForDelivery = activeOrders.filter(o =>
+      o.stage === "Out for Delivery" || o.stage === "Picked Up" ||
       o.status === "PICKED_UP" || o.status === "ON_THE_WAY" || o.status === "ARRIVED").length
     const today = new Date().toDateString()
     const deliveredToday = completedOrders.filter(o =>
@@ -299,7 +320,7 @@ export function DeliveryDashboard() {
       {!isLoading && !error && displayOrders.length > 0 && (
         <div className="space-y-3">
           {displayOrders.map((order) => {
-            const config = statusConfig[order.status] || statusConfig.ASSIGNED
+            const config = stageConfig[order.stage] || statusConfig[order.status] || statusConfig.ASSIGNED
             const PaymentIcon = paymentIcons[order.paymentMethod] || Banknote
 
             return (

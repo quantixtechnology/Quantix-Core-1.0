@@ -10,6 +10,23 @@ import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
+// Derive the partner-facing stage badge from the order + delivery status, so a
+// freshly-assigned order shows "Preparing" / "Ready for Pickup" immediately —
+// not just once it reaches the delivery sub-states.
+function deriveStage(orderStatus?: string | null, deliveryStatus?: string | null): string {
+  const d = deliveryStatus || '';
+  const o = orderStatus || '';
+  if (d === 'DELIVERED' || o === 'DELIVERED') return 'Delivered';
+  if (d === 'FAILED') return 'Failed';
+  if (d === 'CANCELLED' || o === 'CANCELLED') return 'Cancelled';
+  if (d === 'ON_THE_WAY' || d === 'ARRIVED' || o === 'OUT_FOR_DELIVERY') return 'Out for Delivery';
+  if (d === 'PICKED_UP' || o === 'PICKED_UP') return 'Picked Up';
+  if (o === 'READY_FOR_PICKUP' || o === 'READY_FOR_DELIVERY') return 'Ready for Pickup';
+  if (['PENDING', 'CONFIRMED', 'PREPARING', 'PROCESSING', 'SCHEDULED', 'PICKUP_ASSIGNED'].includes(o)) return 'Preparing';
+  if (d === 'ASSIGNED') return 'Ready for Pickup';
+  return 'Assigned';
+}
+
 export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY_STAFF'] })(
   async (req) => {
     try {
@@ -39,8 +56,12 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
       // Build where clause based on status filter
       let deliveryStatusFilter: Record<string, unknown>;
       if (statusFilter === 'active') {
+        // INCLUDES 'ASSIGNING' so a just-assigned order (Delivery still in its
+        // initial ASSIGNING state, or the order linked via Order.deliveryPartnerId
+        // before the sub-record transitions) appears immediately as an upcoming
+        // delivery with a "Preparing"/"Ready for Pickup" badge.
         deliveryStatusFilter = {
-          status: { in: ['ASSIGNED', 'PICKED_UP', 'ON_THE_WAY', 'ARRIVED'] },
+          status: { in: ['ASSIGNING', 'ASSIGNED', 'PICKED_UP', 'ON_THE_WAY', 'ARRIVED'] },
         };
       } else if (statusFilter === 'completed') {
         // Includes FAILED/CANCELLED so the app can show delivery history
@@ -59,6 +80,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
             orderNumber: true,
             orderType: true,
             status: true,
+            deliveryPartnerId: true,
             paymentStatus: true,
             paymentMethod: true,
             totalAmount: true,
@@ -93,7 +115,17 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
       // it (e.g. schema drift on a freshly-deployed column) degrades to the
       // partner-scoped feed instead of crashing the request — and is logged so
       // the real cause is visible in server logs rather than surfacing as a 502.
-      const baseWhere = { deliveryPartnerId: deliveryPartner.id, ...deliveryStatusFilter };
+      // Match the partner via EITHER the Delivery sub-record OR the order-level
+      // assignment. The admin "Assign Partner" action sets Order.deliveryPartnerId
+      // and updateMany()s the Delivery — but if the Delivery row was never
+      // transitioned (or matched), the order would otherwise be invisible here.
+      const baseWhere = {
+        ...deliveryStatusFilter,
+        OR: [
+          { deliveryPartnerId: deliveryPartner.id },
+          { order: { deliveryPartnerId: deliveryPartner.id } },
+        ],
+      };
       let deliveries;
       try {
         deliveries = await db.delivery.findMany({
@@ -116,6 +148,10 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
       const orders = deliveries.map((delivery) => ({
         deliveryId: delivery.id,
         deliveryStatus: delivery.status,
+        orderStatus: delivery.order.status,
+        // Partner-facing badge ("Preparing" / "Ready for Pickup" / "Out for
+        // Delivery" / "Assigned" / "Picked Up" / "Delivered").
+        stage: deriveStage(delivery.order.status, delivery.status),
         pickupAddress: delivery.pickupAddress,
         dropAddress: delivery.dropAddress,
         pickupLat: delivery.pickupLat,

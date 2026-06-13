@@ -44,12 +44,35 @@ export const POST = withMiddleware({
       data: { deliveryPartnerId: body.partnerId || null },
     });
 
-    // Sync the Delivery sub-record so the customer tracking API can read the partner
+    // Sync the Delivery sub-record so both the customer tracking API and the
+    // delivery app can read the partner. updateMany() is a no-op when no Delivery
+    // row exists yet — so when assigning, create one if missing. This guarantees
+    // the partner has an actionable delivery record the moment they're assigned.
     if (body.partnerId) {
-      await db.delivery.updateMany({
+      const updated = await db.delivery.updateMany({
         where: { orderId },
         data: { deliveryPartnerId: body.partnerId, status: 'ASSIGNED' },
       });
+      if (updated.count === 0) {
+        const store = await db.store.findUnique({
+          where: { id: order.storeId },
+          select: { latitude: true, longitude: true, address: true, city: true, pincode: true },
+        });
+        await db.delivery.create({
+          data: {
+            orderId,
+            deliveryPartnerId: body.partnerId,
+            status: 'ASSIGNED',
+            pickupLat: store?.latitude ?? null,
+            pickupLng: store?.longitude ?? null,
+            pickupAddress: store?.address
+              ? JSON.stringify({ address: store.address, city: store.city, pincode: store.pincode })
+              : null,
+            dropAddress: order.deliveryAddress,
+            deliveryOtp: order.deliveryOtp,
+          },
+        });
+      }
     } else {
       await db.delivery.updateMany({
         where: { orderId },
