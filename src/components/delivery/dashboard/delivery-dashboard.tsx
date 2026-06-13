@@ -281,8 +281,8 @@ export function DeliveryDashboard() {
       {/* Error State */}
       {error && !isLoading && (
         <ErrorState
-          title="Failed to load orders"
-          description="Could not fetch your delivery orders. Please try again."
+          title="Unable to load assigned orders"
+          description={(error as { message?: string })?.message || "Could not fetch your delivery orders. Please try again."}
           onRetry={() => activeTab === "active" ? refetchActive() : refetchCompleted()}
         />
       )}

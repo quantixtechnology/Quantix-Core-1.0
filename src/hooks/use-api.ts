@@ -517,7 +517,18 @@ export function useDeliveryOrders(
       const response = await fetch(`/api/core/delivery/my-orders?${new URLSearchParams(params)}`, {
         headers,
       });
-      const data = await response.json();
+      // A 502/504 from nginx returns an HTML body, not JSON — guard the parse so
+      // the partner sees a clear message instead of a cryptic SyntaxError.
+      let data: ApiResponse<unknown>;
+      try {
+        data = await response.json();
+      } catch {
+        throw AppError.fromApiError({
+          error: response.status >= 502
+            ? "Unable to load assigned orders — server is temporarily unavailable. Pull to refresh."
+            : `Unable to load assigned orders (HTTP ${response.status})`,
+        });
+      }
       if (!response.ok) throw AppError.fromApiError(data);
       return data as ApiResponse<unknown>;
     },
@@ -543,7 +554,16 @@ export function useDeliveryEarnings(
       const response = await fetch("/api/core/delivery/my-earnings", {
         headers,
       });
-      const data = await response.json();
+      let data: ApiResponse<unknown>;
+      try {
+        data = await response.json();
+      } catch {
+        throw AppError.fromApiError({
+          error: response.status >= 502
+            ? "Unable to load earnings — server is temporarily unavailable."
+            : `Unable to load earnings (HTTP ${response.status})`,
+        });
+      }
       if (!response.ok) throw AppError.fromApiError(data);
       return data as ApiResponse<unknown>;
     },

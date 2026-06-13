@@ -52,49 +52,65 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
         deliveryStatusFilter = {};
       }
 
-      // Get deliveries assigned to this partner
-      // SECURITY (store isolation): when the partner is assigned to a specific
-      // store, restrict to that store's orders as defense-in-depth on top of the
-      // deliveryPartnerId scope. Partners with no store (legacy) keep business scope.
-      const deliveries = await db.delivery.findMany({
-        where: {
-          deliveryPartnerId: deliveryPartner.id,
-          ...(deliveryPartner.storeId ? { order: { storeId: deliveryPartner.storeId } } : {}),
-          ...deliveryStatusFilter,
-        },
-        include: {
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-              orderType: true,
-              status: true,
-              paymentStatus: true,
-              paymentMethod: true,
-              totalAmount: true,
-              createdAt: true,
-              customerName: true,
-              customerPhone: true,
-              deliveryAddress: true,
-              deliveryInstructions: true,
-              deliveryOtp: true,
-              pickupOtp: true,
-              store: {
-                select: {
-                  id: true,
-                  name: true,
-                  address: true,
-                  city: true,
-                  phone: true,
-                  latitude: true,
-                  longitude: true,
-                },
+      const orderInclude = {
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            orderType: true,
+            status: true,
+            paymentStatus: true,
+            paymentMethod: true,
+            totalAmount: true,
+            createdAt: true,
+            customerName: true,
+            customerPhone: true,
+            deliveryAddress: true,
+            deliveryInstructions: true,
+            deliveryOtp: true,
+            pickupOtp: true,
+            store: {
+              select: {
+                id: true,
+                name: true,
+                address: true,
+                city: true,
+                phone: true,
+                latitude: true,
+                longitude: true,
               },
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
-      });
+      } as const;
+
+      // Get deliveries assigned to this partner.
+      // SECURITY (store isolation): when the partner is assigned to a specific
+      // store, restrict to that store's orders as defense-in-depth on top of the
+      // deliveryPartnerId scope. Partners with no store (legacy) keep business scope.
+      //
+      // RESILIENCE: the store-relation filter is wrapped so that any failure in
+      // it (e.g. schema drift on a freshly-deployed column) degrades to the
+      // partner-scoped feed instead of crashing the request — and is logged so
+      // the real cause is visible in server logs rather than surfacing as a 502.
+      const baseWhere = { deliveryPartnerId: deliveryPartner.id, ...deliveryStatusFilter };
+      let deliveries;
+      try {
+        deliveries = await db.delivery.findMany({
+          where: {
+            ...baseWhere,
+            ...(deliveryPartner.storeId ? { order: { storeId: deliveryPartner.storeId } } : {}),
+          },
+          include: orderInclude,
+          orderBy: { createdAt: 'desc' },
+        });
+      } catch (storeErr) {
+        console.error(
+          `[delivery/my-orders] store-scoped query failed for partner=${deliveryPartner.id} store=${deliveryPartner.storeId} — falling back to partner scope:`,
+          storeErr
+        );
+        deliveries = await db.delivery.findMany({ where: baseWhere, include: orderInclude, orderBy: { createdAt: 'desc' } });
+      }
 
       // Transform for delivery app
       const orders = deliveries.map((delivery) => ({
@@ -121,9 +137,15 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
         count: orders.length,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch delivery orders';
+      // Log the real error server-side (visible in `pm2 logs quantix`) so an
+      // opaque 502/500 in the client always has a traceable cause here.
+      console.error('[delivery/my-orders] FATAL:', error);
       return NextResponse.json(
-        { success: false, error: message },
+        {
+          success: false,
+          error: 'Unable to load assigned orders',
+          detail: error instanceof Error ? error.message : String(error),
+        },
         { status: 500 }
       );
     }

@@ -33,27 +33,25 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
         );
       }
 
-      // Get all completed deliveries for this partner
+      // Get all completed deliveries for this partner.
       // SECURITY (store isolation): scope to the partner's assigned store when set.
-      const completedDeliveries = await db.delivery.findMany({
-        where: {
-          deliveryPartnerId: deliveryPartner.id,
-          status: 'DELIVERED',
-          ...(deliveryPartner.storeId ? { order: { storeId: deliveryPartner.storeId } } : {}),
-        },
-        include: {
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-              totalAmount: true,
-              deliveryFee: true,
-              deliveredAt: true,
-            },
-          },
-        },
-        orderBy: { actualDeliveryTime: 'desc' },
-      });
+      // RESILIENCE: store-filter failures degrade to partner scope + are logged,
+      // never crashing the request into an opaque 502.
+      const earningsInclude = {
+        order: { select: { id: true, orderNumber: true, totalAmount: true, deliveryFee: true, deliveredAt: true } },
+      } as const;
+      const baseWhere = { deliveryPartnerId: deliveryPartner.id, status: 'DELIVERED' as const };
+      let completedDeliveries;
+      try {
+        completedDeliveries = await db.delivery.findMany({
+          where: { ...baseWhere, ...(deliveryPartner.storeId ? { order: { storeId: deliveryPartner.storeId } } : {}) },
+          include: earningsInclude,
+          orderBy: { actualDeliveryTime: 'desc' },
+        });
+      } catch (storeErr) {
+        console.error(`[delivery/my-earnings] store-scoped query failed for partner=${deliveryPartner.id} — falling back to partner scope:`, storeErr);
+        completedDeliveries = await db.delivery.findMany({ where: baseWhere, include: earningsInclude, orderBy: { actualDeliveryTime: 'desc' } });
+      }
 
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -107,9 +105,9 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
         },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch earnings';
+      console.error('[delivery/my-earnings] FATAL:', error);
       return NextResponse.json(
-        { success: false, error: message },
+        { success: false, error: 'Unable to load earnings', detail: error instanceof Error ? error.message : String(error) },
         { status: 500 }
       );
     }
