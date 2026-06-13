@@ -17,7 +17,8 @@ import {
   Truck, Plus, Search, Phone, Mail, Star, Package, IndianRupee,
   Pencil, Trash2, RefreshCw, Wifi, WifiOff, Clock, Car, Shield,
   Smartphone, ChevronDown, ChevronUp, User, KeyRound, Eye, EyeOff,
-  Store as StoreIcon, Copy, MessageCircle, Check,
+  Store as StoreIcon, Copy, MessageCircle, Check, Stethoscope,
+  CheckCircle2, XCircle, AlertTriangle, Loader2, UserPlus, RotateCcw, Link2, Mail as MailIcon,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
@@ -112,6 +113,26 @@ interface CredentialResult {
   tempPassword: string
 }
 
+// Shape returned by the admin-only login diagnostic endpoint.
+interface Diagnosis {
+  partner: {
+    partnerId: string; partnerName: string; businessId: string; businessName: string | null
+    storeId: string | null; storeName: string | null; storeCode: string | null
+    appEnabled: boolean; isActive: boolean; email: string | null; phone: string; userId: string | null
+  }
+  user: {
+    userId: string; email: string; role: string | null; isActive: boolean
+    passwordHashExists: boolean; mustChangePassword: boolean; lastLogin: string | null
+    businesses: { businessId: string; slug: string; name: string; role: string; storeId: string | null; status: string }[]
+  } | null
+  tests: {
+    userExists: boolean; passwordHashExists: boolean; roleIsDeliveryStaff: boolean
+    businessMatch: boolean; storeAssignmentExists: boolean
+  }
+  failReason: string | null
+  canLogin: boolean
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function availabilityBadge(a: PartnerAvailability) {
@@ -125,12 +146,35 @@ function partnerTypeBadge(t: PartnerType) {
   return <Badge variant="outline" className="text-purple-600 border-purple-200"><User className="h-3 w-3 mr-1" />External</Badge>
 }
 
+// Key/value row used inside the diagnostic dialog.
+function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="text-muted-foreground shrink-0">{k}</span>
+      <span className={`text-right break-all ${mono ? "font-mono text-[11px]" : ""}`}>{v}</span>
+    </div>
+  )
+}
+
+// Repair action button with an inline busy spinner.
+function RepairBtn({ icon: Icon, label, busy, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; busy?: boolean; onClick: () => void }) {
+  return (
+    <Button variant="outline" size="sm" className="justify-start gap-2 h-9 text-xs" onClick={onClick} disabled={busy}>
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
+      {label}
+    </Button>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function DeliveryPartnersView() {
   const { currentBusinessId } = useAdminStore()
-  const { currentBusinessId: authBizId } = useAuthStore()
+  const { currentBusinessId: authBizId, currentRole } = useAuthStore()
   const businessId = currentBusinessId || authBizId || ""
+
+  // The diagnostic tool is admin-only (Business Owners, Super/Platform Admins).
+  const canDiagnose = ["CLIENT_OWNER", "STORE_MANAGER", "QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM"].includes(currentRole || "")
 
   const [partners, setPartners] = useState<DeliveryPartner[]>([])
   const [stores, setStores] = useState<StoreOption[]>([])
@@ -161,6 +205,13 @@ export function DeliveryPartnersView() {
   // Credential reveal dialog (shown once after temp password is issued)
   const [credential, setCredential] = useState<CredentialResult | null>(null)
   const [credCopied, setCredCopied] = useState(false)
+
+  // Login diagnostic dialog
+  const [diagTarget, setDiagTarget] = useState<DeliveryPartner | null>(null)
+  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null)
+  const [diagLoading, setDiagLoading] = useState(false)
+  const [diagBusy, setDiagBusy] = useState<string | null>(null)
+  const [diagTempPassword, setDiagTempPassword] = useState<string | null>(null)
 
   // Keep localStorage in sync so getAuthHeaders() sends the correct x-business-id header.
   // This is critical when a platform admin manages a business via the admin panel —
@@ -342,6 +393,59 @@ export function DeliveryPartnersView() {
       setTimeout(() => setCredCopied(false), 2000)
     } catch {
       showError("Could not copy — copy the details manually")
+    }
+  }
+
+  // ── Login diagnostics ────────────────────────────────────────────────────────
+
+  async function openDiagnose(p: DeliveryPartner) {
+    setDiagTarget(p)
+    setDiagnosis(null)
+    setDiagTempPassword(null)
+    setDiagLoading(true)
+    try {
+      const res = await fetch(`/api/core/delivery/partners/${p.id}/diagnose`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (!json.success) { showError(json.error || "Diagnosis failed"); return }
+      setDiagnosis(json.data)
+    } catch {
+      showError("Diagnosis failed")
+    } finally {
+      setDiagLoading(false)
+    }
+  }
+
+  async function runRepair(action: string) {
+    if (!diagTarget) return
+    setDiagBusy(action)
+    try {
+      const res = await fetch(`/api/core/delivery/partners/${diagTarget.id}/diagnose`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      })
+      const json = await res.json()
+      if (!json.success) { showError(json.error || "Repair failed"); return }
+      if (json.data) setDiagnosis(json.data)
+      if (json.tempPassword) setDiagTempPassword(json.tempPassword)
+      showSuccess(json.message || "Done")
+      fetchPartners()
+    } catch {
+      showError("Repair failed")
+    } finally {
+      setDiagBusy(null)
+    }
+  }
+
+  async function copyDiagnosisCredentials() {
+    if (!diagnosis) return
+    const email = diagnosis.partner.email || ""
+    const pw = diagTempPassword || "(use Reset Password to generate a new one)"
+    try {
+      await navigator.clipboard.writeText(`Email: ${email}\nPassword: ${pw}`)
+      showSuccess("Login credentials copied")
+    } catch {
+      showError("Could not copy")
     }
   }
 
@@ -570,6 +674,11 @@ export function DeliveryPartnersView() {
                     >
                       {p.availability === "ONLINE" ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
                     </Button>
+                    {canDiagnose && (
+                      <Button variant="outline" size="sm" onClick={() => openDiagnose(p)} title="Diagnose Login" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50">
+                        <Stethoscope className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => { setResetTarget(p); setResetPassword(""); setShowResetPw(false) }}>
                       <KeyRound className="h-3.5 w-3.5" />
                     </Button>
@@ -815,6 +924,124 @@ export function DeliveryPartnersView() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      {/* Login Diagnostic — admin-only */}
+      <Dialog open={!!diagTarget} onOpenChange={(o) => { if (!o) { setDiagTarget(null); setDiagnosis(null); setDiagTempPassword(null) } }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Stethoscope className="h-4 w-4 text-indigo-600" />
+              Diagnose Login — {diagTarget?.name}
+            </DialogTitle>
+            <DialogDescription>Live trace of this delivery partner&apos;s authentication.</DialogDescription>
+          </DialogHeader>
+
+          {diagLoading || !diagnosis ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Running diagnostic…
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* OUTPUT — exact reason */}
+              <div className={`rounded-xl border p-3 ${diagnosis.canLogin ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Result</p>
+                {diagnosis.failReason ? (
+                  <p className={`text-sm font-medium ${diagnosis.failReason.startsWith("⚠️") ? "text-amber-700" : "text-red-700"}`}>{diagnosis.failReason}</p>
+                ) : (
+                  <p className="text-sm font-medium text-emerald-700">✅ Login should succeed</p>
+                )}
+              </div>
+
+              {/* AUTH TEST */}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Auth Test</p>
+                <div className="space-y-1.5">
+                  {([
+                    ["User Exists", diagnosis.tests.userExists],
+                    ["Password Hash Exists", diagnosis.tests.passwordHashExists],
+                    ["Role = DELIVERY_STAFF", diagnosis.tests.roleIsDeliveryStaff],
+                    ["Business Match", diagnosis.tests.businessMatch],
+                    ["Store Assignment Exists", diagnosis.tests.storeAssignmentExists],
+                  ] as [string, boolean][]).map(([label, pass]) => (
+                    <div key={label} className="flex items-center justify-between text-sm">
+                      <span>{label}</span>
+                      {pass
+                        ? <span className="flex items-center gap-1 text-emerald-600 font-medium"><CheckCircle2 className="h-4 w-4" />Pass</span>
+                        : <span className="flex items-center gap-1 text-red-600 font-medium"><XCircle className="h-4 w-4" />Fail</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* DELIVERY PARTNER */}
+              <div className="rounded-lg border p-3 text-xs space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Delivery Partner</p>
+                <Row k="Partner ID" v={diagnosis.partner.partnerId} mono />
+                <Row k="Business" v={`${diagnosis.partner.businessName ?? ""} (${diagnosis.partner.businessId})`} />
+                <Row k="Store" v={diagnosis.partner.storeName ? `${diagnosis.partner.storeCode || ""} ${diagnosis.partner.storeName}` : "— none —"} />
+                <Row k="App Access" v={diagnosis.partner.appEnabled ? "Enabled" : "Disabled"} />
+                <Row k="Active" v={diagnosis.partner.isActive ? "Yes" : "No"} />
+                <Row k="Email" v={diagnosis.partner.email || "— none —"} />
+                <Row k="Linked userId" v={diagnosis.partner.userId || "— none —"} mono />
+              </div>
+
+              {/* LINKED USER */}
+              <div className="rounded-lg border p-3 text-xs space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Linked User</p>
+                {diagnosis.user ? (
+                  <>
+                    <Row k="User ID" v={diagnosis.user.userId} mono />
+                    <Row k="Email" v={diagnosis.user.email} />
+                    <Row k="Role" v={diagnosis.user.role || "— none —"} />
+                    <Row k="Active" v={diagnosis.user.isActive ? "Yes" : "No"} />
+                    <Row k="Password Hash" v={diagnosis.user.passwordHashExists ? "Yes" : "No"} />
+                    <Row k="Must Change Password" v={diagnosis.user.mustChangePassword ? "Yes" : "No"} />
+                    <Row k="Last Login" v={diagnosis.user.lastLogin ? new Date(diagnosis.user.lastLogin).toLocaleString("en-IN") : "Never"} />
+                    {diagnosis.user.businesses.length > 1 && (
+                      <Row k="Businesses" v={diagnosis.user.businesses.map(b => `${b.slug}:${b.role}`).join(", ")} />
+                    )}
+                  </>
+                ) : (
+                  <p className="text-red-600 font-medium">No user linked to this partner.</p>
+                )}
+              </div>
+
+              {/* Temp password (if just generated) */}
+              {diagTempPassword && (
+                <div className="rounded-xl border bg-teal-50 border-teal-200 p-3 text-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-700 mb-1">New Temporary Password</p>
+                  <p className="font-mono font-semibold tracking-wide text-teal-900">{diagTempPassword}</p>
+                  <p className="text-[11px] text-teal-600 mt-1">Share with the partner — they set their own on first login.</p>
+                </div>
+              )}
+
+              {/* REPAIR ACTIONS */}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Repair Actions</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {!diagnosis.tests.userExists ? (
+                    <RepairBtn icon={UserPlus} label="Create Missing User" busy={diagBusy === "create-user"} onClick={() => runRepair("create-user")} />
+                  ) : (
+                    <RepairBtn icon={Link2} label="Re-link / Fix Role" busy={diagBusy === "link-user"} onClick={() => runRepair("link-user")} />
+                  )}
+                  <RepairBtn icon={KeyRound} label="Reset Password" busy={diagBusy === "reset-password"} onClick={() => runRepair("reset-password")} />
+                  <RepairBtn icon={RotateCcw} label="Regenerate Credentials" busy={diagBusy === "regenerate"} onClick={() => runRepair("regenerate")} />
+                  <RepairBtn icon={AlertTriangle} label="Force Password Reset" busy={diagBusy === "force-reset"} onClick={() => runRepair("force-reset")} />
+                  <RepairBtn icon={MailIcon} label="Send Setup Email" busy={diagBusy === "send-setup-email"} onClick={() => runRepair("send-setup-email")} />
+                  <RepairBtn icon={Copy} label="Copy Login Credentials" onClick={copyDiagnosisCredentials} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => openDiagnose(diagTarget!)} disabled={diagLoading || !diagTarget}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Re-run
+            </Button>
+            <Button onClick={() => { setDiagTarget(null); setDiagnosis(null); setDiagTempPassword(null) }}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Credentials reveal — shown once after a temp password is issued */}
       <Dialog open={!!credential} onOpenChange={(o) => !o && setCredential(null)}>
