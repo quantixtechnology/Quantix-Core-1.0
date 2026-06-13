@@ -10,7 +10,7 @@
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
 import { db } from '@/lib/db';
-import { hashPassword } from '@/lib/password-utils';
+import { hashPassword, generateTempPassword } from '@/lib/password-utils';
 
 export const GET = withMiddleware({ requireAuth: true })(async (req) => {
   try {
@@ -47,6 +47,7 @@ export const GET = withMiddleware({ requireAuth: true })(async (req) => {
 
     const partners = await db.deliveryPartner.findMany({
       where,
+      include: { store: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -80,10 +81,28 @@ export const POST = withMiddleware({
       return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
     }
 
-    // Validate app access fields
-    if (body.appEnabled && body.password && !body.email) {
+    // Assigned store is mandatory — it scopes the partner's app access to a single
+    // store (orders/customers/deliveries). Validate it belongs to this business.
+    if (!body.storeId) {
+      return NextResponse.json({ success: false, error: 'Assigned store is required' }, { status: 400 });
+    }
+    const store = await db.store.findFirst({
+      where: { id: body.storeId as string, businessId },
+      select: { id: true },
+    });
+    if (!store) {
       return NextResponse.json(
-        { success: false, error: 'email is required when App Access is enabled with a password' },
+        { success: false, error: 'Assigned store not found for this business' },
+        { status: 400 }
+      );
+    }
+
+    // App Access requires an email so the partner can log in with email + password
+    // (the unified Quantix auth flow). The password itself is optional — when
+    // omitted we generate a temporary one and force a change on first login.
+    if (body.appEnabled && !body.email) {
+      return NextResponse.json(
+        { success: false, error: 'email is required when App Access is enabled' },
         { status: 400 }
       );
     }
@@ -104,34 +123,49 @@ export const POST = withMiddleware({
     const count = await db.deliveryPartner.count({ where: { businessId } });
     const partnerCode = `DP-${ym}-${String(count + 1).padStart(4, '0')}`;
 
-    // Resolve userId — create a linked User account when appEnabled + password + email
+    // Resolve userId — create a linked User account when appEnabled + email.
+    // Password is optional: when not supplied we mint a temp password and force
+    // a change on first login (returned once for the admin to share).
     let linkedUserId: string | undefined = body.userId ?? undefined;
+    let tempPassword: string | undefined;
 
-    if (body.appEnabled && body.password && body.email) {
+    if (body.appEnabled && body.email) {
       const email = (body.email as string).toLowerCase().trim();
 
-      if (body.password.length < 6) {
+      if (body.password && (body.password as string).length < 6) {
         return NextResponse.json(
           { success: false, error: 'Password must be at least 6 characters' },
           { status: 400 }
         );
       }
 
-      const hash = await hashPassword(body.password as string);
+      // Admin-typed password → use as-is (no forced change). No password → temp
+      // password + forced rotation on first login.
+      const usingTemp = !body.password;
+      const plainPassword = (body.password as string) || generateTempPassword();
+      if (usingTemp) tempPassword = plainPassword;
+
+      const hash = await hashPassword(plainPassword);
       const existingUser = await db.user.findUnique({ where: { email } });
 
       if (existingUser) {
         // Link existing user and ensure they have DELIVERY_STAFF for this business
         await db.user.update({
           where: { id: existingUser.id },
-          data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD' },
+          data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD', mustChangePassword: usingTemp },
         });
         const bu = await db.businessUser.findUnique({
           where: { userId_businessId: { userId: existingUser.id, businessId } },
         });
         if (!bu) {
           await db.businessUser.create({
-            data: { userId: existingUser.id, businessId, role: 'DELIVERY_STAFF', isActive: true },
+            data: { userId: existingUser.id, businessId, role: 'DELIVERY_STAFF', storeId: body.storeId, isActive: true },
+          });
+        } else {
+          // Keep the linked BusinessUser's store in sync (drives middleware store scoping)
+          await db.businessUser.update({
+            where: { id: bu.id },
+            data: { storeId: body.storeId },
           });
         }
         linkedUserId = existingUser.id;
@@ -143,10 +177,11 @@ export const POST = withMiddleware({
             phone: body.phone as string,
             passwordHash: hash,
             hasPassword: true,
+            mustChangePassword: usingTemp,
             authProvider: 'PASSWORD',
             isActive: true,
             businessUsers: {
-              create: { businessId, role: 'DELIVERY_STAFF', isActive: true },
+              create: { businessId, role: 'DELIVERY_STAFF', storeId: body.storeId, isActive: true },
             },
           },
         });
@@ -158,6 +193,7 @@ export const POST = withMiddleware({
       data: {
         businessId,
         userId: linkedUserId,
+        storeId: body.storeId,
         name: body.name,
         phone: body.phone,
         email: body.email,
@@ -180,7 +216,13 @@ export const POST = withMiddleware({
     });
 
     return NextResponse.json(
-      { success: true, data: partner, message: 'Delivery partner created successfully' },
+      {
+        success: true,
+        // tempPassword is surfaced ONCE so the admin can share it with the partner.
+        // It is never stored in plaintext — only the bcrypt hash is persisted.
+        data: { ...partner, tempPassword },
+        message: 'Delivery partner created successfully',
+      },
       { status: 201 }
     );
   } catch (error) {

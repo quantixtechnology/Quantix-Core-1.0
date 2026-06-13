@@ -468,6 +468,7 @@ model Store {
   workflowRules       WorkflowRule[]
   userAssignments     UserStoreAssignment[]
   storePaymentGateways StorePaymentGateway[]
+  deliveryPartners    DeliveryPartner[]
   business            Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   storeTimings        StoreTiming[]
   banners             Banner[]
@@ -502,6 +503,7 @@ model User {
   avatar              String?
   passwordHash        String?
   hasPassword         Boolean           @default(false)
+  mustChangePassword  Boolean           @default(false)
   authProvider        AuthProvider      @default(EMAIL_OTP)
   emailVerified       Boolean           @default(false)
   phoneVerified       Boolean           @default(false)
@@ -836,6 +838,7 @@ model DeliveryPartner {
   id              String              @id @default(cuid())
   businessId      String
   userId          String?
+  storeId         String?
   name            String
   phone           String
   email           String?
@@ -867,11 +870,13 @@ model DeliveryPartner {
   locationHistory     PartnerLocationHistory[]
   liveTrackingSessions LiveTrackingSession[]
   user            User?               @relation(fields: [userId], references: [id])
+  store           Store?              @relation(fields: [storeId], references: [id])
   business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, phone])
   @@unique([businessId, partnerCode])
   @@index([businessId])
+  @@index([storeId])
   @@index([isOnline])
   @@index([availability])
 }

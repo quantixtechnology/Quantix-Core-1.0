@@ -21,6 +21,25 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 /**
+ * Generate a human-friendly temporary password for delivery-partner onboarding.
+ * Avoids ambiguous characters (0/O, 1/l/I) so it can be read aloud or shared
+ * over WhatsApp without confusion. Format: Xxxx-9999 (8 usable chars).
+ */
+export function generateTempPassword(): string {
+  const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const pick = (set: string, n: number) => {
+    const arr = new Uint8Array(n);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(arr);
+    else for (let i = 0; i < n; i++) arr[i] = Math.floor(Math.random() * 256);
+    return Array.from(arr, (b) => set[b % set.length]).join('');
+  };
+  // e.g. "Kpra-7384" — 1 upper + 3 lower + dash + 4 digits
+  return `${pick(upper, 1)}${pick(lower, 3)}-${pick(digits, 4)}`;
+}
+
+/**
  * Create a simple access token (for API usage, not JWT)
  */
 export function createAccessToken(): string {

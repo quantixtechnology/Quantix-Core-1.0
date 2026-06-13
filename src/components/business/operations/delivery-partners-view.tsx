@@ -17,11 +17,13 @@ import {
   Truck, Plus, Search, Phone, Mail, Star, Package, IndianRupee,
   Pencil, Trash2, RefreshCw, Wifi, WifiOff, Clock, Car, Shield,
   Smartphone, ChevronDown, ChevronUp, User, KeyRound, Eye, EyeOff,
+  Store as StoreIcon, Copy, MessageCircle, Check,
 } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { setBusinessContext } from "@/lib/api-client"
+import { openWhatsApp } from "@/lib/delivery-actions"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -30,10 +32,17 @@ import { Skeleton } from "@/components/ui/skeleton"
 type PartnerType = "INTERNAL" | "EXTERNAL"
 type PartnerAvailability = "ONLINE" | "OFFLINE" | "BUSY"
 
+interface StoreOption {
+  id: string
+  name: string
+}
+
 interface DeliveryPartner {
   id: string
   businessId: string
   userId: string | null
+  storeId: string | null
+  store?: { id: string; name: string } | null
   name: string
   phone: string
   email: string | null
@@ -60,6 +69,7 @@ interface PartnerFormData {
   phone: string
   email: string
   password: string
+  storeId: string
   vehicleType: string
   vehicleNumber: string
   licenseNumber: string
@@ -75,6 +85,7 @@ const EMPTY_FORM: PartnerFormData = {
   phone: "",
   email: "",
   password: "",
+  storeId: "",
   vehicleType: "",
   vehicleNumber: "",
   licenseNumber: "",
@@ -83,6 +94,15 @@ const EMPTY_FORM: PartnerFormData = {
   appEnabled: false,
   notes: "",
   bankAccount: "",
+}
+
+// Credentials surfaced once after a partner is created / app-enabled, so the
+// admin can share them with the partner before the temp password disappears.
+interface CredentialResult {
+  name: string
+  email: string
+  phone: string
+  tempPassword: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -106,6 +126,7 @@ export function DeliveryPartnersView() {
   const businessId = currentBusinessId || authBizId || ""
 
   const [partners, setPartners] = useState<DeliveryPartner[]>([])
+  const [stores, setStores] = useState<StoreOption[]>([])
   // Start as false — only show spinner when we actually have a businessId to query
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState("")
@@ -129,6 +150,10 @@ export function DeliveryPartnersView() {
   const [resetPassword, setResetPassword] = useState("")
   const [showResetPw, setShowResetPw] = useState(false)
   const [resetting, setResetting] = useState(false)
+
+  // Credential reveal dialog (shown once after temp password is issued)
+  const [credential, setCredential] = useState<CredentialResult | null>(null)
+  const [credCopied, setCredCopied] = useState(false)
 
   // Keep localStorage in sync so getAuthHeaders() sends the correct x-business-id header.
   // This is critical when a platform admin manages a business via the admin panel —
@@ -158,6 +183,22 @@ export function DeliveryPartnersView() {
   }, [businessId, filterAvailability])
 
   useEffect(() => { fetchPartners() }, [fetchPartners])
+
+  // Stores for the mandatory "Assigned Store" dropdown
+  const fetchStores = useCallback(async () => {
+    if (!businessId) return
+    try {
+      const res = await fetch(`/api/core/stores?businessId=${businessId}`, { headers: getAuthHeaders() })
+      const json = await res.json()
+      if (json.success) {
+        setStores((json.data || []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })))
+      }
+    } catch {
+      // non-fatal — the dropdown will show empty and block save with a clear error
+    }
+  }, [businessId])
+
+  useEffect(() => { fetchStores() }, [fetchStores])
 
   // ── Filter ─────────────────────────────────────────────────────────────────
 
@@ -193,6 +234,7 @@ export function DeliveryPartnersView() {
       phone: p.phone,
       email: p.email || "",
       password: "",
+      storeId: p.storeId || "",
       vehicleType: p.vehicleType || "",
       vehicleNumber: p.vehicleNumber || "",
       licenseNumber: p.licenseNumber || "",
@@ -213,7 +255,8 @@ export function DeliveryPartnersView() {
   async function handleSave() {
     if (!formData.name.trim()) { showError("Name is required"); return }
     if (!formData.phone.trim()) { showError("Phone is required"); return }
-    if (!editingPartner && formData.appEnabled && !formData.email.trim()) {
+    if (!formData.storeId) { showError("Assigned store is required"); return }
+    if (formData.appEnabled && !formData.email.trim()) {
       showError("Email is required when App Access is enabled"); return
     }
     setSaving(true)
@@ -245,15 +288,48 @@ export function DeliveryPartnersView() {
       const json = await res.json()
       if (!json.success) { showError(json.error || "Failed to save"); return }
       showSuccess(editingPartner ? "Partner updated" : "Partner created")
-      if (!editingPartner && json.data?.appEnabled && json.data?.email) {
+      setSheetOpen(false)
+      // A temp password is returned ONCE when app access was enabled without an
+      // admin-typed password — reveal it so the admin can share the credentials.
+      if (json.data?.tempPassword) {
+        setCredCopied(false)
+        setCredential({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          tempPassword: json.data.tempPassword,
+        })
+      } else if (!editingPartner && json.data?.appEnabled && json.data?.email) {
         showSuccess(`App login: ${json.data.email}`)
       }
-      setSheetOpen(false)
       fetchPartners()
     } catch {
       showError("Failed to save partner")
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Compose a ready-to-send onboarding message for WhatsApp / clipboard.
+  function credentialMessage(c: CredentialResult): string {
+    return [
+      `Hi ${c.name}, your delivery app login is ready.`,
+      ``,
+      `Email: ${c.email}`,
+      `Temporary password: ${c.tempPassword}`,
+      ``,
+      `Open the delivery app and sign in. You'll be asked to set a new password on first login.`,
+    ].join("\n")
+  }
+
+  async function copyCredentials(c: CredentialResult) {
+    try {
+      await navigator.clipboard.writeText(credentialMessage(c))
+      setCredCopied(true)
+      showSuccess("Credentials copied")
+      setTimeout(() => setCredCopied(false), 2000)
+    } catch {
+      showError("Could not copy — copy the details manually")
     }
   }
 
@@ -446,6 +522,7 @@ export function DeliveryPartnersView() {
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{p.phone}</span>
                       {p.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{p.email}</span>}
+                      {p.store?.name && <span className="flex items-center gap-1"><StoreIcon className="h-3 w-3" />{p.store.name}</span>}
                       {p.vehicleType && <span className="flex items-center gap-1"><Car className="h-3 w-3" />{p.vehicleType}</span>}
                     </div>
                   </div>
@@ -513,6 +590,10 @@ export function DeliveryPartnersView() {
                         <p className="font-medium">{p.appEnabled ? "Enabled" : "Disabled"}</p>
                       </div>
                       <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Assigned Store</p>
+                        <p className="font-medium">{p.store?.name || <span className="text-muted-foreground">—</span>}</p>
+                      </div>
+                      <div>
                         <p className="text-xs text-muted-foreground mb-0.5">Joined</p>
                         <p className="font-medium">{new Date(p.createdAt).toLocaleDateString("en-IN")}</p>
                       </div>
@@ -571,23 +652,39 @@ export function DeliveryPartnersView() {
                   <Input value={formData.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+91 98765 43210" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Email {formData.appEnabled && !editingPartner && <span className="text-red-500">*</span>}</Label>
+                  <Label>Email {formData.appEnabled && <span className="text-red-500">*</span>}</Label>
                   <Input value={formData.email} onChange={(e) => set("email", e.target.value)} placeholder="rahul@example.com" type="email" />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Assigned Store <span className="text-red-500">*</span></Label>
+                  <Select value={formData.storeId} onValueChange={(v) => set("storeId", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={stores.length ? "Select a store…" : "No stores available"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {stores.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    The partner only sees orders &amp; deliveries for this store.
+                  </p>
                 </div>
               </div>
 
-              {/* Password field — always shown on create; shown on edit as optional reset */}
+              {/* App password — optional. Blank + App Access on = a temporary
+                  password is generated and shown once for you to share. */}
               <div className="space-y-1.5">
                 <Label>
-                  {editingPartner ? "New Password (leave blank to keep current)" : "App Password"}
-                  {!editingPartner && formData.appEnabled && <span className="text-red-500"> *</span>}
+                  {editingPartner ? "New Password (leave blank to keep current)" : "App Password (optional)"}
                 </Label>
                 <div className="relative">
                   <Input
                     type={showPassword ? "text" : "password"}
                     value={formData.password}
                     onChange={(e) => set("password", e.target.value)}
-                    placeholder={editingPartner ? "Leave blank to keep current" : "Min 6 characters"}
+                    placeholder={editingPartner ? "Leave blank to keep current" : "Leave blank to auto-generate"}
                     className="pr-10"
                   />
                   <button
@@ -598,8 +695,10 @@ export function DeliveryPartnersView() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {!editingPartner && (
-                  <p className="text-xs text-muted-foreground">Set a password to allow delivery app login</p>
+                {!editingPartner && formData.appEnabled && (
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank to generate a temporary password — the partner sets their own on first login.
+                  </p>
                 )}
               </div>
 
@@ -686,6 +785,50 @@ export function DeliveryPartnersView() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      {/* Credentials reveal — shown once after a temp password is issued */}
+      <Dialog open={!!credential} onOpenChange={(o) => !o && setCredential(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-teal-600" />Share Login Credentials</DialogTitle>
+            <DialogDescription>
+              This temporary password is shown <strong>only once</strong>. Share it with{" "}
+              <strong>{credential?.name}</strong> now — they&apos;ll set their own password on first login.
+            </DialogDescription>
+          </DialogHeader>
+          {credential && (
+            <div className="space-y-3 py-1">
+              <div className="rounded-xl border bg-muted/40 p-3 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Email</span>
+                  <span className="font-medium break-all">{credential.email}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Temporary password</span>
+                  <span className="font-mono font-semibold tracking-wide">{credential.tempPassword}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="gap-2" onClick={() => copyCredentials(credential)}>
+                  {credCopied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                  {credCopied ? "Copied" : "Copy"}
+                </Button>
+                <Button
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                  onClick={() => openWhatsApp(credential.phone, credentialMessage(credential))}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  WhatsApp
+                </Button>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCredential(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Reset Password Dialog */}
       <Dialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>

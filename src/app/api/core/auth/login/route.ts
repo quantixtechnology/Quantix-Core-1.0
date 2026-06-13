@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
     const userSelect = {
       id: true, name: true, email: true, loginId: true, avatar: true,
-      passwordHash: true, isActive: true, platformRole: true, platformPermissions: true,
+      passwordHash: true, isActive: true, mustChangePassword: true, platformRole: true, platformPermissions: true,
       businessUsers: {
         where: { isActive: true },
         select: {
@@ -162,6 +162,7 @@ export async function POST(request: Request) {
       id: user.id, name: user.name, email: user.email, avatar: user.avatar,
       role, businessId, businessName, businessType, businessSlug, storeId, permissions, isPlatformAdmin,
       hasPassword: !!user.passwordHash,
+      mustChangePassword: !!user.mustChangePassword,
     };
 
     const businesses = await Promise.all(user.businessUsers.map(async (bu) => ({

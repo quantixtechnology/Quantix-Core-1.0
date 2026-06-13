@@ -42,11 +42,12 @@ export const POST = withMiddleware({
 
     const hash = await hashPassword(newPassword);
 
+    // Admin-set password → force the partner to choose their own on next login.
     if (partner.userId) {
       // Update existing linked user's password
       await db.user.update({
         where: { id: partner.userId },
-        data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD' },
+        data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD', mustChangePassword: true },
       });
     } else if (partner.email) {
       const email = partner.email.toLowerCase().trim();
@@ -56,15 +57,17 @@ export const POST = withMiddleware({
         // Link to existing user and update password
         await db.user.update({
           where: { id: existingUser.id },
-          data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD' },
+          data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD', mustChangePassword: true },
         });
         const bu = await db.businessUser.findUnique({
           where: { userId_businessId: { userId: existingUser.id, businessId: partner.businessId } },
         });
         if (!bu) {
           await db.businessUser.create({
-            data: { userId: existingUser.id, businessId: partner.businessId, role: 'DELIVERY_STAFF', isActive: true },
+            data: { userId: existingUser.id, businessId: partner.businessId, role: 'DELIVERY_STAFF', storeId: partner.storeId, isActive: true },
           });
+        } else if (partner.storeId) {
+          await db.businessUser.update({ where: { id: bu.id }, data: { storeId: partner.storeId } });
         }
         await db.deliveryPartner.update({
           where: { id: partnerId },
@@ -79,10 +82,11 @@ export const POST = withMiddleware({
             phone: partner.phone,
             passwordHash: hash,
             hasPassword: true,
+            mustChangePassword: true,
             authProvider: 'PASSWORD',
             isActive: true,
             businessUsers: {
-              create: { businessId: partner.businessId, role: 'DELIVERY_STAFF', isActive: true },
+              create: { businessId: partner.businessId, role: 'DELIVERY_STAFF', storeId: partner.storeId, isActive: true },
             },
           },
         });

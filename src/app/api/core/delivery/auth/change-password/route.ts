@@ -51,7 +51,8 @@ export const POST = withMiddleware({
     const hash = await hashPassword(newPassword);
     await db.user.update({
       where: { id: user.id },
-      data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD' },
+      // Clear the forced-rotation flag — the temp password has now been replaced.
+      data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD', mustChangePassword: false },
     });
 
     return NextResponse.json({ success: true, message: 'Password changed successfully' });

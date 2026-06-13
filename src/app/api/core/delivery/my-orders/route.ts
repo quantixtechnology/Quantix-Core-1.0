@@ -53,9 +53,13 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
       }
 
       // Get deliveries assigned to this partner
+      // SECURITY (store isolation): when the partner is assigned to a specific
+      // store, restrict to that store's orders as defense-in-depth on top of the
+      // deliveryPartnerId scope. Partners with no store (legacy) keep business scope.
       const deliveries = await db.delivery.findMany({
         where: {
           deliveryPartnerId: deliveryPartner.id,
+          ...(deliveryPartner.storeId ? { order: { storeId: deliveryPartner.storeId } } : {}),
           ...deliveryStatusFilter,
         },
         include: {

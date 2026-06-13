@@ -617,6 +617,7 @@ export interface SessionUser {
   permissions: Permission[];
   isPlatformAdmin: boolean;
   hasPassword?: boolean;
+  mustChangePassword?: boolean;
 }
 
 // ============================================================================

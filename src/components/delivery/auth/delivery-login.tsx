@@ -1,85 +1,121 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
-import { useSendOtp } from "@/hooks/use-api"
 import { setBusinessContext } from "@/lib/api-client"
-import { showSuccess, showError, showInfo } from "@/lib/toast-utils"
+import { showSuccess, showError } from "@/lib/toast-utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
-import { Bike, Phone, Shield, ArrowRight, Loader2 } from "lucide-react"
+import { Bike, Mail, Lock, Shield, ArrowRight, Loader2, Eye, EyeOff, KeyRound } from "lucide-react"
 
+// Delivery Partner login — unified Quantix email + password authentication.
+// Uses the same flow as Business Users (useAuthStore.login → /api/core/auth/login),
+// so session, refresh token, and store/business context are all handled centrally.
+// First-time partners issued a temporary password are forced to set a new one
+// before reaching the dashboard.
 export function DeliveryLogin() {
   const { setDeliveryLoggedIn, setDeliveryPartnerName, setDeliveryPage } = useAdminStore()
-  const { loginWithOtp, isLoading: isAuthLoading } = useAuthStore()
-  const [phone, setPhone] = useState("")
-  const [otp, setOtp] = useState("")
-  const [step, setStep] = useState<"phone" | "otp">("phone")
+  const { login, logout, isLoading: isAuthLoading } = useAuthStore()
+
+  const [step, setStep] = useState<"login" | "change-password">("login")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState("")
-  const inputRef = useRef<HTMLInputElement>(null)
 
-  const sendOtpMutation = useSendOtp({
-    onSuccess: () => {
-      setStep("otp")
-      showInfo("OTP Sent", `Verification code sent to +91 ${phone}`)
-    },
-    onError: (err) => {
-      setError(err.message || "Failed to send OTP. Please try again.")
-      showError("OTP Failed", err.message || "Could not send OTP")
-    },
-  })
+  // Forced first-login password change
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [changing, setChanging] = useState(false)
 
-  const handleSendOtp = () => {
-    if (phone.length < 10) {
-      setError("Please enter a valid 10-digit phone number")
-      return
-    }
-    setError("")
-    sendOtpMutation.mutate({ phone })
+  // Finalize the delivery session once auth + (optional) password change succeed.
+  const finishLogin = () => {
+    const auth = useAuthStore.getState()
+    const bizId = auth.currentBusinessId || auth.user?.businessId
+    if (bizId) setBusinessContext(bizId)
+    const partnerName = auth.user?.name || auth.user?.email || "Delivery Partner"
+    setDeliveryLoggedIn(true)
+    setDeliveryPartnerName(partnerName)
+    setDeliveryPage("dashboard")
+    showSuccess("Login Successful", `Welcome, ${partnerName}!`)
   }
 
-  const handleVerifyOtp = () => {
-    if (otp.length < 4) {
-      setError("Please enter the 4-digit OTP")
+  const handleLogin = async () => {
+    const identifier = email.trim()
+    if (!identifier || !password) {
+      setError("Enter your email and password")
       return
     }
     setError("")
-    // Use the auth store's loginWithOtp which handles the full flow
-    loginWithOtp(phone, otp).then(() => {
-      const authState = useAuthStore.getState()
+    try {
+      await login(identifier, password)
+      const auth = useAuthStore.getState()
 
-      // SECURITY: business context from the verified session — never hardcoded.
-      // currentBusinessId is resolved from the user's own BusinessUser record.
-      const bizId = authState.currentBusinessId || authState.user?.businessId
-      if (bizId) setBusinessContext(bizId)
+      // Role guard: this app is for delivery partners only.
+      if (auth.currentRole !== "DELIVERY_STAFF") {
+        logout()
+        setError("This login is for delivery partners only.")
+        showError("Access Denied", "This account is not a delivery partner.")
+        return
+      }
 
-      const partnerName = authState.user?.name || authState.user?.phone || "Delivery Partner"
+      // Forced rotation for temp passwords issued at onboarding.
+      if (auth.user?.mustChangePassword) {
+        setStep("change-password")
+        return
+      }
 
-      setDeliveryLoggedIn(true)
-      setDeliveryPartnerName(partnerName)
-      setDeliveryPage("dashboard")
-
-      showSuccess("Login Successful", `Welcome back, ${partnerName}!`)
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : "Invalid OTP. Please try again."
+      finishLogin()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid email or password"
       setError(message)
-      showError("Verification Failed", message)
-    })
+      showError("Login Failed", message)
+    }
   }
 
-  const handlePhoneChange = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 10)
-    setPhone(digits)
-    if (error) setError("")
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) {
+      setError("New password must be at least 6 characters")
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match")
+      return
+    }
+    setError("")
+    setChanging(true)
+    try {
+      const token = useAuthStore.getState().token
+      const res = await fetch("/api/core/delivery/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        // The current (temporary) password is the one just used to sign in.
+        body: JSON.stringify({ currentPassword: password, newPassword }),
+      })
+      const json = await res.json()
+      if (!json.success) {
+        setError(json.error || "Could not change password")
+        showError("Update Failed", json.error || "Could not change password")
+        return
+      }
+      // Reflect the cleared flag locally so a re-login isn't required.
+      const auth = useAuthStore.getState()
+      if (auth.user) auth.user.mustChangePassword = false
+      showSuccess("Password Updated", "Your new password is set.")
+      finishLogin()
+    } catch {
+      setError("Could not change password. Please try again.")
+    } finally {
+      setChanging(false)
+    }
   }
 
-  const handleResendOtp = () => {
-    sendOtpMutation.mutate({ phone })
-  }
-
-  const isLoading = sendOtpMutation.isPending || isAuthLoading
+  const isLoading = isAuthLoading
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-600 via-teal-500 to-teal-700 flex flex-col relative overflow-hidden">
@@ -90,59 +126,82 @@ export function DeliveryLogin() {
 
       {/* Top section */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8 relative z-10">
-        {/* Logo / Icon */}
         <div className="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-6 shadow-lg">
           <Bike className="h-10 w-10 text-white" />
         </div>
-
-        <h1 className="text-2xl font-bold text-white mb-1">Quantix Delivery</h1>
-        <p className="text-teal-100 text-sm text-center mb-1">
-          Delivery Partner App
-        </p>
+        <h1 className="text-2xl font-bold text-white mb-1">Delivery Partner App</h1>
+        <p className="text-teal-100 text-sm text-center mb-1">Sign in to receive and deliver orders</p>
         <div className="flex items-center gap-1.5 mt-2">
           <Shield className="h-3.5 w-3.5 text-teal-200" />
-          <span className="text-xs text-teal-200">Secure & Fast Login</span>
+          <span className="text-xs text-teal-200">Secure Login</span>
         </div>
       </div>
 
       {/* Bottom card section */}
       <div className="bg-white rounded-t-3xl px-6 pt-8 pb-10 relative z-10">
-        {step === "phone" ? (
+        {step === "login" ? (
           <>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">
-              Welcome Back!
-            </h2>
-            <p className="text-sm text-gray-500 mb-6">
-              Enter your phone number to login
-            </p>
+            <h2 className="text-xl font-bold text-gray-900 mb-1">Welcome Back!</h2>
+            <p className="text-sm text-gray-500 mb-6">Login with your registered email and password</p>
 
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                  Phone Number
-                </label>
+                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email Address</label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-gray-400">
-                    <Phone className="h-4 w-4" />
-                    <span className="text-sm font-medium">+91</span>
-                    <span className="w-px h-5 bg-gray-300" />
-                  </div>
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
-                    ref={inputRef}
-                    type="tel"
-                    placeholder="Enter 10-digit number"
-                    value={phone}
-                    onChange={(e) => handlePhoneChange(e.target.value)}
-                    className="pl-[72px] h-12 text-base rounded-xl border-gray-200 focus:border-teal-500 focus:ring-teal-500"
-                    maxLength={10}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendOtp()}
+                    type="email"
+                    autoComplete="username"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); if (error) setError("") }}
+                    className="pl-10 h-12 text-base rounded-xl border-gray-200 focus:border-teal-500 focus:ring-teal-500"
+                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                   />
                 </div>
-                {phone.length > 0 && phone.length < 10 && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    {10 - phone.length} more digit{10 - phone.length !== 1 ? "s" : ""} needed
-                  </p>
-                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); if (error) setError("") }}
+                    className="pl-10 pr-10 h-12 text-base rounded-xl border-gray-200 focus:border-teal-500 focus:ring-teal-500"
+                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  Keep me signed in
+                </label>
+                <button
+                  type="button"
+                  className="text-sm text-teal-600 hover:text-teal-700 font-medium"
+                  onClick={() => showError("Forgot Password", "Contact your store administrator to reset your password.")}
+                >
+                  Forgot password?
+                </button>
               </div>
 
               {error && (
@@ -152,48 +211,62 @@ export function DeliveryLogin() {
               )}
 
               <Button
-                onClick={handleSendOtp}
-                disabled={sendOtpMutation.isPending || phone.length < 10}
+                onClick={handleLogin}
+                disabled={isLoading || !email.trim() || !password}
                 className="w-full h-12 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-base shadow-lg shadow-teal-600/30 disabled:opacity-50"
               >
-                {sendOtpMutation.isPending ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    Send OTP
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </>
-                )}
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (<>Login <ArrowRight className="h-4 w-4 ml-2" /></>)}
               </Button>
             </div>
           </>
         ) : (
           <>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">
-              Verify OTP
-            </h2>
+            <div className="flex items-center gap-2 mb-1">
+              <KeyRound className="h-5 w-5 text-teal-600" />
+              <h2 className="text-xl font-bold text-gray-900">Set a New Password</h2>
+            </div>
             <p className="text-sm text-gray-500 mb-6">
-              Enter the 4-digit code sent to{" "}
-              <span className="font-medium text-gray-700">+91 {phone}</span>
+              For your security, please replace the temporary password before continuing.
             </p>
 
-            <div className="space-y-5">
-              <div className="flex flex-col items-center">
-                <InputOTP
-                  value={otp}
-                  onChange={setOtp}
-                  maxLength={4}
-                >
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} className="h-14 w-14 text-xl font-bold rounded-lg border-2 data-[active=true]:border-teal-500" />
-                    <InputOTPSlot index={1} className="h-14 w-14 text-xl font-bold rounded-lg border-2 data-[active=true]:border-teal-500" />
-                    <InputOTPSlot index={2} className="h-14 w-14 text-xl font-bold rounded-lg border-2 data-[active=true]:border-teal-500" />
-                    <InputOTPSlot index={3} className="h-14 w-14 text-xl font-bold rounded-lg border-2 data-[active=true]:border-teal-500" />
-                  </InputOTPGroup>
-                </InputOTP>
-                <p className="text-xs text-gray-400 mt-3">
-                  Enter the OTP sent to your phone
-                </p>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1.5 block">New Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    placeholder="At least 6 characters"
+                    value={newPassword}
+                    onChange={(e) => { setNewPassword(e.target.value); if (error) setError("") }}
+                    className="pl-10 pr-10 h-12 text-base rounded-xl border-gray-200 focus:border-teal-500 focus:ring-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Confirm Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    placeholder="Re-enter new password"
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); if (error) setError("") }}
+                    className="pl-10 h-12 text-base rounded-xl border-gray-200 focus:border-teal-500 focus:ring-teal-500"
+                    onKeyDown={(e) => e.key === "Enter" && handleChangePassword()}
+                  />
+                </div>
               </div>
 
               {error && (
@@ -203,48 +276,19 @@ export function DeliveryLogin() {
               )}
 
               <Button
-                onClick={handleVerifyOtp}
-                disabled={isLoading || otp.length < 4}
+                onClick={handleChangePassword}
+                disabled={changing || !newPassword || !confirmPassword}
                 className="w-full h-12 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-base shadow-lg shadow-teal-600/30 disabled:opacity-50"
               >
-                {isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    Verify & Login
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </>
-                )}
+                {changing ? <Loader2 className="h-5 w-5 animate-spin" /> : (<>Save & Continue <ArrowRight className="h-4 w-4 ml-2" /></>)}
               </Button>
-
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => {
-                    setStep("phone")
-                    setOtp("")
-                    setError("")
-                  }}
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                >
-                  Change number
-                </button>
-                <button
-                  className="text-sm text-teal-600 hover:text-teal-700 font-medium"
-                  onClick={handleResendOtp}
-                  disabled={sendOtpMutation.isPending}
-                >
-                  {sendOtpMutation.isPending ? "Sending..." : "Resend OTP"}
-                </button>
-              </div>
             </div>
           </>
         )}
 
-        {/* Bottom info */}
         <div className="mt-8 pt-6 border-t border-gray-100">
           <p className="text-center text-xs text-gray-400">
-            By logging in, you agree to our{" "}
-            <span className="text-teal-600">Terms of Service</span> &{" "}
+            By logging in, you agree to our <span className="text-teal-600">Terms of Service</span> &{" "}
             <span className="text-teal-600">Privacy Policy</span>
           </p>
         </div>

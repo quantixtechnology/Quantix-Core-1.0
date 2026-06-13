@@ -34,10 +34,12 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
       }
 
       // Get all completed deliveries for this partner
+      // SECURITY (store isolation): scope to the partner's assigned store when set.
       const completedDeliveries = await db.delivery.findMany({
         where: {
           deliveryPartnerId: deliveryPartner.id,
           status: 'DELIVERED',
+          ...(deliveryPartner.storeId ? { order: { storeId: deliveryPartner.storeId } } : {}),
         },
         include: {
           order: {

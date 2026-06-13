@@ -65,6 +65,13 @@ export const PUT = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
           { status: 403 }
         );
       }
+      // Store isolation: a store-assigned partner can only act on their store's orders.
+      if (partner.storeId && delivery.order.storeId !== partner.storeId) {
+        return NextResponse.json(
+          { success: false, error: 'Not authorized for this delivery' },
+          { status: 403 }
+        );
+      }
     } else if (!user.isPlatformAdmin && user.businessId !== delivery.order.businessId) {
       return NextResponse.json(
         { success: false, error: 'Not authorized for this delivery' },

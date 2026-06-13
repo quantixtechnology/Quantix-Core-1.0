@@ -123,6 +123,14 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
         );
       }
 
+      // Store isolation: a store-assigned partner can only take their store's orders.
+      if (partner.storeId && order.storeId !== partner.storeId) {
+        return NextResponse.json(
+          { success: false, error: 'This delivery partner is assigned to a different store' },
+          { status: 400 }
+        );
+      }
+
       partnerInfo = { name: partner.name, phone: partner.phone };
     }
 
