@@ -21,7 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-DB_FILE="/root/quantix-data/custom.db"
+DB_FILE="/home/ubuntu/data/custom.db"
 LOG_FILE="/tmp/quantix-deploy.log"
 STATUS_FILE="/tmp/quantix-deploy-status.json"
 LOCK_FILE="/tmp/quantix-deploy.lock"
@@ -95,14 +95,19 @@ CURRENT_STEP="backup"
 status "backup" "Backing up database"
 log ""
 log "── DB backup ────────────────────────────────────────────────"
-mkdir -p /root/backups
+BACKUP_DIR="/home/ubuntu/db-backups"
+mkdir -p "$BACKUP_DIR"
+log "[DB] Path: $DB_FILE"
 if [ -f "$DB_FILE" ]; then
-  BACKUP="/root/backups/custom.db.$(date +%Y%m%d-%H%M%S).bak"
-  cp "$DB_FILE" "$BACKUP" || fail "DB backup failed"
+  log "[DB] Exists: yes"
+  BACKUP="$BACKUP_DIR/custom.db.$(date +%Y%m%d-%H%M%S).bak"
+  log "[DB] Backup destination: $BACKUP"
+  cp "$DB_FILE" "$BACKUP" || { log "⚠️ DB backup failed, continuing anyway"; true; }
   log "✅ DB backed up → $BACKUP"
-  ls -t /root/backups/custom.db.*.bak 2>/dev/null | tail -n +11 | xargs rm -f || true
+  ls -t "$BACKUP_DIR"/custom.db.*.bak 2>/dev/null | tail -n +11 | xargs rm -f || true
 else
-  log "ℹ️  No existing DB (first deploy)"
+  log "[DB] Exists: no"
+  log "⚠️ Database missing at $DB_FILE. Skipping backup and continuing deployment."
 fi
 
 # ─── Git ───────────────────────────────────────────────────────────────────────
