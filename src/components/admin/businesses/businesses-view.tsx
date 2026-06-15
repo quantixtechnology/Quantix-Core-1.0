@@ -31,7 +31,7 @@ import {
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AvatarImage } from "@/components/ui/avatar"
-import { useAdminStore, BUSINESS_TYPE_WORKFLOWS } from "@/stores/admin-store"
+import { useAdminStore, BUSINESS_TYPE_WORKFLOWS, type PlanTier } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -41,7 +41,7 @@ import { resolveImageUrl } from "@/lib/image-url"
 // ---- Plan data type — feature access only, no pricing ----
 interface PlanApiData {
   id: string;
-  tier: string;
+  tier: PlanTier;
   name: string;
 }
 
@@ -214,7 +214,7 @@ export function BusinessesView() {
   const [formAddress, setFormAddress] = useState("")
   const [formGST, setFormGST] = useState("")
   // Form state — plan (feature access)
-  const [formPlan, setFormPlan] = useState<string>("")
+  const [formPlan, setFormPlan] = useState<PlanTier | "">("STANDARD")
   const [formAllowedStores, setFormAllowedStores] = useState<string>("1")
   // Form state — enabled workflows
   const [formEnabledWorkflows, setFormEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
@@ -326,26 +326,32 @@ export function BusinessesView() {
       return
     }
 
-
+    const requestBody = {
+      name: formName,
+      slug: formSlug,
+      businessType: formType,
+      planId: matchingPlan.id,
+      planTier: formPlan,
+      enabledWorkflows: formEnabledWorkflows,
+      allowedStores: Number(formAllowedStores),
+      city: formCity,
+      state: formState,
+      pincode: formPincode,
+      contactPhone: formPhone,
+      contactEmail: formEmail,
+      address: formAddress,
+      gstNumber: formGST,
+      ownerName: formOwnerName || undefined,
+      ownerEmail: formOwnerEmail || undefined,
+      ownerPassword: formOwnerPassword || undefined,
+    }
 
     setCreating(true)
     try {
       const res = await fetch("/api/core/businesses", {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({
-          name: formName, slug: formSlug, businessType: formType,
-          planId: matchingPlan.id,
-          planTier: formPlan,
-          enabledWorkflows: formEnabledWorkflows,
-          allowedStores: Number(formAllowedStores),
-          city: formCity, state: formState, pincode: formPincode,
-          contactPhone: formPhone, contactEmail: formEmail,
-          address: formAddress, gstNumber: formGST,
-          ownerName: formOwnerName || undefined,
-          ownerEmail: formOwnerEmail || undefined,
-          ownerPassword: formOwnerPassword || undefined,
-        }),
+        body: JSON.stringify(requestBody),
       })
       const json = await res.json()
       if (json.success) {
@@ -821,16 +827,8 @@ export function BusinessesView() {
                       <div className="space-y-2"><Label>Plan *</Label>
                         <Select value={formPlan} onValueChange={setFormPlan}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
                           <SelectContent>
-                            {plans.length > 0 ? plans.map((plan) => (
-                              <SelectItem key={plan.id} value={plan.tier}>
-                                {plan.name}
-                              </SelectItem>
-                            )) : (
-                              <>
-                                <SelectItem value="STANDARD">Standard</SelectItem>
-                                <SelectItem value="PRO">Pro</SelectItem>
-                              </>
-                            )}
+                            <SelectItem value="STANDARD">STANDARD</SelectItem>
+                            <SelectItem value="PRO">PRO</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

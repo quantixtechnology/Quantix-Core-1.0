@@ -270,7 +270,7 @@ export const notificationItems: NotificationItem[] = [
     type: "SUBSCRIPTION",
     channel: "EMAIL",
     title: "Subscription renewed successfully",
-    message: "Your Quantix Pro yearly plan has been renewed for ₹49,999. Valid until Jan 14, 2026.",
+    message: "Your Pro plan has been renewed for ₹49,999. Valid until Jan 14, 2026.",
     recipientName: "QuickBite Restaurants",
     recipientId: "biz_008",
     isRead: true,
