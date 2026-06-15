@@ -137,23 +137,6 @@ export async function POST(req: Request) {
     console.log(JSON.stringify({ service: 'deploy', requestAt, ip, result, ...extra }))
   }
 
-  // Diagnostic: log environment context on every request so the deploy log
-  // captures exactly which script is resolved and what environment the
-  // webhook handler sees.  This distinguishes manual SSH builds (which run
-  // the live git-tree script) from webhook builds (which historically ran the
-  // stale standalone copy).
-  const { scriptPath, resolvedVia } = resolveScriptPath()
-  log('webhook_env_diagnostic', {
-    cwd:                process.cwd(),
-    HOSTNAME:           process.env.HOSTNAME   ?? '(not set)',
-    PORT:               process.env.PORT        ?? '(not set)',
-    QUANTIX_PROJECT_DIR:process.env.QUANTIX_PROJECT_DIR ?? '(not set)',
-    resolvedScriptPath: scriptPath,
-    resolvedVia,
-    standaloneConfigSet: !!process.env.__NEXT_PRIVATE_STANDALONE_CONFIG,
-    command:            `/bin/bash -c '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 &'`,
-  })
-
   // ── 1. Secret configured? ─────────────────────────────────────────────────
   // Resolve deploy webhook secret from env or well-known files on the host.
   function resolveSecret(): { source: string; secret?: string } {
@@ -178,8 +161,38 @@ export async function POST(req: Request) {
   }
 
   const resolved = resolveSecret()
+
+  const { scriptPath, resolvedVia } = resolveScriptPath()
+  
+  // Do NOT expose the secret value in logs. Only log configured/not configured
+  console.log(`[Deploy] DEPLOY_WEBHOOK_SECRET = ${resolved.secret ? 'configured' : 'not configured'}`)
+
+  log('webhook_env_diagnostic', {
+    cwd:                process.cwd(),
+    HOSTNAME:           process.env.HOSTNAME   ?? '(not set)',
+    PORT:               process.env.PORT        ?? '(not set)',
+    QUANTIX_PROJECT_DIR:process.env.QUANTIX_PROJECT_DIR ?? '(not set)',
+    resolvedScriptPath: scriptPath,
+    resolvedVia,
+    standaloneConfigSet: !!process.env.__NEXT_PRIVATE_STANDALONE_CONFIG,
+    command:            `/bin/bash -c '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 &'`,
+    deployWebhookSecret: resolved.secret ? 'configured' : 'not configured'
+  })
+
   if (!resolved.secret) {
-    console.error('[Deploy] DEPLOY_WEBHOOK_SECRET not found (tried env and files)', { tried: resolved.source })
+    const diagnostics = {
+      cwd: process.cwd(),
+      pm2Process: process.env.name || process.env.PM2_PROGRAM_NAME || '(not running in PM2)',
+      secretExists: false,
+      deployScriptPath: scriptPath,
+      environmentSource: resolved.source
+    }
+    console.error('[Deploy] DEPLOY_WEBHOOK_SECRET not configured. Server misconfiguration.', diagnostics)
+    
+    if (process.env.NODE_ENV === 'development') {
+      return NextResponse.json({ error: 'Server misconfiguration', diagnostics }, { status: 500 })
+    }
+    
     return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
   }
   const secret = resolved.secret
