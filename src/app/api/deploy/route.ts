@@ -36,6 +36,7 @@ import { spawn }        from 'child_process'
 import { existsSync, openSync, writeFileSync, closeSync } from 'fs'
 import { timingSafeEqual, createHash } from 'crypto'
 import path from 'path'
+import { readFileSync } from 'fs'
 
 export const runtime = 'nodejs'
 
@@ -154,11 +155,34 @@ export async function POST(req: Request) {
   })
 
   // ── 1. Secret configured? ─────────────────────────────────────────────────
-  const secret = process.env.DEPLOY_WEBHOOK_SECRET
-  if (!secret) {
-    console.error('[Deploy] DEPLOY_WEBHOOK_SECRET is not configured')
+  // Resolve deploy webhook secret from env or well-known files on the host.
+  function resolveSecret(): { source: string; secret?: string } {
+    if (process.env.DEPLOY_WEBHOOK_SECRET) return { source: 'env', secret: process.env.DEPLOY_WEBHOOK_SECRET }
+    if (process.env.DEPLOY_WEBHOOK_SECRET_FILE) {
+      try { const s = readFileSync(process.env.DEPLOY_WEBHOOK_SECRET_FILE, 'utf-8').trim(); if (s) return { source: `file:${process.env.DEPLOY_WEBHOOK_SECRET_FILE}`, secret: s } } catch { /* ignore */ }
+    }
+    const candidates = [
+      path.join(process.env.QUANTIX_PROJECT_DIR || '/root/Quantix-Core-1.0', '.deploy_webhook_secret'),
+      '/etc/quantix/deploy_webhook_secret',
+      '/root/.deploy_webhook_secret',
+    ]
+    for (const c of candidates) {
+      try {
+        if (existsSync(c)) {
+          const s = readFileSync(c, 'utf-8').trim()
+          if (s) return { source: `file:${c}`, secret: s }
+        }
+      } catch { /* ignore */ }
+    }
+    return { source: 'none' }
+  }
+
+  const resolved = resolveSecret()
+  if (!resolved.secret) {
+    console.error('[Deploy] DEPLOY_WEBHOOK_SECRET not found (tried env and files)', { tried: resolved.source })
     return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
   }
+  const secret = resolved.secret
 
   // ── 2. Rate limit ─────────────────────────────────────────────────────────
   const rate = checkRateLimit(ip)
@@ -174,6 +198,7 @@ export async function POST(req: Request) {
   const provided = req.headers.get('x-deploy-secret') ?? ''
   if (!provided || !safeEqual(provided, secret)) {
     log('unauthorized')
+    console.warn('[Deploy] Unauthorized attempt: invalid x-deploy-secret header', { providedPresent: !!provided })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -41,8 +41,25 @@ function deriveDuration(data: Record<string, unknown>): number | null {
 
 export async function GET(req: Request) {
   // ── Auth ────────────────────────────────────────────────────────────────────
-  const secret = process.env.DEPLOY_WEBHOOK_SECRET
+  // Resolve secret similarly to trigger route so status polling is consistent.
+  const resolveSecret = (): string | null => {
+    if (process.env.DEPLOY_WEBHOOK_SECRET) return process.env.DEPLOY_WEBHOOK_SECRET
+    try {
+      const candidates = [
+        `${process.env.QUANTIX_PROJECT_DIR || '/root/Quantix-Core-1.0'}/.deploy_webhook_secret`,
+        '/etc/quantix/deploy_webhook_secret',
+        '/root/.deploy_webhook_secret',
+      ]
+      for (const c of candidates) {
+        try { if (existsSync(c)) return readFileSync(c, 'utf-8').trim() } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+    return null
+  }
+
+  const secret = resolveSecret()
   if (!secret) {
+    console.error('[DeployStatus] DEPLOY_WEBHOOK_SECRET not configured; tried env and common secret files')
     return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
   }
 
