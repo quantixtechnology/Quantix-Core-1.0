@@ -195,6 +195,6 @@ jobs:
           done
 
           echo "⏱  Timed out after $((MAX_POLLS * 30))s"
-          echo "   Check VPS: pm2 logs quantix --lines 50"
-          echo "   Status:    cat /tmp/quantix-deploy-status.json"
+          echo "   Check VPS: pm2 logs quantix-core --lines 50"
+          echo "   Status:    cat /tmp/quantix-deploy-status.json" # This file name is fine.
           exit 1

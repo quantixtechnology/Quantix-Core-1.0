@@ -32,9 +32,9 @@ SCRIPT_START=$(date +%s)
 DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S')
 
 # ─── Config ────────────────────────────────────────────────────────────────────
-PROJECT="/root/Quantix-Core-1.0"
-DB_FILE="/root/quantix-data/custom.db"
-BACKUP_BASE="/root/backups"
+PROJECT="/home/ubuntu/Quantix-Core-1.0"
+DB_FILE="/home/ubuntu/data/custom.db"
+BACKUP_BASE="/home/ubuntu/backups"
 EXPECTED_GITHUB_HEAD="62f5e1d"
 GITHUB_REPO="quantixtechnology/Quantix-Core-1.0"
 BACKUP_FILE=""   # set inside DB backup block; initialised here to avoid unbound-var under set -u
@@ -205,13 +205,13 @@ PASS "Standalone .env written"
 # ─── Step 12: PM2 restart ─────────────────────────────────────────────────────
 STEP "12. PM2 restart"
 
-if pm2 list 2>/dev/null | grep -q "quantix"; then
-  pm2 restart quantix --update-env 2>&1 || FAIL "pm2 restart failed — run: pm2 logs quantix"
-  PASS "PM2 process 'quantix' restarted"
+if pm2 list 2>/dev/null | grep -q "quantix-core"; then
+  pm2 restart quantix-core --update-env 2>&1 || FAIL "pm2 restart failed — run: pm2 logs quantix-core"
+  PASS "PM2 process 'quantix-core' restarted"
 else
   [ -f "$PROJECT/ecosystem.config.js" ] || FAIL "ecosystem.config.js not found"
-  pm2 start ecosystem.config.js 2>&1 || FAIL "pm2 start failed — run: pm2 logs quantix"
-  PASS "PM2 process 'quantix' started"
+  pm2 start ecosystem.config.js 2>&1 || FAIL "pm2 start failed — run: pm2 logs quantix-core"
+  PASS "PM2 process 'quantix-core' started"
 fi
 
 pm2 save 2>/dev/null || true
@@ -227,7 +227,7 @@ if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
   PASS "App healthy — HTTP $HTTP"
 else
   echo -e "${YELLOW}  ⚠️  Health check HTTP $HTTP — showing PM2 logs:${RESET}"
-  pm2 logs quantix --lines 20 --nostream 2>/dev/null || true
+  pm2 logs quantix-core --lines 20 --nostream 2>/dev/null || true
   FAIL "App unhealthy after restart (HTTP $HTTP)"
 fi
 
@@ -251,7 +251,7 @@ echo -e "  ${BOLD}DB backup${RESET}        ${BACKUP_FILE:-"(skipped — DB file 
 echo -e "  ${BOLD}App backup${RESET}       $APP_BACKUP ($BACKUP_SIZE)"
 echo ""
 echo -e "  ${BOLD}PM2 status${RESET}"
-pm2 list 2>/dev/null | grep -E "quantix|name" || true
+pm2 list 2>/dev/null | grep -E "quantix-core|name" || true
 echo ""
 echo -e "  ${BOLD}Health check${RESET}     HTTP $HTTP ✅"
 echo ""
@@ -264,6 +264,6 @@ echo -e "${GREEN}${BOLD}  ✅ Production is now running GitHub HEAD: $NEW_COMMIT
 echo ""
 echo -e "  Verify manually:"
 echo -e "    curl http://localhost:3000"
-echo -e "    pm2 logs quantix --lines 20"
+echo -e "    pm2 logs quantix-core --lines 20"
 echo -e "    cat /tmp/quantix-deploy-status.json"
 echo ""

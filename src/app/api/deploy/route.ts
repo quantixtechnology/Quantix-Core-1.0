@@ -17,8 +17,7 @@
 // Required env vars:
 //   DEPLOY_WEBHOOK_SECRET  — strong random string ≥ 32 chars
 //                            generate: openssl rand -hex 32
-//   QUANTIX_PROJECT_DIR    — absolute path to the project root on the VPS
-//                            e.g. /root/Quantix-Core-1.0
+//   QUANTIX_PROJECT_DIR    — absolute path to the project root on the VPS (e.g. /home/ubuntu/Quantix-Core-1.0)
 //                            Set in ecosystem.config.js env section.
 //
 // WHY QUANTIX_PROJECT_DIR IS REQUIRED:
@@ -145,9 +144,9 @@ export async function POST(req: Request) {
       try { const s = readFileSync(process.env.DEPLOY_WEBHOOK_SECRET_FILE, 'utf-8').trim(); if (s) return { source: `file:${process.env.DEPLOY_WEBHOOK_SECRET_FILE}`, secret: s } } catch { /* ignore */ }
     }
     const candidates = [
-      path.join(process.env.QUANTIX_PROJECT_DIR || '/root/Quantix-Core-1.0', '.deploy_webhook_secret'),
+      path.join(process.env.QUANTIX_PROJECT_DIR || '/home/ubuntu/Quantix-Core-1.0', '.deploy_webhook_secret'),
       '/etc/quantix/deploy_webhook_secret',
-      '/root/.deploy_webhook_secret',
+      '/home/ubuntu/.deploy_webhook_secret',
     ]
     for (const c of candidates) {
       try {
