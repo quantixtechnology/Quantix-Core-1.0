@@ -70,20 +70,20 @@ async function ensureNginxConfig(domain: string): Promise<void> {
   const confPath = `${NGINX_DIR}/${domain}.conf`
   const enabledPath = `${NGINX_ENABLED_DIR}/${domain}.conf`
 
-  await shell(`mkdir -p ${NGINX_DIR} ${NGINX_ENABLED_DIR}`)
+  await shell(`sudo mkdir -p ${NGINX_DIR} ${NGINX_ENABLED_DIR}`)
 
-  const exists = await shellSafe(`test -f ${confPath} && echo "EXISTS"`)
+  const exists = await shellSafe(`sudo test -f ${confPath} && echo "EXISTS"`)
   if (exists !== 'EXISTS') {
     const conf = nginxTemplate(domain)
-    await shell(`cat > ${confPath} << 'NGINX_EOF'\n${conf}\nNGINX_EOF`)
+    await shell(`sudo tee ${confPath} > /dev/null << 'NGINX_EOF'\n${conf}\nNGINX_EOF`)
   }
 
-  const linked = await shellSafe(`test -L ${enabledPath} && echo "LINKED"`)
+  const linked = await shellSafe(`sudo test -L ${enabledPath} && echo "LINKED"`)
   if (linked !== 'LINKED') {
-    await shell(`ln -sf ${confPath} ${enabledPath}`)
+    await shell(`sudo ln -sf ${confPath} ${enabledPath}`)
   }
 
-  const valid = await shellSafe('nginx -t 2>&1')
+  const valid = await shellSafe('sudo nginx -t 2>&1')
   if (!valid.includes('syntax is ok')) {
     throw new Error(`nginx config invalid:\n${valid}`)
   }
@@ -91,7 +91,7 @@ async function ensureNginxConfig(domain: string): Promise<void> {
 
 async function runCertbot(domain: string): Promise<void> {
   await shell(
-    `certbot --nginx ` +
+    `sudo certbot --nginx ` +
     `-d ${domain} ` +
     `-d www.${domain} ` +
     `--non-interactive ` +
@@ -102,12 +102,12 @@ async function runCertbot(domain: string): Promise<void> {
 }
 
 async function reloadNginx(): Promise<void> {
-  await shell('systemctl reload nginx')
+  await shell('sudo systemctl reload nginx')
 }
 
 async function getCertExpiry(domain: string): Promise<Date | null> {
   const result = await shellSafe(
-    `openssl x509 -enddate -noout -in /etc/letsencrypt/live/${domain}/cert.pem 2>/dev/null || echo "NOT_FOUND"`
+    `sudo openssl x509 -enddate -noout -in /etc/letsencrypt/live/${domain}/cert.pem 2>/dev/null || echo "NOT_FOUND"`
   )
   if (result === 'NOT_FOUND' || !result) return null
   const match = result.match(/notAfter=(.+)/)
@@ -262,7 +262,7 @@ export const POST = withMiddleware({ requireAuth: true })(
         console.log("Step: ensureNginxConfig")
         await ensureNginxConfig(domain)
         console.log("Step: runCertbot")
-        const certbotCmd = `certbot --nginx -d ${domain} -d www.${domain} --non-interactive --agree-tos -m ${SSL_EMAIL}`
+        const certbotCmd = `sudo certbot --nginx -d ${domain} -d www.${domain} --non-interactive --agree-tos -m ${SSL_EMAIL}`
         console.log("CERTBOT COMMAND:", certbotCmd)
         let certbotOutput = ''
         try {
