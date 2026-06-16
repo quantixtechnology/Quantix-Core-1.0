@@ -139,13 +139,15 @@ export const POST = withMiddleware({ requireAuth: true })(
           domain: { select: { domain: true, subdomain: true, sslStatus: true, sslError: true, status: true } },
         },
       })
-      console.log("BUSINESS FOUND", !!business)
+      console.log("BUSINESS", JSON.stringify(business))
+      console.log("DOMAIN_MAPPING", JSON.stringify(business?.domain))
 
       // Resolve the actual provisioning domain:
       //   Prefer DomainMapping.domain (the canonical website hostname)
       //   Fall back to slug-derived domain for first-time provisioning
       const domain = business?.domain?.domain || defaultDomain
-      console.log("PROVISIONING DOMAIN:", domain, "(source:", business?.domain?.domain ? 'DomainMapping' : 'slug-derived', ")")
+      console.log("DOMAIN_USED", domain)
+      console.log("DOMAIN_SOURCE", business?.domain?.domain ? 'DomainMapping' : 'slug-derived')
 
       // 1. DNS Resolution
       let dnsActive = false

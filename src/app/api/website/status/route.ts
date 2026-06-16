@@ -51,8 +51,13 @@ export const GET = withMiddleware({ requireAuth: true })(
       },
     })
 
+    console.log("BUSINESS", JSON.stringify(business))
+    console.log("DOMAIN_MAPPING", JSON.stringify(business?.domain))
+
     // Use the canonical domain from DomainMapping if available
     const domain = business?.domain?.domain || defaultDomain
+    console.log("DOMAIN_USED", domain)
+    console.log("DOMAIN_SOURCE", business?.domain?.domain ? 'DomainMapping' : 'slug-derived')
 
     const result: StatusResponse = {
       slug,
