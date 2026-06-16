@@ -121,7 +121,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       }
     } else if (domainRecord?.sslStatus === 'provisioning') {
       result.deployment = {
-        status:   'SSL_PROVISIONING',
+        status:   'SSL_PENDING',
         label:    'Provisioning SSL...',
         nextStep: `SSL certificate is being provisioned automatically. This takes 1-3 minutes.`,
       }
@@ -161,7 +161,7 @@ export const GET = withMiddleware({ requireAuth: true })(
     if (business) {
       try {
         const newDomainStatus = result.deployment.status === 'ACTIVE' ? 'ACTIVE'
-          : result.deployment.status === 'SSL_PROVISIONING' ? 'SSL_PROVISIONING'
+          : result.deployment.status === 'SSL_PENDING' ? 'SSL_PENDING'
           : result.deployment.status === 'SSL_FAILED' ? 'ERROR'
           : result.dns.status === 'active'  ? 'SSL_PENDING'
           : 'PENDING_DNS'
@@ -169,14 +169,14 @@ export const GET = withMiddleware({ requireAuth: true })(
         const currentStatus = domainRecord?.status ?? 'PENDING_DNS'
 
         // Only advance status, never regress (unless DNS disappeared)
-        const statusOrder = ['PENDING_DNS', 'DNS_PROPAGATING', 'SSL_PENDING', 'SSL_PROVISIONING', 'ACTIVE']
+        const statusOrder = ['PENDING_DNS', 'DNS_PROPAGATING', 'SSL_PENDING', 'SSL_PENDING', 'ACTIVE']
         const newIdx  = statusOrder.indexOf(newDomainStatus)
         const currIdx = statusOrder.indexOf(currentStatus)
 
         const shouldUpdate = newIdx > currIdx || result.dns.status !== 'active'
 
         if (shouldUpdate || !business.domain) {
-          const sslStatusValue = result.deployment.status === 'SSL_PROVISIONING' ? 'provisioning'
+          const sslStatusValue = result.deployment.status === 'SSL_PENDING' ? 'provisioning'
             : domainRecord?.sslStatus === 'failed' ? 'failed'
             : result.ssl.httpsReachable ? 'active'
             : (domainRecord?.sslStatus ?? 'pending')
@@ -184,7 +184,7 @@ export const GET = withMiddleware({ requireAuth: true })(
           await db.domainMapping.upsert({
             where: { businessId: business.id },
             update: {
-              status:    newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'SSL_PROVISIONING' | 'ACTIVE' | 'ERROR',
+              status:    newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR',
               sslStatus: sslStatusValue,
               sslLastCheckedAt: new Date(),
             },
@@ -192,7 +192,7 @@ export const GET = withMiddleware({ requireAuth: true })(
               businessId: business.id,
               domain:     domain,
               subdomain:  slug,
-              status:     newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'SSL_PROVISIONING' | 'ACTIVE' | 'ERROR',
+              status:     newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR',
               sslStatus:  'pending',
             },
           })

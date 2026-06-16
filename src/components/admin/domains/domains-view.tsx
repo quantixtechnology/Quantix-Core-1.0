@@ -157,7 +157,6 @@ function domainStatusBadge(domainStatus: string | null) {
   switch (domainStatus) {
     case "ACTIVE":          return { label: "Live",           cls: "bg-emerald-50 text-emerald-700 border-emerald-200" }
     case "SSL_PENDING":     return { label: "SSL Pending",    cls: "bg-amber-50   text-amber-700   border-amber-200"   }
-    case "SSL_PROVISIONING": return { label: "SSL Provisioning...", cls: "bg-blue-50 text-blue-700 border-blue-200" }
     case "DNS_PROPAGATING": return { label: "DNS Propagating",cls: "bg-blue-50    text-blue-700    border-blue-200"    }
     case "PENDING_DNS":     return { label: "DNS Pending",    cls: "bg-gray-100   text-gray-600    border-gray-200"    }
     case "ERROR":           return { label: "Error",          cls: "bg-red-50     text-red-700     border-red-200"     }

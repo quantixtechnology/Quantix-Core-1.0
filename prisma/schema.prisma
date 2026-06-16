@@ -1732,25 +1732,46 @@ model SalesTeamMember {
 }
 
 model DomainMapping {
-  id            String       @id @default(cuid())
-  businessId    String       @unique
-  domain        String       @unique
-  subdomain     String?
-  isPrimary     Boolean      @default(true)
-  sslStatus     String       @default("pending")
-  sslExpiryDate DateTime?
-  dnsProvider   String?
-  dnsConfig     String       @default("{}")
-  status        DomainStatus @default(PENDING_DNS)
-  configuredBy  String?
-  configuredAt  DateTime?
-  deployedAt    DateTime?
-  notes         String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  business      Business     @relation(fields: [businessId], references: [id])
+  id              String       @id @default(cuid())
+  businessId      String       @unique
+  domain          String       @unique
+  subdomain       String?
+  isPrimary       Boolean      @default(true)
+  sslStatus       String       @default("pending")
+  sslExpiryDate   DateTime?
+  sslError        String?
+  sslLastCheckedAt DateTime?
+  dnsProvider     String?
+  dnsConfig       String       @default("{}")
+  status          DomainStatus @default(PENDING_DNS)
+  configuredBy    String?
+  configuredAt    DateTime?
+  deployedAt      DateTime?
+  notes           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  business        Business     @relation(fields: [businessId], references: [id])
+  sslJobs         SslJob[]
 
   @@index([status])
+}
+
+model SslJob {
+  id            String    @id @default(cuid())
+  businessId    String
+  domain        String
+  status        SslJobStatus @default(PENDING)
+  attempt       Int       @default(0)
+  maxAttempts   Int       @default(5)
+  lastError     String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  domainMapping DomainMapping @relation(fields: [businessId], references: [businessId])
+
+  @@index([status])
+  @@index([businessId])
 }
 
 model Deployment {
@@ -2405,6 +2426,13 @@ enum DomainStatus {
   SSL_PENDING
   ACTIVE
   ERROR
+}
+
+enum SslJobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
 }
 
 enum DeploymentStatus {

@@ -208,7 +208,7 @@ export const POST = withMiddleware({ requireAuth: true })(
             dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
             ssl: { status: 'provisioning', expiryDate: null, httpsReachable: false, error: null },
             tenant: null, storefront: null,
-            deployment: { status: 'SSL_PROVISIONING', label: 'Provisioning SSL...', nextStep: 'SSL provisioning already in progress.' },
+            deployment: { status: 'SSL_PENDING', label: 'Provisioning SSL...', nextStep: 'SSL provisioning already in progress.' },
             checkedAt,
           },
         })
@@ -242,8 +242,8 @@ export const POST = withMiddleware({ requireAuth: true })(
       console.log("Updating DB to provisioning")
       await db.domainMapping.upsert({
         where: { businessId: business.id },
-        update: { sslStatus: 'provisioning', status: 'SSL_PROVISIONING', sslError: null },
-        create: { businessId: business.id, domain, subdomain: slug, sslStatus: 'provisioning', status: 'SSL_PROVISIONING' },
+        update: { sslStatus: 'provisioning', status: 'SSL_PENDING', sslError: null },
+        create: { businessId: business.id, domain, subdomain: slug, sslStatus: 'provisioning', status: 'SSL_PENDING' },
       })
 
       // 4. Run full provisioning (blocks until certbot completes)
