@@ -34,7 +34,7 @@ export type BusinessType =
   | 'DIRECTORY';
 
 /** Business lifecycle status — managed by Quantix */
-export type BusinessStatus = 'INACTIVE' | 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CHURNED';
+export type BusinessStatus = 'INACTIVE' | 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CHURNED' | 'TRIAL';
 
 /** Platform roles for the MANAGED model */
 export type Role =
@@ -134,6 +134,7 @@ export interface AddOnItem {
 export type SubscriptionStatus =
   | 'ACTIVE'
   | 'PAST_DUE'
+  | 'GRACE_PERIOD'
   | 'SUSPENDED'
   | 'CANCELLED'
   | 'EXPIRED';

@@ -321,6 +321,9 @@ model Business {
   defaultLocale         String                  @default("en-IN")
   timezone              String                  @default("Asia/Kolkata")
   isOnline              Boolean                 @default(false)
+  activationChecklist   String                  @default("{}")
+  activationProgress    Int                     @default(0)
+  activationCompleted   Boolean                 @default(false)
   settings              String                  @default("{}")
   features              String                  @default("{}")
   notificationConfig    String                  @default("{}")
@@ -1249,6 +1252,9 @@ model BusinessSubscription {
   cancelledAt          DateTime?
   cancelReason         String?
   notes                String?
+  gracePeriodEnabled   Boolean            @default(false)
+  gracePeriodUntil     DateTime?
+  gracePeriodComments  String?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   reminderSentAt       DateTime?
@@ -2209,6 +2215,7 @@ enum BusinessStatus {
   ONBOARDING
   TRIAL
   ACTIVE
+  INACTIVE
   SUSPENDED
   EXPIRED
   CHURNED
@@ -2361,6 +2368,7 @@ enum PlanBillingCycle {
 enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
+  GRACE_PERIOD
   SUSPENDED
   CANCELLED
   EXPIRED

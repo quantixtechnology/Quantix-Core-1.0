@@ -982,10 +982,15 @@ export async function toggleOnline(businessId: string, isOnline: boolean) {
 // ============================================================================
 
 /**
- * STATUS_ITEMS determine the business status (ACTIVE/ONBOARDING/INACTIVE/SUSPENDED).
+ * STATUS_ITEMS determine the business status (ACTIVE/ONBOARDING/INACTIVE).
+ * Business status represents operational readiness only — no billing dependency.
+ *   ACTIVE:     Online ON + Domain configured + SSL active
+ *   ONBOARDING: Online ON but Domain or SSL missing
+ *   INACTIVE:   Online OFF
+ *
  * READINESS_ITEMS are informational only — they do NOT affect status.
  */
-const STATUS_ITEMS = ['subscription', 'domain', 'ssl', 'online'] as const;
+const STATUS_ITEMS = ['domain', 'ssl', 'online'] as const;
 const READINESS_ITEMS = ['storeSettings', 'category', 'product', 'adminUser', 'logo', 'paymentGateway', 'deliveryConfig'] as const;
 const ALL_ITEMS = [...STATUS_ITEMS, ...READINESS_ITEMS] as const;
 
@@ -1007,7 +1012,6 @@ async function autoDetectChecklist(businessId: string): Promise<ActivationCheckl
   const store = biz.stores[0];
 
   return {
-    subscription: biz.businessSubscription?.status === 'ACTIVE',
     domain: !!biz.domain?.domain,
     ssl: biz.domain?.sslStatus?.toLowerCase() === 'active',
     online: biz.isOnline,
@@ -1016,19 +1020,18 @@ async function autoDetectChecklist(businessId: string): Promise<ActivationCheckl
     product: biz._count.products > 0,
     adminUser: biz.businessUsers.length > 0,
     logo: !!biz.logo,
-    paymentGateway: false, // auto-detection TBD — manually toggleable
-    deliveryConfig: false, // auto-detection TBD — manually toggleable
+    paymentGateway: false, // manually toggleable by Super Admin
+    deliveryConfig: false, // manually toggleable by Super Admin
   };
 }
 
 /**
  * Auto-detect checklist completion and compute activation status.
  *
- * Status rules (STATUS_ITEMS only):
- *   isOnline=false → INACTIVE
- *   Subscription not ACTIVE → SUSPENDED
- *   All 4 status items complete → ACTIVE
- *   Any status item missing   → ONBOARDING
+ * Status rules (STATUS_ITEMS only — no billing dependency):
+ *   Online ON  + Domain + SSL active  → ACTIVE
+ *   Online ON  + Domain or SSL missing → ONBOARDING
+ *   Online OFF                         → INACTIVE
  *
  * READINESS_ITEMS are stored but do NOT affect status.
  *
@@ -1044,10 +1047,12 @@ export async function evaluateActivation(businessId: string) {
   });
   if (!biz) throw new Error(`Business "${businessId}" not found`);
 
-  const stored: ActivationChecklist = JSON.parse(biz.activationChecklist || '{}');
+  const stored: ActivationChecklist = biz.activationChecklist
+    ? (JSON.parse(biz.activationChecklist) as ActivationChecklist)
+    : {};
   const merged: ActivationChecklist = {};
   for (const key of ALL_ITEMS) {
-    merged[key] = key in stored ? stored[key] : auto[key];
+    merged[key] = key in stored ? stored[key] : (auto[key] ?? false);
   }
 
   const statusCompleted = STATUS_ITEMS.filter(k => merged[k]).length;
@@ -1055,23 +1060,21 @@ export async function evaluateActivation(businessId: string) {
   const readinessCompleted = READINESS_ITEMS.filter(k => merged[k]).length;
   const readinessTotal = READINESS_ITEMS.length;
 
-  const isOnline = biz.isOnline;
-
   let newStatus: string;
-  if (merged['subscription'] !== true) {
-    newStatus = 'SUSPENDED';
-  } else if (!isOnline) {
-    newStatus = 'INACTIVE';
-  } else if (statusAllDone) {
-    newStatus = 'ACTIVE';
+  if (merged['online']) {
+    if (statusAllDone) {
+      newStatus = 'ACTIVE';
+    } else {
+      newStatus = 'ONBOARDING';
+    }
   } else {
-    newStatus = 'ONBOARDING';
+    newStatus = 'INACTIVE';
   }
 
   const updateData: Record<string, unknown> = {
     activationChecklist: JSON.stringify(merged),
     activationProgress: readinessCompleted,
-    activationCompleted: statusAllDone && readinessCompleted === readinessTotal,
+    activationCompleted: readinessCompleted === readinessTotal,
   };
 
   if (newStatus !== biz.status) {
@@ -1090,8 +1093,9 @@ export async function evaluateActivation(businessId: string) {
  * Stores the override in activationChecklist JSON, then re-evaluates.
  */
 export async function toggleChecklistItem(businessId: string, item: string, value: boolean) {
-  if (!ALL_ITEMS.includes(item as typeof ALL_ITEMS[number])) {
-    throw new Error(`Invalid checklist item "${item}". Must be one of: ${ALL_ITEMS.join(', ')}`);
+  const allKeys = ALL_ITEMS as readonly string[];
+  if (!allKeys.includes(item)) {
+    throw new Error(`Invalid checklist item "${item}". Must be one of: ${allKeys.join(', ')}`);
   }
 
   const biz = await db.business.findUnique({
@@ -1100,7 +1104,9 @@ export async function toggleChecklistItem(businessId: string, item: string, valu
   });
   if (!biz) throw new Error(`Business "${businessId}" not found`);
 
-  const checklist: ActivationChecklist = JSON.parse(biz.activationChecklist || '{}');
+  const checklist: ActivationChecklist = biz.activationChecklist
+    ? (JSON.parse(biz.activationChecklist) as ActivationChecklist)
+    : {};
   checklist[item] = value;
 
   await db.business.update({
