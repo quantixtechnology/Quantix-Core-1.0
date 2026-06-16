@@ -179,12 +179,18 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Turnstile verification ─────────────────────────────────────────
-    if (!captchaToken || typeof captchaToken !== 'string') {
-      return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
-    }
-    const captchaValid = await verifyTurnstileToken(captchaToken, ip);
-    if (!captchaValid) {
-      return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
+    // Only enforced when TURNSTILE_SECRET_KEY is configured in the backend.
+    // The website conditionally renders the widget based on
+    // NEXT_PUBLIC_TURNSTILE_SITE_KEY; if that env var is missing no token
+    // is sent and this check is skipped.
+    if (process.env.TURNSTILE_SECRET_KEY) {
+      if (!captchaToken || typeof captchaToken !== 'string') {
+        return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
+      }
+      const captchaValid = await verifyTurnstileToken(captchaToken, ip);
+      if (!captchaValid) {
+        return Response.json({ success: false, error: 'CAPTCHA verification failed. Please try again.' }, { status: 400, headers: addCors(origin) });
+      }
     }
 
     // ── Duplicate phone detection ──────────────────────────────────────
