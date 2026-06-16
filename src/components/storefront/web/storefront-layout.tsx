@@ -243,8 +243,8 @@ export function StorefrontLayout({
         <header className="sticky top-0 z-40 shadow-sm" style={{ backgroundColor: hBg }}>
           {/* Status-bar spacer: header background fills behind system status bar */}
           <div aria-hidden="true" style={{ height: "max(env(safe-area-inset-top, 0px), 24px)" }} />
-          {/* Toolbar: 60px gives comfortable vertical room for 20px name + 13px store */}
-          <div className="flex items-center gap-3 px-4" style={{ height: 60 }}>
+          {/* Toolbar: 80px gives comfortable vertical room for 18px name + 13px store */}
+          <div className="flex items-center gap-3 px-4" style={{ height: 80 }}>
             {showBackInPwa ? (
               <>
                 {/* Back button — 44px touch target */}
@@ -263,9 +263,9 @@ export function StorefrontLayout({
               </>
             ) : (
               <>
-                {/* Logo container — 52×52 flex centered, never stretches header */}
+                {/* Logo container — 56×56 flex centered, never stretches header */}
                 <div
-                  className="w-[52px] h-[52px] shrink-0 flex items-center justify-center cursor-pointer active:opacity-70"
+                  className="w-[56px] h-[56px] shrink-0 flex items-center justify-center cursor-pointer active:opacity-70"
                   onClick={() => nav.go("home")}
                 >
                   <img
@@ -280,14 +280,14 @@ export function StorefrontLayout({
                 </div>
                 {/* Business name + store selector — centered as a unit with logo */}
                 <div
-                  className="flex-1 min-w-0 flex flex-col justify-center gap-[3px] cursor-pointer"
+                  className="flex-1 min-w-0 flex flex-col justify-center gap-[4px] cursor-pointer"
                   onClick={() => nav.go("home")}
                   role="button"
                   tabIndex={0}
                 >
-                  {/* 20px bold — premium native-app feel */}
+                  {/* 18px bold — premium native-app feel */}
                   <span
-                    className="text-[20px] font-bold leading-[1.15] truncate block"
+                    className="text-[18px] font-bold leading-[1.2] truncate block"
                     style={{ color: hFg }}
                   >
                     {currentBusinessName || "Store"}
@@ -299,7 +299,7 @@ export function StorefrontLayout({
                       style={{ color: hMuted }}
                     >
                       <MapPin className="w-3 h-3 shrink-0" />
-                      <span className="text-[13px] leading-[1.2] truncate max-w-[160px]">{currentStore.name}</span>
+                      <span className="text-[13px] leading-[1.2] truncate max-w-[200px]">{currentStore.name}</span>
                       <ChevronDown className="w-3 h-3 shrink-0" />
                     </button>
                   )}
