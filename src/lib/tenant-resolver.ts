@@ -76,12 +76,18 @@ export async function resolveBusinessFromDomain(
     .replace(/\/+$/, '')
     .toLowerCase();
 
-  // Try exact domain match first
+  // Only match subdomain when the hostname is a Quantix storefront subdomain
+  // (slug.quantixtechnology.in).  Custom domains MUST resolve by exact domain
+  // match only — never by subdomain — to prevent accidental collisions from
+  // split('.')[0] matching unrelated businesses.
+  const storefrontBase = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
+  const isQuantixSubdomain = cleanHostname.endsWith(`.${storefrontBase}`);
+
   const domainMapping = await db.domainMapping.findFirst({
     where: {
       OR: [
         { domain: cleanHostname },
-        { subdomain: cleanHostname.split('.')[0] },
+        ...(isQuantixSubdomain ? [{ subdomain: cleanHostname.split('.')[0] }] : []),
       ],
     },
     include: {

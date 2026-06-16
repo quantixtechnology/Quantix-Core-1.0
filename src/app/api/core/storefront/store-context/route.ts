@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { resolveImageUrl } from '@/lib/image-url';
+import { resolveBusinessFromDomain } from '@/lib/tenant-resolver';
 import { type OrderStage, getDefaultStages } from '@/lib/order-stages';
 
 export async function GET(request: Request) {
@@ -46,24 +47,13 @@ export async function GET(request: Request) {
       resolvedBusinessId = biz.id;
     }
 
-    // Resolve from Host header (subdomain: slug.quantixtechnology.in)
+    // Resolve from Host header — supports both slug.quantixtechnology.in and custom domains
     if (!resolvedBusinessId) {
       const host = request.headers.get('host') || '';
-      const storefrontBaseDomain = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in';
-      const subdomainMatch = host.replace(`.${storefrontBaseDomain}`, '');
-      if (subdomainMatch && subdomainMatch !== host) {
-        // subdomainMatch is the slug
-        const mapping = await db.domainMapping.findFirst({
-          where: {
-            OR: [
-              { domain: host },
-              { subdomain: subdomainMatch },
-            ],
-          },
-          select: { businessId: true },
-        });
-        if (mapping) {
-          resolvedBusinessId = mapping.businessId;
+      if (host) {
+        const resolved = await resolveBusinessFromDomain(host);
+        if (resolved) {
+          resolvedBusinessId = resolved.business.businessId;
         }
       }
     }
