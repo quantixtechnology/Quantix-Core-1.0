@@ -116,6 +116,26 @@ async function getCertExpiry(domain: string): Promise<Date | null> {
   return isNaN(date.getTime()) ? null : date
 }
 
+function buildTenantStorefront(business: {
+  id: string; name: string; isOnline: boolean; status: string; settings?: string | null;
+}): { tenant: { status: string; businessId: string; businessName: string }; storefront: { status: string; isOnline: boolean } } {
+  let tenantStatus: string
+  if (!business.isOnline && business.status === 'SUSPENDED') {
+    tenantStatus = 'not_found'
+  } else {
+    tenantStatus = business.isOnline ? 'active' : 'draft'
+  }
+  try {
+    const settings = JSON.parse(business.settings || '{}')
+    const sf = settings.storefront as Record<string, unknown> | undefined
+    if (sf?.websiteStatus === 'maintenance') tenantStatus = 'maintenance'
+  } catch { /* ignore */ }
+  return {
+    tenant: { status: tenantStatus, businessId: business.id, businessName: business.name },
+    storefront: { isOnline: business.isOnline, status: business.isOnline ? 'online' : 'offline' },
+  }
+}
+
 export const POST = withMiddleware({ requireAuth: true })(
   async (req) => {
     try {
@@ -135,7 +155,7 @@ export const POST = withMiddleware({ requireAuth: true })(
       const business = await db.business.findFirst({
         where: { slug },
         select: {
-          id: true, slug: true, name: true, isOnline: true, status: true,
+          id: true, slug: true, name: true, isOnline: true, status: true, settings: true,
           domain: { select: { domain: true, subdomain: true, sslStatus: true, sslError: true, status: true } },
         },
       })
@@ -191,6 +211,9 @@ export const POST = withMiddleware({ requireAuth: true })(
         })
       }
 
+      // Compute tenant/storefront from business data (available for all subsequent paths)
+      const ts = buildTenantStorefront(business)
+
       // Skip if already active or currently provisioning
       const currentSslStatus = business.domain?.sslStatus
       console.log("CURRENT SSL STATUS", currentSslStatus)
@@ -202,7 +225,7 @@ export const POST = withMiddleware({ requireAuth: true })(
             slug, domain,
             dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
             ssl: { status: 'active', expiryDate: null, httpsReachable: true, error: null },
-            tenant: null, storefront: null,
+            tenant: ts.tenant, storefront: ts.storefront,
             deployment: { status: 'ACTIVE', label: 'Fully Live', nextStep: '' },
             checkedAt,
           },
@@ -216,7 +239,7 @@ export const POST = withMiddleware({ requireAuth: true })(
             slug, domain,
             dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
             ssl: { status: 'provisioning', expiryDate: null, httpsReachable: false, error: null },
-            tenant: null, storefront: null,
+            tenant: ts.tenant, storefront: ts.storefront,
             deployment: { status: 'SSL_PENDING', label: 'Provisioning SSL...', nextStep: 'SSL provisioning already in progress.' },
             checkedAt,
           },
@@ -240,7 +263,7 @@ export const POST = withMiddleware({ requireAuth: true })(
             slug, domain,
             dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
             ssl: { status: 'failed', expiryDate: null, httpsReachable: false, error: prereqError },
-            tenant: null, storefront: null,
+            tenant: ts.tenant, storefront: ts.storefront,
             deployment: { status: 'ERROR', label: 'SSL Failed', nextStep: prereqError },
             checkedAt,
           },
@@ -324,7 +347,7 @@ export const POST = withMiddleware({ requireAuth: true })(
             httpsReachable: sslResult.status === 'active',
             error: sslResult.error,
           },
-          tenant: null, storefront: null,
+          tenant: ts.tenant, storefront: ts.storefront,
           deployment: {
             status: sslResult.status === 'active' ? 'ACTIVE' : 'SSL_FAILED',
             label: sslResult.status === 'active' ? 'Fully Live' : 'SSL Failed',
