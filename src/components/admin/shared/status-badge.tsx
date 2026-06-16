@@ -17,6 +17,7 @@ const colorMap: Record<string, string> = {
   LOST: "bg-red-100 text-red-700 hover:bg-red-100",
   CHURNED: "bg-slate-100 text-slate-500 hover:bg-slate-100",
   // Business status
+  INACTIVE: "bg-slate-100 text-slate-500 hover:bg-slate-100",
   SUSPENDED: "bg-red-100 text-red-700 hover:bg-red-100",
   // Subscription status
   PAST_DUE: "bg-amber-100 text-amber-700 hover:bg-amber-100",

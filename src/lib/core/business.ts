@@ -129,7 +129,7 @@ const BUSINESS_TYPE_DEFAULT_WORKFLOWS: Record<string, string[]> = {
   DIRECTORY:     ['ECOMMERCE'],
 };
 
-function resolveEnabledWorkflows(
+export function resolveEnabledWorkflows(
   planTier: string,
   businessType: string,
   adminSelected?: string[],
@@ -138,6 +138,24 @@ function resolveEnabledWorkflows(
   const valid = new Set(ALL_WORKFLOWS as readonly string[]);
   if (Array.isArray(adminSelected) && adminSelected.length > 0) {
     const filtered = adminSelected.filter(w => valid.has(w));
+    if (filtered.length > 0) return filtered;
+  }
+  return BUSINESS_TYPE_DEFAULT_WORKFLOWS[businessType] ?? ['ECOMMERCE'];
+}
+
+export function getBusinessEnabledWorkflows(
+  businessType: string,
+  planTier: string | undefined,
+  settingsJson?: string | null,
+): string[] {
+  const tier = planTier || 'STANDARD';
+  if (tier === 'STANDARD') return ['ECOMMERCE'];
+
+  const settings = JSON.parse(settingsJson || '{}') as Record<string, unknown>;
+  const fromSettings = settings.enabledWorkflows;
+  if (Array.isArray(fromSettings) && fromSettings.length > 0) {
+    const valid = new Set(ALL_WORKFLOWS as readonly string[]);
+    const filtered = (fromSettings as string[]).filter(w => valid.has(w));
     if (filtered.length > 0) return filtered;
   }
   return BUSINESS_TYPE_DEFAULT_WORKFLOWS[businessType] ?? ['ECOMMERCE'];
@@ -158,21 +176,33 @@ export async function createBusiness(data: CreateBusinessRequest) {
     }
   }
 
-  // 3. Find or use provided plan — plan is feature access only, no pricing
-  let planId = data.planId;
-  if (!planId) {
-    const tier = data.planTier || 'STANDARD';
-    const defaultPlan = await db.platformPlan.findUnique({ where: { tier } });
-    if (!defaultPlan) {
-      throw new Error(`No ${tier} plan found. Please seed platform plans first.`);
-    }
-    planId = defaultPlan.id;
+  // 3. Find or use provided plan — plan is workflow feature access only, pricing is managed separately.
+  const validPlanTiers = ['STANDARD', 'PRO'] as const;
+  const requestedPlanTier = data.planTier || 'STANDARD';
+  if (!validPlanTiers.includes(requestedPlanTier)) {
+    throw new Error(`Invalid planTier "${requestedPlanTier}". Allowed values: STANDARD, PRO`);
   }
 
-  const plan = await db.platformPlan.findUnique({ where: { id: planId } });
-  if (!plan) {
-    throw new Error(`Platform plan "${planId}" not found`);
+  let plan = null;
+  if (data.planId) {
+    plan = await db.platformPlan.findUnique({ where: { id: data.planId } });
+    if (!plan) {
+      throw new Error(`Platform plan "${data.planId}" not found`);
+    }
+    if (!validPlanTiers.includes(plan.tier as typeof validPlanTiers[number])) {
+      throw new Error(`Platform plan "${data.planId}" has invalid tier "${plan.tier}". Allowed values: STANDARD, PRO`);
+    }
+    if (data.planTier && data.planTier !== plan.tier) {
+      throw new Error(`planTier "${data.planTier}" does not match plan tier "${plan.tier}" for planId "${data.planId}".`);
+    }
+  } else {
+    plan = await db.platformPlan.findUnique({ where: { tier: requestedPlanTier } });
+    if (!plan) {
+      throw new Error(`No ${requestedPlanTier} plan found. Please seed platform plans first.`);
+    }
   }
+
+  const planId = plan.id;
 
   // 4. Build billing structure — all amounts are admin-entered, none come from the plan
   const billingCycle = data.billingCycle || 'MONTHLY';
@@ -939,10 +969,146 @@ export async function toggleOnline(businessId: string, isOnline: boolean) {
     }
   }
 
-  return db.business.update({
+  await db.business.update({
     where: { id: businessId },
     data: { isOnline },
   });
+
+  return evaluateActivation(businessId);
+}
+
+// ============================================================================
+// ACTIVATION CHECKLIST & AUTO-STATUS
+// ============================================================================
+
+/**
+ * STATUS_ITEMS determine the business status (ACTIVE/ONBOARDING/INACTIVE/SUSPENDED).
+ * READINESS_ITEMS are informational only — they do NOT affect status.
+ */
+const STATUS_ITEMS = ['subscription', 'domain', 'ssl', 'online'] as const;
+const READINESS_ITEMS = ['storeSettings', 'category', 'product', 'adminUser', 'logo', 'paymentGateway', 'deliveryConfig'] as const;
+const ALL_ITEMS = [...STATUS_ITEMS, ...READINESS_ITEMS] as const;
+
+type ActivationChecklist = Record<string, boolean>;
+
+async function autoDetectChecklist(businessId: string): Promise<ActivationChecklist> {
+  const biz = await db.business.findUnique({
+    where: { id: businessId },
+    include: {
+      domain: true,
+      businessSubscription: { select: { status: true } },
+      businessUsers: { where: { role: 'CLIENT_OWNER', isActive: true }, take: 1, select: { id: true } },
+      stores: { take: 1, select: { id: true, name: true, phone: true, email: true, address: true } },
+      _count: { select: { categories: true, products: true } },
+    },
+  });
+  if (!biz) throw new Error(`Business "${businessId}" not found`);
+
+  const store = biz.stores[0];
+
+  return {
+    subscription: biz.businessSubscription?.status === 'ACTIVE',
+    domain: !!biz.domain?.domain,
+    ssl: biz.domain?.sslStatus?.toLowerCase() === 'active',
+    online: biz.isOnline,
+    storeSettings: !!(store && store.name),
+    category: biz._count.categories > 0,
+    product: biz._count.products > 0,
+    adminUser: biz.businessUsers.length > 0,
+    logo: !!biz.logo,
+    paymentGateway: false, // auto-detection TBD — manually toggleable
+    deliveryConfig: false, // auto-detection TBD — manually toggleable
+  };
+}
+
+/**
+ * Auto-detect checklist completion and compute activation status.
+ *
+ * Status rules (STATUS_ITEMS only):
+ *   isOnline=false → INACTIVE
+ *   Subscription not ACTIVE → SUSPENDED
+ *   All 4 status items complete → ACTIVE
+ *   Any status item missing   → ONBOARDING
+ *
+ * READINESS_ITEMS are stored but do NOT affect status.
+ *
+ * Manual overrides stored in activationChecklist JSON take precedence
+ * over auto-detected values. Call toggleChecklistItem() to set overrides.
+ */
+export async function evaluateActivation(businessId: string) {
+  const auto = await autoDetectChecklist(businessId);
+
+  const biz = await db.business.findUnique({
+    where: { id: businessId },
+    select: { activationChecklist: true, isOnline: true, status: true },
+  });
+  if (!biz) throw new Error(`Business "${businessId}" not found`);
+
+  const stored: ActivationChecklist = JSON.parse(biz.activationChecklist || '{}');
+  const merged: ActivationChecklist = {};
+  for (const key of ALL_ITEMS) {
+    merged[key] = key in stored ? stored[key] : auto[key];
+  }
+
+  const statusCompleted = STATUS_ITEMS.filter(k => merged[k]).length;
+  const statusAllDone = statusCompleted === STATUS_ITEMS.length;
+  const readinessCompleted = READINESS_ITEMS.filter(k => merged[k]).length;
+  const readinessTotal = READINESS_ITEMS.length;
+
+  const isOnline = biz.isOnline;
+
+  let newStatus: string;
+  if (merged['subscription'] !== true) {
+    newStatus = 'SUSPENDED';
+  } else if (!isOnline) {
+    newStatus = 'INACTIVE';
+  } else if (statusAllDone) {
+    newStatus = 'ACTIVE';
+  } else {
+    newStatus = 'ONBOARDING';
+  }
+
+  const updateData: Record<string, unknown> = {
+    activationChecklist: JSON.stringify(merged),
+    activationProgress: readinessCompleted,
+    activationCompleted: statusAllDone && readinessCompleted === readinessTotal,
+  };
+
+  if (newStatus !== biz.status) {
+    updateData.status = newStatus;
+    if (newStatus === 'ACTIVE') {
+      updateData.activatedAt = new Date();
+      updateData.onboardedAt = new Date();
+    }
+  }
+
+  return db.business.update({ where: { id: businessId }, data: updateData });
+}
+
+/**
+ * Toggle a single activation checklist item.
+ * Stores the override in activationChecklist JSON, then re-evaluates.
+ */
+export async function toggleChecklistItem(businessId: string, item: string, value: boolean) {
+  if (!ALL_ITEMS.includes(item as typeof ALL_ITEMS[number])) {
+    throw new Error(`Invalid checklist item "${item}". Must be one of: ${ALL_ITEMS.join(', ')}`);
+  }
+
+  const biz = await db.business.findUnique({
+    where: { id: businessId },
+    select: { activationChecklist: true },
+  });
+  if (!biz) throw new Error(`Business "${businessId}" not found`);
+
+  const checklist: ActivationChecklist = JSON.parse(biz.activationChecklist || '{}');
+  checklist[item] = value;
+
+  await db.business.update({
+    where: { id: businessId },
+    data: { activationChecklist: JSON.stringify(checklist) },
+  });
+
+  return evaluateActivation(businessId);
 }
 
 // ============================================================================

@@ -77,11 +77,13 @@ interface BusinessApiData {
   ownerLoginId: string | null; ownerInternalId: string | null
   ownerEmail: string | null; ownerName: string | null
   ownerPhone: string | null; ownerLastLogin: string | null; ownerIsActive: boolean | null
+  activationChecklist: string; activationProgress: number; activationCompleted: boolean
 }
 
 // Filter options
 const allStatuses = [
   { value: "ALL", label: "All Statuses" },
+  { value: "INACTIVE", label: "Inactive" },
   { value: "ONBOARDING", label: "Onboarding" },
   { value: "TRIAL", label: "Trial" },
   { value: "ACTIVE", label: "Active" },
@@ -107,6 +109,23 @@ function formatCurrency(value: number): string {
   return `₹${value.toLocaleString("en-IN")}`
 }
 
+const STATUS_ITEMS: { key: string; label: string }[] = [
+  { key: "subscription", label: "Subscription Active" },
+  { key: "domain", label: "Domain Configured" },
+  { key: "ssl", label: "SSL Active" },
+  { key: "online", label: "Online Enabled" },
+]
+
+const READINESS_ITEMS: { key: string; label: string }[] = [
+  { key: "storeSettings", label: "Store Settings Configured" },
+  { key: "category", label: "Categories Created" },
+  { key: "product", label: "Products Added" },
+  { key: "adminUser", label: "Admin User Created" },
+  { key: "logo", label: "Logo Uploaded" },
+  { key: "paymentGateway", label: "Payment Gateway Configured" },
+  { key: "deliveryConfig", label: "Delivery Configuration" },
+]
+
 export function BusinessesView() {
   const { searchQuery, setCurrentBusiness, setActivePage } = useAdminStore()
   const { permissions } = useAuthStore()
@@ -126,7 +145,6 @@ export function BusinessesView() {
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [plans, setPlans] = useState<PlanApiData[]>([])
-  const [activatingBusiness, setActivatingBusiness] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Module toggle state (super admin)
@@ -142,6 +160,10 @@ export function BusinessesView() {
   const [editingLoginId, setEditingLoginId] = useState(false)
   const [newLoginIdValue, setNewLoginIdValue] = useState("")
   const [savingLoginId, setSavingLoginId] = useState(false)
+
+  // Activation checklist state
+  const [checklistItems, setChecklistItems] = useState<Record<string, boolean>>({})
+  const [checklistLoading, setChecklistLoading] = useState(false)
 
   // Branding & domain edit state (inline editor)
   const [brandingOpen, setBrandingOpen] = useState(false)
@@ -269,6 +291,29 @@ export function BusinessesView() {
       .then(j => { if (j.success) setStageLabels(j.data.stages) })
       .catch(() => {/* non-critical */})
   }, [selectedBusiness])
+
+  // Fetch activation checklist when detail sheet opens
+  useEffect(() => {
+    if (!detailOpen || !selectedBusiness) {
+      setChecklistItems({})
+      return
+    }
+    setChecklistLoading(true)
+    fetch(`/api/core/businesses/${selectedBusiness.id}`, { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(j => {
+        if (j.success && j.data) {
+          try {
+            const parsed = typeof j.data.activationChecklist === "string"
+              ? JSON.parse(j.data.activationChecklist)
+              : (j.data.activationChecklist || {})
+            setChecklistItems(parsed)
+          } catch { setChecklistItems({}) }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setChecklistLoading(false))
+  }, [detailOpen, selectedBusiness])
 
   const filteredBusinesses = useMemo(() => {
     return businesses.filter((biz) => {
@@ -487,6 +532,29 @@ export function BusinessesView() {
     }
   }
 
+  const handleToggleChecklistItem = async (item: string) => {
+    if (!selectedBusiness) return
+    const current = checklistItems[item] ?? false
+    setChecklistItems(prev => ({ ...prev, [item]: !current }))
+    try {
+      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}/activation-checklist`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ item, value: !current }),
+      })
+      const json = await res.json()
+      if (!json.success) {
+        setChecklistItems(prev => ({ ...prev, [item]: current }))
+        toast.error(json.error || "Failed to update")
+      } else {
+        fetchBusinesses()
+      }
+    } catch {
+      setChecklistItems(prev => ({ ...prev, [item]: current }))
+      toast.error("Network error")
+    }
+  }
+
   // Upload a business logo or favicon.
   // IMPORTANT: Do NOT set Content-Type — the browser sets the multipart boundary automatically.
   // Only pass Authorization + x-business-id headers.
@@ -629,43 +697,6 @@ export function BusinessesView() {
       }
     } catch {
       toast.error("Failed to toggle online status")
-    }
-  }
-
-  const handleActivateBusiness = async (biz: BusinessApiData) => {
-    setActivatingBusiness(true)
-    try {
-      if (biz.status !== "ACTIVE") {
-        const res = await fetch(`/api/core/businesses/${biz.id}/status`, {
-          method: "PUT",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ status: "ACTIVE" }),
-        })
-        const json = await res.json()
-        if (!res.ok || !json.success) {
-          toast.error(json.error || "Failed to activate business")
-          return
-        }
-        toast.success("Business activated successfully")
-      } else if (biz.subscription && biz.subscription.status !== "ACTIVE") {
-        const res = await fetch(`/api/core/businesses/${biz.id}/subscription/reactivate`, {
-          method: "POST",
-          headers: getAuthHeaders(),
-        })
-        const json = await res.json()
-        if (!res.ok || !json.success) {
-          toast.error(json.error || "Failed to reactivate subscription")
-          return
-        }
-        toast.success("Subscription reactivated successfully")
-      } else {
-        toast.success("Business is already active")
-      }
-      fetchBusinesses()
-    } catch {
-      toast.error("Failed to activate business")
-    } finally {
-      setActivatingBusiness(false)
     }
   }
 
@@ -1350,6 +1381,113 @@ export function BusinessesView() {
                         </div>
                       )}
                     </div>
+                    <Separator />
+                    {/* Business Status (determines ACTIVE/ONBOARDING/INACTIVE/SUSPENDED) */}
+                    {(() => {
+                      const statusCompleted = STATUS_ITEMS.filter(i => checklistItems[i.key]).length
+                      const statusAllDone = statusCompleted === STATUS_ITEMS.length
+                      const missingItems = STATUS_ITEMS.filter(i => !checklistItems[i.key])
+                      const doneItems = STATUS_ITEMS.filter(i => checklistItems[i.key])
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Status</h4>
+                            <StatusBadge status={biz.status} />
+                          </div>
+                          {biz.status === "ACTIVE" && (
+                            <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+                              <Check className="size-4 text-emerald-600 shrink-0" />
+                              <span className="text-xs font-medium text-emerald-700">Business is Live</span>
+                            </div>
+                          )}
+                          {biz.status !== "ACTIVE" && statusAllDone && (
+                            <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                              <span className="text-xs font-medium text-amber-700">Subscription is active but business is offline</span>
+                            </div>
+                          )}
+                          {checklistLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {missingItems.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-medium text-red-500 uppercase tracking-wide mb-1.5">Missing Requirements</p>
+                                  <div className="space-y-1">
+                                    {missingItems.map(item => (
+                                      <div key={item.key} className="flex items-center gap-2 py-1 px-2">
+                                        <X className="size-3.5 text-red-400 shrink-0" />
+                                        <span className="text-xs text-red-600">{item.label}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {doneItems.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-medium text-emerald-500 uppercase tracking-wide mb-1.5">Completed Requirements</p>
+                                  <div className="space-y-1">
+                                    {doneItems.map(item => (
+                                      <div key={item.key} className="flex items-center gap-2 py-1 px-2">
+                                        <Check className="size-3.5 text-emerald-500 shrink-0" />
+                                        <span className="text-xs text-emerald-700">{item.label}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
+                    <Separator />
+
+                    {/* Business Readiness (informational — does not affect status) */}
+                    {(() => {
+                      const readinessDone = READINESS_ITEMS.filter(i => checklistItems[i.key]).length
+                      const readinessTotal = READINESS_ITEMS.length
+                      const readinessPct = readinessTotal > 0 ? Math.round((readinessDone / readinessTotal) * 100) : 0
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Readiness</h4>
+                          </div>
+                          {checklistLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-500 ${readinessDone === readinessTotal ? "bg-emerald-500" : "bg-violet-400"}`}
+                                    style={{ width: `${readinessPct}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-mono font-medium text-muted-foreground shrink-0">{readinessDone}/{readinessTotal} Complete</span>
+                              </div>
+                              <div className="space-y-1.5">
+                                {READINESS_ITEMS.map(item => {
+                                  const checked = checklistItems[item.key] ?? false
+                                  return (
+                                    <div key={item.key} className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => handleToggleChecklistItem(item.key)}>
+                                      <div className={`size-4 rounded border flex items-center justify-center shrink-0 transition-colors ${checked ? "bg-emerald-500 border-emerald-500" : "border-muted-foreground/30"}`}>
+                                        {checked && <Check className="size-3 text-white" />}
+                                      </div>
+                                      <span className="text-xs">{item.label}</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })()}
                     <Separator />
                     {/* Access Credentials */}
                     <div className="space-y-3">

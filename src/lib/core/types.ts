@@ -34,7 +34,7 @@ export type BusinessType =
   | 'DIRECTORY';
 
 /** Business lifecycle status — managed by Quantix */
-export type BusinessStatus = 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CHURNED';
+export type BusinessStatus = 'INACTIVE' | 'ONBOARDING' | 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CHURNED';
 
 /** Platform roles for the MANAGED model */
 export type Role =

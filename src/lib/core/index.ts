@@ -26,7 +26,7 @@ export { PLATFORM_PERMISSIONS, BUSINESS_PERMISSIONS, SALES_PERMISSIONS, LEAD_PER
 export { logActivity, getActivityLogs, exportAuditLog } from './audit';
 
 // Business Management
-export { createBusiness, updateBusiness, getBusiness, listBusinesses, updateBusinessStatus, toggleOnline, getBusinessStats, getOnboardingProgress, updateOnboardingStep, completeOnboarding, convertLeadToBusiness } from './business';
+export { createBusiness, updateBusiness, getBusiness, listBusinesses, updateBusinessStatus, toggleOnline, evaluateActivation, toggleChecklistItem, getBusinessStats, getOnboardingProgress, updateOnboardingStep, completeOnboarding, convertLeadToBusiness } from './business';
 
 // Store Management
 export { createStore, updateStore, getStore, listStores, updateStoreTimings, getDefaultStoreTimings } from './store';
