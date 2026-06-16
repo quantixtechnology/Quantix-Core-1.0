@@ -263,28 +263,31 @@ export function StorefrontLayout({
               </>
             ) : (
               <>
-                {/* Logo — 40×40, never stretches header */}
-                <img
-                  src={currentBusinessLogo || "/placeholder-logo.svg"}
-                  alt={currentBusinessName || "Store"}
-                  className={`rounded-xl object-contain border block shrink-0 cursor-pointer active:opacity-70 ${logoBorder}`}
-                  style={{ width: 40, height: 40 }}
+                {/* Logo container — 52×52 flex centered, never stretches header */}
+                <div
+                  className="w-[52px] h-[52px] shrink-0 flex items-center justify-center cursor-pointer active:opacity-70"
                   onClick={() => nav.go("home")}
-                  onError={(e) => {
-                    const img = e.currentTarget
-                    if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
-                  }}
-                />
+                >
+                  <img
+                    src={currentBusinessLogo || "/placeholder-logo.svg"}
+                    alt={currentBusinessName || "Store"}
+                    className={`rounded-xl object-contain max-w-full max-h-full border ${logoBorder}`}
+                    onError={(e) => {
+                      const img = e.currentTarget
+                      if (!img.src.endsWith("/placeholder-logo.svg")) img.src = "/placeholder-logo.svg"
+                    }}
+                  />
+                </div>
                 {/* Business name + store selector — centered as a unit with logo */}
                 <div
-                  className="flex-1 min-w-0 flex flex-col gap-[3px] cursor-pointer"
+                  className="flex-1 min-w-0 flex flex-col justify-center gap-[3px] cursor-pointer"
                   onClick={() => nav.go("home")}
                   role="button"
                   tabIndex={0}
                 >
                   {/* 20px bold — premium native-app feel */}
                   <span
-                    className="text-[20px] font-bold leading-none truncate block"
+                    className="text-[20px] font-bold leading-[1.15] truncate block"
                     style={{ color: hFg }}
                   >
                     {currentBusinessName || "Store"}
@@ -296,7 +299,7 @@ export function StorefrontLayout({
                       style={{ color: hMuted }}
                     >
                       <MapPin className="w-3 h-3 shrink-0" />
-                      <span className="text-[13px] leading-none truncate max-w-[160px]">{currentStore.name}</span>
+                      <span className="text-[13px] leading-[1.2] truncate max-w-[160px]">{currentStore.name}</span>
                       <ChevronDown className="w-3 h-3 shrink-0" />
                     </button>
                   )}
