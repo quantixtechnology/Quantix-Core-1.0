@@ -35,6 +35,7 @@ import {
   Settings2,
   ShieldCheck,
   Shield,
+  ShieldAlert,
   AlertTriangle,
   RefreshCw,
   Loader2,
@@ -47,6 +48,7 @@ import {
   Lock,
   PlayCircle,
   Zap,
+  RotateCcw,
 } from "lucide-react"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { toast } from "sonner"
@@ -79,6 +81,7 @@ interface WebsiteRecord {
   subdomain: string | null
   sslStatus: string
   sslExpiryDate: string | null
+  sslError: string | null
   domainStatus: string | null
   domainConfiguredAt: string | null
   updatedAt: string
@@ -88,7 +91,7 @@ interface ValidationResult {
   slug:       string
   domain:     string
   dns:        { status: string; resolved: string[]; expected: string; pointsToVps: boolean }
-  ssl:        { status: string; expiryDate: string | null; httpsReachable: boolean }
+  ssl:        { status: string; expiryDate: string | null; httpsReachable: boolean; error: string | null }
   tenant:     { status: string; businessId: string | null; businessName: string | null }
   storefront: { status: string; isOnline: boolean }
   deployment: { status: string; label: string; nextStep: string }
@@ -106,9 +109,11 @@ const STATUS_CONFIG: Record<WebsiteStatus, { label: string; cls: string }> = {
 
 type SslConfig = { label: string; cls: string; Icon: React.ComponentType<{ className?: string }> }
 const SSL_CONFIG: Record<string, SslConfig> = {
-  active:  { label: "SSL Active",  cls: "text-emerald-600", Icon: ShieldCheck    },
-  pending: { label: "SSL Pending", cls: "text-amber-500",   Icon: Shield         },
-  expired: { label: "SSL Expired", cls: "text-red-500",     Icon: AlertTriangle  },
+  active:       { label: "SSL Active",  cls: "text-emerald-600", Icon: ShieldCheck    },
+  pending:      { label: "SSL Pending", cls: "text-amber-500",   Icon: Shield         },
+  provisioning: { label: "Provisioning SSL...", cls: "text-blue-500", Icon: Loader2 },
+  expired:      { label: "SSL Expired", cls: "text-red-500",     Icon: AlertTriangle  },
+  failed:       { label: "SSL Failed",  cls: "text-red-600",     Icon: ShieldAlert    },
 }
 
 // 4-step deployment pipeline
@@ -132,6 +137,8 @@ function deployStepStatus(validation: ValidationResult | null, step: string): "d
   if (step === "ssl") {
     if (dns.status !== "active") return "pending"
     if (ssl.httpsReachable || ssl.status === "active") return "done"
+    if (ssl.status === "provisioning") return "active"
+    if (ssl.status === "failed") return "error"
     return "active"
   }
   if (step === "storefront") {
@@ -150,6 +157,7 @@ function domainStatusBadge(domainStatus: string | null) {
   switch (domainStatus) {
     case "ACTIVE":          return { label: "Live",           cls: "bg-emerald-50 text-emerald-700 border-emerald-200" }
     case "SSL_PENDING":     return { label: "SSL Pending",    cls: "bg-amber-50   text-amber-700   border-amber-200"   }
+    case "SSL_PROVISIONING": return { label: "SSL Provisioning...", cls: "bg-blue-50 text-blue-700 border-blue-200" }
     case "DNS_PROPAGATING": return { label: "DNS Propagating",cls: "bg-blue-50    text-blue-700    border-blue-200"    }
     case "PENDING_DNS":     return { label: "DNS Pending",    cls: "bg-gray-100   text-gray-600    border-gray-200"    }
     case "ERROR":           return { label: "Error",          cls: "bg-red-50     text-red-700     border-red-200"     }
@@ -296,12 +304,18 @@ export function DomainsView() {
     setValidating(slug)
     setValidationResult(null)
     setValidationDialogOpen(true)
+
     try {
-      const res  = await fetch(`/api/website/status?slug=${encodeURIComponent(slug)}`, { headers: getAuthHeaders() })
+      // POST /api/website/validate runs DNS check + SSL provisioning synchronously.
+      // May take 30-60s while certbot runs on the server.
+      const res  = await fetch(`/api/website/validate`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ slug }),
+      })
       const json = await res.json()
       if (json.success) {
         setValidationResult(json.data as ValidationResult)
-        // Refresh list to pick up updated domain status
         fetchSites()
       } else {
         toast.error(json.error || "Validation failed")
@@ -481,7 +495,7 @@ export function DomainsView() {
                       {/* SSL */}
                       <td className="px-4 py-3 hidden md:table-cell">
                         <div className={`flex items-center gap-1 text-[11px] font-medium ${ssl.cls}`}>
-                          <SslIcon className="h-3 w-3 shrink-0" />
+                          <SslIcon className={`h-3 w-3 shrink-0 ${sslKey === "provisioning" ? "animate-spin" : ""}`} />
                           <span>{ssl.label}</span>
                         </div>
                       </td>
@@ -763,7 +777,11 @@ export function DomainsView() {
                   ok: validationResult.ssl.httpsReachable || validationResult.ssl.status === "active",
                   detail: validationResult.ssl.httpsReachable
                     ? `HTTPS reachable${validationResult.ssl.expiryDate ? ` · expires ${new Date(validationResult.ssl.expiryDate).toLocaleDateString("en-IN")}` : ""}`
-                    : "SSL not active — run certbot after DNS is working",
+                    : validationResult.ssl.status === "provisioning"
+                    ? "SSL certificate being provisioned automatically..."
+                    : validationResult.ssl.status === "failed"
+                    ? `SSL failed: ${validationResult.ssl.error || "Unknown error"}`
+                    : "SSL not active — provisioning queued automatically",
                 },
                 {
                   icon: Server,
@@ -799,6 +817,41 @@ export function DomainsView() {
                   <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1">Next Step</p>
                   <p className="text-xs text-amber-800 font-mono leading-relaxed">{validationResult.deployment.nextStep}</p>
                 </div>
+              )}
+
+              {/* Retry SSL on failure */}
+              {validationResult.ssl.status === "failed" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2 text-xs"
+                  disabled={validating === validationResult.slug}
+                  onClick={async () => {
+                    try {
+                      setValidating(validationResult.slug)
+                      const res = await fetch("/api/ssl/provision", {
+                        method: "POST",
+                        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                        body: JSON.stringify({ businessId: validationResult.tenant.businessId }),
+                      })
+                      const json = await res.json()
+                      if (json.success) {
+                        toast.success("SSL provisioning retried")
+                        // Re-run validation to show updated status
+                        setTimeout(() => validateSite(validationResult.slug), 2000)
+                      } else {
+                        toast.error(json.error || "Retry failed")
+                      }
+                    } catch {
+                      toast.error("Failed to retry SSL provisioning")
+                    } finally {
+                      setValidating(null)
+                    }
+                  }}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Retry SSL Provisioning
+                </Button>
               )}
 
               {validationResult.deployment.status === "ACTIVE" && (

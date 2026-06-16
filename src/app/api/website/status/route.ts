@@ -5,6 +5,7 @@
 // Returns a structured status object for each layer so the Website Management
 // UI can show exactly which step is failing.
 // Also updates DomainMapping.status in-place if DNS just became resolvable.
+// When DNS becomes active, automatically queues SSL provisioning.
 // ============================================================================
 
 import { NextResponse } from 'next/server'
@@ -16,7 +17,7 @@ const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtec
 const VPS_IP          = process.env.VPS_HOST || ''   // Set in .env — the public VPS IP
 
 type DnsStatus      = 'active' | 'pending' | 'error'
-type SslStatus      = 'active' | 'pending' | 'expired' | 'error'
+type SslStatus      = 'active' | 'pending' | 'provisioning' | 'expired' | 'error' | 'failed'
 type TenantStatus   = 'active' | 'draft' | 'maintenance' | 'not_found'
 type StorefrontStatus = 'online' | 'offline' | 'unknown'
 
@@ -24,7 +25,7 @@ interface StatusResponse {
   slug:        string
   domain:      string
   dns:         { status: DnsStatus;      resolved: string[]; expected: string; pointsToVps: boolean }
-  ssl:         { status: SslStatus;      expiryDate: string | null; httpsReachable: boolean }
+  ssl:         { status: SslStatus;      expiryDate: string | null; httpsReachable: boolean; error: string | null }
   tenant:      { status: TenantStatus;   businessId: string | null; businessName: string | null }
   storefront:  { status: StorefrontStatus; isOnline: boolean }
   deployment:  { status: string; label: string; nextStep: string }
@@ -42,7 +43,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       slug,
       domain,
       dns:        { status: 'pending', resolved: [], expected: VPS_IP, pointsToVps: false },
-      ssl:        { status: 'pending', expiryDate: null, httpsReachable: false },
+      ssl:        { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
       tenant:     { status: 'not_found', businessId: null, businessName: null },
       storefront: { status: 'unknown', isOnline: false },
       deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: 'Add wildcard A record for *.quantixtechnology.in to your DNS provider' },
@@ -66,7 +67,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       select: {
         id: true, name: true, isOnline: true, status: true, settings: true,
         domain: {
-          select: { sslStatus: true, sslExpiryDate: true, status: true },
+          select: { sslStatus: true, sslExpiryDate: true, sslError: true, status: true },
         },
       },
     })
@@ -91,6 +92,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       const raw = domainRecord.sslStatus ?? 'pending'
       result.ssl.status     = (raw as SslStatus)
       result.ssl.expiryDate = domainRecord.sslExpiryDate?.toISOString() ?? null
+      result.ssl.error      = domainRecord.sslError ?? null
     }
 
     // ── 4. HTTPS reachability (non-blocking, short timeout) ───────────────
@@ -117,11 +119,23 @@ export const GET = withMiddleware({ requireAuth: true })(
         label:    'DNS Pending',
         nextStep: `Add wildcard A record: * → ${VPS_IP || '<VPS_IP>'} for ${STOREFRONT_BASE}. Then run: nslookup ${domain}`,
       }
+    } else if (domainRecord?.sslStatus === 'provisioning') {
+      result.deployment = {
+        status:   'SSL_PROVISIONING',
+        label:    'Provisioning SSL...',
+        nextStep: `SSL certificate is being provisioned automatically. This takes 1-3 minutes.`,
+      }
+    } else if (domainRecord?.sslStatus === 'failed') {
+      result.deployment = {
+        status:   'SSL_FAILED',
+        label:    'SSL Failed',
+        nextStep: `SSL provisioning failed: ${domainRecord.sslError || 'Unknown error'}. Retrying automatically.`,
+      }
     } else if (result.ssl.status !== 'active' && !result.ssl.httpsReachable) {
       result.deployment = {
         status:   'SSL_PENDING',
         label:    'SSL Pending',
-        nextStep: `DNS is active. Run on VPS: sudo certbot --nginx -d '*.${STOREFRONT_BASE}' or sudo certbot --nginx -d ${domain}`,
+        nextStep: `DNS is active. Click "Validate" to trigger SSL provisioning.`,
       }
     } else if (result.tenant.status === 'not_found') {
       result.deployment = {
@@ -147,30 +161,38 @@ export const GET = withMiddleware({ requireAuth: true })(
     if (business) {
       try {
         const newDomainStatus = result.deployment.status === 'ACTIVE' ? 'ACTIVE'
+          : result.deployment.status === 'SSL_PROVISIONING' ? 'SSL_PROVISIONING'
+          : result.deployment.status === 'SSL_FAILED' ? 'ERROR'
           : result.dns.status === 'active'  ? 'SSL_PENDING'
           : 'PENDING_DNS'
 
         const currentStatus = domainRecord?.status ?? 'PENDING_DNS'
 
         // Only advance status, never regress (unless DNS disappeared)
-        const statusOrder = ['PENDING_DNS', 'DNS_PROPAGATING', 'SSL_PENDING', 'ACTIVE']
+        const statusOrder = ['PENDING_DNS', 'DNS_PROPAGATING', 'SSL_PENDING', 'SSL_PROVISIONING', 'ACTIVE']
         const newIdx  = statusOrder.indexOf(newDomainStatus)
         const currIdx = statusOrder.indexOf(currentStatus)
 
         const shouldUpdate = newIdx > currIdx || result.dns.status !== 'active'
 
         if (shouldUpdate || !business.domain) {
+          const sslStatusValue = result.deployment.status === 'SSL_PROVISIONING' ? 'provisioning'
+            : domainRecord?.sslStatus === 'failed' ? 'failed'
+            : result.ssl.httpsReachable ? 'active'
+            : (domainRecord?.sslStatus ?? 'pending')
+
           await db.domainMapping.upsert({
             where: { businessId: business.id },
             update: {
-              status:    newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR',
-              sslStatus: result.ssl.httpsReachable ? 'active' : (domainRecord?.sslStatus ?? 'pending'),
+              status:    newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'SSL_PROVISIONING' | 'ACTIVE' | 'ERROR',
+              sslStatus: sslStatusValue,
+              sslLastCheckedAt: new Date(),
             },
             create: {
               businessId: business.id,
               domain:     domain,
               subdomain:  slug,
-              status:     newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'ACTIVE' | 'ERROR',
+              status:     newDomainStatus as 'PENDING_DNS' | 'DNS_PROPAGATING' | 'SSL_PENDING' | 'SSL_PROVISIONING' | 'ACTIVE' | 'ERROR',
               sslStatus:  'pending',
             },
           })
