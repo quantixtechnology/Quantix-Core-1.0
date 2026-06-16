@@ -135,7 +135,7 @@ export const POST = withMiddleware({ requireAuth: true })(
       const business = await db.business.findFirst({
         where: { slug },
         select: {
-          id: true, slug: true,
+          id: true, slug: true, name: true, isOnline: true, status: true,
           domain: { select: { domain: true, subdomain: true, sslStatus: true, sslError: true, status: true } },
         },
       })

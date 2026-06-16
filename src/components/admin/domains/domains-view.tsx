@@ -143,7 +143,7 @@ function deployStepStatus(validation: ValidationResult | null, step: string): "d
   }
   if (step === "storefront") {
     if (!ssl.httpsReachable && ssl.status !== "active") return "pending"
-    if (storefront.isOnline) return "done"
+    if (storefront?.isOnline) return "done"
     return "active"
   }
   if (step === "live") {
@@ -785,16 +785,18 @@ export function DomainsView() {
                 {
                   icon: Server,
                   label: "Tenant",
-                  ok: validationResult.tenant.status !== "not_found",
-                  detail: validationResult.tenant.status === "not_found"
-                    ? `Slug "${validationResult.slug}" not found in database`
-                    : `${validationResult.tenant.businessName} · ${validationResult.tenant.status}`,
+                  ok: validationResult.tenant?.status !== "not_found" && validationResult.tenant !== null,
+                  detail: validationResult.tenant
+                    ? validationResult.tenant.status === "not_found"
+                      ? `Slug "${validationResult.slug}" not found in database`
+                      : `${validationResult.tenant.businessName} · ${validationResult.tenant.status}`
+                    : "Tenant data not yet available — run Validate again",
                 },
                 {
                   icon: PlayCircle,
                   label: "Storefront",
-                  ok: validationResult.storefront.isOnline,
-                  detail: validationResult.storefront.isOnline
+                  ok: validationResult.storefront?.isOnline ?? false,
+                  detail: validationResult.storefront?.isOnline
                     ? "Online and serving customers"
                     : "Website status is not Active — set to Active in settings",
                 },
@@ -831,7 +833,7 @@ export function DomainsView() {
                       const res = await fetch("/api/ssl/provision", {
                         method: "POST",
                         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-                        body: JSON.stringify({ businessId: validationResult.tenant.businessId }),
+                        body: JSON.stringify({ businessId: validationResult.tenant?.businessId }),
                       })
                       const json = await res.json()
                       if (json.success) {
