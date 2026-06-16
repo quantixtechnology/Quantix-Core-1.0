@@ -38,7 +38,22 @@ export const GET = withMiddleware({ requireAuth: true })(
     const slug = searchParams.get('slug')?.toLowerCase().trim()
     if (!slug) return createErrorResponse('slug is required', 400)
 
-    const domain = `${slug}.${STOREFRONT_BASE}`
+    const defaultDomain = `${slug}.${STOREFRONT_BASE}`
+
+    // ── 0. Tenant resolution (from DB) — needed first for actual domain ─────
+    const business = await db.business.findFirst({
+      where: { slug },
+      select: {
+        id: true, name: true, isOnline: true, status: true, settings: true,
+        domain: {
+          select: { domain: true, subdomain: true, sslStatus: true, sslExpiryDate: true, sslError: true, status: true },
+        },
+      },
+    })
+
+    // Use the canonical domain from DomainMapping if available
+    const domain = business?.domain?.domain || defaultDomain
+
     const result: StatusResponse = {
       slug,
       domain,
@@ -49,28 +64,6 @@ export const GET = withMiddleware({ requireAuth: true })(
       deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: 'Add wildcard A record for *.quantixtechnology.in to your DNS provider' },
       checkedAt:  new Date().toISOString(),
     }
-
-    // ── 1. DNS Resolution ──────────────────────────────────────────────────
-    try {
-      const addresses = await dns.resolve4(domain)
-      result.dns.resolved = addresses
-      result.dns.status   = 'active'
-      result.dns.pointsToVps = VPS_IP ? addresses.includes(VPS_IP) : true
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code
-      result.dns.status = code === 'ENOTFOUND' || code === 'ENODATA' ? 'pending' : 'error'
-    }
-
-    // ── 2. Tenant resolution (from DB) ─────────────────────────────────────
-    const business = await db.business.findFirst({
-      where: { slug },
-      select: {
-        id: true, name: true, isOnline: true, status: true, settings: true,
-        domain: {
-          select: { sslStatus: true, sslExpiryDate: true, sslError: true, status: true },
-        },
-      },
-    })
 
     if (business) {
       result.tenant.businessId   = business.id
@@ -84,6 +77,17 @@ export const GET = withMiddleware({ requireAuth: true })(
 
       result.storefront.isOnline = business.isOnline
       result.storefront.status   = business.isOnline ? 'online' : 'offline'
+    }
+
+    // ── 1. DNS Resolution ──────────────────────────────────────────────────
+    try {
+      const addresses = await dns.resolve4(domain)
+      result.dns.resolved = addresses
+      result.dns.status   = 'active'
+      result.dns.pointsToVps = VPS_IP ? addresses.includes(VPS_IP) : true
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      result.dns.status = code === 'ENOTFOUND' || code === 'ENODATA' ? 'pending' : 'error'
     }
 
     // ── 3. SSL Status (from DB record) ─────────────────────────────────────

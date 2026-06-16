@@ -127,10 +127,25 @@ export const POST = withMiddleware({ requireAuth: true })(
 
       if (!slug) return createErrorResponse('slug is required', 400)
 
-      const domain = `${slug}.${STOREFRONT_BASE}`
-      console.log("DOMAIN", domain)
-
+      const defaultDomain = `${slug}.${STOREFRONT_BASE}`
       const checkedAt = new Date().toISOString()
+
+      // 0. Look up business + DomainMapping first
+      console.log("Fetching business for slug", slug)
+      const business = await db.business.findFirst({
+        where: { slug },
+        select: {
+          id: true, slug: true,
+          domain: { select: { domain: true, subdomain: true, sslStatus: true, sslError: true, status: true } },
+        },
+      })
+      console.log("BUSINESS FOUND", !!business)
+
+      // Resolve the actual provisioning domain:
+      //   Prefer DomainMapping.domain (the canonical website hostname)
+      //   Fall back to slug-derived domain for first-time provisioning
+      const domain = business?.domain?.domain || defaultDomain
+      console.log("PROVISIONING DOMAIN:", domain, "(source:", business?.domain?.domain ? 'DomainMapping' : 'slug-derived', ")")
 
       // 1. DNS Resolution
       let dnsActive = false
@@ -159,14 +174,6 @@ export const POST = withMiddleware({ requireAuth: true })(
           },
         })
       }
-
-      // DNS is active — proceed with SSL provisioning
-      console.log("Fetching business for slug", slug)
-      const business = await db.business.findFirst({
-        where: { slug },
-        select: { id: true, slug: true, domain: { select: { sslStatus: true } } },
-      })
-      console.log("BUSINESS FOUND", !!business)
 
       if (!business) {
         return NextResponse.json({
@@ -247,13 +254,23 @@ export const POST = withMiddleware({ requireAuth: true })(
       })
 
       // 4. Run full provisioning (blocks until certbot completes)
-      console.log("Starting SSL provisioning for", domain)
+      console.log("SSL PROVISIONING DOMAIN:", domain)
       let sslResult: { status: 'active' | 'failed'; expiryDate: Date | null; error: string | null }
       try {
         console.log("Step: ensureNginxConfig")
         await ensureNginxConfig(domain)
         console.log("Step: runCertbot")
-        await runCertbot(domain)
+        const certbotCmd = `certbot --nginx -d ${domain} -d www.${domain} --non-interactive --agree-tos -m ${SSL_EMAIL}`
+        console.log("CERTBOT COMMAND:", certbotCmd)
+        let certbotOutput = ''
+        try {
+          certbotOutput = await shell(certbotCmd, 180_000)
+          console.log("CERTBOT OUTPUT:", certbotOutput)
+        } catch (certbotErr) {
+          certbotOutput = certbotErr instanceof Error ? certbotErr.message : String(certbotErr)
+          console.log("CERTBOT FAILED:", certbotOutput)
+          throw certbotErr
+        }
         console.log("Step: reloadNginx")
         await reloadNginx()
 
