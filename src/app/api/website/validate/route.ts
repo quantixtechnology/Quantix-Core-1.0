@@ -118,172 +118,211 @@ async function getCertExpiry(domain: string): Promise<Date | null> {
 
 export const POST = withMiddleware({ requireAuth: true })(
   async (req) => {
-    const body = (await req.json()) as { slug: string }
-    const slug = body.slug?.toLowerCase().trim()
-    if (!slug) return createErrorResponse('slug is required', 400)
-
-    const domain = `${slug}.${STOREFRONT_BASE}`
-
-    const checkedAt = new Date().toISOString()
-
-    // 1. DNS Resolution
-    let dnsActive = false
-    let resolved: string[] = []
     try {
-      resolved = await dns.resolve4(domain)
-      dnsActive = VPS_IP ? resolved.includes(VPS_IP) : true
-    } catch {
-      dnsActive = false
-    }
+      const body = (await req.json()) as { slug: string }
+      console.log("VALIDATE REQUEST", JSON.stringify(body))
 
-    if (!dnsActive) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          slug, domain,
-          dns: { status: 'pending', resolved, expected: VPS_IP, pointsToVps: false },
-          ssl: { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
-          tenant: null, storefront: null,
-          deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: `Add A record: * → ${VPS_IP || '<VPS_IP>'}` },
-          checkedAt,
-        },
-      })
-    }
+      const slug = body.slug?.toLowerCase().trim()
+      console.log("SLUG", slug)
 
-    // DNS is active — proceed with SSL provisioning
-    const business = await db.business.findFirst({
-      where: { slug },
-      select: { id: true, slug: true, domain: { select: { sslStatus: true } } },
-    })
-    if (!business) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          slug, domain,
-          dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
-          ssl: { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
-          tenant: null, storefront: null,
-          deployment: { status: 'ERROR', label: 'Tenant Not Found', nextStep: 'Business not found in database.' },
-          checkedAt,
-        },
-      })
-    }
+      if (!slug) return createErrorResponse('slug is required', 400)
 
-    // Skip if already active or currently provisioning
-    const currentSslStatus = business.domain?.sslStatus
-    if (currentSslStatus === 'active') {
-      return NextResponse.json({
-        success: true,
-        data: {
-          slug, domain,
-          dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
-          ssl: { status: 'active', expiryDate: null, httpsReachable: true, error: null },
-          tenant: null, storefront: null,
-          deployment: { status: 'ACTIVE', label: 'Fully Live', nextStep: '' },
-          checkedAt,
-        },
-      })
-    }
+      const domain = `${slug}.${STOREFRONT_BASE}`
+      console.log("DOMAIN", domain)
 
-    if (currentSslStatus === 'provisioning') {
-      return NextResponse.json({
-        success: true,
-        data: {
-          slug, domain,
-          dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
-          ssl: { status: 'provisioning', expiryDate: null, httpsReachable: false, error: null },
-          tenant: null, storefront: null,
-          deployment: { status: 'SSL_PROVISIONING', label: 'Provisioning SSL...', nextStep: 'SSL provisioning already in progress.' },
-          checkedAt,
-        },
-      })
-    }
+      const checkedAt = new Date().toISOString()
 
-    // 2. Verify prerequisites
-    const prereqError = await verifyPrerequisites()
-    if (prereqError) {
-      await db.domainMapping.upsert({
-        where: { businessId: business.id },
-        update: { sslStatus: 'failed', status: 'ERROR', sslError: prereqError, sslLastCheckedAt: new Date() },
-        create: { businessId: business.id, domain, subdomain: slug, sslStatus: 'failed', status: 'ERROR', sslError: prereqError },
-      })
-      return NextResponse.json({
-        success: true,
-        data: {
-          slug, domain,
-          dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
-          ssl: { status: 'failed', expiryDate: null, httpsReachable: false, error: prereqError },
-          tenant: null, storefront: null,
-          deployment: { status: 'ERROR', label: 'SSL Failed', nextStep: prereqError },
-          checkedAt,
-        },
-      })
-    }
-
-    // 3. Update DB to provisioning
-    await db.domainMapping.upsert({
-      where: { businessId: business.id },
-      update: { sslStatus: 'provisioning', status: 'SSL_PROVISIONING', sslError: null },
-      create: { businessId: business.id, domain, subdomain: slug, sslStatus: 'provisioning', status: 'SSL_PROVISIONING' },
-    })
-
-    // 4. Run full provisioning (blocks until certbot completes)
-    let sslResult: { status: 'active' | 'failed'; expiryDate: Date | null; error: string | null }
-    try {
-      await ensureNginxConfig(domain)
-      await runCertbot(domain)
-      await reloadNginx()
-
-      // Verify HTTPS
-      let httpsOk = false
+      // 1. DNS Resolution
+      let dnsActive = false
+      let resolved: string[] = []
       try {
-        const ctrl = new AbortController()
-        const tid = setTimeout(() => ctrl.abort(), 10000)
-        const res = await fetch(`https://${domain}`, { signal: ctrl.signal, redirect: 'follow' })
-        clearTimeout(tid)
-        httpsOk = res.ok || res.status < 500
-      } catch {
-        httpsOk = false
+        console.log("Resolving DNS for", domain)
+        resolved = await dns.resolve4(domain)
+        console.log("DNS RESOLVED", resolved)
+        dnsActive = VPS_IP ? resolved.includes(VPS_IP) : true
+        console.log("DNS ACTIVE", dnsActive, "VPS_IP", VPS_IP)
+      } catch (dnsErr) {
+        console.log("DNS ERROR", dnsErr instanceof Error ? dnsErr.message : String(dnsErr))
+        dnsActive = false
       }
 
-      const expiryDate = await getCertExpiry(domain)
-      sslResult = { status: httpsOk ? 'active' : 'failed', expiryDate, error: httpsOk ? null : 'HTTPS not reachable after certificate was issued' }
+      if (!dnsActive) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            slug, domain,
+            dns: { status: 'pending', resolved, expected: VPS_IP, pointsToVps: false },
+            ssl: { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
+            tenant: null, storefront: null,
+            deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: `Add A record: * → ${VPS_IP || '<VPS_IP>'}` },
+            checkedAt,
+          },
+        })
+      }
+
+      // DNS is active — proceed with SSL provisioning
+      console.log("Fetching business for slug", slug)
+      const business = await db.business.findFirst({
+        where: { slug },
+        select: { id: true, slug: true, domain: { select: { sslStatus: true } } },
+      })
+      console.log("BUSINESS FOUND", !!business)
+
+      if (!business) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            slug, domain,
+            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            ssl: { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
+            tenant: null, storefront: null,
+            deployment: { status: 'ERROR', label: 'Tenant Not Found', nextStep: 'Business not found in database.' },
+            checkedAt,
+          },
+        })
+      }
+
+      // Skip if already active or currently provisioning
+      const currentSslStatus = business.domain?.sslStatus
+      console.log("CURRENT SSL STATUS", currentSslStatus)
+
+      if (currentSslStatus === 'active') {
+        return NextResponse.json({
+          success: true,
+          data: {
+            slug, domain,
+            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            ssl: { status: 'active', expiryDate: null, httpsReachable: true, error: null },
+            tenant: null, storefront: null,
+            deployment: { status: 'ACTIVE', label: 'Fully Live', nextStep: '' },
+            checkedAt,
+          },
+        })
+      }
+
+      if (currentSslStatus === 'provisioning') {
+        return NextResponse.json({
+          success: true,
+          data: {
+            slug, domain,
+            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            ssl: { status: 'provisioning', expiryDate: null, httpsReachable: false, error: null },
+            tenant: null, storefront: null,
+            deployment: { status: 'SSL_PROVISIONING', label: 'Provisioning SSL...', nextStep: 'SSL provisioning already in progress.' },
+            checkedAt,
+          },
+        })
+      }
+
+      // 2. Verify prerequisites
+      console.log("Verifying prerequisites (nginx + certbot)")
+      const prereqError = await verifyPrerequisites()
+      console.log("PREREQ RESULT", prereqError)
+
+      if (prereqError) {
+        await db.domainMapping.upsert({
+          where: { businessId: business.id },
+          update: { sslStatus: 'failed', status: 'ERROR', sslError: prereqError, sslLastCheckedAt: new Date() },
+          create: { businessId: business.id, domain, subdomain: slug, sslStatus: 'failed', status: 'ERROR', sslError: prereqError },
+        })
+        return NextResponse.json({
+          success: true,
+          data: {
+            slug, domain,
+            dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+            ssl: { status: 'failed', expiryDate: null, httpsReachable: false, error: prereqError },
+            tenant: null, storefront: null,
+            deployment: { status: 'ERROR', label: 'SSL Failed', nextStep: prereqError },
+            checkedAt,
+          },
+        })
+      }
+
+      // 3. Update DB to provisioning
+      console.log("Updating DB to provisioning")
+      await db.domainMapping.upsert({
+        where: { businessId: business.id },
+        update: { sslStatus: 'provisioning', status: 'SSL_PROVISIONING', sslError: null },
+        create: { businessId: business.id, domain, subdomain: slug, sslStatus: 'provisioning', status: 'SSL_PROVISIONING' },
+      })
+
+      // 4. Run full provisioning (blocks until certbot completes)
+      console.log("Starting SSL provisioning for", domain)
+      let sslResult: { status: 'active' | 'failed'; expiryDate: Date | null; error: string | null }
+      try {
+        console.log("Step: ensureNginxConfig")
+        await ensureNginxConfig(domain)
+        console.log("Step: runCertbot")
+        await runCertbot(domain)
+        console.log("Step: reloadNginx")
+        await reloadNginx()
+
+        // Verify HTTPS
+        console.log("Step: verify HTTPS")
+        let httpsOk = false
+        try {
+          const ctrl = new AbortController()
+          const tid = setTimeout(() => ctrl.abort(), 10000)
+          const res = await fetch(`https://${domain}`, { signal: ctrl.signal, redirect: 'follow' })
+          clearTimeout(tid)
+          httpsOk = res.ok || res.status < 500
+          console.log("HTTPS CHECK", httpsOk, res.status)
+        } catch (httpsErr) {
+          console.log("HTTPS ERROR", httpsErr instanceof Error ? httpsErr.message : String(httpsErr))
+          httpsOk = false
+        }
+
+        const expiryDate = await getCertExpiry(domain)
+        console.log("CERT EXPIRY", expiryDate)
+        sslResult = { status: httpsOk ? 'active' : 'failed', expiryDate, error: httpsOk ? null : 'HTTPS not reachable after certificate was issued' }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.log("PROVISION ERROR", message)
+        sslResult = { status: 'failed', expiryDate: null, error: message }
+      }
+
+      // 5. Update DB with final result
+      console.log("Final SSL result", sslResult.status, sslResult.error)
+      await db.domainMapping.update({
+        where: { businessId: business.id },
+        data: {
+          sslStatus: sslResult.status,
+          status: sslResult.status === 'active' ? 'ACTIVE' : 'ERROR',
+          sslExpiryDate: sslResult.expiryDate,
+          sslError: sslResult.error,
+          sslLastCheckedAt: new Date(),
+        },
+      })
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          slug, domain,
+          dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
+          ssl: {
+            status: sslResult.status,
+            expiryDate: sslResult.expiryDate?.toISOString() ?? null,
+            httpsReachable: sslResult.status === 'active',
+            error: sslResult.error,
+          },
+          tenant: null, storefront: null,
+          deployment: {
+            status: sslResult.status === 'active' ? 'ACTIVE' : 'SSL_FAILED',
+            label: sslResult.status === 'active' ? 'Fully Live' : 'SSL Failed',
+            nextStep: sslResult.error || '',
+          },
+          checkedAt: new Date().toISOString(),
+        },
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      sslResult = { status: 'failed', expiryDate: null, error: message }
+      const stack = err instanceof Error ? err.stack : ''
+      console.log("VALIDATION FATAL ERROR", message)
+      console.log("STACK", stack)
+      return NextResponse.json(
+        { success: false, error: message, stack },
+        { status: 500 },
+      )
     }
-
-    // 5. Update DB with final result
-    await db.domainMapping.update({
-      where: { businessId: business.id },
-      data: {
-        sslStatus: sslResult.status,
-        status: sslResult.status === 'active' ? 'ACTIVE' : 'ERROR',
-        sslExpiryDate: sslResult.expiryDate,
-        sslError: sslResult.error,
-        sslLastCheckedAt: new Date(),
-      },
-    })
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        slug, domain,
-        dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
-        ssl: {
-          status: sslResult.status,
-          expiryDate: sslResult.expiryDate?.toISOString() ?? null,
-          httpsReachable: sslResult.status === 'active',
-          error: sslResult.error,
-        },
-        tenant: null, storefront: null,
-        deployment: {
-          status: sslResult.status === 'active' ? 'ACTIVE' : 'SSL_FAILED',
-          label: sslResult.status === 'active' ? 'Fully Live' : 'SSL Failed',
-          nextStep: sslResult.error || '',
-        },
-        checkedAt: new Date().toISOString(),
-      },
-    })
   },
 )
