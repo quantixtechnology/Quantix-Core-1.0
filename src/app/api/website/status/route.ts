@@ -80,6 +80,7 @@ export const GET = withMiddleware({ requireAuth: true })(
       const storefront = settings.storefront as Record<string, unknown> | undefined
       if (storefront?.websiteStatus === 'maintenance') result.tenant.status = 'maintenance'
 
+      // Storefront status will be overridden by live health check below if DNS is active
       result.storefront.isOnline = business.isOnline
       result.storefront.status   = business.isOnline ? 'online' : 'offline'
     }
@@ -119,6 +120,18 @@ export const GET = withMiddleware({ requireAuth: true })(
         // HTTPS not reachable — could be SSL not provisioned yet or port closed
         result.ssl.httpsReachable = false
       }
+
+      // ── 4b. Live storefront health check (separate from SSL reachability) ──
+      try {
+        const ctrl = new AbortController()
+        const tid  = setTimeout(() => ctrl.abort(), 6000)
+        const res  = await fetch(`https://${domain}`, { signal: ctrl.signal, redirect: 'follow' })
+        clearTimeout(tid)
+        const isOnline = res.ok || res.status < 500
+        result.storefront = { status: isOnline ? 'online' : 'offline', isOnline }
+      } catch {
+        result.storefront = { status: 'offline', isOnline: false }
+      }
     }
 
     // ── 5. Derive composite deployment status ──────────────────────────────
@@ -154,9 +167,9 @@ export const GET = withMiddleware({ requireAuth: true })(
       }
     } else if (!result.storefront.isOnline) {
       result.deployment = {
-        status:   'SSL_PENDING',
-        label:    'SSL Active — Storefront Offline',
-        nextStep: 'DNS and SSL are active. Set website status to Active in Website Management.',
+        status:   'STOREFRONT_OFFLINE',
+        label:    'Storefront Offline',
+        nextStep: 'DNS and SSL are active but the storefront is not serving content. Check the Next.js application or set website status to Active.',
       }
     } else {
       result.deployment = {
@@ -172,6 +185,7 @@ export const GET = withMiddleware({ requireAuth: true })(
         const newDomainStatus = result.deployment.status === 'ACTIVE' ? 'ACTIVE'
           : result.deployment.status === 'SSL_PENDING' ? 'SSL_PENDING'
           : result.deployment.status === 'SSL_FAILED' ? 'ERROR'
+          : result.deployment.status === 'STOREFRONT_OFFLINE' ? 'SSL_PENDING'
           : result.dns.status === 'active'  ? 'SSL_PENDING'
           : 'PENDING_DNS'
 

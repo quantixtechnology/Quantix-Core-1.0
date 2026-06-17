@@ -142,12 +142,15 @@ function deployStepStatus(validation: ValidationResult | null, step: string): "d
     return "active"
   }
   if (step === "storefront") {
+    if (dns.status !== "active") return "pending"
     if (!ssl.httpsReachable && ssl.status !== "active") return "pending"
+    if (deployment.status === "STOREFRONT_OFFLINE") return "error"
     if (storefront?.isOnline) return "done"
     return "active"
   }
   if (step === "live") {
     if (deployment.status === "ACTIVE") return "done"
+    if (deployment.status === "STOREFRONT_OFFLINE") return "pending"
     return "pending"
   }
   return "pending"
@@ -155,12 +158,14 @@ function deployStepStatus(validation: ValidationResult | null, step: string): "d
 
 function domainStatusBadge(domainStatus: string | null) {
   switch (domainStatus) {
-    case "ACTIVE":          return { label: "Live",           cls: "bg-emerald-50 text-emerald-700 border-emerald-200" }
-    case "SSL_PENDING":     return { label: "SSL Pending",    cls: "bg-amber-50   text-amber-700   border-amber-200"   }
-    case "DNS_PROPAGATING": return { label: "DNS Propagating",cls: "bg-blue-50    text-blue-700    border-blue-200"    }
-    case "PENDING_DNS":     return { label: "DNS Pending",    cls: "bg-gray-100   text-gray-600    border-gray-200"    }
-    case "ERROR":           return { label: "Error",          cls: "bg-red-50     text-red-700     border-red-200"     }
-    default:                return { label: "Not Deployed",   cls: "bg-gray-100   text-gray-500    border-gray-200"    }
+    case "ACTIVE":             return { label: "Live",              cls: "bg-emerald-50 text-emerald-700 border-emerald-200" }
+    case "SSL_PENDING":        return { label: "SSL Pending",       cls: "bg-amber-50   text-amber-700   border-amber-200"   }
+    case "SSL_FAILED":         return { label: "SSL Failed",        cls: "bg-red-50     text-red-700     border-red-200"     }
+    case "STOREFRONT_OFFLINE": return { label: "Storefront Offline",cls: "bg-red-50     text-red-700     border-red-200"     }
+    case "DNS_PROPAGATING":    return { label: "DNS Propagating",   cls: "bg-blue-50    text-blue-700    border-blue-200"    }
+    case "PENDING_DNS":        return { label: "DNS Pending",       cls: "bg-gray-100   text-gray-600    border-gray-200"    }
+    case "ERROR":              return { label: "Error",             cls: "bg-red-50     text-red-700     border-red-200"     }
+    default:                   return { label: "Not Deployed",      cls: "bg-gray-100   text-gray-500    border-gray-200"    }
   }
 }
 
@@ -797,8 +802,8 @@ export function DomainsView() {
                   label: "Storefront",
                   ok: validationResult.storefront?.isOnline ?? false,
                   detail: validationResult.storefront?.isOnline
-                    ? "Online and serving customers"
-                    : "Website status is not Active — set to Active in settings",
+                    ? "Online — serving live HTTP content"
+                    : "Not serving HTTP content — check Next.js app or set website status to Active",
                 },
               ].map(({ icon: Icon, label, ok, detail }) => (
                 <div key={label} className={`flex items-start gap-3 rounded-lg px-3 py-2.5 border ${ok ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>

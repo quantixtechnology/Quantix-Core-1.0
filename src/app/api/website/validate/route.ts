@@ -52,6 +52,8 @@ function nginxTemplate(domain: string): string {
     '    listen 80;',
     `    server_name ${domain} www.${domain};`,
     '',
+    '    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;',
+    '',
     '    location / {',
     '        proxy_pass http://localhost:3000;',
     '        proxy_http_version 1.1;',
@@ -116,6 +118,19 @@ async function getCertExpiry(domain: string): Promise<Date | null> {
   return isNaN(date.getTime()) ? null : date
 }
 
+async function checkStorefrontHealth(domain: string): Promise<{ status: string; isOnline: boolean }> {
+  try {
+    const ctrl = new AbortController()
+    const tid = setTimeout(() => ctrl.abort(), 8000)
+    const res = await fetch(`https://${domain}`, { signal: ctrl.signal, redirect: 'follow' })
+    clearTimeout(tid)
+    const isOnline = res.ok || res.status < 500
+    return { status: isOnline ? 'online' : 'offline', isOnline }
+  } catch {
+    return { status: 'offline', isOnline: false }
+  }
+}
+
 function buildTenantStorefront(business: {
   id: string; name: string; isOnline: boolean; status: string; settings?: string | null;
 }): { tenant: { status: string; businessId: string; businessName: string }; storefront: { status: string; isOnline: boolean } } {
@@ -150,7 +165,7 @@ export const POST = withMiddleware({ requireAuth: true })(
       const defaultDomain = `${slug}.${STOREFRONT_BASE}`
       const checkedAt = new Date().toISOString()
 
-      // 0. Look up business + DomainMapping first
+      // 0. Look up business + DomainMapping first (ALWAYS — even before DNS check)
       console.log("Fetching business for slug", slug)
       const business = await db.business.findFirst({
         where: { slug },
@@ -168,6 +183,11 @@ export const POST = withMiddleware({ requireAuth: true })(
       const domain = business?.domain?.domain || defaultDomain
       console.log("DOMAIN_USED", domain)
       console.log("DOMAIN_SOURCE", business?.domain?.domain ? 'DomainMapping' : 'slug-derived')
+
+      // Compute tenant/storefront from business data (available for ALL paths, including DNS-pending)
+      const ts = business
+        ? buildTenantStorefront(business)
+        : { tenant: null, storefront: null }
 
       // 1. DNS Resolution
       let dnsActive = false
@@ -190,7 +210,7 @@ export const POST = withMiddleware({ requireAuth: true })(
             slug, domain,
             dns: { status: 'pending', resolved, expected: VPS_IP, pointsToVps: false },
             ssl: { status: 'pending', expiryDate: null, httpsReachable: false, error: null },
-            tenant: null, storefront: null,
+            tenant: ts.tenant, storefront: ts.storefront,
             deployment: { status: 'PENDING_DNS', label: 'DNS Pending', nextStep: `Add A record: * → ${VPS_IP || '<VPS_IP>'}` },
             checkedAt,
           },
@@ -211,22 +231,22 @@ export const POST = withMiddleware({ requireAuth: true })(
         })
       }
 
-      // Compute tenant/storefront from business data (available for all subsequent paths)
-      const ts = buildTenantStorefront(business)
-
       // Skip if already active or currently provisioning
       const currentSslStatus = business.domain?.sslStatus
       console.log("CURRENT SSL STATUS", currentSslStatus)
 
       if (currentSslStatus === 'active') {
+        const health = await checkStorefrontHealth(domain)
         return NextResponse.json({
           success: true,
           data: {
             slug, domain,
             dns: { status: 'active', resolved, expected: VPS_IP, pointsToVps: true },
             ssl: { status: 'active', expiryDate: null, httpsReachable: true, error: null },
-            tenant: ts.tenant, storefront: ts.storefront,
-            deployment: { status: 'ACTIVE', label: 'Fully Live', nextStep: '' },
+            tenant: ts.tenant, storefront: health,
+            deployment: health.isOnline
+              ? { status: 'ACTIVE', label: 'Fully Live', nextStep: '' }
+              : { status: 'STOREFRONT_OFFLINE', label: 'Storefront Offline', nextStep: 'SSL is active but the storefront is not serving content.' },
             checkedAt,
           },
         })
@@ -323,13 +343,36 @@ export const POST = withMiddleware({ requireAuth: true })(
         sslResult = { status: 'failed', expiryDate: null, error: message }
       }
 
-      // 5. Update DB with final result
+      // 5. Live storefront health check (independent of DB isOnline flag)
+      const storefrontHealth = await checkStorefrontHealth(domain)
+      console.log("STOREFRONT HEALTH", storefrontHealth)
+
+      // 6. Determine final deployment status with distinct codes
+      let deploymentStatus: string
+      let deploymentLabel: string
+      let deploymentNextStep: string
+
+      if (sslResult.status === 'failed') {
+        deploymentStatus = 'SSL_FAILED'
+        deploymentLabel = 'SSL Failed'
+        deploymentNextStep = sslResult.error || ''
+      } else if (!storefrontHealth.isOnline) {
+        deploymentStatus = 'STOREFRONT_OFFLINE'
+        deploymentLabel = 'Storefront Offline'
+        deploymentNextStep = 'SSL is active but the storefront is not serving content. Check the Next.js application and set website status to Active.'
+      } else {
+        deploymentStatus = 'ACTIVE'
+        deploymentLabel = 'Fully Live'
+        deploymentNextStep = ''
+      }
+
+      // 7. Update DB with final result
       console.log("Final SSL result", sslResult.status, sslResult.error)
       await db.domainMapping.update({
         where: { businessId: business.id },
         data: {
           sslStatus: sslResult.status,
-          status: sslResult.status === 'active' ? 'ACTIVE' : 'ERROR',
+          status: deploymentStatus === 'ACTIVE' ? 'ACTIVE' : deploymentStatus === 'STOREFRONT_OFFLINE' ? 'SSL_PENDING' : 'ERROR',
           sslExpiryDate: sslResult.expiryDate,
           sslError: sslResult.error,
           sslLastCheckedAt: new Date(),
@@ -347,11 +390,12 @@ export const POST = withMiddleware({ requireAuth: true })(
             httpsReachable: sslResult.status === 'active',
             error: sslResult.error,
           },
-          tenant: ts.tenant, storefront: ts.storefront,
+          tenant: ts.tenant,
+          storefront: storefrontHealth,
           deployment: {
-            status: sslResult.status === 'active' ? 'ACTIVE' : 'SSL_FAILED',
-            label: sslResult.status === 'active' ? 'Fully Live' : 'SSL Failed',
-            nextStep: sslResult.error || '',
+            status: deploymentStatus,
+            label: deploymentLabel,
+            nextStep: deploymentNextStep,
           },
           checkedAt: new Date().toISOString(),
         },
