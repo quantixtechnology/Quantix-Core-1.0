@@ -16,6 +16,22 @@ import { generateLeadId } from '@/lib/lead-id';
 import type { NextRequest } from 'next/server';
 import type { LeadSource, LeadStage, BusinessType } from '@/lib/types';
 
+const LEGACY_LEAD_STAGE_MAPPINGS = [
+  ['DEMO_SHARED', 'DEMO_DONE'] as const,
+  ['ONBOARDING', 'CLOSED_WON'] as const,
+  ['DEPLOYMENT', 'CLOSED_WON'] as const,
+  ['ACTIVE', 'CLOSED_WON'] as const,
+  ['CHURNED', 'LOST'] as const,
+] as const;
+
+async function normalizeLegacyLeadStages() {
+  await Promise.all(
+    LEGACY_LEAD_STAGE_MAPPINGS.map(([from, to]) =>
+      db.$executeRaw`UPDATE Lead SET stage = ${to} WHERE stage = ${from}`
+    )
+  );
+}
+
 // ============================================================================
 // LEAD STAGE ORDER — for pipeline ordering
 // ============================================================================
@@ -47,6 +63,7 @@ export async function GET(request: NextRequest) {
       const stageParam = searchParams.get('stage');
       const sourceParam = searchParams.get('source');
       const salesRepId = searchParams.get('salesRepId');
+      const assignedToUserId = searchParams.get('assignedToUserId');
       const businessTypeParam = searchParams.get('businessType');
       const search = searchParams.get('search');
       const dateFrom = searchParams.get('dateFrom');
@@ -67,6 +84,10 @@ export async function GET(request: NextRequest) {
 
       if (salesRepId) {
         where.salesRepId = salesRepId;
+      }
+
+      if (assignedToUserId) {
+        where.assignedToUserId = assignedToUserId;
       }
 
       if (businessTypeParam) {
@@ -90,6 +111,8 @@ export async function GET(request: NextRequest) {
         where.createdAt = createdAt;
       }
 
+      await normalizeLegacyLeadStages();
+
       const [leads, total] = await Promise.all([
         db.lead.findMany({
           where,
@@ -97,6 +120,9 @@ export async function GET(request: NextRequest) {
           take: limit,
           include: {
             salesRep: {
+              select: { id: true, name: true, email: true },
+            },
+            assignedToUser: {
               select: { id: true, name: true, email: true },
             },
           },
@@ -168,6 +194,16 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Validate assignedToUserId if provided
+      if (body.assignedToUserId) {
+        const assignee = await db.user.findUnique({
+          where: { id: body.assignedToUserId },
+        });
+        if (!assignee || !assignee.isActive) {
+          return createErrorResponse('Assigned user not found or inactive', 404);
+        }
+      }
+
       // Generate immutable human-readable Lead ID
       const leadId = await generateLeadId(db);
 
@@ -186,6 +222,7 @@ export async function POST(request: NextRequest) {
           source: body.source || 'WEBSITE_INQUIRY',
           stage: 'LEAD',
           salesRepId: body.salesRepId || null,
+          assignedToUserId: body.assignedToUserId || null,
           createdById: req.user?.id || null,
           notes: body.notes || null,
           followUpDate: body.followUpDate ? new Date(body.followUpDate) : null,
@@ -194,6 +231,9 @@ export async function POST(request: NextRequest) {
         },
         include: {
           salesRep: {
+            select: { id: true, name: true, email: true },
+          },
+          assignedToUser: {
             select: { id: true, name: true, email: true },
           },
         },

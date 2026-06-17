@@ -28,7 +28,12 @@ export const GET = withMiddleware({
     }
 
     const salesTeam = await db.salesTeamMember.findMany({
-      where,
+      where: {
+        ...where,
+        user: {
+          platformRole: { not: 'QUANTIX_SUPER_ADMIN' },
+        },
+      },
       select: {
         id: true,
         userId: true,

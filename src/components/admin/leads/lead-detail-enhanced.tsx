@@ -32,10 +32,22 @@ interface LeadApiData {
   estimatedValue: number | null; notes: string | null; followUpDate: string | null
   lastContactedAt: string | null; tags: string; createdAt: string; updatedAt: string
   salesRep: { id: string; name: string; email: string } | null
+  assignedToUser: { id: string; name: string; email: string } | null
   negotiatedMonthlyPrice: number | null; negotiatedYearlyPrice: number | null
   lostReason: string | null; selectedBillingCycle: string | null
   demoTenantId: string | null; demoSharedAt: string | null
   paymentVerifiedAt: string | null; convertedBusinessId: string | null; convertedAt: string | null
+}
+
+interface AssignableUser {
+  id: string
+  userId: string
+  name: string
+  email: string
+  phone: string | null
+  region: string | null
+  designation: string | null
+  type: 'sales_team' | 'user'
 }
 
 interface SalesTeamMember { id: string; name: string; isActive?: boolean }
@@ -212,7 +224,7 @@ function SelectFieldCard({ label, icon, children }: SelectFieldCardProps) {
 
 export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }: LeadDetailEnhancedProps) {
   const [lead, setLead] = useState<LeadApiData>(initialLead)
-  const [salesTeam, setSalesTeam] = useState<SalesTeamMember[]>([])
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
   const [comments, setComments] = useState<ApiComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
   const [commentType, setCommentType] = useState("comment")
@@ -234,8 +246,8 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
   }, [lead.id])
 
   useEffect(() => {
-    fetch("/api/admin/sales-team?active=true", { headers: getAuthHeaders() })
-      .then(r => r.json()).then(j => { if (j.success) setSalesTeam(j.data) }).catch(() => {})
+    fetch("/api/core/assignable-users", { headers: getAuthHeaders() })
+      .then(r => r.json()).then(j => { if (j.success) setAssignableUsers(j.data.all || []) }).catch(() => {})
     fetchComments()
   }, [lead.id])
 
@@ -370,15 +382,25 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
           </Select>
         </div>
 
-        {/* Sales rep row */}
-        {lead.salesRep && (
-          <div className="flex items-center gap-2 mt-2">
-            <div className="h-5 w-5 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center shrink-0">
-              <span className="text-[9px] font-bold text-indigo-700">{initials(lead.salesRep.name)}</span>
+        {/* Sales rep / assignee row */}
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          {lead.salesRep && (
+            <div className="flex items-center gap-1.5">
+              <div className="h-5 w-5 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center shrink-0">
+                <span className="text-[9px] font-bold text-indigo-700">{initials(lead.salesRep.name)}</span>
+              </div>
+              <span className="text-[12px] font-medium text-gray-600">{lead.salesRep.name}</span>
             </div>
-            <span className="text-[12px] font-medium text-gray-600">{lead.salesRep.name}</span>
-          </div>
-        )}
+          )}
+          {lead.assignedToUser && (
+            <div className="flex items-center gap-1.5">
+              <div className="h-5 w-5 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
+                <span className="text-[9px] font-bold text-amber-700">{initials(lead.assignedToUser.name)}</span>
+              </div>
+              <span className="text-[12px] font-medium text-gray-600">{lead.assignedToUser.name}</span>
+            </div>
+          )}
+        </div>
 
         {/* Overdue banner */}
         {isOverdue && (
@@ -497,14 +519,23 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                   placeholder="Annual contract value"
                 />
 
-                {/* Sales Rep */}
+                {/* Assigned Rep */}
                 <SelectFieldCard label="Assigned Rep" icon={<UserCheck className="h-4 w-4" />}>
                   <Select
-                    value={lead.salesRep?.id ?? "none"}
+                    value={lead.salesRep?.id ?? lead.assignedToUser?.id ?? "none"}
                     onValueChange={async (v) => {
                       try {
-                        await patch({ salesRepId: v === "none" ? null : v })
-                        toast.success("Rep updated")
+                        if (v === "none") {
+                          await patch({ salesRepId: null, assignedToUserId: null })
+                        } else {
+                          const user = assignableUsers.find(u => u.id === v)
+                          if (user?.type === "user") {
+                            await patch({ salesRepId: null, assignedToUserId: user.userId })
+                          } else {
+                            await patch({ salesRepId: v, assignedToUserId: null })
+                          }
+                        }
+                        toast.success("Assignee updated")
                       } catch { toast.error("Failed") }
                     }}
                   >
@@ -513,8 +544,10 @@ export function LeadDetailEnhanced({ lead: initialLead, onBack, onLeadUpdated }:
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none" className="text-sm italic text-muted-foreground">Unassigned</SelectItem>
-                      {salesTeam.filter(r => r.isActive !== false).map(r => (
-                        <SelectItem key={r.id} value={r.id} className="text-sm">{r.name}</SelectItem>
+                      {assignableUsers.map(u => (
+                        <SelectItem key={u.id} value={u.id} className="text-sm">
+                          {u.name}{u.designation ? ` (${u.designation})` : ""}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

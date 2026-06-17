@@ -26,9 +26,13 @@ export async function POST(
 
       const user = await db.user.findUnique({
         where: { id: userId },
-        select: { id: true, name: true, email: true, isActive: true },
+        select: { id: true, name: true, email: true, isActive: true, platformRole: true },
       });
       if (!user) return createErrorResponse('User not found', 404);
+
+      if (user.platformRole === 'QUANTIX_SUPER_ADMIN' && !body.active) {
+        return createErrorResponse('Cannot deactivate the Super Admin account', 403);
+      }
 
       await db.user.update({ where: { id: userId }, data: { isActive: body.active } });
 

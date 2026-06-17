@@ -43,11 +43,23 @@ interface LeadApiData {
   estimatedValue: number | null; notes: string | null; followUpDate: string | null
   lastContactedAt: string | null; tags: string; createdAt: string; updatedAt: string
   salesRep: { id: string; name: string; email: string } | null
+  assignedToUser: { id: string; name: string; email: string } | null
   // Conversion tracking
   demoTenantId: string | null; demoSharedAt: string | null
   negotiatedMonthlyPrice: number | null; negotiatedYearlyPrice: number | null
   paymentVerifiedAt: string | null; convertedBusinessId: string | null; convertedAt: string | null
   lostReason: string | null; selectedBillingCycle: string | null
+}
+
+interface AssignableUser {
+  id: string
+  userId: string
+  name: string
+  email: string
+  phone: string | null
+  region: string | null
+  designation: string | null
+  type: 'sales_team' | 'user'
 }
 
 interface SalesTeamMember {
@@ -111,7 +123,7 @@ export function LeadsView() {
   const { permissions } = useAuthStore()
   const canEdit = permissions.includes("leads:edit" as never)
   const [leads, setLeads] = useState<LeadApiData[]>([])
-  const [salesTeam, setSalesTeam] = useState<SalesTeamMember[]>([])
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -167,7 +179,7 @@ export function LeadsView() {
   const [createForm, setCreateForm] = useState({
     businessName: "", contactName: "", contactEmail: "", contactPhone: "",
     city: "", businessType: "", source: "WEBSITE_INQUIRY", estimatedValue: "",
-    salesRepId: "", notes: "", followUpDate: "",
+    salesRepId: "", assignedToUserId: "", notes: "", followUpDate: "",
   })
   const [creating, setCreating] = useState(false)
 
@@ -180,7 +192,14 @@ export function LeadsView() {
       if (sourceFilter !== "all") params.set("source",       sourceFilter)
       if (typeFilter   !== "all") params.set("businessType", typeFilter)
       if (repFilter === "unassigned") params.set("salesRepId", "null")
-      else if (repFilter !== "all") params.set("salesRepId", repFilter)
+      else if (repFilter !== "all") {
+        const user = assignableUsers.find(u => u.id === repFilter)
+        if (user?.type === "user") {
+          params.set("assignedToUserId", user.userId)
+        } else {
+          params.set("salesRepId", repFilter)
+        }
+      }
       if (debouncedSearch) params.set("search", debouncedSearch)
 
       const res = await authFetch(`/api/admin/leads?${params}`)
@@ -196,17 +215,17 @@ export function LeadsView() {
     } finally {
       setLoading(false)
     }
-  }, [stageFilter, sourceFilter, typeFilter, repFilter, debouncedSearch])
+  }, [stageFilter, sourceFilter, typeFilter, repFilter, debouncedSearch, assignableUsers])
 
-  const fetchSalesTeam = useCallback(async () => {
+  const fetchAssignableUsers = useCallback(async () => {
     try {
-      const res = await authFetch("/api/admin/sales-team?active=true")
+      const res = await authFetch("/api/core/assignable-users")
       if (res.ok) {
         const json = await res.json()
-        if (json.success) setSalesTeam(json.data)
+        if (json.success) setAssignableUsers(json.data.all || [])
       }
     } catch {
-      // Silently fail — sales team is not critical for initial load
+      // Silently fail — assignable users is not critical for initial load
     }
   }, [])
 
@@ -224,7 +243,7 @@ export function LeadsView() {
   }, [page])
 
   useEffect(() => {
-    fetchSalesTeam()
+    fetchAssignableUsers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -330,22 +349,31 @@ export function LeadsView() {
     if (!selectedLead || !reassignRep) return
     setUpdating(true)
     try {
+      const user = assignableUsers.find(u => u.id === reassignRep)
+      const payload: Record<string, unknown> = {}
+      if (user?.type === "user") {
+        payload.salesRepId = null
+        payload.assignedToUserId = user.userId
+      } else {
+        payload.salesRepId = reassignRep
+        payload.assignedToUserId = null
+      }
       const res = await fetch(`/api/core/leads/${selectedLead.id}`, {
         method: "PATCH",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ salesRepId: reassignRep }),
+        body: JSON.stringify(payload),
       })
       const json = await res.json()
       if (json.success || json.data) {
-        toast.success("Sales rep reassigned")
+        toast.success("Assignee updated")
         setReassignOpen(false)
         setReassignRep("")
         fetchLeads(page)
       } else {
-        toast.error(json.error || "Failed to reassign sales rep")
+        toast.error(json.error || "Failed to reassign")
       }
     } catch {
-      toast.error("Failed to reassign sales rep")
+      toast.error("Failed to reassign")
     } finally {
       setUpdating(false)
     }
@@ -355,13 +383,22 @@ export function LeadsView() {
     if (!bulkAssignRep || selectedIds.size === 0) return
     setUpdating(true)
     try {
+      const user = assignableUsers.find(u => u.id === bulkAssignRep)
+      const payload: Record<string, unknown> = {}
+      if (user?.type === "user") {
+        payload.salesRepId = null
+        payload.assignedToUserId = user.userId
+      } else {
+        payload.salesRepId = bulkAssignRep
+        payload.assignedToUserId = null
+      }
       // Update each selected lead
       const results = await Promise.allSettled(
         Array.from(selectedIds).map(leadId =>
           fetch(`/api/core/leads/${leadId}`, {
             method: "PATCH",
             headers: getAuthHeaders(),
-            body: JSON.stringify({ salesRepId: bulkAssignRep }),
+            body: JSON.stringify(payload),
           })
         )
       )
@@ -397,6 +434,7 @@ export function LeadsView() {
           businessType: createForm.businessType,
           source: createForm.source || "WEBSITE_INQUIRY",
           salesRepId: createForm.salesRepId || undefined,
+          assignedToUserId: createForm.assignedToUserId || undefined,
           estimatedValue: createForm.estimatedValue ? Number(createForm.estimatedValue) : undefined,
           notes: createForm.notes || undefined,
           followUpDate: createForm.followUpDate || undefined,
@@ -409,7 +447,7 @@ export function LeadsView() {
         setCreateForm({
           businessName: "", contactName: "", contactEmail: "", contactPhone: "",
           city: "", businessType: "", source: "WEBSITE_INQUIRY", estimatedValue: "",
-          salesRepId: "", notes: "", followUpDate: "",
+          salesRepId: "", assignedToUserId: "", notes: "", followUpDate: "",
         })
         fetchLeads(page)
       } else {
@@ -629,8 +667,8 @@ export function LeadsView() {
           <SelectContent>
             <SelectItem value="all">All Sales Reps</SelectItem>
             <SelectItem value="unassigned">Unassigned</SelectItem>
-            {salesTeam.filter(r => r.isActive !== false).map(r => (
-              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+            {assignableUsers.map(u => (
+              <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -736,8 +774,8 @@ export function LeadsView() {
                         {lead.estimatedValue ? `₹${lead.estimatedValue.toLocaleString("en-IN")}` : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {lead.salesRep?.name
-                          ? <span className="font-medium">{lead.salesRep.name}</span>
+                        {lead.salesRep?.name || lead.assignedToUser?.name
+                          ? <span className="font-medium">{lead.salesRep?.name || lead.assignedToUser?.name}</span>
                           : <span className="text-muted-foreground/60 italic text-[10px]">Unassigned</span>}
                       </TableCell>
                       <TableCell className="text-[10px] text-muted-foreground whitespace-nowrap">
@@ -824,7 +862,10 @@ export function LeadsView() {
                     <SheetTitle className="text-sm">{selectedLead.businessName}</SheetTitle>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <StatusBadge status={selectedLead.stage} />
-                      <span>{selectedLead.salesRep?.name || "Unassigned"}</span>
+                      <span>{selectedLead.salesRep?.name || selectedLead.assignedToUser?.name || "Unassigned"}</span>
+                      {selectedLead.salesRep && selectedLead.assignedToUser && (
+                        <span className="text-[10px] text-muted-foreground/60">+ {selectedLead.assignedToUser.name}</span>
+                      )}
                       <span>•</span>
                       <span>{sourceLabels[selectedLead.source] || selectedLead.source.replace(/_/g, " ")}</span>
                     </div>
@@ -880,7 +921,7 @@ export function LeadsView() {
                         { label: "Type", value: businessTypeConfig[selectedLead.businessType as BusinessType]?.label || selectedLead.businessType },
                         { label: "Source", value: sourceLabels[selectedLead.source] || selectedLead.source.replace(/_/g, " ") },
                         { label: "City", value: selectedLead.city || "—" },
-                        { label: "Sales Rep", value: selectedLead.salesRep?.name || "Unassigned" },
+                        { label: "Sales Rep", value: selectedLead.salesRep?.name || selectedLead.assignedToUser?.name || "Unassigned" },
                         { label: "Follow-up", value: selectedLead.followUpDate ? new Date(selectedLead.followUpDate).toLocaleDateString("en-IN") : "None" },
                         { label: "Created", value: `${new Date(selectedLead.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} ${new Date(selectedLead.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` },
                       ].map((item) => (
@@ -1001,11 +1042,22 @@ export function LeadsView() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Est. Value (₹)</Label><Input placeholder="e.g. 59988" type="number" value={createForm.estimatedValue} onChange={(e) => setCreateForm(p => ({ ...p, estimatedValue: e.target.value }))} /></div>
-              <div className="space-y-2"><Label>Sales Rep</Label>
-                <Select value={createForm.salesRepId} onValueChange={(v) => setCreateForm(p => ({ ...p, salesRepId: v }))}><SelectTrigger><SelectValue placeholder="Assign rep" /></SelectTrigger>
+              <div className="space-y-2"><Label>Assign To</Label>
+                <Select value={createForm.assignedToUserId || createForm.salesRepId || "none"} onValueChange={(v) => {
+                  if (v === "none") {
+                    setCreateForm(p => ({ ...p, salesRepId: "", assignedToUserId: "" }))
+                  } else {
+                    const user = assignableUsers.find(u => u.id === v)
+                    if (user?.type === "user") {
+                      setCreateForm(p => ({ ...p, salesRepId: "", assignedToUserId: user.userId }))
+                    } else {
+                      setCreateForm(p => ({ ...p, salesRepId: v, assignedToUserId: "" }))
+                    }
+                  }
+                }}><SelectTrigger><SelectValue placeholder="Assign to" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Unassigned</SelectItem>
-                    {salesTeam.filter((rep) => rep.isActive !== false).map((rep) => (<SelectItem key={rep.id} value={rep.id}>{rep.name}</SelectItem>))}
+                    {assignableUsers.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name}{u.designation ? ` (${u.designation})` : ""}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1079,13 +1131,13 @@ export function LeadsView() {
           {selectedLead && (
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-muted-foreground">Current:</span><span className="font-medium">{selectedLead.salesRep?.name || "Unassigned"}</span>
+                <span className="text-muted-foreground">Current:</span><span className="font-medium">{selectedLead.salesRep?.name || selectedLead.assignedToUser?.name || "Unassigned"}</span>
               </div>
               <div className="space-y-2"><Label>Assign To</Label>
-                <Select value={reassignRep} onValueChange={setReassignRep}><SelectTrigger><SelectValue placeholder="Select sales rep" /></SelectTrigger>
+                <Select value={reassignRep} onValueChange={setReassignRep}><SelectTrigger><SelectValue placeholder="Select assignee" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Unassigned</SelectItem>
-                    {salesTeam.filter((rep) => rep.isActive !== false).map((rep) => (<SelectItem key={rep.id} value={rep.id}>{rep.name}</SelectItem>))}
+                    {assignableUsers.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name}{u.designation ? ` (${u.designation})` : ""}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1104,9 +1156,10 @@ export function LeadsView() {
           <DialogHeader><DialogTitle>Bulk Assign Sales Rep</DialogTitle><DialogDescription>Assign a sales rep to {selectedIds.size} selected leads</DialogDescription></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2"><Label>Assign To</Label>
-              <Select value={bulkAssignRep} onValueChange={setBulkAssignRep}><SelectTrigger><SelectValue placeholder="Select sales rep" /></SelectTrigger>
+              <Select value={bulkAssignRep} onValueChange={setBulkAssignRep}><SelectTrigger><SelectValue placeholder="Select assignee" /></SelectTrigger>
                 <SelectContent>
-                  {salesTeam.filter((rep) => rep.isActive !== false).map((rep) => (<SelectItem key={rep.id} value={rep.id}>{rep.name}</SelectItem>))}
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {assignableUsers.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name}{u.designation ? ` (${u.designation})` : ""}</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>

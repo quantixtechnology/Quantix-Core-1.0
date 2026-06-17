@@ -33,6 +33,7 @@ export type ImportLeadRow = {
   tags?: string;
   salesRepName?: string;    // Name-based lookup — resolved to salesRepId
   salesRepId?: string;      // Direct ID assignment (takes precedence over salesRepName)
+  assignedToUserId?: string; // Direct User ID assignment
 };
 
 export type ImportLeadResult = {
@@ -69,6 +70,7 @@ export const POST = withMiddleware({
     const body = await req.json();
     const rows: ImportLeadRow[] = body.rows;
     const globalSalesRepId: string | undefined = body.salesRepId;
+    const globalAssignedToUserId: string | undefined = body.assignedToUserId;
     const fileName: string | undefined = body.fileName;
 
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -131,6 +133,26 @@ export const POST = withMiddleware({
         resolvedSalesRepId = found;
       }
 
+      // ── Resolve assignedToUserId ───────────────────────────────────────────
+      const resolvedAssignedToUserId: string | null = globalAssignedToUserId || row.assignedToUserId || null;
+
+      if (resolvedAssignedToUserId) {
+        const assignee = await db.user.findUnique({
+          where: { id: resolvedAssignedToUserId },
+          select: { id: true, isActive: true },
+        });
+        if (!assignee || !assignee.isActive) {
+          results.push({
+            row: rowNum,
+            status: 'error',
+            reason: `Assigned user "${row.assignedToUserId}" not found or inactive.`,
+            data: row,
+          });
+          errorCount++;
+          continue;
+        }
+      }
+
       // ── UPSERT PATH: leadId column present and matches existing record ──────
       if (incomingLeadId) {
         const existingDbId = existingLeadIds.get(incomingLeadId);
@@ -163,6 +185,7 @@ export const POST = withMiddleware({
                 ...(row.estimatedValue !== undefined && { estimatedValue: Number(row.estimatedValue) || null }),
                 ...(row.tags && { tags: row.tags }),
                 ...(resolvedSalesRepId && { salesRepId: resolvedSalesRepId }),
+                ...(resolvedAssignedToUserId && { assignedToUserId: resolvedAssignedToUserId }),
               },
             });
 
@@ -249,6 +272,7 @@ export const POST = withMiddleware({
             followUpDate: row.followUpDate ? new Date(row.followUpDate) : null,
             tags: row.tags || '[]',
             salesRepId: resolvedSalesRepId,
+            assignedToUserId: resolvedAssignedToUserId,
             createdById: req.user?.id || null,
           },
         });

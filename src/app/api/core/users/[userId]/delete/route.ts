@@ -25,11 +25,15 @@ export const POST = withMiddleware({
     const user = await db.user.findUnique({
       where: { id: userId },
       select: {
-        id: true, name: true, email: true, isActive: true,
+        id: true, name: true, email: true, isActive: true, platformRole: true,
         salesProfile: { select: { id: true, name: true } },
       },
     });
     if (!user) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+
+    if (user.platformRole === 'QUANTIX_SUPER_ADMIN') {
+      return NextResponse.json({ success: false, error: 'Cannot delete the Super Admin account' }, { status: 403 });
+    }
 
     const adminUser = req.user!;
 
@@ -46,8 +50,9 @@ export const POST = withMiddleware({
     const salesTeamMemberId = user.salesProfile?.id;
 
     // Count records to be transferred
-    const [leadCount, proposalCount, businessCount, activityCount, commissionCount] = await Promise.all([
+    const [leadCount, directLeadCount, proposalCount, businessCount, activityCount, commissionCount] = await Promise.all([
       salesTeamMemberId ? db.lead.count({ where: { salesRepId: salesTeamMemberId } }) : 0,
+      db.lead.count({ where: { assignedToUserId: userId } }),
       db.proposalDocument.count({ where: { createdBy: userId } }),
       salesTeamMemberId ? db.business.count({ where: { salesRepId: salesTeamMemberId } }) : 0,
       db.activityLog.count({ where: { userId } }),
@@ -74,8 +79,16 @@ export const POST = withMiddleware({
             data: { salesRepId: null },
           });
         }
+      }
 
-        // Transfer business clients
+      // Transfer direct-assigned leads (assignedToUserId)
+      await tx.lead.updateMany({
+        where: { assignedToUserId: userId },
+        data: { assignedToUserId: superAdmin.id },
+      });
+
+      // Transfer business clients
+      if (salesTeamMemberId) {
         await tx.business.updateMany({
           where: { salesRepId: salesTeamMemberId },
           data: { salesRepId: superAdminSalesTeam?.id || null },
@@ -113,6 +126,7 @@ export const POST = withMiddleware({
             transferredTo: { name: superAdmin.name, email: superAdmin.email, id: superAdmin.id },
             recordsTransferred: {
               leads: leadCount,
+              directLeads: directLeadCount,
               proposals: proposalCount,
               businesses: businessCount,
               activities: activityCount,
@@ -132,6 +146,7 @@ export const POST = withMiddleware({
         transferredTo: superAdmin,
         recordsTransferred: {
           leads: leadCount,
+          directLeads: directLeadCount,
           proposals: proposalCount,
           businesses: businessCount,
           activities: activityCount,

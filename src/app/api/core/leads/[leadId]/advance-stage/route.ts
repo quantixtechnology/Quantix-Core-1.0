@@ -183,6 +183,9 @@ export async function POST(
           salesRep: {
             select: { id: true, name: true, email: true },
           },
+          assignedToUser: {
+            select: { id: true, name: true, email: true },
+          },
         },
       });
 

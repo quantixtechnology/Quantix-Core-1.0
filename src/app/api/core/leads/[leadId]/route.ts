@@ -33,6 +33,9 @@ export async function GET(
           salesRep: {
             select: { id: true, name: true, email: true, phone: true },
           },
+          assignedToUser: {
+            select: { id: true, name: true, email: true },
+          },
         },
       });
 
@@ -171,6 +174,19 @@ export async function PATCH(
         updateData.salesRepId = body.salesRepId || null;
       }
 
+      // User assignment (direct User-based ownership)
+      if (body.assignedToUserId !== undefined) {
+        if (body.assignedToUserId) {
+          const assignee = await db.user.findUnique({
+            where: { id: body.assignedToUserId },
+          });
+          if (!assignee || !assignee.isActive) {
+            return createErrorResponse('Assigned user not found or inactive', 404);
+          }
+        }
+        updateData.assignedToUserId = body.assignedToUserId || null;
+      }
+
       // Numeric fields
       if (body.estimatedValue !== undefined) {
         updateData.estimatedValue = body.estimatedValue;
@@ -230,6 +246,9 @@ export async function PATCH(
           salesRep: {
             select: { id: true, name: true, email: true },
           },
+          assignedToUser: {
+            select: { id: true, name: true, email: true },
+          },
         },
       });
 
@@ -274,6 +293,16 @@ export async function PUT(
         return createErrorResponse('Invalid businessType', 400);
       }
 
+      // Validate assignedToUserId if provided
+      if (body.assignedToUserId !== undefined && body.assignedToUserId) {
+        const assignee = await db.user.findUnique({
+          where: { id: body.assignedToUserId },
+        });
+        if (!assignee || !assignee.isActive) {
+          return createErrorResponse('Assigned user not found or inactive', 404);
+        }
+      }
+
       const updated = await db.lead.update({
         where: { id: leadId },
         data: {
@@ -286,6 +315,7 @@ export async function PUT(
           source: body.source || lead.source,
           stage: body.stage || lead.stage,
           salesRepId: body.salesRepId !== undefined ? body.salesRepId : lead.salesRepId,
+          assignedToUserId: body.assignedToUserId !== undefined ? body.assignedToUserId : lead.assignedToUserId,
           notes: body.notes !== undefined ? body.notes : lead.notes,
           followUpDate: body.followUpDate ? new Date(body.followUpDate) : lead.followUpDate,
           estimatedValue: body.estimatedValue !== undefined ? body.estimatedValue : lead.estimatedValue,
@@ -300,6 +330,9 @@ export async function PUT(
         },
         include: {
           salesRep: {
+            select: { id: true, name: true, email: true },
+          },
+          assignedToUser: {
             select: { id: true, name: true, email: true },
           },
         },

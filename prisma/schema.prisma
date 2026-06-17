@@ -146,6 +146,7 @@ model PlatformSettings {
 model Lead {
   id                     String           @id @default(cuid())
   salesRepId             String?
+  assignedToUserId       String?
   businessName           String
   contactName            String
   contactEmail           String
@@ -181,10 +182,12 @@ model Lead {
   pincode                String?
   state                  String?
   salesRep               SalesTeamMember? @relation(fields: [salesRepId], references: [id])
+  assignedToUser         User?            @relation(fields: [assignedToUserId], references: [id])
   convertedBusiness      Business?        @relation("LeadConversion", fields: [convertedBusinessId], references: [id])
 
   @@index([leadId])
   @@index([salesRepId])
+  @@index([assignedToUserId])
   @@index([stage])
   @@index([source])
   @@index([createdAt])
@@ -530,6 +533,7 @@ model User {
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   salesProfile        SalesTeamMember?
+  assignedLeads       Lead[]
 }
 
 model OTPCode {
