@@ -374,6 +374,9 @@ model Business {
   workflowRules         WorkflowRule[]
   branding              BusinessBranding?
   appConfig             AppConfig?
+  laundryServiceCategories LaundryServiceCategory[]
+  laundryServices       LaundryService[]
+  qrPaymentConfig       QRPaymentConfig?
   cartItems             CartItem[]
   favorites             Favorite[]
   supportTickets        SupportTicket[]
@@ -2036,22 +2039,87 @@ model PermissionChangeLog {
 }
 
 model BusinessBranding {
-  id             String   @id @default(cuid())
-  businessId     String   @unique
-  primaryColor   String   @default("#10B981")
-  secondaryColor String?
-  accentColor    String?
-  logo           String?
-  favicon        String?
-  coverImage     String?
-  appIcon        String?
-  fontFamily     String?
-  borderRadius   String   @default("8")
-  darkMode       Boolean  @default(false)
-  customCss      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                 String   @id @default(cuid())
+  businessId         String   @unique
+  primaryColor       String   @default("#10B981")
+  secondaryColor     String?
+  accentColor        String?
+  textColor          String?  @default("#1F2937")
+  backgroundColor    String?  @default("#FFFFFF")
+  logo               String?
+  favicon            String?
+  coverImage         String?
+  appIcon            String?
+  secondaryLogo      String?
+  watermarkLogo      String?
+  fontFamily         String?  @default("Inter")
+  headingStyle       String?  @default("modern")
+  buttonStyle        String?  @default("rounded")
+  borderRadius       String   @default("8")
+  darkMode           Boolean  @default(false)
+  customCss          String?
+  theme              String?  @default("fresh-market")
+  tagline            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  business           Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model LaundryServiceCategory {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  slug        String
+  description String?
+  type        String   @default("NORMAL")
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  services    LaundryService[]
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([type])
+}
+
+model LaundryService {
+  id            String   @id @default(cuid())
+  businessId    String
+  categoryId    String
+  name          String
+  slug          String
+  description   String?
+  price         Float
+  unitType      String   @default("PER_KG")
+  turnaroundTime String? @default("24h")
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  metadata      String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  category      LaundryServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model QRPaymentConfig {
+  id              String   @id @default(cuid())
+  businessId      String   @unique
+  upiId           String?
+  qrCode          String?
+  dynamicQREnabled Boolean @default(false)
+  codEnabled      Boolean  @default(true)
+  outstandingQR   String?
+  metadata        String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 model AppConfig {
