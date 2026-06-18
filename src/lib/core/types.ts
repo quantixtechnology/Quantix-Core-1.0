@@ -124,7 +124,7 @@ export type ZoneType = 'CIRCLE' | 'POLYGON' | 'PINCODE';
 export type ModuleStatus = 'DISABLED' | 'ENABLED';
 
 /** Store type — standard, laundry processing center, or pickup-only store */
-export type StoreType = 'STANDARD' | 'PROCESSING_CENTER' | 'PICKUP_STORE';
+export type StoreType = 'PICKUP_CENTER' | 'PROCESSING_CENTER' | 'BOTH';
 
 /** Store operational status */
 export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
@@ -389,6 +389,7 @@ export interface DefaultStoreTiming {
 export interface CreateStoreRequest {
   name: string;
   slug: string;
+  storeType?: string;
   code?: string;
   address?: string;
   city?: string;
@@ -937,6 +938,9 @@ export interface CreateOrderParams {
   storeId: string;
   orderType: string;
   orderSource?: string;
+  originStoreId?: string;
+  processingStoreId?: string;
+  deliveryStoreId?: string;
   customerId?: string;
   customerName?: string;
   customerPhone?: string;

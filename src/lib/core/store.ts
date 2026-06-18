@@ -130,6 +130,7 @@ export async function createStore(businessId: string, data: CreateStoreRequest) 
         businessId,
         name: data.name,
         slug: data.slug,
+        storeType: data.storeType as any || undefined,
         code: data.code,
         storeCode,
         address: data.address,

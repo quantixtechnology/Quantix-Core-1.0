@@ -160,6 +160,9 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     const order = await createOrder({
       businessId,
       storeId: body.storeId,
+      originStoreId: body.originStoreId,
+      processingStoreId: body.processingStoreId,
+      deliveryStoreId: body.deliveryStoreId,
       orderType: body.orderType,
       orderSource: body.orderSource || 'admin',
       customerId: body.customerId,

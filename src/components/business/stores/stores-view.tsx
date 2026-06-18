@@ -97,7 +97,7 @@ interface StoreForm {
 }
 
 const EMPTY_FORM: StoreForm = {
-  name: '', slug: '', storeType: 'STANDARD', address: '', city: '', state: '', pincode: '',
+  name: '', slug: '', storeType: 'PICKUP_CENTER', address: '', city: '', state: '', pincode: '',
   phone: '', email: '',
   whatsappNumber: '', supportEmail: '', notificationEmail: '', otpSenderEmail: '',
   deliveryRadius: '', deliveryFee: '',
@@ -114,7 +114,7 @@ function storeToForm(s: StoreRecord): StoreForm {
   return {
     name: s.name,
     slug: s.slug,
-    storeType: s.storeType ?? 'STANDARD',
+    storeType: s.storeType ?? 'PICKUP_CENTER',
     address: s.address ?? '',
     city: s.city ?? '',
     state: s.state ?? '',
@@ -265,7 +265,7 @@ export function StoresView() {
           businessId: currentBusinessId,
           name: form.name.trim(),
           slug: form.slug.trim(),
-          storeType: form.storeType || 'STANDARD',
+          storeType: form.storeType || 'PICKUP_CENTER',
           isMainStore,
           address: form.address.trim() || undefined,
           city: form.city.trim() || undefined,
@@ -344,7 +344,7 @@ export function StoresView() {
         body: JSON.stringify({
           name: form.name.trim(),
           slug: form.slug.trim(),
-          storeType: form.storeType || 'STANDARD',
+          storeType: form.storeType || 'PICKUP_CENTER',
           isMainStore,
           address: form.address.trim() || null,
           city: form.city.trim() || null,
@@ -584,7 +584,7 @@ export function StoresView() {
                         {store.isMainStore && (
                           <Badge className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 text-amber-700 border-amber-200">Main</Badge>
                         )}
-                        {currentBusinessType === "LAUNDRY" && store.storeType && store.storeType !== 'STANDARD' && (
+                        {currentBusinessType === "LAUNDRY" && store.storeType && store.storeType !== 'BOTH' && (
                           <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${
                             store.storeType === 'PROCESSING_CENTER' ? 'bg-purple-50 text-purple-700 border-purple-200' :
                             'bg-sky-50 text-sky-700 border-sky-200'
@@ -773,9 +773,9 @@ export function StoresView() {
                   <Select value={form.storeType} onValueChange={v => handleFieldChange('storeType', v)}>
                     <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="STANDARD">Standard Store</SelectItem>
-                      <SelectItem value="PICKUP_STORE">Pickup Store</SelectItem>
+                      <SelectItem value="PICKUP_CENTER">Pickup Center</SelectItem>
                       <SelectItem value="PROCESSING_CENTER">Processing Center</SelectItem>
+                      <SelectItem value="BOTH">Both</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-[10px] text-muted-foreground">Processing Center = laundry facility, Pickup Store = customer drop/pickup</p>
