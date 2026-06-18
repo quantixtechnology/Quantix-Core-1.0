@@ -102,6 +102,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (body.planTier && body.planTier !== 'STANDARD' && body.planTier !== 'PRO') {
+        return createErrorResponse('Invalid planTier. Must be STANDARD or PRO', 400);
+      }
+
       // If leadId is provided, verify the lead exists (no stage gate — creation is manual)
       if (body.leadId) {
         const { db } = await import('@/lib/db');

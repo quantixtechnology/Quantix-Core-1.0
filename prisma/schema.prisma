@@ -296,6 +296,8 @@ model Business {
   name                  String
   slug                  String                  @unique
   businessType          BusinessType
+  workspaceType         WorkspaceType            @default(ECOMMERCE)
+  businessCategory      String?                  @default("General")
   status                BusinessStatus          @default(ONBOARDING)
   leadId                String?
   logo                  String?
@@ -387,6 +389,7 @@ model Business {
   billingAccount        BillingAccount?
 
   @@index([businessType])
+  @@index([workspaceType])
   @@index([status])
   @@index([salesRepId])
 }
@@ -435,6 +438,7 @@ model Store {
   businessId          String
   name                String
   slug                String
+  storeType           StoreType      @default(STANDARD)
   code                String?
   address             String?
   city                String?
@@ -467,7 +471,10 @@ model Store {
   categories          Category[]
   deliveryZones       DeliveryZone[]
   inventory           Inventory[]
-  orders              Order[]
+  orders              Order[]                 @relation("OrderStore")
+  originOrders        Order[]                 @relation("OrderOriginStore")
+  processingOrders    Order[]                 @relation("OrderProcessingStore")
+  deliveryOrders      Order[]                 @relation("OrderDeliveryStore")
   posSessions         POSSession[]
   products            Product[]
   taxConfigs          TaxConfig[]
@@ -660,6 +667,9 @@ model Order {
   id                   String                @id @default(cuid())
   businessId           String
   storeId              String
+  originStoreId        String?
+  processingStoreId    String?
+  deliveryStoreId      String?
   orderNumber          String
   orderType            OrderType
   orderSource          String                @default("online")
@@ -716,7 +726,10 @@ model Order {
   customerSubscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id])
   posSession           POSSession?           @relation(fields: [posSessionId], references: [id])
   customer             Customer?             @relation(fields: [customerId], references: [id])
-  store                Store                 @relation(fields: [storeId], references: [id])
+  store                Store                 @relation("OrderStore", fields: [storeId], references: [id])
+  originStore          Store?                @relation("OrderOriginStore", fields: [originStoreId], references: [id])
+  processingStore      Store?                @relation("OrderProcessingStore", fields: [processingStoreId], references: [id])
+  deliveryStore        Store?                @relation("OrderDeliveryStore", fields: [deliveryStoreId], references: [id])
   business             Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   deliveryPartner      DeliveryPartner?      @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id])
   pickupPartner        DeliveryPartner?      @relation("OrderPickupPartner", fields: [pickupPartnerId], references: [id])
@@ -2207,6 +2220,16 @@ enum BusinessType {
   DIRECTORY
 }
 
+enum WorkspaceType {
+  ECOMMERCE
+  LAUNDRY
+  CAR_WASH
+  BIKE_WASH
+  SALON
+  RESTAURANT
+  SERVICES
+}
+
 enum WorkflowType {
   ECOMMERCE
   PICKUP_DELIVERY
@@ -2235,6 +2258,12 @@ enum OnboardingStepStatus {
 enum ModuleStatus {
   DISABLED
   ENABLED
+}
+
+enum StoreType {
+  STANDARD
+  PROCESSING_CENTER
+  PICKUP_STORE
 }
 
 enum StoreStatus {

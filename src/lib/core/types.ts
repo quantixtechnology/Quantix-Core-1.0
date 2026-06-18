@@ -33,6 +33,19 @@ export type BusinessType =
   | 'FURNITURE'
   | 'DIRECTORY';
 
+/** 7 workspace types — drives navigation, dashboard, workflows, features */
+export type WorkspaceType =
+  | 'ECOMMERCE'
+  | 'LAUNDRY'
+  | 'CAR_WASH'
+  | 'BIKE_WASH'
+  | 'SALON'
+  | 'RESTAURANT'
+  | 'SERVICES';
+
+/** Business category — informational, used for branding, labels, templates, marketing */
+export type BusinessCategory = string;
+
 /** Business lifecycle status — managed by Quantix */
 export type BusinessStatus = 'INACTIVE' | 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'CHURNED' | 'TRIAL';
 
@@ -109,6 +122,9 @@ export type ZoneType = 'CIRCLE' | 'POLYGON' | 'PINCODE';
 
 /** Business module status — NO TRIAL */
 export type ModuleStatus = 'DISABLED' | 'ENABLED';
+
+/** Store type — standard, laundry processing center, or pickup-only store */
+export type StoreType = 'STANDARD' | 'PROCESSING_CENTER' | 'PICKUP_STORE';
 
 /** Store operational status */
 export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
@@ -279,6 +295,8 @@ export interface CreateBusinessRequest {
   name: string;
   slug: string;
   businessType: BusinessType;
+  workspaceType?: WorkspaceType;
+  businessCategory?: BusinessCategory;
   description?: string;
   domain?: string;
   subdomain?: string;
@@ -332,6 +350,9 @@ export interface CreateBusinessRequest {
 
   // ── Add-ons (dynamic, unlimited) ───────────────────────────────────────
   addOns?: AddOnItem[];
+
+  // ── Industry-specific features (e.g. Laundry) ──────────────────────────
+  industryFeatures?: Record<string, boolean>;
 
   // ── Resource limits (subscription-level) ───────────────────────────────
   allowedStores?: number;        // How many stores this business can create (default: 1)
@@ -435,6 +456,8 @@ export interface BusinessSubscriptionRequest {
 export interface BusinessContext {
   businessId: string;
   businessType: BusinessType;
+  workspaceType: WorkspaceType;
+  businessCategory: BusinessCategory;
   businessSlug: string;
   businessName: string;
   role: Role;
@@ -748,6 +771,8 @@ export interface BusinessListItem {
   name: string;
   slug: string;
   businessType: BusinessType;
+  workspaceType: WorkspaceType;
+  businessCategory: BusinessCategory;
   status: BusinessStatus;
   logo: string | null;
   primaryColor: string;

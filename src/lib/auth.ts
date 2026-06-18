@@ -264,6 +264,8 @@ export function getBusinessContext(session: Session | null): BusinessContext | n
     return {
       businessId: '',
       businessType: 'GROCERY', // default
+      workspaceType: 'ECOMMERCE',
+      businessCategory: 'General',
       businessSlug: '',
       businessName: 'Quantix Technology',
       role: session.user.role,
@@ -277,6 +279,8 @@ export function getBusinessContext(session: Session | null): BusinessContext | n
   return {
     businessId: session.user.businessId || '',
     businessType: session.user.businessType || 'GROCERY',
+    workspaceType: (session.user as any).workspaceType || 'ECOMMERCE',
+    businessCategory: (session.user as any).businessCategory || '',
     businessSlug: session.user.businessSlug || '',
     businessName: session.user.businessName || '',
     role: session.user.role,

@@ -6,7 +6,7 @@ import {
   Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
   Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
-  Tag, Palette, Smartphone, Globe, Shield,
+  Tag, Palette, Smartphone, Globe, Shield, ClipboardList, Shirt,
 } from "lucide-react"
 import {
   Sidebar,
@@ -35,13 +35,18 @@ import {
   useAdminStore,
   BUSINESS_TYPE_WORKFLOWS,
   BUSINESS_TYPE_UI,
+  WORKSPACE_WORKFLOWS,
+  WORKSPACE_UI,
   type BusinessPage,
   type WorkflowType,
 } from "@/stores/admin-store"
+import { resolveWorkspaceWorkflows, resolveWorkspaceUI, getExcludedPageKeys } from "@/lib/workspace-nav"
 import { useResponsive } from "@/hooks/use-responsive"
 
+type WorkflowNavItem = { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }>; flag?: string }
+
 // ── Workflow → nav items (derived from business type, owned by platform admin) ──
-const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[]> = {
+const workflowNavMap: Record<WorkflowType, WorkflowNavItem[]> = {
   ECOMMERCE: [
     { key: "orders",            label: "Orders",            icon: ShoppingBag },
     { key: "products",          label: "Products",          icon: Package },
@@ -52,14 +57,19 @@ const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; i
     { key: "orders",             label: "Pickup Orders",      icon: Truck },
     { key: "delivery-zones",     label: "Delivery Zones",     icon: MapPin },
     { key: "delivery-partners",  label: "Delivery Partners",  icon: Truck },
+    { key: "pickup-requests",    label: "Pickup Requests",    icon: ClipboardList, flag: "delivery_enabled" },
   ],
   APPOINTMENT: [
     { key: "orders", label: "Appointments", icon: Calendar },
     { key: "staff",  label: "Technicians",  icon: UserCog },
   ],
   SUBSCRIPTION: [
-    { key: "customers", label: "Customers",          icon: Users },
-    { key: "offers",    label: "Subscription Plans", icon: CreditCard },
+    { key: "customers",             label: "Customers",             icon: Users },
+    { key: "subscription-plans",    label: "Subscription Plans",   icon: CreditCard },
+    { key: "customer-subscriptions", label: "Customer Subscriptions", icon: Users, flag: "laundry_subscription_enabled" },
+    { key: "usage-ledger",          label: "Usage Ledger",          icon: BarChart3, flag: "laundry_subscription_enabled" },
+    { key: "renewals",              label: "Renewals",              icon: Calendar, flag: "laundry_subscription_enabled" },
+    { key: "laundry-config",        label: "Laundry Config",        icon: Settings, flag: "laundry_subscription_enabled" },
   ],
   POST_SERVICE_BILLING: [
     { key: "orders",   label: "Service Orders", icon: Receipt },
@@ -176,11 +186,13 @@ interface BusinessSidebarProps {
 }
 
 export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: BusinessSidebarProps) {
-  const { businessPage, setBusinessPage, currentBusinessName, currentBusinessType, currentBusinessId } = useAdminStore()
+  const { businessPage, setBusinessPage, currentBusinessName, currentBusinessType, currentWorkspaceType, currentBusinessId } = useAdminStore()
   const { isMobile } = useResponsive()
 
-  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
-  const activeWorkflows = BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]
+  const workspaceType = currentWorkspaceType || currentBusinessType || "ECOMMERCE"
+  const typeUI = WORKSPACE_UI[workspaceType] || BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const activeWorkflows = WORKSPACE_WORKFLOWS[workspaceType] || BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]
+  const excludedPages = getExcludedPageKeys(workspaceType)
 
   // Business logo — fetched from the branding API whenever the business context changes
   const [businessLogo, setBusinessLogo] = useState<string | null>(null)
@@ -215,11 +227,16 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
       .catch(() => {/* non-fatal — keep defaults */})
   }, [currentBusinessId])
 
-  // Build workflow-specific nav items (dedup by page key)
-  const workflowNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = []
+  // Build workflow-specific nav items (dedup by page key, filtered by feature flags + workspace exclusions)
+  const workflowNavItems: WorkflowNavItem[] = []
   const seen = new Set<string>()
+  const skipPages = new Set(excludedPages)
   activeWorkflows.forEach((wf) => {
     workflowNavMap[wf as WorkflowType]?.forEach((item) => {
+      // Skip items that require a feature flag that's not enabled
+      if (item.flag && !enabledFlags.has(item.flag)) return
+      // Skip items excluded for this workspace type
+      if (skipPages.has(item.key)) return
       if (!seen.has(item.key)) {
         seen.add(item.key)
         workflowNavItems.push(item)
@@ -227,10 +244,10 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
     })
   })
 
-  // Management = core items + flag-gated items (only those whose flag is enabled)
+  // Management = core items + flag-gated items (only those whose flag is enabled, filtered by workspace exclusions)
   const managementNavItems = [
-    ...coreManagementItems,
-    ...flagGatedItems.filter(item => enabledFlags.has(item.flag)),
+    ...coreManagementItems.filter(item => !skipPages.has(item.key)),
+    ...flagGatedItems.filter(item => enabledFlags.has(item.flag) && !skipPages.has(item.key)),
   ].sort((a, b) => {
     // preserve deterministic order: core first, then flag-gated in original order
     const coreOrder = coreManagementItems.findIndex(c => c.key === a.key)

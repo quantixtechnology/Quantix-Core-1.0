@@ -182,25 +182,27 @@ export async function createBusiness(data: CreateBusinessRequest) {
   if (!validPlanTiers.includes(requestedPlanTier)) {
     throw new Error(`Invalid planTier "${requestedPlanTier}". Allowed values: STANDARD, PRO`);
   }
-
-  let plan = null;
-  if (data.planId) {
-    plan = await db.platformPlan.findUnique({ where: { id: data.planId } });
-    if (!plan) {
-      throw new Error(`Platform plan "${data.planId}" not found`);
-    }
-    if (!validPlanTiers.includes(plan.tier as typeof validPlanTiers[number])) {
-      throw new Error(`Platform plan "${data.planId}" has invalid tier "${plan.tier}". Allowed values: STANDARD, PRO`);
-    }
-    if (data.planTier && data.planTier !== plan.tier) {
-      throw new Error(`planTier "${data.planTier}" does not match plan tier "${plan.tier}" for planId "${data.planId}".`);
-    }
-  } else {
-    plan = await db.platformPlan.findUnique({ where: { tier: requestedPlanTier } });
-    if (!plan) {
-      throw new Error(`No ${requestedPlanTier} plan found. Please seed platform plans first.`);
-    }
+  // Laundry businesses must use PRO plan
+  if (data.businessType === 'LAUNDRY' && requestedPlanTier !== 'PRO') {
+    throw new Error('Laundry businesses require the PRO plan');
   }
+
+  const plan = await (async () => {
+    if (data.planId) {
+      const p = await db.platformPlan.findUnique({ where: { id: data.planId } });
+      if (!p) throw new Error(`Platform plan "${data.planId}" not found`);
+      if (!validPlanTiers.includes(p.tier as typeof validPlanTiers[number])) {
+        throw new Error(`Platform plan "${data.planId}" has invalid tier "${p.tier}". Allowed values: STANDARD, PRO`);
+      }
+      if (data.planTier && data.planTier !== p.tier) {
+        throw new Error(`planTier "${data.planTier}" does not match plan tier "${p.tier}" for planId "${data.planId}".`);
+      }
+      return p;
+    }
+    const p = await db.platformPlan.findUnique({ where: { tier: requestedPlanTier } });
+    if (!p) throw new Error(`No ${requestedPlanTier} plan found. Please seed platform plans first.`);
+    return p;
+  })();
 
   const planId = plan.id;
 
@@ -248,6 +250,8 @@ export async function createBusiness(data: CreateBusinessRequest) {
         name: data.name,
         slug: data.slug,
         businessType: data.businessType as BusinessType,
+        workspaceType: (data.workspaceType as any) || 'ECOMMERCE',
+        businessCategory: (data as any).businessCategory || null,
         status: 'ONBOARDING',
         description: data.description,
         logo: data.logo,
@@ -454,16 +458,25 @@ export async function createBusiness(data: CreateBusinessRequest) {
     });
 
     // Auto-provision: default feature flags
-    await tx.featureFlag.createMany({
-      data: [
-        { businessId: business.id, key: 'pos_enabled',            enabled: true,  value: '{}' },
-        { businessId: business.id, key: 'delivery_enabled',       enabled: true,  value: '{}' },
-        { businessId: business.id, key: 'online_orders_enabled',  enabled: true,  value: '{}' },
-        { businessId: business.id, key: 'promo_codes_enabled',    enabled: true,  value: '{}' },
-        { businessId: business.id, key: 'loyalty_enabled',        enabled: false, value: '{}' },
-        { businessId: business.id, key: 'subscription_enabled',   enabled: false, value: '{}' },
-      ],
-    });
+    const baseFlags: Array<{ businessId: string; key: string; enabled: boolean; value: string }> = [
+      { businessId: business.id, key: 'pos_enabled',            enabled: true,  value: '{}' },
+      { businessId: business.id, key: 'delivery_enabled',       enabled: true,  value: '{}' },
+      { businessId: business.id, key: 'online_orders_enabled',  enabled: true,  value: '{}' },
+      { businessId: business.id, key: 'promo_codes_enabled',    enabled: true,  value: '{}' },
+      { businessId: business.id, key: 'loyalty_enabled',        enabled: false, value: '{}' },
+      { businessId: business.id, key: 'subscription_enabled',   enabled: data.businessType === 'LAUNDRY' ? true : false, value: '{}' },
+    ];
+
+    // Add laundry industry feature flags when business type is LAUNDRY
+    if (data.businessType === 'LAUNDRY' && data.industryFeatures) {
+      for (const [key, enabled] of Object.entries(data.industryFeatures)) {
+        if (enabled) {
+          baseFlags.push({ businessId: business.id, key, enabled: true, value: '{}' });
+        }
+      }
+    }
+
+    await tx.featureFlag.createMany({ data: baseFlags });
 
     // Auto-provision: default workflow rules (order lifecycle)
     await tx.workflowRule.createMany({

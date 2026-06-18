@@ -56,7 +56,7 @@ export async function POST(request: Request) {
         select: {
           role: true, storeId: true,
           business: {
-            select: { id: true, name: true, slug: true, businessType: true, status: true, primaryColor: true, logo: true },
+            select: { id: true, name: true, slug: true, businessType: true, workspaceType: true, businessCategory: true, status: true, primaryColor: true, logo: true },
           },
           store: { select: { id: true, name: true } },
         },
