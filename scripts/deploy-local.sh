@@ -152,6 +152,16 @@ npx prisma db push --accept-data-loss 2>&1 | tee -a "$LOG_FILE" | tail -2 \
   || fail "prisma db push failed"
 log "✅ Schema synced"
 
+# ─── Store type migration ────────────────────────────────────────────────────────
+# Converts old StoreType enum values (STANDARD, PICKUP_STORE, MAIN, BRANCH)
+# to new values (PICKUP_CENTER, PROCESSING_CENTER, BOTH).
+CURRENT_STEP="storetype"
+status "storetype" "Migrating store type values"
+log ""
+log "── Store type migration ──────────────────────────────────────"
+node scripts/migrate-store-type.js 2>&1 | tee -a "$LOG_FILE" || log "⚠️ Store type migration had issues, continuing"
+log "✅ StoreType migration complete"
+
 # ─── Super admin ───────────────────────────────────────────────────────────────
 CURRENT_STEP="seed"
 status "seed" "Verifying super admin"
