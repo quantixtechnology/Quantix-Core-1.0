@@ -58,7 +58,7 @@ import {
   Workflow,
   ExternalLink,
 } from "lucide-react"
-import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS } from "@/stores/admin-store"
+import { useAdminStore, type WorkflowType, WORKFLOW_CONFIGS, BUSINESS_TYPE_WORKFLOWS } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useBusinessContext } from "@/hooks/use-business-context"
 import { showSuccess, showError } from "@/lib/toast-utils"
@@ -187,7 +187,7 @@ function CategoryIcon({ icon, color, name }: { icon: string; color: string; name
 export function ProductsView() {
   // Get real business context
   const { businessId, isLoading: contextLoading } = useBusinessContext()
-  const { setBusinessPage, currentStoreId } = useAdminStore()
+  const { setBusinessPage, currentStoreId, currentBusinessType } = useAdminStore()
   const { permissions } = useAuthStore()
   const canDeleteProducts = permissions.includes('products:delete')
   const queryClient = useQueryClient()
@@ -384,6 +384,17 @@ export function ProductsView() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
 
+  // ---- Laundry-specific form state ----
+  const [formLaundryRegularEnabled, setFormLaundryRegularEnabled] = useState(false)
+  const [formLaundryRegularRate, setFormLaundryRegularRate] = useState("")
+  const [formLaundrySubscriptionEnabled, setFormLaundrySubscriptionEnabled] = useState(false)
+  const [formLaundryMonthlyPrice, setFormLaundryMonthlyPrice] = useState("")
+  const [formLaundryIncludedKg, setFormLaundryIncludedKg] = useState("10")
+  const [formLaundryExtraKgRate, setFormLaundryExtraKgRate] = useState("")
+  const [formLaundryPlans, setFormLaundryPlans] = useState<
+    { service: string; name: string; monthlyPrice: string; includedKg: string; extraKgRate: string; status: "ACTIVE" | "INACTIVE" }[]
+  >([])
+
   // ---- Image upload state ----
   const [formImageUrl, setFormImageUrl] = useState("")
   const [imageUploading, setImageUploading] = useState(false)
@@ -472,6 +483,13 @@ export function ProductsView() {
     setFormAddToAllStores(true)
     setFormVariants([{ name: "", sku: "", mrp: "", price: "", stock: "" }])
     setFormImageUrl("")
+    setFormLaundryRegularEnabled(false)
+    setFormLaundryRegularRate("")
+    setFormLaundrySubscriptionEnabled(false)
+    setFormLaundryMonthlyPrice("")
+    setFormLaundryIncludedKg("10")
+    setFormLaundryExtraKgRate("")
+    setFormLaundryPlans([])
     setEditingProduct(null)
   }
 
@@ -524,6 +542,31 @@ export function ProductsView() {
         stock: Number(fv.stock) || 0,
       }))
 
+      // Laundry-specific fields
+      const laundryConfig: Record<string, unknown> = {}
+      if (currentBusinessType === "LAUNDRY") {
+        laundryConfig.regularPricingEnabled = formLaundryRegularEnabled
+        if (formLaundryRegularEnabled) {
+          laundryConfig.regularRatePerKg = Number(formLaundryRegularRate) || 0
+        }
+        laundryConfig.subscriptionEnabled = formLaundrySubscriptionEnabled
+        if (formLaundrySubscriptionEnabled) {
+          laundryConfig.monthlySubscriptionPrice = Number(formLaundryMonthlyPrice) || 0
+          laundryConfig.includedKg = Number(formLaundryIncludedKg) || 0
+          laundryConfig.extraKgRate = Number(formLaundryExtraKgRate) || 0
+        }
+        if (formLaundryPlans.length > 0) {
+          laundryConfig.subscriptionPlans = formLaundryPlans.map(p => ({
+            service: p.service,
+            name: p.name,
+            monthlyPrice: Number(p.monthlyPrice) || 0,
+            includedKg: Number(p.includedKg) || 0,
+            extraKgRate: Number(p.extraKgRate) || 0,
+            status: p.status,
+          }))
+        }
+      }
+
       if (editingProduct) {
         // Products are business-level — no storeId on updates
         await updateProductMutation.mutateAsync({
@@ -538,6 +581,7 @@ export function ProductsView() {
             images: imageList,
             variants: variantPayload,
             workflowType: categoryObj?.workflow || "ECOMMERCE",
+            ...laundryConfig,
           },
         })
       } else {
@@ -554,6 +598,7 @@ export function ProductsView() {
           // Inventory routing: primary store + addToAllStores flag
           ...(currentStoreId ? { storeId: currentStoreId } : {}),
           addToAllStores: formAddToAllStores,
+          ...laundryConfig,
         })
       }
 
@@ -1432,6 +1477,210 @@ export function ProductsView() {
                   </p>
                 </div>
                 <Switch checked={formAddToAllStores} onCheckedChange={setFormAddToAllStores} />
+              </div>
+            )}
+
+            {/* Laundry: Regular + Subscription Pricing */}
+            {currentBusinessType === "LAUNDRY" && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 space-y-4">
+                {/* ── Regular Pricing ── */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-sky-800">Regular Pricing</span>
+                    <p className="text-[10px] text-sky-600">Enable one-time per-KG pricing</p>
+                  </div>
+                  <Switch
+                    checked={formLaundryRegularEnabled}
+                    onCheckedChange={setFormLaundryRegularEnabled}
+                  />
+                </div>
+                {formLaundryRegularEnabled && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Regular Rate Per KG</Label>
+                    <div className="relative max-w-[220px]">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
+                      <Input
+                        type="number"
+                        placeholder="80"
+                        className="h-8 text-xs pl-5"
+                        value={formLaundryRegularRate}
+                        onChange={(e) => setFormLaundryRegularRate(e.target.value)}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Per-kilogram rate for one-time (non-subscription) orders</p>
+                  </div>
+                )}
+
+                <Separator className="bg-sky-100" />
+
+                {/* ── Subscription Pricing ── */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-sky-800">Subscription Pricing</span>
+                    <p className="text-[10px] text-sky-600">Enable monthly subscription with KG allowance</p>
+                  </div>
+                  <Switch
+                    checked={formLaundrySubscriptionEnabled}
+                    onCheckedChange={setFormLaundrySubscriptionEnabled}
+                  />
+                </div>
+                {formLaundrySubscriptionEnabled && (
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Monthly Subscription Price</Label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
+                        <Input
+                          type="number"
+                          placeholder="4000"
+                          className="h-8 text-xs pl-5"
+                          value={formLaundryMonthlyPrice}
+                          onChange={(e) => setFormLaundryMonthlyPrice(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Included KG</Label>
+                      <Input
+                        type="number"
+                        placeholder="10"
+                        className="h-8 text-xs"
+                        value={formLaundryIncludedKg}
+                        onChange={(e) => setFormLaundryIncludedKg(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Extra KG Rate</Label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
+                        <Input
+                          type="number"
+                          placeholder="80"
+                          className="h-8 text-xs pl-5"
+                          value={formLaundryExtraKgRate}
+                          onChange={(e) => setFormLaundryExtraKgRate(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Subscription Plans ── */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-xs font-medium">Subscription Plans</Label>
+                      <p className="text-[10px] text-muted-foreground">Define plan tiers for this service</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setFormLaundryPlans(prev => [...prev, { service: "", name: "", monthlyPrice: "", includedKg: "10", extraKgRate: "", status: "ACTIVE" }])}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Plan
+                    </Button>
+                  </div>
+                  {formLaundryPlans.length === 0 ? (
+                    <p className="text-[10px] text-muted-foreground italic">No subscription plans defined for this service.</p>
+                  ) : (
+                    <div className="border rounded-md overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs h-8">Service</TableHead>
+                            <TableHead className="text-xs h-8">Plan Name</TableHead>
+                            <TableHead className="text-xs h-8">Monthly Price</TableHead>
+                            <TableHead className="text-xs h-8">Included KG</TableHead>
+                            <TableHead className="text-xs h-8">Extra KG Rate</TableHead>
+                            <TableHead className="text-xs h-8">Status</TableHead>
+                            <TableHead className="text-xs h-8 w-12"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {formLaundryPlans.map((plan, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="py-1">
+                                <Input
+                                  placeholder="e.g. Wash + Dry + Iron"
+                                  className="h-7 text-xs"
+                                  value={plan.service}
+                                  onChange={(e) => setFormLaundryPlans(prev => prev.map((p, j) => j === i ? { ...p, service: e.target.value } : p))}
+                                />
+                              </TableCell>
+                              <TableCell className="py-1">
+                                <Input
+                                  placeholder="e.g. Gold Monthly"
+                                  className="h-7 text-xs"
+                                  value={plan.name}
+                                  onChange={(e) => setFormLaundryPlans(prev => prev.map((p, j) => j === i ? { ...p, name: e.target.value } : p))}
+                                />
+                              </TableCell>
+                              <TableCell className="py-1">
+                                <div className="relative">
+                                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
+                                  <Input
+                                    type="number"
+                                    placeholder="4000"
+                                    className="h-7 text-xs pl-5"
+                                    value={plan.monthlyPrice}
+                                    onChange={(e) => setFormLaundryPlans(prev => prev.map((p, j) => j === i ? { ...p, monthlyPrice: e.target.value } : p))}
+                                  />
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-1">
+                                <Input
+                                  type="number"
+                                  placeholder="10"
+                                  className="h-7 text-xs max-w-[80px]"
+                                  value={plan.includedKg}
+                                  onChange={(e) => setFormLaundryPlans(prev => prev.map((p, j) => j === i ? { ...p, includedKg: e.target.value } : p))}
+                                />
+                              </TableCell>
+                              <TableCell className="py-1">
+                                <div className="relative">
+                                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
+                                  <Input
+                                    type="number"
+                                    placeholder="80"
+                                    className="h-7 text-xs pl-5"
+                                    value={plan.extraKgRate}
+                                    onChange={(e) => setFormLaundryPlans(prev => prev.map((p, j) => j === i ? { ...p, extraKgRate: e.target.value } : p))}
+                                  />
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-1">
+                                <Select
+                                  value={plan.status}
+                                  onValueChange={(v: "ACTIVE" | "INACTIVE") => setFormLaundryPlans(prev => prev.map((p, j) => j === i ? { ...p, status: v } : p))}
+                                >
+                                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="ACTIVE">Active</SelectItem>
+                                    <SelectItem value="INACTIVE">Inactive</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell className="py-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-red-500"
+                                  onClick={() => setFormLaundryPlans(prev => prev.filter((_, j) => j !== i))}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

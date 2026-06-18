@@ -101,8 +101,9 @@ function getWorkflowBadgeText(workflow: string) {
 
 export function BusinessDashboard() {
   const { businessId, businessName, isLoading: contextLoading } = useBusinessContext()
-  const { setBusinessPage, currentStoreId, currentStoreName } = useAdminStore()
+  const { setBusinessPage, currentStoreId, currentStoreName, currentBusinessType } = useAdminStore()
   const { currentRole } = useAuthStore()
+  const isLaundry = currentBusinessType === "LAUNDRY"
   const isStoreManager = currentRole === "STORE_MANAGER"
   const [isRefreshing, setIsRefreshing] = useState(false)
   const queryClient = useQueryClient()
@@ -412,6 +413,63 @@ export function BusinessDashboard() {
           iconBg="bg-emerald-50"
         />
       </div>
+
+      {/* Laundry-specific Phase 1 KPIs — subscription-based metrics only */}
+      {isLaundry && (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            title="Active Subscriptions"
+            value={String(dashboardData?.laundry?.activeSubscriptions || 0)}
+            change="Subscribed customers"
+            changeType="neutral"
+            icon={Users}
+            iconColor="text-emerald-600"
+            iconBg="bg-emerald-50"
+          />
+          <StatCard
+            title="KG Consumed This Month"
+            value={String(dashboardData?.laundry?.kgConsumedThisMonth || 0)}
+            change="Total weight processed"
+            changeType="neutral"
+            icon={Package}
+            iconColor="text-sky-600"
+            iconBg="bg-sky-50"
+          />
+          <StatCard
+            title="Renewals Due"
+            value={String(dashboardData?.laundry?.renewalsDue || 0)}
+            change="Awaiting renewal"
+            changeType="neutral"
+            icon={RefreshCw}
+            iconColor="text-amber-600"
+            iconBg="bg-amber-50"
+          />
+          <StatCard
+            title="Extra KG Revenue"
+            value={`₹${(dashboardData?.laundry?.extraKgRevenue || 0).toLocaleString("en-IN")}`}
+            change="Overage charges"
+            changeType="neutral"
+            icon={TrendingUp}
+            iconColor="text-violet-600"
+            iconBg="bg-violet-50"
+          />
+        </div>
+      )}
+
+      {/* Laundry Monthly Revenue */}
+      {isLaundry && (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-1 lg:grid-cols-1">
+          <StatCard
+            title="Monthly Revenue"
+            value={`₹${(dashboardData?.laundry?.monthlyRevenue || 0).toLocaleString("en-IN")}`}
+            change="Subscription + one-time combined"
+            changeType="neutral"
+            icon={IndianRupee}
+            iconColor="text-emerald-600"
+            iconBg="bg-emerald-50"
+          />
+        </div>
+      )}
 
       {/* Charts Section */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">

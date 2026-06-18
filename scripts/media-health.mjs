@@ -3,13 +3,13 @@
 // Media Health Check — Quantix Core
 //
 // Scans all media references in the database, verifies files exist on disk,
-// and generates a JSON report at /root/logs/media-health-report.json
+// and generates a JSON report at /home/ubuntu/logs/media-health-report.json
 //
 // Usage (run from project root):
 //   node scripts/media-health.mjs
 //
 // Cron (nightly at 2am):
-//   0 2 * * * cd /root/Quantix-Core-1.0 && node scripts/media-health.mjs >> /root/logs/media-health-cron.log 2>&1
+//   0 2 * * * cd /home/ubuntu/Quantix-Core-1.0 && node scripts/media-health.mjs >> /home/ubuntu/logs/media-health-cron.log 2>&1
 // ============================================================================
 
 import { PrismaClient } from '@prisma/client'
@@ -17,7 +17,7 @@ import { existsSync, statSync, writeFileSync, mkdirSync } from 'fs'
 import { join, resolve } from 'path'
 
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT ?? '/var/www/uploads'
-const REPORT_DIR  = '/root/logs'
+const REPORT_DIR  = '/home/ubuntu/logs'
 const REPORT_PATH = join(REPORT_DIR, 'media-health-report.json')
 
 const db = new PrismaClient()

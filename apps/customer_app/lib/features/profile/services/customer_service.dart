@@ -26,10 +26,10 @@ class CustomerService {
     final data = await _dio.put<Map<String, dynamic>>(
       ApiEndpoints.profile,
       data: {
-        if (name != null) 'name': name,
-        if (email != null) 'email': email,
-        if (phone != null) 'phone': phone,
-        if (gstNumber != null) 'gstNumber': gstNumber,
+        'name': ?name,
+        'email': ?email,
+        'phone': ?phone,
+        'gstNumber': ?gstNumber,
       },
     );
     return CustomerProfile.fromJson(data);

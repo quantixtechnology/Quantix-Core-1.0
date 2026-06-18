@@ -13,7 +13,7 @@ export async function GET() {
   const projectPublicSvg    = join(cwd, 'public', 'logo.svg')
   const standaloneLogo      = join(cwd, '.next', 'standalone', 'public', 'quantix-logo.png')
   const standaloneSvg       = join(cwd, '.next', 'standalone', 'public', 'logo.svg')
-  const absoluteFallback    = '/root/Quantix-Core-1.0/public/quantix-logo.png'
+  const absoluteFallback    = '/home/ubuntu/Quantix-Core-1.0/public/quantix-logo.png'
 
   return NextResponse.json({
     success: true,

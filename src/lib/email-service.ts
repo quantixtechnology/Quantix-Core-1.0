@@ -17,7 +17,7 @@ const RETRY_DELAY_MS = 1500
 
 // ── SMTP transport ───────────────────────────────────────────────────────────
 // Rebuilt fresh every process start — no stale cached credentials.
-// To pick up .env changes: npm run build && pm2 restart quantix --update-env
+// To pick up .env changes: npm run build && pm2 restart quantix-core --update-env
 
 function buildTransport(): nodemailer.Transporter | null {
   const host = process.env.SMTP_HOST

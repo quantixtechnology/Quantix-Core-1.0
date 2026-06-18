@@ -58,17 +58,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       // ── Splash ────────────────────────────────────────────────────────
       GoRoute(
         path: RoutePaths.splash,
-        builder: (_, __) => const SplashPage(),
+        builder: (_, _) => const SplashPage(),
       ),
 
       // ── Auth ──────────────────────────────────────────────────────────
       GoRoute(
         path: RoutePaths.login,
-        builder: (_, __) => const LoginPage(),
+        builder: (_, _) => const LoginPage(),
         routes: [
           GoRoute(
             path: 'otp',
-            builder: (_, __) => const OtpPage(),
+            builder: (_, _) => const OtpPage(),
           ),
         ],
       ),
@@ -79,11 +79,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: RoutePaths.home,
-            builder: (_, __) => const HomePage(),
+            builder: (_, _) => const HomePage(),
           ),
           GoRoute(
             path: RoutePaths.catalog,
-            builder: (_, __) => const CategoriesPage(),
+            builder: (_, _) => const CategoriesPage(),
             routes: [
               GoRoute(
                 path: 'products',
@@ -93,7 +93,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: 'search',
-                builder: (_, __) => const SearchPage(),
+                builder: (_, _) => const SearchPage(),
               ),
             ],
           ),
@@ -104,27 +104,27 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: RoutePaths.cart,
-            builder: (_, __) => const CartPage(),
+            builder: (_, _) => const CartPage(),
           ),
           GoRoute(
             path: RoutePaths.orders,
-            builder: (_, __) => const OrdersPage(),
+            builder: (_, _) => const OrdersPage(),
           ),
           GoRoute(
             path: RoutePaths.profile,
-            builder: (_, __) => const ProfilePage(),
+            builder: (_, _) => const ProfilePage(),
             routes: [
               GoRoute(
                 path: 'addresses',
-                builder: (_, __) => const AddressesPage(),
+                builder: (_, _) => const AddressesPage(),
               ),
               GoRoute(
                 path: 'loyalty',
-                builder: (_, __) => const LoyaltyPage(),
+                builder: (_, _) => const LoyaltyPage(),
               ),
               GoRoute(
                 path: 'settings',
-                builder: (_, __) => const SettingsPage(),
+                builder: (_, _) => const SettingsPage(),
               ),
             ],
           ),
@@ -144,11 +144,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: RoutePaths.checkout,
-        builder: (_, __) => const CheckoutPage(),
+        builder: (_, _) => const CheckoutPage(),
       ),
       GoRoute(
         path: RoutePaths.notifications,
-        builder: (_, __) => const NotificationsPage(),
+        builder: (_, _) => const NotificationsPage(),
       ),
     ],
   );

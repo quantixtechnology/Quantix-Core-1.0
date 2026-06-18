@@ -7,26 +7,26 @@
 #
 # What it does:
 #   1. Verifies the source DB exists and has real data.
-#   2. Creates /root/quantix-data/ with restricted permissions.
+#   2. Creates /home/ubuntu/data/ with restricted permissions.
 #   3. Creates a timestamped backup.
 #   4. Copies the DB to the new location.
 #   5. Verifies the copy is intact (row counts match).
-#   6. Updates /root/Quantix-Core-1.0/.env with the new DATABASE_URL.
+#   6. Updates /home/ubuntu/Quantix-Core-1.0/.env with the new DATABASE_URL.
 #   7. Restarts PM2 and confirms the app is healthy.
 #   8. Prints a rollback command in case anything goes wrong.
 #
 # ROLLBACK (if the app fails after this script):
-#   export DATABASE_URL="file:/root/Quantix-Core-1.0/prisma/db/custom.db"
-#   grep -v "^DATABASE_URL=" /root/Quantix-Core-1.0/.env > /tmp/env_tmp
-#   { echo "DATABASE_URL=file:/root/Quantix-Core-1.0/prisma/db/custom.db"; cat /tmp/env_tmp; } > /root/Quantix-Core-1.0/.env
-#   pm2 restart quantix --update-env
+#   export DATABASE_URL="file:/home/ubuntu/Quantix-Core-1.0/prisma/db/custom.db"
+#   grep -v "^DATABASE_URL=" /home/ubuntu/Quantix-Core-1.0/.env > /tmp/env_tmp
+#   { echo "DATABASE_URL=file:/home/ubuntu/Quantix-Core-1.0/prisma/db/custom.db"; cat /tmp/env_tmp; } > /home/ubuntu/Quantix-Core-1.0/.env
+#   pm2 restart quantix-core --update-env
 # =============================================================================
 
 set -euo pipefail
 
-PROJECT="/root/Quantix-Core-1.0"
+PROJECT="/home/ubuntu/Quantix-Core-1.0"
 OLD_DB="$PROJECT/prisma/db/custom.db"
-NEW_DIR="/root/quantix-data"
+NEW_DIR="/home/ubuntu/data"
 NEW_DB="$NEW_DIR/custom.db"
 BACKUP_DIR="/root/backups"
 
@@ -76,7 +76,7 @@ ls -t "$BACKUP_DIR"/custom.db.*.bak 2>/dev/null | tail -n +21 | xargs rm -f || t
 
 # ── Create destination ───────────────────────────────────────────────────────
 echo ""
-echo "── Creating /root/quantix-data/ ─────────────────────────────"
+echo "── Creating /home/ubuntu/data/ ─────────────────────────────"
 mkdir -p "$NEW_DIR"
 chmod 700 "$NEW_DIR"   # only root can read — protects customer data
 echo "   Directory : $NEW_DIR (chmod 700)"
@@ -122,11 +122,11 @@ echo "✅ .env updated"
 # ── Restart PM2 ─────────────────────────────────────────────────────────────
 echo ""
 echo "── Restarting PM2 ───────────────────────────────────────────"
-if pm2 list 2>/dev/null | grep -q "quantix"; then
-  pm2 restart quantix --update-env
+if pm2 list 2>/dev/null | grep -q "quantix-core"; then
+  pm2 restart quantix-core --update-env
   echo "✅ PM2 restarted"
 else
-  echo "⚠️  PM2 process 'quantix' not found — start it manually with:"
+  echo "⚠️  PM2 process 'quantix-core' not found — start it manually with:"
   echo "   cd $PROJECT && pm2 start ecosystem.config.js && pm2 save"
 fi
 pm2 save 2>/dev/null || true
@@ -140,12 +140,12 @@ if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
   echo "✅ App healthy (HTTP $HTTP)"
 else
   echo "⚠️  App returned HTTP $HTTP — check PM2 logs:"
-  pm2 logs quantix --lines 30 --nostream 2>/dev/null || true
+  pm2 logs quantix-core --lines 30 --nostream 2>/dev/null || true
   echo ""
   echo "ROLLBACK COMMAND (run if needed):"
   echo "  grep -v '^DATABASE_URL=' $PROJECT/.env > /tmp/env_rb"
   echo "  { echo 'DATABASE_URL=file:$OLD_DB'; cat /tmp/env_rb; } > $PROJECT/.env"
-  echo "  pm2 restart quantix --update-env"
+  echo "  pm2 restart quantix-core --update-env"
   exit 1
 fi
 
@@ -168,4 +168,4 @@ echo ""
 echo " Rollback (if needed later):"
 echo "   grep -v '^DATABASE_URL=' $PROJECT/.env > /tmp/env_rb"
 echo "   { echo 'DATABASE_URL=file:$OLD_DB'; cat /tmp/env_rb; } > $PROJECT/.env"
-echo "   pm2 restart quantix --update-env"
+echo "   pm2 restart quantix-core --update-env"

@@ -2,7 +2,7 @@
 // Delivery login diagnostic + repair — runs against the ACTUAL database.
 //
 // The production database is a SQLite file on the server
-// (e.g. file:/root/Quantix-Core-1.0/prisma/db/custom.db). It is NOT present on
+// (e.g. file:/home/ubuntu/Quantix-Core-1.0/prisma/db/custom.db). It is NOT present on
 // a developer laptop, so this must be run ON THE SERVER (or anywhere the prod
 // DATABASE_URL is reachable). It uses the app's own Prisma client + bcrypt, so
 // password verification is byte-for-byte identical to /api/core/auth/login.

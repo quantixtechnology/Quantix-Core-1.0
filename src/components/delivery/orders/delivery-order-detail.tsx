@@ -34,6 +34,7 @@ import {
   Loader2,
   MessageCircle,
 } from "lucide-react"
+import { InvoiceOnDeliveryDialog, type DeliveryPaymentStatus } from "@/components/business/orders/invoice-on-delivery-dialog"
 
 const statusSteps = [
   { key: "ASSIGNED", label: "Pickup", icon: Package },
@@ -60,6 +61,7 @@ export function DeliveryOrderDetail() {
   const [otpError, setOtpError] = useState("")
   const [copied, setCopied] = useState(false)
   const [showReportDialog, setShowReportDialog] = useState(false)
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false)
 
   // SECURITY: business context comes from the authenticated session
   // (was a hardcoded "biz_1" placeholder before)
@@ -563,7 +565,14 @@ export function DeliveryOrderDetail() {
           <Button
             className="w-full h-12 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-base shadow-lg shadow-green-600/20"
             disabled={updateStatusMutation.isPending}
-            onClick={() => handleStatusUpdate("DELIVERED")}
+            onClick={() => {
+              const needsPayment = order.paymentStatus && order.paymentStatus !== "PAID" && order.paymentStatus !== "COMPLETED"
+              if (needsPayment) {
+                setShowInvoiceDialog(true)
+              } else {
+                handleStatusUpdate("DELIVERED")
+              }
+            }}
           >
             {updateStatusMutation.isPending ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <CheckCircle2 className="h-5 w-5 mr-2" />}
             Mark as Delivered
@@ -605,6 +614,24 @@ export function DeliveryOrderDetail() {
           </Card>
         )}
       </div>
+
+      {/* Invoice on Delivery Dialog */}
+      {order && (
+        <InvoiceOnDeliveryDialog
+          open={showInvoiceDialog}
+          onOpenChange={setShowInvoiceDialog}
+          order={{ id: order.id, orderNumber: order.orderNumber, total: order.totalAmount }}
+          onConfirm={async (paymentStatus: DeliveryPaymentStatus, paidAmount: number, notes: string) => {
+            // Update delivery status + create invoice with payment info
+            updateStatusMutation.mutate({
+              deliveryId: order.deliveryId,
+              status: "DELIVERED",
+              note: `Payment: ${paymentStatus}, Amount: ₹${paidAmount}${notes ? ` — ${notes}` : ""}`,
+            })
+            setShowInvoiceDialog(false)
+          }}
+        />
+      )}
 
       <div className="h-4" />
     </div>

@@ -52,7 +52,7 @@ class ProductListNotifier extends StateNotifier<AsyncValue<List<ProductDTO>>> {
 
     if (!_hasMore) return;
 
-    state = AsyncValue.loading();
+    state = const AsyncValue.loading();
     try {
       final result = await _service.getProducts(ProductFilter(
         page: _page,

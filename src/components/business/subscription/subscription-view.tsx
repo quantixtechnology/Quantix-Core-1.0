@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Loader2, CreditCard, CalendarDays, IndianRupee, CheckCircle2, AlertCircle, Clock } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import { Loader2, CreditCard, CalendarDays, IndianRupee, CheckCircle2, AlertCircle, Clock, Droplets, Users, RotateCcw, ClipboardList } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { PageHeader } from "@/components/admin/shared/page-header"
@@ -23,6 +24,8 @@ interface SubscriptionData {
   allowedStores: number
   plan: { name: string; tier: string } | null
   billingHistory: BillingRecord[]
+  kgLimit?: number
+  kgConsumed?: number
 }
 
 interface BillingRecord {
@@ -51,9 +54,10 @@ function fmtDate(d: string | null) {
 }
 
 export function SubscriptionView() {
-  const { currentBusinessId } = useAdminStore()
+  const { currentBusinessId, currentBusinessType } = useAdminStore()
   const { currentBusinessId: authBizId } = useAuthStore()
   const businessId = currentBusinessId || authBizId || ""
+  const isLaundry = currentBusinessType === "LAUNDRY"
 
   const [sub, setSub] = useState<SubscriptionData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -196,6 +200,60 @@ export function SubscriptionView() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── Laundry-specific: KG Usage ── */}
+      {isLaundry && (
+        <Card className="shadow-none border-sky-200">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Droplets className="h-4 w-4 text-sky-600" />
+              <CardTitle className="text-sm">KG Usage This Period</CardTitle>
+            </div>
+            <CardDescription className="text-xs">Laundry weight consumed vs plan limit</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Consumed</span>
+              <span className="font-semibold">{sub.kgConsumed ?? 0} kg / {sub.kgLimit ?? "—"} kg</span>
+            </div>
+            {sub.kgLimit ? (
+              <Progress
+                value={Math.min(100, ((sub.kgConsumed ?? 0) / sub.kgLimit) * 100)}
+                className="h-2.5"
+              />
+            ) : (
+              <Progress value={0} className="h-2.5 opacity-30" />
+            )}
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{sub.kgLimit ? `${Math.round(((sub.kgConsumed ?? 0) / sub.kgLimit) * 100)}% used` : "No limit set"}</span>
+              <span>{sub.kgLimit ? `${sub.kgLimit - (sub.kgConsumed ?? 0)} kg remaining` : ""}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Laundry-specific: quick-nav cards ── */}
+      {isLaundry && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { icon: ClipboardList, label: "Subscription Plans", desc: "View & manage laundry plans", href: "#" },
+            { icon: Users, label: "Customer Subscriptions", desc: "Active customer subscriptions", href: "#" },
+            { icon: RotateCcw, label: "Renewals", desc: "Upcoming renewals & expirations", href: "#" },
+          ].map(item => (
+            <Card key={item.label} className="shadow-none hover:shadow-sm transition-shadow cursor-pointer">
+              <CardContent className="p-4 flex items-start gap-3">
+                <div className="rounded-lg bg-sky-50 p-2 shrink-0">
+                  <item.icon className="h-4 w-4 text-sky-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{item.label}</p>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   )

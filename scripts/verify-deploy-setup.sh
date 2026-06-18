@@ -5,7 +5,7 @@
 # Output is structured so every check has a clear PASS/FAIL/WARN result.
 #
 # Usage:
-#   bash /root/Quantix-Core-1.0/scripts/verify-deploy-setup.sh
+#   bash /home/ubuntu/Quantix-Core-1.0/scripts/verify-deploy-setup.sh
 #
 # What it checks:
 #   1. DEPLOY_WEBHOOK_SECRET in .env
@@ -31,7 +31,7 @@ WARN() { echo -e "  ${YELLOW}⚠️  WARN${RESET}  $*"; }
 INFO() { echo -e "  ${BLUE}ℹ️  INFO${RESET}  $*"; }
 HEAD() { echo -e "\n${BOLD}$*${RESET}"; echo "$(printf '─%.0s' {1..60})"; }
 
-PROJECT="/root/Quantix-Core-1.0"
+PROJECT="/home/ubuntu/Quantix-Core-1.0"
 ENV_FILE="$PROJECT/.env"
 APP_URL="http://localhost:3000"
 LOCK_FILE="/tmp/quantix-deploy.lock"
@@ -70,11 +70,11 @@ HEAD "2. Application Health"
 
 if command -v pm2 &>/dev/null; then
   PASS "pm2 binary found: $(pm2 --version)"
-  if pm2 list 2>/dev/null | grep -q "quantix"; then
-    PM2_STATUS=$(pm2 list 2>/dev/null | grep "quantix" | awk '{print $10}' || echo "unknown")
-    PASS "PM2 process 'quantix' exists (status: ${PM2_STATUS:-online})"
+  if pm2 list 2>/dev/null | grep -q "quantix-core"; then
+    PM2_STATUS=$(pm2 list 2>/dev/null | grep "quantix-core" | awk '{print $10}' || echo "unknown")
+    PASS "PM2 process 'quantix-core' exists (status: ${PM2_STATUS:-online})"
   else
-    FAIL "PM2 process 'quantix' not found"
+    FAIL "PM2 process 'quantix-core' not found"
     echo "     Fix: cd $PROJECT && pm2 start ecosystem.config.js"
   fi
 else
@@ -88,19 +88,19 @@ if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
   PASS "App responds HTTP $HTTP"
 else
   FAIL "App health check failed (HTTP $HTTP)"
-  echo "     Check: pm2 logs quantix --lines 30"
+  echo "     Check: pm2 logs quantix-core --lines 30"
 fi
 
 # ─── 3. Env loaded by running process ────────────────────────────────────────
 HEAD "3. Runtime Environment"
 
-PM2_PID=$(pm2 list --no-color 2>/dev/null | grep "quantix" | grep -oE '[0-9]+' | head -1 || echo "")
+PM2_PID=$(pm2 list --no-color 2>/dev/null | grep "quantix-core" | grep -oE '[0-9]+' | head -1 || echo "")
 if [ -n "$PM2_PID" ]; then
   if cat /proc/"$PM2_PID"/environ 2>/dev/null | tr '\0' '\n' | grep -q "DEPLOY_WEBHOOK_SECRET="; then
     PASS "DEPLOY_WEBHOOK_SECRET is loaded in the running process environment"
   else
     FAIL "DEPLOY_WEBHOOK_SECRET not in running process environment"
-    echo "     Fix: pm2 restart quantix --update-env"
+    echo "     Fix: pm2 restart quantix-core --update-env"
   fi
 else
   WARN "Could not determine PM2 PID — skipping runtime env check"

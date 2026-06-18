@@ -173,7 +173,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ['DELIVERY
         count: orders.length,
       });
     } catch (error) {
-      // Log the real error server-side (visible in `pm2 logs quantix`) so an
+      // Log the real error server-side (visible in `pm2 logs quantix-core`) so an
       // opaque 502/500 in the client always has a traceable cause here.
       console.error('[delivery/my-orders] FATAL:', error);
       return NextResponse.json(

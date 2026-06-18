@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
       '2. If nginx is present: add client_max_body_size 20m; to the server{} block',
       '3. Reload nginx: nginx -t && systemctl reload nginx',
       '4. If no nginx: Caddy is the only proxy and 20MB is already configured via request_buffers',
-      '5. Redeploy Next.js after next.config.ts change: pm2 restart quantix',
+      '5. Redeploy Next.js after next.config.ts change: pm2 restart quantix-core',
     ],
   });
 }

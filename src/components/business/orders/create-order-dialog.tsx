@@ -53,6 +53,7 @@ import {
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { cn } from "@/lib/utils"
+import { useAdminStore } from "@/stores/admin-store"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,6 +158,11 @@ export function CreateOrderDialog({
   const [notes, setNotes] = useState("")
   const [productSearchOpen, setProductSearchOpen] = useState(false)
   const [storeId, setStoreId] = useState("")
+  const { currentBusinessType } = useAdminStore()
+  const isLaundry = currentBusinessType === "LAUNDRY"
+  const [originStoreId, setOriginStoreId] = useState("")
+  const [processingStoreId, setProcessingStoreId] = useState("")
+  const [deliveryStoreId, setDeliveryStoreId] = useState("")
 
   // ---- Computed ----
   const selectedCustomer = useMemo(
@@ -203,6 +209,9 @@ export function CreateOrderDialog({
     setDeliveryAddress("")
     setNotes("")
     setStoreId("")
+    setOriginStoreId("")
+    setProcessingStoreId("")
+    setDeliveryStoreId("")
   }
 
   async function fetchCustomers() {
@@ -390,6 +399,9 @@ export function CreateOrderDialog({
         totalTax: Math.round(totalTax * 100) / 100,
         totalAmount: Math.round(totalAmount * 100) / 100,
         notes: notes.trim() || undefined,
+        originStoreId: isLaundry ? (originStoreId || undefined) : undefined,
+        processingStoreId: isLaundry ? (processingStoreId || undefined) : undefined,
+        deliveryStoreId: isLaundry ? (deliveryStoreId || undefined) : undefined,
       }
 
       const res = await fetch("/api/core/orders", {
@@ -585,6 +597,62 @@ export function CreateOrderDialog({
             </section>
 
             <Separator />
+
+            {isLaundry && (
+              <>
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                    <MapPin className="h-4 w-4" />
+                    Laundry Stores
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Origin Store</Label>
+                      <Select value={originStoreId} onValueChange={setOriginStoreId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select origin" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stores.filter(s => s.id).map(store => (
+                            <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Where clothes are picked up</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Processing Store</Label>
+                      <Select value={processingStoreId} onValueChange={setProcessingStoreId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select processing" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stores.filter(s => s.id).map(store => (
+                            <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Where clothes are cleaned</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Delivery Store</Label>
+                      <Select value={deliveryStoreId} onValueChange={setDeliveryStoreId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select delivery" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stores.filter(s => s.id).map(store => (
+                            <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Where clothes are delivered</p>
+                    </div>
+                  </div>
+                </section>
+                <Separator />
+              </>
+            )}
 
             {/* ─── Items Section ─── */}
             <section className="space-y-3">

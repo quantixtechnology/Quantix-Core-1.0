@@ -104,7 +104,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
               );
             },
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
           ),
 
           // ── Product grid ─────────────────────────────────────────────

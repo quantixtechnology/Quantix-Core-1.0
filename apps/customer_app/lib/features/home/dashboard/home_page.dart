@@ -50,7 +50,7 @@ class HomePage extends ConsumerWidget {
                     'Loading…',
                     style: TextStyle(color: Colors.white),
                   ),
-                  error: (_, __) => const Text(
+                  error: (_, _) => const Text(
                     'Store',
                     style: TextStyle(color: Colors.white),
                   ),
@@ -75,7 +75,7 @@ class HomePage extends ConsumerWidget {
                   height: 80,
                   child: Center(child: CircularProgressIndicator()),
                 ),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (_, _) => const SizedBox.shrink(),
               ),
             ),
 
@@ -177,7 +177,7 @@ class _CategoriesRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (ctx, i) {
           final cat = categories[i];
           return GestureDetector(

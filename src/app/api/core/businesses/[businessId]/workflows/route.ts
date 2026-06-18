@@ -7,24 +7,10 @@
 import { NextResponse } from 'next/server'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
+import { getBusinessEnabledWorkflows } from '@/lib/core/business'
 import type { NextRequest } from 'next/server'
 
-const ALL_WORKFLOWS = ['ECOMMERCE', 'PICKUP_DELIVERY', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'] as const
-type WorkflowType = typeof ALL_WORKFLOWS[number]
-
-const BUSINESS_TYPE_DEFAULT_WORKFLOWS: Record<string, WorkflowType[]> = {
-  GROCERY:       ['ECOMMERCE', 'PICKUP_DELIVERY'],
-  ECOMMERCE:     ['ECOMMERCE'],
-  FOOD_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
-  LAUNDRY:       ['ECOMMERCE', 'PICKUP_DELIVERY', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
-  CAR_WASH:      ['ECOMMERCE', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
-  PHARMACY:      ['ECOMMERCE', 'PICKUP_DELIVERY'],
-  HOME_SERVICES: ['APPOINTMENT', 'POST_SERVICE_BILLING'],
-  MEAT_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
-  COSMETICS:     ['ECOMMERCE'],
-  FURNITURE:     ['ECOMMERCE'],
-  DIRECTORY:     ['ECOMMERCE'],
-}
+type WorkflowType = 'ECOMMERCE' | 'PICKUP_DELIVERY' | 'APPOINTMENT' | 'SUBSCRIPTION' | 'POST_SERVICE_BILLING'
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
 
@@ -52,20 +38,7 @@ export const GET = withMiddleware({ requireAuth: true })(
 
       let enabledWorkflows: WorkflowType[]
 
-      if (planTier === 'STANDARD') {
-        enabledWorkflows = ['ECOMMERCE']
-      } else {
-        // PRO: read from settings, fallback to business-type defaults
-        const settings = JSON.parse(business.settings || '{}') as Record<string, unknown>
-        const fromSettings = settings.enabledWorkflows
-        if (Array.isArray(fromSettings) && fromSettings.length > 0) {
-          const valid = new Set<string>(ALL_WORKFLOWS)
-          enabledWorkflows = (fromSettings as string[]).filter(w => valid.has(w)) as WorkflowType[]
-        } else {
-          enabledWorkflows = BUSINESS_TYPE_DEFAULT_WORKFLOWS[business.businessType] ?? ['ECOMMERCE']
-        }
-        if (enabledWorkflows.length === 0) enabledWorkflows = ['ECOMMERCE']
-      }
+      enabledWorkflows = getBusinessEnabledWorkflows(business.businessType, planTier, business.settings) as WorkflowType[]
 
       return NextResponse.json({
         success: true,
