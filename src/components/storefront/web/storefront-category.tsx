@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { Search, SlidersHorizontal, ChevronDown, X, Package } from "lucide-react"
-import type { WebNav } from "./storefront-types"
+import type { WebNav } from "./storefront-website"
 import { StorefrontProductCard, ProductCardSkeleton } from "./storefront-product-card"
 import type { StorefrontProduct } from "./storefront-product-card"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"

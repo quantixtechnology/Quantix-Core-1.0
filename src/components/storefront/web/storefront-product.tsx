@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, ShoppingCart, Plus, Minus,
   Check, Package, ChevronDown,
 } from "lucide-react"
-import type { WebNav } from "./storefront-types"
+import type { WebNav } from "./storefront-website"
 import { ProductImage } from "./product-image"
 import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
 

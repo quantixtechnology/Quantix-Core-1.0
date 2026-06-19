@@ -32,7 +32,7 @@ import {
   Phone, ArrowLeft, Loader2, CheckCircle2, User, Mail,
   AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, Lock, KeyRound,
 } from "lucide-react"
-import type { WebNav } from "./storefront-types"
+import type { WebNav } from "./storefront-website"
 
 interface StorefrontAuthProps {
   brandColor: string
