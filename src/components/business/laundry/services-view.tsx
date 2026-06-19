@@ -152,7 +152,7 @@ export function ServicesView() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setEditingService({ categoryId: category.id, service: { id: "", name: "", slug: "", description: "", price: 0, unitType: "PER_KG", turnaroundTime: "24h", isActive: true, sortOrder: 0, metadata: {} } }
+                        setEditingService({ categoryId: category.id, service: { id: "", name: "", slug: "", description: "", price: 0, unitType: "PER_KG", turnaroundTime: "24h", isActive: true, sortOrder: 0, metadata: {} } })
                         setIsServiceDialogOpen(true)
                       }}
                       className="gap-1.5"

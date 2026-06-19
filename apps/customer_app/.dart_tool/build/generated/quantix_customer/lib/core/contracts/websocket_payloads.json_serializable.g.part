@@ -1,0 +1,129 @@
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
+
+_WsOrderStatusChanged _$WsOrderStatusChangedFromJson(
+  Map<String, dynamic> json,
+) => _WsOrderStatusChanged(
+  orderId: json['orderId'] as String,
+  orderNumber: json['orderNumber'] as String,
+  previousStatus: json['previousStatus'] as String,
+  newStatus: json['newStatus'] as String,
+  businessId: json['businessId'] as String,
+  timestamp: json['timestamp'] as String,
+  storeId: json['storeId'] as String?,
+  customerId: json['customerId'] as String?,
+  note: json['note'] as String?,
+);
+
+Map<String, dynamic> _$WsOrderStatusChangedToJson(
+  _WsOrderStatusChanged instance,
+) => <String, dynamic>{
+  'orderId': instance.orderId,
+  'orderNumber': instance.orderNumber,
+  'previousStatus': instance.previousStatus,
+  'newStatus': instance.newStatus,
+  'businessId': instance.businessId,
+  'timestamp': instance.timestamp,
+  'storeId': instance.storeId,
+  'customerId': instance.customerId,
+  'note': instance.note,
+};
+
+_WsDeliveryLocationUpdated _$WsDeliveryLocationUpdatedFromJson(
+  Map<String, dynamic> json,
+) => _WsDeliveryLocationUpdated(
+  orderId: json['orderId'] as String,
+  partnerId: json['partnerId'] as String,
+  partnerName: json['partnerName'] as String,
+  lat: (json['lat'] as num).toDouble(),
+  lng: (json['lng'] as num).toDouble(),
+  businessId: json['businessId'] as String,
+  timestamp: json['timestamp'] as String,
+  accuracy: (json['accuracy'] as num?)?.toDouble(),
+  heading: (json['heading'] as num?)?.toDouble(),
+  speed: (json['speed'] as num?)?.toDouble(),
+  etaMinutes: (json['etaMinutes'] as num?)?.toInt(),
+  distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+);
+
+Map<String, dynamic> _$WsDeliveryLocationUpdatedToJson(
+  _WsDeliveryLocationUpdated instance,
+) => <String, dynamic>{
+  'orderId': instance.orderId,
+  'partnerId': instance.partnerId,
+  'partnerName': instance.partnerName,
+  'lat': instance.lat,
+  'lng': instance.lng,
+  'businessId': instance.businessId,
+  'timestamp': instance.timestamp,
+  'accuracy': instance.accuracy,
+  'heading': instance.heading,
+  'speed': instance.speed,
+  'etaMinutes': instance.etaMinutes,
+  'distanceKm': instance.distanceKm,
+};
+
+_WsPartnerAssigned _$WsPartnerAssignedFromJson(Map<String, dynamic> json) =>
+    _WsPartnerAssigned(
+      orderId: json['orderId'] as String,
+      orderNumber: json['orderNumber'] as String,
+      partnerId: json['partnerId'] as String,
+      partnerName: json['partnerName'] as String,
+      partnerPhone: json['partnerPhone'] as String,
+      businessId: json['businessId'] as String,
+      timestamp: json['timestamp'] as String,
+    );
+
+Map<String, dynamic> _$WsPartnerAssignedToJson(_WsPartnerAssigned instance) =>
+    <String, dynamic>{
+      'orderId': instance.orderId,
+      'orderNumber': instance.orderNumber,
+      'partnerId': instance.partnerId,
+      'partnerName': instance.partnerName,
+      'partnerPhone': instance.partnerPhone,
+      'businessId': instance.businessId,
+      'timestamp': instance.timestamp,
+    };
+
+_WsTrackingEtaUpdated _$WsTrackingEtaUpdatedFromJson(
+  Map<String, dynamic> json,
+) => _WsTrackingEtaUpdated(
+  orderId: json['orderId'] as String,
+  etaMinutes: (json['etaMinutes'] as num).toInt(),
+  distanceKm: (json['distanceKm'] as num).toDouble(),
+  estimatedArrival: json['estimatedArrival'] as String,
+  timestamp: json['timestamp'] as String,
+);
+
+Map<String, dynamic> _$WsTrackingEtaUpdatedToJson(
+  _WsTrackingEtaUpdated instance,
+) => <String, dynamic>{
+  'orderId': instance.orderId,
+  'etaMinutes': instance.etaMinutes,
+  'distanceKm': instance.distanceKm,
+  'estimatedArrival': instance.estimatedArrival,
+  'timestamp': instance.timestamp,
+};
+
+_WsNotificationNew _$WsNotificationNewFromJson(Map<String, dynamic> json) =>
+    _WsNotificationNew(
+      notificationId: json['notificationId'] as String,
+      type: json['type'] as String,
+      title: json['title'] as String,
+      message: json['message'] as String,
+      userId: json['userId'] as String,
+      timestamp: json['timestamp'] as String,
+      data: json['data'] as Map<String, dynamic>?,
+    );
+
+Map<String, dynamic> _$WsNotificationNewToJson(_WsNotificationNew instance) =>
+    <String, dynamic>{
+      'notificationId': instance.notificationId,
+      'type': instance.type,
+      'title': instance.title,
+      'message': instance.message,
+      'userId': instance.userId,
+      'timestamp': instance.timestamp,
+      'data': instance.data,
+    };

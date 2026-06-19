@@ -14,6 +14,7 @@ import { StorefrontOrders } from "./storefront-orders"
 import { StorefrontProfile } from "./storefront-profile"
 import { StorefrontAddresses } from "./storefront-addresses"
 import { StorefrontPassword } from "./storefront-password"
+import { StorefrontLaundryHome } from "./storefront-laundry-home"
 import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
 import { PwaMetaUpdater } from "@/components/storefront/pwa-meta-updater"
 
@@ -125,7 +126,8 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
 }
 
 export function StorefrontWebsite() {
-  const { currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
+  const { currentBusinessId, currentBusinessPrimaryColor, currentWorkspaceType, currentBusinessType } = useAdminStore()
+  const isLaundry = currentWorkspaceType === "LAUNDRY" || currentBusinessType === "LAUNDRY"
   const { switchStore, restoreStore, storeId: cartStoreId } = useCartStore()
   const brandColor = currentBusinessPrimaryColor || "#C62828"
 
@@ -297,7 +299,7 @@ export function StorefrontWebsite() {
           </div>
         )}
 
-        {page === "home"           && <StorefrontHome          brandColor={brandColor} nav={nav} storeClosed={storeClosed} />}
+        {page === "home" && (isLaundry ? <StorefrontLaundryHome brandColor={brandColor} nav={nav} /> : <StorefrontHome brandColor={brandColor} nav={nav} storeClosed={storeClosed} />)}
         {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} storeClosed={storeClosed} />}
         {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
         {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}

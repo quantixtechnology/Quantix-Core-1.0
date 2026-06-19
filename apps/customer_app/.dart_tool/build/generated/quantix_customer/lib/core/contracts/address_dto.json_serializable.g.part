@@ -1,0 +1,110 @@
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
+
+_AddressDTO _$AddressDTOFromJson(Map<String, dynamic> json) => _AddressDTO(
+  id: json['id'] as String,
+  customerId: json['customerId'] as String,
+  addressLine1: json['addressLine1'] as String,
+  city: json['city'] as String,
+  pincode: json['pincode'] as String,
+  country: json['country'] as String,
+  state: json['state'] as String,
+  isDefault: json['isDefault'] as bool,
+  createdAt: json['createdAt'] as String,
+  updatedAt: json['updatedAt'] as String,
+  label: json['label'] as String?,
+  area: json['area'] as String?,
+  addressLine2: json['addressLine2'] as String?,
+  landmark: json['landmark'] as String?,
+  instructions: json['instructions'] as String?,
+  latitude: (json['latitude'] as num?)?.toDouble(),
+  longitude: (json['longitude'] as num?)?.toDouble(),
+  gpsAccuracy: (json['gpsAccuracy'] as num?)?.toDouble(),
+);
+
+Map<String, dynamic> _$AddressDTOToJson(_AddressDTO instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'customerId': instance.customerId,
+      'addressLine1': instance.addressLine1,
+      'city': instance.city,
+      'pincode': instance.pincode,
+      'country': instance.country,
+      'state': instance.state,
+      'isDefault': instance.isDefault,
+      'createdAt': instance.createdAt,
+      'updatedAt': instance.updatedAt,
+      'label': instance.label,
+      'area': instance.area,
+      'addressLine2': instance.addressLine2,
+      'landmark': instance.landmark,
+      'instructions': instance.instructions,
+      'latitude': instance.latitude,
+      'longitude': instance.longitude,
+      'gpsAccuracy': instance.gpsAccuracy,
+    };
+
+_CreateAddressRequest _$CreateAddressRequestFromJson(
+  Map<String, dynamic> json,
+) => _CreateAddressRequest(
+  line1: json['line1'] as String,
+  city: json['city'] as String,
+  pincode: json['pincode'] as String,
+  label: json['label'] as String?,
+  area: json['area'] as String?,
+  line2: json['line2'] as String?,
+  landmark: json['landmark'] as String?,
+  state: json['state'] as String?,
+  instructions: json['instructions'] as String?,
+  latitude: (json['latitude'] as num?)?.toDouble(),
+  longitude: (json['longitude'] as num?)?.toDouble(),
+  gpsAccuracy: (json['gpsAccuracy'] as num?)?.toDouble(),
+  isDefault: json['isDefault'] as bool?,
+);
+
+Map<String, dynamic> _$CreateAddressRequestToJson(
+  _CreateAddressRequest instance,
+) => <String, dynamic>{
+  'line1': instance.line1,
+  'city': instance.city,
+  'pincode': instance.pincode,
+  'label': instance.label,
+  'area': instance.area,
+  'line2': instance.line2,
+  'landmark': instance.landmark,
+  'state': instance.state,
+  'instructions': instance.instructions,
+  'latitude': instance.latitude,
+  'longitude': instance.longitude,
+  'gpsAccuracy': instance.gpsAccuracy,
+  'isDefault': instance.isDefault,
+};
+
+_CustomerProfile _$CustomerProfileFromJson(Map<String, dynamic> json) =>
+    _CustomerProfile(
+      id: json['id'] as String,
+      loyaltyPoints: (json['loyaltyPoints'] as num?)?.toInt() ?? 0,
+      totalOrders: (json['totalOrders'] as num?)?.toInt() ?? 0,
+      totalSpent: (json['totalSpent'] as num?)?.toDouble() ?? 0.0,
+      name: json['name'] as String?,
+      email: json['email'] as String?,
+      phone: json['phone'] as String?,
+      avatar: json['avatar'] as String?,
+      gstNumber: json['gstNumber'] as String?,
+      loyaltyTier: json['loyaltyTier'] as String?,
+    );
+
+Map<String, dynamic> _$CustomerProfileToJson(_CustomerProfile instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'loyaltyPoints': instance.loyaltyPoints,
+      'totalOrders': instance.totalOrders,
+      'totalSpent': instance.totalSpent,
+      'name': instance.name,
+      'email': instance.email,
+      'phone': instance.phone,
+      'avatar': instance.avatar,
+      'gstNumber': instance.gstNumber,
+      'loyaltyTier': instance.loyaltyTier,
+    };

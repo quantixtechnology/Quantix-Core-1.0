@@ -6,7 +6,7 @@ import {
   Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
   Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
   Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
-  Tag, Palette, Smartphone, Globe, Shield, ClipboardList, Shirt,
+  Tag, Palette, Smartphone, Globe, Shield, ClipboardList, Shirt, QrCode, Layers,
 } from "lucide-react"
 import {
   Sidebar,
@@ -88,6 +88,7 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   { key: "user-management",     label: "User Management",      icon: Shield },
   { key: "tax",                 label: "Tax & GST",            icon: Receipt },
   { key: "gateway-config",      label: "Payment Gateways",     icon: CreditCard },
+  { key: "qr-payment-config",   label: "QR Payment",          icon: QrCode },
   { key: "invoices",            label: "Invoices",             icon: Receipt },
   { key: "reports",             label: "Reports",              icon: BarChart3 },
   { key: "settings",            label: "Settings",             icon: Settings },
@@ -105,6 +106,7 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
     key: "storefront", label: "Storefront Preview", icon: Eye,
   }
 
+
   // ── Business Brand Studio — shown for all businesses ───────────────────────────
   const brandStudioItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
     key: "brand-studio", label: "Business Brand Studio", icon: Palette,
@@ -118,7 +120,7 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   // ── Platform section — always visible, read-only for business owner ───────────
   const platformNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { key: "branding",            label: "Branding",       icon: Palette },
-    { key: "brand-studio",       label: "Business Brand Studio", icon: Layers },
+    { key: "brand-studio",       label: "Business Brand Studio", icon: Palette },
     { key: "feature-flags",       label: "Feature Flags",  icon: Zap },
     { key: "subscription-view",   label: "Subscription",   icon: CreditCard },
     { key: "customer-app",        label: "Customer App",   icon: Smartphone },

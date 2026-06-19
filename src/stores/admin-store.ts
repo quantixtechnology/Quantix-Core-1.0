@@ -106,6 +106,7 @@ export type BusinessPage =
   | "workflow-config"
   | "workflows"
   | "gateway-config"
+  | "qr-payment-config"
   | "business-data-import"
   | "customer-import"
   | "user-creation"
