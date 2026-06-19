@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   Settings, Save, RotateCcw, MapPin, Clock, Printer, Building2, Lock,
-  Plus, Trash2, GripVertical, Smartphone,
+  Plus, Trash2, GripVertical,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -67,7 +67,7 @@ const gstRates = [
 
 export function StoreSettingsView() {
   const { businessId }            = useBusinessContext()
-  const { currentBusinessId, currentBusinessType } = useAdminStore()
+  const { currentBusinessId }     = useAdminStore()
   const effectiveBizId            = currentBusinessId || businessId || ""
 
   useEffect(() => { if (businessId) setBusinessContext(businessId) }, [businessId])
@@ -408,50 +408,6 @@ export function StoreSettingsView() {
       .catch(() => {})
   }, [storeId])
 
-  // ── Payment Configuration (Laundry UPI) ─────────────────────────────────
-  const [upiId,         setUpiId]         = useState("")
-  const [merchantName,  setMerchantName]  = useState("")
-  const [qrEnabled,     setQrEnabled]     = useState(false)
-  const [paymentSaving, setPaymentSaving] = useState(false)
-
-  const handleSavePayment = async () => {
-    if (!currentBusinessId) { showError("No business selected"); return }
-    setPaymentSaving(true)
-    try {
-      // Fetch existing business settings to merge (never overwrite)
-      const existingRes = await fetch(`/api/core/businesses/${currentBusinessId}`, {
-        headers: getAuthHeaders(),
-      })
-      const existingJson = await existingRes.json()
-      let mergedSettings: Record<string, unknown> = {}
-      if (existingJson.success && existingJson.data?.settings) {
-        try {
-          const raw = existingJson.data.settings
-          mergedSettings = typeof raw === 'string' ? JSON.parse(raw) : raw
-        } catch { /* use empty object */ }
-      }
-      mergedSettings.upiId = upiId
-      mergedSettings.merchantName = merchantName
-      mergedSettings.qrEnabled = qrEnabled
-
-      const res = await fetch(`/api/core/businesses/${currentBusinessId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ settings: JSON.stringify(mergedSettings) }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        showSuccess("Payment configuration saved")
-      } else {
-        showError(json.error || "Failed to save payment config")
-      }
-    } catch {
-      showError("Failed to save payment config")
-    } finally {
-      setPaymentSaving(false)
-    }
-  }
-
   const handleSavePrinter = async () => {
     if (!storeId) { showError("No store found"); return }
     setPrinterSaving(true)
@@ -495,9 +451,6 @@ export function StoreSettingsView() {
           <TabsTrigger value="storefront">Storefront</TabsTrigger>
           <TabsTrigger value="taxes">Taxes</TabsTrigger>
           <TabsTrigger value="printer">Printer</TabsTrigger>
-          {currentBusinessType === "LAUNDRY" && (
-            <TabsTrigger value="payment">Payment</TabsTrigger>
-          )}
         </TabsList>
 
         {/* ── Business Profile ─────────────────────────────────────────── */}
@@ -1044,55 +997,6 @@ export function StoreSettingsView() {
             <Button className="gap-2" onClick={handleSavePrinter} disabled={printerSaving}>
               <Save className="h-4 w-4" />
               {printerSaving ? "Saving…" : "Save Changes"}
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* ── Payment Tab (Laundry) ─────────────────────────────────────── */}
-        <TabsContent value="payment" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Smartphone className="size-4" /> UPI Payment Configuration
-              </CardTitle>
-              <CardDescription>Configure UPI payment settings for laundry invoices</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>UPI ID</Label>
-                  <Input
-                    placeholder="laundry@okaxis"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">Your UPI VPA (e.g., businessname@upi)</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Merchant Name</Label>
-                  <Input
-                    placeholder="ABC Laundry"
-                    value={merchantName}
-                    onChange={(e) => setMerchantName(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">Display name shown on payment screen</p>
-                </div>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">QR Enabled</Label>
-                  <p className="text-xs text-muted-foreground">Generate dynamic UPI QR codes on invoices for contactless payment</p>
-                </div>
-                <Switch checked={qrEnabled} onCheckedChange={setQrEnabled} />
-              </div>
-            </CardContent>
-          </Card>
-          <div className="flex items-center gap-3 justify-end">
-            <Button className="gap-2" onClick={handleSavePayment} disabled={paymentSaving}>
-              <Save className="h-4 w-4" />
-              {paymentSaving ? "Saving…" : "Save Changes"}
             </Button>
           </div>
         </TabsContent>

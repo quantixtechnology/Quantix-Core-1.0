@@ -102,13 +102,13 @@ class SocketService {
 
   StreamController<T> stream<T>(String event, T Function(dynamic) mapper) {
     final controller = StreamController<T>.broadcast();
-    void handler(dynamic data) {
+    final handler = (dynamic data) {
       try {
         controller.add(mapper(data));
       } catch (e) {
         _log.e('[Socket] Parse error for $event: $e');
       }
-    }
+    };
     _listeners.putIfAbsent(event, () => []).add(handler);
     _socket?.on(event, handler);
     return controller;

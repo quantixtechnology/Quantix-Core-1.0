@@ -222,13 +222,6 @@ const AppsView = dynamic(() => import("@/components/business/apps/apps-view").th
 const DeliveryAppView = dynamic(() => import("@/components/business/apps/delivery-app-view").then(m => ({ default: m.DeliveryAppView })), { loading: () => <PageLoader /> })
 const WorkspaceOverview = dynamic(() => import("@/components/business/workspace/workspace-overview").then(m => ({ default: m.WorkspaceOverview })), { loading: () => <PageLoader /> })
 
-// ── Laundry-specific modules (lazy) ───────────────────────────────────────
-const SubscriptionPlansView = dynamic(() => import("@/components/business/laundry/subscription-plans-view").then(m => ({ default: m.SubscriptionPlansView })), { loading: () => <PageLoader /> })
-const CustomerSubscriptionsView = dynamic(() => import("@/components/business/laundry/customer-subscriptions-view").then(m => ({ default: m.CustomerSubscriptionsView })), { loading: () => <PageLoader /> })
-const UsageLedgerView = dynamic(() => import("@/components/business/laundry/usage-ledger-view").then(m => ({ default: m.UsageLedgerView })), { loading: () => <PageLoader /> })
-const RenewalsView = dynamic(() => import("@/components/business/laundry/renewals-view").then(m => ({ default: m.RenewalsView })), { loading: () => <PageLoader /> })
-const LaundryConfigView = dynamic(() => import("@/components/business/laundry/laundry-config-view").then(m => ({ default: m.LaundryConfigView })), { loading: () => <PageLoader /> })
-
 // ── Customer App (lazy) ───────────────────────────────────────────────────
 const CustomerAuth = dynamic(() => import("@/components/customer/auth/customer-auth").then(m => ({ default: m.CustomerAuth })), { loading: () => <PageLoader /> })
 const CustomerHome = dynamic(() => import("@/components/customer/home/customer-home").then(m => ({ default: m.CustomerHome })), { loading: () => <PageLoader /> })
@@ -552,12 +545,6 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "website": return <AppsView />
       case "onboarding-progress": return <WorkspaceOverview />
       case "invoices": return <BusinessInvoicesView />
-      // Laundry-specific modules
-      case "subscription-plans": return <SubscriptionPlansView />
-      case "customer-subscriptions": return <CustomerSubscriptionsView />
-      case "usage-ledger": return <UsageLedgerView />
-      case "renewals": return <RenewalsView />
-      case "laundry-config": return <LaundryConfigView />
       default: return <BusinessDashboard />
     }
   }

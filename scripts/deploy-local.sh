@@ -21,7 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-DB_FILE="/home/ubuntu/data/custom.db" # Already correct, no change needed here.
+DB_FILE="/home/ubuntu/data/custom.db"
 LOG_FILE="/tmp/quantix-deploy.log"
 STATUS_FILE="/tmp/quantix-deploy-status.json"
 LOCK_FILE="/tmp/quantix-deploy.lock"
@@ -219,8 +219,8 @@ log "Node $(node --version) | NPM $(npm --version) | ulimit nofile=$(ulimit -n)"
 #
 # Manual builds succeed because a developer shell never has HOSTNAME=0.0.0.0.
 ( env -i \
-    HOME="/home/ubuntu" \
-    USER="ubuntu" \
+    HOME="/root" \
+    USER="root" \
     PATH="$PATH" \
     LANG="en_US.UTF-8" \
     NODE_ENV="production" \
@@ -270,11 +270,11 @@ log "✅ Assets + .env written to standalone"
 # the script path. plain `pm2 restart` keeps the old path; `startOrRestart`
 # re-reads the config file, which is what we want after a path change.
 CURRENT_STEP="restart"
-status "restart" "Restarting quantix-core via PM2"
+status "restart" "Restarting app via PM2"
 log ""
 log "── PM2 ──────────────────────────────────────────────────────"
 pm2 startOrRestart "$PROJECT/ecosystem.config.js" --update-env 2>&1 | tee -a "$LOG_FILE" \
-  || fail "pm2 restart failed — check: pm2 logs quantix-core"
+  || fail "pm2 restart failed — check: pm2 logs quantix"
 pm2 save 2>/dev/null || true
 # || true: pm2 list failure must not abort the deploy — the restart already succeeded.
 pm2 list 2>&1 | tee -a "$LOG_FILE" || true
@@ -306,8 +306,8 @@ done
 
 if [ "$HTTP" = "000" ] || ! echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
   log "❌ Health check failed after 8 attempts (last HTTP $HTTP) — PM2 logs:"
-  pm2 logs quantix-core --lines 30 --nostream 2>/dev/null | tee -a "$LOG_FILE" || true
-  fail "App unhealthy after restart (HTTP $HTTP) — check pm2 logs quantix-core"
+  pm2 logs quantix --lines 30 --nostream 2>/dev/null | tee -a "$LOG_FILE" || true
+  fail "App unhealthy after restart (HTTP $HTTP) — check pm2 logs"
 fi
 
 # ─── Success ───────────────────────────────────────────────────────────────────

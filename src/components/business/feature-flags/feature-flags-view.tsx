@@ -24,14 +24,6 @@ const FLAG_META: Record<string, { label: string; description: string; category: 
   promo_codes_enabled:    { label: "Promo Codes",        description: "Allow customers to apply discount codes at checkout", category: "Sales" },
   loyalty_enabled:        { label: "Loyalty Program",    description: "Earn and redeem loyalty points on orders",           category: "Marketing" },
   subscription_enabled:   { label: "Subscriptions",      description: "Offer recurring subscription plans to customers",    category: "Marketing" },
-  // Laundry-specific flags
-  laundry_subscription_enabled: { label: "Laundry Subscription", description: "Monthly subscription plans with KG-based billing",              category: "Laundry" },
-  barcode_tracking_enabled:     { label: "Barcode Tracking",     description: "Scan barcodes to track garments through processing",            category: "Laundry" },
-  garment_photos_enabled:       { label: "Garment Photos",       description: "Capture garment photos at check-in for damage records",        category: "Laundry" },
-  qc_workflow_enabled:          { label: "QC Workflow",          description: "Quality check step before marking items complete",              category: "Laundry" },
-  call_queue_enabled:           { label: "Call Queue",           description: "Queue system for customer pickup notifications",               category: "Laundry" },
-  whatsapp_updates_enabled:     { label: "WhatsApp Updates",     description: "Send order status updates via WhatsApp",                       category: "Laundry" },
-  customer_membership_enabled:  { label: "Customer Membership",  description: "Loyalty membership with points and rewards",                   category: "Laundry" },
 }
 
 export function FeatureFlagsView() {

@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -51,7 +50,6 @@ interface StoreRecord {
   id: string
   name: string
   slug: string
-  storeType: string
   storeCode: string | null
   address: string | null
   city: string | null
@@ -76,7 +74,6 @@ interface StoreRecord {
 interface StoreForm {
   name: string
   slug: string
-  storeType: string
   address: string
   city: string
   state: string
@@ -97,7 +94,7 @@ interface StoreForm {
 }
 
 const EMPTY_FORM: StoreForm = {
-  name: '', slug: '', storeType: 'STANDARD', address: '', city: '', state: '', pincode: '',
+  name: '', slug: '', address: '', city: '', state: '', pincode: '',
   phone: '', email: '',
   whatsappNumber: '', supportEmail: '', notificationEmail: '', otpSenderEmail: '',
   deliveryRadius: '', deliveryFee: '',
@@ -114,7 +111,6 @@ function storeToForm(s: StoreRecord): StoreForm {
   return {
     name: s.name,
     slug: s.slug,
-    storeType: s.storeType ?? 'STANDARD',
     address: s.address ?? '',
     city: s.city ?? '',
     state: s.state ?? '',
@@ -147,7 +143,7 @@ interface CredPanel {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function StoresView() {
-  const { currentBusinessId, currentBusinessType, storeRefreshKey } = useAdminStore()
+  const { currentBusinessId, storeRefreshKey } = useAdminStore()
   const { token } = useAuthStore()
 
   const [stores, setStores] = useState<StoreRecord[]>([])
@@ -178,9 +174,6 @@ export function StoresView() {
 
   // reset-password in-progress
   const [resettingStoreId, setResettingStoreId] = useState<string | null>(null)
-
-  // main store toggle
-  const [isMainStore, setIsMainStore] = useState(false)
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -231,7 +224,6 @@ export function StoresView() {
     setSaveError(null)
     setLimitError(null)
     setEditingStore(null)
-    setIsMainStore(false)
     setDialogOpen(true)
   }
 
@@ -240,7 +232,6 @@ export function StoresView() {
     setEditingStore(store)
     setForm(storeToForm(store))
     setSaveError(null)
-    setIsMainStore(store.isMainStore)
     setDialogOpen(true)
   }
 
@@ -265,8 +256,6 @@ export function StoresView() {
           businessId: currentBusinessId,
           name: form.name.trim(),
           slug: form.slug.trim(),
-          storeType: form.storeType || 'STANDARD',
-          isMainStore,
           address: form.address.trim() || undefined,
           city: form.city.trim() || undefined,
           state: form.state.trim() || undefined,
@@ -344,8 +333,6 @@ export function StoresView() {
         body: JSON.stringify({
           name: form.name.trim(),
           slug: form.slug.trim(),
-          storeType: form.storeType || 'STANDARD',
-          isMainStore,
           address: form.address.trim() || null,
           city: form.city.trim() || null,
           state: form.state.trim() || null,
@@ -584,14 +571,6 @@ export function StoresView() {
                         {store.isMainStore && (
                           <Badge className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 text-amber-700 border-amber-200">Main</Badge>
                         )}
-                        {currentBusinessType === "LAUNDRY" && store.storeType && store.storeType !== 'STANDARD' && (
-                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${
-                            store.storeType === 'PROCESSING_CENTER' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                            'bg-sky-50 text-sky-700 border-sky-200'
-                          }`}>
-                            {store.storeType === 'PROCESSING_CENTER' ? 'Processing' : 'Pickup'}
-                          </Badge>
-                        )}
                         {store.status === 'ACTIVE' ? (
                           <Badge className="text-[10px] px-1.5 py-0 h-4 bg-emerald-100 text-emerald-700 border-emerald-200">
                             <CheckCircle2 className="size-2.5 mr-1" />Active
@@ -763,30 +742,6 @@ export function StoresView() {
                 <Label className="text-xs">Slug *</Label>
                 <Input className="h-8 text-sm" placeholder="e.g. main-branch"
                   value={form.slug} onChange={e => handleFieldChange('slug', e.target.value)} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {currentBusinessType === "LAUNDRY" && (
-                <div className="space-y-1">
-                  <Label className="text-xs">Store Type</Label>
-                  <Select value={form.storeType} onValueChange={v => handleFieldChange('storeType', v)}>
-                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="STANDARD">Standard Store</SelectItem>
-                      <SelectItem value="PICKUP_STORE">Pickup Store</SelectItem>
-                      <SelectItem value="PROCESSING_CENTER">Processing Center</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[10px] text-muted-foreground">Processing Center = laundry facility, Pickup Store = customer drop/pickup</p>
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label className="text-xs">Mark as Main Store</Label>
-                <div className="flex items-center h-8 gap-2">
-                  <Switch checked={isMainStore} onCheckedChange={setIsMainStore} />
-                  <span className="text-xs text-muted-foreground">{isMainStore ? 'Yes' : 'No'}</span>
-                </div>
               </div>
             </div>
 

@@ -7,8 +7,8 @@
 //
 // Copies files from OLD upload locations into UPLOAD_ROOT (/root/uploads).
 // Old locations checked (in order):
-//   1. /home/ubuntu/Quantix-Core-1.0/.next/standalone/public/uploads  (standalone cwd path)
-//   2. /home/ubuntu/Quantix-Core-1.0/public/uploads                    (project public/ path)
+//   1. /root/Quantix-Core-1.0/.next/standalone/public/uploads  (standalone cwd path)
+//   2. /root/Quantix-Core-1.0/public/uploads                    (project public/ path)
 //
 // Safe to run multiple times — already-copied files are skipped.
 // ============================================================================
@@ -17,7 +17,7 @@ const fs   = require('fs')
 const path = require('path')
 
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || '/root/uploads'
-const PROJECT     = '/home/ubuntu/Quantix-Core-1.0'
+const PROJECT     = '/root/Quantix-Core-1.0'
 
 const OLD_PATHS = [
   path.join(PROJECT, '.next', 'standalone', 'public', 'uploads'),

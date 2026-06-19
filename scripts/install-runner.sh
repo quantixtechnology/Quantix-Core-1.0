@@ -3,7 +3,7 @@
 # install-runner.sh — Install GitHub Actions self-hosted runner on the VPS
 #
 # Run this ONCE on the VPS via Hostinger web terminal:
-#   bash /home/ubuntu/Quantix-Core-1.0/scripts/install-runner.sh <REGISTRATION_TOKEN>
+#   bash /root/Quantix-Core-1.0/scripts/install-runner.sh <REGISTRATION_TOKEN>
 #
 # Get the token:
 #   github.com → quantixtechnology/Quantix-Core-1.0 →

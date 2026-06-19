@@ -16,7 +16,6 @@ import { join } from 'path'
 import { withMiddleware, createErrorResponse } from '@/lib/middleware'
 import { db } from '@/lib/db'
 import { ensureDir } from '@/lib/upload-root'
-import { getBusinessEnabledWorkflows as resolveBusinessEnabledWorkflows } from '@/lib/core/business'
 import type { NextRequest } from 'next/server'
 
 const CAT_IMG_MAX = 2 * 1024 * 1024
@@ -72,7 +71,22 @@ async function parseBody(req: NextRequest) {
 
 type Ctx = { params?: Promise<Record<string, string | string[]>> }
 
-async function getBusinessEnabledWorkflowsForBiz(businessId: string): Promise<string[]> {
+const ALL_WORKFLOWS = new Set(['ECOMMERCE', 'PICKUP_DELIVERY', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'])
+const BUSINESS_TYPE_DEFAULT_WORKFLOWS: Record<string, string[]> = {
+  GROCERY:       ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  ECOMMERCE:     ['ECOMMERCE'],
+  FOOD_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  LAUNDRY:       ['ECOMMERCE', 'PICKUP_DELIVERY', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
+  CAR_WASH:      ['ECOMMERCE', 'APPOINTMENT', 'SUBSCRIPTION', 'POST_SERVICE_BILLING'],
+  PHARMACY:      ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  HOME_SERVICES: ['APPOINTMENT', 'POST_SERVICE_BILLING'],
+  MEAT_DELIVERY: ['ECOMMERCE', 'PICKUP_DELIVERY'],
+  COSMETICS:     ['ECOMMERCE'],
+  FURNITURE:     ['ECOMMERCE'],
+  DIRECTORY:     ['ECOMMERCE'],
+}
+
+async function getBusinessEnabledWorkflows(businessId: string): Promise<string[]> {
   const biz = await db.business.findUnique({
     where: { id: businessId },
     select: {
@@ -83,7 +97,16 @@ async function getBusinessEnabledWorkflowsForBiz(businessId: string): Promise<st
   })
   if (!biz) return ['ECOMMERCE']
 
-  return resolveBusinessEnabledWorkflows(biz.businessType, biz.businessSubscription?.plan?.tier, biz.settings)
+  const planTier = biz.businessSubscription?.plan?.tier ?? 'STANDARD'
+  if (planTier === 'STANDARD') return ['ECOMMERCE']
+
+  const settings = JSON.parse(biz.settings || '{}') as Record<string, unknown>
+  const fromSettings = settings.enabledWorkflows
+  if (Array.isArray(fromSettings) && fromSettings.length > 0) {
+    const filtered = (fromSettings as string[]).filter(w => ALL_WORKFLOWS.has(w))
+    if (filtered.length > 0) return filtered
+  }
+  return BUSINESS_TYPE_DEFAULT_WORKFLOWS[biz.businessType] ?? ['ECOMMERCE']
 }
 
 function resolveWorkflowType(enabledWorkflows: string[], requested?: string | null): string {
@@ -149,7 +172,7 @@ export const POST = withMiddleware({
       image = await uploadCategoryImage(parsed.imageFile, businessId)
     }
 
-    const enabledWorkflows = await getBusinessEnabledWorkflowsForBiz(businessId)
+    const enabledWorkflows = await getBusinessEnabledWorkflows(businessId)
     const workflowType = resolveWorkflowType(enabledWorkflows, parsed.workflowType ?? null)
 
     const slug = (parsed.slug || name)
@@ -234,7 +257,7 @@ export const PATCH = withMiddleware({
     }
 
     if (parsed.workflowType !== undefined) {
-      const enabledWorkflows = await getBusinessEnabledWorkflowsForBiz(businessId)
+      const enabledWorkflows = await getBusinessEnabledWorkflows(businessId)
       updateData.workflowType = resolveWorkflowType(enabledWorkflows, parsed.workflowType ?? null)
     }
 

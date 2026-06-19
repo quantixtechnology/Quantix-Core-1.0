@@ -15,7 +15,7 @@ import { UPLOAD_ROOT } from '@/lib/upload-root'
 const STATIC_CANDIDATES = [
   join(process.cwd(), 'public', 'quantix-logo.png'),
   join(process.cwd(), '.next', 'standalone', 'public', 'quantix-logo.png'),
-  '/home/ubuntu/Quantix-Core-1.0/public/quantix-logo.png',
+  '/root/Quantix-Core-1.0/public/quantix-logo.png',
 ]
 
 function serveFile(path: string, mime: string): Response {

@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     if (process.env.DEPLOY_WEBHOOK_SECRET) return process.env.DEPLOY_WEBHOOK_SECRET
     try {
       const candidates = [
-        `${process.env.QUANTIX_PROJECT_DIR || '/home/ubuntu/Quantix-Core-1.0'}/.deploy_webhook_secret`,
+        `${process.env.QUANTIX_PROJECT_DIR || '/root/Quantix-Core-1.0'}/.deploy_webhook_secret`,
         '/etc/quantix/deploy_webhook_secret',
         '/root/.deploy_webhook_secret',
       ]

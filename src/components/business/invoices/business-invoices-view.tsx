@@ -17,10 +17,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { showSuccess, showError } from "@/lib/toast-utils"
 import {
   Receipt, Search, RefreshCw, CreditCard, FileText,
-  Download, User, Hash, Calendar, QrCode, Smartphone, Banknote,
+  Download, User, Hash, Calendar,
 } from "lucide-react"
-import { buildUpiUri } from "@/lib/upi-qr"
-import { QrCode as QrCodeDisplay } from "@/components/ui/qr-code"
 
 interface InvoiceRow {
   id: string
@@ -76,9 +74,6 @@ export function BusinessInvoicesView() {
   // Invoice detail dialog (audit trail)
   const [detailDialog, setDetailDialog] = useState<InvoiceRow | null>(null)
 
-  // UPI payment config (from business settings)
-  const [upiConfig, setUpiConfig] = useState<{ upiId: string; merchantName: string; qrEnabled: boolean } | null>(null)
-
   const fetchInvoices = useCallback(async (p = 1, q = search, st = statusFilter) => {
     if (!businessId) return
     setLoading(true)
@@ -106,22 +101,6 @@ export function BusinessInvoicesView() {
 
   useEffect(() => { fetchInvoices(page) }, [page])
   useEffect(() => { setPage(1); fetchInvoices(1, search, statusFilter) }, [search, statusFilter])
-
-  // Load UPI config from business settings
-  useEffect(() => {
-    if (!businessId) return
-    fetch(`/api/core/businesses/${businessId}`, { headers: getAuthHeaders() })
-      .then(r => r.json())
-      .then(j => {
-        if (j.success && j.data?.settings) {
-          try {
-            const s = typeof j.data.settings === 'string' ? JSON.parse(j.data.settings) : j.data.settings
-            if (s.upiId) setUpiConfig({ upiId: s.upiId, merchantName: s.merchantName || '', qrEnabled: s.qrEnabled === true })
-          } catch { /* ignore */ }
-        }
-      })
-      .catch(() => {})
-  }, [businessId])
 
   const handleRecordPayment = async () => {
     if (!paymentDialog || !payAmount || Number(payAmount) <= 0) return
@@ -302,34 +281,18 @@ export function BusinessInvoicesView() {
                         <Download className="h-3.5 w-3.5" />
                       </Button>
                       {inv.status === "PAYMENT_DUE" && (
-                        <>
-                          {upiConfig?.qrEnabled && upiConfig?.upiId && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs gap-1 text-sky-700 border-sky-200 hover:bg-sky-50"
-                              onClick={() => {
-                                setPayAmount(String(inv.totalAmount - inv.paidAmount))
-                                setPayNotes("")
-                                setPaymentDialog(inv)
-                              }}
-                            >
-                              <QrCode className="h-3 w-3" />QR
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                            onClick={() => {
-                              setPayAmount(String(inv.totalAmount - inv.paidAmount))
-                              setPayNotes("")
-                              setPaymentDialog(inv)
-                            }}
-                          >
-                            <CreditCard className="h-3 w-3" />Pay
-                          </Button>
-                        </>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                          onClick={() => {
+                            setPayAmount(String(inv.totalAmount - inv.paidAmount))
+                            setPayNotes("")
+                            setPaymentDialog(inv)
+                          }}
+                        >
+                          <CreditCard className="h-3 w-3" />Pay
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -355,9 +318,9 @@ export function BusinessInvoicesView() {
         </div>
       )}
 
-      {/* Record Payment Dialog — with UPI QR for Laundry */}
+      {/* Record Payment Dialog */}
       <Dialog open={!!paymentDialog} onOpenChange={(v) => !v && setPaymentDialog(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
@@ -366,7 +329,7 @@ export function BusinessInvoicesView() {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label>Amount (₹)</Label>
               <Input
@@ -376,30 +339,6 @@ export function BusinessInvoicesView() {
                 placeholder="Enter amount"
               />
             </div>
-
-            {/* UPI QR Code */}
-            {paymentDialog && upiConfig?.qrEnabled && upiConfig?.upiId && Number(payAmount) > 0 && (
-              <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <QrCode className="h-4 w-4" /> Pay with UPI
-                </div>
-                <div className="flex items-center justify-center">
-                  <QrCodeDisplay
-                    data={buildUpiUri({
-                      pa: upiConfig.upiId,
-                      pn: upiConfig.merchantName || undefined,
-                      am: Number(payAmount),
-                      tn: paymentDialog.invoiceNumber,
-                    })}
-                    size={200}
-                  />
-                </div>
-                <p className="text-[10px] text-muted-foreground text-center">
-                  Scan with any UPI app to pay ₹{Number(payAmount).toLocaleString("en-IN")}
-                </p>
-              </div>
-            )}
-
             <div className="space-y-1.5">
               <Label>Notes (optional)</Label>
               <Textarea
@@ -413,25 +352,11 @@ export function BusinessInvoicesView() {
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setPaymentDialog(null)} disabled={paying}>Cancel</Button>
             <Button
-              size="sm"
-              variant="outline"
-              className="gap-1"
-              disabled={paying || !payAmount || Number(payAmount) <= 0}
-              onClick={async () => {
-                setPayNotes(prev => prev ? `${prev} | Cash collected` : 'Cash collected')
-                await handleRecordPayment()
-              }}
-            >
-              <Banknote className="h-3.5 w-3.5" />
-              Cash Received
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
               disabled={paying || !payAmount || Number(payAmount) <= 0}
               onClick={handleRecordPayment}
             >
-              {paying ? "Recording…" : <><Smartphone className="h-3.5 w-3.5" /> Mark Paid</>}
+              {paying ? "Recording…" : "Record Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
