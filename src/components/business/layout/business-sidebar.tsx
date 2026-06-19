@@ -107,11 +107,6 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   }
 
 
-  // ── Business Brand Studio — shown for all businesses ───────────────────────────
-  const brandStudioItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
-    key: "brand-studio", label: "Business Brand Studio", icon: Palette,
-  }
-
   // ── Services — shown for laundry businesses ────────────────────────────────
   const servicesItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
     key: "laundry-services", label: "Services", icon: Layers,
@@ -120,7 +115,6 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   // ── Platform section — always visible, read-only for business owner ───────────
   const platformNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { key: "branding",            label: "Branding",       icon: Palette },
-    { key: "brand-studio",       label: "Business Brand Studio", icon: Palette },
     { key: "feature-flags",       label: "Feature Flags",  icon: Zap },
     { key: "subscription-view",   label: "Subscription",   icon: CreditCard },
     { key: "customer-app",        label: "Customer App",   icon: Smartphone },
@@ -279,8 +273,7 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
   const showStorefront = enabledFlags.has("online_orders_enabled")
 
   const handleNavigate = (page: BusinessPage) => {
-    console.log("BusinessSidebar setBusinessPage:", page)
-    setBusinessPage(page)
+    console.log("Navigation blocked for diagnostic:", page)
     if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }
 
