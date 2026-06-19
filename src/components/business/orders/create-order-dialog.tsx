@@ -263,12 +263,6 @@ export function CreateOrderDialog({
         // Auto-select main store
         const main = storeList.find((s: Store) => s.isMainStore) || storeList[0]
         if (main) setStoreId(main.id)
-        // Single-store laundry: auto-populate all routing fields
-        if (isLaundry && storeList.length === 1 && main) {
-          setOriginStoreId(main.id)
-          setProcessingStoreId(main.id)
-          setDeliveryStoreId(main.id)
-        }
       }
     } catch {
       // silent
@@ -447,23 +441,16 @@ export function CreateOrderDialog({
   }
 
   // ---- Render ----
-  const routingReady = useMemo(() => {
-    if (!isLaundry) return true
-    if (stores.length <= 1) return true
-    return !!(originStoreId && processingStoreId && deliveryStoreId)
-  }, [isLaundry, stores.length, originStoreId, processingStoreId, deliveryStoreId])
-
   const canSubmit =
     items.length > 0 &&
     activeStoreId &&
-    routingReady &&
     !submitting &&
     ((orderType !== "DELIVERY" && orderType !== "PICKUP_AND_DELIVERY") ||
       deliveryAddress.trim() !== "")
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[1200px] sm:w-[95vw] w-full md:w-[90vw] max-h-[90vh] p-0 gap-0">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0 gap-0">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle className="text-xl">Create New Order</DialogTitle>
           <DialogDescription>
@@ -583,7 +570,7 @@ export function CreateOrderDialog({
                 <Package className="h-4 w-4" />
                 Order Details
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Order Type</Label>
                   <Select value={orderType} onValueChange={setOrderType}>
@@ -624,67 +611,52 @@ export function CreateOrderDialog({
                 <section className="space-y-3">
                   <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                     <MapPin className="h-4 w-4" />
-                    Store Routing
+                    Laundry Stores
                   </div>
-
-                  {stores.length <= 1 ? (
-                    /* ── Single store — read-only notice ── */
-                    <Card className="bg-muted/30">
-                      <CardContent className="p-4 flex items-center gap-3">
-                        <MapPin className="h-5 w-5 text-muted-foreground shrink-0" />
-                        <div className="text-sm text-muted-foreground space-y-1">
-                          <p className="font-medium text-foreground">Single-store mode</p>
-                          <p>Origin, processing, and delivery all routed through <strong>{mainStore?.name || stores[0]?.name}</strong>.</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    /* ── Multi-store — routing selectors ── */
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label>Origin Store <span className="text-red-500">*</span></Label>
-                        <Select value={originStoreId} onValueChange={setOriginStoreId}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select origin" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {stores.filter(s => s.storeType === 'PICKUP_CENTER' || s.storeType === 'BOTH').map(s => (
-                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-[10px] text-muted-foreground">Customer drop-off / rider pickup point</p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Processing Store <span className="text-red-500">*</span></Label>
-                        <Select value={processingStoreId} onValueChange={setProcessingStoreId}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select processing" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {stores.filter(s => s.storeType === 'PROCESSING_CENTER' || s.storeType === 'BOTH').map(s => (
-                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-[10px] text-muted-foreground">Washing, drying, ironing, QC & packing</p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Delivery Store <span className="text-red-500">*</span></Label>
-                        <Select value={deliveryStoreId} onValueChange={setDeliveryStoreId}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select delivery" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {stores.filter(s => s.storeType === 'PICKUP_CENTER' || s.storeType === 'BOTH').map(s => (
-                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-[10px] text-muted-foreground">Where clothes are returned to customer</p>
-                      </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Origin Store <span className="text-red-500">*</span></Label>
+                      <Select value={originStoreId} onValueChange={setOriginStoreId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select origin" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stores.filter(s => s.storeType === 'PICKUP_CENTER' || s.storeType === 'BOTH').map(store => (
+                            <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Customer drop-off / rider pickup point</p>
                     </div>
-                  )}
+                    <div className="space-y-2">
+                      <Label>Processing Store <span className="text-red-500">*</span></Label>
+                      <Select value={processingStoreId} onValueChange={setProcessingStoreId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select processing" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stores.filter(s => s.storeType === 'PROCESSING_CENTER' || s.storeType === 'BOTH').map(store => (
+                            <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Washing, drying, ironing, QC & packing</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Delivery Store <span className="text-red-500">*</span></Label>
+                      <Select value={deliveryStoreId} onValueChange={setDeliveryStoreId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select delivery" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stores.filter(s => s.storeType === 'PICKUP_CENTER' || s.storeType === 'BOTH').map(store => (
+                            <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">Where clothes are returned to customer</p>
+                    </div>
+                  </div>
                 </section>
                 <Separator />
               </>
