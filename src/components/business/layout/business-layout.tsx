@@ -1,14 +1,9 @@
 "use client"
 
-import { BusinessSidebar } from "./business-sidebar"
-
-export function BusinessLayout({ children }: { children: React.ReactNode }) {
+export function BusinessLayout() {
   return (
-    <>
-      <BusinessSidebar />
-      <div style={{ padding: 40 }}>
-        SIDEBAR TEST
-      </div>
-    </>
+    <div style={{ padding: 40 }}>
+      BUSINESS LAYOUT ROOT TEST
+    </div>
   )
 }
