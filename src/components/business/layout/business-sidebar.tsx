@@ -93,39 +93,28 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
   { key: "settings",            label: "Settings",             icon: Settings },
 ]
 
-  // ── Flag-gated items — hidden when flag is disabled ───────────────────────────
-  const flagGatedItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }>; flag: string }[] = [
-    { key: "pos",       label: "POS Billing",     icon: Monitor,  flag: "pos_enabled" },
-    { key: "marketing", label: "Marketing",        icon: Megaphone, flag: "promo_codes_enabled" },
-    { key: "loyalty",   label: "Loyalty Program",  icon: Heart,    flag: "loyalty_enabled" },
-  ]
+// ── Flag-gated items — hidden when flag is disabled ───────────────────────────
+const flagGatedItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }>; flag: string }[] = [
+  { key: "pos",       label: "POS Billing",     icon: Monitor,  flag: "pos_enabled" },
+  { key: "marketing", label: "Marketing",        icon: Megaphone, flag: "promo_codes_enabled" },
+  { key: "loyalty",   label: "Loyalty Program",  icon: Heart,    flag: "loyalty_enabled" },
+]
 
-  // ── Storefront — shown only when online_orders is enabled ─────────────────────
-  const storefrontItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
-    key: "storefront", label: "Storefront Preview", icon: Eye,
-  }
+// ── Storefront — shown only when online_orders is enabled ─────────────────────
+const storefrontItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
+  key: "storefront", label: "Storefront Preview", icon: Eye,
+}
 
-  // ── Business Brand Studio — shown for all businesses ───────────────────────────
-  const brandStudioItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
-    key: "brand-studio", label: "Business Brand Studio", icon: Palette,
-  }
-
-  // ── Services — shown for laundry businesses ────────────────────────────────
-  const servicesItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
-    key: "laundry-services", label: "Services", icon: Layers,
-  }
-
-  // ── Platform section — always visible, read-only for business owner ───────────
-  const platformNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { key: "branding",            label: "Branding",       icon: Palette },
-    { key: "brand-studio",       label: "Business Brand Studio", icon: Layers },
-    { key: "feature-flags",       label: "Feature Flags",  icon: Zap },
-    { key: "subscription-view",   label: "Subscription",   icon: CreditCard },
-    { key: "customer-app",        label: "Customer App",   icon: Smartphone },
-    { key: "delivery-app",        label: "Delivery App",   icon: Truck },
-    { key: "admin-app",           label: "Admin App",      icon: Globe },
-    { key: "onboarding-progress", label: "Onboarding",     icon: LayoutDashboard },
-  ]
+// ── Platform section — always visible, read-only for business owner ───────────
+const platformNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "branding",            label: "Branding",       icon: Palette },
+  { key: "feature-flags",       label: "Feature Flags",  icon: Zap },
+  { key: "subscription-view",   label: "Subscription",   icon: CreditCard },
+  { key: "customer-app",        label: "Customer App",   icon: Smartphone },
+  { key: "delivery-app",        label: "Delivery App",   icon: Truck },
+  { key: "admin-app",           label: "Admin App",      icon: Globe },
+  { key: "onboarding-progress", label: "Onboarding",     icon: LayoutDashboard },
+]
 
 // Plan & Workflows info item (read-only for business owner, managed by platform)
 const planWorkflowsItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
@@ -259,7 +248,6 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
   const managementNavItems = [
     ...coreManagementItems.filter(item => !skipPages.has(item.key)),
     ...flagGatedItems.filter(item => enabledFlags.has(item.flag) && !skipPages.has(item.key)),
-    ...(showServices ? [servicesItem] : []),
   ].sort((a, b) => {
     // preserve deterministic order: core first, then flag-gated in original order
     const coreOrder = coreManagementItems.findIndex(c => c.key === a.key)
@@ -269,9 +257,6 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
     if (bCoreOrder !== -1) return 1
     return 0
   })
-
-  // Services — only show for LAUNDRY workspace
-  const showServices = workspaceType === "LAUNDRY" || currentBusinessType === "LAUNDRY"
 
   // Storefront — only if online_orders_enabled
   const showStorefront = enabledFlags.has("online_orders_enabled")
@@ -333,9 +318,6 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
             <NavSection title="Management" items={managementNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
             {showStorefront && (
               <NavSection title="Store" items={[storefrontItem]} activePage={businessPage} onNavigate={handleNavigate} compact />
-            )}
-            {showServices && (
-              <NavSection title="Services" items={[servicesItem]} activePage={businessPage} onNavigate={handleNavigate} compact />
             )}
             <NavSection title="Platform" items={[planWorkflowsItem, ...platformNavItems]} activePage={businessPage} onNavigate={handleNavigate} compact />
           </ScrollArea>
@@ -451,22 +433,6 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
                   <SidebarMenuButton isActive={businessPage === "storefront"} onClick={() => setBusinessPage("storefront")} tooltip="Storefront Preview">
                     <Eye className="size-4" />
                     <span>Storefront Preview</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {showServices && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Services</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton isActive={businessPage === "laundry-services"} onClick={() => setBusinessPage("laundry-services")} tooltip="Services">
-                    <Layers className="size-4" />
-                    <span>Services</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>

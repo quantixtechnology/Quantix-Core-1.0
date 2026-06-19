@@ -112,7 +112,6 @@ export type BusinessPage =
   | "user-management"
   | "categories"
   | "branding"
-  | "brand-studio"
   | "feature-flags"
   | "subscription-view"
   | "customer-app"
@@ -126,7 +125,6 @@ export type BusinessPage =
   | "usage-ledger"
   | "renewals"
   | "laundry-config"
-  | "laundry-services"
   | "pickup-requests"
 
 export type CustomerPage =

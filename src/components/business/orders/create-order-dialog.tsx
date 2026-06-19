@@ -583,7 +583,7 @@ export function CreateOrderDialog({
                 <Package className="h-4 w-4" />
                 Order Details
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Order Type</Label>
                   <Select value={orderType} onValueChange={setOrderType}>
@@ -640,7 +640,7 @@ export function CreateOrderDialog({
                     </Card>
                   ) : (
                     /* ── Multi-store — routing selectors ── */
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>Origin Store <span className="text-red-500">*</span></Label>
                         <Select value={originStoreId} onValueChange={setOriginStoreId}>
@@ -707,7 +707,7 @@ export function CreateOrderDialog({
                       Add Item
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-full sm:w-[480px] p-0" align="start">
+                  <PopoverContent className="w-[480px] p-0" align="start">
                     <Command>
                       <CommandInput placeholder="Search products..." />
                       <CommandList>
