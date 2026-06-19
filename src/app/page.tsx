@@ -220,7 +220,9 @@ const FeatureFlagsView = dynamic(() => import("@/components/business/feature-fla
 const SubscriptionView = dynamic(() => import("@/components/business/subscription/subscription-view").then(m => ({ default: m.SubscriptionView })), { loading: () => <PageLoader /> })
 const AppsView = dynamic(() => import("@/components/business/apps/apps-view").then(m => ({ default: m.AppsView })), { loading: () => <PageLoader /> })
 const DeliveryAppView = dynamic(() => import("@/components/business/apps/delivery-app-view").then(m => ({ default: m.DeliveryAppView })), { loading: () => <PageLoader /> })
-const WorkspaceOverview = dynamic(() => import("@/components/business/workspace/workspace-overview").then(m => ({ default: m.WorkspaceOverview })), { loading: () => <PageLoader /> })
+function WorkspaceOverview() {
+  return <div style={{ padding: 20 }}>WorkspaceOverview Diagnostic Test</div>
+}
 
 // ── Laundry-specific modules (lazy) ───────────────────────────────────────
 const SubscriptionPlansView = dynamic(() => import("@/components/business/laundry/subscription-plans-view").then(m => ({ default: m.SubscriptionPlansView })), { loading: () => <PageLoader /> })
