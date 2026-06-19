@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { ArrowLeft, Eye, EyeOff, CheckCircle2 } from "lucide-react"
-import type { WebNav } from "./storefront-website"
+import type { WebNav } from "./storefront-types"
 
 // ── Defined at module level so React never remounts it on re-render ───────────
 const INPUT_CLS = "w-full h-11 px-3 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 bg-white"

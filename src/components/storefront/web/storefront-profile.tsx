@@ -2,7 +2,7 @@
 
 import { useAuthStore } from "@/stores/auth-store"
 import { Package, MapPin, LogOut, ArrowLeft, Phone, Lock, Download, Share2 } from "lucide-react"
-import type { WebNav } from "./storefront-website"
+import type { WebNav } from "./storefront-types"
 import { usePwaInstall } from "@/hooks/use-pwa-install"
 import { useState } from "react"
 

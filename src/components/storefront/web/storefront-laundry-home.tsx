@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { ChevronRight, Clock, Phone, MapPin } from "lucide-react"
-import type { WebNav } from "./storefront-website"
+import type { WebNav } from "./storefront-types"
 import { StorefrontBanner } from "./storefront-banner"
 import { PwaInstallBanner } from "./pwa-install-banner"
 import { PAGE_X, TYPE } from "@/design-system"

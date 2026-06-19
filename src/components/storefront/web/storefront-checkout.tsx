@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 import { resolveImageUrl } from "@/lib/image-url"
-import type { WebNav } from "./storefront-website"
+import type { WebNav } from "./storefront-types"
 import type { PickedStore } from "./storefront-store-picker"
 
 interface Address {

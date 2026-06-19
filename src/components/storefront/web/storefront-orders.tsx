@@ -6,7 +6,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { ArrowLeft, Package, ChevronRight, Clock, CheckCircle2, Truck, XCircle, Loader2 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 import { buildLabelMap, getLabel } from "@/lib/order-stages"
-import type { WebNav } from "./storefront-website"
+import type { WebNav } from "./storefront-types"
 
 interface OrderItem { itemName: string; quantity: number; unitPrice: number; totalPrice: number }
 

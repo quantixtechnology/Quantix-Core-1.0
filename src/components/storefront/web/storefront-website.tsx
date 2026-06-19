@@ -17,18 +17,7 @@ import { StorefrontPassword } from "./storefront-password"
 import { StorefrontLaundryHome } from "./storefront-laundry-home"
 import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
 import { PwaMetaUpdater } from "@/components/storefront/pwa-meta-updater"
-
-export type WebPage =
-  | "home"
-  | "category"
-  | "product"
-  | "auth"
-  | "checkout"
-  | "order-tracking"
-  | "orders"
-  | "profile"
-  | "addresses"
-  | "password"
+import type { WebPage, WebNav } from "./storefront-types"
 
 type NavSnapshot = {
   page: WebPage
@@ -36,23 +25,6 @@ type NavSnapshot = {
   categoryName: string
   productId: string | null
   orderId: string | null
-}
-
-export interface WebNav {
-  go: (page: WebPage, opts?: {
-    categoryId?: string
-    categoryName?: string
-    productId?: string
-    orderId?: string
-  }) => void
-  goBack: (defaultPage?: WebPage) => void
-  canGoBack: boolean
-  current: WebPage
-  categoryId: string | null
-  categoryName: string
-  productId: string | null
-  orderId: string | null
-  prevPage: WebPage | null
 }
 
 // ── Store status check ──────────────────────────────────────────────────────

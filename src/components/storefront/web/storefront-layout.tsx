@@ -9,7 +9,7 @@ import {
   Package, MapPin, ChevronDown, Home, Menu,
   ChevronRight, ArrowLeft,
 } from "lucide-react"
-import type { WebNav } from "./storefront-website"
+import type { WebNav } from "./storefront-types"
 import type { PickedStore } from "./storefront-store-picker"
 import { ProductImage } from "./product-image"
 import { formatINR } from "@/lib/currency"

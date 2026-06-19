@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { ArrowLeft, MapPin, Plus, Trash2, Check, Loader2, Navigation } from "lucide-react"
-import type { WebNav } from "./storefront-website"
+import type { WebNav } from "./storefront-types"
 
 interface Address {
   id: string
