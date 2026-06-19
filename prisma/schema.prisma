@@ -386,7 +386,6 @@ model Business {
   billingDocuments      BillingDocument[]
   recurringDateOverrides RecurringDateOverride[]
   charges               Charge[]
-  garmentItems          GarmentItem[]
   billingAccount        BillingAccount?
 
   @@index([businessType])
@@ -439,7 +438,7 @@ model Store {
   businessId          String
   name                String
   slug                String
-  storeType           StoreType      @default(PICKUP_CENTER)
+  storeType           StoreType      @default(STANDARD)
   code                String?
   address             String?
   city                String?
@@ -735,7 +734,6 @@ model Order {
   deliveryPartner      DeliveryPartner?      @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id])
   pickupPartner        DeliveryPartner?      @relation("OrderPickupPartner", fields: [pickupPartnerId], references: [id])
   items                OrderItem[]
-  garmentItems         GarmentItem[]
   statusHistory        OrderStatusHistory[]
   payments             Payment[]
   refunds              Refund[]
@@ -783,30 +781,6 @@ model OrderItem {
   @@index([orderId])
   @@index([itemType])
   @@index([itemId])
-}
-
-model GarmentItem {
-  id          String   @id @default(cuid())
-  orderId     String
-  businessId  String
-  itemName    String
-  quantity    Int      @default(1)
-  weight      Float?
-  barcode     String   @unique
-  status      String   @default("RECEIVED")
-  photoPickup String?
-  photoProcessing String?
-  photoQc     String?
-  photoDelivery String?
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([barcode])
-  @@index([businessId])
 }
 
 model OrderStatusHistory {
@@ -2287,9 +2261,9 @@ enum ModuleStatus {
 }
 
 enum StoreType {
-  PICKUP_CENTER
+  STANDARD
   PROCESSING_CENTER
-  BOTH
+  PICKUP_STORE
 }
 
 enum StoreStatus {
@@ -2357,27 +2331,16 @@ enum OrderStatus {
   PENDING
   CONFIRMED
   PREPARING
-  PICKUP_REQUESTED
-  PICKUP_ASSIGNED
-  PICKED_UP
-  RECEIVED_AT_STORE
-  IN_TRANSIT_TO_PROCESSING
-  RECEIVED_AT_PROCESSING
-  PROCESSING
-  WASHING
-  DRYING
-  IRONING
-  QUALITY_CHECK
-  PACKED
-  RETURNED_TO_STORE
-  READY_FOR_DELIVERY
+  READY_FOR_PICKUP
   OUT_FOR_DELIVERY
   DELIVERED
-  COMPLETED
-  READY_FOR_PICKUP
   CANCELLED
   REFUNDED
   SCHEDULED
+  PICKUP_ASSIGNED
+  PICKED_UP
+  PROCESSING
+  READY_FOR_DELIVERY
 }
 
 enum PaymentStatus {

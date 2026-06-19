@@ -90,7 +90,6 @@ interface Product {
 interface Store {
   id: string
   name: string
-  storeType: string
   isMainStore: boolean
   deliveryFee: number
 }
@@ -253,9 +252,7 @@ export function CreateOrderDialog({
   async function fetchStores() {
     setLoadingStores(true)
     try {
-      const res = await fetch(`/api/core/stores?businessId=${businessId}`, {
-        headers: getAuthHeaders(),
-      })
+      const res = await fetch(`/api/core/stores?businessId=${businessId}`)
       const data = await res.json()
       if (data.success) {
         const storeList = data.data || []
@@ -359,11 +356,6 @@ export function CreateOrderDialog({
     if (items.length === 0) {
       showError("Add at least one item to the order")
       return
-    }
-    if (isLaundry) {
-      if (!originStoreId) { showError("Origin Store is required"); return }
-      if (!processingStoreId) { showError("Processing Store is required"); return }
-      if (!deliveryStoreId) { showError("Delivery Store is required"); return }
     }
     if ((orderType === "DELIVERY" || orderType === "PICKUP_AND_DELIVERY") && !deliveryAddress.trim()) {
       showError("Delivery address is required for delivery orders")
@@ -615,46 +607,46 @@ export function CreateOrderDialog({
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label>Origin Store <span className="text-red-500">*</span></Label>
+                      <Label>Origin Store</Label>
                       <Select value={originStoreId} onValueChange={setOriginStoreId}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select origin" />
                         </SelectTrigger>
                         <SelectContent>
-                          {stores.filter(s => s.storeType === 'PICKUP_CENTER' || s.storeType === 'BOTH').map(store => (
+                          {stores.filter(s => s.id).map(store => (
                             <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-[10px] text-muted-foreground">Customer drop-off / rider pickup point</p>
+                      <p className="text-[10px] text-muted-foreground">Where clothes are picked up</p>
                     </div>
                     <div className="space-y-2">
-                      <Label>Processing Store <span className="text-red-500">*</span></Label>
+                      <Label>Processing Store</Label>
                       <Select value={processingStoreId} onValueChange={setProcessingStoreId}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select processing" />
                         </SelectTrigger>
                         <SelectContent>
-                          {stores.filter(s => s.storeType === 'PROCESSING_CENTER' || s.storeType === 'BOTH').map(store => (
+                          {stores.filter(s => s.id).map(store => (
                             <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-[10px] text-muted-foreground">Washing, drying, ironing, QC & packing</p>
+                      <p className="text-[10px] text-muted-foreground">Where clothes are cleaned</p>
                     </div>
                     <div className="space-y-2">
-                      <Label>Delivery Store <span className="text-red-500">*</span></Label>
+                      <Label>Delivery Store</Label>
                       <Select value={deliveryStoreId} onValueChange={setDeliveryStoreId}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select delivery" />
                         </SelectTrigger>
                         <SelectContent>
-                          {stores.filter(s => s.storeType === 'PICKUP_CENTER' || s.storeType === 'BOTH').map(store => (
+                          {stores.filter(s => s.id).map(store => (
                             <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-[10px] text-muted-foreground">Where clothes are returned to customer</p>
+                      <p className="text-[10px] text-muted-foreground">Where clothes are delivered</p>
                     </div>
                   </div>
                 </section>

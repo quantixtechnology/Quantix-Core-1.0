@@ -335,9 +335,6 @@ export async function createOrder(params: CreateOrderParams) {
       data: {
         businessId: params.businessId,
         storeId: params.storeId,
-        originStoreId: params.originStoreId || null,
-        processingStoreId: params.processingStoreId || null,
-        deliveryStoreId: params.deliveryStoreId || null,
         orderNumber,
         orderType: params.orderType as OrderTypeType,
         orderSource: params.orderSource || 'online',

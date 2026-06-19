@@ -130,7 +130,7 @@ export type NotificationType = 'ORDER_STATUS' | 'DELIVERY_UPDATE' | 'PROMOTION' 
 export type NotificationChannel = 'PUSH' | 'EMAIL' | 'WHATSAPP' | 'IN_APP';
 
 export type POSSessionStatus = 'OPEN' | 'CLOSED' | 'SUSPENDED';
-export type StoreType = 'PICKUP_CENTER' | 'PROCESSING_CENTER' | 'BOTH';
+export type StoreType = 'STANDARD' | 'PROCESSING_CENTER' | 'PICKUP_STORE';
 export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
 export type ZoneType = 'CIRCLE' | 'POLYGON' | 'PINCODE';
 export type AuthProvider = 'EMAIL_OTP' | 'WHATSAPP_OTP' | 'PUSH_NOTIFICATION' | 'GOOGLE' | 'PASSWORD';
