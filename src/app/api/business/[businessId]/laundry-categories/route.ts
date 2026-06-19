@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { db as prisma } from "@/lib/db"
-import { resolveBusinessFromDomain } from "@/lib/tenant-resolver"
+import { prisma } from "@/lib/prisma"
+import { getBusinessIdFromRequest } from "@/lib/api-utils"
 
 export async function POST(
   req: NextRequest,
@@ -15,19 +15,7 @@ export async function POST(
     }
 
     const { businessId } = await params
-    
-    // Resolve business from host header or use provided businessId
-    let resolvedBusinessId = businessId;
-    
-    // Try to resolve from host header (for custom domains)
-    const host = req.headers.get('host') || '';
-    if (host) {
-      const resolved = await resolveBusinessFromDomain(host);
-      if (resolved) {
-        resolvedBusinessId = resolved.business.businessId;
-      }
-    }
-    
+    const resolvedBusinessId = await getBusinessIdFromRequest(req, businessId)
     if (!resolvedBusinessId) {
       return NextResponse.json({ success: false, error: "Business context required" }, { status: 400 })
     }

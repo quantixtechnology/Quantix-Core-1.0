@@ -74,7 +74,6 @@ export async function GET(request: Request) {
         name: true,
         slug: true,
         businessType: true,
-        workspaceType: true,
         status: true,
         isOnline: true,
         logo: true,
@@ -92,9 +91,9 @@ export async function GET(request: Request) {
         domain: {
           select: { domain: true, subdomain: true, status: true },
         },
-        // Fetch BusinessBranding as fallback for branding fields
+        // Fetch BusinessBranding as fallback for logo/favicon if Business fields are null
         branding: {
-          select: { logo: true, favicon: true, primaryColor: true, secondaryColor: true, darkMode: true, tagline: true },
+          select: { logo: true, favicon: true },
         },
       },
     });
@@ -187,14 +186,13 @@ export async function GET(request: Request) {
           name: business.name,
           slug: business.slug,
           businessType: business.businessType,
-          workspaceType: business.workspaceType,
           isOnline: business.isOnline,
           logo:    resolveImageUrl(business.logo    ?? business.branding?.logo),
           favicon: resolveImageUrl(business.favicon ?? business.branding?.favicon),
-          primaryColor:   business.primaryColor   ?? business.branding?.primaryColor   ?? "#10B981",
-          secondaryColor: business.secondaryColor ?? business.branding?.secondaryColor ?? null,
-          darkMode:       business.darkMode       ?? business.branding?.darkMode       ?? false,
-          tagline:        business.tagline        ?? business.branding?.tagline        ?? null,
+          primaryColor: business.primaryColor,
+          secondaryColor: business.secondaryColor,
+          darkMode: business.darkMode,
+          tagline: business.tagline,
           description: business.description,
           contactEmail: business.contactEmail,
           contactPhone: business.contactPhone,

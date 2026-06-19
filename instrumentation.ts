@@ -14,7 +14,6 @@ export async function register() {
   console.log(`[startup] DATABASE_URL=${databaseUrl ?? '(not set)'}`)
   console.log(`[startup] resolvedDbPath=${resolvedDbPath}`)
 
-  // ── Run database migration and store code validation ────────────────────
   try {
     const { db } = await import('@/lib/db')
 

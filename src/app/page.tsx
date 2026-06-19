@@ -52,7 +52,7 @@ function StorefrontContextLoader({
       .then((json) => {
         if (!json.success || !json.data?.business) { onNotFound(); return }
         const biz = json.data.business
-        setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug, biz.workspaceType)
+        setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug)
         if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
         if (biz.logo) setCurrentBusinessLogo(biz.logo)
         // Always inject a favicon — use business favicon if set, otherwise the
@@ -228,8 +228,7 @@ const CustomerSubscriptionsView = dynamic(() => import("@/components/business/la
 const UsageLedgerView = dynamic(() => import("@/components/business/laundry/usage-ledger-view").then(m => ({ default: m.UsageLedgerView })), { loading: () => <PageLoader /> })
 const RenewalsView = dynamic(() => import("@/components/business/laundry/renewals-view").then(m => ({ default: m.RenewalsView })), { loading: () => <PageLoader /> })
 const LaundryConfigView = dynamic(() => import("@/components/business/laundry/laundry-config-view").then(m => ({ default: m.LaundryConfigView })), { loading: () => <PageLoader /> })
-const ServicesView = dynamic(() => import("@/components/business/laundry/services-view").then(m => ({ default: m.ServicesView })), { loading: () => <PageLoader /> })
- 
+
 // ── Customer App (lazy) ───────────────────────────────────────────────────
 const CustomerAuth = dynamic(() => import("@/components/customer/auth/customer-auth").then(m => ({ default: m.CustomerAuth })), { loading: () => <PageLoader /> })
 const CustomerHome = dynamic(() => import("@/components/customer/home/customer-home").then(m => ({ default: m.CustomerHome })), { loading: () => <PageLoader /> })
@@ -271,7 +270,6 @@ const PlanComparison = dynamic(() => import("@/components/workflow/plan-comparis
 // ── Payment (lazy) ────────────────────────────────────────────────────────
 const PaymentPluginsView = dynamic(() => import("@/components/admin/payment-plugins/payment-plugins-view").then(m => ({ default: m.PaymentPluginsView })), { loading: () => <PageLoader /> })
 const GatewayConfigView = dynamic(() => import("@/components/business/payment/gateway-config-view").then(m => ({ default: m.GatewayConfigView })), { loading: () => <PageLoader /> })
-const QrPaymentConfigView = dynamic(() => import("@/components/business/payment/qr-payment-config-view").then(m => ({ default: m.QrPaymentConfigView })), { loading: () => <PageLoader /> })
 const POSEnterprise = dynamic(() => import("@/components/business/pos/pos-enterprise").then(m => ({ default: m.POSEnterprise })), { loading: () => <PageLoader /> })
 
 // ── Top-level routing ────────────────────────────────────────────────────
@@ -543,7 +541,6 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "workflows": return <WorkflowEngineView />
       // Payment
       case "gateway-config": return <GatewayConfigView />
-      case "qr-payment-config": return <QrPaymentConfigView />
       // Platform config
       case "categories": return <CategoriesView />
       case "branding": return <BrandingView />
@@ -561,7 +558,6 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "usage-ledger": return <UsageLedgerView />
       case "renewals": return <RenewalsView />
       case "laundry-config": return <LaundryConfigView />
-      case "laundry-services": return <ServicesView />
       default: return <BusinessDashboard />
     }
   }

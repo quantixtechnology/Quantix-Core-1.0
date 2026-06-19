@@ -2109,18 +2109,17 @@ model LaundryService {
 }
 
 model QRPaymentConfig {
-  id               String   @id @default(cuid())
-  businessId       String   @unique
-  upiId            String?
-  merchantName     String?
-  qrCode           String?
-  dynamicQREnabled Boolean  @default(false)
-  codEnabled       Boolean  @default(true)
-  outstandingQR    String?
-  metadata         String   @default("{}")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  business         Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  businessId      String   @unique
+  upiId           String?
+  qrCode          String?
+  dynamicQREnabled Boolean @default(false)
+  codEnabled      Boolean  @default(true)
+  outstandingQR   String?
+  metadata        String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 model AppConfig {
