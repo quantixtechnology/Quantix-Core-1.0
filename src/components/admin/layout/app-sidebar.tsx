@@ -8,7 +8,7 @@ import {
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
   DatabaseZap, FileText, Archive, Package, Calculator,
   UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal, Paperclip,
-  TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette,
+  TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette, Sparkles,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -85,6 +85,7 @@ const platformNavItems: NavItem[] = [
   { key: "dashboard",         label: "Dashboard",          icon: LayoutDashboard },
   { key: "workflow-engine",   label: "Workflow Engine",    icon: Workflow    },
   { key: "businesses",        label: "Businesses",         icon: Building2   },
+  { key: "laundry-os",        label: "Laundry OS",         icon: Sparkles    },
   { key: "leads",             label: "Sales & Leads",      icon: UserCheck   },
   { key: "proposals",           label: "Quote & Proposals",  icon: FileText },
   { key: "proposal-documents",  label: "Proposal Documents", icon: Archive  },

@@ -178,6 +178,7 @@ const BackupMonitoringView = dynamic(() => import("@/components/dashboard/backup
 const SecurityAccessView = dynamic(() => import("@/components/dashboard/security-access-view").then(m => ({ default: m.SecurityAccessView })), { loading: () => <PageLoader /> })
 const AuditLogsView = dynamic(() => import("@/components/dashboard/audit-logs-view").then(m => ({ default: m.AuditLogsView })), { loading: () => <PageLoader /> })
 const QuantixWebsiteView = dynamic(() => import("@/components/admin/websites/quantix-website-view").then(m => ({ default: m.QuantixWebsiteView })), { loading: () => <PageLoader /> })
+const LaundryOsView = dynamic(() => import("@/components/admin/laundry/laundry-os-dashboard").then(m => ({ default: m.LaundryOsDashboard })), { loading: () => <PageLoader /> })
 
 // ── HRMS pages (lazy) ─────────────────────────────────────────────────────
 const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
@@ -500,6 +501,8 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "audit-logs": return <AuditLogsView />
       // Website
       case "quantix-website": return <QuantixWebsiteView />
+      // Laundry OS
+      case "laundry-os": return <LaundryOsView />
       default: return <WorkflowEngineView />
     }
   }
