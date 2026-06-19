@@ -8,7 +8,7 @@ import {
   BarChart3, Wallet, HeadphonesIcon, Receipt, ShieldCheck, KeyRound,
   DatabaseZap, FileText, Archive, Package, Calculator,
   UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal, Paperclip,
-  TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette, Sparkles,
+  TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette, Sparkles, Store, LayoutList,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -85,7 +85,6 @@ const platformNavItems: NavItem[] = [
   { key: "dashboard",         label: "Dashboard",          icon: LayoutDashboard },
   { key: "workflow-engine",   label: "Workflow Engine",    icon: Workflow    },
   { key: "businesses",        label: "Businesses",         icon: Building2   },
-  { key: "laundry-os",        label: "Laundry OS",         icon: Sparkles    },
   { key: "leads",             label: "Sales & Leads",      icon: UserCheck   },
   { key: "proposals",           label: "Quote & Proposals",  icon: FileText },
   { key: "proposal-documents",  label: "Proposal Documents", icon: Archive  },
@@ -159,6 +158,11 @@ const systemNavItems: NavItem[] = [
 
 const websiteNavItems: NavItem[] = [
   { key: "quantix-website", label: "Quantix Website", icon: Globe },
+]
+
+const laundryNavItems: NavItem[] = [
+  { key: "laundry-os",        label: "Dashboard",     icon: Sparkles },
+  { key: "laundry-businesses",label: "Businesses",    icon: LayoutList },
 ]
 
 function CollapsibleSection({
@@ -280,6 +284,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
 
   const sections = [
     { title: "Platform Control",  items: filterItems(platformNavItems), open: true },
+    { title: "Laundry OS",        items: filterItems(laundryNavItems),  open: true },
     { title: "Mobile & Apps",     items: filterItems(mobileNavItems),   open: true },
     { title: "Deployment & Ops",  items: filterItems(deployNavItems),   open: false },
     { title: "Client Operations", items: filterItems(clientNavItems),   open: false },

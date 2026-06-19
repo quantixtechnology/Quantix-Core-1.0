@@ -83,6 +83,7 @@ export type AdminPage =
   | "quantix-website"
   | "account-billing"
   | "laundry-os"
+  | "laundry-businesses"
 
 export type BusinessPage =
   | "dashboard"

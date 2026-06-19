@@ -734,6 +734,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "sales":                  "sales_team:view",
   "platform-users":         "users:view",
   "laundry-os":             "laundry_os:view",
+  "laundry-businesses":     "laundry_os:view",
   // Mobile & Apps
   "mobile-apps":            "platform:manage_deployments",
   // Deployment & Ops

@@ -44,6 +44,7 @@ const pageTitles: Record<string, string> = {
   "security-access": "Security & Access",
   "audit-logs": "Audit Logs",
   "laundry-os": "Laundry OS",
+  "laundry-businesses": "Laundry Businesses",
 }
 
 interface AdminHeaderProps {
