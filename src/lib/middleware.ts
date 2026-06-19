@@ -282,11 +282,9 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
           if (user.businessId || user.isPlatformAdmin) {
             (req as AuthenticatedRequest).businessContext = {
               businessId: user.businessId || '',
-              businessType: (user as any).businessType || 'GROCERY',
-              workspaceType: (user as any).workspaceType || 'ECOMMERCE',
-              businessCategory: (user as any).businessCategory || '',
-              businessSlug: (user as any).businessSlug || '',
-              businessName: (user as any).businessName || '',
+              businessType: 'GROCERY',
+              businessSlug: '',
+              businessName: '',
               role: user.role,
               userId: user.id,
               storeId: user.storeId,

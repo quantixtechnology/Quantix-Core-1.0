@@ -28,19 +28,6 @@ export type BusinessType =
   | 'FURNITURE'
   | 'DIRECTORY';
 
-/** 7 workspace types — drives navigation, dashboard, workflows, features */
-export type WorkspaceType =
-  | 'ECOMMERCE'
-  | 'LAUNDRY'
-  | 'CAR_WASH'
-  | 'BIKE_WASH'
-  | 'SALON'
-  | 'RESTAURANT'
-  | 'SERVICES';
-
-/** Business category — informational, used for branding, labels, templates, marketing */
-export type BusinessCategory = string;
-
 /** Business lifecycle status — managed by Quantix, NO TRIAL */
 export type BusinessStatus = 'ONBOARDING' | 'ACTIVE' | 'SUSPENDED' | 'CHURNED';
 
@@ -130,7 +117,6 @@ export type NotificationType = 'ORDER_STATUS' | 'DELIVERY_UPDATE' | 'PROMOTION' 
 export type NotificationChannel = 'PUSH' | 'EMAIL' | 'WHATSAPP' | 'IN_APP';
 
 export type POSSessionStatus = 'OPEN' | 'CLOSED' | 'SUSPENDED';
-export type StoreType = 'STANDARD' | 'PROCESSING_CENTER' | 'PICKUP_STORE';
 export type StoreStatus = 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE';
 export type ZoneType = 'CIRCLE' | 'POLYGON' | 'PINCODE';
 export type AuthProvider = 'EMAIL_OTP' | 'WHATSAPP_OTP' | 'PUSH_NOTIFICATION' | 'GOOGLE' | 'PASSWORD';
@@ -509,8 +495,6 @@ export interface RolePermissionMap {
 export interface BusinessContext {
   businessId: string;
   businessType: BusinessType;
-  workspaceType: WorkspaceType;
-  businessCategory: BusinessCategory;
   businessSlug: string;
   businessName: string;
   role: Role;
@@ -529,8 +513,6 @@ export interface BusinessListItem {
   name: string;
   slug: string;
   businessType: BusinessType;
-  workspaceType: WorkspaceType;
-  businessCategory: BusinessCategory;
   status: BusinessStatus;
   logo: string | null;
   primaryColor: string;

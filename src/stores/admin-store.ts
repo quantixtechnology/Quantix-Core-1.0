@@ -120,12 +120,6 @@ export type BusinessPage =
   | "website"
   | "onboarding-progress"
   | "invoices"
-  | "subscription-plans"
-  | "customer-subscriptions"
-  | "usage-ledger"
-  | "renewals"
-  | "laundry-config"
-  | "pickup-requests"
 
 export type CustomerPage =
   | "auth"
@@ -213,54 +207,6 @@ export const BUSINESS_TYPE_UI: Record<string, BusinessTypeUI> = {
   FURNITURE:     { icon: "Sofa",         color: "bg-yellow-700 text-white",  label: "Furniture",        description: "Furniture & home decor" },
   DIRECTORY:     { icon: "MapPin",       color: "bg-cyan-600 text-white",    label: "Directory",        description: "Local business directory" },
   PLATFORM:      { icon: "Zap",          color: "bg-primary text-primary-foreground", label: "Platform Admin", description: "Quantix platform control" },
-}
-
-// ============================================================================
-// WORKSPACE TYPE → WORKFLOWS MAPPING
-// Drives navigation and feature flags based on workspaceType
-// ============================================================================
-
-export const WORKSPACE_WORKFLOWS: Record<string, WorkflowType[]> = {
-  ECOMMERCE:  ["ECOMMERCE", "PICKUP_DELIVERY"],
-  LAUNDRY:    ["ECOMMERCE", "PICKUP_DELIVERY", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
-  CAR_WASH:   ["ECOMMERCE", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
-  BIKE_WASH:  ["ECOMMERCE", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
-  SALON:      ["ECOMMERCE", "APPOINTMENT", "SUBSCRIPTION", "POST_SERVICE_BILLING"],
-  RESTAURANT: ["ECOMMERCE", "PICKUP_DELIVERY"],
-  SERVICES:   ["APPOINTMENT", "POST_SERVICE_BILLING"],
-}
-
-// ============================================================================
-// WORKSPACE TYPE → UI CONFIG (icons, colors, labels)
-// ============================================================================
-
-export const WORKSPACE_UI: Record<string, BusinessTypeUI> = {
-  ECOMMERCE:  { icon: "ShoppingBag", color: "bg-indigo-600 text-white", label: "Ecommerce",        description: "Online retail & marketplace" },
-  LAUNDRY:    { icon: "Droplets",    color: "bg-sky-600 text-white",    label: "Laundry",          description: "Laundry & dry cleaning" },
-  CAR_WASH:   { icon: "Car",         color: "bg-amber-600 text-white",  label: "Car Wash",         description: "Car wash & detailing" },
-  BIKE_WASH:  { icon: "Bike",        color: "bg-lime-600 text-white",   label: "Bike Wash",        description: "Bike wash & detailing" },
-  SALON:      { icon: "Scissors",    color: "bg-pink-600 text-white",   label: "Salon",            description: "Salon & spa services" },
-  RESTAURANT: { icon: "ChefHat",     color: "bg-orange-600 text-white", label: "Restaurant",       description: "Restaurant & food service" },
-  SERVICES:   { icon: "Wrench",      color: "bg-rose-600 text-white",   label: "Services",         description: "Service-based business" },
-}
-
-// ============================================================================
-// WORKSPACE → BUSINESS CATEGORIES
-// Controls which categories are available when creating a business per workspace
-// ============================================================================
-
-export const WORKSPACE_CATEGORIES: Record<string, string[]> = {
-  ECOMMERCE: [
-    "Grocery", "Pharmacy", "Meat Shop", "Bakery", "Pet Store",
-    "Flower Shop", "Cosmetics", "Furniture", "Electronics",
-    "Fashion", "General Store", "Books & Stationery",
-  ],
-  LAUNDRY: ["Laundry", "Dry Cleaning"],
-  CAR_WASH: ["Car Wash", "Auto Detailing"],
-  BIKE_WASH: ["Bike Wash"],
-  SALON: ["Salon", "Spa", "Beauty Studio", "Barbershop"],
-  RESTAURANT: ["Restaurant", "Fast Food", "Cafe", "Cloud Kitchen", "Diner"],
-  SERVICES: ["Home Services", "Repair & Maintenance", "Cleaning", "Tutoring", "Consulting"],
 }
 
 // ============================================================================
@@ -423,8 +369,6 @@ interface AdminState {
   // Business metadata for display — set when super admin impersonates or business owner logs in
   currentBusinessName: string
   currentBusinessType: string       // e.g. "GROCERY", "LAUNDRY"
-  currentWorkspaceType: string      // e.g. "ECOMMERCE", "LAUNDRY"
-  currentBusinessCategory: string   // e.g. "Grocery", "Laundry"
   currentBusinessSlug: string
   currentBusinessPrimaryColor: string  // hex, e.g. "#10B981"
   setCurrentBusinessPrimaryColor: (color: string) => void
@@ -440,9 +384,9 @@ interface AdminState {
   currentStoreCode: string
   setCurrentStoreCode: (code: string) => void
   // Set all business context at once (used by login, impersonation, business selection)
-  setCurrentBusiness: (id: string, name: string, type: string, slug?: string, workspaceType?: string, businessCategory?: string) => void
+  setCurrentBusiness: (id: string, name: string, type: string, slug?: string) => void
   // Set business context for real business owner login (does NOT set isImpersonating)
-  setBusinessOwnerContext: (id: string, name: string, type: string, slug?: string, workspaceType?: string, businessCategory?: string) => void
+  setBusinessOwnerContext: (id: string, name: string, type: string, slug?: string) => void
   // Clear business context (when super admin exits impersonation)
   clearCurrentBusiness: () => void
   // Whether super admin is currently impersonating a business
@@ -556,8 +500,6 @@ export const useAdminStore = create<AdminState>((set) => ({
   setCurrentStoreCode: (code) => set({ currentStoreCode: code }),
   currentBusinessName: "",
   currentBusinessType: "",
-  currentWorkspaceType: "",
-  currentBusinessCategory: "",
   currentBusinessSlug: "",
   currentBusinessPrimaryColor: "",
   setCurrentBusinessPrimaryColor: (color) => set({ currentBusinessPrimaryColor: color }),
@@ -565,24 +507,20 @@ export const useAdminStore = create<AdminState>((set) => ({
   currentBusinessFavicon: "",
   setCurrentBusinessLogo: (url) => set({ currentBusinessLogo: url }),
   setCurrentBusinessFavicon: (url) => set({ currentBusinessFavicon: url }),
-  setCurrentBusiness: (id, name, type, slug = "", workspaceType?, businessCategory?) => set({
+  setCurrentBusiness: (id, name, type, slug = "") => set({
     currentBusinessId: id,
     currentBusinessName: name,
     currentBusinessType: type,
-    currentWorkspaceType: workspaceType ?? type,
-    currentBusinessCategory: businessCategory ?? "",
     currentBusinessSlug: slug,
     isImpersonating: true,
     viewMode: "business_owner",
     businessPage: "dashboard",
     searchQuery: "",
   }),
-  setBusinessOwnerContext: (id, name, type, slug = "", workspaceType?, businessCategory?) => set({
+  setBusinessOwnerContext: (id, name, type, slug = "") => set({
     currentBusinessId: id,
     currentBusinessName: name,
     currentBusinessType: type,
-    currentWorkspaceType: workspaceType ?? type,
-    currentBusinessCategory: businessCategory ?? "",
     currentBusinessSlug: slug,
     isImpersonating: false,
     viewMode: "business_owner",
@@ -593,8 +531,6 @@ export const useAdminStore = create<AdminState>((set) => ({
     currentBusinessId: "",
     currentBusinessName: "",
     currentBusinessType: "",
-    currentWorkspaceType: "",
-    currentBusinessCategory: "",
     currentBusinessSlug: "",
     currentBusinessPrimaryColor: "",
     currentBusinessLogo: "",

@@ -31,7 +31,7 @@ import {
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AvatarImage } from "@/components/ui/avatar"
-import { useAdminStore, BUSINESS_TYPE_WORKFLOWS, WORKSPACE_WORKFLOWS, WORKSPACE_CATEGORIES, type PlanTier } from "@/stores/admin-store"
+import { useAdminStore, BUSINESS_TYPE_WORKFLOWS, type PlanTier } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -125,20 +125,6 @@ const READINESS_ITEMS: { key: string; label: string }[] = [
   { key: "paymentGateway", label: "Payment Gateway Configured" },
   { key: "deliveryConfig", label: "Delivery Configuration" },
 ]
-
-const BUSINESS_TYPE_WORKSPACE_MAP: Record<string, string> = {
-  GROCERY: "ECOMMERCE",
-  PHARMACY: "ECOMMERCE",
-  MEAT_DELIVERY: "ECOMMERCE",
-  ECOMMERCE: "ECOMMERCE",
-  FOOD_DELIVERY: "ECOMMERCE",
-  COSMETICS: "ECOMMERCE",
-  FURNITURE: "ECOMMERCE",
-  DIRECTORY: "ECOMMERCE",
-  LAUNDRY: "LAUNDRY",
-  CAR_WASH: "CAR_WASH",
-  HOME_SERVICES: "SERVICES",
-}
 
 export function BusinessesView() {
   const { searchQuery, setCurrentBusiness, setActivePage } = useAdminStore()
@@ -242,8 +228,6 @@ export function BusinessesView() {
   const [formName, setFormName] = useState("")
   const [formSlug, setFormSlug] = useState("")
   const [formType, setFormType] = useState<string>("")
-  const [formWorkspaceType, setFormWorkspaceType] = useState<string>("ECOMMERCE")
-  const [formBusinessCategory, setFormBusinessCategory] = useState<string>("")
   const [formCity, setFormCity] = useState("")
   const [formState, setFormState] = useState("")
   const [formPincode, setFormPincode] = useState("")
@@ -256,16 +240,6 @@ export function BusinessesView() {
   const [formAllowedStores, setFormAllowedStores] = useState<string>("1")
   // Form state — enabled workflows
   const [formEnabledWorkflows, setFormEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
-  // Form state — industry features (laundry-specific)
-  const [formIndustryFeatures, setFormIndustryFeatures] = useState<Record<string, boolean>>({
-    laundry_subscription_enabled: true,
-    barcode_tracking_enabled: false,
-    garment_photos_enabled: false,
-    qc_workflow_enabled: false,
-    call_queue_enabled: false,
-    whatsapp_updates_enabled: true,
-    customer_membership_enabled: false,
-  })
   // Form state — owner
   const [formOwnerName, setFormOwnerName] = useState("")
   const [formOwnerEmail, setFormOwnerEmail] = useState("")
@@ -357,43 +331,22 @@ export function BusinessesView() {
   }, [businesses, searchQuery, statusFilter, typeFilter, onlineFilter])
 
   const resetForm = () => {
-    setFormName(""); setFormSlug(""); setFormType(""); setFormWorkspaceType("ECOMMERCE"); setFormBusinessCategory(""); setFormPlan("")
+    setFormName(""); setFormSlug(""); setFormType(""); setFormPlan("")
     setFormCity(""); setFormState(""); setFormPincode("")
     setFormPhone(""); setFormEmail(""); setFormAddress(""); setFormGST("")
     setFormOwnerName(""); setFormOwnerEmail(""); setFormOwnerPassword("")
     setFormEnabledWorkflows(["ECOMMERCE"])
-    setFormIndustryFeatures({
-      laundry_subscription_enabled: true,
-      barcode_tracking_enabled: false,
-      garment_photos_enabled: false,
-      qc_workflow_enabled: false,
-      call_queue_enabled: false,
-      whatsapp_updates_enabled: true,
-      customer_membership_enabled: false,
-    })
     setCreatedResult(null)
   }
 
-  // Auto-derive workspace type and workflows when business type changes
+  // Auto-derive enabledWorkflows when plan or business type changes
   useEffect(() => {
-    if (!formType) return
-    const ws = BUSINESS_TYPE_WORKSPACE_MAP[formType] || "ECOMMERCE"
-    setFormWorkspaceType(ws)
-    if (formType === "LAUNDRY" || ws === "LAUNDRY") {
-      setFormPlan("PRO")
-      setFormEnabledWorkflows((WORKSPACE_WORKFLOWS[ws] ?? ["ECOMMERCE"]) as string[])
-    }
-  }, [formType])
-
-  useEffect(() => {
-    const ws = formWorkspaceType
-    if (ws === "LAUNDRY") return // Workflows locked for laundry
     if (formPlan === "STANDARD") {
       setFormEnabledWorkflows(["ECOMMERCE"])
     } else if (formPlan === "PRO" && formType) {
-      setFormEnabledWorkflows((WORKSPACE_WORKFLOWS[ws] ?? BUSINESS_TYPE_WORKFLOWS[formType] ?? ["ECOMMERCE"]) as string[])
+      setFormEnabledWorkflows((BUSINESS_TYPE_WORKFLOWS[formType] ?? ["ECOMMERCE"]) as string[])
     }
-  }, [formPlan, formType, formWorkspaceType])
+  }, [formPlan, formType])
 
   const handleNameChange = (value: string) => {
     setFormName(value)
@@ -418,17 +371,14 @@ export function BusinessesView() {
       return
     }
 
-    const requestBody: Record<string, unknown> = {
+    const requestBody = {
       name: formName,
       slug: formSlug,
       businessType: formType,
-      workspaceType: formWorkspaceType,
-      businessCategory: formBusinessCategory || undefined,
       planId: matchingPlan.id,
       planTier: formPlan,
       enabledWorkflows: formEnabledWorkflows,
       allowedStores: Number(formAllowedStores),
-      industryFeatures: formWorkspaceType === "LAUNDRY" ? formIndustryFeatures : undefined,
       city: formCity,
       state: formState,
       pincode: formPincode,
@@ -899,154 +849,72 @@ export function BusinessesView() {
                         {formSlug && <p className="text-[10px] text-muted-foreground font-mono">ID: {formSlug}</p>}
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2"><Label>Step 1: Workspace Type *</Label>
-                        <Select value={formWorkspaceType} onValueChange={(v) => {
-                          setFormWorkspaceType(v)
-                          setFormBusinessCategory("")
-                          const cats = WORKSPACE_CATEGORIES[v] || ["General"]
-                          const defaultBizType = v === "LAUNDRY" ? "LAUNDRY" : v === "CAR_WASH" ? "CAR_WASH" : v === "SERVICES" ? "HOME_SERVICES" : "GROCERY"
-                          setFormType(defaultBizType)
-                          if (v === "LAUNDRY") setFormPlan("PRO")
-                        }}>
-                          <SelectTrigger><SelectValue placeholder="Select workspace" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ECOMMERCE">Ecommerce</SelectItem>
-                            <SelectItem value="LAUNDRY">Laundry</SelectItem>
-                            <SelectItem value="CAR_WASH">Car Wash</SelectItem>
-                            <SelectItem value="BIKE_WASH">Bike Wash</SelectItem>
-                            <SelectItem value="SALON">Salon</SelectItem>
-                            <SelectItem value="RESTAURANT">Restaurant</SelectItem>
-                            <SelectItem value="SERVICES">Services</SelectItem>
-                          </SelectContent>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>Business Type *</Label>
+                        <Select value={formType} onValueChange={setFormType}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                          <SelectContent>{Object.entries(businessTypeConfig).map(([key, val]) => (<SelectItem key={key} value={key}>{val.label}</SelectItem>))}</SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-2"><Label>Step 2: Business Category *</Label>
-                        <Select value={formBusinessCategory} onValueChange={setFormBusinessCategory}>
-                          <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                      <div className="space-y-2"><Label>Plan *</Label>
+                        <Select value={formPlan} onValueChange={setFormPlan}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
                           <SelectContent>
-                            {(WORKSPACE_CATEGORIES[formWorkspaceType] || ["General"]).map((cat) => (
-                              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                            ))}
+                            <SelectItem value="STANDARD">STANDARD</SelectItem>
+                            <SelectItem value="PRO">PRO</SelectItem>
                           </SelectContent>
                         </Select>
-                      </div>
-                      <div className="space-y-2"><Label>Step 3: Plan *</Label>
-                        {formWorkspaceType === "LAUNDRY" ? (
-                          <div className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
-                            <span className="text-sm font-semibold text-sky-800">PRO</span>
-                            <span className="text-[10px] text-sky-600">Laundry requires PRO plan</span>
-                          </div>
-                        ) : (
-                          <Select value={formPlan} onValueChange={(v) => setFormPlan(v as PlanTier | "")}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="STANDARD">STANDARD</SelectItem>
-                              <SelectItem value="PRO">PRO</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        )}
                       </div>
                     </div>
-                    {/* Enabled Workflows — locked for STANDARD, selectable for PRO, predefined for LAUNDRY */}
+                    {/* Enabled Workflows — locked for STANDARD, selectable for PRO */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs font-semibold">Enabled Workflows</Label>
-                        {formWorkspaceType === "LAUNDRY" && (
-                          <Badge variant="outline" className="text-[10px] text-sky-600 border-sky-200 bg-sky-50">Laundry — predefined</Badge>
-                        )}
-                        {formPlan === "STANDARD" && formWorkspaceType !== "LAUNDRY" && (
+                        {formPlan === "STANDARD" && (
                           <Badge variant="secondary" className="text-[10px]">Standard — Ecommerce only</Badge>
                         )}
-                        {formPlan === "PRO" && formWorkspaceType !== "LAUNDRY" && (
+                        {formPlan === "PRO" && (
                           <Badge variant="outline" className="text-[10px]">PRO — select workflows</Badge>
                         )}
                       </div>
                       <div className="rounded-lg border p-3 space-y-2">
-                        {formWorkspaceType === "LAUNDRY" ? (
-                          // Laundry: show predefined workflows as badges, no checkboxes
-                          <div className="flex flex-wrap gap-2">
-                            {WORKSPACE_WORKFLOWS["LAUNDRY"]?.map(wf => (
-                              <Badge key={wf} variant="secondary" className="text-xs bg-sky-50 text-sky-700 border-sky-200">
-                                {wf.replace(/_/g, " ")}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          // Other types: show checkboxes
-                          [
-                            { value: "ECOMMERCE",            label: "Ecommerce" },
-                            { value: "PICKUP_DELIVERY",      label: "Pickup & Delivery" },
-                            { value: "APPOINTMENT",          label: "Appointment" },
-                            { value: "SUBSCRIPTION",         label: "Subscription" },
-                            { value: "POST_SERVICE_BILLING", label: "Post Service Billing" },
-                          ].map(wf => {
-                            const isStandard = formPlan === "STANDARD"
-                            const isChecked = formEnabledWorkflows.includes(wf.value)
-                            const isLocked = isStandard || wf.value === "ECOMMERCE"
-                            return (
-                              <label
-                                key={wf.value}
-                                className={`flex items-center gap-2.5 cursor-pointer select-none ${isLocked && isStandard ? "opacity-50 cursor-not-allowed" : ""}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="h-3.5 w-3.5 rounded"
-                                  checked={isChecked}
-                                  disabled={isStandard}
-                                  onChange={e => {
-                                    if (isStandard) return
-                                    if (wf.value === "ECOMMERCE") return
-                                    setFormEnabledWorkflows(prev =>
-                                      e.target.checked
-                                        ? [...prev, wf.value]
-                                        : prev.filter(w => w !== wf.value)
-                                    )
-                                  }}
-                                />
-                                <span className="text-xs">{wf.label}</span>
-                              </label>
-                            )
-                          })
-                        )}
+                        {[
+                          { value: "ECOMMERCE",            label: "Ecommerce" },
+                          { value: "PICKUP_DELIVERY",      label: "Pickup & Delivery" },
+                          { value: "APPOINTMENT",          label: "Appointment" },
+                          { value: "SUBSCRIPTION",         label: "Subscription" },
+                          { value: "POST_SERVICE_BILLING", label: "Post Service Billing" },
+                        ].map(wf => {
+                          const isStandard = formPlan === "STANDARD"
+                          const isChecked = formEnabledWorkflows.includes(wf.value)
+                          const isLocked = isStandard || wf.value === "ECOMMERCE"
+                          return (
+                            <label
+                              key={wf.value}
+                              className={`flex items-center gap-2.5 cursor-pointer select-none ${isLocked && isStandard ? "opacity-50 cursor-not-allowed" : ""}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-3.5 w-3.5 rounded"
+                                checked={isChecked}
+                                disabled={isStandard}
+                                onChange={e => {
+                                  if (isStandard) return
+                                  if (wf.value === "ECOMMERCE") return // ECOMMERCE always required
+                                  setFormEnabledWorkflows(prev =>
+                                    e.target.checked
+                                      ? [...prev, wf.value]
+                                      : prev.filter(w => w !== wf.value)
+                                  )
+                                }}
+                              />
+                              <span className="text-xs">{wf.label}</span>
+                            </label>
+                          )
+                        })}
                       </div>
-                      {!formPlan && formType !== "LAUNDRY" && (
+                      {!formPlan && (
                         <p className="text-[10px] text-muted-foreground">Select a plan to configure workflows.</p>
                       )}
                     </div>
-
-                    {/* Industry Features — Laundry-specific feature flags */}
-                    {formWorkspaceType === "LAUNDRY" && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs font-semibold">Laundry Features</Label>
-                          <Badge variant="outline" className="text-[10px] text-sky-600 border-sky-200 bg-sky-50">Configurable later</Badge>
-                        </div>
-                        <div className="rounded-lg border p-3 space-y-2">
-                          {[
-                            { value: "laundry_subscription_enabled",  label: "Laundry Subscription",  description: "Monthly subscription plans with KG-based billing" },
-                            { value: "barcode_tracking_enabled",      label: "Barcode Tracking",      description: "Scan barcodes to track garments through processing" },
-                            { value: "garment_photos_enabled",        label: "Garment Photos",        description: "Capture garment photos at check-in for damage records" },
-                            { value: "qc_workflow_enabled",           label: "QC Workflow",           description: "Quality check step before marking items complete" },
-                            { value: "call_queue_enabled",            label: "Call Queue",            description: "Queue system for customer pickup notifications" },
-                            { value: "whatsapp_updates_enabled",      label: "WhatsApp Updates",      description: "Send order status updates via WhatsApp" },
-                            { value: "customer_membership_enabled",   label: "Customer Membership",   description: "Loyalty membership with points and rewards" },
-                          ].map(feature => (
-                            <label key={feature.value} className="flex items-start gap-2.5 cursor-pointer select-none py-1">
-                              <input
-                                type="checkbox"
-                                className="h-3.5 w-3.5 rounded mt-0.5"
-                                checked={formIndustryFeatures[feature.value]}
-                                onChange={e => setFormIndustryFeatures(prev => ({ ...prev, [feature.value]: e.target.checked }))}
-                              />
-                              <div>
-                                <span className="text-xs font-medium">{feature.label}</span>
-                                <p className="text-[10px] text-muted-foreground">{feature.description}</p>
-                              </div>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
                     <div className="space-y-2">
                       <Label>Allowed Stores</Label>

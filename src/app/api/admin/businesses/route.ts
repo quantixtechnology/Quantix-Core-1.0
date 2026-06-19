@@ -108,8 +108,6 @@ export const GET = withMiddleware({
       name: b.name,
       slug: b.slug,
       businessType: b.businessType,
-      workspaceType: (b as any).workspaceType || "ECOMMERCE",
-      businessCategory: (b as any).businessCategory || null,
       status: b.status,
       city: b.city,
       state: b.state,

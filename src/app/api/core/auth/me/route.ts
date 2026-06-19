@@ -34,8 +34,6 @@ export async function GET(request: Request) {
                 name: true,
                 slug: true,
                 businessType: true,
-                workspaceType: true,
-                businessCategory: true,
                 status: true,
                 primaryColor: true,
                 logo: true,
