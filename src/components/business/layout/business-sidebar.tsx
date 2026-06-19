@@ -279,7 +279,6 @@ export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: Busi
   const showStorefront = enabledFlags.has("online_orders_enabled")
 
   const handleNavigate = (page: BusinessPage) => {
-    console.log("BusinessSidebar setBusinessPage:", page)
     setBusinessPage(page)
     if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }

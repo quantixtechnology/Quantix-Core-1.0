@@ -516,7 +516,6 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
   }
 
   const renderBusinessPage = () => {
-    console.log("Rendering business page:", businessPage)
     switch (businessPage) {
       case "dashboard": return <BusinessDashboard />
       case "orders": return <OrdersView />
