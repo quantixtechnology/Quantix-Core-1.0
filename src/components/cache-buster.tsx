@@ -6,6 +6,10 @@
 // 3. Compares with the build ID stored in localStorage.
 // 4. On mismatch (= new deploy): wipes all caches, unregisters old SWs, reloads.
 // 5. Sends buildId to the SW so it names its cache correctly.
+//
+// TEMPORARY BYPASS: set NEXT_PUBLIC_DISABLE_SW=true to skip SW registration
+// and clear all caches. Remove the flag after incident investigation is
+// resolved.
 
 import { useEffect } from "react"
 
@@ -51,6 +55,16 @@ async function registerSW(buildId: string) {
 export function CacheBuster() {
   useEffect(() => {
     const run = async () => {
+      // TEMPORARY: if the feature flag is set, wipe all caches, unregister
+      // existing service workers, and never register a new one.
+      if (process.env.NEXT_PUBLIC_DISABLE_SW === "true") {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[CacheBuster] DISABLE_SW flag is set — skipping SW registration")
+        }
+        await clearAllCaches()
+        return
+      }
+
       try {
         const res = await fetch(VERSION_URL, { cache: "no-store" })
         if (!res.ok) return
