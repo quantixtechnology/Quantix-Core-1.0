@@ -10,11 +10,6 @@
 // The canonical SW is in public/sw.js — this handler reads it at runtime.
 // The inline SW_FALLBACK is only used if public/sw.js is somehow missing
 // (should never happen in a proper deployment).
-//
-// TEMPORARY BYPASS: set NEXT_PUBLIC_DISABLE_SW=true to serve a no-op service
-// worker that never intercepts requests. This neuters existing registrations
-// without any client-side cache interaction. Remove the flag after incident
-// investigation is resolved.
 
 import { readFileSync } from 'fs'
 import { join }         from 'path'
@@ -48,21 +43,6 @@ self.addEventListener('fetch', (e) => {
 `.trim()
 
 export async function GET() {
-  // TEMPORARY: serve a no-op SW when the disable flag is set.
-  // Existing SW registrations will be replaced with this harmless worker
-  // on their next update check, without any caching or fetch interception.
-  if (process.env.NEXT_PUBLIC_DISABLE_SW === "true") {
-    return new Response('self.addEventListener("install",()=>self.skipWaiting());self.addEventListener("activate",e=>e.waitUntil(self.clients.claim()))', {
-      status: 200,
-      headers: {
-        'Content-Type':          'application/javascript; charset=utf-8',
-        'Service-Worker-Allowed': '/',
-        'Cache-Control':         'no-cache, no-store, must-revalidate',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    })
-  }
-
   let content = SW_FALLBACK
   try {
     content = readFileSync(join(process.cwd(), 'public', 'sw.js'), 'utf8')
