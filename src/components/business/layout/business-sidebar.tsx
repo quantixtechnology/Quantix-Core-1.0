@@ -1,9 +1,515 @@
 "use client"
 
-export function BusinessSidebar() {
+import { useState, useEffect } from "react"
+import {
+  LayoutDashboard, ShoppingBag, Package, Monitor, Users, BarChart3,
+  Settings, ShoppingCart, Warehouse, Megaphone, UserCog,
+  Receipt, Heart, MapPin, Upload, Eye, Truck, Calendar, CreditCard,
+  Zap, Droplets, Car, Beef, Wrench, Sparkles, Sofa, Store,
+  Tag, Palette, Smartphone, Globe, Shield, ClipboardList, Shirt, QrCode, Layers,
+} from "lucide-react"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from "@/components/ui/sidebar"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  useAdminStore,
+  BUSINESS_TYPE_WORKFLOWS,
+  BUSINESS_TYPE_UI,
+  WORKSPACE_WORKFLOWS,
+  WORKSPACE_UI,
+  type BusinessPage,
+  type WorkflowType,
+} from "@/stores/admin-store"
+import { resolveWorkspaceWorkflows, resolveWorkspaceUI, getExcludedPageKeys } from "@/lib/workspace-nav"
+import { useResponsive } from "@/hooks/use-responsive"
+
+type WorkflowNavItem = { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }>; flag?: string }
+
+// ── Workflow → nav items (derived from business type, owned by platform admin) ──
+const workflowNavMap: Record<WorkflowType, WorkflowNavItem[]> = {
+  ECOMMERCE: [
+    { key: "orders",            label: "Orders",            icon: ShoppingBag },
+    { key: "products",          label: "Products",          icon: Package },
+    { key: "inventory",         label: "Inventory",         icon: Warehouse },
+    { key: "delivery-partners", label: "Delivery Partners", icon: Truck },
+  ],
+  PICKUP_DELIVERY: [
+    { key: "orders",             label: "Pickup Orders",      icon: Truck },
+    { key: "delivery-zones",     label: "Delivery Zones",     icon: MapPin },
+    { key: "delivery-partners",  label: "Delivery Partners",  icon: Truck },
+    { key: "pickup-requests",    label: "Pickup Requests",    icon: ClipboardList, flag: "delivery_enabled" },
+  ],
+  APPOINTMENT: [
+    { key: "orders", label: "Appointments", icon: Calendar },
+    { key: "staff",  label: "Technicians",  icon: UserCog },
+  ],
+  SUBSCRIPTION: [
+    { key: "customers",             label: "Customers",             icon: Users },
+    { key: "subscription-plans",    label: "Subscription Plans",   icon: CreditCard },
+    { key: "customer-subscriptions", label: "Customer Subscriptions", icon: Users, flag: "laundry_subscription_enabled" },
+    { key: "usage-ledger",          label: "Usage Ledger",          icon: BarChart3, flag: "laundry_subscription_enabled" },
+    { key: "renewals",              label: "Renewals",              icon: Calendar, flag: "laundry_subscription_enabled" },
+    { key: "laundry-config",        label: "Laundry Config",        icon: Settings, flag: "laundry_subscription_enabled" },
+  ],
+  POST_SERVICE_BILLING: [
+    { key: "orders",   label: "Service Orders", icon: Receipt },
+    { key: "reports",  label: "Billing Reports", icon: BarChart3 },
+  ],
+}
+
+// ── Core management items — always visible ────────────────────────────────────
+const coreManagementItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "stores",              label: "Stores",               icon: Store },
+  { key: "customers",           label: "Customers",            icon: Users },
+  { key: "categories",          label: "Categories",           icon: Tag },
+  { key: "product-import",      label: "Product Import",       icon: Upload },
+  { key: "customer-import",      label: "Bulk Customer Upload", icon: Users },
+  { key: "user-creation",       label: "User Creation",        icon: UserCog },
+  { key: "user-management",     label: "User Management",      icon: Shield },
+  { key: "tax",                 label: "Tax & GST",            icon: Receipt },
+  { key: "gateway-config",      label: "Payment Gateways",     icon: CreditCard },
+  { key: "qr-payment-config",   label: "QR Payment",          icon: QrCode },
+  { key: "invoices",            label: "Invoices",             icon: Receipt },
+  { key: "reports",             label: "Reports",              icon: BarChart3 },
+  { key: "settings",            label: "Settings",             icon: Settings },
+]
+
+  // ── Flag-gated items — hidden when flag is disabled ───────────────────────────
+  const flagGatedItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }>; flag: string }[] = [
+    { key: "pos",       label: "POS Billing",     icon: Monitor,  flag: "pos_enabled" },
+    { key: "marketing", label: "Marketing",        icon: Megaphone, flag: "promo_codes_enabled" },
+    { key: "loyalty",   label: "Loyalty Program",  icon: Heart,    flag: "loyalty_enabled" },
+  ]
+
+  // ── Storefront — shown only when online_orders is enabled ─────────────────────
+  const storefrontItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
+    key: "storefront", label: "Storefront Preview", icon: Eye,
+  }
+
+
+  // ── Services — shown for laundry businesses ────────────────────────────────
+  const servicesItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
+    key: "laundry-services", label: "Services", icon: Layers,
+  }
+
+  // ── Platform section — always visible, read-only for business owner ───────────
+  const platformNavItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { key: "branding",            label: "Branding",       icon: Palette },
+    { key: "feature-flags",       label: "Feature Flags",  icon: Zap },
+    { key: "subscription-view",   label: "Subscription",   icon: CreditCard },
+    { key: "customer-app",        label: "Customer App",   icon: Smartphone },
+    { key: "delivery-app",        label: "Delivery App",   icon: Truck },
+    { key: "admin-app",           label: "Admin App",      icon: Globe },
+    { key: "onboarding-progress", label: "Onboarding",     icon: LayoutDashboard },
+  ]
+
+// Plan & Workflows info item (read-only for business owner, managed by platform)
+const planWorkflowsItem: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> } = {
+  key: "workflow-config", label: "Plan & Workflows", icon: Shield,
+}
+
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  ShoppingCart, ShoppingBag, Zap, Droplets, Car, Truck, Calendar, CreditCard,
+  Receipt, Beef, Wrench, Sparkles, Sofa, MapPin,
+}
+
+function NavSection({
+  title,
+  items,
+  activePage,
+  onNavigate,
+  compact = false,
+  badge,
+}: {
+  title?: string
+  items: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }> }[]
+  activePage: BusinessPage
+  onNavigate: (page: BusinessPage) => void
+  compact?: boolean
+  badge?: string
+}) {
   return (
-    <div style={{ width: 250 }}>
-      SIDEBAR TEST
+    <div className="mb-1">
+      {title && (
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {title}
+          </span>
+          {badge && (
+            <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5">
+              {badge}
+            </Badge>
+          )}
+        </div>
+      )}
+      <div className="flex flex-col gap-0.5 px-2">
+        {items.map((item) => {
+          const isActive = activePage === item.key
+          return (
+            <button
+              key={item.key + item.label}
+              onClick={() => onNavigate(item.key)}
+              className={`flex items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${
+                compact ? "py-2" : "py-1.5"
+              } ${
+                isActive
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              <item.icon className={`shrink-0 ${compact ? "size-4" : "size-3.5"}`} />
+              <span className="text-xs">{item.label}</span>
+            </button>
+          )
+        })}
+      </div>
     </div>
+  )
+}
+
+interface BusinessSidebarProps {
+  mobileOpen?: boolean
+  onMobileOpenChange?: (open: boolean) => void
+}
+
+export function BusinessSidebar({ mobileOpen = false, onMobileOpenChange }: BusinessSidebarProps) {
+  const { businessPage, setBusinessPage, currentBusinessName, currentBusinessType, currentWorkspaceType, currentBusinessId } = useAdminStore()
+  const { isMobile } = useResponsive()
+
+  const workspaceType = currentWorkspaceType || currentBusinessType || "ECOMMERCE"
+  const typeUI = WORKSPACE_UI[workspaceType] || BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  const activeWorkflows = WORKSPACE_WORKFLOWS[workspaceType] || BUSINESS_TYPE_WORKFLOWS[currentBusinessType] || ["ECOMMERCE"]
+  const excludedPages = getExcludedPageKeys(workspaceType)
+
+  // Business logo — fetched from the branding API whenever the business context changes
+  const [businessLogo, setBusinessLogo] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!currentBusinessId) { setBusinessLogo(null); return }
+    fetch(`/api/core/businesses/${currentBusinessId}/branding`, {
+      headers: { "x-business-id": currentBusinessId },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.success && j.data?.logo) setBusinessLogo(j.data.logo) })
+      .catch(() => {})
+  }, [currentBusinessId])
+
+  // Feature flags — fetched to control which management items are visible
+  const [enabledFlags, setEnabledFlags] = useState<Set<string>>(new Set(["pos_enabled", "promo_codes_enabled", "loyalty_enabled", "online_orders_enabled"]))
+
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/core/businesses/${currentBusinessId}/feature-flags`, {
+      headers: { "x-business-id": currentBusinessId },
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (!json.success) return
+        const flags = new Set<string>()
+        for (const f of (json.data ?? [])) {
+          if (f.enabled) flags.add(f.key)
+        }
+        setEnabledFlags(flags)
+      })
+      .catch(() => {/* non-fatal — keep defaults */})
+  }, [currentBusinessId])
+
+  // Build workflow-specific nav items (dedup by page key, filtered by feature flags + workspace exclusions)
+  const workflowNavItems: WorkflowNavItem[] = []
+  const seen = new Set<string>()
+  const skipPages = new Set(excludedPages)
+  activeWorkflows.forEach((wf) => {
+    workflowNavMap[wf as WorkflowType]?.forEach((item) => {
+      // Skip items that require a feature flag that's not enabled
+      if (item.flag && !enabledFlags.has(item.flag)) return
+      // Skip items excluded for this workspace type
+      if (skipPages.has(item.key)) return
+      if (!seen.has(item.key)) {
+        seen.add(item.key)
+        workflowNavItems.push(item)
+      }
+    })
+  })
+
+  // Management = core items + flag-gated items (only those whose flag is enabled, filtered by workspace exclusions)
+  const managementNavItems = [
+    ...coreManagementItems.filter(item => !skipPages.has(item.key)),
+    ...flagGatedItems.filter(item => enabledFlags.has(item.flag) && !skipPages.has(item.key)),
+    ...(showServices ? [servicesItem] : []),
+  ].sort((a, b) => {
+    // preserve deterministic order: core first, then flag-gated in original order
+    const coreOrder = coreManagementItems.findIndex(c => c.key === a.key)
+    const bCoreOrder = coreManagementItems.findIndex(c => c.key === b.key)
+    if (coreOrder !== -1 && bCoreOrder !== -1) return coreOrder - bCoreOrder
+    if (coreOrder !== -1) return -1
+    if (bCoreOrder !== -1) return 1
+    return 0
+  })
+
+  // Services — only show for LAUNDRY workspace
+  const showServices = workspaceType === "LAUNDRY" || currentBusinessType === "LAUNDRY"
+
+  // Storefront — only if online_orders_enabled
+  const showStorefront = enabledFlags.has("online_orders_enabled")
+
+  const handleNavigate = (page: BusinessPage) => {
+    console.log("Navigation blocked for diagnostic:", page)
+    if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
+  }
+
+  const displayName = currentBusinessName || typeUI.label || "Business"
+  const businessInitials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()
+  const BusinessIcon = iconMap[typeUI.icon] || ShoppingCart
+
+  // Mobile: Sheet-based sidebar
+  if (isMobile) {
+    return (
+      <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
+        <SheetContent side="left" className="w-[280px] p-0">
+          <SheetHeader className="p-0 border-b">
+            <SheetTitle className="sr-only">{displayName}</SheetTitle>
+            <SheetDescription className="sr-only">{typeUI.label} Admin</SheetDescription>
+            {businessLogo ? (
+              <div className="flex items-center justify-center h-[90px] px-3 py-[10px]">
+                <img
+                  src={businessLogo}
+                  alt={displayName}
+                  style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-4">
+                <div className={`flex size-10 items-center justify-center rounded-lg ${typeUI.color}`}>
+                  <BusinessIcon className="size-5" />
+                </div>
+                <div>
+                  <p className="text-left text-base font-bold">{displayName}</p>
+                  <p className="text-left text-xs text-muted-foreground flex items-center gap-1.5">
+                    {typeUI.label} Admin
+                    <Badge variant="outline" className="text-[8px] px-1 py-0 h-3">
+                      {activeWorkflows.length} workflow{activeWorkflows.length !== 1 ? "s" : ""}
+                    </Badge>
+                  </p>
+                </div>
+              </div>
+            )}
+          </SheetHeader>
+
+          <ScrollArea className="flex-1 px-1 py-3">
+            <NavSection title="Overview" items={[{ key: "dashboard", label: "Dashboard", icon: LayoutDashboard }]} activePage={businessPage} onNavigate={handleNavigate} compact />
+            <NavSection
+              title="Operations"
+              items={[...workflowNavItems]}
+              activePage={businessPage}
+              onNavigate={handleNavigate}
+              compact
+              badge={`${activeWorkflows.length}`}
+            />
+            <NavSection title="Management" items={managementNavItems} activePage={businessPage} onNavigate={handleNavigate} compact />
+            {showStorefront && (
+              <NavSection title="Store" items={[storefrontItem]} activePage={businessPage} onNavigate={handleNavigate} compact />
+            )}
+            {showServices && (
+              <NavSection title="Services" items={[servicesItem]} activePage={businessPage} onNavigate={handleNavigate} compact />
+            )}
+            <NavSection title="Platform" items={[planWorkflowsItem, ...platformNavItems]} activePage={businessPage} onNavigate={handleNavigate} compact />
+          </ScrollArea>
+
+          <div className="border-t p-4">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10">
+                <AvatarFallback className={`${typeUI.color} text-sm`}>{businessInitials}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="truncate text-sm font-semibold">Business Owner</p>
+                <p className="truncate text-xs text-muted-foreground">{displayName}</p>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+    )
+  }
+
+  // Desktop: Persistent sidebar
+  return (
+    <Sidebar collapsible="icon" className="border-r">
+      <SidebarHeader className="p-0 shrink-0" style={{ borderBottom: "1px solid var(--sidebar-border, rgba(0,0,0,0.08))" }}>
+        {/* Collapsed: business type icon only */}
+        <div className="hidden group-data-[state=collapsed]:flex items-center justify-center py-[10px] px-3">
+          <div className={`flex size-9 items-center justify-center rounded-xl ${typeUI.color}`}>
+            <BusinessIcon className="size-5" />
+          </div>
+        </div>
+
+        {/* Expanded: logo when available, else icon + name */}
+        <div className="group-data-[state=collapsed]:hidden">
+          {businessLogo ? (
+            <div className="flex items-center justify-center h-[90px] px-3 py-[10px]">
+              <img
+                src={businessLogo}
+                alt={displayName}
+                style={{ width: "100%", height: "auto", objectFit: "contain", display: "block" }}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 px-4 py-[10px]">
+              <div className={`flex size-8 items-center justify-center rounded-lg shrink-0 ${typeUI.color}`}>
+                <BusinessIcon className="size-4" />
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight min-w-0">
+                <span className="truncate font-bold">{displayName}</span>
+                <span className="truncate text-xs text-muted-foreground">{typeUI.label} Admin</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Overview</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={businessPage === "dashboard"} onClick={() => setBusinessPage("dashboard")} tooltip="Dashboard">
+                  <LayoutDashboard className="size-4" />
+                  <span>Dashboard</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="flex items-center gap-1.5">
+            Operations
+            <Badge variant="outline" className="text-[8px] px-1 py-0 h-3 ml-auto">{activeWorkflows.length}</Badge>
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {workflowNavItems.map((item) => (
+                <SidebarMenuItem key={item.key + item.label}>
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
+                    <item.icon className="size-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Management</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {managementNavItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
+                    <item.icon className="size-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {showStorefront && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Store</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={businessPage === "storefront"} onClick={() => setBusinessPage("storefront")} tooltip="Storefront Preview">
+                    <Eye className="size-4" />
+                    <span>Storefront Preview</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {showServices && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Services</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive={businessPage === "laundry-services"} onClick={() => setBusinessPage("laundry-services")} tooltip="Services">
+                    <Layers className="size-4" />
+                    <span>Services</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Platform</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {/* Plan & Workflows — read-only, managed by platform admin */}
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={businessPage === "workflow-config"} onClick={() => setBusinessPage("workflow-config")} tooltip="Plan & Workflows">
+                  <Shield className="size-4" />
+                  <span>Plan &amp; Workflows</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {platformNavItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <SidebarMenuButton isActive={businessPage === item.key} onClick={() => setBusinessPage(item.key)} tooltip={item.label}>
+                    <item.icon className="size-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter className="p-4">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className={`${typeUI.color} text-xs`}>{businessInitials}</AvatarFallback>
+              </Avatar>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-semibold">Business Owner</span>
+                <span className="truncate text-xs text-muted-foreground">{displayName}</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
   )
 }
