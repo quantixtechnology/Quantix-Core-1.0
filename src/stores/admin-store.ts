@@ -113,6 +113,7 @@ export type BusinessPage =
   | "user-management"
   | "categories"
   | "branding"
+  | "brand-studio"
   | "feature-flags"
   | "subscription-view"
   | "customer-app"

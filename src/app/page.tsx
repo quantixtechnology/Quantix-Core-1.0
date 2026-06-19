@@ -32,6 +32,7 @@ function StorefrontContextLoader({
   const {
     setCurrentBusiness, setViewMode,
     setCurrentStoreId, setCurrentStoreName,
+    setCurrentBusinessPrimaryColor,
     setCurrentBusinessLogo, setCurrentBusinessFavicon,
     setOrderStages, setImageConfig, setBusinessTheme,
     setStorefrontWhyChooseUs, setStorefrontPromiseBar,
@@ -52,6 +53,7 @@ function StorefrontContextLoader({
         if (!json.success || !json.data?.business) { onNotFound(); return }
         const biz = json.data.business
         setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug, biz.workspaceType)
+        if (biz.primaryColor) setCurrentBusinessPrimaryColor(biz.primaryColor)
         if (biz.logo) setCurrentBusinessLogo(biz.logo)
         // Always inject a favicon — use business favicon if set, otherwise the
         // platform logo. This ensures the browser tab always shows something.
@@ -514,6 +516,7 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
   }
 
   const renderBusinessPage = () => {
+    console.log("Rendering business page:", businessPage)
     switch (businessPage) {
       case "dashboard": return <BusinessDashboard />
       case "orders": return <OrdersView />
