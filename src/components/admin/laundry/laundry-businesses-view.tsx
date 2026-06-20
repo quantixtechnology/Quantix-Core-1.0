@@ -233,18 +233,21 @@ function BusinessWorkflowTab({ businessId }: { businessId: string }) {
   const [loading, setLoading] = useState(true)
   const [roles, setRoles] = useState<LaundryRole[]>([])
   const [departments, setDepartments] = useState<{ id: string; code: string; name: string }[]>([])
+  const [business, setBusiness] = useState<{ transportEnabled: boolean; barcodeTaggingEnabled: boolean; ironingEnabled: boolean; deliveryEnabled: boolean } | null>(null)
 
   const fetchConfigs = useCallback(async () => {
     setLoading(true)
     try {
-      const [configRes, rolesRes, deptRes] = await Promise.all([
+      const [configRes, rolesRes, deptRes, bizRes] = await Promise.all([
         fetch(`/api/laundry/workflow-configurations/business/${businessId}`),
         fetch("/api/laundry/roles"),
         fetch(`/api/laundry/departments?businessId=${businessId}`),
+        fetch(`/api/laundry/businesses/${businessId}`),
       ])
       if (configRes.ok) setConfigs(await configRes.json())
       if (rolesRes.ok) setRoles(await rolesRes.json())
       if (deptRes.ok) setDepartments(await deptRes.json())
+      if (bizRes.ok) setBusiness(await bizRes.json())
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [businessId])
@@ -285,8 +288,40 @@ function BusinessWorkflowTab({ businessId }: { businessId: string }) {
   const sorted = [...configs].sort((a, b) => (a.configuration?.sequence ?? a.stage.sequence) - (b.configuration?.sequence ?? b.stage.sequence))
   const activeRoles = roles.filter(r => r.isActive)
 
+  // Feature-toggle based filtering
+  const FEATURE_TOGGLE_STAGES: Record<string, string[]> = {
+    transportEnabled: ["IN_TRANSIT_TO_PROCESSING", "IN_TRANSIT_TO_STORE"],
+    barcodeTaggingEnabled: ["BARCODE_TAGGING"],
+    ironingEnabled: ["IRONING"],
+    deliveryEnabled: ["READY_FOR_DELIVERY", "DELIVERED"],
+  }
+
+  const disabledByFeature: Set<string> = new Set()
+  if (business) {
+    for (const [feature, stageCodes] of Object.entries(FEATURE_TOGGLE_STAGES)) {
+      if (!(business as Record<string, boolean>)[feature]) {
+        for (const code of stageCodes) disabledByFeature.add(code)
+      }
+    }
+  }
+
   return (
     <div className="rounded-lg border">
+      {business && !business.transportEnabled && (
+        <div className="px-3 py-2 bg-amber-50 text-amber-700 text-xs border-b">
+          Transport is disabled. Transit stages are hidden from the active workflow.
+        </div>
+      )}
+      {business && !business.ironingEnabled && (
+        <div className="px-3 py-2 bg-amber-50 text-amber-700 text-xs border-b">
+          Ironing service is disabled. Ironing stage is hidden from the active workflow.
+        </div>
+      )}
+      {business && !business.deliveryEnabled && (
+        <div className="px-3 py-2 bg-amber-50 text-amber-700 text-xs border-b">
+          Home delivery is disabled. Delivery stages are hidden from the active workflow.
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -306,17 +341,17 @@ function BusinessWorkflowTab({ businessId }: { businessId: string }) {
           <tbody>
             {sorted.map((bc, index) => {
               const cfg = bc.configuration
-              const deptName = cfg?.responsibleDepartment?.name ?? (cfg?.responsibleDepartmentId ? "Unknown" : "—")
-              const roleName = cfg?.responsibleRole?.name ?? (cfg?.responsibleRoleId ? "Unknown" : "—")
+              const isDisabledByToggle = disabledByFeature.has(bc.stage.code)
+              const rowEnabled = bc.enabled && !isDisabledByToggle
 
               return (
-                <tr key={bc.stage.id} className="border-b last:border-0 hover:bg-muted/30">
+                <tr key={bc.stage.id} className={`border-b last:border-0 hover:bg-muted/30 ${isDisabledByToggle ? "opacity-40" : ""}`}>
                   <td className="p-3">
                     <div className="flex items-center gap-1">
                       <span className="text-sm font-mono text-muted-foreground w-6">{cfg?.sequence ?? bc.stage.sequence}</span>
                       <div className="flex flex-col gap-0.5">
-                        <button onClick={() => moveStage(index, "up")} disabled={index === 0} className="disabled:opacity-20 hover:text-foreground text-muted-foreground"><ArrowUp className="h-3 w-3" /></button>
-                        <button onClick={() => moveStage(index, "down")} disabled={index === sorted.length - 1} className="disabled:opacity-20 hover:text-foreground text-muted-foreground"><ArrowDown className="h-3 w-3" /></button>
+                        <button onClick={() => moveStage(index, "up")} disabled={index === 0 || isDisabledByToggle} className="disabled:opacity-20 hover:text-foreground text-muted-foreground"><ArrowUp className="h-3 w-3" /></button>
+                        <button onClick={() => moveStage(index, "down")} disabled={index === sorted.length - 1 || isDisabledByToggle} className="disabled:opacity-20 hover:text-foreground text-muted-foreground"><ArrowDown className="h-3 w-3" /></button>
                       </div>
                     </div>
                   </td>
@@ -324,6 +359,7 @@ function BusinessWorkflowTab({ businessId }: { businessId: string }) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{bc.stage.name}</span>
                       {bc.stage.isSystem && <Badge variant="outline" className="text-[10px] h-4 px-1 text-muted-foreground">System</Badge>}
+                      {isDisabledByToggle && <Badge variant="outline" className="text-[10px] h-4 px-1 text-amber-600 border-amber-300">Toggle Off</Badge>}
                     </div>
                   </td>
                   <td className="p-3">
@@ -331,14 +367,15 @@ function BusinessWorkflowTab({ businessId }: { businessId: string }) {
                   </td>
                   <td className="p-3">
                     <Select
-                      value={cfg?.responsibleDepartmentId || ""}
-                      onValueChange={(v) => updateConfig(bc.stage.id, { responsibleDepartmentId: v || null })}
+                      value={cfg?.responsibleDepartmentId ?? "none"}
+                      onValueChange={(v) => updateConfig(bc.stage.id, { responsibleDepartmentId: v === "none" ? null : v })}
+                      disabled={isDisabledByToggle}
                     >
                       <SelectTrigger className="h-8 text-xs max-w-[160px]">
                         <SelectValue placeholder="Not set" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value=" ">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {departments.map(d => (
                           <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                         ))}
@@ -347,14 +384,15 @@ function BusinessWorkflowTab({ businessId }: { businessId: string }) {
                   </td>
                   <td className="p-3">
                     <Select
-                      value={cfg?.responsibleRoleId || ""}
-                      onValueChange={(v) => updateConfig(bc.stage.id, { responsibleRoleId: v || null })}
+                      value={cfg?.responsibleRoleId ?? "none"}
+                      onValueChange={(v) => updateConfig(bc.stage.id, { responsibleRoleId: v === "none" ? null : v })}
+                      disabled={isDisabledByToggle}
                     >
                       <SelectTrigger className="h-8 text-xs max-w-[160px]">
                         <SelectValue placeholder="Not set" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value=" ">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {activeRoles.map(r => (
                           <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
                         ))}
@@ -362,32 +400,52 @@ function BusinessWorkflowTab({ businessId }: { businessId: string }) {
                     </Select>
                   </td>
                   <td className="p-3 text-center">
-                    <Switch checked={bc.enabled} onCheckedChange={() => handleToggle(bc.stage.id, bc.enabled)} />
+                    <Switch
+                      checked={rowEnabled}
+                      onCheckedChange={() => handleToggle(bc.stage.id, rowEnabled)}
+                      disabled={isDisabledByToggle}
+                    />
                   </td>
                   <td className="p-3 text-center">
                     <Checkbox
                       checked={cfg?.canView ?? true}
                       onCheckedChange={(v) => updateConfig(bc.stage.id, { canView: v === true })}
+                      disabled={isDisabledByToggle}
                     />
                   </td>
                   <td className="p-3 text-center">
                     <Checkbox
                       checked={cfg?.canUpdate ?? false}
                       onCheckedChange={(v) => updateConfig(bc.stage.id, { canUpdate: v === true })}
+                      disabled={isDisabledByToggle}
                     />
                   </td>
                   <td className="p-3 text-center">
                     <Checkbox
                       checked={cfg?.canApprove ?? false}
                       onCheckedChange={(v) => updateConfig(bc.stage.id, { canApprove: v === true })}
+                      disabled={isDisabledByToggle}
                     />
                   </td>
                   <td className="p-3 text-right">
-                    {bc.enabled ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Enabled</Badge> : <Badge variant="outline" className="text-muted-foreground">Disabled</Badge>}
+                    {isDisabledByToggle ? (
+                      <Badge variant="outline" className="text-amber-600 border-amber-300">Toggle Off</Badge>
+                    ) : bc.enabled ? (
+                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Enabled</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-muted-foreground">Disabled</Badge>
+                    )}
                   </td>
                 </tr>
               )
             })}
+            {sorted.length === 0 && (
+              <tr>
+                <td colSpan={10} className="p-6 text-center text-sm text-muted-foreground">
+                  No workflow stages found.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -400,19 +458,22 @@ function BusinessPermissionsTab({ businessId }: { businessId: string }) {
   const [configs, setConfigs] = useState<BusinessConfig[]>([])
   const [roles, setRoles] = useState<LaundryRole[]>([])
   const [departments, setDepartments] = useState<{ id: string; code: string; name: string }[]>([])
+  const [business, setBusiness] = useState<{ transportEnabled: boolean; barcodeTaggingEnabled: boolean; ironingEnabled: boolean; deliveryEnabled: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [configRes, rolesRes, deptRes] = await Promise.all([
+      const [configRes, rolesRes, deptRes, bizRes] = await Promise.all([
         fetch(`/api/laundry/workflow-configurations/business/${businessId}`),
         fetch("/api/laundry/roles"),
         fetch(`/api/laundry/departments?businessId=${businessId}`),
+        fetch(`/api/laundry/businesses/${businessId}`),
       ])
       if (configRes.ok) setConfigs(await configRes.json())
       if (rolesRes.ok) setRoles(await rolesRes.json())
       if (deptRes.ok) setDepartments(await deptRes.json())
+      if (bizRes.ok) setBusiness(await bizRes.json())
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [businessId])
@@ -438,6 +499,30 @@ function BusinessPermissionsTab({ businessId }: { businessId: string }) {
   const activeRoles = roles.filter(r => r.isActive)
   const sortedStages = [...configs].sort((a, b) => (a.configuration?.sequence ?? a.stage.sequence) - (b.configuration?.sequence ?? b.stage.sequence))
 
+  const FEATURE_TOGGLE_STAGES: Record<string, string[]> = {
+    transportEnabled: ["IN_TRANSIT_TO_PROCESSING", "IN_TRANSIT_TO_STORE"],
+    barcodeTaggingEnabled: ["BARCODE_TAGGING"],
+    ironingEnabled: ["IRONING"],
+    deliveryEnabled: ["READY_FOR_DELIVERY", "DELIVERED"],
+  }
+
+  const disabledByFeature: Set<string> = new Set()
+  if (business) {
+    for (const [feature, stageCodes] of Object.entries(FEATURE_TOGGLE_STAGES)) {
+      if (!(business as Record<string, boolean>)[feature]) {
+        for (const code of stageCodes) disabledByFeature.add(code)
+      }
+    }
+  }
+
+  if (sortedStages.length === 0) {
+    return (
+      <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+        No workflow stages found. Configure stages for this business.
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-lg border overflow-x-auto">
       <table className="w-full">
@@ -445,6 +530,7 @@ function BusinessPermissionsTab({ businessId }: { businessId: string }) {
           <tr className="border-b bg-muted/50">
             <th className="text-left p-3 text-xs font-medium text-muted-foreground min-w-[160px]">Stage</th>
             <th className="text-left p-3 text-xs font-medium text-muted-foreground min-w-[120px]">Department</th>
+            <th className="text-left p-3 text-xs font-medium text-muted-foreground min-w-[120px]">Responsible Role</th>
             {activeRoles.map(role => (
               <th key={role.id} className="text-center p-3 text-xs font-medium text-muted-foreground min-w-[100px]">
                 <div className="flex items-center justify-center gap-1">
@@ -458,6 +544,7 @@ function BusinessPermissionsTab({ businessId }: { businessId: string }) {
         <tbody>
           {sortedStages.map(item => {
             const cfg = item.configuration
+            const isDisabledByToggle = disabledByFeature.has(item.stage.code)
             const rolePerms = new Map<string, { canView: boolean; canUpdate: boolean; canApprove: boolean }>()
 
             for (const role of activeRoles) {
@@ -470,57 +557,50 @@ function BusinessPermissionsTab({ businessId }: { businessId: string }) {
             }
 
             return (
-              <tr key={item.stage.id} className="border-b last:border-0 hover:bg-muted/30">
+              <tr key={item.stage.id} className={`border-b last:border-0 hover:bg-muted/30 ${isDisabledByToggle ? "opacity-40" : ""}`}>
                 <td className="p-3 text-sm font-medium whitespace-nowrap">
                   {item.stage.name}
                   <code className="ml-2 text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{item.stage.code}</code>
+                  {isDisabledByToggle && <Badge variant="outline" className="ml-1 text-[9px] h-3 px-1 text-amber-600 border-amber-300">Off</Badge>}
                 </td>
                 <td className="p-3 text-sm text-muted-foreground">
                   {cfg?.responsibleDepartment?.name || (cfg?.responsibleDepartmentId ? "Unknown" : "—")}
                 </td>
+                <td className="p-3 text-sm text-muted-foreground">
+                  {cfg?.responsibleRole?.name || (cfg?.responsibleRoleId ? "Unknown" : "—")}
+                </td>
                 {activeRoles.map(role => {
                   const perms = rolePerms.get(role.id)!
+                  const canEdit = cfg?.responsibleRoleId === role.id
                   return (
                     <td key={role.id} className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-2">
+                      <div className="flex items-center justify-center gap-1">
                         <div className="flex flex-col items-center gap-0.5">
                           <Checkbox
                             checked={perms.canView}
-                            onCheckedChange={(v) => {
-                              if (cfg?.responsibleRoleId === role.id) {
-                                updatePermission(item.stage.id, "canView", v === true)
-                              }
-                            }}
-                            disabled={cfg?.responsibleRoleId !== role.id}
-                            className="h-3.5 w-3.5"
+                            onCheckedChange={(v) => canEdit && updatePermission(item.stage.id, "canView", v === true)}
+                            disabled={!canEdit || isDisabledByToggle}
+                            className="h-3 w-3"
                           />
-                          <span className="text-[10px] text-muted-foreground">V</span>
+                          <span className="text-[9px] text-muted-foreground">V</span>
                         </div>
                         <div className="flex flex-col items-center gap-0.5">
                           <Checkbox
                             checked={perms.canUpdate}
-                            onCheckedChange={(v) => {
-                              if (cfg?.responsibleRoleId === role.id) {
-                                updatePermission(item.stage.id, "canUpdate", v === true)
-                              }
-                            }}
-                            disabled={cfg?.responsibleRoleId !== role.id}
-                            className="h-3.5 w-3.5"
+                            onCheckedChange={(v) => canEdit && updatePermission(item.stage.id, "canUpdate", v === true)}
+                            disabled={!canEdit || isDisabledByToggle}
+                            className="h-3 w-3"
                           />
-                          <span className="text-[10px] text-muted-foreground">U</span>
+                          <span className="text-[9px] text-muted-foreground">U</span>
                         </div>
                         <div className="flex flex-col items-center gap-0.5">
                           <Checkbox
                             checked={perms.canApprove}
-                            onCheckedChange={(v) => {
-                              if (cfg?.responsibleRoleId === role.id) {
-                                updatePermission(item.stage.id, "canApprove", v === true)
-                              }
-                            }}
-                            disabled={cfg?.responsibleRoleId !== role.id}
-                            className="h-3.5 w-3.5"
+                            onCheckedChange={(v) => canEdit && updatePermission(item.stage.id, "canApprove", v === true)}
+                            disabled={!canEdit || isDisabledByToggle}
+                            className="h-3 w-3"
                           />
-                          <span className="text-[10px] text-muted-foreground">A</span>
+                          <span className="text-[9px] text-muted-foreground">A</span>
                         </div>
                       </div>
                     </td>
@@ -529,13 +609,6 @@ function BusinessPermissionsTab({ businessId }: { businessId: string }) {
               </tr>
             )
           })}
-          {sortedStages.length === 0 && (
-            <tr>
-              <td colSpan={2 + activeRoles.length} className="p-6 text-center text-sm text-muted-foreground">
-                No workflow stages found. Configure stages for this business.
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
     </div>

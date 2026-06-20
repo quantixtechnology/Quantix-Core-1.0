@@ -169,13 +169,23 @@ export async function POST(request: Request) {
       })
     }
 
-    // Auto-assign ADMIN role to the business owner
+    // Auto-assign default roles
     const adminRole = roleByCode.get("ADMIN")
     if (adminRole) {
       await prisma.laundryUserAssignment.create({
         data: {
           businessId: business.id,
           roleId: adminRole,
+          active: true,
+        },
+      })
+    }
+    const storeManagerRole = roleByCode.get("STORE_MANAGER")
+    if (storeManagerRole) {
+      await prisma.laundryUserAssignment.create({
+        data: {
+          businessId: business.id,
+          roleId: storeManagerRole,
           active: true,
         },
       })

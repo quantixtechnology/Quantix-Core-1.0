@@ -161,34 +161,40 @@ async function ensureBusinessConfigs(stageMap: Map<string, string>) {
     const roles = await prisma.laundryRole.findMany()
     const roleByCode = new Map(roles.map((r) => [r.code, r.id]))
 
-    for (const stage of SYSTEM_STAGES) {
-      const stageId = stageMap.get(stage.code)
-      if (!stageId) continue
+    // Get ALL stages, not just system stages
+    const allStages = await prisma.laundryWorkflowStage.findMany({
+      orderBy: { sequence: "asc" },
+    })
 
-      const mapping = STAGE_DEPARTMENT_ROLE[stage.code]
+    for (const stage of allStages) {
+      const mapping = STAGE_DEPARTMENT_ROLE[stage.code] || null
       const responsibleDepartmentId = mapping ? deptByCode.get(mapping.departmentCode) ?? null : null
       const responsibleRoleId = mapping ? roleByCode.get(mapping.roleCode) ?? null : null
 
       await prisma.laundryWorkflowConfiguration.upsert({
-        where: { businessId_stageId: { businessId: business.id, stageId } },
+        where: { businessId_stageId: { businessId: business.id, stageId: stage.id } },
         update: {
+          enabled: mapping ? true : false,
           responsibleRoleId,
           responsibleDepartmentId,
+          canView: mapping ? true : false,
+          canUpdate: mapping?.roleCode === "STORE_SUPERVISOR" || mapping?.roleCode === "ADMIN" || mapping?.roleCode === "STORE_MANAGER" || mapping?.roleCode === "PROCESSING_MANAGER",
+          canApprove: mapping?.roleCode === "ADMIN" || mapping?.roleCode === "STORE_MANAGER" || mapping?.roleCode === "PROCESSING_MANAGER",
         },
         create: {
           businessId: business.id,
-          stageId,
-          enabled: true,
+          stageId: stage.id,
+          enabled: mapping ? true : false,
           sequence: stage.sequence,
           responsibleRoleId,
           responsibleDepartmentId,
-          canView: true,
+          canView: mapping ? true : false,
           canUpdate: mapping?.roleCode === "STORE_SUPERVISOR" || mapping?.roleCode === "ADMIN" || mapping?.roleCode === "STORE_MANAGER" || mapping?.roleCode === "PROCESSING_MANAGER",
           canApprove: mapping?.roleCode === "ADMIN" || mapping?.roleCode === "STORE_MANAGER" || mapping?.roleCode === "PROCESSING_MANAGER",
         },
       })
     }
-    console.log(`  Workflow configs synced for business: ${business.businessName}`)
+    console.log(`  Workflow configs synced for business: ${business.businessName} (${allStages.length} stages)`)
   }
 }
 
