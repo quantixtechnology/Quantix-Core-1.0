@@ -14,7 +14,7 @@ import {
 
 type Store = { id: string; storeName: string; storeCode: string; storeType: string }
 type Department = { id: string; code: string; name: string; enabled: boolean }
-type Role = { id: string; code: string; name: string }
+type Role = { id: string; code: string; name: string; isActive: boolean }
 type Assignment = {
   id: string
   businessId: string

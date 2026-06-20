@@ -32,6 +32,7 @@ export async function POST(request: Request) {
         description: description || null,
         isDefault: isDefault ?? false,
         isActive: isActive ?? true,
+        isSystem: false,
       },
     })
 

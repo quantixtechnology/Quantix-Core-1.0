@@ -34,6 +34,10 @@ export async function PUT(
       return NextResponse.json({ error: "Workflow stage not found" }, { status: 404 })
     }
 
+    if (existing.isSystem && code !== undefined && code !== existing.code) {
+      return NextResponse.json({ error: "Cannot change code of a system stage" }, { status: 403 })
+    }
+
     const stage = await prisma.laundryWorkflowStage.update({
       where: { id },
       data: {
@@ -62,6 +66,10 @@ export async function DELETE(
     const existing = await prisma.laundryWorkflowStage.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: "Workflow stage not found" }, { status: 404 })
+    }
+
+    if (existing.isSystem) {
+      return NextResponse.json({ error: "Cannot delete a system stage" }, { status: 403 })
     }
 
     await prisma.laundryWorkflowStage.delete({ where: { id } })

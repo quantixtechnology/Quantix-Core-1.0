@@ -13,6 +13,7 @@ interface WorkflowStage {
   name: string
   sequence: number
   isActive: boolean
+  isSystem: boolean
 }
 
 interface LaundryRole {
@@ -20,6 +21,7 @@ interface LaundryRole {
   code: string
   name: string
   isActive: boolean
+  isSystem: boolean
 }
 
 interface StagePermission {
@@ -182,10 +184,14 @@ export function LaundryStagePermissionsView() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{perm.stage.name}</span>
                       <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{perm.stage.code}</code>
+                      {perm.stage.isSystem && <Badge variant="outline" className="text-[10px] h-4 px-1 text-muted-foreground">System</Badge>}
                     </div>
                   </td>
                   <td className="p-3">
-                    <Badge variant="outline">{perm.role.name}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{perm.role.name}</Badge>
+                      {perm.role.isSystem && <Badge variant="outline" className="text-[10px] h-4 px-1 text-muted-foreground">System</Badge>}
+                    </div>
                   </td>
                   <td className="p-3 text-right">
                     <Button

@@ -18,6 +18,7 @@ interface LaundryRole {
   name: string
   description: string | null
   isActive: boolean
+  isSystem: boolean
 }
 
 export function LaundryRolesView() {
@@ -185,14 +186,17 @@ export function LaundryRolesView() {
                 <th className="text-left p-3 text-xs font-medium text-muted-foreground">Name</th>
                 <th className="text-left p-3 text-xs font-medium text-muted-foreground">Description</th>
                 <th className="text-center p-3 text-xs font-medium text-muted-foreground w-24">Status</th>
-                <th className="text-right p-3 text-xs font-medium text-muted-foreground w-32">Actions</th>
+                <th className="text-right p-3 text-xs font-medium text-muted-foreground w-36">Actions</th>
               </tr>
             </thead>
             <tbody>
               {roles.map((role) => (
                 <tr key={role.id} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-3">
-                    <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{role.code}</code>
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{role.code}</code>
+                      {role.isSystem && <Badge variant="outline" className="text-[10px] h-4 px-1 text-muted-foreground">System</Badge>}
+                    </div>
                   </td>
                   <td className="p-3 text-sm font-medium">{role.name}</td>
                   <td className="p-3 text-sm text-muted-foreground max-w-[250px] truncate">
@@ -206,7 +210,14 @@ export function LaundryRolesView() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingRole(role)}>
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" onClick={() => handleDelete(role.id)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                        onClick={() => handleDelete(role.id)}
+                        disabled={role.isSystem}
+                        title={role.isSystem ? "System roles cannot be deleted" : "Delete role"}
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -236,8 +247,10 @@ export function LaundryRolesView() {
                 <Label>Code</Label>
                 <Input
                   value={editingRole.code}
+                  disabled={editingRole.isSystem}
                   onChange={(e) => setEditingRole({ ...editingRole, code: e.target.value.toUpperCase().replace(/\s+/g, "_") })}
                 />
+                {editingRole.isSystem && <p className="text-xs text-muted-foreground">Code cannot be changed for system roles.</p>}
               </div>
               <div className="space-y-2">
                 <Label>Name</Label>

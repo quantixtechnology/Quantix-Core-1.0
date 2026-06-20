@@ -12,6 +12,9 @@ import { useToast } from "@/hooks/use-toast"
 interface LaundryBusiness {
   id: string
   transportEnabled: boolean
+  barcodeTaggingEnabled: boolean
+  ironingEnabled: boolean
+  deliveryEnabled: boolean
   defaultServiceRadius: number | null
   defaultDailyCapacity: number | null
   plan: string
@@ -23,6 +26,9 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [transportEnabled, setTransportEnabled] = useState(true)
+  const [barcodeTaggingEnabled, setBarcodeTaggingEnabled] = useState(true)
+  const [ironingEnabled, setIroningEnabled] = useState(true)
+  const [deliveryEnabled, setDeliveryEnabled] = useState(true)
   const [defaultServiceRadius, setDefaultServiceRadius] = useState("")
   const [defaultDailyCapacity, setDefaultDailyCapacity] = useState("")
 
@@ -33,6 +39,9 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
         if (d) {
           setBusiness(d)
           setTransportEnabled(d.transportEnabled)
+          setBarcodeTaggingEnabled(d.barcodeTaggingEnabled ?? true)
+          setIroningEnabled(d.ironingEnabled ?? true)
+          setDeliveryEnabled(d.deliveryEnabled ?? true)
           setDefaultServiceRadius(d.defaultServiceRadius?.toString() || "")
           setDefaultDailyCapacity(d.defaultDailyCapacity?.toString() || "")
         }
@@ -49,6 +58,9 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transportEnabled,
+          barcodeTaggingEnabled,
+          ironingEnabled,
+          deliveryEnabled,
           defaultServiceRadius,
           defaultDailyCapacity,
         }),
@@ -78,21 +90,48 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Transport Settings</CardTitle>
+          <CardTitle className="text-sm">Feature Toggles</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div>
               <p className="text-sm font-medium">Transport Required</p>
               <p className="text-xs text-muted-foreground">
-                When disabled, transport stages (STORE_DISPATCH, DISPATCH_TO_STORE) are skipped in the workflow.
+                When disabled, transit stages are skipped in the workflow.
               </p>
             </div>
             <Switch checked={transportEnabled} onCheckedChange={setTransportEnabled} />
           </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div>
+              <p className="text-sm font-medium">Barcode Tagging</p>
+              <p className="text-xs text-muted-foreground">
+                Enable barcode-based item tracking at processing.
+              </p>
+            </div>
+            <Switch checked={barcodeTaggingEnabled} onCheckedChange={setBarcodeTaggingEnabled} />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div>
+              <p className="text-sm font-medium">Ironing Service</p>
+              <p className="text-xs text-muted-foreground">
+                Enable ironing stage in processing workflow.
+              </p>
+            </div>
+            <Switch checked={ironingEnabled} onCheckedChange={setIroningEnabled} />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div>
+              <p className="text-sm font-medium">Home Delivery</p>
+              <p className="text-xs text-muted-foreground">
+                Enable delivery stages for customer home delivery.
+              </p>
+            </div>
+            <Switch checked={deliveryEnabled} onCheckedChange={setDeliveryEnabled} />
+          </div>
           {!transportEnabled && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-              Transport is disabled. Workflow will skip dispatch to/from store stages. Only applicable when processing is done on-site.
+              Transport is disabled. Workflow will skip transit stages. Only applicable when processing is done on-site.
             </div>
           )}
         </CardContent>

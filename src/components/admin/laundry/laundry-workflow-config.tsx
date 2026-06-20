@@ -23,6 +23,7 @@ interface WorkflowStage {
   description: string | null
   isDefault: boolean
   isActive: boolean
+  isSystem: boolean
 }
 
 interface LaundryBusiness {
@@ -43,6 +44,8 @@ interface LaundryRole {
   id: string
   code: string
   name: string
+  isActive: boolean
+  isSystem: boolean
 }
 
 interface StagePermission {
@@ -365,7 +368,10 @@ export function LaundryWorkflowConfigView() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{stage.code}</code>
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{stage.code}</code>
+                          {stage.isSystem && <Badge variant="outline" className="text-[10px] h-4 px-1 text-muted-foreground">System</Badge>}
+                        </div>
                       </td>
                       <td className="p-3 text-sm font-medium">{stage.name}</td>
                       <td className="p-3 text-sm text-muted-foreground max-w-[200px] truncate">
@@ -382,7 +388,14 @@ export function LaundryWorkflowConfigView() {
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingStage(stage)}>
                             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" onClick={() => handleDeleteStage(stage.id)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                            onClick={() => handleDeleteStage(stage.id)}
+                            disabled={stage.isSystem}
+                            title={stage.isSystem ? "System stages cannot be deleted" : "Delete stage"}
+                          >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -522,8 +535,10 @@ export function LaundryWorkflowConfigView() {
                   <Label>Code</Label>
                   <Input
                     value={editingStage.code}
+                    disabled={editingStage.isSystem}
                     onChange={(e) => setEditingStage({ ...editingStage, code: e.target.value.toUpperCase().replace(/\s+/g, "_") })}
                   />
+                  {editingStage.isSystem && <p className="text-xs text-muted-foreground">Code cannot be changed for system stages.</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Sequence</Label>

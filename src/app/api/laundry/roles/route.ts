@@ -30,6 +30,7 @@ export async function POST(request: Request) {
         name,
         description: description || null,
         isActive: isActive ?? true,
+        isSystem: false,
       },
     })
 

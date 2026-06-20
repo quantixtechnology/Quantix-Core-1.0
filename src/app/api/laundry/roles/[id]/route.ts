@@ -17,6 +17,10 @@ export async function PUT(
       return NextResponse.json({ error: "Laundry role not found" }, { status: 404 })
     }
 
+    if (existing.isSystem && code !== undefined && code !== existing.code) {
+      return NextResponse.json({ error: "Cannot change code of a system role" }, { status: 403 })
+    }
+
     const role = await prisma.laundryRole.update({
       where: { id },
       data: {
@@ -43,6 +47,10 @@ export async function DELETE(
     const existing = await prisma.laundryRole.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: "Laundry role not found" }, { status: 404 })
+    }
+
+    if (existing.isSystem) {
+      return NextResponse.json({ error: "Cannot delete a system role" }, { status: 403 })
     }
 
     await prisma.laundryRole.delete({ where: { id } })

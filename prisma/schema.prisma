@@ -3330,24 +3330,27 @@ model BillingAudit {
 // ============================================================================
 
 model LaundryBusiness {
-  id                    String   @id @default(cuid())
-  businessCode          String   @unique
-  businessName          String
-  legalName             String?
-  ownerName             String
-  mobile                String
-  email                 String?
-  gstNumber             String?
-  logo                  String?
-  favicon               String?
-  address               String?
-  plan                  String   @default("STANDARD")
-  status                String   @default("ONBOARDING")
-  transportEnabled      Boolean  @default(true)
-  defaultServiceRadius  Float?
-  defaultDailyCapacity  Float?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  businessCode            String   @unique
+  businessName            String
+  legalName               String?
+  ownerName               String
+  mobile                  String
+  email                   String?
+  gstNumber               String?
+  logo                    String?
+  favicon                 String?
+  address                 String?
+  plan                    String   @default("STANDARD")
+  status                  String   @default("ONBOARDING")
+  transportEnabled        Boolean  @default(true)
+  barcodeTaggingEnabled   Boolean  @default(true)
+  ironingEnabled          Boolean  @default(true)
+  deliveryEnabled         Boolean  @default(true)
+  defaultServiceRadius    Float?
+  defaultDailyCapacity    Float?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   stores         LaundryStore[]
   features       LaundryBusinessFeature[]
@@ -3417,6 +3420,7 @@ model LaundryWorkflowStage {
   description String?
   isDefault   Boolean  @default(false)
   isActive    Boolean  @default(true)
+  isSystem    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -3446,13 +3450,14 @@ model LaundryWorkflowConfiguration {
 }
 
 model LaundryRole {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
   description String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive    Boolean  @default(true)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   permissions LaundryStagePermission[]
   assignments LaundryUserAssignment[]
