@@ -188,7 +188,7 @@ const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/la
 const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
-const LaundryWorkspaceConfig = dynamic(() => import("@/components/admin/laundry/laundry-business-config").then(m => ({ default: m.LaundryBusinessConfig })), { loading: () => <PageLoader /> })
+const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
 
 // ── HRMS pages (lazy) ─────────────────────────────────────────────────────
 const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
@@ -527,7 +527,7 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "stores": return <LaundryStoresWorkspace businessId={currentBusinessId} />
       case "processing-centers": return <LaundryProcessingCentersView />
       case "reports": return <LaundryReportsView />
-      case "settings": return <LaundryWorkspaceConfig businessId={currentBusinessId} />
+      case "settings": return <LaundryWorkspaceSettings businessId={currentBusinessId} />
       default: return <LaundryDashboard />
     }
   }

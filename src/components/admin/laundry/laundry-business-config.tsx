@@ -14,7 +14,7 @@ interface LaundryBusiness {
   transportEnabled: boolean
   barcodeTaggingEnabled: boolean
   ironingEnabled: boolean
-  deliveryEnabled: boolean
+  homeDeliveryEnabled: boolean
   defaultServiceRadius: number | null
   defaultDailyCapacity: number | null
   plan: string
@@ -28,7 +28,7 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
   const [transportEnabled, setTransportEnabled] = useState(true)
   const [barcodeTaggingEnabled, setBarcodeTaggingEnabled] = useState(true)
   const [ironingEnabled, setIroningEnabled] = useState(true)
-  const [deliveryEnabled, setDeliveryEnabled] = useState(true)
+  const [homeDeliveryEnabled, setHomeDeliveryEnabled] = useState(true)
   const [defaultServiceRadius, setDefaultServiceRadius] = useState("")
   const [defaultDailyCapacity, setDefaultDailyCapacity] = useState("")
 
@@ -41,7 +41,7 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
           setTransportEnabled(d.transportEnabled)
           setBarcodeTaggingEnabled(d.barcodeTaggingEnabled ?? true)
           setIroningEnabled(d.ironingEnabled ?? true)
-          setDeliveryEnabled(d.deliveryEnabled ?? true)
+          setHomeDeliveryEnabled(d.homeDeliveryEnabled ?? true)
           setDefaultServiceRadius(d.defaultServiceRadius?.toString() || "")
           setDefaultDailyCapacity(d.defaultDailyCapacity?.toString() || "")
         }
@@ -60,7 +60,7 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
           transportEnabled,
           barcodeTaggingEnabled,
           ironingEnabled,
-          deliveryEnabled,
+          homeDeliveryEnabled,
           defaultServiceRadius,
           defaultDailyCapacity,
         }),
@@ -127,7 +127,7 @@ export function LaundryBusinessConfig({ businessId }: { businessId: string }) {
                 Enable delivery stages for customer home delivery.
               </p>
             </div>
-            <Switch checked={deliveryEnabled} onCheckedChange={setDeliveryEnabled} />
+            <Switch checked={homeDeliveryEnabled} onCheckedChange={setHomeDeliveryEnabled} />
           </div>
           {!transportEnabled && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">

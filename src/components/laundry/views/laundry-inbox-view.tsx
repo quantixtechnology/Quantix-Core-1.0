@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Inbox, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useAuthStore } from "@/stores/auth-store"
+import { useLaundryLicensing } from "@/hooks/use-laundry-licensing"
 
 type StageWithDetails = {
   id: string
@@ -18,10 +19,34 @@ type StageWithDetails = {
   role?: { code: string; name: string } | null
 }
 
+const FEATURE_STAGE_MAP: Record<string, string[]> = {
+  transportEnabled: ["IN_TRANSIT_TO_PROCESSING", "IN_TRANSIT_TO_STORE"],
+  barcodeTaggingEnabled: ["BARCODE_TAGGING"],
+  ironingEnabled: ["IRONING"],
+  homeDeliveryEnabled: ["READY_FOR_DELIVERY", "DELIVERED"],
+}
+
 export function LaundryInboxView() {
   const { currentBusinessId } = useAuthStore()
-  const [stages, setStages] = useState<StageWithDetails[]>([])
+  const { isEnabled } = useLaundryLicensing(currentBusinessId)
+  const [rawStages, setRawStages] = useState<StageWithDetails[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Compute hidden stage codes from licensing
+  const hiddenCodes = useMemo(() => {
+    const codes = new Set<string>()
+    for (const [feature, stageCodes] of Object.entries(FEATURE_STAGE_MAP)) {
+      if (!isEnabled(feature)) {
+        for (const code of stageCodes) codes.add(code)
+      }
+    }
+    return codes
+  }, [isEnabled])
+
+  const stages = useMemo(() =>
+    rawStages.filter(s => !hiddenCodes.has(s.code)),
+    [rawStages, hiddenCodes]
+  )
 
   useEffect(() => {
     async function load() {
@@ -30,7 +55,7 @@ export function LaundryInboxView() {
         const res = await fetch(`/api/laundry/workflow-configurations/business/${currentBusinessId}`)
         const data = await res.json()
         if (Array.isArray(data)) {
-          setStages(
+          setRawStages(
             data
               .filter((s: { enabled: boolean }) => s.enabled)
               .map((s: { stage: StageWithDetails; configuration: { responsibleRole?: { code: string; name: string } | null; responsibleDepartment?: { code: string; name: string } | null } | null }) => ({
@@ -41,7 +66,7 @@ export function LaundryInboxView() {
           )
         }
       } catch {
-        setStages([])
+        setRawStages([])
       } finally {
         setLoading(false)
       }

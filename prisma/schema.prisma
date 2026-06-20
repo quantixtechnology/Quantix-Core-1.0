@@ -3343,17 +3343,25 @@ model LaundryBusiness {
   address                 String?
   plan                    String   @default("STANDARD")
   status                  String   @default("ONBOARDING")
-  transportEnabled          Boolean  @default(true)
-  barcodeTaggingEnabled     Boolean  @default(true)
-  ironingEnabled            Boolean  @default(true)
-  deliveryEnabled           Boolean  @default(true)
-  photoAuditEnabled         Boolean  @default(false)
-  preServicePayment         Boolean  @default(false)
-  postServicePayment        Boolean  @default(false)
-  qrOrderLabels             Boolean  @default(false)
-  barcodeGarmentTracking    Boolean  @default(false)
-  defaultServiceRadius      Float?
-  defaultDailyCapacity      Float?
+  transportEnabled           Boolean  @default(true)
+  barcodeTaggingEnabled      Boolean  @default(true)
+  ironingEnabled             Boolean  @default(true)
+  homeDeliveryEnabled        Boolean  @default(true)
+  photoAuditEnabled          Boolean  @default(false)
+  preServicePayment          Boolean  @default(false)
+  postServicePayment         Boolean  @default(false)
+  qrOrderLabels              Boolean  @default(false)
+  barcodeGarmentTracking     Boolean  @default(false)
+  multiStoreEnabled          Boolean  @default(false)
+  multiProcessingEnabled     Boolean  @default(false)
+  employeeManagementEnabled  Boolean  @default(false)
+  membershipEnabled          Boolean  @default(false)
+  loyaltyEnabled             Boolean  @default(false)
+  whatsappIntegrationEnabled Boolean  @default(false)
+  smsIntegrationEnabled      Boolean  @default(false)
+  advancedReportsEnabled     Boolean  @default(false)
+  defaultServiceRadius       Float?
+  defaultDailyCapacity       Float?
   platformBusinessId        String?  @unique
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt

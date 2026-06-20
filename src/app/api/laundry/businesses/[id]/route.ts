@@ -26,8 +26,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const body = await request.json()
     const {
       businessName, legalName, ownerName, mobile, email, gstNumber, logo, favicon, address,
-      plan, status, transportEnabled, barcodeTaggingEnabled, ironingEnabled, deliveryEnabled,
-      defaultServiceRadius, defaultDailyCapacity,
+       plan, status, transportEnabled, barcodeTaggingEnabled, ironingEnabled, homeDeliveryEnabled,
+       multiStoreEnabled, multiProcessingEnabled, employeeManagementEnabled,
+       membershipEnabled, loyaltyEnabled, whatsappIntegrationEnabled, smsIntegrationEnabled, advancedReportsEnabled,
+       photoAuditEnabled, preServicePayment, postServicePayment, qrOrderLabels, barcodeGarmentTracking,
+       defaultServiceRadius, defaultDailyCapacity,
     } = body
 
     const business = await prisma.laundryBusiness.update({
@@ -47,7 +50,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(transportEnabled !== undefined && { transportEnabled }),
         ...(barcodeTaggingEnabled !== undefined && { barcodeTaggingEnabled }),
         ...(ironingEnabled !== undefined && { ironingEnabled }),
-        ...(deliveryEnabled !== undefined && { deliveryEnabled }),
+        ...(homeDeliveryEnabled !== undefined && { homeDeliveryEnabled }),
+        ...(multiStoreEnabled !== undefined && { multiStoreEnabled }),
+        ...(multiProcessingEnabled !== undefined && { multiProcessingEnabled }),
+        ...(employeeManagementEnabled !== undefined && { employeeManagementEnabled }),
+        ...(membershipEnabled !== undefined && { membershipEnabled }),
+        ...(loyaltyEnabled !== undefined && { loyaltyEnabled }),
+        ...(whatsappIntegrationEnabled !== undefined && { whatsappIntegrationEnabled }),
+        ...(smsIntegrationEnabled !== undefined && { smsIntegrationEnabled }),
+        ...(advancedReportsEnabled !== undefined && { advancedReportsEnabled }),
+        ...(photoAuditEnabled !== undefined && { photoAuditEnabled }),
+        ...(preServicePayment !== undefined && { preServicePayment }),
+        ...(postServicePayment !== undefined && { postServicePayment }),
+        ...(qrOrderLabels !== undefined && { qrOrderLabels }),
+        ...(barcodeGarmentTracking !== undefined && { barcodeGarmentTracking }),
         ...(defaultServiceRadius !== undefined && { defaultServiceRadius: defaultServiceRadius ? parseFloat(defaultServiceRadius) : null }),
         ...(defaultDailyCapacity !== undefined && { defaultDailyCapacity: defaultDailyCapacity ? parseFloat(defaultDailyCapacity) : null }),
       },

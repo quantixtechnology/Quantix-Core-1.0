@@ -10,9 +10,11 @@ import {
 } from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useEffect } from "react"
 import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
+import { useLaundryLicensing } from "@/hooks/use-laundry-licensing"
 import {
   LayoutDashboard, Inbox, ShoppingBag, Users, Store,
   Factory, BarChart3, Settings, ChevronLeft, Sparkles,
@@ -23,6 +25,7 @@ type NavItem = {
   key: LaundryBusinessPage
   label: string
   icon: React.ComponentType<{ className?: string }>
+  feature?: string
 }
 
 const laundryNavItems: NavItem[] = [
@@ -30,8 +33,8 @@ const laundryNavItems: NavItem[] = [
   { key: "inbox",              label: "My Inbox",           icon: Inbox },
   { key: "orders",             label: "Orders",             icon: ShoppingBag },
   { key: "customers",          label: "Customers",          icon: Users },
-  { key: "stores",             label: "Stores",             icon: Store },
-  { key: "processing-centers", label: "Processing Centers", icon: Factory },
+  { key: "stores",             label: "Stores",             icon: Store,               feature: "multiStoreEnabled" },
+  { key: "processing-centers", label: "Processing Centers", icon: Factory,             feature: "multiProcessingEnabled" },
   { key: "reports",            label: "Reports",            icon: BarChart3 },
   { key: "settings",           label: "Settings",           icon: Settings },
 ]
@@ -43,8 +46,9 @@ interface LaundrySidebarProps {
 
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
   const { laundryPage, setLaundryPage } = useAdminStore()
-  const { user } = useAuthStore()
+  const { user, currentBusinessId } = useAuthStore()
   const { isMobile } = useResponsive()
+  const { isEnabled } = useLaundryLicensing(currentBusinessId)
 
   const userInitials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
@@ -62,6 +66,16 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     "--sidebar-ring": "#0284C7",
     "--sidebar-heading": "rgba(56,189,248,0.55)",
   } as React.CSSProperties
+
+  // Redirect to dashboard if current page is hidden by licensing
+  useEffect(() => {
+    const hiddenPage = laundryNavItems.find(
+      item => item.key === laundryPage && item.feature && !isEnabled(item.feature)
+    )
+    if (hiddenPage) {
+      setLaundryPage("dashboard")
+    }
+  }, [laundryPage, isEnabled, setLaundryPage])
 
   const handleNavigate = (page: LaundryBusinessPage) => {
     setLaundryPage(page)
@@ -91,7 +105,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
-              {laundryNavItems.map((item) => {
+              {laundryNavItems.filter(item => !item.feature || isEnabled(item.feature)).map((item) => {
                 const isActive = laundryPage === item.key
                 return (
                   <SidebarMenuItem key={item.key}>
@@ -149,7 +163,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
           </SheetHeader>
           <ScrollArea className="flex-1 px-1 py-3">
             <div className="space-y-0.5 px-2">
-              {laundryNavItems.map((item) => {
+              {laundryNavItems.filter(item => !item.feature || isEnabled(item.feature)).map((item) => {
                 const isActive = laundryPage === item.key
                 return (
                   <button

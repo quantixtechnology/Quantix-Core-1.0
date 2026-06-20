@@ -199,7 +199,27 @@ async function ensureBusinessConfigs(stageMap: Map<string, string>) {
 }
 
 async function main() {
-  console.log("Seeding Laundry OS Master Data...\n")
+  // Set default licensing fields on existing businesses
+  const allBizs = await prisma.laundryBusiness.findMany()
+  for (const biz of allBizs) {
+    await prisma.laundryBusiness.update({
+      where: { id: biz.id },
+      data: {
+        homeDeliveryEnabled: true,
+        multiStoreEnabled: false,
+        multiProcessingEnabled: false,
+        employeeManagementEnabled: false,
+        membershipEnabled: false,
+        loyaltyEnabled: false,
+        whatsappIntegrationEnabled: false,
+        smsIntegrationEnabled: false,
+        advancedReportsEnabled: false,
+      },
+    })
+  }
+  console.log(`Licensing defaults set for ${allBizs.length} businesses`)
+
+  console.log("\nSeeding Laundry OS Master Data...\n")
 
   console.log("1. System Stages")
   const stageMap = await upsertStages()
