@@ -84,6 +84,9 @@ export type AdminPage =
   | "account-billing"
   | "laundry-os"
   | "laundry-businesses"
+  | "laundry-workflow-config"
+  | "laundry-roles"
+  | "laundry-stage-permissions"
 
 export type BusinessPage =
   | "dashboard"

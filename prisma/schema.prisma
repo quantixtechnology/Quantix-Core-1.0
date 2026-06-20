@@ -3330,23 +3330,30 @@ model BillingAudit {
 // ============================================================================
 
 model LaundryBusiness {
-  id             String   @id @default(cuid())
-  businessCode   String   @unique
-  businessName   String
-  legalName      String?
-  ownerName      String
-  mobile         String
-  email          String?
-  gstNumber      String?
-  logo           String?
-  favicon        String?
-  address        String?
-  plan           String   @default("STANDARD")
-  status         String   @default("ONBOARDING")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  businessCode          String   @unique
+  businessName          String
+  legalName             String?
+  ownerName             String
+  mobile                String
+  email                 String?
+  gstNumber             String?
+  logo                  String?
+  favicon               String?
+  address               String?
+  plan                  String   @default("STANDARD")
+  status                String   @default("ONBOARDING")
+  transportEnabled      Boolean  @default(true)
+  defaultServiceRadius  Float?
+  defaultDailyCapacity  Float?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   stores         LaundryStore[]
+  features       LaundryBusinessFeature[]
+  configurations LaundryWorkflowConfiguration[]
+  departments    LaundryDepartment[]
+  assignments    LaundryUserAssignment[]
 
   @@index([businessCode])
   @@index([status])
@@ -3358,20 +3365,178 @@ model LaundryStore {
   storeCode           String   @unique
   laundryBusinessId   String
   storeName           String
-  storeType           String   @default("STORE")
-  contactPerson       String?
+  storeType           String   @default("RETAIL_STORE")
+  managerName         String?
   mobile              String?
   email               String?
   address             String?
+  city                String?
+  state               String?
+  pincode             String?
   latitude            Float?
   longitude           Float?
   serviceRadiusKm     Float?
+  dailyCapacityKg     Float?
+  isActive            Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
   laundryBusiness     LaundryBusiness @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
+  departments         LaundryDepartment[]
+  assignments         LaundryUserAssignment[]
 
   @@index([laundryBusinessId])
   @@index([storeCode])
   @@index([storeType])
+}
+
+model LaundryBusinessFeature {
+  id             String   @id @default(cuid())
+  businessId     String
+  featureKey     String
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  business       LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+   @@unique([businessId, featureKey])
+   @@index([businessId])
+}
+
+// ============================================================================
+// LAUNDRY OS — Workflow Engine (Phase 4)
+// Fully isolated, no relationships with existing Quantix Core entities.
+// ============================================================================
+
+model LaundryWorkflowStage {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  sequence    Int
+  description String?
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  configurations LaundryWorkflowConfiguration[]
+  permissions    LaundryStagePermission[]
+  timestamps     LaundryStageTimestamp[]
+
+  @@index([code])
+  @@index([sequence])
+}
+
+model LaundryWorkflowConfiguration {
+  id        String   @id @default(cuid())
+  businessId String
+  stageId   String
+  enabled   Boolean  @default(true)
+  sequence  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stage LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, stageId])
+  @@index([businessId])
+  @@index([stageId])
+}
+
+model LaundryRole {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  description String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  permissions LaundryStagePermission[]
+  assignments LaundryUserAssignment[]
+
+  @@index([code])
+}
+
+model LaundryStagePermission {
+  id        String   @id @default(cuid())
+  stageId   String
+  roleId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stage LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  role  LaundryRole          @relation(fields: [roleId],  references: [id], onDelete: Cascade)
+
+  @@unique([stageId, roleId])
+  @@index([stageId])
+  @@index([roleId])
+}
+
+model LaundryStageTimestamp {
+  id        String    @id @default(cuid())
+  orderId   String
+  stageId   String
+  enteredAt DateTime?
+  exitedAt  DateTime?
+  movedBy   String?
+  duration  Int?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  stage LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([stageId])
+  @@index([orderId, stageId])
+}
+
+// ============================================================================
+// LAUNDRY OS — Operational Structure (Phase 5)
+// Fully isolated, no relationships with existing Quantix Core entities.
+// ============================================================================
+
+model LaundryDepartment {
+  id         String   @id @default(cuid())
+  businessId String
+  storeId    String?
+  code       String
+  name       String
+  enabled    Boolean  @default(true)
+  sequence   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business    LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store       LaundryStore?   @relation(fields: [storeId],   references: [id], onDelete: SetNull)
+  assignments LaundryUserAssignment[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([storeId])
+}
+
+model LaundryUserAssignment {
+  id           String   @id @default(cuid())
+  businessId   String
+  storeId      String?
+  departmentId String?
+  roleId       String
+  userId       String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business   LaundryBusiness   @relation(fields: [businessId],   references: [id], onDelete: Cascade)
+  store      LaundryStore?     @relation(fields: [storeId],      references: [id], onDelete: SetNull)
+  department LaundryDepartment? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  role       LaundryRole       @relation(fields: [roleId],       references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([storeId])
+  @@index([departmentId])
+  @@index([roleId])
 }

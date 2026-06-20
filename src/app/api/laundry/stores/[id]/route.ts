@@ -7,20 +7,25 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await request.json()
-    const { storeName, storeType, contactPerson, mobile, email, address, latitude, longitude, serviceRadiusKm } = body
+    const { storeName, storeType, managerName, mobile, email, address, city, state, pincode, latitude, longitude, serviceRadiusKm, dailyCapacityKg, isActive } = body
 
     const store = await prisma.laundryStore.update({
       where: { id },
       data: {
         ...(storeName !== undefined && { storeName }),
         ...(storeType !== undefined && { storeType }),
-        ...(contactPerson !== undefined && { contactPerson: contactPerson || null }),
+        ...(managerName !== undefined && { managerName: managerName || null }),
         ...(mobile !== undefined && { mobile: mobile || null }),
         ...(email !== undefined && { email: email || null }),
         ...(address !== undefined && { address: address || null }),
+        ...(city !== undefined && { city: city || null }),
+        ...(state !== undefined && { state: state || null }),
+        ...(pincode !== undefined && { pincode: pincode || null }),
         ...(latitude !== undefined && { latitude: latitude ? parseFloat(latitude) : null }),
         ...(longitude !== undefined && { longitude: longitude ? parseFloat(longitude) : null }),
         ...(serviceRadiusKm !== undefined && { serviceRadiusKm: serviceRadiusKm ? parseFloat(serviceRadiusKm) : null }),
+        ...(dailyCapacityKg !== undefined && { dailyCapacityKg: dailyCapacityKg ? parseFloat(dailyCapacityKg) : null }),
+        ...(isActive !== undefined && { isActive }),
       },
     })
 

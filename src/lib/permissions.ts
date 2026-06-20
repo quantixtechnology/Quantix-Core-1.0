@@ -70,6 +70,7 @@ export type Permission =
   | "revenue_ops.commission_processing:view" | "revenue_ops.commission_processing:approve" | "revenue_ops.commission_processing:export" | "revenue_ops.commission_processing:process" | "revenue_ops.commission_processing:release"
   // ── Laundry OS ──────────────────────────────────────────────────────────
   | "laundry_os:view"
+  | "laundry_os:configure"
   // ── Brand Studio ─────────────────────────────────────────────────────────
   | "brand_studio:view" | "brand_studio:edit" | "brand_studio:configure"
   // ── Roles & Permissions ───────────────────────────────────────────────────
@@ -198,7 +199,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "revenue_ops.renewal_ownership:view", "revenue_ops.renewal_ownership:edit", "revenue_ops.renewal_ownership:assign",
     "revenue_ops.addon_ownership:view", "revenue_ops.addon_ownership:edit", "revenue_ops.addon_ownership:assign",
     "revenue_ops.commission_processing:view", "revenue_ops.commission_processing:approve", "revenue_ops.commission_processing:export", "revenue_ops.commission_processing:process", "revenue_ops.commission_processing:release",
-    "laundry_os:view",
+    "laundry_os:view", "laundry_os:configure",
     "brand_studio:view", "brand_studio:edit", "brand_studio:configure",
     "roles_permissions:edit", "roles_permissions:configure",
     "website:view", "website:create", "website:edit", "website:delete", "website:configure",
@@ -661,6 +662,9 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "revenue_ops.commission_processing:export":  "Export Commission Reports",
   "revenue_ops.commission_processing:process": "Process Commission Payroll",
   "revenue_ops.commission_processing:release": "Release Commission Payouts",
+  // Laundry OS
+  "laundry_os:view":                       "View Laundry OS",
+  "laundry_os:configure":                  "Configure Laundry Workflow",
   // Brand Studio
   "brand_studio:view":                     "View Brand Studio",
   "brand_studio:edit":                     "Edit Brand Studio Settings",
@@ -735,6 +739,9 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "platform-users":         "users:view",
   "laundry-os":             "laundry_os:view",
   "laundry-businesses":     "laundry_os:view",
+  "laundry-workflow-config":    "laundry_os:configure",
+  "laundry-roles":              "laundry_os:configure",
+  "laundry-stage-permissions":  "laundry_os:configure",
   // Mobile & Apps
   "mobile-apps":            "platform:manage_deployments",
   // Deployment & Ops

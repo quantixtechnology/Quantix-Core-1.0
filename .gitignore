@@ -59,3 +59,4 @@ prompt
 server.log
 # Skills directory
 /skills/public/manifest.json
+apps/customer_app/.dart_tool/

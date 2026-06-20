@@ -10,26 +10,32 @@ import { Badge } from "@/components/ui/badge"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 
 type Store = {
   id: string
   storeCode: string
   storeName: string
   storeType: string
-  contactPerson: string | null
+  managerName: string | null
   mobile: string | null
   email: string | null
   address: string | null
+  city: string | null
+  state: string | null
+  pincode: string | null
   latitude: number | null
   longitude: number | null
   serviceRadiusKm: number | null
+  dailyCapacityKg: number | null
+  isActive: boolean
 }
 
 export function LaundryStoresView({ businessId }: { businessId: string }) {
@@ -39,14 +45,19 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
   const [editingStore, setEditingStore] = useState<Store | null>(null)
   const [form, setForm] = useState({
     storeName: "",
-    storeType: "STORE",
-    contactPerson: "",
+    storeType: "RETAIL_STORE",
+    managerName: "",
     mobile: "",
     email: "",
     address: "",
+    city: "",
+    state: "",
+    pincode: "",
     latitude: "",
     longitude: "",
     serviceRadiusKm: "",
+    dailyCapacityKg: "",
+    isActive: true,
   })
 
   const fetchStores = async () => {
@@ -62,7 +73,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
 
   const openCreate = () => {
     setEditingStore(null)
-    setForm({ storeName: "", storeType: "STORE", contactPerson: "", mobile: "", email: "", address: "", latitude: "", longitude: "", serviceRadiusKm: "" })
+    setForm({ storeName: "", storeType: "RETAIL_STORE", managerName: "", mobile: "", email: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "", serviceRadiusKm: "", dailyCapacityKg: "", isActive: true })
     setDialogOpen(true)
   }
 
@@ -71,13 +82,18 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
     setForm({
       storeName: store.storeName,
       storeType: store.storeType,
-      contactPerson: store.contactPerson || "",
+      managerName: store.managerName || "",
       mobile: store.mobile || "",
       email: store.email || "",
       address: store.address || "",
+      city: store.city || "",
+      state: store.state || "",
+      pincode: store.pincode || "",
       latitude: store.latitude?.toString() || "",
       longitude: store.longitude?.toString() || "",
       serviceRadiusKm: store.serviceRadiusKm?.toString() || "",
+      dailyCapacityKg: store.dailyCapacityKg?.toString() || "",
+      isActive: store.isActive,
     })
     setDialogOpen(true)
   }
@@ -101,6 +117,15 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
     if (res.ok) fetchStores()
   }
 
+  const handleToggleActive = async (store: Store) => {
+    await fetch(`/api/laundry/stores/${store.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !store.isActive }),
+    })
+    fetchStores()
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -116,29 +141,35 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                 <TableHead>Code</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Contact</TableHead>
+                <TableHead>Manager</TableHead>
                 <TableHead>Mobile</TableHead>
                 <TableHead>Radius</TableHead>
+                <TableHead>Capacity</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">Loading...</TableCell></TableRow>
               ) : stores.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-gray-400">No stores yet</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-gray-400">No stores yet</TableCell></TableRow>
               ) : stores.map(s => (
                 <TableRow key={s.id}>
                   <TableCell className="font-mono text-xs">{s.storeCode}</TableCell>
                   <TableCell className="font-medium">{s.storeName}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={s.storeType === "PROCESSING_CENTER" ? "border-amber-300 text-amber-700" : ""}>
-                      {s.storeType === "PROCESSING_CENTER" ? "Processing Center" : "Store"}
+                    <Badge variant="outline" className={s.storeType === "PROCESSING_CENTER" ? "border-amber-300 text-amber-700" : "border-blue-300 text-blue-700"}>
+                      {s.storeType === "PROCESSING_CENTER" ? "Processing Center" : "Retail Store"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{s.contactPerson || "—"}</TableCell>
+                  <TableCell>{s.managerName || "—"}</TableCell>
                   <TableCell>{s.mobile || "—"}</TableCell>
                   <TableCell>{s.serviceRadiusKm ? `${s.serviceRadiusKm} km` : "—"}</TableCell>
+                  <TableCell>{s.dailyCapacityKg ? `${s.dailyCapacityKg} kg` : "—"}</TableCell>
+                  <TableCell>
+                    <Switch checked={s.isActive} onCheckedChange={() => handleToggleActive(s)} />
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
@@ -151,7 +182,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingStore ? "Edit Store" : "Add Store"}</DialogTitle>
             <DialogDescription>Configure store details for this laundry business.</DialogDescription>
@@ -161,19 +192,25 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
               <Label>Store Name *</Label>
               <Input value={form.storeName} onChange={e => setForm(p => ({ ...p, storeName: e.target.value }))} placeholder="Main Store" />
             </div>
-            <div className="col-span-2">
+            <div>
               <Label>Store Type</Label>
               <Select value={form.storeType} onValueChange={v => setForm(p => ({ ...p, storeType: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="STORE">Store</SelectItem>
+                  <SelectItem value="RETAIL_STORE">Retail Store</SelectItem>
                   <SelectItem value="PROCESSING_CENTER">Processing Center</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-end">
+              <div className="flex items-center gap-2 pb-1.5">
+                <Switch checked={form.isActive} onCheckedChange={v => setForm(p => ({ ...p, isActive: v }))} />
+                <Label className="text-sm">Active</Label>
+              </div>
+            </div>
             <div>
-              <Label>Contact Person</Label>
-              <Input value={form.contactPerson} onChange={e => setForm(p => ({ ...p, contactPerson: e.target.value }))} placeholder="Store Manager" />
+              <Label>Manager Name</Label>
+              <Input value={form.managerName} onChange={e => setForm(p => ({ ...p, managerName: e.target.value }))} placeholder="Store Manager" />
             </div>
             <div>
               <Label>Mobile</Label>
@@ -188,6 +225,18 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
               <Textarea value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Store address" />
             </div>
             <div>
+              <Label>City</Label>
+              <Input value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} placeholder="Mumbai" />
+            </div>
+            <div>
+              <Label>State</Label>
+              <Input value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))} placeholder="Maharashtra" />
+            </div>
+            <div>
+              <Label>Pincode</Label>
+              <Input value={form.pincode} onChange={e => setForm(p => ({ ...p, pincode: e.target.value }))} placeholder="400001" />
+            </div>
+            <div>
               <Label>Latitude</Label>
               <Input value={form.latitude} onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))} placeholder="28.6139" />
             </div>
@@ -195,9 +244,13 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
               <Label>Longitude</Label>
               <Input value={form.longitude} onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))} placeholder="77.2090" />
             </div>
-            <div className="col-span-2">
+            <div>
               <Label>Service Radius (KM)</Label>
               <Input value={form.serviceRadiusKm} onChange={e => setForm(p => ({ ...p, serviceRadiusKm: e.target.value }))} placeholder="5" />
+            </div>
+            <div>
+              <Label>Daily Capacity (KG)</Label>
+              <Input value={form.dailyCapacityKg} onChange={e => setForm(p => ({ ...p, dailyCapacityKg: e.target.value }))} placeholder="500" />
             </div>
           </div>
           <DialogFooter>

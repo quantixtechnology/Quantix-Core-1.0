@@ -1,10 +1,12 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Search, Plus, Sparkles, Building2, MapPin, Store, CreditCard, ChevronLeft } from "lucide-react"
+import { Search, Plus, Sparkles, Building2, MapPin, Store, CreditCard, ChevronLeft, Pencil, Save, X, Users, Route, Settings2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
@@ -14,10 +16,14 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAdminStore } from "@/stores/admin-store"
+import { useToast } from "@/hooks/use-toast"
 import { LaundryBusinessCreate } from "./laundry-business-create"
 import { LaundryStoresView } from "./laundry-stores-view"
 import { LaundryServiceArea } from "./laundry-service-area"
 import { LaundrySubscription } from "./laundry-subscription"
+import { LaundryDepartmentsView } from "./laundry-departments-view"
+import { LaundryAssignmentsView } from "./laundry-assignments-view"
+import { LaundryBusinessConfig } from "./laundry-business-config"
 
 type LaundryBusiness = {
   id: string
@@ -177,14 +183,51 @@ function BusinessListView({ onSelect }: { onSelect: (id: string) => void }) {
 function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: () => void }) {
   const [business, setBusiness] = useState<LaundryBusiness | null>(null)
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const { toast } = useToast()
 
-  useEffect(() => {
+  const [editForm, setEditForm] = useState({
+    businessName: "", legalName: "", ownerName: "", mobile: "", email: "",
+    gstNumber: "", address: "", plan: "", status: "",
+  })
+
+  const fetchBusiness = useCallback(async () => {
     setLoading(true)
-    fetch(`/api/laundry/businesses/${businessId}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { setBusiness(d); setLoading(false) })
-      .catch(() => setLoading(false))
+    try {
+      const res = await fetch(`/api/laundry/businesses/${businessId}`)
+      if (res.ok) {
+        const d = await res.json()
+        setBusiness(d)
+        setEditForm({
+          businessName: d.businessName, legalName: d.legalName || "", ownerName: d.ownerName,
+          mobile: d.mobile, email: d.email || "", gstNumber: d.gstNumber || "",
+          address: d.address || "", plan: d.plan, status: d.status,
+        })
+      }
+    } catch { /* ignore */ }
+    finally { setLoading(false) }
   }, [businessId])
+
+  useEffect(() => { fetchBusiness() }, [fetchBusiness])
+
+  const handleSaveOverview = async () => {
+    try {
+      const res = await fetch(`/api/laundry/businesses/${businessId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      })
+      if (res.ok) {
+        toast({ title: "Saved", description: "Business details updated" })
+        setEditing(false)
+        fetchBusiness()
+      } else {
+        toast({ title: "Error", description: "Failed to update", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to update", variant: "destructive" })
+    }
+  }
 
   if (loading) return <div className="py-8 text-center text-gray-400">Loading...</div>
   if (!business) return <div className="py-8 text-center text-gray-400">Business not found</div>
@@ -193,9 +236,13 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={onBack}><ChevronLeft className="h-5 w-5" /></Button>
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-100 text-sky-600">
-          <Building2 className="h-5 w-5" />
-        </div>
+        {business.logo ? (
+          <img src={business.logo} alt="" className="h-10 w-10 rounded-lg object-cover" />
+        ) : (
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-100 text-sky-600">
+            <Building2 className="h-5 w-5" />
+          </div>
+        )}
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{business.businessName}</h1>
           <p className="text-sm text-gray-500 font-mono">{business.businessCode}</p>
@@ -206,37 +253,113 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
 
       <Tabs defaultValue="overview">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="stores">Stores</TabsTrigger>
-          <TabsTrigger value="service-areas">Service Areas</TabsTrigger>
-          <TabsTrigger value="subscription">Subscription</TabsTrigger>
+          <TabsTrigger value="overview" className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Overview</TabsTrigger>
+          <TabsTrigger value="stores" className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5" /> Stores</TabsTrigger>
+          <TabsTrigger value="departments" className="flex items-center gap-1.5"><Route className="h-3.5 w-3.5" /> Departments</TabsTrigger>
+          <TabsTrigger value="assignments" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Assignments</TabsTrigger>
+          <TabsTrigger value="configuration" className="flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Configuration</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
           <Card>
-            <CardContent className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className="text-xs text-gray-500">Business Name</label><p className="font-medium">{business.businessName}</p></div>
-              <div><label className="text-xs text-gray-500">Legal Name</label><p className="font-medium">{business.legalName || "—"}</p></div>
-              <div><label className="text-xs text-gray-500">Owner Name</label><p className="font-medium">{business.ownerName}</p></div>
-              <div><label className="text-xs text-gray-500">Mobile</label><p className="font-medium">{business.mobile}</p></div>
-              <div><label className="text-xs text-gray-500">Email</label><p className="font-medium">{business.email || "—"}</p></div>
-              <div><label className="text-xs text-gray-500">GST Number</label><p className="font-medium">{business.gstNumber || "—"}</p></div>
-              <div><label className="text-xs text-gray-500">Address</label><p className="font-medium">{business.address || "—"}</p></div>
-              <div><label className="text-xs text-gray-500">Plan</label><p className="font-medium">{business.plan}</p></div>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-muted-foreground">Business Details</h3>
+                {editing ? (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setEditing(false)}><X className="h-3.5 w-3.5 mr-1" /> Cancel</Button>
+                    <Button size="sm" onClick={handleSaveOverview}><Save className="h-3.5 w-3.5 mr-1" /> Save</Button>
+                  </div>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(true)}><Pencil className="h-3.5 w-3.5 mr-1" /> Edit</Button>
+                )}
+              </div>
+              {editing ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Business Name</Label>
+                    <Input value={editForm.businessName} onChange={e => setEditForm(p => ({ ...p, businessName: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Legal Name</Label>
+                    <Input value={editForm.legalName} onChange={e => setEditForm(p => ({ ...p, legalName: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Owner Name</Label>
+                    <Input value={editForm.ownerName} onChange={e => setEditForm(p => ({ ...p, ownerName: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Mobile</Label>
+                    <Input value={editForm.mobile} onChange={e => setEditForm(p => ({ ...p, mobile: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Email</Label>
+                    <Input value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">GST Number</Label>
+                    <Input value={editForm.gstNumber} onChange={e => setEditForm(p => ({ ...p, gstNumber: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Plan</Label>
+                    <Select value={editForm.plan} onValueChange={v => setEditForm(p => ({ ...p, plan: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="STANDARD">Standard</SelectItem>
+                        <SelectItem value="PRO">Pro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Status</Label>
+                    <Select value={editForm.status} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ONBOARDING">Onboarding</SelectItem>
+                        <SelectItem value="ACTIVE">Active</SelectItem>
+                        <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Address</Label>
+                    <Textarea value={editForm.address} onChange={e => setEditForm(p => ({ ...p, address: e.target.value }))} />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label className="text-xs text-gray-500">Business Name</label><p className="font-medium">{business.businessName}</p></div>
+                  <div><label className="text-xs text-gray-500">Legal Name</label><p className="font-medium">{business.legalName || "—"}</p></div>
+                  <div><label className="text-xs text-gray-500">Owner Name</label><p className="font-medium">{business.ownerName}</p></div>
+                  <div><label className="text-xs text-gray-500">Mobile</label><p className="font-medium">{business.mobile}</p></div>
+                  <div><label className="text-xs text-gray-500">Email</label><p className="font-medium">{business.email || "—"}</p></div>
+                  <div><label className="text-xs text-gray-500">GST Number</label><p className="font-medium">{business.gstNumber || "—"}</p></div>
+                  <div><label className="text-xs text-gray-500">Address</label><p className="font-medium">{business.address || "—"}</p></div>
+                  <div><label className="text-xs text-gray-500">Plan</label><p className="font-medium">{business.plan}</p></div>
+                  <div><label className="text-xs text-gray-500">Created</label><p className="font-medium">{new Date(business.createdAt).toLocaleDateString()}</p></div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="stores" className="mt-4">
-          <LaundryStoresView businessId={businessId} />
+          <div className="space-y-4">
+            <LaundryStoresView businessId={businessId} />
+            <LaundryServiceArea businessId={businessId} />
+          </div>
         </TabsContent>
 
-        <TabsContent value="service-areas" className="mt-4">
-          <LaundryServiceArea businessId={businessId} />
+        <TabsContent value="departments" className="mt-4">
+          <LaundryDepartmentsView businessId={businessId} />
         </TabsContent>
 
-        <TabsContent value="subscription" className="mt-4">
-          <LaundrySubscription plan={business.plan} />
+        <TabsContent value="assignments" className="mt-4">
+          <LaundryAssignmentsView businessId={businessId} />
+        </TabsContent>
+
+        <TabsContent value="configuration" className="mt-4">
+          <LaundryBusinessConfig businessId={businessId} />
         </TabsContent>
       </Tabs>
     </div>

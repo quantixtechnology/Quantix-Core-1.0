@@ -24,7 +24,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await request.json()
-    const { businessName, legalName, ownerName, mobile, email, gstNumber, logo, favicon, address, plan, status } = body
+    const { businessName, legalName, ownerName, mobile, email, gstNumber, logo, favicon, address, plan, status, transportEnabled, defaultServiceRadius, defaultDailyCapacity } = body
 
     const business = await prisma.laundryBusiness.update({
       where: { id },
@@ -40,6 +40,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(address !== undefined && { address: address || null }),
         ...(plan !== undefined && { plan }),
         ...(status !== undefined && { status }),
+        ...(transportEnabled !== undefined && { transportEnabled }),
+        ...(defaultServiceRadius !== undefined && { defaultServiceRadius: defaultServiceRadius ? parseFloat(defaultServiceRadius) : null }),
+        ...(defaultDailyCapacity !== undefined && { defaultDailyCapacity: defaultDailyCapacity ? parseFloat(defaultDailyCapacity) : null }),
       },
     })
 

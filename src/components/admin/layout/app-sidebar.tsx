@@ -9,6 +9,7 @@ import {
   DatabaseZap, FileText, Archive, Package, Calculator,
   UserSquare, FileSignature, BadgeDollarSign, LayoutTemplate, SlidersHorizontal, Paperclip,
   TrendingUp, RefreshCcw, Puzzle, CheckCircle, Palette, Sparkles, Store, LayoutList,
+  Route, UserCog, Shield,
 } from "lucide-react"
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -161,8 +162,11 @@ const websiteNavItems: NavItem[] = [
 ]
 
 const laundryNavItems: NavItem[] = [
-  { key: "laundry-os",        label: "Dashboard",     icon: Sparkles },
-  { key: "laundry-businesses",label: "Businesses",    icon: LayoutList },
+  { key: "laundry-os",                label: "Dashboard",             icon: Sparkles },
+  { key: "laundry-businesses",        label: "Businesses",            icon: LayoutList },
+  { key: "laundry-workflow-config",   label: "Workflow Config",       icon: Route },
+  { key: "laundry-roles",             label: "Roles",                 icon: UserCog },
+  { key: "laundry-stage-permissions", label: "Stage Permissions",     icon: Shield },
 ]
 
 function CollapsibleSection({
