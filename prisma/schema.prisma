@@ -3354,6 +3354,7 @@ model LaundryBusiness {
   barcodeGarmentTracking    Boolean  @default(false)
   defaultServiceRadius      Float?
   defaultDailyCapacity      Float?
+  platformBusinessId        String?  @unique
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -3446,6 +3447,9 @@ model LaundryWorkflowConfiguration {
   sequence             Int?
   responsibleRoleId    String?
   responsibleDepartmentId String?
+  canView              Boolean  @default(true)
+  canUpdate            Boolean  @default(false)
+  canApprove           Boolean  @default(false)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

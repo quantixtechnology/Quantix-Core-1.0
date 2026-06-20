@@ -12,7 +12,11 @@ export async function GET(
 
     const configs = await prisma.laundryWorkflowConfiguration.findMany({
       where: { businessId },
-      include: { stage: true },
+      include: {
+        stage: true,
+        responsibleRole: { select: { id: true, code: true, name: true, isSystem: true } },
+        responsibleDepartment: { select: { id: true, code: true, name: true } },
+      },
       orderBy: { createdAt: "asc" },
     })
 
@@ -45,27 +49,42 @@ export async function POST(
   try {
     const { businessId } = await params
     const body = await request.json()
-    const { stageId, enabled, sequence } = body
+    const { stageId, enabled, sequence, responsibleRoleId, responsibleDepartmentId, canView, canUpdate, canApprove } = body
 
     if (!stageId) {
       return NextResponse.json({ error: "Stage ID is required" }, { status: 400 })
     }
 
+    const updateData: Record<string, unknown> = {}
+    if (enabled !== undefined) updateData.enabled = enabled
+    if (sequence !== undefined) updateData.sequence = sequence
+    if (responsibleRoleId !== undefined) updateData.responsibleRoleId = responsibleRoleId || null
+    if (responsibleDepartmentId !== undefined) updateData.responsibleDepartmentId = responsibleDepartmentId || null
+    if (canView !== undefined) updateData.canView = canView
+    if (canUpdate !== undefined) updateData.canUpdate = canUpdate
+    if (canApprove !== undefined) updateData.canApprove = canApprove
+
     const config = await prisma.laundryWorkflowConfiguration.upsert({
       where: {
         businessId_stageId: { businessId, stageId },
       },
-      update: {
-        enabled: enabled ?? true,
-        ...(sequence !== undefined && { sequence }),
-      },
+      update: updateData,
       create: {
         businessId,
         stageId,
         enabled: enabled ?? true,
         sequence: sequence ?? null,
+        responsibleRoleId: responsibleRoleId || null,
+        responsibleDepartmentId: responsibleDepartmentId || null,
+        canView: canView ?? true,
+        canUpdate: canUpdate ?? false,
+        canApprove: canApprove ?? false,
       },
-      include: { stage: true },
+      include: {
+        stage: true,
+        responsibleRole: { select: { id: true, code: true, name: true, isSystem: true } },
+        responsibleDepartment: { select: { id: true, code: true, name: true } },
+      },
     })
 
     return NextResponse.json(config, { status: 201 })

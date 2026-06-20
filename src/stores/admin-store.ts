@@ -85,6 +85,16 @@ export type AdminPage =
   | "laundry-os"
   | "laundry-businesses"
 
+export type LaundryBusinessPage =
+  | "dashboard"
+  | "inbox"
+  | "orders"
+  | "customers"
+  | "stores"
+  | "processing-centers"
+  | "reports"
+  | "settings"
+
 export type BusinessPage =
   | "dashboard"
   | "orders"
@@ -363,6 +373,9 @@ interface AdminState {
   // ── Delivery Partner pages ──────────────────────────────────────────────
   deliveryPage: DeliveryPage
   setDeliveryPage: (page: DeliveryPage) => void
+  // ── Laundry Business Workspace pages ────────────────────────────────────
+  laundryPage: LaundryBusinessPage
+  setLaundryPage: (page: LaundryBusinessPage) => void
 
   // ── Real tenant context ─────────────────────────────────────────────────
   // The real database business ID currently being viewed/managed
@@ -490,6 +503,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   }),
   deliveryPage: "login",
   setDeliveryPage: (page) => set({ deliveryPage: page }),
+  laundryPage: "dashboard",
+  setLaundryPage: (page) => set({ laundryPage: page, searchQuery: "" }),
 
   // Real tenant context
   currentBusinessId: "",

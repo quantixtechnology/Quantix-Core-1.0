@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       include: {
         store: { select: { id: true, storeName: true, storeCode: true } },
         department: { select: { id: true, name: true, code: true } },
-        role: { select: { id: true, name: true, code: true } },
+        role: { select: { id: true, name: true, code: true, isSystem: true } },
       },
       orderBy: { createdAt: "desc" },
     })
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       include: {
         store: { select: { id: true, storeName: true, storeCode: true } },
         department: { select: { id: true, name: true, code: true } },
-        role: { select: { id: true, name: true, code: true } },
+        role: { select: { id: true, name: true, code: true, isSystem: true } },
       },
     })
 

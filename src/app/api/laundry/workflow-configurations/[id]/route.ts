@@ -10,20 +10,30 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { enabled, sequence } = body
+    const { enabled, sequence, responsibleRoleId, responsibleDepartmentId, canView, canUpdate, canApprove } = body
 
     const existing = await prisma.laundryWorkflowConfiguration.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: "Workflow configuration not found" }, { status: 404 })
     }
 
+    const updateData: Record<string, unknown> = {}
+    if (enabled !== undefined) updateData.enabled = enabled
+    if (sequence !== undefined) updateData.sequence = sequence
+    if (responsibleRoleId !== undefined) updateData.responsibleRoleId = responsibleRoleId || null
+    if (responsibleDepartmentId !== undefined) updateData.responsibleDepartmentId = responsibleDepartmentId || null
+    if (canView !== undefined) updateData.canView = canView
+    if (canUpdate !== undefined) updateData.canUpdate = canUpdate
+    if (canApprove !== undefined) updateData.canApprove = canApprove
+
     const config = await prisma.laundryWorkflowConfiguration.update({
       where: { id },
-      data: {
-        ...(enabled !== undefined && { enabled }),
-        ...(sequence !== undefined && { sequence }),
+      data: updateData,
+      include: {
+        stage: true,
+        responsibleRole: { select: { id: true, code: true, name: true, isSystem: true } },
+        responsibleDepartment: { select: { id: true, code: true, name: true } },
       },
-      include: { stage: true },
     })
 
     return NextResponse.json(config)

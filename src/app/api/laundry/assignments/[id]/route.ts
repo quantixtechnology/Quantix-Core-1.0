@@ -29,7 +29,7 @@ export async function PUT(
       include: {
         store: { select: { id: true, storeName: true, storeCode: true } },
         department: { select: { id: true, name: true, code: true } },
-        role: { select: { id: true, name: true, code: true } },
+        role: { select: { id: true, name: true, code: true, isSystem: true } },
       },
     })
 

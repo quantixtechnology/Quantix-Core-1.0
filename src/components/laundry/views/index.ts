@@ -1,0 +1,6 @@
+export { LaundryDashboard } from "./laundry-dashboard"
+export { LaundryInboxView } from "./laundry-inbox-view"
+export { LaundryOrdersView } from "./laundry-orders-view"
+export { LaundryCustomersView } from "./laundry-customers-view"
+export { LaundryProcessingCentersView } from "./laundry-processing-centers-view"
+export { LaundryReportsView } from "./laundry-reports-view"

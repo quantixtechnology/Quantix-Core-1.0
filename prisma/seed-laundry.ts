@@ -62,6 +62,27 @@ const ROLE_STAGE_PERMISSIONS: Record<string, string[]> = {
   ADMIN:                     ALL_STAGE_CODES,
 }
 
+// Stage → Department code → Role code mapping.
+// Used to set responsibleRoleId and responsibleDepartmentId on each
+// business's LaundryWorkflowConfiguration.
+const STAGE_DEPARTMENT_ROLE: Record<string, { departmentCode: string; roleCode: string }> = {
+  STORE_ORDER_CREATED:      { departmentCode: "STORE_FRONT", roleCode: "STORE_SUPERVISOR" },
+  STORE_AUDIT:              { departmentCode: "STORE_FRONT", roleCode: "STORE_SUPERVISOR" },
+  READY_FOR_PROCESSING:     { departmentCode: "STORE_FRONT", roleCode: "STORE_SUPERVISOR" },
+  IN_TRANSIT_TO_PROCESSING: { departmentCode: "STORE_FRONT", roleCode: "STORE_SUPERVISOR" },
+  PROCESSING_ENTRY_AUDIT:   { departmentCode: "PROCESSING",  roleCode: "PROCESSING_ENTRY_SUPERVISOR" },
+  BARCODE_TAGGING:          { departmentCode: "PROCESSING",  roleCode: "PROCESSING_ENTRY_SUPERVISOR" },
+  WASHING:                  { departmentCode: "PROCESSING",  roleCode: "WASHING_SUPERVISOR" },
+  DRYING:                   { departmentCode: "PROCESSING",  roleCode: "DRYING_SUPERVISOR" },
+  IRONING:                  { departmentCode: "PROCESSING",  roleCode: "IRONING_SUPERVISOR" },
+  FOLDING:                  { departmentCode: "PROCESSING",  roleCode: "PACKING_SUPERVISOR" },
+  PACKING:                  { departmentCode: "PROCESSING",  roleCode: "PACKING_SUPERVISOR" },
+  READY_FOR_STORE_DISPATCH: { departmentCode: "PROCESSING",  roleCode: "DISPATCH_SUPERVISOR" },
+  IN_TRANSIT_TO_STORE:      { departmentCode: "PROCESSING",  roleCode: "DISPATCH_SUPERVISOR" },
+  READY_FOR_DELIVERY:       { departmentCode: "DELIVERY",    roleCode: "DELIVERY_MANAGER" },
+  DELIVERED:                { departmentCode: "DELIVERY",    roleCode: "DELIVERY_MANAGER" },
+}
+
 async function upsertStages(): Promise<Map<string, string>> {
   const stageMap = new Map<string, string>()
   for (const stage of SYSTEM_STAGES) {
@@ -132,45 +153,61 @@ async function upsertStagePermissions(stageMap: Map<string, string>, roleMap: Ma
 async function ensureBusinessConfigs(stageMap: Map<string, string>) {
   const businesses = await prisma.laundryBusiness.findMany()
   for (const business of businesses) {
+    const departments = await prisma.laundryDepartment.findMany({
+      where: { businessId: business.id },
+    })
+    const deptByCode = new Map(departments.map((d) => [d.code, d.id]))
+
+    const roles = await prisma.laundryRole.findMany()
+    const roleByCode = new Map(roles.map((r) => [r.code, r.id]))
+
     for (const stage of SYSTEM_STAGES) {
       const stageId = stageMap.get(stage.code)
       if (!stageId) continue
+
+      const mapping = STAGE_DEPARTMENT_ROLE[stage.code]
+      const responsibleDepartmentId = mapping ? deptByCode.get(mapping.departmentCode) ?? null : null
+      const responsibleRoleId = mapping ? roleByCode.get(mapping.roleCode) ?? null : null
+
       await prisma.laundryWorkflowConfiguration.upsert({
         where: { businessId_stageId: { businessId: business.id, stageId } },
-        update: {},
+        update: {
+          responsibleRoleId,
+          responsibleDepartmentId,
+        },
         create: {
           businessId: business.id,
           stageId,
           enabled: true,
           sequence: stage.sequence,
+          responsibleRoleId,
+          responsibleDepartmentId,
+          canView: true,
+          canUpdate: mapping?.roleCode === "STORE_SUPERVISOR" || mapping?.roleCode === "ADMIN" || mapping?.roleCode === "STORE_MANAGER" || mapping?.roleCode === "PROCESSING_MANAGER",
+          canApprove: mapping?.roleCode === "ADMIN" || mapping?.roleCode === "STORE_MANAGER" || mapping?.roleCode === "PROCESSING_MANAGER",
         },
       })
     }
-    console.log(`  Workflow configs ensured for business: ${business.businessName}`)
+    console.log(`  Workflow configs synced for business: ${business.businessName}`)
   }
 }
 
 async function main() {
-  console.log("Seeding Laundry OS Master Data...")
-  console.log("")
+  console.log("Seeding Laundry OS Master Data...\n")
 
   console.log("1. System Stages")
   const stageMap = await upsertStages()
 
-  console.log("")
-  console.log("2. System Roles")
+  console.log("\n2. System Roles")
   const roleMap = await upsertRoles()
 
-  console.log("")
-  console.log("3. Default Stage Permissions")
+  console.log("\n3. Default Stage Permissions")
   await upsertStagePermissions(stageMap, roleMap)
 
-  console.log("")
-  console.log("4. Business Workflow Configurations")
+  console.log("\n4. Business Workflow Configurations")
   await ensureBusinessConfigs(stageMap)
 
-  console.log("")
-  console.log("Seeding complete!")
+  console.log("\nSeeding complete!")
 }
 
 main()

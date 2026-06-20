@@ -8,6 +8,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { ADMIN_NAV_PERMISSIONS } from "@/lib/permissions"
 import { AdminLayout } from "@/components/admin/layout/admin-layout"
 import { BusinessLayout } from "@/components/business/layout/business-layout"
+import { LaundryLayout } from "@/components/laundry/layout/laundry-layout"
 import { CustomerLayout } from "@/components/customer/layout/customer-layout"
 import { DeliveryLayout } from "@/components/delivery/layout/delivery-layout"
 import { useAdminStore } from "@/stores/admin-store"
@@ -180,7 +181,14 @@ const AuditLogsView = dynamic(() => import("@/components/dashboard/audit-logs-vi
 const QuantixWebsiteView = dynamic(() => import("@/components/admin/websites/quantix-website-view").then(m => ({ default: m.QuantixWebsiteView })), { loading: () => <PageLoader /> })
 const LaundryOsView = dynamic(() => import("@/components/admin/laundry/laundry-os-dashboard").then(m => ({ default: m.LaundryOsDashboard })), { loading: () => <PageLoader /> })
 const LaundryBusinessesView = dynamic(() => import("@/components/admin/laundry/laundry-businesses-view").then(m => ({ default: m.LaundryBusinessesView })), { loading: () => <PageLoader /> })
-
+const LaundryDashboard = dynamic(() => import("@/components/laundry/views/laundry-dashboard").then(m => ({ default: m.LaundryDashboard })), { loading: () => <PageLoader /> })
+const LaundryInboxView = dynamic(() => import("@/components/laundry/views/laundry-inbox-view").then(m => ({ default: m.LaundryInboxView })), { loading: () => <PageLoader /> })
+const LaundryOrdersView = dynamic(() => import("@/components/laundry/views/laundry-orders-view").then(m => ({ default: m.LaundryOrdersView })), { loading: () => <PageLoader /> })
+const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
+const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
+const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
+const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
+const LaundryWorkspaceConfig = dynamic(() => import("@/components/admin/laundry/laundry-business-config").then(m => ({ default: m.LaundryBusinessConfig })), { loading: () => <PageLoader /> })
 
 // ── HRMS pages (lazy) ─────────────────────────────────────────────────────
 const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
@@ -370,7 +378,7 @@ function AppRouter() {
 const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF"])
 
 function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string | null; deliveryEntry?: boolean }) {
-  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext } = useAdminStore()
+  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
@@ -507,6 +515,20 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "laundry-os": return <LaundryOsView />
       case "laundry-businesses": return <LaundryBusinessesView />
       default: return <WorkflowEngineView />
+    }
+  }
+
+  const renderLaundryPage = () => {
+    switch (laundryPage) {
+      case "dashboard": return <LaundryDashboard />
+      case "inbox": return <LaundryInboxView />
+      case "orders": return <LaundryOrdersView />
+      case "customers": return <LaundryCustomersView />
+      case "stores": return <LaundryStoresWorkspace businessId={currentBusinessId} />
+      case "processing-centers": return <LaundryProcessingCentersView />
+      case "reports": return <LaundryReportsView />
+      case "settings": return <LaundryWorkspaceConfig businessId={currentBusinessId} />
+      default: return <LaundryDashboard />
     }
   }
 
@@ -673,8 +695,14 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
   }
 
   if (viewMode === "business_owner") {
-    // Show nothing briefly while the guard effect redirects an unauthorised user
     if (_isHydrated && !isBusinessRole && !canImpersonate) return null
+    if (currentBusinessType === "LAUNDRY") {
+      return (
+        <LaundryLayout>
+          {renderLaundryPage()}
+        </LaundryLayout>
+      )
+    }
     return (
       <BusinessLayout>
         {renderBusinessPage()}

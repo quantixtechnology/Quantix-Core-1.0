@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma"
 
 // ─── Code Generators ────────────────────────────────────────────────────────
 // All codes use human-readable formats, NOT database IDs.
-// Format: PREFIX-YYYYMM-NNNN with zero-padded sequential numbers.
+// Sequential numbers reset per-prefix (per month for top-level entities,
+// per parent for child entities).
 // ────────────────────────────────────────────────────────────────────────────
 
 const CODES = {
@@ -10,7 +11,7 @@ const CODES = {
   STORE_PREFIX: "STR",
   PROCESSING_CENTER_PREFIX: "PC",
   ORDER_PREFIX: "ORD",
-  GARMENT_TAG_PREFIX: "GT",
+  ITEM_PREFIX: "ITM",
   TRANSPORT_BATCH_PREFIX: "TB",
 } as const
 
@@ -19,14 +20,16 @@ function getMonthPrefix(): string {
   return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`
 }
 
-async function getNextSequentialNumber(
+function padNumber(n: number, width = 4): string {
+  return String(n).padStart(width, "0")
+}
+
+// ─── Generic sequential helper ──────────────────────────────────────────────
+async function getNextSequential(
   model: string,
   codeField: string,
-  prefix: string,
+  searchPrefix: string,
 ): Promise<number> {
-  const monthPrefix = getMonthPrefix()
-  const searchPrefix = `${prefix}-${monthPrefix}-`
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const prismaModel = (prisma as any)[model]
   if (!prismaModel) throw new Error(`Prisma model "${model}" not found`)
@@ -43,55 +46,61 @@ async function getNextSequentialNumber(
   return parseInt(parts[parts.length - 1], 10) + 1
 }
 
-function padNumber(n: number, width = 4): string {
-  return String(n).padStart(width, "0")
-}
-
-// ─── Business Code: LND-202606-0001 ─────────────────────────────────────────
+// ─── Business Code: LND-YYYYMM-NNNN ─────────────────────────────────────────
+// Example: LND-202606-0001
 export async function generateBusinessCode(): Promise<string> {
-  const next = await getNextSequentialNumber("laundryBusiness", "businessCode", CODES.BUSINESS_PREFIX)
-  return `${CODES.BUSINESS_PREFIX}-${getMonthPrefix()}-${padNumber(next)}`
+  const prefix = `${CODES.BUSINESS_PREFIX}-${getMonthPrefix()}-`
+  const next = await getNextSequential("laundryBusiness", "businessCode", prefix)
+  return `${prefix}${padNumber(next)}`
 }
 
-// ─── Store Code: STR-LND-202606-0001-001 ────────────────────────────────────
+// ─── Store Code: STR-LND-YYYYMM-NNNN-NNN ────────────────────────────────────
+// Example: STR-LND-202606-0001-001
 export async function generateStoreCode(businessCode: string): Promise<string> {
-  const prefix = `${CODES.STORE_PREFIX}-${businessCode}`
-  const next = await getNextSequentialNumber("laundryStore", "storeCode", prefix)
-  return `${prefix}-${padNumber(next, 3)}`
+  const prefix = `${CODES.STORE_PREFIX}-${businessCode}-`
+  const next = await getNextSequential("laundryStore", "storeCode", prefix)
+  return `${prefix}${padNumber(next, 3)}`
 }
 
-// ─── Processing Center Code: PC-BUSINESSCODE-001 ────────────────────────────
+// ─── Processing Center Code: PC-LND-YYYYMM-NNNN-NNN ─────────────────────────
+// Example: PC-LND-202606-0001-001
 export async function generateProcessingCenterCode(businessCode: string): Promise<string> {
-  const prefix = `${CODES.PROCESSING_CENTER_PREFIX}-${businessCode}`
-  const next = await getNextSequentialNumber("laundryProcessingCenter", "centerCode", prefix)
-  return `${prefix}-${padNumber(next, 3)}`
+  const prefix = `${CODES.PROCESSING_CENTER_PREFIX}-${businessCode}-`
+  const next = await getNextSequential("laundryProcessingCenter", "centerCode", prefix)
+  return `${prefix}${padNumber(next, 3)}`
 }
 
-// ─── Order Number: ORD-BUSINESSCODE-202606-0001 ─────────────────────────────
-export async function generateOrderNumber(businessCode: string): Promise<string> {
-  const prefix = `${CODES.ORDER_PREFIX}-${businessCode}`
-  const next = await getNextSequentialNumber("laundryOrder", "orderNumber", prefix)
-  return `${prefix}-${getMonthPrefix()}-${padNumber(next)}`
+// ─── Order Number: ORD-STR-{storeCode}-NNNNNN ──────────────────────────────
+// Example: ORD-STR-LND-202606-0001-001-000001
+// Scoped per store — sequential within the store.
+export async function generateOrderNumber(storeCode: string): Promise<string> {
+  const prefix = `${CODES.ORDER_PREFIX}-${storeCode}-`
+  const next = await getNextSequential("laundryOrder", "orderNumber", prefix)
+  return `${prefix}${padNumber(next, 6)}`
 }
 
-// ─── Garment Tag Number: GT-BUSINESSCODE-202606-0001 ────────────────────────
-export async function generateGarmentTagNumber(businessCode: string): Promise<string> {
-  const prefix = `${CODES.GARMENT_TAG_PREFIX}-${businessCode}`
-  const next = await getNextSequentialNumber("laundryGarmentTag", "tagNumber", prefix)
-  return `${prefix}-${getMonthPrefix()}-${padNumber(next)}`
+// ─── Item / Garment Tag Number: ITM-{orderNumber}-NNNN ─────────────────────
+// Example: ITM-ORD-STR-LND-202606-0001-001-000001-0001
+// Scoped per order — sequential within the order.
+export async function generateItemNumber(orderNumber: string): Promise<string> {
+  const prefix = `${CODES.ITEM_PREFIX}-${orderNumber}-`
+  const next = await getNextSequential("laundryOrderItem", "itemNumber", prefix)
+  return `${prefix}${padNumber(next, 4)}`
 }
 
-// ─── Transport Batch Number: TB-BUSINESSCODE-202606-0001 ────────────────────
+// ─── Transport Batch Number: TB-LND-YYYYMM-NNNN-NNNNNN ────────────────────
+// Example: TB-LND-202606-0001-000001
+// Scoped per business.
 export async function generateTransportBatchNumber(businessCode: string): Promise<string> {
-  const prefix = `${CODES.TRANSPORT_BATCH_PREFIX}-${businessCode}`
-  const next = await getNextSequentialNumber("laundryTransportBatch", "batchNumber", prefix)
-  return `${prefix}-${getMonthPrefix()}-${padNumber(next)}`
+  const prefix = `${CODES.TRANSPORT_BATCH_PREFIX}-${businessCode}-`
+  const next = await getNextSequential("laundryTransportBatch", "batchNumber", prefix)
+  return `${prefix}${padNumber(next, 6)}`
 }
 
 // ─── Examples ───────────────────────────────────────────────────────────────
 // Business Code:        LND-202606-0001
 // Store Code:           STR-LND-202606-0001-001
 // Processing Center:    PC-LND-202606-0001-001
-// Order Number:         ORD-LND-202606-0001-202606-0001
-// Garment Tag Number:   GT-LND-202606-0001-202606-0001
-// Transport Batch:      TB-LND-202606-0001-202606-0001
+// Order Number:         ORD-STR-LND-202606-0001-001-000001
+// Item / Garment Tag:   ITM-ORD-STR-LND-202606-0001-001-000001-0001
+// Transport Batch:      TB-LND-202606-0001-000001
