@@ -3343,12 +3343,17 @@ model LaundryBusiness {
   address                 String?
   plan                    String   @default("STANDARD")
   status                  String   @default("ONBOARDING")
-  transportEnabled        Boolean  @default(true)
-  barcodeTaggingEnabled   Boolean  @default(true)
-  ironingEnabled          Boolean  @default(true)
-  deliveryEnabled         Boolean  @default(true)
-  defaultServiceRadius    Float?
-  defaultDailyCapacity    Float?
+  transportEnabled          Boolean  @default(true)
+  barcodeTaggingEnabled     Boolean  @default(true)
+  ironingEnabled            Boolean  @default(true)
+  deliveryEnabled           Boolean  @default(true)
+  photoAuditEnabled         Boolean  @default(false)
+  preServicePayment         Boolean  @default(false)
+  postServicePayment        Boolean  @default(false)
+  qrOrderLabels             Boolean  @default(false)
+  barcodeGarmentTracking    Boolean  @default(false)
+  defaultServiceRadius      Float?
+  defaultDailyCapacity      Float?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -3433,20 +3438,26 @@ model LaundryWorkflowStage {
 }
 
 model LaundryWorkflowConfiguration {
-  id        String   @id @default(cuid())
-  businessId String
-  stageId   String
-  enabled   Boolean  @default(true)
-  sequence  Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  businessId           String
+  stageId              String
+  enabled              Boolean  @default(true)
+  sequence             Int?
+  responsibleRoleId    String?
+  responsibleDepartmentId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  stage LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  stage       LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  business    LaundryBusiness      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responsibleRole    LaundryRole?        @relation(fields: [responsibleRoleId], references: [id], onDelete: SetNull)
+  responsibleDepartment LaundryDepartment? @relation(fields: [responsibleDepartmentId], references: [id], onDelete: SetNull)
 
   @@unique([businessId, stageId])
   @@index([businessId])
   @@index([stageId])
+  @@index([responsibleRoleId])
+  @@index([responsibleDepartmentId])
 }
 
 model LaundryRole {
@@ -3459,8 +3470,9 @@ model LaundryRole {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  permissions LaundryStagePermission[]
-  assignments LaundryUserAssignment[]
+  permissions  LaundryStagePermission[]
+  assignments  LaundryUserAssignment[]
+  workflowConfigs LaundryWorkflowConfiguration[]
 
   @@index([code])
 }
@@ -3515,9 +3527,10 @@ model LaundryDepartment {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business    LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store       LaundryStore?   @relation(fields: [storeId],   references: [id], onDelete: SetNull)
-  assignments LaundryUserAssignment[]
+  business       LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store          LaundryStore?   @relation(fields: [storeId],   references: [id], onDelete: SetNull)
+  assignments    LaundryUserAssignment[]
+  workflowConfigs LaundryWorkflowConfiguration[]
 
   @@unique([businessId, code])
   @@index([businessId])
