@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { generateStoreCode } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -17,29 +18,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-async function generateStoreCode(businessId: string): Promise<string> {
-  const business = await prisma.laundryBusiness.findUnique({
-    where: { id: businessId },
-    select: { businessCode: true },
-  })
-  if (!business) throw new Error("Business not found")
-
-  const prefix = `STR-${business.businessCode}`
-  const last = await prisma.laundryStore.findFirst({
-    where: { storeCode: { startsWith: prefix } },
-    orderBy: { storeCode: "desc" },
-    select: { storeCode: true },
-  })
-
-  let nextNumber = 1
-  if (last) {
-    const parts = last.storeCode.split("-")
-    nextNumber = parseInt(parts[parts.length - 1], 10) + 1
-  }
-
-  return `${prefix}-${String(nextNumber).padStart(3, "0")}`
-}
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -50,7 +28,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Store name is required" }, { status: 400 })
     }
 
-    const storeCode = await generateStoreCode(id)
+    const business = await prisma.laundryBusiness.findUnique({
+      where: { id },
+      select: { businessCode: true },
+    })
+    if (!business) {
+      return NextResponse.json({ error: "Business not found" }, { status: 404 })
+    }
+
+    const storeCode = await generateStoreCode(business.businessCode)
 
     const store = await prisma.laundryStore.create({
       data: {

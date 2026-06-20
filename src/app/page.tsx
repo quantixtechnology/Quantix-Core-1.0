@@ -180,9 +180,7 @@ const AuditLogsView = dynamic(() => import("@/components/dashboard/audit-logs-vi
 const QuantixWebsiteView = dynamic(() => import("@/components/admin/websites/quantix-website-view").then(m => ({ default: m.QuantixWebsiteView })), { loading: () => <PageLoader /> })
 const LaundryOsView = dynamic(() => import("@/components/admin/laundry/laundry-os-dashboard").then(m => ({ default: m.LaundryOsDashboard })), { loading: () => <PageLoader /> })
 const LaundryBusinessesView = dynamic(() => import("@/components/admin/laundry/laundry-businesses-view").then(m => ({ default: m.LaundryBusinessesView })), { loading: () => <PageLoader /> })
-const LaundryWorkflowConfigView = dynamic(() => import("@/components/admin/laundry/laundry-workflow-config").then(m => ({ default: m.LaundryWorkflowConfigView })), { loading: () => <PageLoader /> })
-const LaundryRolesView = dynamic(() => import("@/components/admin/laundry/laundry-roles-view").then(m => ({ default: m.LaundryRolesView })), { loading: () => <PageLoader /> })
-const LaundryStagePermissionsView = dynamic(() => import("@/components/admin/laundry/laundry-stage-permissions").then(m => ({ default: m.LaundryStagePermissionsView })), { loading: () => <PageLoader /> })
+
 
 // ── HRMS pages (lazy) ─────────────────────────────────────────────────────
 const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
@@ -508,9 +506,6 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       // Laundry OS
       case "laundry-os": return <LaundryOsView />
       case "laundry-businesses": return <LaundryBusinessesView />
-      case "laundry-workflow-config": return <LaundryWorkflowConfigView />
-      case "laundry-roles": return <LaundryRolesView />
-      case "laundry-stage-permissions": return <LaundryStagePermissionsView />
       default: return <WorkflowEngineView />
     }
   }

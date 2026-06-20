@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { generateBusinessCode } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -19,6 +20,12 @@ const SYSTEM_STAGE_CODES = [
   "IN_TRANSIT_TO_STORE",
   "READY_FOR_DELIVERY",
   "DELIVERED",
+]
+
+const DEFAULT_DEPARTMENTS = [
+  { code: "STORE_FRONT", name: "Store Front", sequence: 1 },
+  { code: "PROCESSING", name: "Processing Unit", sequence: 2 },
+  { code: "DELIVERY", name: "Delivery", sequence: 3 },
 ]
 
 export async function GET(request: Request) {
@@ -62,15 +69,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Business name, owner name, and mobile are required" }, { status: 400 })
     }
 
-    const code = businessName
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "_")
-      .replace(/^_|_$/g, "")
-      .slice(0, 20) || "BIZ"
+    const businessCode = await generateBusinessCode()
 
     const business = await prisma.laundryBusiness.create({
       data: {
-        businessCode: code,
+        businessCode,
         businessName,
         legalName: legalName || null,
         ownerName,
@@ -98,6 +101,33 @@ export async function POST(request: Request) {
           stageId: stage.id,
           enabled: true,
           sequence: stage.sequence,
+        },
+      })
+    }
+
+    // Auto-create default departments
+    for (const dept of DEFAULT_DEPARTMENTS) {
+      await prisma.laundryDepartment.create({
+        data: {
+          businessId: business.id,
+          code: dept.code,
+          name: dept.name,
+          sequence: dept.sequence,
+          enabled: true,
+        },
+      })
+    }
+
+    // Auto-assign ADMIN role to the business owner
+    const adminRole = await prisma.laundryRole.findUnique({
+      where: { code: "ADMIN" },
+    })
+    if (adminRole) {
+      await prisma.laundryUserAssignment.create({
+        data: {
+          businessId: business.id,
+          roleId: adminRole.id,
+          active: true,
         },
       })
     }

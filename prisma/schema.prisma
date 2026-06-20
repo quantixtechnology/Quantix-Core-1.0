@@ -3359,9 +3359,10 @@ model LaundryBusiness {
 
   stores         LaundryStore[]
   features       LaundryBusinessFeature[]
-  configurations LaundryWorkflowConfiguration[]
-  departments    LaundryDepartment[]
-  assignments    LaundryUserAssignment[]
+  configurations     LaundryWorkflowConfiguration[]
+  departments        LaundryDepartment[]
+  processingCenters  LaundryProcessingCenter[]
+  assignments        LaundryUserAssignment[]
 
   @@index([businessCode])
   @@index([status])
@@ -3535,6 +3536,33 @@ model LaundryDepartment {
   @@unique([businessId, code])
   @@index([businessId])
   @@index([storeId])
+}
+
+model LaundryProcessingCenter {
+  id              String    @id @default(cuid())
+  centerCode      String    @unique
+  businessId      String
+  centerName      String
+  centerType      String    @default("PROCESSING_HUB")
+  managerName     String?
+  mobile          String?
+  email           String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  latitude        Float?
+  longitude       Float?
+  dailyCapacityKg Float?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([centerCode])
+  @@index([centerType])
 }
 
 model LaundryUserAssignment {

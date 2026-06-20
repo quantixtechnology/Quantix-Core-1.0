@@ -739,9 +739,6 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   "platform-users":         "users:view",
   "laundry-os":             "laundry_os:view",
   "laundry-businesses":     "laundry_os:view",
-  "laundry-workflow-config":    "laundry_os:configure",
-  "laundry-roles":              "laundry_os:configure",
-  "laundry-stage-permissions":  "laundry_os:configure",
   // Mobile & Apps
   "mobile-apps":            "platform:manage_deployments",
   // Deployment & Ops

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Search, Plus, Sparkles, Building2, MapPin, Store, CreditCard, ChevronLeft, Pencil, Save, X, Users, Route, Settings2 } from "lucide-react"
+import { Search, Plus, Sparkles, Building2, MapPin, Store, CreditCard, ChevronLeft, Pencil, Save, X, Users, Route, Settings2, ArrowUp, ArrowDown, CheckCircle2, Eye, EyeOff } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,15 +14,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { Card, CardContent } from "@/components/ui/card"
+import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
 import { LaundryBusinessCreate } from "./laundry-business-create"
 import { LaundryStoresView } from "./laundry-stores-view"
 import { LaundryServiceArea } from "./laundry-service-area"
-import { LaundrySubscription } from "./laundry-subscription"
 import { LaundryDepartmentsView } from "./laundry-departments-view"
-import { LaundryAssignmentsView } from "./laundry-assignments-view"
 import { LaundryBusinessConfig } from "./laundry-business-config"
 
 type LaundryBusiness = {
@@ -60,6 +60,39 @@ type LaundryStore = {
   serviceRadiusKm: number | null
   createdAt: string
   updatedAt: string
+}
+
+type WorkflowStage = {
+  id: string
+  code: string
+  name: string
+  sequence: number
+  description: string | null
+  isDefault: boolean
+  isActive: boolean
+  isSystem: boolean
+}
+
+type BusinessConfig = {
+  stage: WorkflowStage
+  configuration: { id: string; enabled: boolean; sequence: number | null } | null
+  enabled: boolean
+}
+
+type LaundryRole = {
+  id: string
+  code: string
+  name: string
+  isActive: boolean
+  isSystem: boolean
+}
+
+type StagePermission = {
+  id: string
+  stageId: string
+  roleId: string
+  stage: WorkflowStage
+  role: LaundryRole
 }
 
 const statusColors: Record<string, string> = {
@@ -180,6 +213,207 @@ function BusinessListView({ onSelect }: { onSelect: (id: string) => void }) {
   )
 }
 
+function BusinessWorkflowTab({ businessId }: { businessId: string }) {
+  const { toast } = useToast()
+  const [configs, setConfigs] = useState<BusinessConfig[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchConfigs = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/laundry/workflow-configurations/business/${businessId}`)
+      if (res.ok) setConfigs(await res.json())
+    } catch { /* ignore */ }
+    finally { setLoading(false) }
+  }, [businessId])
+
+  useEffect(() => { fetchConfigs() }, [fetchConfigs])
+
+  const handleToggle = async (stageId: string, enabled: boolean) => {
+    try {
+      const res = await fetch(`/api/laundry/workflow-configurations/business/${businessId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId, enabled: !enabled }),
+      })
+      if (res.ok) fetchConfigs()
+      else toast({ title: "Error", description: "Failed to update", variant: "destructive" })
+    } catch {
+      toast({ title: "Error", description: "Failed to update", variant: "destructive" })
+    }
+  }
+
+  const handleReorder = async (stageId: string, newSequence: number) => {
+    try {
+      const res = await fetch(`/api/laundry/workflow-configurations/business/${businessId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId, sequence: newSequence }),
+      })
+      if (!res.ok) toast({ title: "Error", description: "Failed to reorder", variant: "destructive" })
+    } catch {
+      toast({ title: "Error", description: "Failed to reorder", variant: "destructive" })
+    }
+  }
+
+  const moveStage = (index: number, direction: "up" | "down") => {
+    const sorted = [...configs].sort((a, b) => (a.configuration?.sequence ?? a.stage.sequence) - (b.configuration?.sequence ?? b.stage.sequence))
+    const swapIndex = direction === "up" ? index - 1 : index + 1
+    if (swapIndex < 0 || swapIndex >= sorted.length) return
+    const current = sorted[index]
+    const swap = sorted[swapIndex]
+    const tempSeq = current.configuration?.sequence ?? current.stage.sequence
+    handleReorder(current.stage.id, swap.configuration?.sequence ?? swap.stage.sequence)
+    handleReorder(swap.stage.id, tempSeq)
+  }
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Loading stages...</div>
+
+  const sorted = [...configs].sort((a, b) => (a.configuration?.sequence ?? a.stage.sequence) - (b.configuration?.sequence ?? b.stage.sequence))
+
+  return (
+    <div className="rounded-lg border">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="text-left p-3 text-xs font-medium text-muted-foreground w-12">Seq</th>
+              <th className="text-left p-3 text-xs font-medium text-muted-foreground">Stage</th>
+              <th className="text-left p-3 text-xs font-medium text-muted-foreground">Code</th>
+              <th className="text-center p-3 text-xs font-medium text-muted-foreground w-24">Enabled</th>
+              <th className="text-right p-3 text-xs font-medium text-muted-foreground w-24">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((bc, index) => (
+              <tr key={bc.stage.id} className="border-b last:border-0 hover:bg-muted/30">
+                <td className="p-3">
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-mono text-muted-foreground w-6">{bc.configuration?.sequence ?? bc.stage.sequence}</span>
+                    <div className="flex flex-col gap-0.5">
+                      <button onClick={() => moveStage(index, "up")} disabled={index === 0} className="disabled:opacity-20 hover:text-foreground text-muted-foreground"><ArrowUp className="h-3 w-3" /></button>
+                      <button onClick={() => moveStage(index, "down")} disabled={index === sorted.length - 1} className="disabled:opacity-20 hover:text-foreground text-muted-foreground"><ArrowDown className="h-3 w-3" /></button>
+                    </div>
+                  </div>
+                </td>
+                <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{bc.stage.name}</span>
+                    {bc.stage.isSystem && <Badge variant="outline" className="text-[10px] h-4 px-1 text-muted-foreground">System</Badge>}
+                  </div>
+                </td>
+                <td className="p-3">
+                  <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{bc.stage.code}</code>
+                </td>
+                <td className="p-3 text-center">
+                  <Switch checked={bc.enabled} onCheckedChange={() => handleToggle(bc.stage.id, bc.enabled)} />
+                </td>
+                <td className="p-3 text-right">
+                  {bc.enabled ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Enabled</Badge> : <Badge variant="outline" className="text-muted-foreground">Disabled</Badge>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function BusinessPermissionsTab({ businessId }: { businessId: string }) {
+  const { toast } = useToast()
+  const [roles, setRoles] = useState<LaundryRole[]>([])
+  const [stages, setStages] = useState<WorkflowStage[]>([])
+  const [permissions, setPermissions] = useState<StagePermission[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [rolesRes, stagesRes, permsRes] = await Promise.all([
+        fetch("/api/laundry/roles"),
+        fetch("/api/laundry/workflow-stages"),
+        fetch("/api/laundry/stage-permissions"),
+      ])
+      const [rolesData, stagesData, permsData] = await Promise.all([
+        rolesRes.json(), stagesRes.json(), permsRes.json(),
+      ])
+      setRoles(rolesData)
+      setStages(stagesData)
+      setPermissions(permsData)
+    } catch { /* ignore */ }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const handleToggle = async (stageId: string, roleId: string, hasPermission: boolean) => {
+    if (hasPermission) {
+      const perm = permissions.find(p => p.stageId === stageId && p.roleId === roleId)
+      if (!perm) return
+      try {
+        const res = await fetch(`/api/laundry/stage-permissions/${perm.id}`, { method: "DELETE" })
+        if (res.ok) fetchData()
+        else toast({ title: "Error", description: "Failed to remove", variant: "destructive" })
+      } catch {
+        toast({ title: "Error", description: "Failed to remove", variant: "destructive" })
+      }
+    } else {
+      try {
+        const res = await fetch("/api/laundry/stage-permissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stageId, roleId }),
+        })
+        if (res.ok) fetchData()
+        else toast({ title: "Error", description: "Failed to add", variant: "destructive" })
+      } catch {
+        toast({ title: "Error", description: "Failed to add", variant: "destructive" })
+      }
+    }
+  }
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Loading permissions...</div>
+
+  const activeRoles = roles.filter(r => r.isActive)
+  const sortedStages = [...stages].sort((a, b) => a.sequence - b.sequence)
+
+  return (
+    <div className="rounded-lg border overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b bg-muted/50">
+            <th className="text-left p-3 text-xs font-medium text-muted-foreground min-w-[160px]">Stage</th>
+            {activeRoles.map(role => (
+              <th key={role.id} className="text-center p-3 text-xs font-medium text-muted-foreground min-w-[100px]">
+                <div className="flex items-center justify-center gap-1">
+                  <span>{role.name}</span>
+                  {role.isSystem && <Badge variant="outline" className="text-[9px] h-3 px-1">S</Badge>}
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sortedStages.map(stage => (
+            <tr key={stage.id} className="border-b last:border-0 hover:bg-muted/30">
+              <td className="p-3 text-sm font-medium">{stage.name}</td>
+              {activeRoles.map(role => {
+                const hasPermission = permissions.some(p => p.stageId === stage.id && p.roleId === role.id)
+                return (
+                  <td key={role.id} className="p-3 text-center">
+                    <Checkbox checked={hasPermission} onCheckedChange={() => handleToggle(stage.id, role.id, hasPermission)} />
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: () => void }) {
   const [business, setBusiness] = useState<LaundryBusiness | null>(null)
   const [loading, setLoading] = useState(true)
@@ -252,11 +486,12 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="overview" className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Overview</TabsTrigger>
           <TabsTrigger value="stores" className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5" /> Stores</TabsTrigger>
           <TabsTrigger value="departments" className="flex items-center gap-1.5"><Route className="h-3.5 w-3.5" /> Departments</TabsTrigger>
-          <TabsTrigger value="assignments" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Assignments</TabsTrigger>
+          <TabsTrigger value="workflow" className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Workflow</TabsTrigger>
+          <TabsTrigger value="permissions" className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5" /> Permissions</TabsTrigger>
           <TabsTrigger value="configuration" className="flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Configuration</TabsTrigger>
         </TabsList>
 
@@ -354,8 +589,18 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
           <LaundryDepartmentsView businessId={businessId} />
         </TabsContent>
 
-        <TabsContent value="assignments" className="mt-4">
-          <LaundryAssignmentsView businessId={businessId} />
+        <TabsContent value="workflow" className="mt-4">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Enable, disable, and reorder workflow stages for this business.</p>
+            <BusinessWorkflowTab businessId={businessId} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="permissions" className="mt-4">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Assign stage visibility to roles. System roles and stages are protected.</p>
+            <BusinessPermissionsTab businessId={businessId} />
+          </div>
         </TabsContent>
 
         <TabsContent value="configuration" className="mt-4">
