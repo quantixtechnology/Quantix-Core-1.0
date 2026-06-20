@@ -3343,23 +3343,6 @@ model LaundryBusiness {
   address                 String?
   plan                    String   @default("STANDARD")
   status                  String   @default("ONBOARDING")
-  transportEnabled           Boolean  @default(true)
-  barcodeTaggingEnabled      Boolean  @default(true)
-  ironingEnabled             Boolean  @default(true)
-  homeDeliveryEnabled        Boolean  @default(true)
-  photoAuditEnabled          Boolean  @default(false)
-  preServicePayment          Boolean  @default(false)
-  postServicePayment         Boolean  @default(false)
-  qrOrderLabels              Boolean  @default(false)
-  barcodeGarmentTracking     Boolean  @default(false)
-  multiStoreEnabled          Boolean  @default(false)
-  multiProcessingEnabled     Boolean  @default(false)
-  employeeManagementEnabled  Boolean  @default(false)
-  membershipEnabled          Boolean  @default(false)
-  loyaltyEnabled             Boolean  @default(false)
-  whatsappIntegrationEnabled Boolean  @default(false)
-  smsIntegrationEnabled      Boolean  @default(false)
-  advancedReportsEnabled     Boolean  @default(false)
   defaultServiceRadius       Float?
   defaultDailyCapacity       Float?
   platformBusinessId        String?  @unique
@@ -3372,10 +3355,150 @@ model LaundryBusiness {
   departments        LaundryDepartment[]
   processingCenters  LaundryProcessingCenter[]
   assignments        LaundryUserAssignment[]
+  subscription       LaundrySubscription?
+  license            LaundryLicense?
+  scalingLimit       LaundryScalingLimit?
+  provisioningStatus LaundryProvisioningStatus?
 
   @@index([businessCode])
   @@index([status])
   @@index([plan])
+}
+
+// ============================================================================
+// Laundry OS Licensing Engine
+// ============================================================================
+
+model LaundrySubscription {
+  id               String   @id @default(cuid())
+  businessId       String   @unique
+  business         LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan             String   @default("STANDARD")   // STANDARD | PRO | ENTERPRISE
+  billingCycle     String   @default("MONTHLY")    // MONTHLY | QUARTERLY | YEARLY
+  status           String   @default("ACTIVE")     // ACTIVE | PAST_DUE | CANCELLED | EXPIRED
+  startDate        DateTime @default(now())
+  renewalDate      DateTime
+  workspaceType    String   @default("LAUNDRY_OS") // LAUNDRY_OS | DRY_CLEAN
+  businessCategory String   @default("LAUNDRY")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([plan])
+  @@index([status])
+}
+
+model LaundryLicense {
+  id                   String   @id @default(cuid())
+  businessId           String   @unique
+  business             LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  // ── Infrastructure ───────────────────────────────────────────────────────
+  customerWebsite      Boolean  @default(false)
+  customerPWA          Boolean  @default(false)
+  androidCustomerApp   Boolean  @default(false)
+  deliveryApp          Boolean  @default(false)
+  adminApp             Boolean  @default(false)
+  customDomain         Boolean  @default(false)
+  ssl                  Boolean  @default(false)
+  cloudStorage         Boolean  @default(false)
+  automatedBackups     Boolean  @default(false)
+  pushNotifications    Boolean  @default(false)
+  // ── Operational Modules ──────────────────────────────────────────────────
+  transportModule      Boolean  @default(false)
+  barcodeModule        Boolean  @default(false)
+  homeDeliveryModule   Boolean  @default(false)
+  ironingModule        Boolean  @default(false)
+  pickupRequests       Boolean  @default(false)
+  deliveryManagement   Boolean  @default(false)
+  routeManagement      Boolean  @default(false)
+  auditModule          Boolean  @default(false)
+  // ── Workflow Modules ─────────────────────────────────────────────────────
+  photoAudit           Boolean  @default(false)
+  qrOrderLabels        Boolean  @default(false)
+  barcodeGarmentTracking Boolean @default(false)
+  itemLevelTracking    Boolean  @default(false)
+  processingChecklists Boolean  @default(false)
+  qualityControl       Boolean  @default(false)
+  dispatchVerification Boolean  @default(false)
+  deliveryOTP          Boolean  @default(false)
+  // ── Payment Modules ──────────────────────────────────────────────────────
+  cashCollection       Boolean  @default(true)
+  upiPayments          Boolean  @default(true)
+  razorpay             Boolean  @default(false)
+  phonePe              Boolean  @default(false)
+  advancePayment       Boolean  @default(false)
+  partialPayment       Boolean  @default(false)
+  corporateBilling     Boolean  @default(false)
+  creditAccounts       Boolean  @default(false)
+  // ── Customer Engagement ──────────────────────────────────────────────────
+  membershipModule     Boolean  @default(false)
+  loyaltyModule        Boolean  @default(false)
+  referralProgram      Boolean  @default(false)
+  coupons              Boolean  @default(false)
+  walletSystem         Boolean  @default(false)
+  giftCards            Boolean  @default(false)
+  // ── Communication ────────────────────────────────────────────────────────
+  smsNotifications     Boolean  @default(false)
+  whatsappNotifications Boolean @default(false)
+  emailNotifications   Boolean  @default(false)
+  pushNotificationsModule Boolean @default(false)
+  marketingCampaigns   Boolean  @default(false)
+  // ── Reporting ────────────────────────────────────────────────────────────
+  basicReports         Boolean  @default(true)
+  advancedReports      Boolean  @default(false)
+  storeAnalytics       Boolean  @default(false)
+  processingAnalytics  Boolean  @default(false)
+  employeeAnalytics    Boolean  @default(false)
+  revenueAnalytics     Boolean  @default(false)
+  // ── White Label ──────────────────────────────────────────────────────────
+  dedicatedApk         Boolean  @default(false)
+  customPackageName    Boolean  @default(false)
+  customSplashScreen   Boolean  @default(false)
+  customAppIcon        Boolean  @default(false)
+  playStorePublishing  Boolean  @default(false)
+  customDomainWL       Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([businessId])
+}
+
+model LaundryScalingLimit {
+  id                        String   @id @default(cuid())
+  businessId                String   @unique
+  business                  LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  storesAllowed             Int      @default(1)
+  storesUsed                Int      @default(0)
+  processingCentersAllowed  Int      @default(1)
+  processingCentersUsed     Int      @default(0)
+  employeesAllowed          Int      @default(5)
+  employeesUsed             Int      @default(0)
+  deliveryStaffAllowed      Int      @default(2)
+  deliveryStaffUsed         Int      @default(0)
+  ordersPerMonthLimit       Int      @default(500)
+  storageLimitMB            Int      @default(500)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([businessId])
+}
+
+model LaundryProvisioningStatus {
+  id                  String   @id @default(cuid())
+  businessId          String   @unique
+  business            LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  workspaceCreated    Boolean  @default(false)
+  sslConfigured       Boolean  @default(false)
+  pwaGenerated        Boolean  @default(false)
+  androidApkGenerated Boolean  @default(false)
+  domainMapped        Boolean  @default(false)
+  playStorePublished  Boolean  @default(false)
+  backupEnabled       Boolean  @default(false)
+  monitoringEnabled   Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([businessId])
 }
 
 model LaundryStore {

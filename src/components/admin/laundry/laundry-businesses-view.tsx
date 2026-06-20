@@ -176,79 +176,327 @@ function BusinessListView({ onSelect }: { onSelect: (id: string) => void }) {
 }
 
 // ============================================================================
-// Feature toggle key labels for the licensing matrix
+// Categories definition for the licensing feature matrix
 // ============================================================================
-const FEATURE_LICENSES: { key: string; label: string; description: string; category: string }[] = [
-  { key: "transportEnabled",           label: "Transport Module",         description: "In-transit stages between store and processing",          category: "Core" },
-  { key: "barcodeTaggingEnabled",      label: "Barcode Module",          description: "Barcode tagging and scanning at processing",             category: "Core" },
-  { key: "ironingEnabled",             label: "Ironing Module",          description: "Ironing stage in the processing workflow",                category: "Core" },
-  { key: "homeDeliveryEnabled",        label: "Home Delivery Module",    description: "Delivery stages for customer home delivery",              category: "Core" },
-  { key: "photoAuditEnabled",          label: "Photo Audit",            description: "Photo-based audit at order and processing entry",         category: "Features" },
-  { key: "preServicePayment",          label: "Pre-Service Payment",     description: "Require payment before service",                          category: "Features" },
-  { key: "postServicePayment",         label: "Post-Service Payment",    description: "Payment collection after service completion",             category: "Features" },
-  { key: "qrOrderLabels",              label: "QR Order Labels",         description: "QR-coded labels on customer orders",                      category: "Features" },
-  { key: "barcodeGarmentTracking",     label: "Barcode Garment Tracking", description: "Individual garment tracking via barcode",                category: "Features" },
-  { key: "multiStoreEnabled",          label: "Multi Store",             description: "Multiple store locations under one business",            category: "Scaling" },
-  { key: "multiProcessingEnabled",     label: "Multi Processing Center", description: "Multiple processing centers for distributed operations",  category: "Scaling" },
-  { key: "employeeManagementEnabled",  label: "Employee Management",     description: "Staff role and shift management",                         category: "Scaling" },
-  { key: "membershipEnabled",          label: "Membership Module",       description: "Customer membership plans",                               category: "Growth" },
-  { key: "loyaltyEnabled",             label: "Loyalty Module",          description: "Points-based loyalty and rewards",                        category: "Growth" },
-  { key: "whatsappIntegrationEnabled", label: "WhatsApp Integration",    description: "WhatsApp messaging for orders and notifications",         category: "Integrations" },
-  { key: "smsIntegrationEnabled",      label: "SMS Integration",         description: "SMS messaging for order updates and alerts",              category: "Integrations" },
-  { key: "advancedReportsEnabled",     label: "Advanced Reports",        description: "Detailed analytics and custom report builder",            category: "Growth" },
+interface LicenseCategory {
+  id: string
+  title: string
+  icon: string
+  features: { key: string; label: string; description: string }[]
+}
+
+const LICENSE_CATEGORIES: LicenseCategory[] = [
+  {
+    id: "infrastructure", title: "Infrastructure", icon: "Globe",
+    features: [
+      { key: "customerWebsite", label: "Customer Website", description: "Public-facing business website" },
+      { key: "customerPWA", label: "Customer PWA", description: "Progressive Web App for customers" },
+      { key: "androidCustomerApp", label: "Android Customer App", description: "Native Android app for customers" },
+      { key: "deliveryApp", label: "Delivery App", description: "Dedicated delivery partner app" },
+      { key: "adminApp", label: "Admin App", description: "Administrative mobile application" },
+      { key: "customDomain", label: "Custom Domain", description: "Custom domain for the business" },
+      { key: "ssl", label: "SSL", description: "SSL certificate provisioning" },
+      { key: "cloudStorage", label: "Cloud Storage", description: "Cloud-based file and image storage" },
+      { key: "automatedBackups", label: "Automated Backups", description: "Automated data backup scheduling" },
+      { key: "pushNotifications", label: "Push Notifications", description: "Push notification delivery infrastructure" },
+    ],
+  },
+  {
+    id: "operational", title: "Operational Modules", icon: "Settings2",
+    features: [
+      { key: "transportModule", label: "Transport Module", description: "In-transit stages and tracking between locations" },
+      { key: "barcodeModule", label: "Barcode Module", description: "Barcode tagging and scanning at processing" },
+      { key: "homeDeliveryModule", label: "Home Delivery Module", description: "Delivery stages for customer home delivery" },
+      { key: "ironingModule", label: "Ironing Module", description: "Ironing stage in the processing workflow" },
+      { key: "pickupRequests", label: "Pickup Requests", description: "Customer pickup request scheduling" },
+      { key: "deliveryManagement", label: "Delivery Management", description: "Delivery fleet and dispatch management" },
+      { key: "routeManagement", label: "Route Management", description: "Optimized route planning for deliveries" },
+      { key: "auditModule", label: "Audit Module", description: "Detailed order and process audit trails" },
+    ],
+  },
+  {
+    id: "workflow", title: "Workflow Modules", icon: "MapPin",
+    features: [
+      { key: "photoAudit", label: "Photo Audit", description: "Photo-based audit at order and processing entry" },
+      { key: "qrOrderLabels", label: "QR Order Labels", description: "QR-coded labels on customer orders" },
+      { key: "barcodeGarmentTracking", label: "Barcode Garment Tracking", description: "Individual garment tracking via barcode" },
+      { key: "itemLevelTracking", label: "Item Level Tracking", description: "Track each item through the entire workflow" },
+      { key: "processingChecklists", label: "Processing Checklists", description: "Checklist-driven processing workflow" },
+      { key: "qualityControl", label: "Quality Control", description: "QC checkpoints throughout processing" },
+      { key: "dispatchVerification", label: "Dispatch Verification", description: "Verified dispatch before shipping" },
+      { key: "deliveryOTP", label: "Delivery OTP", description: "OTP-based delivery confirmation" },
+    ],
+  },
+  {
+    id: "payment", title: "Payment Modules", icon: "CreditCard",
+    features: [
+      { key: "cashCollection", label: "Cash Collection", description: "Cash payment collection at store or delivery" },
+      { key: "upiPayments", label: "UPI Payments", description: "UPI-based digital payments" },
+      { key: "razorpay", label: "Razorpay", description: "Razorpay payment gateway integration" },
+      { key: "phonePe", label: "PhonePe", description: "PhonePe payment gateway integration" },
+      { key: "advancePayment", label: "Advance Payment", description: "Pre-payment before service" },
+      { key: "partialPayment", label: "Partial Payment", description: "Partial payment at order placement" },
+      { key: "corporateBilling", label: "Corporate Billing", description: "Bulk billing for corporate accounts" },
+      { key: "creditAccounts", label: "Credit Accounts", description: "Credit-based accounts for trusted customers" },
+    ],
+  },
+  {
+    id: "engagement", title: "Customer Engagement", icon: "Users",
+    features: [
+      { key: "membershipModule", label: "Membership Module", description: "Customer membership plans with recurring billing" },
+      { key: "loyaltyModule", label: "Loyalty Module", description: "Points-based loyalty and reward system" },
+      { key: "referralProgram", label: "Referral Program", description: "Customer referral and incentive program" },
+      { key: "coupons", label: "Coupons", description: "Discount coupons and promotional offers" },
+      { key: "walletSystem", label: "Wallet System", description: "Digital wallet for store credit and refunds" },
+      { key: "giftCards", label: "Gift Cards", description: "Digital and physical gift card system" },
+    ],
+  },
+  {
+    id: "communication", title: "Communication Modules", icon: "Shield",
+    features: [
+      { key: "smsNotifications", label: "SMS Notifications", description: "SMS-based order updates and alerts" },
+      { key: "whatsappNotifications", label: "WhatsApp Notifications", description: "WhatsApp messaging for order communication" },
+      { key: "emailNotifications", label: "Email Notifications", description: "Email-based order confirmations and receipts" },
+      { key: "pushNotificationsModule", label: "Push Notifications", description: "In-app push notification delivery" },
+      { key: "marketingCampaigns", label: "Marketing Campaigns", description: "Bulk marketing and promotional campaigns" },
+    ],
+  },
+  {
+    id: "reporting", title: "Reporting Modules", icon: "BarChart3",
+    features: [
+      { key: "basicReports", label: "Basic Reports", description: "Standard daily and monthly business reports" },
+      { key: "advancedReports", label: "Advanced Reports", description: "Custom report builder and detailed analytics" },
+      { key: "storeAnalytics", label: "Store Analytics", description: "Per-store performance and metrics" },
+      { key: "processingAnalytics", label: "Processing Analytics", description: "Processing center throughput and efficiency" },
+      { key: "employeeAnalytics", label: "Employee Analytics", description: "Staff productivity and performance metrics" },
+      { key: "revenueAnalytics", label: "Revenue Analytics", description: "Revenue tracking and financial dashboards" },
+    ],
+  },
+  {
+    id: "whiteLabel", title: "White Label Modules", icon: "Shield",
+    features: [
+      { key: "dedicatedApk", label: "Dedicated APK", description: "Standalone branded APK for the business" },
+      { key: "customPackageName", label: "Custom Package Name", description: "Custom Android package identifier" },
+      { key: "customSplashScreen", label: "Custom Splash Screen", description: "Branded splash screen on mobile apps" },
+      { key: "customAppIcon", label: "Custom App Icon", description: "Custom app icon for branded apps" },
+      { key: "playStorePublishing", label: "Play Store Publishing", description: "Publish branded app to Google Play Store" },
+      { key: "customDomainWL", label: "Custom Domain", description: "White-labeled custom domain" },
+    ],
+  },
 ]
 
-function FeatureLicensingTab({ business, onToggle, saving }: {
-  business: { id: string } & Record<string, boolean | string | null | number | undefined>
+const SCALING_FIELDS: { key: keyof ScalingLimits; label: string; description: string }[] = [
+  { key: "storesAllowed", label: "Stores Allowed", description: "Maximum number of retail store locations" },
+  { key: "processingCentersAllowed", label: "Processing Centers Allowed", description: "Maximum number of processing centers" },
+  { key: "employeesAllowed", label: "Employees Allowed", description: "Maximum number of staff employees" },
+  { key: "deliveryStaffAllowed", label: "Delivery Staff Allowed", description: "Maximum number of delivery personnel" },
+  { key: "ordersPerMonthLimit", label: "Orders Per Month", description: "Monthly order processing capacity" },
+  { key: "storageLimitMB", label: "Storage Limit (MB)", description: "Cloud storage allocation in megabytes" },
+]
+
+interface ScalingLimits {
+  storesAllowed: number; storesUsed: number;
+  processingCentersAllowed: number; processingCentersUsed: number;
+  employeesAllowed: number; employeesUsed: number;
+  deliveryStaffAllowed: number; deliveryStaffUsed: number;
+  ordersPerMonthLimit: number; storageLimitMB: number;
+}
+
+const PROVISIONING_FIELDS: { key: string; label: string }[] = [
+  { key: "workspaceCreated", label: "Workspace Created" },
+  { key: "sslConfigured", label: "SSL Configured" },
+  { key: "pwaGenerated", label: "PWA Generated" },
+  { key: "androidApkGenerated", label: "Android APK Generated" },
+  { key: "domainMapped", label: "Domain Mapped" },
+  { key: "playStorePublished", label: "Play Store Published" },
+  { key: "backupEnabled", label: "Backup Enabled" },
+  { key: "monitoringEnabled", label: "Monitoring Enabled" },
+]
+
+function LicensingSubscriptionCard({ subscription }: { subscription: LaundrySubscription | null }) {
+  if (!subscription) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-sm text-muted-foreground">No subscription record found.</CardContent>
+      </Card>
+    )
+  }
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Subscription</h3>
+          <Badge className={subscription.status === "ACTIVE" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>
+            {subscription.status}
+          </Badge>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <label className="text-xs text-gray-500">Plan</label>
+            <p className="font-semibold text-lg">{subscription.plan}</p>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Billing Cycle</label>
+            <p className="font-medium capitalize">{subscription.billingCycle.toLowerCase()}</p>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Start Date</label>
+            <p className="font-medium">{new Date(subscription.startDate).toLocaleDateString()}</p>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Renewal Date</label>
+            <p className="font-medium">{new Date(subscription.renewalDate).toLocaleDateString()}</p>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Workspace Type</label>
+            <p className="font-medium">{subscription.workspaceType}</p>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Category</label>
+            <p className="font-medium">{subscription.businessCategory}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function FeatureCategoryCard({ category, license, onToggle, saving }: {
+  category: LicenseCategory
+  license: Record<string, boolean>
   onToggle: (key: string, value: boolean) => void
   saving: boolean
 }) {
-  const categories = [...new Set(FEATURE_LICENSES.map(f => f.category))]
-
   return (
-    <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
-        Toggle feature licensing for this business. These settings control which modules are available to the business owner.
-        Business owners cannot modify these settings.
-      </p>
-      {categories.map(cat => (
-        <Card key={cat}>
-          <CardContent className="p-4">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{cat}</h4>
-            <div className="space-y-2">
-              {FEATURE_LICENSES.filter(f => f.category === cat).map(f => {
-                const enabled = !!(business as Record<string, boolean | string | null | undefined>)[f.key]
-                return (
-                  <div key={f.key} className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{f.label}</span>
-                        {enabled ? (
-                          <Badge className="bg-green-100 text-green-700 text-[10px] h-4 px-1.5">Licensed</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground">Not Licensed</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{f.description}</p>
-                    </div>
-                    <Switch
-                      checked={enabled}
-                      onCheckedChange={(v) => onToggle(f.key, v)}
-                      disabled={saving}
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          {category.title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {category.features.map(f => {
+          const enabled = !!license[f.key]
+          return (
+            <div key={f.key} className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/20 transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{f.label}</span>
+                  {enabled ? (
+                    <Badge className="bg-green-100 text-green-700 text-[10px] h-4 px-1.5 shrink-0">Licensed</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground shrink-0">Not Licensed</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{f.description}</p>
+              </div>
+              <Switch checked={enabled} onCheckedChange={(v) => onToggle(f.key, v)} disabled={saving} className="shrink-0 ml-3" />
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+function ScalingLimitsCard({ limits, onUpdate, saving }: {
+  limits: ScalingLimits
+  onUpdate: (key: string, value: number) => void
+  saving: boolean
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Scaling Limits</CardTitle>
+        <p className="text-xs text-muted-foreground">Set numeric usage limits for this business. These are NOT toggles — they control maximum capacity.</p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {SCALING_FIELDS.map(f => {
+            const allowed = limits[f.key] ?? 0
+            const usedKey = f.key.replace("Allowed", "Used") as keyof ScalingLimits
+            const used = (limits[usedKey] ?? 0) as number
+            const usagePercent = allowed > 0 ? Math.round((used / allowed) * 100) : 0
+            return (
+              <div key={f.key} className="rounded-lg border p-4">
+                <label className="text-xs text-muted-foreground">{f.label}</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={allowed}
+                    onChange={e => onUpdate(f.key, parseInt(e.target.value) || 0)}
+                    disabled={saving}
+                    className="h-8 w-24 text-sm"
+                  />
+                  <span className="text-xs text-muted-foreground">Used: {used}</span>
+                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${usagePercent > 90 ? "bg-red-500" : usagePercent > 70 ? "bg-amber-500" : "bg-green-500"}`}
+                      style={{ width: `${Math.min(usagePercent, 100)}%` }}
                     />
                   </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">{f.description}</p>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
+}
+
+function ProvisioningStatusCard({ provisioning }: { provisioning: Record<string, boolean> }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Provisioning Status</CardTitle>
+        <p className="text-xs text-muted-foreground">Internal status for Quantix operations team. Read-only.</p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {PROVISIONING_FIELDS.map(f => {
+            const done = !!provisioning[f.key]
+            return (
+              <div key={f.key} className={`flex items-center gap-2 rounded-lg border p-3 ${done ? "bg-green-50 border-green-200" : "bg-muted/30"}`}>
+                <div className={`h-2 w-2 rounded-full ${done ? "bg-green-500" : "bg-gray-300"}`} />
+                <div>
+                  <p className="text-xs font-medium">{f.label}</p>
+                  <p className="text-[10px] text-muted-foreground">{done ? "Completed" : "Pending"}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ============================================================================
+// Licensing data types
+// ============================================================================
+interface LaundrySubscriptionData {
+  id?: string; businessId?: string; plan?: string; billingCycle?: string;
+  status?: string; startDate?: string; renewalDate?: string;
+  workspaceType?: string; businessCategory?: string;
+}
+
+interface ProvisioningMap {
+  workspaceCreated?: boolean; sslConfigured?: boolean; pwaGenerated?: boolean;
+  androidApkGenerated?: boolean; domainMapped?: boolean; playStorePublished?: boolean;
+  backupEnabled?: boolean; monitoringEnabled?: boolean;
 }
 
 function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: () => void }) {
   const [business, setBusiness] = useState<LaundryBusiness | null>(null)
+  const [licensing, setLicensing] = useState<{
+    subscription: LaundrySubscriptionData | null
+    license: Record<string, boolean>
+    scalingLimit: ScalingLimits
+    provisioningStatus: ProvisioningMap
+  } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -259,12 +507,15 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
     gstNumber: "", address: "", plan: "", status: "",
   })
 
-  const fetchBusiness = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/laundry/businesses/${businessId}`)
-      if (res.ok) {
-        const d = await res.json()
+      const [bizRes, licRes] = await Promise.all([
+        fetch(`/api/laundry/businesses/${businessId}`),
+        fetch(`/api/laundry/businesses/${businessId}/licensing`),
+      ])
+      if (bizRes.ok) {
+        const d = await bizRes.json()
         setBusiness(d)
         setEditForm({
           businessName: d.businessName, legalName: d.legalName || "", ownerName: d.ownerName,
@@ -272,11 +523,12 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
           address: d.address || "", plan: d.plan, status: d.status,
         })
       }
+      if (licRes.ok) setLicensing(await licRes.json())
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [businessId])
 
-  useEffect(() => { fetchBusiness() }, [fetchBusiness])
+  useEffect(() => { fetchData() }, [fetchData])
 
   const handleSaveOverview = async () => {
     try {
@@ -288,7 +540,7 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
       if (res.ok) {
         toast({ title: "Saved", description: "Business details updated" })
         setEditing(false)
-        fetchBusiness()
+        fetchData()
       } else {
         toast({ title: "Error", description: "Failed to update", variant: "destructive" })
       }
@@ -298,16 +550,41 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
   }
 
   const handleFeatureToggle = async (key: string, value: boolean) => {
+    if (!licensing) return
     setSaving(true)
     try {
-      const res = await fetch(`/api/laundry/businesses/${businessId}`, {
+      const res = await fetch(`/api/laundry/businesses/${businessId}/licensing`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [key]: value }),
+        body: JSON.stringify({ license: { [key]: value } }),
       })
       if (res.ok) {
-        fetchBusiness()
-        toast({ title: "Updated", description: `${key} ${value ? "enabled" : "disabled"}` })
+        const updated = await res.json()
+        setLicensing(updated)
+        toast({ title: "Updated", description: `Feature ${value ? "enabled" : "disabled"}` })
+      } else {
+        toast({ title: "Error", description: "Failed to update", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to update", variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleScalingUpdate = async (key: string, value: number) => {
+    if (!licensing) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/laundry/businesses/${businessId}/licensing`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scalingLimit: { [key]: value } }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setLicensing(updated)
+        toast({ title: "Updated", description: "Scaling limit updated" })
       } else {
         toast({ title: "Error", description: "Failed to update", variant: "destructive" })
       }
@@ -484,7 +761,38 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
         </TabsContent>
 
         <TabsContent value="licensing" className="mt-4">
-          <FeatureLicensingTab business={business} onToggle={handleFeatureToggle} saving={saving} />
+          <div className="space-y-6">
+            <p className="text-sm text-muted-foreground">
+              Configure licensing for this business. These settings control which features, modules, and capacity limits
+              are available to the business owner. Only Quantix can modify these settings.
+            </p>
+
+            {!licensing ? (
+              <div className="py-8 text-center text-gray-400">Loading licensing data...</div>
+            ) : (
+              <>
+                <LicensingSubscriptionCard subscription={licensing.subscription} />
+
+                {LICENSE_CATEGORIES.map(cat => (
+                  <FeatureCategoryCard
+                    key={cat.id}
+                    category={cat}
+                    license={licensing.license}
+                    onToggle={handleFeatureToggle}
+                    saving={saving}
+                  />
+                ))}
+
+                <ScalingLimitsCard
+                  limits={licensing.scalingLimit}
+                  onUpdate={handleScalingUpdate}
+                  saving={saving}
+                />
+
+                <ProvisioningStatusCard provisioning={licensing.provisioningStatus} />
+              </>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="technical" className="mt-4">

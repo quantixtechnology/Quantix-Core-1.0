@@ -198,28 +198,127 @@ async function ensureBusinessConfigs(stageMap: Map<string, string>) {
   }
 }
 
-async function main() {
-  // Set default licensing fields on existing businesses
-  const allBizs = await prisma.laundryBusiness.findMany()
-  for (const biz of allBizs) {
-    await prisma.laundryBusiness.update({
-      where: { id: biz.id },
-      data: {
-        homeDeliveryEnabled: true,
-        multiStoreEnabled: false,
-        multiProcessingEnabled: false,
-        employeeManagementEnabled: false,
-        membershipEnabled: false,
-        loyaltyEnabled: false,
-        whatsappIntegrationEnabled: false,
-        smsIntegrationEnabled: false,
-        advancedReportsEnabled: false,
+async function ensureLicensing() {
+  const businesses = await prisma.laundryBusiness.findMany()
+  for (const biz of businesses) {
+    // Subscription
+    await prisma.laundrySubscription.upsert({
+      where: { businessId: biz.id },
+      update: {},
+      create: {
+        businessId: biz.id,
+        plan: biz.plan || "STANDARD",
+        status: biz.status === "ACTIVE" ? "ACTIVE" : "PAST_DUE",
+        startDate: biz.createdAt,
+        renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: "MONTHLY",
+      },
+    })
+
+    // License - map old toggles to new structure
+    const infraEnabled = true
+    await prisma.laundryLicense.upsert({
+      where: { businessId: biz.id },
+      update: {},
+      create: {
+        businessId: biz.id,
+        customerWebsite: false,
+        customerPWA: true,
+        androidCustomerApp: false,
+        deliveryApp: false,
+        adminApp: true,
+        customDomain: false,
+        ssl: true,
+        cloudStorage: true,
+        automatedBackups: true,
+        pushNotifications: true,
+        transportModule: true,
+        barcodeModule: true,
+        homeDeliveryModule: true,
+        ironingModule: true,
+        pickupRequests: false,
+        deliveryManagement: false,
+        routeManagement: false,
+        auditModule: false,
+        photoAudit: true,
+        qrOrderLabels: false,
+        barcodeGarmentTracking: false,
+        itemLevelTracking: false,
+        processingChecklists: false,
+        qualityControl: false,
+        dispatchVerification: false,
+        deliveryOTP: true,
+        cashCollection: true,
+        upiPayments: true,
+        razorpay: false,
+        phonePe: false,
+        advancePayment: false,
+        partialPayment: true,
+        corporateBilling: false,
+        creditAccounts: false,
+        membershipModule: false,
+        loyaltyModule: false,
+        referralProgram: false,
+        coupons: false,
+        walletSystem: false,
+        giftCards: false,
+        smsNotifications: false,
+        whatsappNotifications: false,
+        emailNotifications: true,
+        pushNotificationsModule: true,
+        marketingCampaigns: false,
+        basicReports: true,
+        advancedReports: false,
+        storeAnalytics: false,
+        processingAnalytics: false,
+        employeeAnalytics: false,
+        revenueAnalytics: false,
+        dedicatedApk: false,
+        customPackageName: false,
+        customSplashScreen: false,
+        customAppIcon: false,
+        playStorePublishing: false,
+        customDomainWL: false,
+      },
+    })
+
+    // Scaling limits
+    await prisma.laundryScalingLimit.upsert({
+      where: { businessId: biz.id },
+      update: {},
+      create: {
+        businessId: biz.id,
+        storesAllowed: 1,
+        processingCentersAllowed: 1,
+        employeesAllowed: 5,
+        deliveryStaffAllowed: 2,
+        ordersPerMonthLimit: 500,
+        storageLimitMB: 500,
+      },
+    })
+
+    // Provisioning status
+    await prisma.laundryProvisioningStatus.upsert({
+      where: { businessId: biz.id },
+      update: {},
+      create: {
+        businessId: biz.id,
+        workspaceCreated: true,
+        sslConfigured: true,
+        pwaGenerated: true,
+        androidApkGenerated: false,
+        domainMapped: false,
+        playStorePublished: false,
+        backupEnabled: true,
+        monitoringEnabled: true,
       },
     })
   }
-  console.log(`Licensing defaults set for ${allBizs.length} businesses`)
+  console.log(`Licensing engine initialized for ${businesses.length} businesses`)
+}
 
-  console.log("\nSeeding Laundry OS Master Data...\n")
+async function main() {
+  console.log("Seeding Laundry OS Master Data...\n")
 
   console.log("1. System Stages")
   const stageMap = await upsertStages()
@@ -232,6 +331,9 @@ async function main() {
 
   console.log("\n4. Business Workflow Configurations")
   await ensureBusinessConfigs(stageMap)
+
+  console.log("\n5. Licensing Engine")
+  await ensureLicensing()
 
   console.log("\nSeeding complete!")
 }
