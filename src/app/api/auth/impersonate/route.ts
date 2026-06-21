@@ -6,15 +6,49 @@ import { isPlatformRole } from "@/lib/permissions"
 
 export const runtime = "nodejs"
 
+async function isPlatformUser(session: { user?: { id?: string; email?: string; role?: string; isPlatformAdmin?: boolean } } | null): Promise<boolean> {
+  // Fast path: session has a platform role
+  if (session?.user?.role && isPlatformRole(session.user.role)) return true
+
+  // Belt-and-braces: verify from the database for stale JWT edge cases
+  if (!session?.user?.id && !session?.user?.email) return false
+
+  const dbUser = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { id: session?.user?.id },
+        { email: session?.user?.email },
+      ].filter(Boolean) as any,
+    },
+    select: {
+      email: true,
+      salesProfile: { select: { id: true } },
+      businessUsers: { where: { isActive: true }, take: 1, select: { id: true } },
+    },
+  })
+
+  if (!dbUser) return false
+
+  // Quantix internal email = platform user
+  if (dbUser.email?.endsWith("@quantixtechnology.in")) return true
+  // Has a sales profile = platform user (Quantix Sales Team)
+  if (dbUser.salesProfile) return true
+
+  // No business-user records = pure platform user
+  if (dbUser.businessUsers.length === 0) return true
+
+  return false
+}
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
     console.log("[impersonate] Session user:", session?.user)
     console.log("[impersonate] Role:", session?.user?.role)
     console.log("[impersonate] isPlatformAdmin:", session?.user?.isPlatformAdmin)
-    // Check role directly — session.isPlatformAdmin may be stale from old JWTs
-    const role = session?.user?.role
-    if (!role || !isPlatformRole(role)) {
+
+    // Authorize: fast path via JWT role + DB fallback for stale JWTs
+    if (!(await isPlatformUser(session))) {
       return NextResponse.json({ error: "Unauthorized. Only platform admins can access this." }, { status: 403 })
     }
 
