@@ -3363,6 +3363,7 @@ model LaundryBusiness {
   brandingConfig     LaundryBrandingConfig?
   workflowQuality    LaundryWorkflowQualityConfig?
   auditLogs          LaundryAuditLog[]
+  orders             LaundryOrder[]
 
   @@index([businessCode])
   @@index([status])
@@ -3548,6 +3549,7 @@ model LaundryStore {
   laundryBusiness     LaundryBusiness @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
   departments         LaundryDepartment[]
   assignments         LaundryUserAssignment[]
+  orders              LaundryOrder[]
 
   @@index([laundryBusinessId])
   @@index([storeCode])
@@ -3566,6 +3568,73 @@ model LaundryBusinessFeature {
 
    @@unique([businessId, featureKey])
    @@index([businessId])
+}
+
+// ============================================================================
+// LAUNDRY OS — Order Management (Stage 1 – Order Intake)
+// Fully isolated order models for the Laundry OS workflow.
+// ============================================================================
+
+enum LaundryOrderStatus {
+  DRAFT
+  PENDING_STORE_AUDIT
+  UNDER_AUDIT
+  PAYMENT_PENDING
+  READY_FOR_PROCESSING
+  PROCESSING
+  QC_PENDING
+  READY_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+model LaundryOrder {
+  id                   String             @id @default(cuid())
+  orderNumber          String             @unique
+  businessId           String
+  storeId              String
+  customerId           String?
+  orderType            String             @default("WALK_IN")     // WALK_IN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION
+  source               String             @default("MANUAL")
+  status               LaundryOrderStatus @default(DRAFT)
+  paymentPreference    String             @default("COD")         // FULL_ADVANCE | PARTIAL_ADVANCE | COD | SUBSCRIPTION_BILLING
+  expectedDeliveryDate DateTime?
+  deliveryOverride     Boolean            @default(false)
+  overrideReason       String?
+  pickupDate           DateTime?
+  pickupTimeSlot       String?
+  pickupAddress        String?
+  pickupInstructions   String?
+  specialInstructions  String?
+  notes                String?
+  createdBy            String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  business   LaundryBusiness     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store      LaundryStore        @relation(fields: [storeId],    references: [id])
+  services   LaundryOrderService[]
+  timestamps LaundryStageTimestamp[]
+
+  @@index([businessId])
+  @@index([storeId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([orderNumber])
+}
+
+model LaundryOrderService {
+  id               String   @id @default(cuid())
+  orderId          String
+  serviceId        String?
+  serviceName      String
+  turnaroundHours  Int      @default(24)
+  createdAt        DateTime @default(now())
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
 
 // ============================================================================
@@ -3664,6 +3733,7 @@ model LaundryStageTimestamp {
   updatedAt DateTime  @updatedAt
 
   stage LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  order LaundryOrder         @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([stageId])

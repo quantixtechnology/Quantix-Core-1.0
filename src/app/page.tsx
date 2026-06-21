@@ -184,6 +184,7 @@ const LaundryBusinessesView = dynamic(() => import("@/components/admin/laundry/l
 const LaundryDashboard = dynamic(() => import("@/components/laundry/views/laundry-dashboard").then(m => ({ default: m.LaundryDashboard })), { loading: () => <PageLoader /> })
 const LaundryInboxView = dynamic(() => import("@/components/laundry/views/laundry-inbox-view").then(m => ({ default: m.LaundryInboxView })), { loading: () => <PageLoader /> })
 const LaundryOrdersView = dynamic(() => import("@/components/laundry/views/laundry-orders-view").then(m => ({ default: m.LaundryOrdersView })), { loading: () => <PageLoader /> })
+const LaundryNewOrder = dynamic(() => import("@/components/laundry/views/laundry-new-order").then(m => ({ default: m.default })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
@@ -523,6 +524,7 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "dashboard": return <LaundryDashboard />
       case "inbox": return <LaundryInboxView />
       case "orders": return <LaundryOrdersView />
+      case "new-order": return <LaundryNewOrder />
       case "customers": return <LaundryCustomersView />
       case "stores": return <LaundryStoresWorkspace businessId={currentBusinessId} />
       case "processing-centers": return <LaundryProcessingCentersView />

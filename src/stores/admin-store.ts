@@ -89,6 +89,7 @@ export type LaundryBusinessPage =
   | "dashboard"
   | "inbox"
   | "orders"
+  | "new-order"
   | "customers"
   | "stores"
   | "processing-centers"

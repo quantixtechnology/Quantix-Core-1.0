@@ -17,7 +17,7 @@ import { useResponsive } from "@/hooks/use-responsive"
 import { useLaundryLicensing } from "@/hooks/use-laundry-licensing"
 import {
   LayoutDashboard, Inbox, ShoppingBag, Users, Store,
-  Factory, BarChart3, Settings, ChevronLeft, Sparkles,
+  Factory, BarChart3, Settings, ChevronLeft, Sparkles, Plus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -32,6 +32,7 @@ const laundryNavItems: NavItem[] = [
   { key: "dashboard",          label: "Dashboard",          icon: LayoutDashboard },
   { key: "inbox",              label: "My Inbox",           icon: Inbox },
   { key: "orders",             label: "Orders",             icon: ShoppingBag },
+  { key: "new-order",          label: "New Order",          icon: Plus },
   { key: "customers",          label: "Customers",          icon: Users },
   { key: "stores",             label: "Stores",             icon: Store,               feature: "multiStoreEnabled" },
   { key: "processing-centers", label: "Processing Centers", icon: Factory,             feature: "multiProcessingEnabled" },
