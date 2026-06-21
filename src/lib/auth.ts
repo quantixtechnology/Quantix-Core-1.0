@@ -118,7 +118,8 @@ export const authOptions: NextAuthOptions = {
           }
         }
 
-        const isPlatformAdmin = role === 'QUANTIX_SUPER_ADMIN' || role === 'QUANTIX_SALES_TEAM';
+        const isPlatformAdmin = isPlatformRole(role);
+        console.log("[auth.authorize] user:", user.email, "role:", role, "isPlatformAdmin:", isPlatformAdmin, "businessId:", businessId)
 
         return {
           id: user.id,

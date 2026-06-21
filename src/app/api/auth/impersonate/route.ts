@@ -8,6 +8,9 @@ export const runtime = "nodejs"
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
+    console.log("[impersonate] Session user:", session?.user)
+    console.log("[impersonate] Role:", session?.user?.role)
+    console.log("[impersonate] isPlatformAdmin:", session?.user?.isPlatformAdmin)
     if (!session?.user?.isPlatformAdmin) {
       return NextResponse.json({ error: "Unauthorized. Only platform admins can access this." }, { status: 403 })
     }
