@@ -853,21 +853,8 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
   const openWorkspace = async () => {
     setSaving(true)
     try {
-      console.log("[openWorkspace] Fetching business", businessId)
-      const bizRes = await fetch(`/api/laundry/businesses/${businessId}`)
-      if (!bizRes.ok) {
-        toast({ title: "Error", description: "Business not found", variant: "destructive" })
-        return
-      }
-      const biz = await bizRes.json()
-      console.log("[openWorkspace] Business data:", biz)
-      if (!biz.platformBusinessId) {
-        toast({ title: "Error", description: "No platform business linked. Please ensure the business has a platform account.", variant: "destructive" })
-        return
-      }
-
-      console.log("[openWorkspace] Impersonating platformBusinessId:", biz.platformBusinessId)
-      const impRes = await fetch(`/api/auth/impersonate?businessId=${biz.platformBusinessId}`)
+      console.log("[openWorkspace] Starting impersonation for laundryBusinessId:", businessId)
+      const impRes = await fetch(`/api/auth/impersonate?laundryBusinessId=${businessId}`)
       console.log("[openWorkspace] Impersonation response status:", impRes.status)
       if (!impRes.ok) {
         const err = await impRes.json()
@@ -878,19 +865,8 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
 
       const data = await impRes.json()
       console.log("[openWorkspace] API Response:", data)
-      if (!data.success) {
-        toast({ title: "Error", description: "Impersonation failed: success=false", variant: "destructive" })
-        return
-      }
 
-      console.log("[openWorkspace] Business context:", {
-        businessId: data.business.businessId,
-        businessName: data.business.businessName,
-        businessType: data.business.businessType,
-        role: data.business.role,
-        laundryBusinessId: data.business.laundryBusinessId,
-      })
-
+      // Build user object matching auth-store SessionUser shape
       const user = {
         id: "", name: "Quantix Admin", email: "", avatar: null,
         businessId: data.business.businessId,
@@ -912,9 +888,10 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
       localStorage.setItem("quantix_auth_role", data.business.role)
       localStorage.setItem("quantix_auth_permissions", "[]")
       localStorage.setItem("quantix_auth_businesses", JSON.stringify([data.business]))
-      // Legacy keys for other consumers
+      // Legacy keys
       localStorage.setItem("quantix_business_id", data.business.businessId)
       localStorage.setItem("quantix_business_type", data.business.businessType)
+      localStorage.setItem("quantix_store_id", "")
       localStorage.setItem("quantix_impersonating", "true")
       localStorage.setItem("quantix_laundry_business_id", data.business.laundryBusinessId)
 
@@ -934,7 +911,7 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
       console.log("[openWorkspace] Redirecting to", route)
       window.location.href = route
     } catch (err) {
-      console.log("[openWorkspace] Exception after fetch success:", err)
+      console.log("[openWorkspace] Exception:", err)
       toast({ title: "Error", description: "Failed to open workspace", variant: "destructive" })
     } finally {
       setSaving(false)
