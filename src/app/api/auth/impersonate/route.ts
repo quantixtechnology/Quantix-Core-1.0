@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { isPlatformRole } from "@/lib/permissions"
 
 export const runtime = "nodejs"
 
@@ -11,7 +12,9 @@ export async function GET(request: Request) {
     console.log("[impersonate] Session user:", session?.user)
     console.log("[impersonate] Role:", session?.user?.role)
     console.log("[impersonate] isPlatformAdmin:", session?.user?.isPlatformAdmin)
-    if (!session?.user?.isPlatformAdmin) {
+    // Check role directly — session.isPlatformAdmin may be stale from old JWTs
+    const role = session?.user?.role
+    if (!role || !isPlatformRole(role)) {
       return NextResponse.json({ error: "Unauthorized. Only platform admins can access this." }, { status: 403 })
     }
 
