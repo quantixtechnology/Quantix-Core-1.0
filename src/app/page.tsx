@@ -190,6 +190,7 @@ const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
+const ProcessingDashboard = dynamic(() => import("@/components/laundry/views/processing-dashboard").then(m => ({ default: m.ProcessingDashboard })), { loading: () => <PageLoader /> })
 
 // ── HRMS pages (lazy) ─────────────────────────────────────────────────────
 const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
@@ -376,7 +377,7 @@ function AppRouter() {
   return <AppContent storefrontSlug={storefrontSlug} deliveryEntry={deliveryEntry} />
 }
 
-const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "LAUNDRY_OWNER", "LAUNDRY_STORE_MANAGER", "LAUNDRY_STORE_EXECUTIVE", "LAUNDRY_AUDIT_EXECUTIVE", "LAUNDRY_PROCESSING_MANAGER", "LAUNDRY_PROCESSING_STAFF", "LAUNDRY_DELIVERY_EXECUTIVE"])
+const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "LAUNDRY_OWNER", "LAUNDRY_STORE_MANAGER", "STORE_EXECUTIVE", "AUDIT_EXECUTIVE", "PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE", "DELIVERY_EXECUTIVE"])
 
 function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string | null; deliveryEntry?: boolean }) {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode } = useAdminStore()
@@ -524,7 +525,18 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
     }
   }
 
+  const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
+  const isProcessingRole = currentRole ? PROCESSING_ROLES.has(currentRole) : false
+
   const renderLaundryPage = () => {
+    if (isProcessingRole) {
+      switch (laundryPage) {
+        case "dashboard": return <ProcessingDashboard />
+        case "orders": return <LaundryOrdersView />
+        case "reports": return <LaundryReportsView />
+        default: return <ProcessingDashboard />
+      }
+    }
     switch (laundryPage) {
       case "dashboard": return <LaundryDashboard />
       case "inbox": return <LaundryInboxView />

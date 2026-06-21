@@ -102,11 +102,12 @@ export type PlatformRole =
   // ── Laundry OS Roles ───────────────────────────────────────────────
   | "LAUNDRY_OWNER"
   | "LAUNDRY_STORE_MANAGER"
-  | "LAUNDRY_STORE_EXECUTIVE"
-  | "LAUNDRY_AUDIT_EXECUTIVE"
-  | "LAUNDRY_PROCESSING_MANAGER"
-  | "LAUNDRY_PROCESSING_STAFF"
-  | "LAUNDRY_DELIVERY_EXECUTIVE"
+  | "STORE_EXECUTIVE"
+  | "AUDIT_EXECUTIVE"
+  | "PROCESSING_MANAGER"
+  | "PROCESSING_STAFF"
+  | "QC_EXECUTIVE"
+  | "DELIVERY_EXECUTIVE"
   | "CUSTOMER"
 
 // Human-readable labels for all roles
@@ -132,12 +133,13 @@ export const ROLE_LABELS: Record<string, string> = {
   DELIVERY_STAFF:       "Delivery Staff",
   // Laundry OS roles
   LAUNDRY_OWNER:              "Laundry Owner",
-  LAUNDRY_STORE_MANAGER:      "Laundry Store Manager",
-  LAUNDRY_STORE_EXECUTIVE:    "Laundry Store Executive",
-  LAUNDRY_AUDIT_EXECUTIVE:    "Laundry Audit Executive",
-  LAUNDRY_PROCESSING_MANAGER: "Laundry Processing Manager",
-  LAUNDRY_PROCESSING_STAFF:   "Laundry Processing Staff",
-  LAUNDRY_DELIVERY_EXECUTIVE: "Laundry Delivery Executive",
+  LAUNDRY_STORE_MANAGER:      "Store Manager",
+  STORE_EXECUTIVE:            "Store Executive",
+  AUDIT_EXECUTIVE:            "Audit Executive",
+  PROCESSING_MANAGER:         "Processing Manager",
+  PROCESSING_STAFF:           "Processing Staff",
+  QC_EXECUTIVE:               "QC Executive",
+  DELIVERY_EXECUTIVE:         "Delivery Executive",
   CUSTOMER:             "Customer",
 }
 
@@ -172,11 +174,12 @@ export const BUSINESS_ROLES: PlatformRole[] = [
 export const LAUNDRY_ROLES: PlatformRole[] = [
   "LAUNDRY_OWNER",
   "LAUNDRY_STORE_MANAGER",
-  "LAUNDRY_STORE_EXECUTIVE",
-  "LAUNDRY_AUDIT_EXECUTIVE",
-  "LAUNDRY_PROCESSING_MANAGER",
-  "LAUNDRY_PROCESSING_STAFF",
-  "LAUNDRY_DELIVERY_EXECUTIVE",
+  "STORE_EXECUTIVE",
+  "AUDIT_EXECUTIVE",
+  "PROCESSING_MANAGER",
+  "PROCESSING_STAFF",
+  "QC_EXECUTIVE",
+  "DELIVERY_EXECUTIVE",
 ]
 
 export function isLaundryRole(role: string): boolean {
@@ -435,14 +438,14 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "staff:view",
     "notifications:view",
   ],
-  LAUNDRY_STORE_EXECUTIVE: [
+  STORE_EXECUTIVE: [
     "laundry_os:view",
     "dashboard:view",
     "orders:view", "orders:edit",
     "customers:view", "customers:create",
     "notifications:view",
   ],
-  LAUNDRY_AUDIT_EXECUTIVE: [
+  AUDIT_EXECUTIVE: [
     "laundry_os:view",
     "dashboard:view",
     "orders:view",
@@ -450,19 +453,26 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "reports:view", "reports:export",
     "notifications:view",
   ],
-  LAUNDRY_PROCESSING_MANAGER: [
+  PROCESSING_MANAGER: [
     "laundry_os:view",
     "dashboard:view",
     "orders:view", "orders:edit",
     "notifications:view",
     "reports:view",
   ],
-  LAUNDRY_PROCESSING_STAFF: [
+  PROCESSING_STAFF: [
     "laundry_os:view",
     "orders:view",
     "notifications:view",
   ],
-  LAUNDRY_DELIVERY_EXECUTIVE: [
+  QC_EXECUTIVE: [
+    "laundry_os:view",
+    "dashboard:view",
+    "orders:view",
+    "reports:view",
+    "notifications:view",
+  ],
+  DELIVERY_EXECUTIVE: [
     "laundry_os:view",
     "orders:view",
     "notifications:view",

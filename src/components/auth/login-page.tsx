@@ -19,11 +19,12 @@ function getViewModeForRole(role: Role): ViewMode {
     case "STORE_MANAGER":
     case "LAUNDRY_OWNER":
     case "LAUNDRY_STORE_MANAGER":
-    case "LAUNDRY_STORE_EXECUTIVE":
-    case "LAUNDRY_AUDIT_EXECUTIVE":
-    case "LAUNDRY_PROCESSING_MANAGER":
-    case "LAUNDRY_PROCESSING_STAFF":
-    case "LAUNDRY_DELIVERY_EXECUTIVE":
+    case "STORE_EXECUTIVE":
+    case "AUDIT_EXECUTIVE":
+    case "PROCESSING_MANAGER":
+    case "PROCESSING_STAFF":
+    case "QC_EXECUTIVE":
+    case "DELIVERY_EXECUTIVE":
       return "business_owner";
     case "CUSTOMER":
       return "customer";

@@ -15,6 +15,8 @@ import {
   Receipt,
   Package,
   HelpCircle,
+  Factory,
+  Wrench,
 } from "lucide-react";
 import type { Role } from "@/lib/types";
 import { ROLES } from "@/lib/constants";
@@ -49,6 +51,15 @@ const roleIcons: Record<Role, React.ElementType> = {
   SUPPORT_STAFF: HelpCircle,
   DELIVERY_STAFF: Truck,
   CUSTOMER: User,
+  // Laundry OS roles
+  LAUNDRY_OWNER: Shield,
+  LAUNDRY_STORE_MANAGER: Store,
+  STORE_EXECUTIVE: Store,
+  AUDIT_EXECUTIVE: ShieldCheck,
+  PROCESSING_MANAGER: Factory,
+  PROCESSING_STAFF: Wrench,
+  QC_EXECUTIVE: ShieldCheck,
+  DELIVERY_EXECUTIVE: Truck,
 };
 
 const roleColors: Record<Role, string> = {
@@ -77,6 +88,15 @@ const roleColors: Record<Role, string> = {
   SUPPORT_STAFF: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
   DELIVERY_STAFF: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
   CUSTOMER: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300",
+  // Laundry OS roles
+  LAUNDRY_OWNER: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
+  LAUNDRY_STORE_MANAGER: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  STORE_EXECUTIVE: "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400",
+  AUDIT_EXECUTIVE: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+  PROCESSING_MANAGER: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+  PROCESSING_STAFF: "bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
+  QC_EXECUTIVE: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+  DELIVERY_EXECUTIVE: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
 };
 
 // ============================================================================

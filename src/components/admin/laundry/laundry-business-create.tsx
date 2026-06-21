@@ -30,6 +30,7 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
   const [credentials, setCredentials] = useState<{
     owner: { email: string; password: string; name: string; role: string }
     storeManager: { email: string; password: string; name: string; role: string }
+    processingManager: { email: string; password: string; name: string; role: string }
   } | null>(null)
 
   const [form, setForm] = useState({
@@ -253,6 +254,27 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
                   <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
                     <span className="text-gray-500">Role</span>
                     <span className="text-gray-900">Store Manager</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-bold">P</span>
+                  Processing Manager Login
+                </h3>
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Email</span>
+                    <span className="font-mono text-gray-900">{credentials.processingManager.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Password</span>
+                    <span className="font-mono text-gray-900">{credentials.processingManager.password}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Role</span>
+                    <span className="text-gray-900">Processing Manager</span>
                   </div>
                 </div>
               </div>

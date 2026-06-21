@@ -60,11 +60,12 @@ export type Role =
   // Laundry OS roles (standalone product)
   | 'LAUNDRY_OWNER'
   | 'LAUNDRY_STORE_MANAGER'
-  | 'LAUNDRY_STORE_EXECUTIVE'
-  | 'LAUNDRY_AUDIT_EXECUTIVE'
-  | 'LAUNDRY_PROCESSING_MANAGER'
-  | 'LAUNDRY_PROCESSING_STAFF'
-  | 'LAUNDRY_DELIVERY_EXECUTIVE'
+  | 'STORE_EXECUTIVE'
+  | 'AUDIT_EXECUTIVE'
+  | 'PROCESSING_MANAGER'
+  | 'PROCESSING_STAFF'
+  | 'QC_EXECUTIVE'
+  | 'DELIVERY_EXECUTIVE'
   | 'CUSTOMER';
 
 /** Order types including pickup-and-delivery for laundry etc. */

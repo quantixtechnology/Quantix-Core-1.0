@@ -1055,12 +1055,12 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
               Business Provisioning &amp; Capability Control Center. Only Quantix can modify these settings.
             </p>
 
-                <LicenseHealthCard licensing={licensing} />
-
             {!licensing ? (
               <div className="py-8 text-center text-gray-400">Loading licensing data...</div>
             ) : (
               <>
+                <LicenseHealthCard licensing={licensing} />
+
                 <SubscriptionBillingCard subscription={licensing.subscription} />
 
                 <PlatformProvisioningCard
@@ -1144,7 +1144,7 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Workspace</label>
-                  <Button variant="outline" size="sm" className="mt-1" onClick={openWorkspace}>
+                  <Button variant="outline" size="sm" className="mt-1" onClick={launchLaundryOS}>
                     <ExternalLink className="h-3 w-3 mr-1" /> Open
                   </Button>
                 </div>

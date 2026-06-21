@@ -237,6 +237,55 @@ export const ROLES: Record<Role, { label: string; description: string; level: nu
     level: 10,
     scope: 'business',
   },
+  // Laundry OS roles
+  LAUNDRY_OWNER: {
+    label: 'Laundry Owner',
+    description: 'Full laundry business access — stores, processing, orders, staff, reports',
+    level: 80,
+    scope: 'business',
+  },
+  LAUNDRY_STORE_MANAGER: {
+    label: 'Store Manager',
+    description: 'Store operations, order management, customer management, staff oversight',
+    level: 60,
+    scope: 'business',
+  },
+  STORE_EXECUTIVE: {
+    label: 'Store Executive',
+    description: 'Order processing and customer handling at store level',
+    level: 50,
+    scope: 'business',
+  },
+  AUDIT_EXECUTIVE: {
+    label: 'Audit Executive',
+    description: 'Order audit, quality checks, reports and compliance',
+    level: 45,
+    scope: 'business',
+  },
+  PROCESSING_MANAGER: {
+    label: 'Processing Manager',
+    description: 'Factory operations — processing queue, staff, QC oversight, production reports',
+    level: 60,
+    scope: 'business',
+  },
+  PROCESSING_STAFF: {
+    label: 'Processing Staff',
+    description: 'Day-to-day processing operations at the production facility',
+    level: 40,
+    scope: 'business',
+  },
+  QC_EXECUTIVE: {
+    label: 'QC Executive',
+    description: 'Quality control inspections and packing verification',
+    level: 45,
+    scope: 'business',
+  },
+  DELIVERY_EXECUTIVE: {
+    label: 'Delivery Executive',
+    description: 'Pickup and delivery operations, route management',
+    level: 35,
+    scope: 'business',
+  },
 };
 
 // ============================================================================

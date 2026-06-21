@@ -296,9 +296,37 @@ export async function POST(request: Request) {
       },
     })
 
+    // ── Auto-create Processing Center Manager user account ──────────────
+    const processingEmail = `processing-${businessCode.toLowerCase()}@laundry.lan`
+    const processingPassword = generateTempPassword()
+    const processingPasswordHash = await hashPassword(processingPassword)
+
+    const processingUser = await prisma.user.create({
+      data: {
+        email: processingEmail,
+        loginId: processingEmail,
+        name: `${businessName} - Processing Manager`,
+        passwordHash: processingPasswordHash,
+        authProvider: "PASSWORD",
+        isActive: true,
+      },
+    })
+
+    await prisma.businessUser.create({
+      data: {
+        userId: processingUser.id,
+        businessId: platformBusiness.id,
+        role: "PROCESSING_MANAGER",
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    })
+
     // ── Link users to LaundryRole assignments ──────────────────────────
     const laundryOwnerRole = roleByCode.get("ADMIN")
     const laundryStoreMgrRole = roleByCode.get("STORE_MANAGER")
+    const processingMgrRole = roleByCode.get("PROCESSING_MANAGER")
 
     if (laundryOwnerRole) {
       await prisma.laundryUserAssignment.create({
@@ -322,6 +350,17 @@ export async function POST(request: Request) {
       })
     }
 
+    if (processingMgrRole) {
+      await prisma.laundryUserAssignment.create({
+        data: {
+          businessId: business.id,
+          roleId: processingMgrRole,
+          userId: processingUser.id,
+          active: true,
+        },
+      })
+    }
+
     return NextResponse.json({
       ...business,
       credentials: {
@@ -336,6 +375,12 @@ export async function POST(request: Request) {
           password: storeManagerPassword,
           name: `${businessName} - Store Manager`,
           role: "LAUNDRY_STORE_MANAGER",
+        },
+        processingManager: {
+          email: processingEmail,
+          password: processingPassword,
+          name: `${businessName} - Processing Manager`,
+          role: "PROCESSING_MANAGER",
         },
       },
     }, { status: 201 })

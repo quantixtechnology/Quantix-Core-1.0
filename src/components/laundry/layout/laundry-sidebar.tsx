@@ -15,6 +15,7 @@ import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import { useLaundryLicensing } from "@/hooks/use-laundry-licensing"
+import { LAUNDRY_ROLES } from "@/lib/permissions"
 import {
   LayoutDashboard, Inbox, ShoppingBag, Users, Store,
   Factory, BarChart3, Settings, ChevronLeft, Sparkles, Plus,
@@ -28,7 +29,15 @@ type NavItem = {
   feature?: string
 }
 
-const laundryNavItems: NavItem[] = [
+const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
+
+const processingNavItems: NavItem[] = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "orders",    label: "Orders",    icon: ShoppingBag },
+  { key: "reports",   label: "Reports",   icon: BarChart3 },
+]
+
+const storeNavItems: NavItem[] = [
   { key: "dashboard",          label: "Dashboard",          icon: LayoutDashboard },
   { key: "inbox",              label: "My Inbox",           icon: Inbox },
   { key: "orders",             label: "Orders",             icon: ShoppingBag },
@@ -47,7 +56,7 @@ interface LaundrySidebarProps {
 
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
   const { laundryPage, setLaundryPage } = useAdminStore()
-  const { user, currentBusinessId } = useAuthStore()
+  const { user, currentBusinessId, currentRole } = useAuthStore()
   const { isMobile } = useResponsive()
   const { isEnabled } = useLaundryLicensing(currentBusinessId)
 
@@ -68,15 +77,23 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     "--sidebar-heading": "rgba(56,189,248,0.55)",
   } as React.CSSProperties
 
-  // Redirect to dashboard if current page is hidden by licensing
+  const isProcessingRole = currentRole ? PROCESSING_ROLES.has(currentRole) : false
+  const laundryNavItems = isProcessingRole ? processingNavItems : storeNavItems
+
+  // Redirect to dashboard if current page is hidden by licensing or role
   useEffect(() => {
+    const validKeys = new Set(laundryNavItems.map(i => i.key))
+    if (!validKeys.has(laundryPage)) {
+      setLaundryPage("dashboard")
+      return
+    }
     const hiddenPage = laundryNavItems.find(
       item => item.key === laundryPage && item.feature && !isEnabled(item.feature)
     )
     if (hiddenPage) {
       setLaundryPage("dashboard")
     }
-  }, [laundryPage, isEnabled, setLaundryPage])
+  }, [laundryPage, isEnabled, setLaundryPage, currentRole])
 
   const handleNavigate = (page: LaundryBusinessPage) => {
     setLaundryPage(page)
@@ -158,7 +175,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500">
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
-                <span className="text-sm font-bold tracking-wide text-white">Laundry OS</span>
+            <span className="text-sm font-bold tracking-wide text-white">{isProcessingRole ? "Processing" : "Laundry OS"}</span>
               </div>
             </div>
           </SheetHeader>
