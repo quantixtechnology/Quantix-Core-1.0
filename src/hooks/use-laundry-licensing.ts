@@ -6,80 +6,40 @@ export interface LaundrySubscription {
   id: string
   businessId: string
   plan: string
+  templatePreset: string
   billingCycle: string
   status: string
   startDate: string
   renewalDate: string
+  trialExpiry: string | null
+  lastPaymentDate: string | null
+  nextInvoiceDate: string | null
   workspaceType: string
   businessCategory: string
 }
 
-export interface LaundryLicense {
-  // Infrastructure
-  customerWebsite: boolean
-  customerPWA: boolean
-  androidCustomerApp: boolean
-  deliveryApp: boolean
-  adminApp: boolean
-  customDomain: boolean
-  ssl: boolean
-  cloudStorage: boolean
-  automatedBackups: boolean
-  pushNotifications: boolean
-  // Operational
-  transportModule: boolean
-  barcodeModule: boolean
-  homeDeliveryModule: boolean
-  ironingModule: boolean
-  pickupRequests: boolean
-  deliveryManagement: boolean
-  routeManagement: boolean
-  auditModule: boolean
-  // Workflow
+export interface LaundryProvisioningItem {
+  id: string
+  businessId: string
+  item: string
+  status: string
+  notes: string | null
+}
+
+export interface LaundryOperationalConfig {
+  id: string
+  businessId: string
+  transportEnabled: boolean
+  barcodeEnabled: boolean
+  homeDeliveryEnabled: boolean
+  ironingEnabled: boolean
+}
+
+export interface LaundryWorkflowQualityConfig {
+  id: string
+  businessId: string
   photoAudit: boolean
-  qrOrderLabels: boolean
-  barcodeGarmentTracking: boolean
-  itemLevelTracking: boolean
-  processingChecklists: boolean
-  qualityControl: boolean
-  dispatchVerification: boolean
-  deliveryOTP: boolean
-  // Payment
-  cashCollection: boolean
-  upiPayments: boolean
-  razorpay: boolean
-  phonePe: boolean
-  advancePayment: boolean
-  partialPayment: boolean
-  corporateBilling: boolean
-  creditAccounts: boolean
-  // Engagement
-  membershipModule: boolean
-  loyaltyModule: boolean
-  referralProgram: boolean
-  coupons: boolean
-  walletSystem: boolean
-  giftCards: boolean
-  // Communication
-  smsNotifications: boolean
-  whatsappNotifications: boolean
-  emailNotifications: boolean
-  pushNotificationsModule: boolean
-  marketingCampaigns: boolean
-  // Reporting
-  basicReports: boolean
-  advancedReports: boolean
-  storeAnalytics: boolean
-  processingAnalytics: boolean
-  employeeAnalytics: boolean
-  revenueAnalytics: boolean
-  // White Label
-  dedicatedApk: boolean
-  customPackageName: boolean
-  customSplashScreen: boolean
-  customAppIcon: boolean
-  playStorePublishing: boolean
-  customDomainWL: boolean
+  auditModule: boolean
 }
 
 export interface LaundryScalingLimit {
@@ -87,85 +47,85 @@ export interface LaundryScalingLimit {
   storesUsed: number
   processingCentersAllowed: number
   processingCentersUsed: number
+  storeCapacityKg: number
+  processingCapacityKg: number
   employeesAllowed: number
   employeesUsed: number
   deliveryStaffAllowed: number
   deliveryStaffUsed: number
+  ordersPerDay: number
   ordersPerMonthLimit: number
   storageLimitMB: number
 }
 
-export interface LaundryProvisioningStatus {
-  workspaceCreated: boolean
-  sslConfigured: boolean
-  pwaGenerated: boolean
-  androidApkGenerated: boolean
-  domainMapped: boolean
+export interface LaundryBrandingConfig {
+  id: string
+  businessId: string
+  logoUploaded: boolean
+  faviconUploaded: boolean
+  brandColorsConfigured: boolean
+  dedicatedApk: boolean
+  customPackageName: boolean
+  customSplashScreen: boolean
+  customAppIcon: boolean
   playStorePublished: boolean
-  backupEnabled: boolean
-  monitoringEnabled: boolean
+  customDomain: boolean
+  status: string
+}
+
+export interface LaundryPlatformProvisioning {
+  customerWebsite: boolean
+  customerPWA: boolean
+  androidCustomerApp: boolean
+  deliveryApp: boolean
+  adminApp: boolean
+  ssl: boolean
+  cloudStorage: boolean
+  automatedBackups: boolean
+  pushNotifications: boolean
+}
+
+export interface LaundryAuditLog {
+  id: string
+  businessId: string
+  actorId: string | null
+  actorName: string | null
+  section: string
+  field: string
+  oldValue: string | null
+  newValue: string | null
+  ipAddress: string | null
+  createdAt: string
 }
 
 export interface LicensingData {
   subscription: LaundrySubscription | null
-  license: LaundryLicense
-  scalingLimit: LaundryScalingLimit
-  provisioningStatus: LaundryProvisioningStatus
+  provisioning: LaundryProvisioningItem[]
+  operationalConfig: LaundryOperationalConfig | null
+  workflowQuality: LaundryWorkflowQualityConfig | null
+  platformProvisioning: LaundryPlatformProvisioning | null
+  scalingLimit: LaundryScalingLimit | null
+  brandingConfig: LaundryBrandingConfig | null
+  auditLogs: LaundryAuditLog[]
 }
 
-// Mapping from feature toggle keys to workspace nav items
-// True = feature is licensed, nav item visible
-// False = feature not licensed, nav item hidden
 export const FEATURE_NAV_MAP: Record<string, string> = {
-  stores: "multiStoreEnabled",
-  "processing-centers": "multiProcessingEnabled",
+  stores: "storesAllowed",
+  "processing-centers": "processingCentersAllowed",
 }
 
 const CACHE: Record<string, { data: LicensingData; ts: number }> = {}
 const CACHE_TTL = 60_000
 
-const DEFAULT_LICENSE: LaundryLicense = {
-  customerWebsite: false, customerPWA: true, androidCustomerApp: false,
-  deliveryApp: false, adminApp: true, customDomain: false, ssl: true,
-  cloudStorage: true, automatedBackups: true, pushNotifications: true,
-  transportModule: true, barcodeModule: true, homeDeliveryModule: true,
-  ironingModule: true, pickupRequests: false, deliveryManagement: false,
-  routeManagement: false, auditModule: false,
-  photoAudit: true, qrOrderLabels: false, barcodeGarmentTracking: false,
-  itemLevelTracking: false, processingChecklists: false, qualityControl: false,
-  dispatchVerification: false, deliveryOTP: true,
-  cashCollection: true, upiPayments: true, razorpay: false, phonePe: false,
-  advancePayment: false, partialPayment: true, corporateBilling: false,
-  creditAccounts: false,
-  membershipModule: false, loyaltyModule: false, referralProgram: false,
-  coupons: false, walletSystem: false, giftCards: false,
-  smsNotifications: false, whatsappNotifications: false,
-  emailNotifications: true, pushNotificationsModule: true,
-  marketingCampaigns: false,
-  basicReports: true, advancedReports: false, storeAnalytics: false,
-  processingAnalytics: false, employeeAnalytics: false, revenueAnalytics: false,
-  dedicatedApk: false, customPackageName: false, customSplashScreen: false,
-  customAppIcon: false, playStorePublishing: false, customDomainWL: false,
-}
-
-const DEFAULT_SCALING: LaundryScalingLimit = {
-  storesAllowed: 1, storesUsed: 0, processingCentersAllowed: 1,
-  processingCentersUsed: 0, employeesAllowed: 5, employeesUsed: 0,
-  deliveryStaffAllowed: 2, deliveryStaffUsed: 0, ordersPerMonthLimit: 500,
-  storageLimitMB: 500,
-}
-
-const DEFAULT_PROVISIONING: LaundryProvisioningStatus = {
-  workspaceCreated: true, sslConfigured: true, pwaGenerated: true,
-  androidApkGenerated: false, domainMapped: false, playStorePublished: false,
-  backupEnabled: true, monitoringEnabled: true,
-}
-
 const DEFAULT_DATA: LicensingData = {
   subscription: null,
-  license: DEFAULT_LICENSE,
-  scalingLimit: DEFAULT_SCALING,
-  provisioningStatus: DEFAULT_PROVISIONING,
+  provisioning: [],
+  operationalConfig: null,
+  workflowQuality: null,
+  platformProvisioning: null,
+  scalingLimit: null,
+  brandingConfig: null,
+  auditLogs: [],
 }
 
 export function useLaundryLicensing(businessId?: string | null) {
@@ -213,13 +173,16 @@ export function useLaundryLicensing(businessId?: string | null) {
   useEffect(() => { fetchLicensing() }, [fetchLicensing])
 
   const isEnabled = useCallback((feature: string): boolean => {
-    // Check scaling limits for numeric features
-    if (feature === "multiStoreEnabled") return data.scalingLimit.storesAllowed > 1
-    if (feature === "multiProcessingEnabled") return data.scalingLimit.processingCentersAllowed > 1
-    if (feature === "employeeManagementEnabled") return data.scalingLimit.employeesAllowed > 1
-    // Check license booleans
-    const lic = data.license as Record<string, boolean | undefined>
-    return !!lic[feature]
+    if (feature === "multiStoreEnabled") return (data.scalingLimit?.storesAllowed ?? 1) > 1
+    if (feature === "multiProcessingEnabled") return (data.scalingLimit?.processingCentersAllowed ?? 1) > 1
+    if (feature === "employeeManagementEnabled") return (data.scalingLimit?.employeesAllowed ?? 1) > 1
+    // Check operational config toggles
+    const cfg = data.operationalConfig as Record<string, boolean | undefined> | null
+    if (cfg?.[feature] !== undefined) return !!cfg[feature]
+    // Check platform provisioning toggles
+    const pp = data.platformProvisioning as Record<string, boolean | undefined> | null
+    if (pp?.[feature] !== undefined) return !!pp[feature]
+    return false
   }, [data])
 
   const refetch = useCallback(() => {

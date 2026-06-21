@@ -41,6 +41,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Business not found" }, { status: 404 })
     }
 
+    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId } })
+    if (limits && limits.processingCentersUsed >= limits.processingCentersAllowed) {
+      return NextResponse.json({ error: `Processing center limit reached (${limits.processingCentersAllowed}). Contact Quantix to increase capacity.` }, { status: 403 })
+    }
+
     const centerCode = await generateProcessingCenterCode(business.businessCode)
 
     const center = await prisma.laundryProcessingCenter.create({
@@ -60,6 +65,11 @@ export async function POST(request: Request) {
         longitude: longitude ? parseFloat(longitude) : null,
         dailyCapacityKg: dailyCapacityKg ? parseFloat(dailyCapacityKg) : null,
       },
+    })
+
+    await prisma.laundryScalingLimit.update({
+      where: { businessId },
+      data: { processingCentersUsed: { increment: 1 } },
     })
 
     return NextResponse.json(center, { status: 201 })

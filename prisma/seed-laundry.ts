@@ -200,24 +200,59 @@ async function ensureBusinessConfigs(stageMap: Map<string, string>) {
 
 async function ensureLicensing() {
   const businesses = await prisma.laundryBusiness.findMany()
+  const PROVISIONING_ITEMS = [
+    "workspace", "databaseProvisioned", "storageProvisioned", "domain", "ssl",
+    "pwa", "customerApp", "deliveryApp", "adminApp", "apkBuild",
+    "playStore", "monitoring", "backup",
+  ]
   for (const biz of businesses) {
-    // Subscription
+    // 1. Subscription & Billing
     await prisma.laundrySubscription.upsert({
       where: { businessId: biz.id },
       update: {},
       create: {
         businessId: biz.id,
-        plan: biz.plan || "STANDARD",
-        status: biz.status === "ACTIVE" ? "ACTIVE" : "PAST_DUE",
+        plan: "STARTER",
+        templatePreset: "STARTER",
+        status: "ACTIVE",
         startDate: biz.createdAt,
         renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        trialExpiry: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        lastPaymentDate: biz.createdAt,
+        nextInvoiceDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         billingCycle: "MONTHLY",
       },
     })
 
-    // License - map old toggles to new structure
-    const infraEnabled = true
-    await prisma.laundryLicense.upsert({
+    // 2. Platform Provisioning / 7. Deployment Status
+    for (const item of PROVISIONING_ITEMS) {
+      const completedItems = ["workspace", "ssl", "pwa", "monitoring", "backup", "databaseProvisioned", "storageProvisioned"]
+      await prisma.laundryProvisioningItem.upsert({
+        where: { businessId_item: { businessId: biz.id, item } },
+        update: {},
+        create: {
+          businessId: biz.id,
+          item,
+          status: completedItems.includes(item) ? "COMPLETED" : "PENDING",
+        },
+      })
+    }
+
+    // 3. Operational Configuration (4 toggles only)
+    await prisma.laundryOperationalConfig.upsert({
+      where: { businessId: biz.id },
+      update: {},
+      create: {
+        businessId: biz.id,
+        transportEnabled: true,
+        barcodeEnabled: true,
+        homeDeliveryEnabled: true,
+        ironingEnabled: true,
+      },
+    })
+
+    // Platform Provisioning
+    await prisma.laundryPlatformProvisioning.upsert({
       where: { businessId: biz.id },
       update: {},
       create: {
@@ -227,62 +262,25 @@ async function ensureLicensing() {
         androidCustomerApp: false,
         deliveryApp: false,
         adminApp: true,
-        customDomain: false,
         ssl: true,
         cloudStorage: true,
         automatedBackups: true,
         pushNotifications: true,
-        transportModule: true,
-        barcodeModule: true,
-        homeDeliveryModule: true,
-        ironingModule: true,
-        pickupRequests: false,
-        deliveryManagement: false,
-        routeManagement: false,
-        auditModule: false,
-        photoAudit: true,
-        qrOrderLabels: false,
-        barcodeGarmentTracking: false,
-        itemLevelTracking: false,
-        processingChecklists: false,
-        qualityControl: false,
-        dispatchVerification: false,
-        deliveryOTP: true,
-        cashCollection: true,
-        upiPayments: true,
-        razorpay: false,
-        phonePe: false,
-        advancePayment: false,
-        partialPayment: true,
-        corporateBilling: false,
-        creditAccounts: false,
-        membershipModule: false,
-        loyaltyModule: false,
-        referralProgram: false,
-        coupons: false,
-        walletSystem: false,
-        giftCards: false,
-        smsNotifications: false,
-        whatsappNotifications: false,
-        emailNotifications: true,
-        pushNotificationsModule: true,
-        marketingCampaigns: false,
-        basicReports: true,
-        advancedReports: false,
-        storeAnalytics: false,
-        processingAnalytics: false,
-        employeeAnalytics: false,
-        revenueAnalytics: false,
-        dedicatedApk: false,
-        customPackageName: false,
-        customSplashScreen: false,
-        customAppIcon: false,
-        playStorePublishing: false,
-        customDomainWL: false,
       },
     })
 
-    // Scaling limits
+    // 4. Workflow & Quality Controls
+    await prisma.laundryWorkflowQualityConfig.upsert({
+      where: { businessId: biz.id },
+      update: {},
+      create: {
+        businessId: biz.id,
+        photoAudit: true,
+        auditModule: true,
+      },
+    })
+
+    // 5. Capacity Limits
     await prisma.laundryScalingLimit.upsert({
       where: { businessId: biz.id },
       update: {},
@@ -290,27 +288,25 @@ async function ensureLicensing() {
         businessId: biz.id,
         storesAllowed: 1,
         processingCentersAllowed: 1,
+        storeCapacityKg: 500,
+        processingCapacityKg: 1000,
         employeesAllowed: 5,
         deliveryStaffAllowed: 2,
+        ordersPerDay: 50,
         ordersPerMonthLimit: 500,
         storageLimitMB: 500,
       },
     })
 
-    // Provisioning status
-    await prisma.laundryProvisioningStatus.upsert({
+    // 6. Branding & White Label
+    await prisma.laundryBrandingConfig.upsert({
       where: { businessId: biz.id },
       update: {},
       create: {
         businessId: biz.id,
-        workspaceCreated: true,
-        sslConfigured: true,
-        pwaGenerated: true,
-        androidApkGenerated: false,
-        domainMapped: false,
-        playStorePublished: false,
-        backupEnabled: true,
-        monitoringEnabled: true,
+        logoUploaded: !!biz.logo,
+        faviconUploaded: !!biz.favicon,
+        status: biz.logo ? "IN_PROGRESS" : "PENDING",
       },
     })
   }

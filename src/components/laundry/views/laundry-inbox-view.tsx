@@ -20,10 +20,10 @@ type StageWithDetails = {
 }
 
 const FEATURE_STAGE_MAP: Record<string, string[]> = {
-  transportModule: ["IN_TRANSIT_TO_PROCESSING", "IN_TRANSIT_TO_STORE"],
-  barcodeModule: ["BARCODE_TAGGING"],
-  ironingModule: ["IRONING"],
-  homeDeliveryModule: ["READY_FOR_DELIVERY", "DELIVERED"],
+  transportEnabled: ["IN_TRANSIT_TO_PROCESSING", "IN_TRANSIT_TO_STORE"],
+  barcodeEnabled: ["BARCODE_TAGGING"],
+  ironingEnabled: ["IRONING"],
+  homeDeliveryEnabled: ["READY_FOR_DELIVERY", "DELIVERED"],
 }
 
 export function LaundryInboxView() {

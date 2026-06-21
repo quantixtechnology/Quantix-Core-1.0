@@ -18,32 +18,32 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
 
   const sections = [
     {
-      key: "transportModule",
+      key: "transportEnabled",
       title: "Transport Setup",
       icon: Truck,
       description: "Configure routes, vehicles, drivers, and transit settings for item transportation between stores and processing centers.",
-      visible: isEnabled("transportModule"),
+      visible: isEnabled("transportEnabled"),
     },
     {
-      key: "barcodeModule",
+      key: "barcodeEnabled",
       title: "Barcode Setup",
       icon: Scan,
       description: "Configure barcode format, tag printing, and scanner preferences for item tracking.",
-      visible: isEnabled("barcodeModule"),
+      visible: isEnabled("barcodeEnabled"),
     },
     {
-      key: "ironingModule",
+      key: "ironingEnabled",
       title: "Ironing Setup",
       icon: Thermometer,
       description: "Configure ironing workflow, capacity, and quality standards.",
-      visible: isEnabled("ironingModule"),
+      visible: isEnabled("ironingEnabled"),
     },
     {
-      key: "homeDeliveryModule",
+      key: "homeDeliveryEnabled",
       title: "Delivery Setup",
       icon: Home,
       description: "Configure delivery zones, delivery staff, and service level agreements.",
-      visible: isEnabled("homeDeliveryModule"),
+      visible: isEnabled("homeDeliveryEnabled"),
     },
   ]
 

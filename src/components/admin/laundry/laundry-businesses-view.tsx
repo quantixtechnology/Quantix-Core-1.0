@@ -175,145 +175,37 @@ function BusinessListView({ onSelect }: { onSelect: (id: string) => void }) {
   )
 }
 
-// ============================================================================
-// Categories definition for the licensing feature matrix
-// ============================================================================
-interface LicenseCategory {
-  id: string
-  title: string
-  icon: string
-  features: { key: string; label: string; description: string }[]
-}
-
-const LICENSE_CATEGORIES: LicenseCategory[] = [
-  {
-    id: "infrastructure", title: "Infrastructure", icon: "Globe",
-    features: [
-      { key: "customerWebsite", label: "Customer Website", description: "Public-facing business website" },
-      { key: "customerPWA", label: "Customer PWA", description: "Progressive Web App for customers" },
-      { key: "androidCustomerApp", label: "Android Customer App", description: "Native Android app for customers" },
-      { key: "deliveryApp", label: "Delivery App", description: "Dedicated delivery partner app" },
-      { key: "adminApp", label: "Admin App", description: "Administrative mobile application" },
-      { key: "customDomain", label: "Custom Domain", description: "Custom domain for the business" },
-      { key: "ssl", label: "SSL", description: "SSL certificate provisioning" },
-      { key: "cloudStorage", label: "Cloud Storage", description: "Cloud-based file and image storage" },
-      { key: "automatedBackups", label: "Automated Backups", description: "Automated data backup scheduling" },
-      { key: "pushNotifications", label: "Push Notifications", description: "Push notification delivery infrastructure" },
-    ],
-  },
-  {
-    id: "operational", title: "Operational Modules", icon: "Settings2",
-    features: [
-      { key: "transportModule", label: "Transport Module", description: "In-transit stages and tracking between locations" },
-      { key: "barcodeModule", label: "Barcode Module", description: "Barcode tagging and scanning at processing" },
-      { key: "homeDeliveryModule", label: "Home Delivery Module", description: "Delivery stages for customer home delivery" },
-      { key: "ironingModule", label: "Ironing Module", description: "Ironing stage in the processing workflow" },
-      { key: "pickupRequests", label: "Pickup Requests", description: "Customer pickup request scheduling" },
-      { key: "deliveryManagement", label: "Delivery Management", description: "Delivery fleet and dispatch management" },
-      { key: "routeManagement", label: "Route Management", description: "Optimized route planning for deliveries" },
-      { key: "auditModule", label: "Audit Module", description: "Detailed order and process audit trails" },
-    ],
-  },
-  {
-    id: "workflow", title: "Workflow Modules", icon: "MapPin",
-    features: [
-      { key: "photoAudit", label: "Photo Audit", description: "Photo-based audit at order and processing entry" },
-      { key: "qrOrderLabels", label: "QR Order Labels", description: "QR-coded labels on customer orders" },
-      { key: "barcodeGarmentTracking", label: "Barcode Garment Tracking", description: "Individual garment tracking via barcode" },
-      { key: "itemLevelTracking", label: "Item Level Tracking", description: "Track each item through the entire workflow" },
-      { key: "processingChecklists", label: "Processing Checklists", description: "Checklist-driven processing workflow" },
-      { key: "qualityControl", label: "Quality Control", description: "QC checkpoints throughout processing" },
-      { key: "dispatchVerification", label: "Dispatch Verification", description: "Verified dispatch before shipping" },
-      { key: "deliveryOTP", label: "Delivery OTP", description: "OTP-based delivery confirmation" },
-    ],
-  },
-  {
-    id: "payment", title: "Payment Modules", icon: "CreditCard",
-    features: [
-      { key: "cashCollection", label: "Cash Collection", description: "Cash payment collection at store or delivery" },
-      { key: "upiPayments", label: "UPI Payments", description: "UPI-based digital payments" },
-      { key: "razorpay", label: "Razorpay", description: "Razorpay payment gateway integration" },
-      { key: "phonePe", label: "PhonePe", description: "PhonePe payment gateway integration" },
-      { key: "advancePayment", label: "Advance Payment", description: "Pre-payment before service" },
-      { key: "partialPayment", label: "Partial Payment", description: "Partial payment at order placement" },
-      { key: "corporateBilling", label: "Corporate Billing", description: "Bulk billing for corporate accounts" },
-      { key: "creditAccounts", label: "Credit Accounts", description: "Credit-based accounts for trusted customers" },
-    ],
-  },
-  {
-    id: "engagement", title: "Customer Engagement", icon: "Users",
-    features: [
-      { key: "membershipModule", label: "Membership Module", description: "Customer membership plans with recurring billing" },
-      { key: "loyaltyModule", label: "Loyalty Module", description: "Points-based loyalty and reward system" },
-      { key: "referralProgram", label: "Referral Program", description: "Customer referral and incentive program" },
-      { key: "coupons", label: "Coupons", description: "Discount coupons and promotional offers" },
-      { key: "walletSystem", label: "Wallet System", description: "Digital wallet for store credit and refunds" },
-      { key: "giftCards", label: "Gift Cards", description: "Digital and physical gift card system" },
-    ],
-  },
-  {
-    id: "communication", title: "Communication Modules", icon: "Shield",
-    features: [
-      { key: "smsNotifications", label: "SMS Notifications", description: "SMS-based order updates and alerts" },
-      { key: "whatsappNotifications", label: "WhatsApp Notifications", description: "WhatsApp messaging for order communication" },
-      { key: "emailNotifications", label: "Email Notifications", description: "Email-based order confirmations and receipts" },
-      { key: "pushNotificationsModule", label: "Push Notifications", description: "In-app push notification delivery" },
-      { key: "marketingCampaigns", label: "Marketing Campaigns", description: "Bulk marketing and promotional campaigns" },
-    ],
-  },
-  {
-    id: "reporting", title: "Reporting Modules", icon: "BarChart3",
-    features: [
-      { key: "basicReports", label: "Basic Reports", description: "Standard daily and monthly business reports" },
-      { key: "advancedReports", label: "Advanced Reports", description: "Custom report builder and detailed analytics" },
-      { key: "storeAnalytics", label: "Store Analytics", description: "Per-store performance and metrics" },
-      { key: "processingAnalytics", label: "Processing Analytics", description: "Processing center throughput and efficiency" },
-      { key: "employeeAnalytics", label: "Employee Analytics", description: "Staff productivity and performance metrics" },
-      { key: "revenueAnalytics", label: "Revenue Analytics", description: "Revenue tracking and financial dashboards" },
-    ],
-  },
-  {
-    id: "whiteLabel", title: "White Label Modules", icon: "Shield",
-    features: [
-      { key: "dedicatedApk", label: "Dedicated APK", description: "Standalone branded APK for the business" },
-      { key: "customPackageName", label: "Custom Package Name", description: "Custom Android package identifier" },
-      { key: "customSplashScreen", label: "Custom Splash Screen", description: "Branded splash screen on mobile apps" },
-      { key: "customAppIcon", label: "Custom App Icon", description: "Custom app icon for branded apps" },
-      { key: "playStorePublishing", label: "Play Store Publishing", description: "Publish branded app to Google Play Store" },
-      { key: "customDomainWL", label: "Custom Domain", description: "White-labeled custom domain" },
-    ],
-  },
-]
-
-const SCALING_FIELDS: { key: keyof ScalingLimits; label: string; description: string }[] = [
-  { key: "storesAllowed", label: "Stores Allowed", description: "Maximum number of retail store locations" },
-  { key: "processingCentersAllowed", label: "Processing Centers Allowed", description: "Maximum number of processing centers" },
-  { key: "employeesAllowed", label: "Employees Allowed", description: "Maximum number of staff employees" },
-  { key: "deliveryStaffAllowed", label: "Delivery Staff Allowed", description: "Maximum number of delivery personnel" },
-  { key: "ordersPerMonthLimit", label: "Orders Per Month", description: "Monthly order processing capacity" },
-  { key: "storageLimitMB", label: "Storage Limit (MB)", description: "Cloud storage allocation in megabytes" },
-]
-
 interface ScalingLimits {
   storesAllowed: number; storesUsed: number;
   processingCentersAllowed: number; processingCentersUsed: number;
+  storeCapacityKg: number; processingCapacityKg: number;
   employeesAllowed: number; employeesUsed: number;
   deliveryStaffAllowed: number; deliveryStaffUsed: number;
-  ordersPerMonthLimit: number; storageLimitMB: number;
+  ordersPerDay: number; ordersPerMonthLimit: number; storageLimitMB: number;
 }
 
-const PROVISIONING_FIELDS: { key: string; label: string }[] = [
-  { key: "workspaceCreated", label: "Workspace Created" },
-  { key: "sslConfigured", label: "SSL Configured" },
-  { key: "pwaGenerated", label: "PWA Generated" },
-  { key: "androidApkGenerated", label: "Android APK Generated" },
-  { key: "domainMapped", label: "Domain Mapped" },
-  { key: "playStorePublished", label: "Play Store Published" },
-  { key: "backupEnabled", label: "Backup Enabled" },
-  { key: "monitoringEnabled", label: "Monitoring Enabled" },
-]
+const PROVISIONING_ITEM_LABELS: Record<string, string> = {
+  workspace: "Workspace",
+  domain: "Domain",
+  ssl: "SSL",
+  pwa: "PWA",
+  customerApp: "Customer App",
+  deliveryApp: "Delivery App",
+  adminApp: "Admin App",
+  apkBuild: "APK Build",
+  playStore: "Play Store",
+  monitoring: "Monitoring",
+  backup: "Backup",
+}
 
-function LicensingSubscriptionCard({ subscription }: { subscription: LaundrySubscription | null }) {
+const PROVISIONING_STATUS_COLORS: Record<string, string> = {
+  COMPLETED: "bg-green-100 text-green-700 border-green-200",
+  IN_PROGRESS: "bg-blue-100 text-blue-700 border-blue-200",
+  PENDING: "bg-gray-100 text-gray-600 border-gray-200",
+  FAILED: "bg-red-100 text-red-700 border-red-200",
+}
+
+function SubscriptionBillingCard({ subscription }: { subscription: LaundrySubscriptionData | null }) {
   if (!subscription) {
     return (
       <Card>
@@ -323,37 +215,50 @@ function LicensingSubscriptionCard({ subscription }: { subscription: LaundrySubs
   }
   return (
     <Card>
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Subscription</h3>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            <span className="flex items-center gap-2"><Settings2 className="h-4 w-4" /> 1. Subscription &amp; Billing</span>
+          </CardTitle>
           <Badge className={subscription.status === "ACTIVE" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>
             {subscription.status}
           </Badge>
         </div>
+        <p className="text-xs text-muted-foreground">Read-only. Subscription details are managed via the billing system.</p>
+      </CardHeader>
+      <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <label className="text-xs text-gray-500">Plan</label>
+            <label className="text-xs text-gray-500">Plan Name</label>
             <p className="font-semibold text-lg">{subscription.plan}</p>
           </div>
           <div>
-            <label className="text-xs text-gray-500">Billing Cycle</label>
-            <p className="font-medium capitalize">{subscription.billingCycle.toLowerCase()}</p>
+            <label className="text-xs text-gray-500">Plan Type</label>
+            <p className="font-medium">{subscription.billingCycle === "MONTHLY" ? "Monthly" : subscription.billingCycle === "QUARTERLY" ? "Quarterly" : "Yearly"}</p>
           </div>
           <div>
             <label className="text-xs text-gray-500">Start Date</label>
-            <p className="font-medium">{new Date(subscription.startDate).toLocaleDateString()}</p>
+            <p className="font-medium">{new Date(subscription.startDate || "").toLocaleDateString()}</p>
           </div>
           <div>
             <label className="text-xs text-gray-500">Renewal Date</label>
-            <p className="font-medium">{new Date(subscription.renewalDate).toLocaleDateString()}</p>
+            <p className="font-medium">{new Date(subscription.renewalDate || "").toLocaleDateString()}</p>
           </div>
           <div>
-            <label className="text-xs text-gray-500">Workspace Type</label>
-            <p className="font-medium">{subscription.workspaceType}</p>
+            <label className="text-xs text-gray-500">Trial Expiry</label>
+            <p className="font-medium">{subscription.trialExpiry ? new Date(subscription.trialExpiry).toLocaleDateString() : "—"}</p>
           </div>
           <div>
-            <label className="text-xs text-gray-500">Category</label>
-            <p className="font-medium">{subscription.businessCategory}</p>
+            <label className="text-xs text-gray-500">Last Payment</label>
+            <p className="font-medium">{subscription.lastPaymentDate ? new Date(subscription.lastPaymentDate).toLocaleDateString() : "—"}</p>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Next Invoice</label>
+            <p className="font-medium">{subscription.nextInvoiceDate ? new Date(subscription.nextInvoiceDate).toLocaleDateString() : "—"}</p>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Billing Cycle</label>
+            <p className="font-medium capitalize">{subscription.billingCycle?.toLowerCase() || "—"}</p>
           </div>
         </div>
       </CardContent>
@@ -361,36 +266,102 @@ function LicensingSubscriptionCard({ subscription }: { subscription: LaundrySubs
   )
 }
 
-function FeatureCategoryCard({ category, license, onToggle, saving }: {
-  category: LicenseCategory
-  license: Record<string, boolean>
-  onToggle: (key: string, value: boolean) => void
-  saving: boolean
-}) {
+function ProvisioningItemsCard({ items }: { items: { item: string; status: string; notes?: string | null }[] }) {
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          {category.title}
+          <span className="flex items-center gap-2"><Activity className="h-4 w-4" /> 2. Platform Provisioning</span>
         </CardTitle>
+        <p className="text-xs text-muted-foreground">Per-item deployment status for Quantix operations team. Read-only.</p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {items.map(pi => (
+            <div key={pi.item} className={`rounded-lg border p-3 ${PROVISIONING_STATUS_COLORS[pi.status] || "bg-gray-100"}`}>
+              <div className="flex items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${pi.status === "COMPLETED" ? "bg-green-500" : pi.status === "IN_PROGRESS" ? "bg-blue-500" : pi.status === "FAILED" ? "bg-red-500" : "bg-gray-400"}`} />
+                <p className="text-xs font-medium">{PROVISIONING_ITEM_LABELS[pi.item] || pi.item}</p>
+              </div>
+              <p className="text-[10px] mt-1 font-medium">{pi.status.replace("_", " ")}</p>
+              {pi.notes && <p className="text-[10px] text-muted-foreground mt-0.5">{pi.notes}</p>}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+
+function BrandingConfigCard({ config, onUpdate, onStatusUpdate, saving }: {
+  config: BrandingConfigData | null
+  onUpdate: (key: string, value: boolean) => void
+  onStatusUpdate: (value: string) => void
+  saving: boolean
+}) {
+  const BRANDING_FIELDS: { key: string; label: string; desc: string }[] = [
+    { key: "logoUploaded", label: "Logo", desc: "Business logo uploaded" },
+    { key: "faviconUploaded", label: "Favicon", desc: "Browser favicon uploaded" },
+    { key: "brandColorsConfigured", label: "Brand Colors", desc: "Brand color scheme configured" },
+    { key: "dedicatedApk", label: "Dedicated APK", desc: "Standalone branded APK generated" },
+    { key: "customPackageName", label: "Custom Package Name", desc: "Custom Android package identifier" },
+    { key: "customSplashScreen", label: "Custom Splash Screen", desc: "Branded splash screen on apps" },
+    { key: "customAppIcon", label: "Custom App Icon", desc: "Custom app icon for branded apps" },
+    { key: "playStorePublished", label: "Play Store Publishing", desc: "App published to Google Play Store" },
+    { key: "customDomain", label: "Custom Domain", desc: "White-labeled custom domain" },
+  ]
+  const BRANDING_STATUSES = ["PENDING", "IN_PROGRESS", "APPROVED", "PUBLISHED"]
+  const BRANDING_STATUS_COLORS: Record<string, string> = {
+    PENDING: "bg-gray-100 text-gray-700",
+    IN_PROGRESS: "bg-blue-100 text-blue-700",
+    APPROVED: "bg-green-100 text-green-700",
+    PUBLISHED: "bg-purple-100 text-purple-700",
+  }
+  const currentStatus = config?.status || "PENDING"
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            <span className="flex items-center gap-2"><Globe className="h-4 w-4" /> 6. Branding &amp; White Label</span>
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {BRANDING_STATUSES.map(s => (
+              <button
+                key={s}
+                onClick={() => onStatusUpdate(s)}
+                disabled={saving}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-all ${
+                  currentStatus === s
+                    ? BRANDING_STATUS_COLORS[s] + " ring-1 ring-offset-1"
+                    : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                {s.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">Quantix-controlled. Business owner cannot modify these settings.</p>
       </CardHeader>
       <CardContent className="space-y-1">
-        {category.features.map(f => {
-          const enabled = !!license[f.key]
+        {BRANDING_FIELDS.map(f => {
+          const enabled = !!(config as Record<string, boolean | undefined>)?.[f.key]
           return (
             <div key={f.key} className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/20 transition-colors">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{f.label}</span>
                   {enabled ? (
-                    <Badge className="bg-green-100 text-green-700 text-[10px] h-4 px-1.5 shrink-0">Licensed</Badge>
+                    <Badge className="bg-green-100 text-green-700 text-[10px] h-4 px-1.5 shrink-0">Done</Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground shrink-0">Not Licensed</Badge>
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground shrink-0">Not Set</Badge>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{f.description}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
               </div>
-              <Switch checked={enabled} onCheckedChange={(v) => onToggle(f.key, v)} disabled={saving} className="shrink-0 ml-3" />
+              <Switch checked={enabled} onCheckedChange={(v) => onUpdate(f.key, v)} disabled={saving} className="shrink-0 ml-3" />
             </div>
           )
         })}
@@ -399,45 +370,193 @@ function FeatureCategoryCard({ category, license, onToggle, saving }: {
   )
 }
 
-function ScalingLimitsCard({ limits, onUpdate, saving }: {
-  limits: ScalingLimits
-  onUpdate: (key: string, value: number) => void
+function PlatformProvisioningCard({ config, onUpdate, saving }: {
+  config: PlatformProvisioningData | null
+  onUpdate: (key: string, value: boolean) => void
   saving: boolean
 }) {
+  const PLATFORM_FIELDS: { key: string; label: string; desc: string }[] = [
+    { key: "customerWebsite", label: "Customer Website", desc: "Public-facing business website" },
+    { key: "customerPWA", label: "Customer PWA", desc: "Progressive Web App for customers" },
+    { key: "androidCustomerApp", label: "Android Customer App", desc: "Native Android app for customers" },
+    { key: "deliveryApp", label: "Delivery App", desc: "Dedicated delivery partner app" },
+    { key: "adminApp", label: "Admin App", desc: "Administrative mobile application" },
+    { key: "ssl", label: "SSL", desc: "SSL certificate provisioning" },
+    { key: "cloudStorage", label: "Cloud Storage", desc: "Cloud-based file and image storage" },
+    { key: "automatedBackups", label: "Automated Backups", desc: "Automated data backup scheduling" },
+    { key: "pushNotifications", label: "Push Notifications", desc: "Push notification delivery infrastructure" },
+  ]
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Scaling Limits</CardTitle>
-        <p className="text-xs text-muted-foreground">Set numeric usage limits for this business. These are NOT toggles — they control maximum capacity.</p>
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          <span className="flex items-center gap-2"><Globe className="h-4 w-4" /> 2. Platform Provisioning</span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">Quantix-controlled. Enable or disable platform features for this business.</p>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {PLATFORM_FIELDS.map(f => {
+          const enabled = !!(config as Record<string, boolean | undefined>)?.[f.key]
+          return (
+            <div key={f.key} className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/20 transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{f.label}</span>
+                  {enabled ? (
+                    <Badge className="bg-green-100 text-green-700 text-[10px] h-4 px-1.5 shrink-0">Provisioned</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground shrink-0">Not Provisioned</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
+              </div>
+              <Switch checked={enabled} onCheckedChange={(v) => onUpdate(f.key, v)} disabled={saving} className="shrink-0 ml-3" />
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+function OperationalConfigCard({ config, onUpdate, saving }: {
+  config: OperationalConfigData | null
+  onUpdate: (key: string, value: boolean) => void
+  saving: boolean
+}) {
+  const OPERATIONAL_FIELDS: { key: string; label: string; desc: string }[] = [
+    { key: "transportEnabled", label: "Transport Module", desc: "In-transit stages between locations. If disabled, workflow skips transport steps." },
+    { key: "barcodeEnabled", label: "Barcode Module", desc: "Barcode tagging at processing. Controls all barcode/QR/item-level tracking." },
+    { key: "homeDeliveryEnabled", label: "Home Delivery", desc: "Customer home delivery stages. Controls delivery OTP and route management." },
+    { key: "ironingEnabled", label: "Ironing Module", desc: "Ironing stage in the processing workflow." },
+  ]
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          <span className="flex items-center gap-2"><Settings2 className="h-4 w-4" /> 5. Operational Configuration</span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">Toggle operational modules. These directly alter workflow behavior.</p>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {OPERATIONAL_FIELDS.map(f => {
+          const enabled = !!(config as Record<string, boolean | undefined>)?.[f.key]
+          return (
+            <div key={f.key} className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/20 transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{f.label}</span>
+                  {enabled ? (
+                    <Badge className="bg-green-100 text-green-700 text-[10px] h-4 px-1.5 shrink-0">Active</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground shrink-0">Disabled</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
+              </div>
+              <Switch checked={enabled} onCheckedChange={(v) => onUpdate(f.key, v)} disabled={saving} className="shrink-0 ml-3" />
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+function WorkflowQualityCard({ config, onUpdate, saving }: {
+  config: WorkflowQualityData | null
+  onUpdate: (key: string, value: boolean) => void
+  saving: boolean
+}) {
+  const WF_QUALITY_FIELDS: { key: string; label: string; desc: string }[] = [
+    { key: "photoAudit", label: "Photo Audit", desc: "Photo-based audit at order entry and processing. Critical for dispute handling." },
+    { key: "auditModule", label: "Audit Module", desc: "Detailed order and process audit trails for compliance." },
+  ]
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          <span className="flex items-center gap-2"><Shield className="h-4 w-4" /> 4. Workflow &amp; Quality Controls</span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">Quantix-controlled. Quality and audit features for business operations.</p>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {WF_QUALITY_FIELDS.map(f => {
+          const enabled = !!(config as Record<string, boolean | undefined>)?.[f.key]
+          return (
+            <div key={f.key} className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/20 transition-colors">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{f.label}</span>
+                  {enabled ? (
+                    <Badge className="bg-green-100 text-green-700 text-[10px] h-4 px-1.5 shrink-0">Active</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground shrink-0">Disabled</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
+              </div>
+              <Switch checked={enabled} onCheckedChange={(v) => onUpdate(f.key, v)} disabled={saving} className="shrink-0 ml-3" />
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
+function CapacityControlsCard({ limits, onUpdate, saving }: {
+  limits: ScalingLimits | null
+  onUpdate: (key: string, value: number) => void
+  saving: boolean
+}) {
+  const CAPACITY_FIELDS: { key: keyof ScalingLimits; label: string; desc: string }[] = [
+    { key: "storesAllowed", label: "Stores", desc: "Maximum retail store locations" },
+    { key: "processingCentersAllowed", label: "Processing Centers", desc: "Maximum processing centers" },
+    { key: "employeesAllowed", label: "Employees", desc: "Maximum staff employees" },
+    { key: "deliveryStaffAllowed", label: "Delivery Staff", desc: "Maximum delivery personnel" },
+    { key: "ordersPerMonthLimit", label: "Orders / Month", desc: "Monthly order processing capacity" },
+    { key: "storageLimitMB", label: "Storage (MB)", desc: "Cloud storage allocation in megabytes" },
+  ]
+  if (!limits) return null
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          <span className="flex items-center gap-2"><Activity className="h-4 w-4" /> 6. Capacity Controls</span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">Numeric capacity limits — these control maximum throughput.</p>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {SCALING_FIELDS.map(f => {
-            const allowed = limits[f.key] ?? 0
-            const usedKey = f.key.replace("Allowed", "Used") as keyof ScalingLimits
-            const used = (limits[usedKey] ?? 0) as number
-            const usagePercent = allowed > 0 ? Math.round((used / allowed) * 100) : 0
+          {CAPACITY_FIELDS.map(f => {
+            const allowed = (limits[f.key] ?? 0) as number
+            const usedKey = f.key.toString().includes("Allowed") ? (f.key.toString().replace("Allowed", "Used") as keyof ScalingLimits) : null
+            const used = usedKey ? ((limits[usedKey] ?? 0) as number) : null
+            const usagePercent = used !== null && allowed > 0 ? Math.round((used / allowed) * 100) : null
             return (
-              <div key={f.key} className="rounded-lg border p-4">
+              <div key={f.key.toString()} className="rounded-lg border p-4">
                 <label className="text-xs text-muted-foreground">{f.label}</label>
                 <div className="flex items-center gap-2 mt-1">
                   <Input
                     type="number"
                     min={0}
                     value={allowed}
-                    onChange={e => onUpdate(f.key, parseInt(e.target.value) || 0)}
+                    onChange={e => onUpdate(f.key.toString(), parseInt(e.target.value) || 0)}
                     disabled={saving}
                     className="h-8 w-24 text-sm"
                   />
-                  <span className="text-xs text-muted-foreground">Used: {used}</span>
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${usagePercent > 90 ? "bg-red-500" : usagePercent > 70 ? "bg-amber-500" : "bg-green-500"}`}
-                      style={{ width: `${Math.min(usagePercent, 100)}%` }}
-                    />
-                  </div>
+                  {used !== null && <span className="text-xs text-muted-foreground">Used: {used}</span>}
+                  {usagePercent !== null && (
+                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${usagePercent > 90 ? "bg-red-500" : usagePercent > 70 ? "bg-amber-500" : "bg-green-500"}`}
+                        style={{ width: `${Math.min(usagePercent, 100)}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1">{f.description}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{f.desc}</p>
               </div>
             )
           })}
@@ -447,28 +566,141 @@ function ScalingLimitsCard({ limits, onUpdate, saving }: {
   )
 }
 
-function ProvisioningStatusCard({ provisioning }: { provisioning: Record<string, boolean> }) {
+function AuditLogCard({ logs }: { logs: AuditLogEntry[] }) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Provisioning Status</CardTitle>
-        <p className="text-xs text-muted-foreground">Internal status for Quantix operations team. Read-only.</p>
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          <span className="flex items-center gap-2"><Activity className="h-4 w-4" /> 8. Audit Log</span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">Every licensing change made by Quantix is logged here.</p>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {PROVISIONING_FIELDS.map(f => {
-            const done = !!provisioning[f.key]
-            return (
-              <div key={f.key} className={`flex items-center gap-2 rounded-lg border p-3 ${done ? "bg-green-50 border-green-200" : "bg-muted/30"}`}>
-                <div className={`h-2 w-2 rounded-full ${done ? "bg-green-500" : "bg-gray-300"}`} />
-                <div>
-                  <p className="text-xs font-medium">{f.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{done ? "Completed" : "Pending"}</p>
+        {logs.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">No audit records yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-[10px]">Date &amp; Time</TableHead>
+                  <TableHead className="text-[10px]">Actor</TableHead>
+                  <TableHead className="text-[10px]">Section</TableHead>
+                  <TableHead className="text-[10px]">Field</TableHead>
+                  <TableHead className="text-[10px]">Old Value</TableHead>
+                  <TableHead className="text-[10px]">New Value</TableHead>
+                  <TableHead className="text-[10px]">IP Address</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.map(log => (
+                  <TableRow key={log.id}>
+                    <TableCell className="text-[10px] font-mono">{new Date(log.createdAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-[10px]">{log.actorName || "—"}</TableCell>
+                    <TableCell className="text-[10px]">{log.section}</TableCell>
+                    <TableCell className="text-[10px] font-mono">{log.field}</TableCell>
+                    <TableCell className="text-[10px] max-w-[120px] truncate">{log.oldValue || "—"}</TableCell>
+                    <TableCell className="text-[10px] max-w-[120px] truncate">{log.newValue || "—"}</TableCell>
+                    <TableCell className="text-[10px] font-mono">{log.ipAddress || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function LicenseHealthCard({ licensing }: {
+  licensing: {
+    subscription: LaundrySubscriptionData | null
+    provisioning: { item: string; status: string }[]
+    scalingLimit: ScalingLimits | null
+    brandingConfig: BrandingConfigData | null
+    auditLogs: AuditLogEntry[]
+    operationalConfig: OperationalConfigData | null
+    platformProvisioning: PlatformProvisioningData | null
+    workflowQuality: WorkflowQualityData | null
+  }
+}) {
+  const subscription = licensing.subscription
+  const totalProvisioning = licensing.platformProvisioning
+    ? Object.entries(licensing.platformProvisioning).filter(([k]) => k !== "id" && k !== "businessId" && k !== "createdAt" && k !== "updatedAt").length
+    : 0
+  const completedProvisioning = licensing.platformProvisioning
+    ? Object.entries(licensing.platformProvisioning).filter(([k, v]) => k !== "id" && k !== "businessId" && k !== "createdAt" && k !== "updatedAt" && v).length
+    : 0
+
+  const totalDeployment = licensing.provisioning.length
+  const completedDeployment = licensing.provisioning.filter(p => p.status === "COMPLETED").length
+
+  const storesUsed = licensing.scalingLimit?.storesUsed ?? 0
+  const storesAllowed = licensing.scalingLimit?.storesAllowed ?? 1
+  const employeesUsed = licensing.scalingLimit?.employeesUsed ?? 0
+  const employeesAllowed = licensing.scalingLimit?.employeesAllowed ?? 1
+  const ordersUsed = 0 // Would come from order count query
+  const ordersAllowed = licensing.scalingLimit?.ordersPerMonthLimit ?? 500
+
+  const lastLog = licensing.auditLogs?.[0]
+
+  return (
+    <Card className="border-sky-200 bg-gradient-to-br from-sky-50 to-white">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+          <Activity className="h-4 w-4 text-sky-600" /> License Health
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="rounded-lg border bg-white p-3">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Plan</p>
+            <p className="text-lg font-bold">{subscription?.plan || "—"}</p>
+            <p className="text-[10px] text-muted-foreground">Status: {subscription?.status || "—"}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Provisioning</p>
+            <p className="text-lg font-bold">{completedProvisioning}/{totalProvisioning}</p>
+            <p className="text-[10px] text-muted-foreground">Platform features</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Branding</p>
+            <p className="text-lg font-bold">{licensing.brandingConfig?.status || "PENDING"}</p>
+            <p className="text-[10px] text-muted-foreground">{licensing.brandingConfig?.status === "PUBLISHED" ? "Published" : licensing.brandingConfig?.status === "APPROVED" ? "Approved" : licensing.brandingConfig?.status === "IN_PROGRESS" ? "In Progress" : "Pending"}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Deployment</p>
+            <p className="text-lg font-bold">{completedDeployment}/{totalDeployment}</p>
+            <p className="text-[10px] text-muted-foreground">Infrastructure</p>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Capacity Usage</p>
+            <div className="space-y-1 mt-1">
+              <div className="flex items-center gap-1 text-[10px]">
+                <span className="w-12 text-muted-foreground">Stores</span>
+                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${(storesUsed / storesAllowed) > 0.9 ? "bg-red-500" : (storesUsed / storesAllowed) > 0.7 ? "bg-amber-500" : "bg-green-500"}`}
+                    style={{ width: `${Math.min((storesUsed / storesAllowed) * 100, 100)}%` }} />
                 </div>
+                <span className="w-14 text-right text-muted-foreground">{storesUsed}/{storesAllowed}</span>
               </div>
-            )
-          })}
+              <div className="flex items-center gap-1 text-[10px]">
+                <span className="w-12 text-muted-foreground">Staff</span>
+                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${(employeesUsed / employeesAllowed) > 0.9 ? "bg-red-500" : (employeesUsed / employeesAllowed) > 0.7 ? "bg-amber-500" : "bg-green-500"}`}
+                    style={{ width: `${Math.min((employeesUsed / employeesAllowed) * 100, 100)}%` }} />
+                </div>
+                <span className="w-14 text-right text-muted-foreground">{employeesUsed}/{employeesAllowed}</span>
+              </div>
+            </div>
+          </div>
         </div>
+        {lastLog && (
+          <p className="text-[10px] text-muted-foreground mt-3 pt-2 border-t">
+            Last modified: {new Date(lastLog.createdAt).toLocaleString()} &middot; {lastLog.section} &middot; {lastLog.actorName || "Quantix Admin"}
+          </p>
+        )}
       </CardContent>
     </Card>
   )
@@ -477,25 +709,53 @@ function ProvisioningStatusCard({ provisioning }: { provisioning: Record<string,
 // ============================================================================
 // Licensing data types
 // ============================================================================
+
 interface LaundrySubscriptionData {
-  id?: string; businessId?: string; plan?: string; billingCycle?: string;
-  status?: string; startDate?: string; renewalDate?: string;
+  id?: string; businessId?: string; plan?: string; templatePreset?: string;
+  billingCycle?: string; status?: string; startDate?: string; renewalDate?: string;
+  trialExpiry?: string; lastPaymentDate?: string; nextInvoiceDate?: string;
   workspaceType?: string; businessCategory?: string;
 }
 
-interface ProvisioningMap {
-  workspaceCreated?: boolean; sslConfigured?: boolean; pwaGenerated?: boolean;
-  androidApkGenerated?: boolean; domainMapped?: boolean; playStorePublished?: boolean;
-  backupEnabled?: boolean; monitoringEnabled?: boolean;
+interface PlatformProvisioningData {
+  customerWebsite?: boolean; customerPWA?: boolean; androidCustomerApp?: boolean;
+  deliveryApp?: boolean; adminApp?: boolean; ssl?: boolean;
+  cloudStorage?: boolean; automatedBackups?: boolean; pushNotifications?: boolean;
+}
+
+interface WorkflowQualityData {
+  photoAudit?: boolean; auditModule?: boolean;
+}
+
+interface BrandingConfigData {
+  logoUploaded?: boolean; faviconUploaded?: boolean; brandColorsConfigured?: boolean;
+  dedicatedApk?: boolean; customPackageName?: boolean; customSplashScreen?: boolean;
+  customAppIcon?: boolean; playStorePublished?: boolean; customDomain?: boolean;
+  status?: string;
+}
+
+interface AuditLogEntry {
+  id: string; businessId: string; actorId?: string | null; actorName?: string | null;
+  section: string; field: string; oldValue?: string | null; newValue?: string | null;
+  ipAddress?: string | null; createdAt: string;
+}
+
+interface OperationalConfigData {
+  transportEnabled?: boolean; barcodeEnabled?: boolean; homeDeliveryEnabled?: boolean;
+  ironingEnabled?: boolean;
 }
 
 function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: () => void }) {
   const [business, setBusiness] = useState<LaundryBusiness | null>(null)
   const [licensing, setLicensing] = useState<{
     subscription: LaundrySubscriptionData | null
-    license: Record<string, boolean>
-    scalingLimit: ScalingLimits
-    provisioningStatus: ProvisioningMap
+    provisioning: { item: string; status: string; notes?: string | null }[]
+    operationalConfig: OperationalConfigData | null
+    workflowQuality: WorkflowQualityData | null
+    scalingLimit: ScalingLimits | null
+    brandingConfig: BrandingConfigData | null
+    platformProvisioning: PlatformProvisioningData | null
+    auditLogs: AuditLogEntry[]
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -549,19 +809,19 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
     }
   }
 
-  const handleFeatureToggle = async (key: string, value: boolean) => {
+  const handleLicensingUpdate = async (section: string, data: Record<string, unknown>) => {
     if (!licensing) return
     setSaving(true)
     try {
       const res = await fetch(`/api/laundry/businesses/${businessId}/licensing`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ license: { [key]: value } }),
+        body: JSON.stringify({ [section]: data }),
       })
       if (res.ok) {
         const updated = await res.json()
         setLicensing(updated)
-        toast({ title: "Updated", description: `Feature ${value ? "enabled" : "disabled"}` })
+        toast({ title: "Updated", description: "Licensing updated" })
       } else {
         toast({ title: "Error", description: "Failed to update", variant: "destructive" })
       }
@@ -572,28 +832,23 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
     }
   }
 
-  const handleScalingUpdate = async (key: string, value: number) => {
-    if (!licensing) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/laundry/businesses/${businessId}/licensing`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scalingLimit: { [key]: value } }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setLicensing(updated)
-        toast({ title: "Updated", description: "Scaling limit updated" })
-      } else {
-        toast({ title: "Error", description: "Failed to update", variant: "destructive" })
-      }
-    } catch {
-      toast({ title: "Error", description: "Failed to update", variant: "destructive" })
-    } finally {
-      setSaving(false)
-    }
-  }
+  const handleOperationalToggle = (key: string, value: boolean) =>
+    handleLicensingUpdate("operationalConfig", { [key]: value })
+
+  const handleWorkflowQualityToggle = (key: string, value: boolean) =>
+    handleLicensingUpdate("workflowQuality", { [key]: value })
+
+  const handleBrandingToggle = (key: string, value: boolean) =>
+    handleLicensingUpdate("brandingConfig", { [key]: value })
+
+  const handleBrandingStatus = (value: string) =>
+    handleLicensingUpdate("brandingConfig", { status: value })
+
+  const handlePlatformProvisioningToggle = (key: string, value: boolean) =>
+    handleLicensingUpdate("platformProvisioning", { [key]: value })
+
+  const handleScalingUpdate = (key: string, value: number) =>
+    handleLicensingUpdate("scalingLimit", { [key]: value })
 
   const openWorkspace = async () => {
     const res = await fetch(`/api/laundry/businesses/${businessId}`)
@@ -763,33 +1018,51 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
         <TabsContent value="licensing" className="mt-4">
           <div className="space-y-6">
             <p className="text-sm text-muted-foreground">
-              Configure licensing for this business. These settings control which features, modules, and capacity limits
-              are available to the business owner. Only Quantix can modify these settings.
+              Business Provisioning &amp; Capability Control Center. Only Quantix can modify these settings.
             </p>
+
+                <LicenseHealthCard licensing={licensing} />
 
             {!licensing ? (
               <div className="py-8 text-center text-gray-400">Loading licensing data...</div>
             ) : (
               <>
-                <LicensingSubscriptionCard subscription={licensing.subscription} />
+                <SubscriptionBillingCard subscription={licensing.subscription} />
 
-                {LICENSE_CATEGORIES.map(cat => (
-                  <FeatureCategoryCard
-                    key={cat.id}
-                    category={cat}
-                    license={licensing.license}
-                    onToggle={handleFeatureToggle}
-                    saving={saving}
-                  />
-                ))}
+                <PlatformProvisioningCard
+                  config={licensing.platformProvisioning}
+                  onUpdate={handlePlatformProvisioningToggle}
+                  saving={saving}
+                />
 
-                <ScalingLimitsCard
+                <OperationalConfigCard
+                  config={licensing.operationalConfig}
+                  onUpdate={handleOperationalToggle}
+                  saving={saving}
+                />
+
+                <WorkflowQualityCard
+                  config={licensing.workflowQuality}
+                  onUpdate={handleWorkflowQualityToggle}
+                  saving={saving}
+                />
+
+                <CapacityControlsCard
                   limits={licensing.scalingLimit}
                   onUpdate={handleScalingUpdate}
                   saving={saving}
                 />
 
-                <ProvisioningStatusCard provisioning={licensing.provisioningStatus} />
+                <BrandingConfigCard
+                  config={licensing.brandingConfig}
+                  onUpdate={handleBrandingToggle}
+                  onStatusUpdate={handleBrandingStatus}
+                  saving={saving}
+                />
+
+                <ProvisioningItemsCard items={licensing.provisioning} />
+
+                <AuditLogCard logs={licensing.auditLogs} />
               </>
             )}
           </div>

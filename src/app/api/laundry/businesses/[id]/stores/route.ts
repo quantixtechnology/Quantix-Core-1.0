@@ -36,6 +36,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Business not found" }, { status: 404 })
     }
 
+    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId: id } })
+    if (limits && limits.storesUsed >= limits.storesAllowed) {
+      return NextResponse.json({ error: `Store limit reached (${limits.storesAllowed}). Contact Quantix to increase capacity.` }, { status: 403 })
+    }
+
     const storeCode = await generateStoreCode(business.businessCode)
 
     const store = await prisma.laundryStore.create({
@@ -57,6 +62,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         dailyCapacityKg: dailyCapacityKg ? parseFloat(dailyCapacityKg) : null,
         isActive: isActive !== undefined ? isActive : true,
       },
+    })
+
+    await prisma.laundryScalingLimit.update({
+      where: { businessId: id },
+      data: { storesUsed: { increment: 1 } },
     })
 
     return NextResponse.json(store, { status: 201 })

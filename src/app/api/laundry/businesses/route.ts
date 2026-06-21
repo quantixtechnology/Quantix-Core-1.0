@@ -191,6 +191,54 @@ export async function POST(request: Request) {
       })
     }
 
+    // Auto-create licensing records
+    const now = new Date()
+    await prisma.laundrySubscription.create({
+      data: {
+        businessId: business.id,
+        plan: plan || "STARTER",
+        templatePreset: "STARTER",
+        status: status === "ACTIVE" ? "ACTIVE" : "ONBOARDING",
+        startDate: now,
+        renewalDate: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+        trialExpiry: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+        lastPaymentDate: now,
+        nextInvoiceDate: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: "MONTHLY",
+      },
+    })
+
+    await prisma.laundryOperationalConfig.create({
+      data: { businessId: business.id },
+    })
+
+    await prisma.laundryWorkflowQualityConfig.create({
+      data: { businessId: business.id },
+    })
+
+    await prisma.laundryScalingLimit.create({
+      data: { businessId: business.id },
+    })
+
+    await prisma.laundryBrandingConfig.create({
+      data: { businessId: business.id },
+    })
+
+    await prisma.laundryPlatformProvisioning.create({
+      data: { businessId: business.id },
+    })
+
+    const PROVISIONING_ITEMS = [
+      "workspace", "databaseProvisioned", "storageProvisioned", "domain", "ssl",
+      "pwa", "customerApp", "deliveryApp", "adminApp", "apkBuild",
+      "playStore", "monitoring", "backup",
+    ]
+    for (const item of PROVISIONING_ITEMS) {
+      await prisma.laundryProvisioningItem.create({
+        data: { businessId: business.id, item, status: "PENDING" },
+      })
+    }
+
     return NextResponse.json(business, { status: 201 })
   } catch (error) {
     console.error("Error creating laundry business:", error)

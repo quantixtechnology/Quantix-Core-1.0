@@ -43,6 +43,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Business ID and Role ID are required" }, { status: 400 })
     }
 
+    // Determine if this is a delivery role or employee role
+    const role = await prisma.laundryRole.findUnique({ where: { id: roleId } })
+    const isDeliveryRole = role?.code === "DELIVERY_MANAGER"
+
+    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId } })
+    if (limits) {
+      if (isDeliveryRole && limits.deliveryStaffUsed >= limits.deliveryStaffAllowed) {
+        return NextResponse.json({ error: `Delivery staff limit reached (${limits.deliveryStaffAllowed}). Contact Quantix to increase capacity.` }, { status: 403 })
+      }
+      if (!isDeliveryRole && limits.employeesUsed >= limits.employeesAllowed) {
+        return NextResponse.json({ error: `Employee limit reached (${limits.employeesAllowed}). Contact Quantix to increase capacity.` }, { status: 403 })
+      }
+    }
+
     const assignment = await prisma.laundryUserAssignment.create({
       data: {
         businessId,
@@ -57,6 +71,11 @@ export async function POST(request: Request) {
         department: { select: { id: true, name: true, code: true } },
         role: { select: { id: true, name: true, code: true, isSystem: true } },
       },
+    })
+
+    await prisma.laundryScalingLimit.update({
+      where: { businessId },
+      data: isDeliveryRole ? { deliveryStaffUsed: { increment: 1 } } : { employeesUsed: { increment: 1 } },
     })
 
     return NextResponse.json(assignment, { status: 201 })

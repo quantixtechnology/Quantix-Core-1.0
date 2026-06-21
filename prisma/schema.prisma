@@ -3356,9 +3356,13 @@ model LaundryBusiness {
   processingCenters  LaundryProcessingCenter[]
   assignments        LaundryUserAssignment[]
   subscription       LaundrySubscription?
-  license            LaundryLicense?
   scalingLimit       LaundryScalingLimit?
-  provisioningStatus LaundryProvisioningStatus?
+  provisioning       LaundryProvisioningItem[]
+  operationalConfig  LaundryOperationalConfig?
+  platformProvisioning LaundryPlatformProvisioning?
+  brandingConfig     LaundryBrandingConfig?
+  workflowQuality    LaundryWorkflowQualityConfig?
+  auditLogs          LaundryAuditLog[]
 
   @@index([businessCode])
   @@index([status])
@@ -3373,12 +3377,16 @@ model LaundrySubscription {
   id               String   @id @default(cuid())
   businessId       String   @unique
   business         LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  plan             String   @default("STANDARD")   // STANDARD | PRO | ENTERPRISE
+  plan             String   @default("STARTER")    // STARTER | PROFESSIONAL | ENTERPRISE | CUSTOM
+  templatePreset   String   @default("STARTER")
   billingCycle     String   @default("MONTHLY")    // MONTHLY | QUARTERLY | YEARLY
   status           String   @default("ACTIVE")     // ACTIVE | PAST_DUE | CANCELLED | EXPIRED
   startDate        DateTime @default(now())
   renewalDate      DateTime
-  workspaceType    String   @default("LAUNDRY_OS") // LAUNDRY_OS | DRY_CLEAN
+  trialExpiry      DateTime?
+  lastPaymentDate  DateTime?
+  nextInvoiceDate  DateTime?
+  workspaceType    String   @default("LAUNDRY_OS")
   businessCategory String   @default("LAUNDRY")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -3388,81 +3396,111 @@ model LaundrySubscription {
   @@index([status])
 }
 
-model LaundryLicense {
+// ── 2. Platform Provisioning ──────────────────────────────────────────────
+// Individual provisioning items with status tracking.
+model LaundryProvisioningItem {
+  id         String   @id @default(cuid())
+  businessId String
+  business   LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  item       String                                          // workspace | domain | ssl | pwa | customerApp | deliveryApp | adminApp | apkBuild | playStore | monitoring | backup
+  status     String   @default("PENDING")                   // PENDING | IN_PROGRESS | COMPLETED | FAILED
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([businessId, item])
+  @@index([businessId])
+}
+
+// ── 2. Platform Provisioning (Quantix-Controlled) ─────────────────────────
+// Which platform features Quantix has enabled for this business.
+model LaundryPlatformProvisioning {
+  id                 String   @id @default(cuid())
+  businessId         String   @unique
+  business           LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerWebsite    Boolean  @default(false)
+  customerPWA        Boolean  @default(true)
+  androidCustomerApp Boolean  @default(false)
+  deliveryApp        Boolean  @default(false)
+  adminApp           Boolean  @default(true)
+  ssl                Boolean  @default(true)
+  cloudStorage       Boolean  @default(true)
+  automatedBackups   Boolean  @default(true)
+  pushNotifications  Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+
+  @@index([businessId])
+}// ── 3. Operational Configuration ──────────────────────────────────────────
+// Only these 4 toggles. They directly determine workflow stage generation.
+model LaundryOperationalConfig {
   id                   String   @id @default(cuid())
   businessId           String   @unique
   business             LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  // ── Infrastructure ───────────────────────────────────────────────────────
-  customerWebsite      Boolean  @default(false)
-  customerPWA          Boolean  @default(false)
-  androidCustomerApp   Boolean  @default(false)
-  deliveryApp          Boolean  @default(false)
-  adminApp             Boolean  @default(false)
-  customDomain         Boolean  @default(false)
-  ssl                  Boolean  @default(false)
-  cloudStorage         Boolean  @default(false)
-  automatedBackups     Boolean  @default(false)
-  pushNotifications    Boolean  @default(false)
-  // ── Operational Modules ──────────────────────────────────────────────────
-  transportModule      Boolean  @default(false)
-  barcodeModule        Boolean  @default(false)
-  homeDeliveryModule   Boolean  @default(false)
-  ironingModule        Boolean  @default(false)
-  pickupRequests       Boolean  @default(false)
-  deliveryManagement   Boolean  @default(false)
-  routeManagement      Boolean  @default(false)
-  auditModule          Boolean  @default(false)
-  // ── Workflow Modules ─────────────────────────────────────────────────────
-  photoAudit           Boolean  @default(false)
-  qrOrderLabels        Boolean  @default(false)
-  barcodeGarmentTracking Boolean @default(false)
-  itemLevelTracking    Boolean  @default(false)
-  processingChecklists Boolean  @default(false)
-  qualityControl       Boolean  @default(false)
-  dispatchVerification Boolean  @default(false)
-  deliveryOTP          Boolean  @default(false)
-  // ── Payment Modules ──────────────────────────────────────────────────────
-  cashCollection       Boolean  @default(true)
-  upiPayments          Boolean  @default(true)
-  razorpay             Boolean  @default(false)
-  phonePe              Boolean  @default(false)
-  advancePayment       Boolean  @default(false)
-  partialPayment       Boolean  @default(false)
-  corporateBilling     Boolean  @default(false)
-  creditAccounts       Boolean  @default(false)
-  // ── Customer Engagement ──────────────────────────────────────────────────
-  membershipModule     Boolean  @default(false)
-  loyaltyModule        Boolean  @default(false)
-  referralProgram      Boolean  @default(false)
-  coupons              Boolean  @default(false)
-  walletSystem         Boolean  @default(false)
-  giftCards            Boolean  @default(false)
-  // ── Communication ────────────────────────────────────────────────────────
-  smsNotifications     Boolean  @default(false)
-  whatsappNotifications Boolean @default(false)
-  emailNotifications   Boolean  @default(false)
-  pushNotificationsModule Boolean @default(false)
-  marketingCampaigns   Boolean  @default(false)
-  // ── Reporting ────────────────────────────────────────────────────────────
-  basicReports         Boolean  @default(true)
-  advancedReports      Boolean  @default(false)
-  storeAnalytics       Boolean  @default(false)
-  processingAnalytics  Boolean  @default(false)
-  employeeAnalytics    Boolean  @default(false)
-  revenueAnalytics     Boolean  @default(false)
-  // ── White Label ──────────────────────────────────────────────────────────
-  dedicatedApk         Boolean  @default(false)
-  customPackageName    Boolean  @default(false)
-  customSplashScreen   Boolean  @default(false)
-  customAppIcon        Boolean  @default(false)
-  playStorePublishing  Boolean  @default(false)
-  customDomainWL       Boolean  @default(false)
-  createdAt            DateTime @default(now())
+  transportEnabled     Boolean  @default(true)
+  barcodeEnabled       Boolean  @default(true)
+  homeDeliveryEnabled  Boolean  @default(true)
+  ironingEnabled       Boolean  @default(true)
   updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
 
   @@index([businessId])
 }
 
+// ── 4. Workflow & Quality Controls ────────────────────────────────────────
+model LaundryWorkflowQualityConfig {
+  id              String   @id @default(cuid())
+  businessId      String   @unique
+  business        LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  photoAudit      Boolean  @default(true)
+  auditModule     Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@index([businessId])
+}
+
+// ── 6. Branding & White Label ─────────────────────────────────────────────
+// Quantix-controlled. Business owner can request changes; only Quantix applies.
+model LaundryBrandingConfig {
+  id                   String   @id @default(cuid())
+  businessId           String   @unique
+  business             LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  logoUploaded         Boolean  @default(false)
+  faviconUploaded      Boolean  @default(false)
+  brandColorsConfigured Boolean @default(false)
+  dedicatedApk         Boolean  @default(false)
+  customPackageName    Boolean  @default(false)
+  customSplashScreen   Boolean  @default(false)
+  customAppIcon        Boolean  @default(false)
+  playStorePublished   Boolean  @default(false)
+  customDomain         Boolean  @default(false)
+  status               String   @default("PENDING")  // PENDING | IN_PROGRESS | APPROVED | PUBLISHED
+  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
+
+  @@index([businessId])
+}
+
+// ── 8. Audit Log ──────────────────────────────────────────────────────────
+model LaundryAuditLog {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actorName   String?
+  section     String
+  field       String
+  oldValue    String?
+  newValue    String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([businessId])
+  @@index([createdAt])
+}
+
+// ── 6. Capacity Controls ──────────────────────────────────────────────────
 model LaundryScalingLimit {
   id                        String   @id @default(cuid())
   businessId                String   @unique
@@ -3471,32 +3509,17 @@ model LaundryScalingLimit {
   storesUsed                Int      @default(0)
   processingCentersAllowed  Int      @default(1)
   processingCentersUsed     Int      @default(0)
+  storeCapacityKg           Int      @default(500)
+  processingCapacityKg      Int      @default(1000)
   employeesAllowed          Int      @default(5)
   employeesUsed             Int      @default(0)
   deliveryStaffAllowed      Int      @default(2)
   deliveryStaffUsed         Int      @default(0)
+  ordersPerDay              Int      @default(50)
   ordersPerMonthLimit       Int      @default(500)
   storageLimitMB            Int      @default(500)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
-
-  @@index([businessId])
-}
-
-model LaundryProvisioningStatus {
-  id                  String   @id @default(cuid())
-  businessId          String   @unique
-  business            LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  workspaceCreated    Boolean  @default(false)
-  sslConfigured       Boolean  @default(false)
-  pwaGenerated        Boolean  @default(false)
-  androidApkGenerated Boolean  @default(false)
-  domainMapped        Boolean  @default(false)
-  playStorePublished  Boolean  @default(false)
-  backupEnabled       Boolean  @default(false)
-  monitoringEnabled   Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
 
   @@index([businessId])
 }
