@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateBusinessCode } from "@/lib/laundry-codes"
+import { hashPassword, generateTempPassword } from "@/lib/password-utils"
 
 export const runtime = "nodejs"
 
@@ -239,7 +240,105 @@ export async function POST(request: Request) {
       })
     }
 
-    return NextResponse.json(business, { status: 201 })
+    // ── Auto-create Laundry Owner user account ──────────────────────────
+    const ownerEmail = email || `owner-${businessCode.toLowerCase()}@laundry.lan`
+    const ownerPassword = generateTempPassword()
+    const ownerPasswordHash = await hashPassword(ownerPassword)
+
+    const ownerUser = await prisma.user.create({
+      data: {
+        email: ownerEmail,
+        loginId: ownerEmail,
+        name: ownerName,
+        phone: mobile,
+        passwordHash: ownerPasswordHash,
+        authProvider: "PASSWORD",
+        emailVerified: false,
+        isActive: true,
+      },
+    })
+
+    await prisma.businessUser.create({
+      data: {
+        userId: ownerUser.id,
+        businessId: platformBusiness.id,
+        role: "LAUNDRY_OWNER",
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    })
+
+    // ── Auto-create Store Manager user account ──────────────────────────
+    const storeEmail = `store-${businessCode.toLowerCase()}@laundry.lan`
+    const storeManagerPassword = generateTempPassword()
+    const storeManagerPasswordHash = await hashPassword(storeManagerPassword)
+
+    const storeManagerUser = await prisma.user.create({
+      data: {
+        email: storeEmail,
+        loginId: storeEmail,
+        name: `${businessName} - Store Manager`,
+        passwordHash: storeManagerPasswordHash,
+        authProvider: "PASSWORD",
+        isActive: true,
+      },
+    })
+
+    await prisma.businessUser.create({
+      data: {
+        userId: storeManagerUser.id,
+        businessId: platformBusiness.id,
+        role: "LAUNDRY_STORE_MANAGER",
+        isActive: true,
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    })
+
+    // ── Link users to LaundryRole assignments ──────────────────────────
+    const laundryOwnerRole = roleByCode.get("ADMIN")
+    const laundryStoreMgrRole = roleByCode.get("STORE_MANAGER")
+
+    if (laundryOwnerRole) {
+      await prisma.laundryUserAssignment.create({
+        data: {
+          businessId: business.id,
+          roleId: laundryOwnerRole,
+          userId: ownerUser.id,
+          active: true,
+        },
+      })
+    }
+
+    if (laundryStoreMgrRole) {
+      await prisma.laundryUserAssignment.create({
+        data: {
+          businessId: business.id,
+          roleId: laundryStoreMgrRole,
+          userId: storeManagerUser.id,
+          active: true,
+        },
+      })
+    }
+
+    return NextResponse.json({
+      ...business,
+      credentials: {
+        owner: {
+          email: ownerEmail,
+          password: ownerPassword,
+          name: ownerName,
+          role: "LAUNDRY_OWNER",
+        },
+        storeManager: {
+          email: storeEmail,
+          password: storeManagerPassword,
+          name: `${businessName} - Store Manager`,
+          role: "LAUNDRY_STORE_MANAGER",
+        },
+      },
+    }, { status: 201 })
   } catch (error) {
     console.error("Error creating laundry business:", error)
     return NextResponse.json({ error: "Failed to create laundry business" }, { status: 500 })

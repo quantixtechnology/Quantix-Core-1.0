@@ -376,10 +376,10 @@ function AppRouter() {
   return <AppContent storefrontSlug={storefrontSlug} deliveryEntry={deliveryEntry} />
 }
 
-const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF"])
+const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "LAUNDRY_OWNER", "LAUNDRY_STORE_MANAGER", "LAUNDRY_STORE_EXECUTIVE", "LAUNDRY_AUDIT_EXECUTIVE", "LAUNDRY_PROCESSING_MANAGER", "LAUNDRY_PROCESSING_STAFF", "LAUNDRY_DELIVERY_EXECUTIVE"])
 
 function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string | null; deliveryEntry?: boolean }) {
-  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage } = useAdminStore()
+  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
@@ -412,6 +412,10 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
   // Sync viewMode from auth session on mount / auth change
   useEffect(() => {
     if (!isAuthenticated) return
+
+    // Don't override viewMode when Laundry OS support mode is active
+    if (supportMode.active) return
+
     const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM", "SUPPORT_TEAM", "FINANCE_TEAM", "DEPLOYMENT_TEAM"])
     if (PLATFORM_ROLES.has(currentRole || "")) {
       if (viewMode !== "super_admin") setViewMode("super_admin")
@@ -427,15 +431,16 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       if (storefrontSlug && viewMode !== "delivery_partner") setViewMode("delivery_partner")
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, currentRole, currentBusinessId])
+  }, [isAuthenticated, currentRole, currentBusinessId, supportMode.active])
 
   // Guard: if somehow in business_owner view without the right role/permission,
   // redirect via effect (never setState during render — that triggers the error boundary loop)
   useEffect(() => {
+    if (supportMode.active) return
     if (viewMode === "business_owner" && _isHydrated && !isBusinessRole && !canImpersonate) {
       setViewMode("super_admin")
     }
-  }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, setViewMode])
+  }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, supportMode.active, setViewMode])
 
   const renderSuperAdminPage = () => {
     // Wait for syncPermissions() to finish before running access checks —

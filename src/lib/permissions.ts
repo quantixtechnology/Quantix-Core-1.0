@@ -99,6 +99,14 @@ export type PlatformRole =
   | "INVENTORY_STAFF"
   | "SUPPORT_STAFF"
   | "DELIVERY_STAFF"
+  // ── Laundry OS Roles ───────────────────────────────────────────────
+  | "LAUNDRY_OWNER"
+  | "LAUNDRY_STORE_MANAGER"
+  | "LAUNDRY_STORE_EXECUTIVE"
+  | "LAUNDRY_AUDIT_EXECUTIVE"
+  | "LAUNDRY_PROCESSING_MANAGER"
+  | "LAUNDRY_PROCESSING_STAFF"
+  | "LAUNDRY_DELIVERY_EXECUTIVE"
   | "CUSTOMER"
 
 // Human-readable labels for all roles
@@ -122,6 +130,14 @@ export const ROLE_LABELS: Record<string, string> = {
   INVENTORY_STAFF:      "Inventory Staff",
   SUPPORT_STAFF:        "Support Staff",
   DELIVERY_STAFF:       "Delivery Staff",
+  // Laundry OS roles
+  LAUNDRY_OWNER:              "Laundry Owner",
+  LAUNDRY_STORE_MANAGER:      "Laundry Store Manager",
+  LAUNDRY_STORE_EXECUTIVE:    "Laundry Store Executive",
+  LAUNDRY_AUDIT_EXECUTIVE:    "Laundry Audit Executive",
+  LAUNDRY_PROCESSING_MANAGER: "Laundry Processing Manager",
+  LAUNDRY_PROCESSING_STAFF:   "Laundry Processing Staff",
+  LAUNDRY_DELIVERY_EXECUTIVE: "Laundry Delivery Executive",
   CUSTOMER:             "Customer",
 }
 
@@ -151,6 +167,21 @@ export const BUSINESS_ROLES: PlatformRole[] = [
   "SUPPORT_STAFF",
   "DELIVERY_STAFF",
 ]
+
+// Which roles are Laundry OS-specific (standalone product — stored on BusinessUser.role)
+export const LAUNDRY_ROLES: PlatformRole[] = [
+  "LAUNDRY_OWNER",
+  "LAUNDRY_STORE_MANAGER",
+  "LAUNDRY_STORE_EXECUTIVE",
+  "LAUNDRY_AUDIT_EXECUTIVE",
+  "LAUNDRY_PROCESSING_MANAGER",
+  "LAUNDRY_PROCESSING_STAFF",
+  "LAUNDRY_DELIVERY_EXECUTIVE",
+]
+
+export function isLaundryRole(role: string): boolean {
+  return LAUNDRY_ROLES.includes(role as PlatformRole)
+}
 
 export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   QUANTIX_SUPER_ADMIN: [
@@ -380,6 +411,61 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     "brand_studio:view",
     "roles_permissions:view",
     "settings:view",
+  ],
+  LAUNDRY_OWNER: [
+    "laundry_os:view", "laundry_os:configure",
+    "dashboard:view",
+    "orders:view", "orders:edit", "orders:cancel",
+    "customers:view", "customers:create", "customers:edit", "customers:delete",
+    "reports:view", "reports:export",
+    "settings:view", "settings:edit",
+    "staff:view", "staff:manage",
+    "notifications:view",
+    "billing:view", "billing:create", "billing:edit",
+    "users:view", "users:create", "users:edit", "users:reset_password", "users:suspend",
+    "refunds:process",
+  ],
+  LAUNDRY_STORE_MANAGER: [
+    "laundry_os:view",
+    "dashboard:view",
+    "orders:view", "orders:edit",
+    "customers:view", "customers:create", "customers:edit",
+    "reports:view",
+    "settings:view",
+    "staff:view",
+    "notifications:view",
+  ],
+  LAUNDRY_STORE_EXECUTIVE: [
+    "laundry_os:view",
+    "dashboard:view",
+    "orders:view", "orders:edit",
+    "customers:view", "customers:create",
+    "notifications:view",
+  ],
+  LAUNDRY_AUDIT_EXECUTIVE: [
+    "laundry_os:view",
+    "dashboard:view",
+    "orders:view",
+    "customers:view",
+    "reports:view", "reports:export",
+    "notifications:view",
+  ],
+  LAUNDRY_PROCESSING_MANAGER: [
+    "laundry_os:view",
+    "dashboard:view",
+    "orders:view", "orders:edit",
+    "notifications:view",
+    "reports:view",
+  ],
+  LAUNDRY_PROCESSING_STAFF: [
+    "laundry_os:view",
+    "orders:view",
+    "notifications:view",
+  ],
+  LAUNDRY_DELIVERY_EXECUTIVE: [
+    "laundry_os:view",
+    "orders:view",
+    "notifications:view",
   ],
   CLIENT_OWNER: [
     "orders:view", "orders:edit", "orders:cancel",

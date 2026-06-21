@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronLeft, ChevronRight, Check, Loader2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Check, Loader2, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
-const STEPS = ["Business Details", "Plan", "Business Code"]
+const STEPS = ["Business Details", "Plan", "Business Code", "Credentials"]
 
 const STANDARD_FEATURES = ["Pickup & Delivery", "Pre-Service Payment", "Post-Service Payment"]
 
@@ -27,6 +27,10 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
   const [saving, setSaving] = useState(false)
   const [generatedCode, setGeneratedCode] = useState("")
   const [businessId, setBusinessId] = useState<string | null>(null)
+  const [credentials, setCredentials] = useState<{
+    owner: { email: string; password: string; name: string; role: string }
+    storeManager: { email: string; password: string; name: string; role: string }
+  } | null>(null)
 
   const [form, setForm] = useState({
     businessName: "",
@@ -69,6 +73,10 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
         const data = await res.json()
         setBusinessId(data.id)
         setGeneratedCode(data.businessCode)
+        if (data.credentials) {
+          setCredentials(data.credentials)
+          setStep(3)
+        }
       }
     } catch (err) {
       console.error("Failed to create business:", err)
@@ -173,7 +181,7 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
         </Card>
       )}
 
-      {step === 2 && (
+      {step === 2 && !credentials && (
         <Card>
           <CardContent className="p-6 space-y-4">
             <div>
@@ -197,11 +205,76 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
         </Card>
       )}
 
+      {step === 3 && credentials && (
+        <Card className="border-green-200 bg-green-50">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex items-center gap-2 text-green-800 mb-2">
+              <Check className="h-5 w-5" />
+              <span className="font-semibold">Business created successfully!</span>
+              <span className="font-mono text-sm">{generatedCode}</span>
+            </div>
+
+            <div className="rounded-lg border border-green-200 bg-white p-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-xs font-bold">O</span>
+                  Laundry Owner Login
+                </h3>
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Email</span>
+                    <span className="font-mono text-gray-900">{credentials.owner.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Password</span>
+                    <span className="font-mono text-gray-900">{credentials.owner.password}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Role</span>
+                    <span className="text-gray-900">Laundry Owner</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-purple-100 text-purple-700 text-xs font-bold">S</span>
+                  Store Manager Login
+                </h3>
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Email</span>
+                    <span className="font-mono text-gray-900">{credentials.storeManager.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Password</span>
+                    <span className="font-mono text-gray-900">{credentials.storeManager.password}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                    <span className="text-gray-500">Role</span>
+                    <span className="text-gray-900">Store Manager</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-3">
+              <strong>Important:</strong> Save these credentials. They will not be shown again.
+              Share them with the business owner and store manager so they can log in directly at /laundry/login
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex justify-between">
         <Button variant="outline" onClick={step === 0 ? onCancel : () => setStep(s => s - 1)}>
           {step === 0 ? "Cancel" : <> <ChevronLeft className="mr-1 h-4 w-4" /> Back</>}
         </Button>
-        {step < 2 ? (
+        {step === 3 ? (
+          <Button onClick={onComplete}>
+            <Check className="mr-2 h-4 w-4" /> Done
+          </Button>
+        ) : step < 2 ? (
           <Button onClick={() => setStep(s => s + 1)} disabled={!canProceed()}>
             Next <ChevronRight className="ml-1 h-4 w-4" />
           </Button>
@@ -212,19 +285,6 @@ export function LaundryBusinessCreate({ onComplete, onCancel }: { onComplete: ()
           </Button>
         )}
       </div>
-
-      {businessId && (
-        <Card className="border-green-200 bg-green-50">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-green-800">
-              <Check className="h-5 w-5" />
-              <span className="font-medium">Business created successfully!</span>
-              <span className="font-mono text-sm">{generatedCode}</span>
-            </div>
-            <Button size="sm" onClick={onComplete}>View All Businesses</Button>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAdminStore } from "@/stores/admin-store"
+import { useAuthStore } from "@/stores/auth-store"
 import { useToast } from "@/hooks/use-toast"
 import { LaundryBusinessCreate } from "./laundry-business-create"
 
@@ -850,69 +851,45 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
   const handleScalingUpdate = (key: string, value: number) =>
     handleLicensingUpdate("scalingLimit", { [key]: value })
 
-  const openWorkspace = async () => {
+  const launchLaundryOS = async () => {
     setSaving(true)
     try {
-      console.log("[openWorkspace] Starting impersonation for laundryBusinessId:", businessId)
-      const impRes = await fetch(`/api/auth/impersonate?laundryBusinessId=${businessId}`)
-      console.log("[openWorkspace] Impersonation response status:", impRes.status)
-      if (!impRes.ok) {
-        const err = await impRes.json()
-        console.log("[openWorkspace] Impersonation error:", err)
-        toast({ title: "Error", description: err.error || "Impersonation failed", variant: "destructive" })
-        return
+      const role = useAuthStore.getState().currentRole
+      const isPlatformAdmin = role === "QUANTIX_SUPER_ADMIN" || role === "PLATFORM_ADMIN"
+
+      if (isPlatformAdmin) {
+        console.log("[launchLaundryOS] Platform admin — creating support session")
+        const res = await fetch("/api/laundry/support-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ laundryBusinessId: businessId }),
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          toast({ title: "Error", description: err.error || "Failed to launch Laundry OS", variant: "destructive" })
+          return
+        }
+
+        const data = await res.json()
+        console.log("[launchLaundryOS] Support session created:", data)
+
+        useAdminStore.getState().setSupportMode({
+          platformAdminId: data.supportSession.platformAdminId,
+          platformAdminName: data.supportSession.platformAdminName,
+          platformAdminRole: data.supportSession.platformAdminRole,
+          laundryBusinessId: data.supportSession.laundryBusinessId,
+          laundryBusinessName: data.supportSession.laundryBusinessName,
+        })
+
+        window.location.href = "/"
+      } else {
+        console.log("[launchLaundryOS] Laundry user — opening own workspace")
+        window.location.href = "/"
       }
-
-      const data = await impRes.json()
-      console.log("[openWorkspace] API Response:", data)
-
-      // Build user object matching auth-store SessionUser shape
-      const user = {
-        id: "", name: "Quantix Admin", email: "", avatar: null,
-        businessId: data.business.businessId,
-        businessName: data.business.businessName,
-        businessType: data.business.businessType,
-        businessSlug: data.business.businessSlug,
-        storeId: null,
-        role: data.business.role,
-        isPlatformAdmin: false,
-      }
-
-      // Write to auth-store's expected individual localStorage keys
-      localStorage.setItem("quantix_auth_user", JSON.stringify(user))
-      localStorage.setItem("quantix_auth_token", "impersonated")
-      localStorage.setItem("quantix_auth_refresh_token", "")
-      localStorage.setItem("quantix_auth_business_id", data.business.businessId)
-      localStorage.setItem("quantix_auth_business_name", data.business.businessName)
-      localStorage.setItem("quantix_auth_business_type", data.business.businessType)
-      localStorage.setItem("quantix_auth_role", data.business.role)
-      localStorage.setItem("quantix_auth_permissions", "[]")
-      localStorage.setItem("quantix_auth_businesses", JSON.stringify([data.business]))
-      // Legacy keys
-      localStorage.setItem("quantix_business_id", data.business.businessId)
-      localStorage.setItem("quantix_business_type", data.business.businessType)
-      localStorage.setItem("quantix_store_id", "")
-      localStorage.setItem("quantix_impersonating", "true")
-      localStorage.setItem("quantix_laundry_business_id", data.business.laundryBusinessId)
-
-      console.log("[openWorkspace] localStorage values:", {
-        quantix_auth_user: localStorage.getItem("quantix_auth_user"),
-        quantix_auth_token: localStorage.getItem("quantix_auth_token"),
-        quantix_auth_business_id: localStorage.getItem("quantix_auth_business_id"),
-        quantix_auth_business_name: localStorage.getItem("quantix_auth_business_name"),
-        quantix_auth_business_type: localStorage.getItem("quantix_auth_business_type"),
-        quantix_auth_role: localStorage.getItem("quantix_auth_role"),
-        quantix_business_id: localStorage.getItem("quantix_business_id"),
-        quantix_impersonating: localStorage.getItem("quantix_impersonating"),
-      })
-      console.log("[openWorkspace] Business Context Stored")
-
-      const route = "/"
-      console.log("[openWorkspace] Redirecting to", route)
-      window.location.href = route
     } catch (err) {
-      console.log("[openWorkspace] Exception:", err)
-      toast({ title: "Error", description: "Failed to open workspace", variant: "destructive" })
+      console.error("[launchLaundryOS] Exception:", err)
+      toast({ title: "Error", description: "Failed to launch Laundry OS", variant: "destructive" })
     } finally {
       setSaving(false)
     }
@@ -940,8 +917,8 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
           <Badge className={statusColors[business.status] || ""}>{business.status}</Badge>
           <Badge variant="outline" className={business.plan === "PRO" ? "border-purple-300 text-purple-700" : ""}>{business.plan}</Badge>
         </div>
-        <Button onClick={openWorkspace} className="gap-1.5">
-          <ExternalLink className="h-4 w-4" /> Open Laundry Workspace
+        <Button onClick={launchLaundryOS} className="gap-1.5">
+          <ExternalLink className="h-4 w-4" /> Launch Laundry OS
         </Button>
       </div>
 

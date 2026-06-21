@@ -408,6 +408,25 @@ interface AdminState {
   // Whether super admin is currently impersonating a business
   isImpersonating: boolean
 
+  // ── Laundry OS Support Mode ─────────────────────────────────────────────
+  // Platform admin can enter Laundry OS in support mode (not impersonation)
+  supportMode: {
+    active: boolean
+    platformAdminId: string
+    platformAdminName: string
+    platformAdminRole: string
+    laundryBusinessId: string
+    laundryBusinessName: string
+  }
+  setSupportMode: (ctx: {
+    platformAdminId: string
+    platformAdminName: string
+    platformAdminRole: string
+    laundryBusinessId: string
+    laundryBusinessName: string
+  }) => void
+  clearSupportMode: () => void
+
   // ── Selected items (CRM / detail panels) ───────────────────────────────
   selectedProductId: string | null
   setSelectedProductId: (id: string | null) => void
@@ -562,6 +581,39 @@ export const useAdminStore = create<AdminState>((set) => ({
     orderStages: [],
   }),
   isImpersonating: false,
+
+  // ── Laundry OS Support Mode ────────────────────────────────────────────
+  supportMode: {
+    active: false,
+    platformAdminId: "",
+    platformAdminName: "",
+    platformAdminRole: "",
+    laundryBusinessId: "",
+    laundryBusinessName: "",
+  },
+  setSupportMode: (ctx) => set({
+    supportMode: { ...ctx, active: true },
+    currentBusinessId: ctx.laundryBusinessId,
+    currentBusinessName: ctx.laundryBusinessName,
+    currentBusinessType: "LAUNDRY",
+    viewMode: "business_owner",
+    laundryPage: "dashboard",
+  }),
+  clearSupportMode: () => set({
+    supportMode: {
+      active: false,
+      platformAdminId: "",
+      platformAdminName: "",
+      platformAdminRole: "",
+      laundryBusinessId: "",
+      laundryBusinessName: "",
+    },
+    currentBusinessId: "",
+    currentBusinessName: "",
+    currentBusinessType: "",
+    isImpersonating: false,
+    viewMode: "super_admin",
+  }),
 
   // Selected items
   selectedProductId: null,
