@@ -851,13 +851,62 @@ function BusinessProfile({ businessId, onBack }: { businessId: string; onBack: (
     handleLicensingUpdate("scalingLimit", { [key]: value })
 
   const openWorkspace = async () => {
-    const res = await fetch(`/api/laundry/businesses/${businessId}`)
-    if (!res.ok) return
-    const biz = await res.json()
-    if (biz.platformBusinessId) {
-      window.location.href = `/api/auth/impersonate?businessId=${biz.platformBusinessId}`
-    } else {
-      toast({ title: "Error", description: "No platform business linked", variant: "destructive" })
+    setSaving(true)
+    try {
+      const bizRes = await fetch(`/api/laundry/businesses/${businessId}`)
+      if (!bizRes.ok) {
+        toast({ title: "Error", description: "Business not found", variant: "destructive" })
+        return
+      }
+      const biz = await bizRes.json()
+      if (!biz.platformBusinessId) {
+        toast({ title: "Error", description: "No platform business linked. Please ensure the business has a platform account.", variant: "destructive" })
+        return
+      }
+
+      const impRes = await fetch(`/api/auth/impersonate?businessId=${biz.platformBusinessId}`)
+      if (!impRes.ok) {
+        const err = await impRes.json()
+        toast({ title: "Error", description: err.error || "Impersonation failed", variant: "destructive" })
+        return
+      }
+
+      const data = await impRes.json()
+      if (!data.success) {
+        toast({ title: "Error", description: "Impersonation failed", variant: "destructive" })
+        return
+      }
+
+      const impersonateData = {
+        user: {
+          id: "", name: "Quantix Admin", email: "", avatar: null,
+          businessId: data.business.businessId,
+          businessName: data.business.businessName,
+          businessType: data.business.businessType,
+          businessSlug: data.business.businessSlug,
+          storeId: null,
+          role: data.business.role,
+          isPlatformAdmin: false,
+        },
+        token: "impersonated",
+        refreshToken: "",
+        isAuthenticated: true,
+        currentBusinessId: data.business.businessId,
+        currentBusinessName: data.business.businessName,
+        currentBusinessType: data.business.businessType,
+        currentRole: data.business.role,
+        permissions: [],
+        businesses: [data.business],
+      }
+      localStorage.setItem("quantix_auth_state", JSON.stringify(impersonateData))
+      localStorage.setItem("quantix_business_id", data.business.businessId)
+      localStorage.setItem("quantix_impersonating", "true")
+      localStorage.setItem("quantix_laundry_business_id", data.business.laundryBusinessId)
+      window.location.href = "/"
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to open workspace", variant: "destructive" })
+    } finally {
+      setSaving(false)
     }
   }
 
