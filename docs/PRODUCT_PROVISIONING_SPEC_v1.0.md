@@ -9,14 +9,22 @@
 
 ## 1. PURPOSE
 
+### Design Philosophy
+
+Quantix is a SaaS company, not a cloud provider. This specification focuses on **business value and customer experience**, not infrastructure complexity.
+
+**Guiding Question:** "Would a Business Owner ever manage this?"
+- If NO → Quantix Core manages it (hidden infrastructure)
+- If YES → The Product manages it (business operations)
+
 ### What This Document Defines
 
 Quantix Core provisions all businesses and their workspaces but **never executes business operations**. 
 
-- **Quantix Core:** Manages provisioning, infrastructure, billing, configuration
-- **Products:** Execute all business workflows, operations, and domain logic
+- **Quantix Core:** Manages provisioning, infrastructure, billing, configuration (Super Admin only)
+- **Products:** Execute all business workflows, operations, and domain logic (Business Owner uses)
 
-This document specifies exactly how Quantix Core provisions every future product to run independently.
+This document specifies exactly how Quantix Core provisions every future product to run independently, keeping the experience simple for customers.
 
 ### Core Responsibility: Provisioning, Not Operations
 

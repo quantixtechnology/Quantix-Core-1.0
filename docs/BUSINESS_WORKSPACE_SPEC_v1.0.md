@@ -600,6 +600,15 @@ Show support contact info
 
 ## BUSINESS MANAGEMENT GRID
 
+### Purpose: Platform Management View
+
+The Business Management grid is **Super Admin's control panel** for managing platform infrastructure and business provisioning.
+
+- Shows subscription status, workspace health, deployment versions, storage allocation
+- Does NOT show operational business data (orders, products, customers, services, workflows)
+- Super Admin uses this to manage infrastructure, subscriptions, and platform operations
+- Business Owners do NOT see this grid; they only see their individual workspace
+
 ### What the Grid Shows
 
 The Business Management grid displays all businesses and their key status information:
@@ -653,6 +662,16 @@ The Business Management grid displays all businesses and their key status inform
 ---
 
 ## BUSINESS DETAILS PAGE
+
+### Purpose: Platform Management Only
+
+**The Business Details page is a PLATFORM MANAGEMENT screen, not a business operational screen.**
+
+- **Super Admin View:** Manages platform infrastructure, subscriptions, and workspace deployment
+- **Business Owner View:** Can view their subscription and workspace status, but cannot modify platform settings
+- **Operational Data:** Is NOT shown here. Orders, Products, Inventory, Customers, Workflows all belong inside the Product workspace
+
+**Rule:** If a Business Owner would not manage it on a daily basis, it does NOT belong on this page.
 
 ### Page Structure
 

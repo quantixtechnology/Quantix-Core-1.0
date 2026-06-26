@@ -14,10 +14,12 @@ Quantix Core (app.quantixtechnology.in) is the **Platform Controller** for the e
 
 ### Core Philosophy
 
-- **Quantix Core manages the platform.** It does not operate a business.
-- **Products operate businesses.** Each product is a complete operating system for a specific business type.
-- **Clean separation.** Core controls infrastructure and provisioning. Products control workflows and user experience.
-- **Product independence.** Products are independently deployable, independently versioned, and independently scalable.
+- **Quantix is a SaaS company, not a cloud provider.** We sell business software, not infrastructure.
+- **Quantix Super Admin manages the platform.** Only Super Admin controls infrastructure, deployments, domains, SSL, and feature toggles.
+- **Business Owners manage only their business.** They configure products and manage business operations, never infrastructure.
+- **Products operate businesses.** Each product is a complete operating system for a specific business type with its own workflows and user interface.
+- **Clean separation.** Quantix Core handles platform provisioning, billing, and management. Products handle workflows and business content.
+- **Product independence.** Products are independently deployable, independently versioned, and independently scalable without Super Admin involvement.
 
 ### Success Criteria
 
@@ -151,13 +153,18 @@ Quantix Core owns and operates the following platform-level concerns:
 - Tenant credential management
 - Multi-workspace support
 
-### Website Provisioning & Management
-- Website deployment (Domain, SSL, Hosting)
+### Website Provisioning & Management (Super Admin Only)
+**PERMANENT RULE:** Only Quantix Super Admin creates and manages websites.
+- Domain registration and mapping
+- SSL certificate provisioning and renewal
+- Web hosting and infrastructure
 - CDN configuration
-- Website content management (limited to Core branding)
-- Analytics integration
+- Website deployment and updates
+- DNS management
 - Performance monitoring
-- Backup and recovery
+- Backup and disaster recovery
+- Website analytics integration
+**Business Owners do NOT create websites.** They only manage business content within their product workspace (e.g., products in Commerce OS, services in Laundry OS).
 
 ### Mobile App Provisioning
 - App registration and configuration
@@ -230,7 +237,60 @@ Quantix Core owns and operates the following platform-level concerns:
 
 ---
 
-## 3.5. PLATFORM OWNERSHIP MATRIX
+## 3.5. WHAT PRODUCTS NEVER OWN
+
+To maintain architectural simplicity, products NEVER manage:
+
+### Platform Concerns (Always in Quantix Core)
+- Subscription management
+- Billing and invoicing
+- Payment processing
+- User authentication (Super Admin only)
+- Role and permission management (Super Admin only)
+- Website creation and management (Super Admin only)
+- Domain and SSL management (Super Admin only)
+- Feature toggles and deployment
+- Infrastructure and hosting
+- Backup and disaster recovery
+- Monitoring and alerting
+- Compliance and audit logs
+
+### Business Ownership Rule
+Ask: "Would a Business Owner ever manage this?"
+- If NO → It belongs in Quantix Core (platform responsibility)
+- If YES → It belongs in the Product (business responsibility)
+
+Examples:
+- Products: Orders, Customers, Coupons, Services, Pricing → YES (Business Owner manages)
+- Core: Subscription, Billing, Domains, SSL, Users → NO (Super Admin only manages)
+
+---
+
+## 3.6. FEATURE TOGGLE MANAGEMENT
+
+Every business has Feature Toggles that control which product features are available.
+
+**Super Admin Only Control:**
+- Only Quantix Super Admin can enable/disable features
+- Business Owners cannot modify feature toggles
+- Features are assigned during business provisioning based on plan
+
+Example Features by Product:
+
+**Commerce OS Features:**
+Inventory, Products, Delivery, Wallet, POS, Coupons, Wholesale, ERP
+
+**Laundry OS Features:**
+CRM, Marketing, Pickup, Delivery, Processing, Queue, Batch, Machine, QC, WhatsApp, Subscriptions
+
+**Business Owner Limitation:**
+- Can only use features assigned by Super Admin
+- Cannot unlock or enable additional features
+- Cannot modify feature configuration
+
+---
+
+## 3.7. PLATFORM OWNERSHIP MATRIX
 
 This matrix defines which system owns every major capability in the Quantix ecosystem.
 
