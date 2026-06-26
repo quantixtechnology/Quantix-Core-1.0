@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import { ApiProvider } from "@/lib/api-provider";
 import { CacheBuster } from "@/components/cache-buster";
+import { PlatformInitializer } from "@/components/platform-initializer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -93,6 +94,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <PlatformInitializer />
         <ApiProvider>
           <CacheBuster />
           {children}
