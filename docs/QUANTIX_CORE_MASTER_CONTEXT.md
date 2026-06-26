@@ -1173,35 +1173,56 @@ This roadmap shows the planned implementation phases for Quantix Core Platform C
 - Business product reference storage
 - Product selection UI component
 
-### v1.3.0 — Business Provisioning (Next)
-- Validate product and subscription plan
-- Apply product default settings to business
-- Apply default roles and permissions
-- Allocate storage quota
-- Generate website configuration
-- Generate workspace configuration
-- Register workspace in system
-- Mark workspace ready for activation
+### v1.3.0 — Business Provisioning Engine (Complete)
+- Pure platform orchestrator (zero product logic)
+- Product provisioner delegation via registry
+- Automated business provisioning
+- Workspace preparation and readiness
 
-### v1.4.0 — Workspace Activation & Launch (Future)
-- Verify provisioning is complete
-- Load correct product workspace (commerce/laundry/carwash)
-- Route user to appropriate workspace
-- Load licensed features and navigation
-- Validate workspace readiness for first login
-- Redirect business owner to workspace
+### v1.3.1 — Product Provisioner Registry (Complete)
+- Dynamic product registration mechanism
+- Zero core modifications for new products
+- Decoupled product provisioning
 
-### v1.5.0 — Product Deployment (Future)
-- Commerce OS deployment to commerce.quantixtechnology.in
-- Laundry OS deployment to laundry.quantixtechnology.in
-- Car Wash OS deployment to carwash.quantixtechnology.in
-- Product workspace integration with Quantix Core
+### v1.4.0 — Product Runtime Registry (Complete)
+- Runtime deployment information
+- Workspace URL management
+- API endpoint configuration
+- Health check monitoring
+- Deployment mode support (LOCAL_MODULE, SUBDOMAIN, REMOTE_SERVICE, CONTAINER)
 
-### v1.6.0+ — Future Enhancements (TBD)
-- Business feature assignment overrides (Super Admin capability)
-- Advanced storage management and expansion
-- Multi-workspace support enhancements
-- Additional products and business types
+### v1.5.0 — Business Creation with Products (Next)
+- Integrated Business Creation Wizard
+- Product selection in creation flow
+- Plan selection with feature display
+- Real-time provisioning visualization
+- Direct workspace launch
+- Seamless product onboarding
+
+### v1.6.0 — Laundry OS Activation (Future)
+- Laundry-specific Business Creation flow
+- Laundry provisioning integration
+- Laundry workspace launch
+
+### v1.7.0 — Car Wash OS Activation (Future)
+- Car Wash-specific Business Creation flow
+- Car Wash provisioning integration
+- Car Wash workspace launch
+
+### v1.8.0 — Commerce OS Extraction (Future)
+- Physical extraction to independent repository
+- After v1.5.0, v1.6.0, v1.7.0 validation
+- Same pattern applies to other products
+
+### v1.9.0+ — Additional Products (Future)
+- Salon OS
+- Restaurant OS
+- Clinic OS
+- Warehouse OS
+- Manufacturing OS
+- Education OS
+- Healthcare OS
+- And unlimited others via registry mechanism
 
 ---
 
