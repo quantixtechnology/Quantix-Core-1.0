@@ -11,7 +11,7 @@ type Ctx = {
   params?: Promise<Record<string, string | string[]>>
 }
 
-export const GET = withMiddleware(
+export const GET = withMiddleware({ permission: 'products:view' })(
   async (req, ctx: Ctx) => {
     try {
       const params = await ctx.params
@@ -74,6 +74,5 @@ export const GET = withMiddleware(
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-  },
-  { permission: 'products:view' }
+  }
 )

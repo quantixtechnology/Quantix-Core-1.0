@@ -8,7 +8,7 @@ import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 import { getAllProductsWithCatalogs } from '@/lib/product-registry-init'
 
-export const GET = withMiddleware(
+export const GET = withMiddleware({ permission: 'products:view' })(
   async (req, ctx) => {
     try {
       const productsWithCatalogs = await getAllProductsWithCatalogs()
@@ -44,6 +44,5 @@ export const GET = withMiddleware(
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-  },
-  { permission: 'products:view' }
+  }
 )

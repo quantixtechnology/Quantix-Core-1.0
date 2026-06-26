@@ -11,7 +11,7 @@ import { ProductProvisionerRegistry } from '@/lib/product-provisioner-registry'
  * List all registered product provisioners
  * Useful for debugging and monitoring
  */
-export const GET = withMiddleware(
+export const GET = withMiddleware({ permission: 'products:view' })(
   async (req) => {
     try {
       const registeredProducts = ProductProvisionerRegistry.listDetails()
@@ -36,6 +36,5 @@ export const GET = withMiddleware(
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-  },
-  { permission: 'products:view' }
+  }
 )

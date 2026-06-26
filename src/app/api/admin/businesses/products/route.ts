@@ -7,7 +7,7 @@
 import { withMiddleware } from '@/lib/middleware'
 import { getAvailableProductsForCreation } from '@/lib/business-product-assignment'
 
-export const GET = withMiddleware(
+export const GET = withMiddleware({ permission: 'businesses:create' })(
   async (req) => {
     try {
       const products = await getAvailableProductsForCreation()
@@ -29,6 +29,5 @@ export const GET = withMiddleware(
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-  },
-  { permission: 'businesses:create' }
+  }
 )

@@ -10,7 +10,7 @@ import {
   validateProductAssignment,
 } from '@/lib/business-product-assignment'
 
-export const POST = withMiddleware(
+export const POST = withMiddleware({ permission: 'businesses:create' })(
   async (req) => {
     try {
       const body = await req.json()
@@ -64,6 +64,5 @@ export const POST = withMiddleware(
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-  },
-  { permission: 'businesses:create' }
+  }
 )

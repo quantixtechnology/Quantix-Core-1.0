@@ -7,7 +7,7 @@
 import { withMiddleware } from '@/lib/middleware'
 import { ProductRuntimeRegistry } from '@/lib/product-runtime-registry'
 
-export const GET = withMiddleware(
+export const GET = withMiddleware({ permission: 'products:view' })(
   async (req, { params }) => {
     try {
       const { code } = params
@@ -57,6 +57,5 @@ export const GET = withMiddleware(
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-  },
-  { permission: 'products:view' }
+  }
 )
