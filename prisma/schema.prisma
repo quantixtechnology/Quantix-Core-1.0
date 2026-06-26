@@ -243,6 +243,132 @@ model PlatformWorkspace {
   @@unique([businessId, productCode])  // One workspace per business per product
 }
 
+// ============================================================================
+// PRODUCT MANAGEMENT
+// Product Plans, Website Templates, Mobile Apps, Default Settings
+// ============================================================================
+
+model ProductPlan {
+  id                     String   @id @default(cuid())
+  productCode            String   // FK to PlatformProduct.code
+
+  // Plan identification
+  code                   String   // e.g., "STARTER", "PROFESSIONAL", "ENTERPRISE"
+  name                   String   // Display name
+  description            String?
+
+  // Features included
+  includedFeatures       String   @default("[]")  // JSON array of feature codes
+
+  // Storage allocation
+  storageQuotaMB         Int      @default(52428800)  // 50GB default
+
+  // Business limits
+  userLimit              Int      @default(10)    // Max users
+  branchLimit            Int      @default(1)     // Max stores/branches
+
+  // Pricing (stored as JSON for flexibility)
+  pricing                String   @default("{}")  // JSON: { currency, amount, interval }
+
+  // Status
+  status                 String   @default("ACTIVE")  // ACTIVE, RETIRED, BETA
+  isDefault              Boolean  @default(false)
+
+  // Audit
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([productCode, code])
+  @@index([productCode])
+  @@index([status])
+}
+
+model ProductWebsiteTemplate {
+  id                     String   @id @default(cuid())
+  productCode            String   @unique  // FK to PlatformProduct.code
+
+  // Template identification
+  name                   String   // e.g., "Store Website", "Laundry Website", "Booking Website"
+  description            String?
+
+  // Theme configuration (JSON)
+  defaultTheme           String   @default("{}")  // JSON: { colors, fonts, layout }
+
+  // Page templates included
+  includedPages          String   @default("[]")  // JSON array of page types
+
+  // Content structure (JSON)
+  contentStructure       String   @default("{}")  // JSON: typical content sections
+
+  // Status
+  status                 String   @default("ACTIVE")
+
+  // Audit
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model ProductMobileApp {
+  id                     String   @id @default(cuid())
+  productCode            String   // FK to PlatformProduct.code
+
+  // App identification
+  appType                String   // CUSTOMER, DELIVERY, ADMIN
+  name                   String   // Display name
+  description            String?
+
+  // Version tracking
+  currentVersion         String   @default("1.0.0")
+
+  // Build status
+  buildStatus            String   @default("READY")  // READY, BUILDING, FAILED
+
+  // Store availability
+  playStoreStatus        String   @default("AVAILABLE")  // AVAILABLE, BUILDING, REJECTED, NOT_PUBLISHED
+  appStoreStatus         String   @default("AVAILABLE")  // AVAILABLE, BUILDING, REJECTED, NOT_PUBLISHED
+
+  // Store links
+  playStoreUrl           String?
+  appStoreUrl            String?
+
+  // Status
+  status                 String   @default("ACTIVE")
+
+  // Audit
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([productCode, appType])
+  @@index([productCode])
+}
+
+model ProductDefaultSettings {
+  id                     String   @id @default(cuid())
+  productCode            String   @unique  // FK to PlatformProduct.code
+
+  // Localization defaults
+  defaultCurrency        String   @default("INR")    // ISO 4217
+  defaultTimezone        String   @default("Asia/Kolkata")
+  defaultLanguage        String   @default("en")
+
+  // Business defaults
+  orderPrefix            String   @default("ORD")    // Order number prefix
+  invoicePrefix          String   @default("INV")    // Invoice number prefix
+
+  // Notification defaults (JSON)
+  notificationDefaults   String   @default("{}")  // Email, SMS, WhatsApp settings
+
+  // Branding defaults (JSON)
+  brandingDefaults       String   @default("{}")  // Colors, logos, fonts
+
+  // Feature defaults (JSON)
+  featureDefaults        String   @default("{}")  // Feature-specific default settings
+
+  // Audit
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
 model Lead {
   id                     String           @id @default(cuid())
   salesRepId             String?
