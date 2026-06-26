@@ -305,10 +305,13 @@ async function createOwnerAccountStep(businessId: string) {
   }
 
   // Create owner user account
+  // Use unique loginId based on email + business ID to avoid collisions
+  const loginId = `${business.slug}-owner-${business.id.substring(0, 8)}`
+
   const ownerUser = await db.user.create({
     data: {
       email: business.contactEmail,
-      loginId: business.contactEmail.split('@')[0] || business.slug,
+      loginId,
       name: business.name,
       phone: business.contactPhone || '',
       isActive: true,
