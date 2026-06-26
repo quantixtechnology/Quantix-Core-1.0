@@ -178,6 +178,7 @@ const SupportView = dynamic(() => import("@/components/dashboard/support-view").
 const BackupMonitoringView = dynamic(() => import("@/components/dashboard/backup-monitoring-view").then(m => ({ default: m.BackupMonitoringView })), { loading: () => <PageLoader /> })
 const SecurityAccessView = dynamic(() => import("@/components/dashboard/security-access-view").then(m => ({ default: m.SecurityAccessView })), { loading: () => <PageLoader /> })
 const AuditLogsView = dynamic(() => import("@/components/dashboard/audit-logs-view").then(m => ({ default: m.AuditLogsView })), { loading: () => <PageLoader /> })
+const ProductsRegistryView = dynamic(() => import("@/components/admin/products/products-view").then(m => ({ default: m.ProductsView })), { loading: () => <PageLoader /> })
 const QuantixWebsiteView = dynamic(() => import("@/components/admin/websites/quantix-website-view").then(m => ({ default: m.QuantixWebsiteView })), { loading: () => <PageLoader /> })
 const LaundryOsView = dynamic(() => import("@/components/admin/laundry/laundry-os-dashboard").then(m => ({ default: m.LaundryOsDashboard })), { loading: () => <PageLoader /> })
 const LaundryBusinessesView = dynamic(() => import("@/components/admin/laundry/laundry-businesses-view").then(m => ({ default: m.LaundryBusinessesView })), { loading: () => <PageLoader /> })
@@ -516,6 +517,7 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "backup-monitoring": return <BackupMonitoringView />
       case "security-access": return <SecurityAccessView />
       case "audit-logs": return <AuditLogsView />
+      case "products": return <ProductsRegistryView />
       // Website
       case "quantix-website": return <QuantixWebsiteView />
       // Laundry OS

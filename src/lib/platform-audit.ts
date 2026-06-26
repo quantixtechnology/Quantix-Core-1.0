@@ -31,6 +31,7 @@ export type AuditModule =
   | 'DEPLOYMENT'
   | 'WORKFLOW'
   | 'SYSTEM'
+  | 'PRODUCTS'
 
 export type AuditAction =
   | 'LOGIN'

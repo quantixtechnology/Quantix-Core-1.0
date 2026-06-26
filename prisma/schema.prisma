@@ -143,6 +143,51 @@ model PlatformSettings {
   updatedAt      DateTime @updatedAt
 }
 
+// ============================================================================
+// PLATFORM PRODUCT REGISTRY
+// Master record of all products supported by Quantix Core Platform
+// ============================================================================
+
+model PlatformProduct {
+  id                     String   @id @default(cuid())
+
+  // Product identification
+  code                   String   @unique  // e.g., "COMMERCE", "LAUNDRY", "CARWASH"
+  name                   String            // e.g., "Commerce OS"
+  slug                   String   @unique  // e.g., "commerce-os"
+  description            String?           // Product description
+  productType            String   @default("OS")  // e.g., "OS", "SERVICE", "MODULE"
+
+  // Deployment information
+  workspaceUrl           String            // Base workspace URL (e.g., commerce.quantixtechnology.in)
+  currentVersion         String   @default("1.0.0")
+  supportedCoreVersion   String?           // Minimum Quantix Core version required
+
+  // Product status & visibility
+  status                 String   @default("ACTIVE")  // ACTIVE, PLANNED, DEPRECATED, DISABLED
+  isEnabled              Boolean  @default(true)      // Admin can disable product
+
+  // Storage & quotas
+  defaultStorageQuotaMB  Int      @default(1048576)   // 1GB default
+
+  // Branding
+  brandingTemplate       String?           // Reference to default branding template
+  defaultBrandColor      String   @default("#10B981") // Default primary color
+
+  // Configuration
+  defaultPlanId          String?           // Default plan for new businesses
+  metadata               String   @default("{}")     // JSON config (roles, features, etc.)
+
+  // Audit
+  createdBy              String?
+  createdAt              DateTime @default(now())
+  updatedBy              String?
+  updatedAt              DateTime @updatedAt
+
+  @@index([status])
+  @@index([code])
+}
+
 model Lead {
   id                     String           @id @default(cuid())
   salesRepId             String?

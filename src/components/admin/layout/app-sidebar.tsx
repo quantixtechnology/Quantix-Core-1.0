@@ -148,6 +148,7 @@ const revenueOpsNavItems: NavItem[] = [
 ]
 
 const systemNavItems: NavItem[] = [
+  { key: "products",            label: "Products",            icon: Package   },
   { key: "payment-config",      label: "Payment Config",      icon: Receipt   },
   { key: "roles-permissions",   label: "Roles & Permissions", icon: KeyRound  },
   { key: "backup-monitoring",   label: "Backup & Monitoring", icon: Server    },
