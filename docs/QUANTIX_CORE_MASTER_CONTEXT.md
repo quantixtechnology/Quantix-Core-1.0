@@ -1157,6 +1157,72 @@ These rules are permanent and override all other considerations:
 
 ---
 
+## MASTER CONTEXT CHANGE POLICY
+
+This document is the constitutional foundation of Quantix Core.
+
+It must only be updated when **permanent architectural decisions** change.
+
+### When to Update QUANTIX_CORE_MASTER_CONTEXT.md
+
+Update this document ONLY when one of these changes:
+
+- Platform architecture fundamentally changes
+- Ownership boundaries shift (Core vs Products)
+- Product boundaries are redefined
+- Platform responsibilities expand or contract
+- Product responsibilities expand or contract
+- Golden Rules are added, modified, or deprecated
+- Governance policies are established or changed
+
+### When NOT to Update QUANTIX_CORE_MASTER_CONTEXT.md
+
+Do NOT update this document for:
+
+- Feature implementation
+- Milestone completion
+- Bug fixes
+- Refactoring
+- New APIs or endpoints
+- UI changes or improvements
+- Database migrations or schema changes
+- Product enhancements
+- Performance improvements
+- Testing additions
+- Documentation clarifications
+- Code reorganization
+
+**These belong in:** Milestone documentation, release notes, technical guides, or API documentation.
+
+### The Three-Question Test
+
+Before proposing any Master Context change, answer these questions:
+
+1. **Does this permanently change the architecture?**
+   - Will the architecture be fundamentally different after this change?
+   - Will the change apply for 5+ years?
+
+2. **Will every future developer need this knowledge?**
+   - Is this essential context for understanding Quantix Core's direction?
+   - Will new team members need to know this to make decisions?
+
+3. **Is this still true five years from now?**
+   - Will this principle hold in 2031?
+   - Or is it specific to the current implementation phase?
+
+**If the answer to ANY question is NO:** Do not modify the Master Context.
+
+### Purpose of This Policy
+
+This policy ensures:
+- ✅ Master Context remains concise and authoritative
+- ✅ Master Context doesn't become an implementation log
+- ✅ Master Context stays stable and reliable for reference
+- ✅ Clear distinction between architecture and implementation
+- ✅ Future developers can read one document for architecture
+
+---
+
 ## ARCHITECTURE VALIDATION CHECKLIST
 
 **Before ANY future implementation, automatically verify:**
