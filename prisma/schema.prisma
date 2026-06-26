@@ -208,7 +208,13 @@ model PlatformWorkspace {
   currentVersion         String   @default("1.0.0")  // Current deployed product version
 
   // Status - only what Super Admin needs to know
-  status                 String   @default("PROVISIONING")  // Provisioning, Running, Maintenance, Suspended, Archived, Failed
+  status                 String   @default("PROVISIONING")  // PROVISIONING, READY, Running, Maintenance, Suspended, Archived, Failed
+
+  // Provisioning tracking (v1.3.0)
+  provisioningStatus     String   @default("PENDING")  // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  provisioningStartedAt  DateTime?
+  provisioningCompletedAt DateTime?
+  provisioningError      String?
 
   // Storage - simple tracking
   storageAllocatedMB     Int      @default(1048576)  // Allocated quota in MB (default 1GB)
@@ -216,6 +222,10 @@ model PlatformWorkspace {
 
   // Subscription info
   subscriptionPlan       String?           // e.g., "Starter", "Professional", "Enterprise"
+
+  // Configuration (v1.3.0)
+  websiteConfig          String   @default("{}")  // JSON website configuration
+  workspaceConfig        String   @default("{}")  // JSON workspace configuration
 
   // Website status - informational only
   websiteStatus          String   @default("INACTIVE")  // Active, Inactive, Pending
@@ -237,10 +247,51 @@ model PlatformWorkspace {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
+  // Relations
+  provisioningAudits     ProvisioningAuditLog[]
+
   @@index([businessId])
   @@index([productCode])
   @@index([status])
+  @@index([provisioningStatus])
   @@unique([businessId, productCode])  // One workspace per business per product
+}
+
+// ============================================================================
+// PROVISIONING AUDIT LOG (v1.3.0)
+// Tracks all provisioning steps for each workspace
+// ============================================================================
+
+model ProvisioningAuditLog {
+  id                String   @id @default(cuid())
+
+  // Workspace reference
+  workspaceId       String
+  workspace         PlatformWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Business reference for easier querying
+  businessId        String
+
+  // Provisioning step information
+  step              String   // e.g., "validate_product", "assign_features", "apply_defaults", etc.
+  status            String   // STARTED, COMPLETED, FAILED
+  error             String?  // Error message if failed
+
+  // Details (JSON for flexibility)
+  details           String   @default("{}")  // Step-specific details
+
+  // Timing
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  duration          Int?     // Duration in milliseconds
+
+  // Audit
+  createdAt         DateTime @default(now())
+
+  @@index([workspaceId])
+  @@index([businessId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // ============================================================================
@@ -2454,6 +2505,7 @@ enum BusinessStatus {
   SUSPENDED
   EXPIRED
   CHURNED
+  PROVISIONING_FAILED
 }
 
 enum OnboardingStepStatus {
