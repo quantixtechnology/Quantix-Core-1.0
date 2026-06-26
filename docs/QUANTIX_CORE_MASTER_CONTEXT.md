@@ -1442,6 +1442,131 @@ This architecture is now considered the permanent long-term direction of Quantix
 
 ---
 
+## ARCHITECTURE CHANGE PROCESS
+
+Every future architectural change to Quantix Core must follow this process.
+
+No architectural decision becomes part of Quantix Core until it completes all steps.
+
+### Step 1 — Proposal
+
+Document the proposed architectural change.
+
+Include:
+- **Problem Statement:** Why change is needed
+- **Current Architecture:** How it works now
+- **Proposed Architecture:** How it will work
+- **Benefits:** What improves
+- **Risks:** What could break
+- **Backward Compatibility:** Impact on existing code
+- **Alternatives Considered:** Other options evaluated
+
+**No code is written at this stage.**
+
+### Step 2 — Review
+
+Validate the proposal against:
+- Master Context (this document)
+- All 14 Golden Rules
+- Platform Freeze principles
+- Platform First rule
+- Product Ownership boundaries
+- Independent Deployment capability
+- Registry Pattern requirements
+- Backward Compatibility
+
+**If any rule is violated:**
+
+STOP.
+
+Redesign the proposal before proceeding.
+
+### Step 3 — Approval
+
+Only after approval:
+- Update QUANTIX_CORE_MASTER_CONTEXT.md
+- Update Revision History
+- Record Architectural Decision (ADR)
+
+**Only then may implementation begin.**
+
+### Step 4 — Implementation
+
+Implementation must follow the approved architecture exactly.
+
+Implementation may NEVER redefine architecture.
+
+If implementation reveals issues:
+- Go back to Step 1
+- Redesign the proposal
+- Re-review and re-approve
+
+### Step 5 — Verification
+
+After implementation completes:
+- Verify compliance with approved architecture
+- Confirm no architectural drift occurred
+- Ensure all Golden Rules are still satisfied
+- Update milestone documentation only
+
+**Do not update the Master Context again** (it was updated in Step 3).
+
+---
+
+## Architecture Decision Records (ADRs)
+
+Every approved architectural change receives an ADR document.
+
+ADR Format:
+- Title (e.g., ADR-001 Platform Controller)
+- Status (PROPOSED, APPROVED, IMPLEMENTED, DEPRECATED)
+- Context (Problem statement)
+- Decision (Approved solution)
+- Consequences (Benefits and risks)
+- Alternatives (Options considered)
+
+ADRs live alongside Master Context and explain WHY architectural decisions were made.
+
+Examples:
+- ADR-001: Platform Controller Pattern
+- ADR-002: Product Registry
+- ADR-003: Runtime Registry
+- ADR-004: Provisioning Engine
+- ADR-005: Platform Freeze
+
+---
+
+## Documentation Hierarchy
+
+**This hierarchy is permanent:**
+
+1. **QUANTIX_CORE_MASTER_CONTEXT.md** — Architecture (What is permanent)
+2. **Architecture Decision Records** — Why (Why decisions were made)
+3. **Milestone Documentation** — How (How decisions were implemented)
+4. **Release Notes** — What (What changed in each release)
+5. **Code Comments** — Details (Implementation specifics)
+
+Architecture flows down. Implementation details never flow up.
+
+---
+
+## Permanent Principle
+
+**Architecture-First Development:**
+
+1. **Architecture is designed first.**
+2. **Architecture is reviewed second.**
+3. **Architecture is approved third.**
+4. **Code is written last.**
+
+Never allow implementation to redefine architecture.
+
+If implementation conflicts with approved architecture:
+- Implementation must change (or be rejected)
+- Never change the architecture to match implementation
+
+---
+
 ## AUDIT REFERENCES
 
 These documents are audits of existing systems. They are NOT architecture:
