@@ -85,6 +85,7 @@ export type AdminPage =
   | "laundry-os"
   | "laundry-businesses"
   | "products"
+  | "workspaces"
 
 export type LaundryBusinessPage =
   | "dashboard"

@@ -188,6 +188,61 @@ model PlatformProduct {
   @@index([code])
 }
 
+// ============================================================================
+// WORKSPACE REGISTRY
+// Business workspace tracking for Quantix Super Admin
+// Simple tracking of deployed customer workspaces
+// ============================================================================
+
+model PlatformWorkspace {
+  id                     String   @id @default(cuid())
+
+  // Business & Product association
+  businessId             String            // Which business this workspace belongs to
+  productCode            String            // Which product (e.g., COMMERCE, LAUNDRY)
+
+  // Workspace identification
+  workspaceUrl           String   @unique  // The actual deployed URL (e.g., commerce.quantix.../tenantId)
+
+  // Versioning - simple tracking
+  currentVersion         String   @default("1.0.0")  // Current deployed product version
+
+  // Status - only what Super Admin needs to know
+  status                 String   @default("PROVISIONING")  // Provisioning, Running, Maintenance, Suspended, Archived, Failed
+
+  // Storage - simple tracking
+  storageAllocatedMB     Int      @default(1048576)  // Allocated quota in MB (default 1GB)
+  storageUsedMB          Int      @default(0)        // Current usage in MB
+
+  // Subscription info
+  subscriptionPlan       String?           // e.g., "Starter", "Professional", "Enterprise"
+
+  // Website status - informational only
+  websiteStatus          String   @default("INACTIVE")  // Active, Inactive, Pending
+  websiteDomain          String?           // The domain if website is active
+
+  // Feature count
+  featuresEnabled        Int      @default(0)        // Number of enabled features (informational)
+
+  // Health - simple indicator
+  healthStatus           String   @default("HEALTHY")  // Healthy, Warning, Offline
+
+  // Notes
+  notes                  String?           // Optional admin notes
+
+  // Sync tracking
+  lastSyncTime           DateTime?         // Last time workspace status was synced
+
+  // Audit
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([productCode])
+  @@index([status])
+  @@unique([businessId, productCode])  // One workspace per business per product
+}
+
 model Lead {
   id                     String           @id @default(cuid())
   salesRepId             String?

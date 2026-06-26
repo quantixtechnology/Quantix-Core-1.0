@@ -32,6 +32,7 @@ export type AuditModule =
   | 'WORKFLOW'
   | 'SYSTEM'
   | 'PRODUCTS'
+  | 'WORKSPACES'
 
 export type AuditAction =
   | 'LOGIN'
