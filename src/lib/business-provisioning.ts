@@ -6,6 +6,7 @@
 
 import { db } from '@/lib/db'
 import { getCompleteProductProfile } from '@/lib/product-management'
+import { ProductProvisionerRegistry, provisionWithRegistry } from '@/lib/product-provisioner-registry'
 
 export interface ProvisioningStep {
   name: string
@@ -366,6 +367,7 @@ async function allocateStorageStep(businessId: string, workspaceId: string, prod
  * Step 7: Call Product Provisioner
  * This is where the Product handles ALL its business logic provisioning
  * Quantix Core does not know what happens here
+ * Uses ProductProvisionerRegistry for dynamic product lookup
  */
 async function callProductProvisionerStep(businessId: string, workspaceId: string, productCode: string) {
   const business = await db.business.findUnique({
@@ -387,32 +389,17 @@ async function callProductProvisionerStep(businessId: string, workspaceId: strin
     workspaceId,
   }
 
-  // Call product provisioner
-  // This is a hook that the product will implement
-  // For now, this is a placeholder - products will implement this
-  const provisioner = getProductProvisioner(productCode)
-  if (!provisioner) {
-    // Products that haven't implemented provisioning yet are allowed
-    // This maintains backward compatibility
+  // Check if product has registered a provisioner
+  // This allows graceful degradation if product hasn't registered yet
+  if (!ProductProvisionerRegistry.has(productCode)) {
+    // Product hasn't registered provisioner yet - allow graceful fallback
+    // This maintains backward compatibility during product migration
     return
   }
 
-  const result = await provisioner.provision(businessId, config)
-
-  if (!result.success) {
-    throw new Error(`Product provisioning failed: ${result.error || 'Unknown error'}`)
-  }
-}
-
-/**
- * Get product provisioner (stub for future product integration)
- * Products will register their provisioners here
- */
-function getProductProvisioner(productCode: string): ProductProvisioner | null {
-  // This is a registry for product provisioners
-  // Products will register themselves when they're ready
-  // For now, return null to allow graceful handling
-  return null
+  // Call product provisioner via registry
+  // Quantix Core never knows the implementation
+  await provisionWithRegistry(businessId, productCode, config)
 }
 
 /**
