@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { PageHeader } from "../shared/page-header"
 import { StatusBadge, CurrencyBadge } from "../shared/status-badge"
 import { EmptyState } from "../shared/empty-state"
@@ -10,9 +11,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -127,6 +125,7 @@ const READINESS_ITEMS: { key: string; label: string }[] = [
 ]
 
 export function BusinessesView() {
+  const router = useRouter()
   const { searchQuery, setCurrentBusiness, setActivePage } = useAdminStore()
   const { permissions } = useAuthStore()
   const canCreate = permissions.includes("businesses:create" as never)
@@ -142,9 +141,6 @@ export function BusinessesView() {
   const [selectedBusiness, setSelectedBusiness] = useState<BusinessApiData | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [drawerTab, setDrawerTab] = useState("overview")
-  const [createOpen, setCreateOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [plans, setPlans] = useState<PlanApiData[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Module toggle state (super admin)
@@ -209,14 +205,6 @@ export function BusinessesView() {
   const [stageSaving, setStageSaving] = useState(false)
   const [stageEditing, setStageEditing] = useState(false)
 
-
-  const [createdResult, setCreatedResult] = useState<{
-    businessCode: string | null; businessId: string
-    mainStoreCode: string | null; registrationDate: string
-    ownerEmail: string; ownerPassword: string; ownerLoginId: string
-    mainStoreEmail: string; mainStorePassword: string; mainStoreLoginId: string
-  } | null>(null)
-
   const copyBusinessId = (slug: string, e: React.MouseEvent) => {
     e.stopPropagation()
     navigator.clipboard.writeText(slug)
@@ -224,26 +212,36 @@ export function BusinessesView() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  // Form state — business identity
-  const [formName, setFormName] = useState("")
-  const [formSlug, setFormSlug] = useState("")
-  const [formType, setFormType] = useState<string>("")
-  const [formCity, setFormCity] = useState("")
-  const [formState, setFormState] = useState("")
-  const [formPincode, setFormPincode] = useState("")
-  const [formPhone, setFormPhone] = useState("")
-  const [formEmail, setFormEmail] = useState("")
-  const [formAddress, setFormAddress] = useState("")
-  const [formGST, setFormGST] = useState("")
-  // Form state — plan (feature access)
-  const [formPlan, setFormPlan] = useState<PlanTier | "">("STANDARD")
-  const [formAllowedStores, setFormAllowedStores] = useState<string>("1")
-  // Form state — enabled workflows
-  const [formEnabledWorkflows, setFormEnabledWorkflows] = useState<string[]>(["ECOMMERCE"])
-  // Form state — owner
-  const [formOwnerName, setFormOwnerName] = useState("")
-  const [formOwnerEmail, setFormOwnerEmail] = useState("")
-  const [formOwnerPassword, setFormOwnerPassword] = useState("")
+  const handleOpenWorkspace = async (biz: BusinessApiData) => {
+    if (!biz.id) {
+      toast.error("Business ID not found")
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/admin/businesses/${biz.id}`)
+      const result = await response.json()
+
+      if (!result.success || !result.data?.productCode) {
+        toast.error("Business has no product assigned")
+        return
+      }
+
+      const productCode = result.data.productCode
+      const runtimeResponse = await fetch(`/api/admin/products/runtime/${encodeURIComponent(productCode)}`)
+      const runtimeResult = await runtimeResponse.json()
+
+      if (!runtimeResult.success || !runtimeResult.data?.runtime?.workspaceUrl) {
+        toast.error("Cannot determine workspace URL")
+        return
+      }
+
+      const workspaceUrl = `${runtimeResult.data.runtime.workspaceUrl}/${biz.id}`
+      window.open(workspaceUrl, '_blank')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to open workspace")
+    }
+  }
 
   const fetchBusinesses = useCallback(async () => {
     setLoading(true)
@@ -264,22 +262,9 @@ export function BusinessesView() {
     }
   }, [])
 
-  const fetchPlans = useCallback(async () => {
-    try {
-      const res = await fetch("/api/core/platform/plans", {
-        headers: getAuthHeaders(),
-      })
-      if (!res.ok) return
-      const json = await res.json()
-      if (json.success) setPlans(json.data)
-    } catch {
-      // Plans fetch failure is non-critical — creation will fail gracefully
-    }
-  }, [])
-
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchBusinesses(); fetchPlans()
+    fetchBusinesses()
   }, [])
 
   // Fetch order stage config when a business is selected
@@ -329,102 +314,6 @@ export function BusinessesView() {
       return matchSearch && matchStatus && matchType && matchOnline
     })
   }, [businesses, searchQuery, statusFilter, typeFilter, onlineFilter])
-
-  const resetForm = () => {
-    setFormName(""); setFormSlug(""); setFormType(""); setFormPlan("")
-    setFormCity(""); setFormState(""); setFormPincode("")
-    setFormPhone(""); setFormEmail(""); setFormAddress(""); setFormGST("")
-    setFormOwnerName(""); setFormOwnerEmail(""); setFormOwnerPassword("")
-    setFormEnabledWorkflows(["ECOMMERCE"])
-    setCreatedResult(null)
-  }
-
-  // Auto-derive enabledWorkflows when plan or business type changes
-  useEffect(() => {
-    if (formPlan === "STANDARD") {
-      setFormEnabledWorkflows(["ECOMMERCE"])
-    } else if (formPlan === "PRO" && formType) {
-      setFormEnabledWorkflows((BUSINESS_TYPE_WORKFLOWS[formType] ?? ["ECOMMERCE"]) as string[])
-    }
-  }, [formPlan, formType])
-
-  const handleNameChange = (value: string) => {
-    setFormName(value)
-    setFormSlug(value.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "").replace(/-+/g, "").slice(0, 20))
-  }
-
-
-  const handleCreateBusiness = async () => {
-    if (!formName || !formSlug || !formType) {
-      toast.error("Please fill in required fields: Name, Slug, Business Type")
-      return
-    }
-    if (!formPlan) {
-      toast.error("Please select a plan")
-      return
-    }
-
-    // Look up plan by tier — plans are feature-access-only, no pricing
-    const matchingPlan = plans.find(p => p.tier === formPlan)
-    if (!matchingPlan) {
-      toast.error("Selected plan not found. Please refresh and try again.")
-      return
-    }
-
-    const requestBody = {
-      name: formName,
-      slug: formSlug,
-      businessType: formType,
-      planId: matchingPlan.id,
-      planTier: formPlan,
-      enabledWorkflows: formEnabledWorkflows,
-      allowedStores: Number(formAllowedStores),
-      city: formCity,
-      state: formState,
-      pincode: formPincode,
-      contactPhone: formPhone,
-      contactEmail: formEmail,
-      address: formAddress,
-      gstNumber: formGST,
-      ownerName: formOwnerName || undefined,
-      ownerEmail: formOwnerEmail || undefined,
-      ownerPassword: formOwnerPassword || undefined,
-    }
-
-    setCreating(true)
-    try {
-      const res = await fetch("/api/core/businesses", {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(requestBody),
-      })
-      const json = await res.json()
-      if (json.success) {
-        toast.success("Business created successfully")
-        const d = json.data
-        setCreatedResult({
-          businessCode: d?.businessCode ?? null,
-          businessId: d?.slug ?? formSlug,
-          mainStoreCode: d?.mainStoreCode ?? null,
-          registrationDate: d?.createdAt ? new Date(d.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-          ownerEmail: d?.ownerCredentials?.email ?? formOwnerEmail,
-          ownerPassword: d?.ownerCredentials?.password ?? "—",
-          ownerLoginId: d?.ownerCredentials?.loginId ?? d?.ownerCredentials?.email ?? "—",
-          mainStoreEmail: d?.mainStoreCredentials?.email ?? "—",
-          mainStorePassword: d?.mainStoreCredentials?.password ?? "—",
-          mainStoreLoginId: d?.mainStoreCredentials?.loginId ?? d?.mainStoreCredentials?.email ?? "—",
-        })
-        fetchBusinesses()
-      } else {
-        const errMsg = json.error || json.message || "Failed to create business"
-        toast.error(errMsg)
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create business")
-    } finally {
-      setCreating(false)
-    }
-  }
 
   const openBrandingEditor = (biz: BusinessApiData) => {
     setEditLogo(biz.logo ?? "")
@@ -762,217 +651,7 @@ export function BusinessesView() {
         description="Manage all platform businesses, subscriptions, and configurations"
         icon={Building2}
         action={canCreate ? (
-          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetForm() }}>
-            <DialogTrigger asChild>
-              <Button className="gap-2"><Plus className="h-4 w-4" /> Create Business</Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Create New Business</DialogTitle>
-                <DialogDescription>Onboard a new business onto the Quantix platform</DialogDescription>
-              </DialogHeader>
-
-              {createdResult ? (
-                /* ── Success screen ── */
-                <div className="space-y-4 py-2">
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
-                    <p className="text-sm font-semibold text-emerald-800">Business created successfully</p>
-                    {/* Business identifiers */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-0.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business Code</p>
-                        <p className="font-mono text-sm font-bold text-emerald-900">{createdResult.businessCode ?? createdResult.businessId}</p>
-                      </div>
-                      <div className="space-y-0.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Store Code</p>
-                        <p className="font-mono text-sm font-bold text-emerald-900">{createdResult.mainStoreCode ?? "—"}</p>
-                      </div>
-                    </div>
-                    <Separator className="border-emerald-200" />
-                    {/* Business Owner Credentials */}
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Business Owner Login</p>
-                      <div className="rounded-md bg-white/60 border border-emerald-200 p-2 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-emerald-600">Login ID</span>
-                          <span className="font-mono text-[11px] font-semibold text-emerald-900 truncate max-w-[180px]">{createdResult.ownerLoginId}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-emerald-600">Email</span>
-                          <span className="font-mono text-[11px] text-emerald-900">{createdResult.ownerEmail}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-emerald-600">Password</span>
-                          <span className="font-mono text-[11px] font-bold tracking-wider text-emerald-900">{createdResult.ownerPassword}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <Separator className="border-emerald-200" />
-                    {/* Primary Store Credentials */}
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Primary Store Login</p>
-                      <div className="rounded-md bg-blue-50/60 border border-blue-200 p-2 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-blue-600">Login ID</span>
-                          <span className="font-mono text-[11px] font-semibold text-blue-900 truncate max-w-[180px]">{createdResult.mainStoreLoginId}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-blue-600">Email</span>
-                          <span className="font-mono text-[11px] text-blue-900">{createdResult.mainStoreEmail}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-blue-600">Password</span>
-                          <span className="font-mono text-[11px] font-bold tracking-wider text-blue-900">{createdResult.mainStorePassword}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-emerald-700">Share these credentials securely. Passwords will not be shown again.</p>
-                  </div>
-                  <div className="rounded-lg bg-sky-50 border border-sky-200 p-3">
-                    <p className="text-xs font-semibold text-sky-800">Next: Set up services in Account &amp; Billing</p>
-                    <p className="text-[11px] text-sky-700 mt-0.5">Go to Account &amp; Billing → open this business → Services tab to add Platform Subscription, Add-Ons, and One-Time charges.</p>
-                  </div>
-                  <DialogFooter>
-                    <Button onClick={() => { setCreateOpen(false); resetForm() }}>Done</Button>
-                  </DialogFooter>
-                </div>
-              ) : (
-                /* ── Creation form ── */
-                <>
-                  <div className="grid gap-4 py-4">
-                    {/* Business Info */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>Business Name *</Label><Input placeholder="e.g. FreshMart Grocers" value={formName} onChange={(e) => handleNameChange(e.target.value)} /></div>
-                      <div className="space-y-2">
-                        <Label>Business ID (Slug) *</Label>
-                        <Input placeholder="Auto-generated" value={formSlug} onChange={(e) => setFormSlug(e.target.value)} />
-                        {formSlug && <p className="text-[10px] text-muted-foreground font-mono">ID: {formSlug}</p>}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>Business Type *</Label>
-                        <Select value={formType} onValueChange={setFormType}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                          <SelectContent>{Object.entries(businessTypeConfig).map(([key, val]) => (<SelectItem key={key} value={key}>{val.label}</SelectItem>))}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2"><Label>Plan *</Label>
-                        <Select value={formPlan} onValueChange={setFormPlan}><SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="STANDARD">STANDARD</SelectItem>
-                            <SelectItem value="PRO">PRO</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    {/* Enabled Workflows — locked for STANDARD, selectable for PRO */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs font-semibold">Enabled Workflows</Label>
-                        {formPlan === "STANDARD" && (
-                          <Badge variant="secondary" className="text-[10px]">Standard — Ecommerce only</Badge>
-                        )}
-                        {formPlan === "PRO" && (
-                          <Badge variant="outline" className="text-[10px]">PRO — select workflows</Badge>
-                        )}
-                      </div>
-                      <div className="rounded-lg border p-3 space-y-2">
-                        {[
-                          { value: "ECOMMERCE",            label: "Ecommerce" },
-                          { value: "PICKUP_DELIVERY",      label: "Pickup & Delivery" },
-                          { value: "APPOINTMENT",          label: "Appointment" },
-                          { value: "SUBSCRIPTION",         label: "Subscription" },
-                          { value: "POST_SERVICE_BILLING", label: "Post Service Billing" },
-                        ].map(wf => {
-                          const isStandard = formPlan === "STANDARD"
-                          const isChecked = formEnabledWorkflows.includes(wf.value)
-                          const isLocked = isStandard || wf.value === "ECOMMERCE"
-                          return (
-                            <label
-                              key={wf.value}
-                              className={`flex items-center gap-2.5 cursor-pointer select-none ${isLocked && isStandard ? "opacity-50 cursor-not-allowed" : ""}`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="h-3.5 w-3.5 rounded"
-                                checked={isChecked}
-                                disabled={isStandard}
-                                onChange={e => {
-                                  if (isStandard) return
-                                  if (wf.value === "ECOMMERCE") return // ECOMMERCE always required
-                                  setFormEnabledWorkflows(prev =>
-                                    e.target.checked
-                                      ? [...prev, wf.value]
-                                      : prev.filter(w => w !== wf.value)
-                                  )
-                                }}
-                              />
-                              <span className="text-xs">{wf.label}</span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                      {!formPlan && (
-                        <p className="text-[10px] text-muted-foreground">Select a plan to configure workflows.</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Allowed Stores</Label>
-                      <Select value={formAllowedStores} onValueChange={setFormAllowedStores}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 store</SelectItem>
-                          <SelectItem value="2">2 stores</SelectItem>
-                          <SelectItem value="3">3 stores</SelectItem>
-                          <SelectItem value="4">4 stores</SelectItem>
-                          <SelectItem value="5">5 stores</SelectItem>
-                          <SelectItem value="10">10 stores</SelectItem>
-                          <SelectItem value="15">15 stores</SelectItem>
-                          <SelectItem value="20">20 stores</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>City</Label><Input placeholder="e.g. Mumbai" value={formCity} onChange={(e) => setFormCity(e.target.value)} /></div>
-                      <div className="space-y-2"><Label>State</Label><Input placeholder="e.g. Maharashtra" value={formState} onChange={(e) => setFormState(e.target.value)} /></div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>Pincode</Label><Input placeholder="e.g. 400001" value={formPincode} onChange={(e) => setFormPincode(e.target.value)} /></div>
-                      <div className="space-y-2"><Label>Phone</Label><Input placeholder="+91 98765 43210" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} /></div>
-                    </div>
-                    <div className="space-y-2"><Label>Business Email</Label><Input placeholder="contact@business.in" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} /></div>
-                    <div className="space-y-2"><Label>Address</Label><Textarea placeholder="Full business address" rows={2} value={formAddress} onChange={(e) => setFormAddress(e.target.value)} /></div>
-                    <div className="space-y-2"><Label>GST Number</Label><Input placeholder="e.g. 27AABCF1234A1Z5" value={formGST} onChange={(e) => setFormGST(e.target.value)} /></div>
-
-                    <Separator />
-
-                    {/* Owner Account */}
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold">Business Owner Account</p>
-                      <p className="text-[11px] text-muted-foreground">Set the primary owner login credentials. Leave password blank to auto-generate.</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>Owner Name</Label><Input placeholder="e.g. Rahul Sharma" value={formOwnerName} onChange={(e) => setFormOwnerName(e.target.value)} /></div>
-                      <div className="space-y-2"><Label>Owner Email *</Label><Input placeholder="owner@business.in" type="email" value={formOwnerEmail} onChange={(e) => setFormOwnerEmail(e.target.value)} /></div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Owner Password <span className="text-muted-foreground font-normal">(blank = auto-generated)</span></Label>
-                      <Input type="text" placeholder="Leave blank to auto-generate" value={formOwnerPassword} onChange={(e) => setFormOwnerPassword(e.target.value)} className="font-mono" />
-                    </div>
-
-                  </div>
-                  <div className="rounded-lg bg-sky-50 border border-sky-200 p-3">
-                    <p className="text-xs font-semibold text-sky-800">Billing is managed in Account &amp; Billing</p>
-                    <p className="text-[11px] text-sky-700 mt-0.5">Subscriptions, add-ons, charges, and invoices are set up after business creation from Account &amp; Billing.</p>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm() }}>Cancel</Button>
-                    <Button onClick={handleCreateBusiness} disabled={creating}>{creating ? "Creating..." : "Create Business"}</Button>
-                  </DialogFooter>
-                </>
-              )}
-            </DialogContent>
-          </Dialog>
+          <Button className="gap-2" onClick={() => router.push("?slug=create-business")}><Plus className="h-4 w-4" /> Create Business</Button>
         ) : undefined}
       />
 
@@ -1122,6 +801,15 @@ export function BusinessesView() {
                       <div className="flex items-center justify-between gap-2">
                         <SheetTitle className="text-lg">{biz.name}</SheetTitle>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => handleOpenWorkspace(biz)}
+                          >
+                            <Globe className="size-3" />
+                            Open Workspace
+                          </Button>
                           {canEdit && (
                             <Button
                               size="sm"
