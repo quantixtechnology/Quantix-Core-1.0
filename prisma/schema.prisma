@@ -163,6 +163,18 @@ model PlatformProduct {
   currentVersion         String   @default("1.0.0")
   supportedCoreVersion   String?           // Minimum Quantix Core version required
 
+  // Runtime Information (v1.4.0)
+  apiBaseUrl             String?           // Product API endpoint (e.g., https://commerce.../api)
+  healthCheckUrl         String?           // Product health endpoint
+  provisionerName        String?           // Provisioner identifier for registry lookup
+  deploymentMode         String   @default("LOCAL_MODULE")  // LOCAL_MODULE, SUBDOMAIN, REMOTE_SERVICE, CONTAINER
+  deploymentStatus       String   @default("READY")         // READY, DEPLOYING, FAILED, MAINTENANCE
+  supportedApiVersion    String   @default("v1")            // API version product supports
+  buildNumber            String?           // Build/release number
+  lastDeploymentAt       DateTime?         // When product was last deployed
+  lastHealthCheckAt      DateTime?         // When product was last health checked
+  lastHealthCheckStatus  String?           // Last health check result (HEALTHY, WARNING, OFFLINE)
+
   // Product status & visibility
   status                 String   @default("ACTIVE")  // ACTIVE, PLANNED, DEPRECATED, DISABLED
   isEnabled              Boolean  @default(true)      // Admin can disable product
@@ -186,6 +198,7 @@ model PlatformProduct {
 
   @@index([status])
   @@index([code])
+  @@index([deploymentStatus])
 }
 
 // ============================================================================
