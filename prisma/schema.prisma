@@ -2982,6 +2982,233 @@ model WebsiteCompanyInfo {
   updatedAt      DateTime @updatedAt
 }
 
+// ── Website Management: General Settings (Singleton) ────────────────
+model WebsiteGeneral {
+  id                String   @id @default("singleton")
+  websiteName       String?  @default("Quantix")
+  websiteUrl        String?
+  defaultLanguage   String?  @default("en-IN")
+  timezone          String?  @default("Asia/Kolkata")
+  companyEmail      String?
+  supportEmail      String?
+  salesPhone        String?
+  supportPhone      String?
+  copyright         String?
+  websiteStatus     String?  @default("ACTIVE") // ACTIVE | MAINTENANCE
+  maintenanceMode   Boolean  @default(false)
+  maintenanceMessage String?
+  updatedAt         DateTime @updatedAt
+}
+
+// ── Website Management: Homepage (Singleton) ───────────────────────
+model WebsiteHomepage {
+  id              String   @id @default("singleton")
+  heroTitle       String?
+  heroSubtitle    String?
+  heroDescription String?
+  primaryBtnText  String?
+  primaryBtnUrl   String?
+  secondaryBtnText String?
+  secondaryBtnUrl String?
+  heroImage       String?
+  heroIllustration String?
+  showStatistics  Boolean  @default(true)
+  showTrustedBy   Boolean  @default(true)
+  displayOrder    Int      @default(1)
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Website Management: Features ───────────────────────────────────
+model WebsiteFeature {
+  id          String   @id @default(cuid())
+  title       String
+  subtitle    String?
+  description String?
+  icon        String?  // icon name or URL
+  displayOrder Int      @default(0)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([displayOrder])
+  @@index([isVisible])
+}
+
+// ── Website Management: Testimonials ───────────────────────────────
+model WebsiteTestimonial {
+  id          String   @id @default(cuid())
+  customerName String
+  business    String?
+  designation String?
+  review      String
+  rating      Int      @default(5) // 1-5
+  image       String?
+  displayOrder Int      @default(0)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([displayOrder])
+  @@index([isVisible])
+}
+
+// ── Website Management: FAQ ────────────────────────────────────────
+model WebsiteFAQ {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String
+  category    String?
+  sortOrder   Int      @default(0)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([sortOrder])
+  @@index([isVisible])
+}
+
+// ── Website Management: Communication Center (Singleton) ────────────
+model WebsiteCommunication {
+  id                  String   @id @default("singleton")
+  // WhatsApp
+  whatsappNumber      String?
+  whatsappMessage     String?  @default("Hello! How can we help?")
+  whatsappFloatingBtn Boolean  @default(true)
+  whatsappBtnPosition String?  @default("bottom-right") // bottom-left | bottom-right
+  whatsappDesktop     Boolean  @default(true)
+  whatsappMobile      Boolean  @default(true)
+  // Phone
+  salesPhone          String?
+  supportPhone        String?
+  enableClickToCall   Boolean  @default(true)
+  // Email
+  salesEmail          String?
+  supportEmail        String?
+  contactFormRecipient String?
+  // Contact Form
+  contactFormEnabled  Boolean  @default(true)
+  contactFormSuccessMsg String?
+  contactFormFailureMsg String?
+  contactFormRedirectUrl String?
+  // Social Links (stored as JSON)
+  socialLinks         String   @default("{}") // { facebook, instagram, linkedin, youtube, twitter, threads, telegram }
+  updatedAt           DateTime @updatedAt
+}
+
+// ── Website Management: SEO (Singleton) ────────────────────────────
+model WebsiteSEO {
+  id                  String   @id @default("singleton")
+  homepageMetaTitle   String?
+  homepageMetaDesc    String?
+  homepageKeywords    String?
+  openGraphImage      String?
+  twitterImage        String?
+  canonicalUrl        String?
+  robotsTxt           String?  @default("index, follow")
+  googleAnalyticsId   String?
+  googleTagManagerId  String?
+  facebookPixelId     String?
+  updatedAt           DateTime @updatedAt
+}
+
+// ── Website Management: Theme (Singleton) ──────────────────────────
+model WebsiteTheme {
+  id              String   @id @default("singleton")
+  primaryColor    String?  @default("#10B981")
+  secondaryColor  String?  @default("#6B7280")
+  accentColor     String?  @default("#2563EB")
+  logo            String?
+  darkLogo        String?
+  favicon         String?
+  loader          String?
+  fontFamily      String?  @default("Inter, sans-serif")
+  buttonStyle     String?  @default("rounded") // rounded | sharp | pill
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Website Management: Footer (Singleton) ─────────────────────────
+model WebsiteFooter {
+  id              String   @id @default("singleton")
+  description     String?
+  footerLogo      String?
+  quickLinks      String   @default("[]") // JSON Array<{title, url}>
+  socialLinks     String   @default("{}") // JSON {facebook, instagram, ...}
+  copyright       String?
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Website Management: Navigation Menu ────────────────────────────
+model WebsiteNavigation {
+  id          String   @id @default(cuid())
+  menuName    String
+  url         String
+  displayOrder Int      @default(0)
+  openInNewTab Boolean  @default(false)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([displayOrder])
+  @@index([isVisible])
+}
+
+// ── Website Management: Announcement Bar (Singleton) ────────────────
+model WebsiteAnnouncement {
+  id              String   @id @default("singleton")
+  isEnabled       Boolean  @default(false)
+  message         String?
+  backgroundColor String?  @default("#FCD34D")
+  textColor       String?  @default("#000000")
+  buttonText      String?
+  buttonUrl       String?
+  expiryDate      DateTime?
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Website Management: Lead Form Configuration (Singleton) ────────
+model WebsiteLeadForm {
+  id               String   @id @default("singleton")
+  isEnabled        Boolean  @default(true)
+  recipientEmail   String?
+  autoReplyEnabled Boolean  @default(true)
+  autoReplyMessage String?
+  successMessage   String?  @default("Thank you! We'll get back to you soon.")
+  failureMessage   String?  @default("Something went wrong. Please try again.")
+  redirectUrl      String?
+  updatedAt        DateTime @updatedAt
+}
+
+// ── Website Management: Media Library ──────────────────────────────
+model WebsiteMedia {
+  id          String   @id @default(cuid())
+  fileName    String
+  fileUrl     String
+  category    String   @default("general") // logos | images | pricing-images | icons | hero | videos | documents | general
+  fileType    String   // image | video | document
+  fileSize    Int      // in bytes
+  altText     String?
+  description String?
+  uploadedAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([fileType])
+}
+
+// ── Website Management: Publish State ──────────────────────────────
+model WebsitePublishState {
+  id              String   @id @default(cuid())
+  sectionKey      String   @unique // general | homepage | pricing | features | testimonials | faq | communication | seo | theme | footer | navigation | announcement | lead-form
+  status          String   @default("DRAFT") // DRAFT | PUBLISHED
+  publishedAt     DateTime?
+  publishedBy     String?
+  updatedAt       DateTime @updatedAt
+
+  @@index([sectionKey])
+  @@index([status])
+}
+
 // ── Account & Billing Engine ──────────────────────────────────────
 
 // Unified document table: PROFORMA, TAX_INVOICE, CREDIT_NOTE,

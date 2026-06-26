@@ -602,6 +602,604 @@ function CompanyLegalTab() {
   )
 }
 
+// ─── General Settings Tab ─────────────────────────────────────────────────────
+
+function GeneralTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/general")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.general)
+        setDraft(d.general ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/general", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.general)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">General Settings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5"><Label>Website Name</Label><Input value={draft.websiteName as string ?? ""} onChange={e => setDraft({...draft, websiteName: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Website URL</Label><Input value={draft.websiteUrl as string ?? ""} onChange={e => setDraft({...draft, websiteUrl: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Default Language</Label><Input value={draft.defaultLanguage as string ?? ""} onChange={e => setDraft({...draft, defaultLanguage: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Timezone</Label><Input value={draft.timezone as string ?? ""} onChange={e => setDraft({...draft, timezone: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Company Email</Label><Input value={draft.companyEmail as string ?? ""} onChange={e => setDraft({...draft, companyEmail: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Support Email</Label><Input value={draft.supportEmail as string ?? ""} onChange={e => setDraft({...draft, supportEmail: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Sales Phone</Label><Input value={draft.salesPhone as string ?? ""} onChange={e => setDraft({...draft, salesPhone: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Support Phone</Label><Input value={draft.supportPhone as string ?? ""} onChange={e => setDraft({...draft, supportPhone: e.target.value})} /></div>
+            <div className="space-y-1.5 col-span-2"><Label>Copyright</Label><Input value={draft.copyright as string ?? ""} onChange={e => setDraft({...draft, copyright: e.target.value})} /></div>
+            <div className="space-y-1.5 col-span-2 flex items-center justify-between"><Label>Maintenance Mode</Label><Switch checked={draft.maintenanceMode as boolean ?? false} onCheckedChange={checked => setDraft({...draft, maintenanceMode: checked})} /></div>
+          </div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── Homepage Tab ─────────────────────────────────────────────────────────────
+
+function HomepageTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/homepage")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.homepage)
+        setDraft(d.homepage ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/homepage", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.homepage)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Hero Section</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5"><Label>Hero Title</Label><Input value={draft.heroTitle as string ?? ""} onChange={e => setDraft({...draft, heroTitle: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Hero Subtitle</Label><Input value={draft.heroSubtitle as string ?? ""} onChange={e => setDraft({...draft, heroSubtitle: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Hero Description</Label><Textarea value={draft.heroDescription as string ?? ""} onChange={e => setDraft({...draft, heroDescription: e.target.value})} rows={2} /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5"><Label>Primary Button Text</Label><Input value={draft.primaryBtnText as string ?? ""} onChange={e => setDraft({...draft, primaryBtnText: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Primary Button URL</Label><Input value={draft.primaryBtnUrl as string ?? ""} onChange={e => setDraft({...draft, primaryBtnUrl: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Secondary Button Text</Label><Input value={draft.secondaryBtnText as string ?? ""} onChange={e => setDraft({...draft, secondaryBtnText: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Secondary Button URL</Label><Input value={draft.secondaryBtnUrl as string ?? ""} onChange={e => setDraft({...draft, secondaryBtnUrl: e.target.value})} /></div>
+          </div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── Features Tab ─────────────────────────────────────────────────────────────
+
+function FeaturesTab() {
+  const [features, setFeatures] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/features")
+      .then(r => r.json())
+      .then(d => { setFeatures(d.features ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return <div className="space-y-4 max-w-2xl"><p className="text-sm text-muted-foreground">Features list management UI coming soon</p></div>
+}
+
+// ─── Testimonials Tab ─────────────────────────────────────────────────────────
+
+function TestimonialsTab() {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/testimonials")
+      .then(r => r.json())
+      .then(d => { setItems(d.testimonials ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return <div className="space-y-4 max-w-2xl"><p className="text-sm text-muted-foreground">Testimonials list management UI coming soon</p></div>
+}
+
+// ─── FAQ Tab ──────────────────────────────────────────────────────────────────
+
+function FAQTab() {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/faq")
+      .then(r => r.json())
+      .then(d => { setItems(d.faq ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return <div className="space-y-4 max-w-2xl"><p className="text-sm text-muted-foreground">FAQ list management UI coming soon</p></div>
+}
+
+// ─── Communication Tab ────────────────────────────────────────────────────────
+
+function CommunicationTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/communication")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.communication)
+        setDraft(d.communication ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/communication", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.communication)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Communication Channels</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5"><Label>WhatsApp Number</Label><Input value={draft.whatsappNumber as string ?? ""} onChange={e => setDraft({...draft, whatsappNumber: e.target.value})} placeholder="+91 XXXXX XXXXX" /></div>
+          <div className="space-y-1.5"><Label>Sales Phone</Label><Input value={draft.salesPhone as string ?? ""} onChange={e => setDraft({...draft, salesPhone: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Support Phone</Label><Input value={draft.supportPhone as string ?? ""} onChange={e => setDraft({...draft, supportPhone: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Sales Email</Label><Input value={draft.salesEmail as string ?? ""} onChange={e => setDraft({...draft, salesEmail: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Support Email</Label><Input value={draft.supportEmail as string ?? ""} onChange={e => setDraft({...draft, supportEmail: e.target.value})} /></div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── SEO Tab ──────────────────────────────────────────────────────────────────
+
+function SEOTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/seo")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.seo)
+        setDraft(d.seo ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/seo", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.seo)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">SEO Settings</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5 col-span-2"><Label>Homepage Meta Title</Label><Input value={draft.homepageMetaTitle as string ?? ""} onChange={e => setDraft({...draft, homepageMetaTitle: e.target.value})} /></div>
+          <div className="space-y-1.5 col-span-2"><Label>Homepage Meta Description</Label><Textarea value={draft.homepageMetaDesc as string ?? ""} onChange={e => setDraft({...draft, homepageMetaDesc: e.target.value})} rows={2} /></div>
+          <div className="space-y-1.5"><Label>Google Analytics ID</Label><Input value={draft.googleAnalyticsId as string ?? ""} onChange={e => setDraft({...draft, googleAnalyticsId: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Google Tag Manager ID</Label><Input value={draft.googleTagManagerId as string ?? ""} onChange={e => setDraft({...draft, googleTagManagerId: e.target.value})} /></div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── Theme Tab ────────────────────────────────────────────────────────────────
+
+function ThemeTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/theme")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.theme)
+        setDraft(d.theme ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/theme", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.theme)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Theme Colors & Branding</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5"><Label>Primary Color</Label><Input type="color" value={draft.primaryColor as string ?? "#10B981"} onChange={e => setDraft({...draft, primaryColor: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Secondary Color</Label><Input type="color" value={draft.secondaryColor as string ?? "#6B7280"} onChange={e => setDraft({...draft, secondaryColor: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Accent Color</Label><Input type="color" value={draft.accentColor as string ?? "#2563EB"} onChange={e => setDraft({...draft, accentColor: e.target.value})} /></div>
+          </div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── Footer Tab ────────────────────────────────────────────────────────────────
+
+function FooterTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/footer")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.footer)
+        setDraft(d.footer ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/footer", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.footer)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Footer Content</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5 col-span-2"><Label>Footer Description</Label><Textarea value={draft.description as string ?? ""} onChange={e => setDraft({...draft, description: e.target.value})} rows={2} /></div>
+          <div className="space-y-1.5 col-span-2"><Label>Copyright Text</Label><Input value={draft.copyright as string ?? ""} onChange={e => setDraft({...draft, copyright: e.target.value})} /></div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── Navigation Tab ───────────────────────────────────────────────────────────
+
+function NavigationTab() {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/navigation")
+      .then(r => r.json())
+      .then(d => { setItems(d.items ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return <div className="space-y-4 max-w-2xl"><p className="text-sm text-muted-foreground">Navigation menu management UI coming soon. {items.length} menu items configured.</p></div>
+}
+
+// ─── Announcement Bar Tab ─────────────────────────────────────────────────────
+
+function AnnouncementTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/announcement")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.announcement)
+        setDraft(d.announcement ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/announcement", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.announcement)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Announcement Bar</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between"><Label>Enable</Label><Switch checked={draft.isEnabled as boolean ?? false} onCheckedChange={checked => setDraft({...draft, isEnabled: checked})} /></div>
+          <div className="space-y-1.5"><Label>Message</Label><Input value={draft.message as string ?? ""} onChange={e => setDraft({...draft, message: e.target.value})} placeholder="Announcement message" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5"><Label>Background Color</Label><Input type="color" value={draft.backgroundColor as string ?? "#FCD34D"} onChange={e => setDraft({...draft, backgroundColor: e.target.value})} /></div>
+            <div className="space-y-1.5"><Label>Text Color</Label><Input type="color" value={draft.textColor as string ?? "#000000"} onChange={e => setDraft({...draft, textColor: e.target.value})} /></div>
+          </div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── Lead Form Tab ────────────────────────────────────────────────────────────
+
+function LeadFormTab() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/lead-form")
+      .then(r => r.json())
+      .then(d => {
+        setData(d.leadForm)
+        setDraft(d.leadForm ?? {})
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch("/api/admin/quantix-website/lead-form", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    })
+    if (!res.ok) {
+      toast.error("Failed to save")
+      setSaving(false)
+      return
+    }
+    const json = await res.json()
+    setData(json.leadForm)
+    setSaving(false)
+    toast.success("Saved")
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Lead Form Settings</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between"><Label>Enable Form</Label><Switch checked={draft.isEnabled as boolean ?? true} onCheckedChange={checked => setDraft({...draft, isEnabled: checked})} /></div>
+          <div className="space-y-1.5"><Label>Recipient Email</Label><Input value={draft.recipientEmail as string ?? ""} onChange={e => setDraft({...draft, recipientEmail: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Success Message</Label><Input value={draft.successMessage as string ?? ""} onChange={e => setDraft({...draft, successMessage: e.target.value})} /></div>
+          <div className="space-y-1.5"><Label>Failure Message</Label><Input value={draft.failureMessage as string ?? ""} onChange={e => setDraft({...draft, failureMessage: e.target.value})} /></div>
+        </CardContent>
+      </Card>
+      <div className="flex justify-end"><Button onClick={handleSave} disabled={saving}>{saving ? <>Saving…</> : "Save Changes"}</Button></div>
+    </div>
+  )
+}
+
+// ─── Media Library Tab ────────────────────────────────────────────────────────
+
+function MediaTab() {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/media")
+      .then(r => r.json())
+      .then(d => { setItems(d.items ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return <div className="space-y-4 max-w-2xl"><p className="text-sm text-muted-foreground">Media library management UI coming soon. {items.length} media files uploaded.</p></div>
+}
+
+// ─── Publish & Draft Tab ──────────────────────────────────────────────────────
+
+function PublishTab() {
+  const [states, setStates] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/admin/quantix-website/publish")
+      .then(r => r.json())
+      .then(d => { setStates(d.states ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const publishSection = async (sectionKey: string) => {
+    const res = await fetch("/api/admin/quantix-website/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sectionKey, status: "PUBLISHED" }),
+    })
+    if (res.ok) {
+      toast.success("Section published")
+      setStates(prev => prev.map(s => s.sectionKey === sectionKey ? {...s, status: "PUBLISHED"} : s))
+    } else {
+      toast.error("Failed to publish")
+    }
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /><span>Loading…</span></div>
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      <p className="text-sm text-muted-foreground">Manage which sections are published to the live website</p>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        {["pricing", "company", "general", "homepage", "features", "testimonials", "faq", "communication", "seo", "theme", "footer", "navigation", "announcement", "lead-form"].map(section => {
+          const state = states.find(s => s.sectionKey === section)
+          const status = state?.status ?? "DRAFT"
+          return (
+            <Card key={section}>
+              <CardContent className="pt-4 space-y-2">
+                <h3 className="font-semibold capitalize">{section}</h3>
+                <Badge variant={status === "PUBLISHED" ? "default" : "outline"}>{status}</Badge>
+                {status === "DRAFT" && <Button size="sm" onClick={() => publishSection(section)} className="w-full">Publish</Button>}
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export function QuantixWebsiteView() {
@@ -619,10 +1217,24 @@ export function QuantixWebsiteView() {
         </div>
       </div>
 
-      <Tabs defaultValue="pricing">
-        <TabsList>
-          <TabsTrigger value="pricing">Pricing Plans</TabsTrigger>
-          <TabsTrigger value="company">Company & Legal</TabsTrigger>
+      <Tabs defaultValue="pricing" className="w-full">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-8">
+          <TabsTrigger value="pricing" className="text-xs">Pricing</TabsTrigger>
+          <TabsTrigger value="company" className="text-xs">Company</TabsTrigger>
+          <TabsTrigger value="general" className="text-xs">General</TabsTrigger>
+          <TabsTrigger value="homepage" className="text-xs">Homepage</TabsTrigger>
+          <TabsTrigger value="features" className="text-xs">Features</TabsTrigger>
+          <TabsTrigger value="testimonials" className="text-xs">Testimonials</TabsTrigger>
+          <TabsTrigger value="faq" className="text-xs">FAQ</TabsTrigger>
+          <TabsTrigger value="communication" className="text-xs">Communication</TabsTrigger>
+          <TabsTrigger value="seo" className="text-xs">SEO</TabsTrigger>
+          <TabsTrigger value="theme" className="text-xs">Theme</TabsTrigger>
+          <TabsTrigger value="footer" className="text-xs">Footer</TabsTrigger>
+          <TabsTrigger value="navigation" className="text-xs">Navigation</TabsTrigger>
+          <TabsTrigger value="announcement" className="text-xs">Announcement</TabsTrigger>
+          <TabsTrigger value="lead-form" className="text-xs">Lead Form</TabsTrigger>
+          <TabsTrigger value="media" className="text-xs">Media</TabsTrigger>
+          <TabsTrigger value="publish" className="text-xs">Publish</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pricing" className="mt-4">
@@ -631,6 +1243,62 @@ export function QuantixWebsiteView() {
 
         <TabsContent value="company" className="mt-4">
           <CompanyLegalTab />
+        </TabsContent>
+
+        <TabsContent value="general" className="mt-4">
+          <GeneralTab />
+        </TabsContent>
+
+        <TabsContent value="homepage" className="mt-4">
+          <HomepageTab />
+        </TabsContent>
+
+        <TabsContent value="features" className="mt-4">
+          <FeaturesTab />
+        </TabsContent>
+
+        <TabsContent value="testimonials" className="mt-4">
+          <TestimonialsTab />
+        </TabsContent>
+
+        <TabsContent value="faq" className="mt-4">
+          <FAQTab />
+        </TabsContent>
+
+        <TabsContent value="communication" className="mt-4">
+          <CommunicationTab />
+        </TabsContent>
+
+        <TabsContent value="seo" className="mt-4">
+          <SEOTab />
+        </TabsContent>
+
+        <TabsContent value="theme" className="mt-4">
+          <ThemeTab />
+        </TabsContent>
+
+        <TabsContent value="footer" className="mt-4">
+          <FooterTab />
+        </TabsContent>
+
+        <TabsContent value="navigation" className="mt-4">
+          <NavigationTab />
+        </TabsContent>
+
+        <TabsContent value="announcement" className="mt-4">
+          <AnnouncementTab />
+        </TabsContent>
+
+        <TabsContent value="lead-form" className="mt-4">
+          <LeadFormTab />
+        </TabsContent>
+
+        <TabsContent value="media" className="mt-4">
+          <MediaTab />
+        </TabsContent>
+
+        <TabsContent value="publish" className="mt-4">
+          <PublishTab />
         </TabsContent>
       </Tabs>
     </div>
