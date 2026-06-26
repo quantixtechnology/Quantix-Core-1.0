@@ -1257,6 +1257,125 @@ This roadmap shows the planned implementation phases for Quantix Core Platform C
 
 ---
 
+## PLATFORM FREEZE
+
+**Status:** ACTIVE
+
+**Effective Version:** Revision 2.1
+
+**Platform State:** STABLE
+
+**Architecture State:** FROZEN
+
+---
+
+## Platform Stability
+
+Quantix Core is considered architecturally stable.
+
+No new Product functionality may be introduced into Quantix Core.
+
+Quantix Core may only evolve for:
+- Multi-tenancy
+- Identity & Authentication
+- RBAC
+- Business Lifecycle
+- Product Registry
+- Runtime Registry
+- Provisioning
+- Billing
+- Licensing
+- Monitoring
+- Health
+- Audit
+- Infrastructure
+- Platform APIs
+- Platform UI
+
+Everything else belongs to Products.
+
+---
+
+## Product Innovation
+
+All future business innovation happens inside Products.
+
+**Examples:**
+
+**Commerce OS:**
+- Inventory
+- Orders
+- POS
+- Products
+- Delivery
+
+**Laundry OS:**
+- Laundry workflow
+- Processing
+- QC
+- Pickup & Delivery
+
+**Car Wash OS:**
+- Packages
+- Queue
+- Scheduling
+
+**Future Products:**
+- Own 100% of their business domain
+
+---
+
+## Platform Freeze Rule
+
+Before implementing ANY feature, answer:
+
+**1. Is this Platform functionality?**
+
+YES → Continue.
+
+NO →
+
+**2. Does it belong to a Product?**
+
+YES → STOP.
+
+Implement inside the Product instead.
+
+---
+
+## Extraction Policy
+
+The remaining Commerce business data currently inside Quantix Core is a legacy implementation.
+
+It is an approved temporary exception.
+
+**No NEW Product tables or Product business logic may be added to Quantix Core.**
+
+Existing legacy Commerce modules remain until the planned extraction (v1.8.0+).
+
+---
+
+## Permanent Architecture Goal
+
+**Target Architecture:**
+
+```
+Quantix Core
+   ↓
+Platform Services
+   ↓
+Products
+   ↓
+Business Logic
+   ↓
+Business Data → Products
+Platform Metadata → Core
+```
+
+This architecture is now considered the permanent long-term direction of Quantix.
+
+---
+
 ## AUDIT REFERENCES
 
 These documents are audits of existing systems. They are NOT architecture:
