@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { withMiddleware } from "@/lib/middleware"
 import { db } from "@/lib/db"
+import { validateWebsiteFAQ } from "@/lib/website-validation"
+import { logWebsiteAudit } from "@/lib/website-audit"
 import type { NextRequest } from "next/server"
 
 interface AuthenticatedRequest extends NextRequest {
@@ -21,6 +23,22 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: "web
   async (req: AuthenticatedRequest) => {
     const body = await req.json()
 
+    const data = {
+      question: body.question,
+      answer: body.answer,
+      category: body.category || null,
+      isVisible: body.isVisible ?? true,
+    }
+
+    // Validate input
+    const validation = validateWebsiteFAQ(data)
+    if (!validation.valid) {
+      return NextResponse.json(
+        { error: "Validation failed", details: validation.errors },
+        { status: 400 }
+      )
+    }
+
     // Get max sortOrder
     const maxOrder = await db.websiteFAQ.findFirst({
       orderBy: { sortOrder: "desc" },
@@ -29,12 +47,23 @@ export const POST = withMiddleware({ requireAuth: true, requiredPermission: "web
 
     const item = await db.websiteFAQ.create({
       data: {
-        question: body.question || "Question?",
-        answer: body.answer || "Answer",
-        category: body.category || null,
+        ...data,
         sortOrder: (maxOrder?.sortOrder ?? 0) + 1,
-        isVisible: body.isVisible ?? true,
+        publishStatus: "DRAFT",
       },
+    })
+
+    // Log audit
+    await logWebsiteAudit({
+      userId: req.user?.id,
+      userName: req.user?.name,
+      email: req.user?.email,
+      role: req.user?.role,
+      action: "CREATE",
+      resourceType: "WebsiteFAQ",
+      resourceId: item.id,
+      description: `Created new FAQ: ${item.question.substring(0, 50)}`,
+      newValues: JSON.parse(JSON.stringify(item)),
     })
 
     return NextResponse.json({ item }, { status: 201 })
