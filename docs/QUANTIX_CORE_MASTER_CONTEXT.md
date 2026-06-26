@@ -1567,6 +1567,210 @@ If implementation conflicts with approved architecture:
 
 ---
 
+## ARCHITECTURE VERSIONING & DEPRECATION POLICY
+
+Quantix Core's architecture will evolve over many years.
+
+All evolution must be **controlled, versioned, and backward-compatible**.
+
+### Architecture Versioning
+
+Architecture has its own version, independent of software releases.
+
+**Format:** MAJOR.MINOR.PATCH
+
+**Example Timeline:**
+```
+Architecture Revision 2.1
+  ├─ Software v1.5.0
+  ├─ Software v1.5.1
+  ├─ Software v1.6.0
+  └─ Software v1.7.0
+
+Architecture Revision 2.2
+  ├─ Software v1.8.0
+  └─ Software v1.9.0
+
+Architecture Revision 3.0
+  ├─ Software v2.0.0
+  └─ ...
+```
+
+Many software releases may exist under one architecture revision.
+
+### PATCH Increment (2.1 → 2.1.1)
+
+**Trigger:** Documentation clarification only
+
+No architectural change. No new capabilities.
+
+Example:
+- Clarifying a Golden Rule
+- Improving Master Context wording
+- Correcting examples
+- Fixing typos
+
+**No migration needed.**
+
+### MINOR Increment (2.1 → 2.2)
+
+**Trigger:** New permanent architectural capability
+
+Additive changes that don't affect existing principles.
+
+Examples:
+- New Golden Rule added
+- New governance process added
+- New permanent capability defined
+- New ownership boundary established
+- Platform responsibility expanded
+
+**Existing architecture still valid.**
+
+Backward compatible.
+
+**Migration:** Existing implementations continue to work.
+
+### MAJOR Increment (2.x → 3.0)
+
+**Trigger:** Fundamental platform structure change
+
+Changes that affect every future implementation.
+
+Examples:
+- Platform structure changed fundamentally
+- Ownership model changed
+- Product model changed
+- Core responsibilities redefined
+- Architecture requires breaking changes
+
+**Requires explicit decision to migrate.**
+
+May require major refactoring.
+
+---
+
+### Deprecation Policy
+
+Architecture must never remove a principle immediately.
+
+Instead, follow a three-stage deprecation process:
+
+**Stage 1 — Current (Active)**
+- Principle is fully supported
+- Use in all new implementations
+- Standard approach
+
+**Stage 2 — Deprecated (Warning)**
+- Principle still supported
+- Should not be used in new work
+- Replacement defined
+- Migration path documented
+- Target removal date announced
+- Warning in Master Context
+
+**Stage 3 — Removed (Obsolete)**
+- Principle is no longer part of architecture
+- Only after migration period is complete
+- Historical reference only
+- Documented in Architecture Change Log
+
+### Deprecation Timeline
+
+**Minimum timeline for any deprecation:**
+
+```
+Day 0: Deprecation announced
+  ↓
+3 months: Deprecation warning in place
+  ↓
+6 months: Extended support available
+  ↓
+9 months: Final removal decision
+  ↓
+12 months: Principle removed
+```
+
+Every deprecated architectural concept must document:
+
+- **Reason:** Why is it being deprecated?
+- **Replacement:** What replaces it?
+- **Migration Strategy:** How to migrate existing code?
+- **Target Removal Revision:** When will it be removed?
+- **Support Timeline:** When does support end?
+
+---
+
+### Backward Compatibility
+
+**Principle:** Preserve backward compatibility whenever possible.
+
+**Rules:**
+
+1. Architecture changes should not break existing products
+2. Existing businesses should continue operating
+3. Existing APIs should remain stable
+4. Existing databases should remain accessible
+
+**If backward compatibility cannot be preserved:**
+
+An ADR is mandatory.
+
+Migration documentation is mandatory.
+
+Impact assessment is mandatory (affecting count of businesses/products).
+
+Stakeholder approval is mandatory.
+
+Deprecation timeline may be extended.
+
+---
+
+### Architecture Change Log
+
+Maintain a permanent Architecture Change Log.
+
+**Location:** docs/ARCHITECTURE_CHANGE_LOG.md
+
+**Record each revision with:**
+- Revision number (e.g., 2.1, 2.2, 3.0)
+- Date of approval
+- ADR references
+- Summary (one sentence)
+- Reason (why this change)
+- Deprecations (what was deprecated)
+- Migrations (what changed for existing code)
+- Breaking changes (yes/no)
+- Affected systems (Platform/Products)
+
+**Example:**
+
+| Revision | Date | Summary | Deprecations | Breaking | Migration |
+|----------|------|---------|--------------|----------|-----------|
+| 2.1 | 2026-06-27 | Platform Freeze + Golden Rules 12-14 | None | No | None |
+| 2.2 | 2027-06-27 | New governance process | Legacy approval method | No | New ADR process required |
+| 3.0 | 2028-06-27 | Multi-tenant ownership model | Single-tenant assumptions | Yes | Requires data migration |
+
+---
+
+## Permanent Evolution Principle
+
+**Architecture evolves slowly and deliberately.**
+
+**Implementation evolves continuously within architecture.**
+
+**Governance ensures that implementation always follows architecture—never the other way around.**
+
+The Master Context defines permanent direction.
+
+ADRs explain why decisions were made.
+
+Architecture revisions mark when principles change.
+
+Software releases show how principles are implemented.
+
+---
+
 ## AUDIT REFERENCES
 
 These documents are audits of existing systems. They are NOT architecture:
