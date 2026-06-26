@@ -523,6 +523,11 @@ model Business {
   slug                  String                  @unique
   businessType          BusinessType
   status                BusinessStatus          @default(ONBOARDING)
+  // Product Assignment (v1.2.0)
+  productCode           String?                 // FK to PlatformProduct.code (e.g., "COMMERCE", "LAUNDRY")
+  productVersion        String?                 // Product version when business was created
+  subscriptionPlanCode  String?                 // Selected subscription plan (e.g., "STARTER", "PROFESSIONAL")
+  enabledFeatures       String                  @default("[]")  // JSON array of enabled feature codes
   leadId                String?
   logo                  String?
   favicon               String?
