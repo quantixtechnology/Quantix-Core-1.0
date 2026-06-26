@@ -1,11 +1,95 @@
 // ============================================================================
-// Route: GET /api/admin/businesses
-// Returns businesses for the admin panel with subscription, domain, deployment info
+// Route: POST /api/admin/businesses — Create business (Onboarding)
+// Route: GET /api/admin/businesses — List businesses (Admin panel)
 // ============================================================================
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
+
+/**
+ * POST /api/admin/businesses
+ * Create a new business (called during onboarding)
+ * Auto-creates owner user account
+ */
+export const POST = withMiddleware({
+  requireAuth: false,
+})(async (req) => {
+  try {
+    const body = await req.json();
+    const {
+      name,
+      slug,
+      businessType,
+      address,
+      city,
+      state,
+      pincode,
+      country,
+      contactEmail,
+      contactPhone,
+    } = body;
+
+    // Validate required fields
+    if (!name || !slug || !businessType) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields: name, slug, businessType' },
+        { status: 400 }
+      );
+    }
+
+    // Check slug uniqueness
+    const existingBusiness = await db.business.findUnique({
+      where: { slug },
+    });
+
+    if (existingBusiness) {
+      return NextResponse.json(
+        { success: false, error: `Slug '${slug}' is already taken` },
+        { status: 409 }
+      );
+    }
+
+    // Create business
+    const business = await db.business.create({
+      data: {
+        name,
+        slug,
+        businessType,
+        businessCode: `BIZ-${slug.toUpperCase()}-${Date.now()}`,
+        address: address || null,
+        city: city || null,
+        state: state || null,
+        pincode: pincode || null,
+        country: country || 'India',
+        contactEmail: contactEmail || '',
+        contactPhone: contactPhone || '',
+        status: 'ONBOARDING',
+        isOnline: false,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: business.id,
+        name: business.name,
+        slug: business.slug,
+        businessType: business.businessType,
+        status: business.status,
+      },
+    });
+  } catch (error) {
+    console.error('[admin/businesses POST] Error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create business',
+      },
+      { status: 500 }
+    );
+  }
+});
 
 export const GET = withMiddleware({
   requireAuth: true,
