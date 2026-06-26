@@ -28,6 +28,7 @@ They DO NOT define architecture.
 | Revision | Date | Summary | Approved By |
 |----------|------|---------|-------------|
 | 1.0 | 2026-06-26 | Initial architecture freeze, merged from v1.0 + specifications | User |
+| 2.0 | 2026-06-27 | Business Provisioning inserted into Business Creation lifecycle. Feature Assignment moved into provisioning (not operational feature). Workspace Launch occurs only after provisioning completes. | User |
 
 ---
 
@@ -172,45 +173,91 @@ Businesses belong to exactly one **Business Type**, which determines:
 ### Business Creation Flow
 
 ```
-Business
+Business Information
     ↓
 Select Product
     ↓
-Load Feature Catalog
-    ↓
 Select Subscription Plan
-    ↓
-Enable Features
     ↓
 Create Business
     ↓
-Load Product Workspace
+Business Provisioning
+    ↓
+Assign Licensed Features
+    ↓
+Generate Product Workspace
+    ↓
+Activate Workspace
+    ↓
+Customer Login
 ```
 
-### Feature Hierarchy
+### Business Provisioning
+
+Business Provisioning is a Quantix Core responsibility executed immediately after Business Creation. It is the automated process that prepares a business for operation before any customer access is granted.
+
+**Provisioning includes:**
+- Validate Product exists and is active
+- Validate Subscription Plan exists
+- Create Product Assignment (productCode, productVersion, subscriptionPlanCode)
+- Assign Licensed Features from subscription plan
+- Apply Product Default Settings (currency, timezone, prefixes, notifications)
+- Apply Default Roles (product-specific roles for business)
+- Apply Default Permissions (based on roles)
+- Allocate Storage Quota (per subscription plan)
+- Generate Website Configuration (domain, SSL, branding)
+- Generate Workspace Configuration (features, permissions, settings)
+- Register Workspace (create workspace entry, set status = PROVISIONING)
+- Mark Workspace Ready (set status = READY, ready for first login)
+
+**Key Principle:** Business Owners never perform provisioning. All provisioning is automated by Quantix Core.
+
+**Idempotency:** Provisioning is fully idempotent—retrying failed steps does not cause duplication or data loss.
+
+**Failure Handling:** If provisioning fails:
+- Business status set to "Provisioning Failed"
+- Support team notified
+- Customer contacted with resolution steps
+- Provisioning can be retried
+
+### Feature Hierarchy & Assignment
+
+**Feature Definition and Assignment Flow:**
 
 ```
-Product
+Product (owns feature definitions and catalog)
     ↓
-Subscription Plan
+Subscription Plan (selects licensed features for tier)
     ↓
-Business Enabled Features
+Licensed Features (assigned to business during provisioning)
     ↓
-RBAC
+Business (stores assigned features)
     ↓
-User Access
+Workspace (receives only licensed features)
+    ↓
+RBAC (controls which users access which features)
+    ↓
+User Access (final permission level)
 ```
+
+**Important Clarification:** Feature Assignment is NOT an operational feature allowing customers to change their features. Feature Assignment is an internal Business Provisioning step that occurs automatically when a business is created. It assigns the licensed features from the selected subscription plan to the business record, which is then provided to the workspace.
+
+**Licensed Features Principle:** A business should receive ONLY the features it has licensed via its subscription plan. No unlicensed features should be visible or accessible to the business.
 
 ### Platform Super Admin Authority
 
 Only Quantix Super Admin can:
 - Create Products
-- Enable Features
 - Configure Subscription Plans
 - Configure Default Roles
+- Configure Default Permissions
 - Configure Default Storage
 - Configure Websites (Infrastructure)
 - Configure Infrastructure
+- Provision Businesses
+- Assign Licensed Features
+- Activate Workspaces (make them ready for first login)
+- Override Feature Assignments (future capability)
 
 ### Business Owner Limitations
 
@@ -581,11 +628,38 @@ CarWash → carwash.quantixtechnology.in
 2. User logs in with credentials
 3. Quantix Core authenticates user
 4. Quantix Core checks user's business(es)
-5. Quantix Core determines Business Type
-6. Quantix Core redirects to appropriate workspace
-7. Product workspace authenticates with token from Core
-8. Product loads tenant-specific configuration from Core
-9. User operates within product workspace
+5. **Quantix Core verifies provisioning is complete** (REQUIRED)
+6. Quantix Core determines Business Type
+7. Quantix Core redirects to appropriate workspace
+8. Product workspace authenticates with token from Core
+9. Product loads tenant-specific configuration from Core
+10. User operates within product workspace
+
+### Workspace Activation Readiness
+
+Before a business owner can access their product workspace, Quantix Core must verify all provisioning steps have completed:
+
+**Required Conditions for Workspace Access:**
+- ✓ Product Assignment exists (productCode, productVersion)
+- ✓ Subscription Plan exists and is valid
+- ✓ Licensed Features are assigned
+- ✓ Default Roles are applied
+- ✓ Default Permissions are applied
+- ✓ Storage Quota is allocated
+- ✓ Website Configuration exists
+- ✓ Workspace Configuration exists
+- ✓ Workspace Status = READY
+- ✓ All provisioning steps completed without errors
+
+**Access Denied If:**
+- Provisioning not completed
+- Business status = "Provisioning Failed"
+- Workspace status ≠ READY
+- Product is disabled
+- Subscription is cancelled
+- User lacks access permission
+
+**Principle:** Business Owners must never access a workspace before it is fully provisioned and ready.
 
 ### Routing Decision Tree
 
@@ -1050,7 +1124,9 @@ These rules are permanent and override all other considerations:
 
 9. **Every module has one owner.** Clear ownership, no ambiguity.
 
-10. **Every architecture change must update this document before code is written.** This document is THE source of truth.
+10. **Business Owners must never see unlicensed functionality.** All licensing and feature provisioning must be completed before first login. Every workspace receives only the features licensed by its subscription plan.
+
+11. **Every architecture change must update this document before code is written.** This document is THE source of truth.
 
 ---
 
@@ -1073,6 +1149,62 @@ These rules are permanent and override all other considerations:
 
 ---
 
+## QUANTIX CORE DEVELOPMENT ROADMAP
+
+This roadmap shows the planned implementation phases for Quantix Core Platform Controller.
+
+### v1.0.0 — Initial Platform Foundation (Complete)
+- User authentication and authorization
+- Business creation and provisioning basics
+- Role-based access control (RBAC)
+- Basic platform settings and configuration
+
+### v1.1.0 — Platform Foundation (Complete)
+- Product Registry with feature catalogs
+- Subscription Plans (Starter/Professional/Enterprise)
+- Product management and configuration
+- Website templates and mobile app definitions
+- Role and permission definitions per product
+
+### v1.2.0 — Business → Product Assignment (Complete)
+- Product selection during business creation
+- Subscription plan selection
+- Licensed feature assignment from plan
+- Business product reference storage
+- Product selection UI component
+
+### v1.3.0 — Business Provisioning (Next)
+- Validate product and subscription plan
+- Apply product default settings to business
+- Apply default roles and permissions
+- Allocate storage quota
+- Generate website configuration
+- Generate workspace configuration
+- Register workspace in system
+- Mark workspace ready for activation
+
+### v1.4.0 — Workspace Activation & Launch (Future)
+- Verify provisioning is complete
+- Load correct product workspace (commerce/laundry/carwash)
+- Route user to appropriate workspace
+- Load licensed features and navigation
+- Validate workspace readiness for first login
+- Redirect business owner to workspace
+
+### v1.5.0 — Product Deployment (Future)
+- Commerce OS deployment to commerce.quantixtechnology.in
+- Laundry OS deployment to laundry.quantixtechnology.in
+- Car Wash OS deployment to carwash.quantixtechnology.in
+- Product workspace integration with Quantix Core
+
+### v1.6.0+ — Future Enhancements (TBD)
+- Business feature assignment overrides (Super Admin capability)
+- Advanced storage management and expansion
+- Multi-workspace support enhancements
+- Additional products and business types
+
+---
+
 ## AUDIT REFERENCES
 
 These documents are audits of existing systems. They are NOT architecture:
@@ -1092,9 +1224,10 @@ These documents track progress. They are NOT architecture:
 
 ## DOCUMENT STATUS
 
-**Architecture Status:** FROZEN  
-**Last Update:** 2026-06-26  
+**Architecture Status:** FROZEN (Revision 2.0)  
+**Last Update:** 2026-06-27  
 **Approval Status:** APPROVED  
+**Current Revision:** 2.0 (Business Provisioning Architecture)  
 **Next Allowed Change:** Architecture Review (user initiated only)
 
 **This document is the ONLY source of truth for Quantix Core architecture.**
