@@ -16,10 +16,11 @@ They DO NOT define architecture.
 
 # QUANTIX CORE MASTER ARCHITECTURE
 
-**Last Updated:** 2026-06-26  
+**Last Updated:** 2026-06-27  
 **Status:** FROZEN - Architecture Locked  
 **Scope:** Complete Platform Controller Architecture & Product Ecosystem  
-**Approval:** User Approved (2026-06-26)
+**Approval:** User Approved (2026-06-27)  
+**Current Revision:** 2.1
 
 ---
 
@@ -29,6 +30,7 @@ They DO NOT define architecture.
 |----------|------|---------|-------------|
 | 1.0 | 2026-06-26 | Initial architecture freeze, merged from v1.0 + specifications | User |
 | 2.0 | 2026-06-27 | Business Provisioning inserted into Business Creation lifecycle. Feature Assignment moved into provisioning (not operational feature). Workspace Launch occurs only after provisioning completes. | User |
+| 2.1 | 2026-06-27 | Added Golden Rules 12, 13, 14. Added Architecture Validation Checklist. Permanent governance framework established. | User |
 
 ---
 
@@ -1126,7 +1128,13 @@ These rules are permanent and override all other considerations:
 
 10. **Business Owners must never see unlicensed functionality.** All licensing and feature provisioning must be completed before first login. Every workspace receives only the features licensed by its subscription plan.
 
-11. **Every architecture change must update this document before code is written.** This document is THE source of truth.
+11. **Platform First.** Quantix Core must remain a Platform Controller. Every new feature must answer: "Does this belong to the Platform or to a Product?" If it belongs to a Product, it must never be implemented inside Quantix Core. Quantix Core grows very slowly after v1.5.0. Future innovation happens inside Products, while Quantix Core remains stable, lightweight, and responsible only for platform services.
+
+12. **Products Never Communicate Directly.** Products must never directly depend on another Product. A Product must never call another Product's API directly, read another Product's database, publish directly to another Product's queue, depend on another Product's internal models, or know another Product's deployment location. All communication must occur through Platform-managed contracts provided by Quantix Core. Quantix Core owns: Service Discovery, Authentication, Authorization, Routing, API Contracts, Event Contracts, Version Compatibility, Tenant Isolation, and Audit Logging. Products know the Platform. Products never know each other.
+
+13. **Products Own Their Own Data.** Every Product owns its business data. Quantix Core must never become a business database. Quantix Core stores only platform metadata: Businesses, Users, Authentication, RBAC, Product Registry, Runtime Registry, Provisioning, Licensing, Subscriptions, Workspaces, Audit Logs, and Platform Configuration. Products own all business data including Commerce (Products, Categories, Inventory, Orders, Customers, POS, Payments, Delivery), Laundry (Laundry Orders, Garments, Services, Processing Centers, QC, Pickup & Delivery, Store Audit), Car Wash (Services, Packages, Bookings, Queue, Bays, Scheduling), and all future Products' operational data. If a table exists because a business operates, it belongs to the Product. If a table exists because the SaaS platform operates, it belongs to Quantix Core.
+
+14. **Platform Metadata Only.** Quantix Core is a Platform Controller. Products are Business Applications. Quantix Core never implements business workflows. Quantix Core only: Creates Businesses, Assigns Products, Assigns Plans, Assigns Licenses, Provisions Workspaces, Routes Users, Manages Runtime, Monitors Health, Manages Platform Users, Manages Billing, Manages Audit. Products implement: Business workflows, Operational rules, Industry logic, Product UI, Product APIs, Product databases. Never move Product functionality into Quantix Core.
 
 ---
 
@@ -1146,6 +1154,29 @@ These rules are permanent and override all other considerations:
 4. **Document any architectural assumptions in the code comment block at the top of implementation files.**
 
 5. **If architecture needs updating, update THIS DOCUMENT FIRST before writing code.**
+
+---
+
+## ARCHITECTURE VALIDATION CHECKLIST
+
+**Before ANY future implementation, automatically verify:**
+
+- [ ] Does this belong to the Platform?
+- [ ] Does this belong to a Product?
+- [ ] Is any Product logic entering Core?
+- [ ] Is any Product data entering Core?
+- [ ] Is any Product calling another Product?
+- [ ] Is every Product accessed only through Platform contracts?
+- [ ] Does this preserve independent deployment?
+- [ ] Does this preserve independent versioning?
+- [ ] Does this preserve independent scaling?
+- [ ] Does this preserve backward compatibility?
+
+**If ANY answer fails:**
+
+**STOP IMPLEMENTATION.**
+
+Explain the architectural violation before writing code. Update QUANTIX_CORE_MASTER_CONTEXT.md if necessary, then proceed.
 
 ---
 
@@ -1245,8 +1276,11 @@ These documents track progress. They are NOT architecture:
 
 ## DOCUMENT STATUS
 
-**Architecture Status:** FROZEN (Revision 2.0)  
+**Architecture Status:** FROZEN (Revision 2.1)  
 **Last Update:** 2026-06-27  
+**Golden Rules:** 14 permanent rules  
+**Validation Checklist:** 10-point architecture gate  
+**Next Review:** Before any new feature implementation  
 **Approval Status:** APPROVED  
 **Current Revision:** 2.0 (Business Provisioning Architecture)  
 **Next Allowed Change:** Architecture Review (user initiated only)
