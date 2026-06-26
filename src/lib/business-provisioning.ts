@@ -199,6 +199,10 @@ function getPlatformProvisioningSteps(businessId: string, workspaceId: string, p
       execute: async () => validateSubscriptionPlanStep(businessId, productCode),
     },
     {
+      name: 'create_owner_account',
+      execute: async () => createOwnerAccountStep(businessId),
+    },
+    {
       name: 'assign_licensed_features',
       execute: async () => assignLicensedFeaturesStep(businessId, workspaceId),
     },
@@ -273,7 +277,62 @@ async function validateSubscriptionPlanStep(businessId: string, productCode: str
 }
 
 /**
- * Step 3: Assign Licensed Features from subscription plan
+ * Step 3: Create Owner Account
+ */
+async function createOwnerAccountStep(businessId: string) {
+  const business = await db.business.findUnique({
+    where: { id: businessId },
+  })
+
+  if (!business) {
+    throw new Error(`Business ${businessId} not found`)
+  }
+
+  if (!business.contactEmail) {
+    throw new Error('Business contact email is required to create owner account')
+  }
+
+  // Check if owner already exists
+  const existingOwner = await db.businessUser.findFirst({
+    where: {
+      businessId,
+      role: 'CLIENT_OWNER',
+    },
+  })
+
+  if (existingOwner) {
+    return // Owner already exists
+  }
+
+  // Create owner user account
+  const ownerUser = await db.user.create({
+    data: {
+      email: business.contactEmail,
+      loginId: business.contactEmail.split('@')[0] || business.slug,
+      name: business.name,
+      phone: business.contactPhone || '',
+      isActive: true,
+      authProvider: 'EMAIL_OTP',
+      hasPassword: false,
+      emailVerified: false,
+    },
+  })
+
+  // Link user to business as owner
+  await db.businessUser.create({
+    data: {
+      businessId,
+      userId: ownerUser.id,
+      role: 'CLIENT_OWNER',
+      isActive: true,
+    },
+  })
+
+  // TODO: Send welcome email with OTP or password reset link to business.contactEmail
+}
+
+/**
+ * Step 4: Assign Licensed Features from subscription plan
  */
 async function assignLicensedFeaturesStep(businessId: string, workspaceId: string) {
   const business = await db.business.findUnique({
