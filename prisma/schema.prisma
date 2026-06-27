@@ -680,6 +680,8 @@ model Business {
   recurringDateOverrides RecurringDateOverride[]
   charges               Charge[]
   billingAccount        BillingAccount?
+  fileUploads           FileUpload[]
+  billingPayments       BillingPayment[]
 
   @@index([businessType])
   @@index([status])
@@ -1560,6 +1562,7 @@ model BusinessSubscription {
   billingHistory       BillingRecord[]
   plan                 PlatformPlan       @relation(fields: [planId], references: [id])
   business             Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  billingPayments      BillingPayment[]
 
   @@index([status])
   @@index([nextBillingDate])
@@ -4323,6 +4326,50 @@ model LaundryProcessingCenter {
   @@index([businessId])
   @@index([centerCode])
   @@index([centerType])
+}
+
+// File uploads (logos, product images, documents)
+model FileUpload {
+  id            String   @id @default(cuid())
+  businessId    String
+  originalName  String
+  filename      String
+  size          Int
+  mimeType      String
+  uploadPath    String
+  status        String   @default("COMPLETED") // COMPLETED, PROCESSING, FAILED
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Payment records from Razorpay webhooks
+model BillingPayment {
+  id               String   @id @default(cuid())
+  businessId       String
+  subscriptionId   String
+  paymentId        String   @unique // Razorpay payment ID
+  amount           Float
+  status           String   @default("COMPLETED") // COMPLETED, FAILED, REFUNDED
+  method           String   @default("RAZORPAY")
+  lastPaymentAt    DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  business       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription   BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([subscriptionId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model LaundryUserAssignment {
