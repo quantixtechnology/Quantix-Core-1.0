@@ -497,15 +497,7 @@ export function BusinessOnboardingWizard({ businessId, initialStep = 'info' }: W
 
             {currentStep === 'review' && (
               <>
-                <ReviewStep
-                  state={state}
-                  resourceAllocation={state.resourceAllocation}
-                  onResourceChange={(allocation) =>
-                    setState((prev) => ({ ...prev, resourceAllocation: allocation }))
-                  }
-                  onSubmit={handleReviewSubmit}
-                  loading={loading}
-                />
+                <ReviewStep state={state} />
                 <div className="flex justify-between gap-2 mt-8 pt-6 border-t">
                   <Button variant="outline" onClick={handlePrevious}>
                     <ChevronLeft className="w-4 h-4 mr-2" />

@@ -1,199 +1,151 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Minus, Plus } from 'lucide-react'
-
-interface ResourceAllocation {
-  storageGB: number
-  maxUsers: number
-  maxStores: number
-}
+import { Loader2 } from 'lucide-react'
 
 interface Props {
-  state: any
-  resourceAllocation: ResourceAllocation
-  onResourceChange: (allocation: ResourceAllocation) => void
-  onSubmit: () => void
-  loading: boolean
+  // Wizard onboarding state; only businessId is needed here. All displayed
+  // values are read back from the persisted Business so Review is the single
+  // source of truth before provisioning.
+  state: { businessId?: string }
 }
 
-export function ReviewStep({ state, resourceAllocation, onResourceChange, onSubmit, loading }: Props) {
-  // Validation helpers
-  const updateStorage = (value: number) => {
-    const validated = Math.max(1, Math.min(500, value))
-    onResourceChange({ ...resourceAllocation, storageGB: validated })
+// Authoritative Business shape we read from the API (persisted values only).
+interface PersistedBusiness {
+  name?: string | null
+  ownerName?: string | null
+  contactEmail?: string | null
+  contactPhone?: string | null
+  address?: string | null
+  city?: string | null
+  state?: string | null
+  pincode?: string | null
+  country?: string | null
+  productCode?: string | null
+  subscriptionPlanCode?: string | null
+  businessType?: string | null
+  status?: string | null
+}
+
+// Values not implemented yet (Resource Allocation, Phase 7). Never fabricated.
+const PLAN_DEFAULT = 'Will use plan defaults'
+
+function Field({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <p className="text-sm text-gray-600">{label}</p>
+      <p className="font-semibold break-words">{value || '—'}</p>
+    </div>
+  )
+}
+
+function PlaceholderField({ label }: { label: string }) {
+  return (
+    <div>
+      <p className="text-sm text-gray-600">{label}</p>
+      <p className="font-medium text-gray-400 italic">{PLAN_DEFAULT}</p>
+    </div>
+  )
+}
+
+export function ReviewStep({ state }: Props) {
+  const [biz, setBiz] = useState<PersistedBusiness | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const businessId = state.businessId
+    if (!businessId) {
+      setLoading(false)
+      return
+    }
+    let active = true
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/admin/businesses/${businessId}`)
+        const json = await res.json()
+        if (!res.ok || json.success === false) {
+          throw new Error(json.error || 'Failed to load business')
+        }
+        if (active) setBiz(json.data as PersistedBusiness)
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Failed to load business')
+      } finally {
+        if (active) setLoading(false)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [state.businessId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-16 text-gray-500">
+        <Loader2 className="w-5 h-5 animate-spin" /> Loading review…
+      </div>
+    )
   }
 
-  const updateUsers = (value: number) => {
-    const validated = Math.max(1, Math.min(1000, value))
-    onResourceChange({ ...resourceAllocation, maxUsers: validated })
+  if (error || !biz) {
+    return (
+      <Card className="p-6 bg-red-50 border-red-200">
+        <p className="text-red-600 text-sm">{error || 'No business data available to review.'}</p>
+      </Card>
+    )
   }
 
-  const updateStores = (value: number) => {
-    const validated = Math.max(1, Math.min(500, value))
-    onResourceChange({ ...resourceAllocation, maxStores: validated })
-  }
+  const addressParts = [biz.address, biz.city, biz.state, biz.pincode, biz.country].filter(
+    (p) => p && String(p).trim()
+  )
+  const fullAddress = addressParts.length ? addressParts.join(', ') : null
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold">Review & Confirm</h3>
+      <div>
+        <h3 className="text-lg font-semibold">Review &amp; Confirm</h3>
+        <p className="text-sm text-gray-600">
+          These are the saved details for this business — the single source of truth before provisioning.
+        </p>
+      </div>
 
       {/* Business Information */}
       <Card className="p-6 bg-blue-50 border-blue-200">
         <h4 className="font-semibold mb-4">Business Information</h4>
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-600">Business Name</p>
-            <p className="font-semibold">{state.businessName}</p>
+          <Field label="Business Name" value={biz.name} />
+          <Field label="Owner" value={biz.ownerName} />
+          <Field label="Email" value={biz.contactEmail} />
+          <Field label="Mobile" value={biz.contactPhone} />
+          <div className="col-span-2">
+            <Field label="Address" value={fullAddress} />
           </div>
-          <div>
-            <p className="text-sm text-gray-600">Business Slug</p>
-            <p className="font-semibold">{state.businessSlug}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Owner Name</p>
-            <p className="font-semibold">{state.ownerName || '—'}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Email</p>
-            <p className="font-semibold text-sm">{state.contactEmail}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Phone</p>
-            <p className="font-semibold">{state.contactPhone}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">City</p>
-            <p className="font-semibold">{state.city}</p>
-          </div>
+          <Field label="Business Status" value={biz.status} />
         </div>
       </Card>
 
-      {/* Product & Plan Information */}
+      {/* Product & Subscription */}
       <Card className="p-6 bg-purple-50 border-purple-200">
-        <h4 className="font-semibold mb-4">Product & Subscription</h4>
+        <h4 className="font-semibold mb-4">Product &amp; Subscription</h4>
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-600">Product</p>
-            <p className="font-semibold">{state.productCode || '—'}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Plan</p>
-            <p className="font-semibold">{state.subscriptionPlanCode || '—'}</p>
-          </div>
+          <Field label="Product" value={biz.productCode} />
+          <Field label="Plan" value={biz.subscriptionPlanCode} />
+          <Field label="Workspace Type" value={biz.businessType} />
         </div>
       </Card>
 
-      {/* Resource Allocation - Editable */}
+      {/* Resource Allocation — not implemented yet (Phase 7). Plan defaults apply. */}
       <Card className="p-6 bg-green-50 border-green-200">
-        <h4 className="font-semibold mb-6">Resource Allocation</h4>
-        <div className="space-y-6">
-          {/* Storage */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Storage (GB)</label>
-            <div className="flex items-center gap-4">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => updateStorage(resourceAllocation.storageGB - 1)}
-              >
-                <Minus className="w-4 h-4" />
-              </Button>
-              <Input
-                type="number"
-                min="1"
-                max="500"
-                value={resourceAllocation.storageGB}
-                onChange={(e) => updateStorage(parseInt(e.target.value) || 1)}
-                className="w-24 text-center"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => updateStorage(resourceAllocation.storageGB + 1)}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-              <span className="text-xs text-gray-500 ml-2">1 - 500 GB</span>
-            </div>
-          </div>
-
-          {/* Users */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Users</label>
-            <div className="flex items-center gap-4">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => updateUsers(resourceAllocation.maxUsers - 1)}
-              >
-                <Minus className="w-4 h-4" />
-              </Button>
-              <Input
-                type="number"
-                min="1"
-                max="1000"
-                value={resourceAllocation.maxUsers}
-                onChange={(e) => updateUsers(parseInt(e.target.value) || 1)}
-                className="w-24 text-center"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => updateUsers(resourceAllocation.maxUsers + 1)}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-              <span className="text-xs text-gray-500 ml-2">1 - 1,000</span>
-            </div>
-          </div>
-
-          {/* Stores / Branches */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Stores / Branches</label>
-            <div className="flex items-center gap-4">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => updateStores(resourceAllocation.maxStores - 1)}
-              >
-                <Minus className="w-4 h-4" />
-              </Button>
-              <Input
-                type="number"
-                min="1"
-                max="500"
-                value={resourceAllocation.maxStores}
-                onChange={(e) => updateStores(parseInt(e.target.value) || 1)}
-                className="w-24 text-center"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => updateStores(resourceAllocation.maxStores + 1)}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-              <span className="text-xs text-gray-500 ml-2">1 - 500</span>
-            </div>
-          </div>
+        <h4 className="font-semibold mb-1">Resource Allocation</h4>
+        <p className="text-xs text-gray-500 mb-4">Configured during provisioning.</p>
+        <div className="grid grid-cols-2 gap-4">
+          <PlaceholderField label="Storage" />
+          <PlaceholderField label="Users" />
+          <PlaceholderField label="Stores" />
+          <PlaceholderField label="Licensed Features" />
         </div>
       </Card>
-
-      {/* Summary */}
-      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-        <p className="text-sm text-gray-600 mb-3">Review Summary:</p>
-        <ul className="space-y-2 text-sm">
-          <li>✓ Business created with all information</li>
-          <li>✓ Product assigned: {state.productCode}</li>
-          <li>✓ Plan assigned: {state.subscriptionPlanCode}</li>
-          <li>✓ Resources allocated: {resourceAllocation.storageGB}GB storage, {resourceAllocation.maxUsers} users, {resourceAllocation.maxStores} store(s)</li>
-          <li>✓ Ready for provisioning</li>
-        </ul>
-      </div>
     </div>
   )
 }

@@ -32,8 +32,17 @@ export const GET = withMiddleware({ requireAuth: true })(
       // here threw at runtime and broke onboarding resume (which loads the
       // business via this endpoint). Lifecycle state is derived from the
       // business's own productCode / subscriptionPlanCode fields.
+      // Owner name lives on the CLIENT_OWNER user — surfaced as `ownerName` so
+      // the onboarding Review/resume can display it.
       const business = await db.business.findUnique({
         where: { id: businessId },
+        include: {
+          businessUsers: {
+            where: { role: 'CLIENT_OWNER', isActive: true },
+            take: 1,
+            include: { user: { select: { name: true, email: true } } },
+          },
+        },
       })
 
       if (!business) {
@@ -43,9 +52,12 @@ export const GET = withMiddleware({ requireAuth: true })(
         )
       }
 
+      const { businessUsers, ...rest } = business
+      const ownerName = businessUsers[0]?.user.name ?? null
+
       return NextResponse.json({
         success: true,
-        data: business,
+        data: { ...rest, ownerName },
       })
     } catch (error) {
       console.error('[businesses GET] Error:', error)
