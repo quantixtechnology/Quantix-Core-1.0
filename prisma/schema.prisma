@@ -681,7 +681,7 @@ model Business {
   charges               Charge[]
   billingAccount        BillingAccount?
   fileUploads           FileUpload[]
-  billingPayments       BillingPayment[]
+  razorpayPayments      RazorpayPayment[]
 
   @@index([businessType])
   @@index([status])
@@ -1562,7 +1562,7 @@ model BusinessSubscription {
   billingHistory       BillingRecord[]
   plan                 PlatformPlan       @relation(fields: [planId], references: [id])
   business             Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  billingPayments      BillingPayment[]
+  razorpayPayments     RazorpayPayment[]
 
   @@index([status])
   @@index([nextBillingDate])
@@ -4350,7 +4350,7 @@ model FileUpload {
 }
 
 // Payment records from Razorpay webhooks
-model BillingPayment {
+model RazorpayPayment {
   id               String   @id @default(cuid())
   businessId       String
   subscriptionId   String

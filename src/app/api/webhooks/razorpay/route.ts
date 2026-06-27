@@ -80,7 +80,7 @@ async function handlePaymentSuccess(paymentId: string, amount: number, metadata:
   })
 
   // Create payment record
-  await db.billingPayment.create({
+  await db.razorpayPayment.create({
     data: {
       businessId,
       subscriptionId,
