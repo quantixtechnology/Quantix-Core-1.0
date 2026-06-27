@@ -10,6 +10,8 @@ import {
   initializeCommerceOS,
   initializeLaundryOS,
 } from '@/lib/product-initialization'
+import { initializeCommerceProduct } from '@/lib/products/commerce-init'
+import { initializeLaundryProduct } from '@/lib/products/laundry-init'
 
 let initialized = false
 
@@ -38,6 +40,10 @@ export async function initializePlatform(): Promise<void> {
       await initializeCommerceOS()
       await initializeLaundryOS()
     }
+
+    // Initialize product provisioners and runtime configurations
+    await initializeCommerceProduct()
+    await initializeLaundryProduct()
 
     initialized = true
   } catch (error) {
