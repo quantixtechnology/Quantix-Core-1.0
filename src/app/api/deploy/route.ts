@@ -152,6 +152,8 @@ function resolveSecret(): { source: string; secret?: string } {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
+  console.log('[DEPLOY] POST received')
+
   const ip        = getIp(req)
   const requestAt = new Date().toISOString()
 
@@ -171,9 +173,13 @@ export async function POST(req: Request) {
 
   try {
     // ── 1. Secret configured? ─────────────────────────────────────────────────
+    console.log('[DEPLOY] Resolving secret')
     const resolved = resolveSecret()
+    console.log('[DEPLOY] Secret resolved:', { source: resolved.source, hasSecret: !!resolved.secret })
 
+    console.log('[DEPLOY] Resolving script path')
     const { scriptPath, resolvedVia } = resolveScriptPath()
+    console.log('[DEPLOY] Script path resolved:', { scriptPath, resolvedVia })
 
     // Do NOT expose the secret value in logs. Only log configured/not configured
     console.log(`[Deploy] DEPLOY_WEBHOOK_SECRET = ${resolved.secret ? 'configured' : 'not configured'}`)
@@ -202,32 +208,41 @@ export async function POST(req: Request) {
       return errorResponse('DEPLOY_WEBHOOK_SECRET not configured', diagnostics, 500)
     }
     const secret = resolved.secret
+    console.log('[DEPLOY] Secret is configured')
     log('secret_resolved', { source: resolved.source })
 
     // ── 2. Rate limit ─────────────────────────────────────────────────────────
+    console.log('[DEPLOY] Checking rate limit for IP:', ip)
     const rate = checkRateLimit(ip)
     if (!rate.allowed) {
+      console.log('[DEPLOY] Rate limited')
       log('rate_limited')
       return NextResponse.json(
         { error: 'Too many requests' },
         { status: 429, headers: { 'Retry-After': String(rate.retryAfter ?? 3600) } }
       )
     }
+    console.log('[DEPLOY] Rate limit OK')
 
     // ── 3. Constant-time secret validation ───────────────────────────────────
+    console.log('[DEPLOY] Validating secret header')
     const provided = req.headers.get('x-deploy-secret') ?? ''
     if (!provided || !safeEqual(provided, secret)) {
+      console.log('[DEPLOY] Secret validation failed')
       log('unauthorized')
       console.warn('[Deploy] Unauthorized attempt: invalid x-deploy-secret header', { providedPresent: !!provided })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    console.log('[DEPLOY] Secret validation passed')
 
     // ── 4. Timestamp replay window ────────────────────────────────────────────
+    console.log('[DEPLOY] Checking timestamp window')
     const tsHeader = req.headers.get('x-deploy-timestamp')
     if (tsHeader) {
       const ts = parseInt(tsHeader, 10)
       const ageSec = Math.floor(Date.now() / 1000) - ts
       if (isNaN(ts) || ageSec > 300 || ageSec < -30) {
+        console.log('[DEPLOY] Timestamp rejected:', { ageSec })
         log('replay_rejected', { ageSec })
         return NextResponse.json(
           { error: 'Request timestamp out of acceptable window' },
@@ -235,12 +250,15 @@ export async function POST(req: Request) {
         )
       }
     }
+    console.log('[DEPLOY] Timestamp valid')
 
     // ── 5. Atomic lock acquisition ────────────────────────────────────────────
+    console.log('[DEPLOY] Acquiring deployment lock')
     try {
       const fd = openSync(LOCK_FILE, 'wx')
       closeSync(fd)
-    } catch {
+    } catch (lockErr) {
+      console.log('[DEPLOY] Lock acquisition failed (deployment in progress):', lockErr)
       let current: Record<string, unknown> = {}
       try {
         const { readFileSync } = await import('fs')
@@ -252,8 +270,10 @@ export async function POST(req: Request) {
         { status: 409 }
       )
     }
+    console.log('[DEPLOY] Lock acquired')
 
     // ── 6. Write initial queued status ───────────────────────────────────────
+    console.log('[DEPLOY] Writing status file')
     try {
       writeFileSync(
         STATUS_FILE,
@@ -265,14 +285,20 @@ export async function POST(req: Request) {
           triggeredBy: ip,
         })
       )
-    } catch { /* non-critical */ }
+      console.log('[DEPLOY] Status file written')
+    } catch (statusErr) {
+      console.log('[DEPLOY] Failed to write status file (non-critical):', statusErr)
+    }
 
     // ── 7. Verify script exists ──────────────────────────────────────────────
+    console.log('[DEPLOY] Verifying script exists:', scriptPath)
     if (!existsSync(scriptPath)) {
+      console.log('[DEPLOY] Script not found, cleaning up lock')
       try { const { unlinkSync } = await import('fs'); unlinkSync(LOCK_FILE) } catch { /* ignore */ }
       log('script_not_found', { scriptPath, resolvedVia })
       return errorResponse('Deployment script not found on server', { scriptPath, resolvedVia }, 500)
     }
+    console.log('[DEPLOY] Script verified')
     log('script_verified', { scriptPath, resolvedVia })
 
     // ── 8. Build spawn environment ───────────────────────────────────────────
@@ -290,13 +316,15 @@ export async function POST(req: Request) {
     // `npm run build`, which strips this variable from the build subprocess.
     // This filter is a belt-and-braces defence for the bash script process
     // itself (git, npm install, prisma steps) which run outside env -i.
+    console.log('[DEPLOY] Building spawn environment')
     const {
       __NEXT_PRIVATE_STANDALONE_CONFIG: _stripped,
       __NEXT_PRIVATE_RENDER_WORKER:     _stripped2,
       ...spawnEnv
     } = process.env
+    console.log('[DEPLOY] Spawn environment built')
 
-      // ── 9. Spawn — double-fork to escape PM2 TreeKill ───────────────────────
+    // ── 9. Spawn — double-fork to escape PM2 TreeKill ───────────────────────
     //
     // ROOT CAUSE (why single detached spawn was not enough):
     //   PM2 uses lib/TreeKill.js when restarting the quantix app.  TreeKill
@@ -324,6 +352,7 @@ export async function POST(req: Request) {
     // (after git pull, npm install, prisma, build).  There is no race.
     // disown ensures bash does not send SIGHUP to the deploy script when the
     // intermediate exits, even on systems where huponexit is enabled.
+    console.log('[DEPLOY] Spawning child process')
     let intermediate: ReturnType<typeof spawn>
     try {
       intermediate = spawn(
@@ -335,6 +364,7 @@ export async function POST(req: Request) {
           env:      { ...spawnEnv, DEPLOY_SCRIPT: scriptPath },
         }
       )
+      console.log('[DEPLOY] Child process spawned, PID:', intermediate.pid)
 
       intermediate.on('error', (err) => {
         console.error('[Deploy] Failed to launch deploy process:', err.message)
@@ -352,7 +382,9 @@ export async function POST(req: Request) {
       })
 
       intermediate.unref()
+      console.log('[DEPLOY] Child process unreferenced')
     } catch (err) {
+      console.error('[DEPLOY] Spawn failed:', err)
       try { const { unlinkSync } = await import('fs'); unlinkSync(LOCK_FILE) } catch { /* ignore */ }
       return errorResponse(
         'Unable to launch deployment process',
@@ -361,6 +393,7 @@ export async function POST(req: Request) {
       )
     }
 
+    console.log('[DEPLOY] Returning success response')
     log('triggered', { scriptPath, resolvedVia, pid: intermediate.pid })
 
     return NextResponse.json({
@@ -369,14 +402,16 @@ export async function POST(req: Request) {
     })
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
-    console.error('[Deploy] Unexpected error in POST handler:', error)
-    return errorResponse(
-      'Unexpected error processing webhook',
+    console.error('[DEPLOY] Unexpected error in POST handler:', error)
+    console.error('[DEPLOY] Error stack:', error.stack)
+
+    return NextResponse.json(
       {
-        message: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        success: false,
+        error: error.message,
+        ...(process.env.NODE_ENV === 'development' && { stack: error.stack }),
       },
-      500
+      { status: 500 }
     )
   }
 }
