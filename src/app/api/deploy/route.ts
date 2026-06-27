@@ -26,6 +26,24 @@ import { readFileSync } from 'fs'
 
 export const runtime = 'nodejs'
 
+// ── Module-level diagnostics ────────────────────────────────────────────────
+const MODULE_LOADED_AT = new Date().toISOString()
+const MODULE_VERSION = 'v1'
+
+interface ExecutionState {
+  handlerEntered: boolean
+  handlerEnteredAt?: string
+  lastStage?: string
+  lastError?: string
+  lastRequestTime?: string
+}
+
+const executionState: ExecutionState = {
+  handlerEntered: false,
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 const LOCK_FILE = '/tmp/quantix-deploy.lock'
 const STATUS_FILE = '/tmp/quantix-deploy-status.json'
 
@@ -130,8 +148,13 @@ function resolveSecret(): { source: string; secret?: string } {
 }
 
 export async function POST(req: Request) {
+  const handlerEnteredAt = new Date().toISOString()
+  executionState.handlerEntered = true
+  executionState.handlerEnteredAt = handlerEnteredAt
+  executionState.lastRequestTime = handlerEnteredAt
+
   const ip = getIp(req)
-  const requestAt = new Date().toISOString()
+  const requestAt = handlerEnteredAt
 
   try {
     // ── 1. Rate limit ──────────────────────────────────────────────────────────
@@ -317,6 +340,9 @@ export async function POST(req: Request) {
     const error = err instanceof Error ? err : new Error(String(err))
     const stage = err?.stage || 'unknown'
 
+    executionState.lastStage = stage
+    executionState.lastError = error.message
+
     console.error(`[Deploy] Error at stage: ${stage}`, error)
 
     return NextResponse.json(
@@ -331,3 +357,6 @@ export async function POST(req: Request) {
     )
   }
 }
+
+// ── Diagnostic exports ──────────────────────────────────────────────────────
+export { executionState, MODULE_LOADED_AT, MODULE_VERSION }

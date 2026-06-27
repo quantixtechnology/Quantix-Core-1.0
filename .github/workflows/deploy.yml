@@ -133,8 +133,8 @@ jobs:
             echo "✅ Deploy triggered (or already in progress)"
           fi
 
-      # ── Step 2b: Collect debug info on webhook failure ──────────────────────
-      - name: Collect debug diagnostics (on webhook failure)
+      # ── Step 2b: Collect diagnostics on webhook failure ────────────────────────
+      - name: Collect execution diagnostics (on webhook failure)
         if: failure() && steps.trigger.outcome == 'failure'
         run: |
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
@@ -150,17 +150,25 @@ jobs:
             fi
           fi
 
-          echo "🔍 Collecting system diagnostics from ${APP_URL}/api/deploy/debug"
-          echo ""
-
-          curl -s --max-time 15 \
-            $RESOLVE_FLAG \
-            "${APP_URL}/api/deploy/debug" 2>/dev/null | jq . || echo "Failed to collect diagnostics"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  1️⃣  Module Load Status"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/module" 2>/dev/null | jq . || echo "❌ Cannot reach module endpoint"
 
           echo ""
-          echo "Webhook error response:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  2️⃣  Handler Execution State"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/state" 2>/dev/null | jq . || echo "❌ Cannot reach state endpoint"
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  3️⃣  Webhook Trigger Response"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           if [ -f /tmp/webhook_error.json ]; then
-            cat /tmp/webhook_error.json | jq . || cat /tmp/webhook_error.json
+            cat /tmp/webhook_error.json | jq . 2>/dev/null || cat /tmp/webhook_error.json
+          else
+            echo "No error response saved"
           fi
 
       # ── Step 3: Poll status until done ────────────────────────────────────
@@ -230,8 +238,8 @@ jobs:
           echo "   Status:    cat /tmp/quantix-deploy-status.json" # This file name is fine.
           exit 1
 
-      # ── Step 3b: Collect debug info on polling timeout ─────────────────────
-      - name: Collect debug diagnostics (on polling timeout)
+      # ── Step 3b: Collect execution diagnostics on polling timeout ──────────────
+      - name: Collect execution diagnostics (on polling timeout)
         if: failure()
         run: |
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
@@ -247,9 +255,13 @@ jobs:
             fi
           fi
 
-          echo "🔍 Collecting system diagnostics from ${APP_URL}/api/deploy/debug"
-          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  1️⃣  Module Load Status"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/module" 2>/dev/null | jq . || echo "❌ Cannot reach module endpoint"
 
-          curl -s --max-time 15 \
-            $RESOLVE_FLAG \
-            "${APP_URL}/api/deploy/debug" 2>/dev/null | jq . || echo "Failed to collect diagnostics"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  2️⃣  Handler Execution State"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/state" 2>/dev/null | jq . || echo "❌ Cannot reach state endpoint"
