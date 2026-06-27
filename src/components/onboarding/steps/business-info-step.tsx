@@ -16,6 +16,7 @@ interface Props {
   initialData: any
   onSubmit: (data: any) => void
   loading: boolean
+  isEditMode?: boolean
 }
 
 // Indian States and Union Territories

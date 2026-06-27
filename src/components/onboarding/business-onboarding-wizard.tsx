@@ -48,10 +48,16 @@ interface OnboardingState {
   workspaceId?: string
 }
 
-export function BusinessOnboardingWizard() {
-  const [currentStep, setCurrentStep] = useState<OnboardingStep>('info')
+interface WizardProps {
+  businessId?: string
+  initialStep?: OnboardingStep
+}
+
+export function BusinessOnboardingWizard({ businessId, initialStep = 'info' }: WizardProps) {
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>(initialStep)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isResumingExisting, setIsResumingExisting] = useState(!!businessId)
 
   const [state, setState] = useState<OnboardingState>({
     businessName: '',
@@ -70,6 +76,41 @@ export function BusinessOnboardingWizard() {
     step: string
     status: 'COMPLETED' | 'IN_PROGRESS' | 'PENDING'
   }>>([])
+
+  // Load existing business if resuming
+  useEffect(() => {
+    if (businessId && isResumingExisting) {
+      const loadBusiness = async () => {
+        try {
+          const res = await fetch(`/api/admin/businesses/${businessId}`)
+          if (res.ok) {
+            const result = await res.json()
+            const business = result.data
+            setState((prev) => ({
+              ...prev,
+              businessName: business.name || '',
+              businessSlug: business.slug || '',
+              ownerName: business.ownerName || '',
+              contactEmail: business.contactEmail || '',
+              contactPhone: business.contactPhone || '',
+              address: business.address || '',
+              city: business.city || '',
+              state: business.state || '',
+              pinCode: business.pincode || '',
+              country: business.country || 'India',
+              productCode: business.productCode || undefined,
+              subscriptionPlanCode: business.subscriptionPlanCode || undefined,
+              businessId: business.id,
+            }))
+          }
+        } catch (err) {
+          console.error('Failed to load business:', err)
+        }
+      }
+      loadBusiness()
+      setIsResumingExisting(false)
+    }
+  }, [businessId, isResumingExisting])
 
   // Step 1: Business Information
   const handleBusinessInfoSubmit = async (data: any) => {
