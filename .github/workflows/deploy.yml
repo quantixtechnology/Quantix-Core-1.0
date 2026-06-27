@@ -206,30 +206,68 @@ jobs:
             sleep 30
             POLL=$((POLL + 1))
 
-            # Capture full HTTP response including headers and status code
-            curl -i --max-time 20 \
+            # Capture HTTP code, headers, body, and stderr separately
+            rm -f /tmp/poll.headers /tmp/poll.body /tmp/poll.stderr
+
+            HTTP_CODE=$(curl \
+              --silent \
+              --show-error \
+              --max-time 20 \
+              --write-out "%{http_code}" \
+              -D /tmp/poll.headers \
+              -o /tmp/poll.body \
               $RESOLVE_FLAG \
               -H "x-deploy-secret: ${SECRET}" \
-              "${APP_URL}/api/deploy/status" > /tmp/poll_response.txt 2>&1 || echo "CURL_FAILED" >> /tmp/poll_response.txt
+              "${APP_URL}/api/deploy/status" 2>/tmp/poll.stderr)
 
-            # Extract HTTP status code (first line)
-            HTTP_STATUS=$(head -1 /tmp/poll_response.txt | grep -oE '[0-9]{3}' | head -1 || echo "000")
+            CURL_EXIT=$?
 
-            # Extract headers and body
-            RESPONSE=$(tail -n +2 /tmp/poll_response.txt | sed '/^[[:space:]]*$/d' | tail -n +2)
+            # Extract Content-Type from headers
+            CONTENT_TYPE=$(grep -i "^content-type:" /tmp/poll.headers 2>/dev/null | head -1 | cut -d' ' -f2- | tr -d '\r')
 
-            echo "[$POLL/$MAX_POLLS] HTTP ${HTTP_STATUS}"
+            # Read body (first 500 chars for preview)
+            BODY=$(cat /tmp/poll.body 2>/dev/null || echo "")
+            BODY_PREVIEW=$(echo "$BODY" | head -c 500)
 
-            # Guard: if the response is not valid JSON, show what we got
-            if ! echo "$RESPONSE" | jq -e . > /dev/null 2>&1; then
-              CONTENT_TYPE=$(grep -i "^content-type:" /tmp/poll_response.txt | cut -d' ' -f2- || echo "unknown")
-              BODY_PREVIEW=$(head -c 300 /tmp/poll_response.txt | tail -c +1)
-              echo "  ⚠️  Non-JSON response"
-              echo "  Content-Type: ${CONTENT_TYPE}"
-              echo "  Preview: ${BODY_PREVIEW}"
+            # Read stderr if present
+            CURL_STDERR=$(cat /tmp/poll.stderr 2>/dev/null || echo "")
+
+            echo "[$POLL/$MAX_POLLS] HTTP ${HTTP_CODE}"
+
+            # Classify the failure
+            if [ "$CURL_EXIT" -ne 0 ]; then
+              echo "  ⚠️  curl failed (exit code ${CURL_EXIT})"
+              case "$CURL_EXIT" in
+                6)  echo "  → DNS resolution failed" ;;
+                7)  echo "  → Connection refused" ;;
+                28) echo "  → Timeout (20s max)" ;;
+                35) echo "  → SSL/TLS error" ;;
+                52) echo "  → Empty reply from server" ;;
+                56) echo "  → Connection reset by peer" ;;
+                *)  echo "  → curl error (see stderr below)" ;;
+              esac
+              if [ -n "$CURL_STDERR" ]; then
+                echo "  stderr: ${CURL_STDERR}"
+              fi
               continue
             fi
 
+            # HTTP request succeeded, but check response
+            if [ -z "$BODY" ]; then
+              echo "  ⚠️  Empty response body"
+              echo "  Content-Type: ${CONTENT_TYPE}"
+              continue
+            fi
+
+            # Try to parse as JSON
+            if ! RESPONSE=$(echo "$BODY" | jq . 2>/dev/null); then
+              echo "  ⚠️  Invalid JSON response"
+              echo "  Content-Type: ${CONTENT_TYPE}"
+              echo "  Body preview: ${BODY_PREVIEW}"
+              continue
+            fi
+
+            # Valid JSON, extract deploy status
             STATUS=$(echo "$RESPONSE" | jq -r '.status  // "unknown"')
             STEP=$(echo "$RESPONSE"   | jq -r '.step    // ""')
             MSG=$(echo "$RESPONSE"    | jq -r '.message // ""')
