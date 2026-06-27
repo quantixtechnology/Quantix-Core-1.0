@@ -206,15 +206,27 @@ jobs:
             sleep 30
             POLL=$((POLL + 1))
 
-            RESPONSE=$(curl -s --max-time 20 \
+            # Capture full HTTP response including headers and status code
+            curl -i --max-time 20 \
               $RESOLVE_FLAG \
               -H "x-deploy-secret: ${SECRET}" \
-              "${APP_URL}/api/deploy/status" 2>/dev/null || echo '{"status":"unreachable"}')
+              "${APP_URL}/api/deploy/status" > /tmp/poll_response.txt 2>&1 || echo "CURL_FAILED" >> /tmp/poll_response.txt
 
-            # Guard: if the response is not valid JSON (e.g. Nginx 502 HTML during
-            # PM2 restart), replace it so jq doesn't fail the step with exit code 5.
+            # Extract HTTP status code (first line)
+            HTTP_STATUS=$(head -1 /tmp/poll_response.txt | grep -oE '[0-9]{3}' | head -1 || echo "000")
+
+            # Extract headers and body
+            RESPONSE=$(tail -n +2 /tmp/poll_response.txt | sed '/^[[:space:]]*$/d' | tail -n +2)
+
+            echo "[$POLL/$MAX_POLLS] HTTP ${HTTP_STATUS}"
+
+            # Guard: if the response is not valid JSON, show what we got
             if ! echo "$RESPONSE" | jq -e . > /dev/null 2>&1; then
-              echo "[$POLL/$MAX_POLLS] ⚠️  Non-JSON response — app may be restarting, retrying…"
+              CONTENT_TYPE=$(grep -i "^content-type:" /tmp/poll_response.txt | cut -d' ' -f2- || echo "unknown")
+              BODY_PREVIEW=$(head -c 300 /tmp/poll_response.txt | tail -c +1)
+              echo "  ⚠️  Non-JSON response"
+              echo "  Content-Type: ${CONTENT_TYPE}"
+              echo "  Preview: ${BODY_PREVIEW}"
               continue
             fi
 
@@ -223,7 +235,7 @@ jobs:
             MSG=$(echo "$RESPONSE"    | jq -r '.message // ""')
             COMMIT=$(echo "$RESPONSE" | jq -r '.commit  // ""')
 
-            echo "[$POLL/$MAX_POLLS] status=${STATUS} step=${STEP} — ${MSG}"
+            echo "  status=${STATUS} step=${STEP} — ${MSG}"
 
             if [ "$STATUS" = "success" ]; then
               echo ""
@@ -251,8 +263,10 @@ jobs:
       # ── Step 3b: Collect execution diagnostics on polling timeout ──────────────
       - name: Collect execution diagnostics (on polling timeout)
         if: failure()
+        continue-on-error: true
         run: |
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
+          SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
           VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
 
           RESOLVE_FLAG=""
@@ -265,13 +279,30 @@ jobs:
             fi
           fi
 
+          echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  1️⃣  Module Load Status"
+          echo "  LAST /api/deploy/status RESPONSE (Raw)"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ -f /tmp/poll_response.txt ]; then
+            head -50 /tmp/poll_response.txt
+          else
+            echo "No poll response captured"
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  BUILD INFO (what version is running?)"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/build-info" 2>/dev/null | jq . || echo "❌ Cannot reach /api/build-info"
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  MODULE LOAD STATUS"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/module" 2>/dev/null | jq . || echo "❌ Cannot reach module endpoint"
 
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  2️⃣  Handler Execution State"
+          echo "  HANDLER EXECUTION STATE"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/state" 2>/dev/null | jq . || echo "❌ Cannot reach state endpoint"

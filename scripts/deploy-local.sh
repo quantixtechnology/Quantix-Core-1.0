@@ -279,6 +279,49 @@ pm2 save 2>/dev/null || true
 # || true: pm2 list failure must not abort the deploy — the restart already succeeded.
 pm2 list 2>&1 | tee -a "$LOG_FILE" || true
 
+# ─── Post-restart diagnostics ──────────────────────────────────────────────────
+log ""
+log "── Post-restart diagnostics ────────────────────────────────"
+log "Checking PM2 process state..."
+PM2_PID=$(pm2 list 2>/dev/null | grep quantix-core | awk '{print $NF}' | head -1 || echo "unknown")
+log "PM2 quantix-core PID: $PM2_PID"
+
+log "Checking if port 3000 is listening..."
+if netstat -tlnp 2>/dev/null | grep -q ":3000 "; then
+  log "✅ Port 3000 is listening"
+elif ss -tlnp 2>/dev/null | grep -q ":3000 "; then
+  log "✅ Port 3000 is listening (via ss)"
+else
+  log "⚠️  Port 3000 not yet listening (may still be starting)"
+fi
+
+log "Testing localhost:3000 connectivity..."
+CURL_HTTP=$(curl -s -o /tmp/curl_test.txt -w "%{http_code}" --max-time 5 http://localhost:3000 2>/dev/null || echo "000")
+CURL_HEAD=$(head -c 200 /tmp/curl_test.txt 2>/dev/null || echo "")
+log "HTTP response: $CURL_HTTP"
+if [ -n "$CURL_HEAD" ]; then
+  log "Response preview: $CURL_HEAD"
+fi
+rm -f /tmp/curl_test.txt
+
+log "Testing /api/deploy/status endpoint..."
+STATUS_HTTP=$(curl -s -o /tmp/status_test.txt -w "%{http_code}" --max-time 5 http://localhost:3000/api/deploy/status 2>/dev/null || echo "000")
+STATUS_BODY=$(cat /tmp/status_test.txt 2>/dev/null || echo "")
+log "HTTP response: $STATUS_HTTP"
+if [ -n "$STATUS_BODY" ]; then
+  log "Response: $STATUS_BODY"
+fi
+rm -f /tmp/status_test.txt
+
+log "Testing /api/build-info endpoint..."
+BUILD_HTTP=$(curl -s -o /tmp/build_test.txt -w "%{http_code}" --max-time 5 http://localhost:3000/api/build-info 2>/dev/null || echo "000")
+BUILD_BODY=$(cat /tmp/build_test.txt 2>/dev/null || echo "")
+log "HTTP response: $BUILD_HTTP"
+if [ -n "$BUILD_BODY" ]; then
+  log "Response: $BUILD_BODY"
+fi
+rm -f /tmp/build_test.txt
+
 # ─── Health check ──────────────────────────────────────────────────────────────
 # Retry up to 8 times with 5 s gaps (40 s total window).
 # WHY retry: pm2 startOrRestart returns as soon as the process is "online" at
