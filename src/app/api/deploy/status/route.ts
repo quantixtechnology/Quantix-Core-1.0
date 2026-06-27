@@ -40,71 +40,121 @@ function deriveDuration(data: Record<string, unknown>): number | null {
 }
 
 export async function GET(req: Request) {
-  // ── Auth ────────────────────────────────────────────────────────────────────
-  // Resolve secret similarly to trigger route so status polling is consistent.
-  const resolveSecret = (): string | null => {
-    if (process.env.DEPLOY_WEBHOOK_SECRET) return process.env.DEPLOY_WEBHOOK_SECRET
+  try {
+    // ── Auth ────────────────────────────────────────────────────────────────────
+    let secret: string | null = null
     try {
-      const candidates = [
-        `${process.env.QUANTIX_PROJECT_DIR || '/root/Quantix-Core-1.0'}/.deploy_webhook_secret`,
-        '/etc/quantix/deploy_webhook_secret',
-        '/root/.deploy_webhook_secret',
-      ]
-      for (const c of candidates) {
-        try { if (existsSync(c)) return readFileSync(c, 'utf-8').trim() } catch { /* ignore */ }
+      // Try environment variable first
+      if (process.env.DEPLOY_WEBHOOK_SECRET) {
+        secret = process.env.DEPLOY_WEBHOOK_SECRET
+      } else {
+        // Try file-based secrets
+        const candidates = [
+          `${process.env.QUANTIX_PROJECT_DIR || '/root/Quantix-Core-1.0'}/.deploy_webhook_secret`,
+          '/etc/quantix/deploy_webhook_secret',
+          '/root/.deploy_webhook_secret',
+        ]
+        for (const c of candidates) {
+          try {
+            if (existsSync(c)) {
+              secret = readFileSync(c, 'utf-8').trim()
+              if (secret) break
+            }
+          } catch {
+            /* ignore file read errors */
+          }
+        }
       }
-    } catch { /* ignore */ }
-    return null
-  }
-
-  const secret = resolveSecret()
-  if (!secret) {
-    console.error('[DeployStatus] DEPLOY_WEBHOOK_SECRET not configured; tried env and common secret files')
-    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
-  }
-
-  // Header only — intentionally no ?secret= query-param support.
-  // URL query params are recorded verbatim in Nginx/CDN access logs; putting
-  // a secret in a query param leaks it to any logging infrastructure.
-  const provided = req.headers.get('x-deploy-secret') ?? ''
-  if (!provided || !safeEqual(provided, secret)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  // ── Read status ─────────────────────────────────────────────────────────────
-  if (!existsSync(STATUS_FILE)) {
-    return NextResponse.json({ status: 'idle', locked: existsSync(LOCK_FILE) })
-  }
-
-  let statusData: Record<string, unknown> = {}
-  try {
-    statusData = JSON.parse(readFileSync(STATUS_FILE, 'utf-8'))
-  } catch {
-    return NextResponse.json({
-      status:  'unknown',
-      error:   'Status file unreadable',
-      locked:  existsSync(LOCK_FILE),
-    })
-  }
-
-  // ── Duration ─────────────────────────────────────────────────────────────────
-  const durationSeconds = deriveDuration(statusData)
-
-  // ── Log tail (auth-gated — only returned to authenticated caller) ────────────
-  // Returns the last 40 lines so CI output has context without flooding logs.
-  // Sensitive env vars are never written to the log by deploy-local.sh.
-  let tail: string[] = []
-  try {
-    if (existsSync(LOG_FILE)) {
-      const lines = readFileSync(LOG_FILE, 'utf-8').split('\n')
-      tail = lines.slice(-40).filter(Boolean)
+    } catch (err) {
+      return NextResponse.json(
+        { error: 'Secret resolution error', details: err instanceof Error ? err.message : String(err) },
+        { status: 500 }
+      )
     }
-  } catch { /* non-critical */ }
 
-  return NextResponse.json({
-    ...statusData,
-    locked:          existsSync(LOCK_FILE),
-    durationSeconds,
-    tail,
-  })
+    if (!secret) {
+      return NextResponse.json(
+        {
+          error: 'Server misconfiguration',
+          details: 'DEPLOY_WEBHOOK_SECRET not configured in environment or file',
+        },
+        { status: 500 }
+      )
+    }
+
+    // ── Authentication ──────────────────────────────────────────────────────────
+    const provided = req.headers.get('x-deploy-secret') ?? ''
+    if (!provided) {
+      return NextResponse.json({ error: 'Missing x-deploy-secret header' }, { status: 401 })
+    }
+
+    try {
+      if (!safeEqual(provided, secret)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    } catch (err) {
+      return NextResponse.json(
+        { error: 'Authentication error', details: err instanceof Error ? err.message : String(err) },
+        { status: 500 }
+      )
+    }
+
+    // ── Read status ─────────────────────────────────────────────────────────────
+    if (!existsSync(STATUS_FILE)) {
+      return NextResponse.json({ status: 'idle', locked: existsSync(LOCK_FILE) })
+    }
+
+    let statusData: Record<string, unknown> = {}
+    try {
+      statusData = JSON.parse(readFileSync(STATUS_FILE, 'utf-8'))
+    } catch (err) {
+      return NextResponse.json(
+        {
+          status: 'unknown',
+          error: 'Status file unreadable',
+          details: err instanceof Error ? err.message : String(err),
+          locked: existsSync(LOCK_FILE),
+        },
+        { status: 500 }
+      )
+    }
+
+    // ── Duration ─────────────────────────────────────────────────────────────────
+    let durationSeconds: number | null = null
+    try {
+      durationSeconds = deriveDuration(statusData)
+    } catch {
+      /* non-critical */
+    }
+
+    // ── Log tail ─────────────────────────────────────────────────────────────────
+    let tail: string[] = []
+    try {
+      if (existsSync(LOG_FILE)) {
+        const lines = readFileSync(LOG_FILE, 'utf-8').split('\n')
+        tail = lines.slice(-40).filter(Boolean)
+      }
+    } catch {
+      /* non-critical */
+    }
+
+    return NextResponse.json({
+      ...statusData,
+      locked: existsSync(LOCK_FILE),
+      durationSeconds,
+      tail,
+    })
+  } catch (err) {
+    // Catch-all for any unexpected errors
+    const error = err instanceof Error ? err : new Error(String(err))
+    console.error('[DeployStatus] Unexpected error:', error)
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        message: error.message,
+        stage: 'handler_execution',
+      },
+      { status: 500 }
+    )
+  }
 }
