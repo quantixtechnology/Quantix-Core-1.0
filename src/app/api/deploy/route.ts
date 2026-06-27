@@ -127,6 +127,29 @@ function resolveScriptPath(): { scriptPath: string; resolvedVia: string } {
   return { scriptPath: legacyCandidates[0], resolvedVia: 'legacy:not-found' }
 }
 
+// ─── Secret resolution ────────────────────────────────────────────────────────
+// Resolve deploy webhook secret from env or well-known files on the host.
+function resolveSecret(): { source: string; secret?: string } {
+  if (process.env.DEPLOY_WEBHOOK_SECRET) return { source: 'env', secret: process.env.DEPLOY_WEBHOOK_SECRET }
+  if (process.env.DEPLOY_WEBHOOK_SECRET_FILE) {
+    try { const s = readFileSync(process.env.DEPLOY_WEBHOOK_SECRET_FILE, 'utf-8').trim(); if (s) return { source: `file:${process.env.DEPLOY_WEBHOOK_SECRET_FILE}`, secret: s } } catch { /* ignore */ }
+  }
+  const candidates = [
+    path.join(process.env.QUANTIX_PROJECT_DIR || '/home/ubuntu/Quantix-Core-1.0', '.deploy_webhook_secret'),
+    '/etc/quantix/deploy_webhook_secret',
+    '/home/ubuntu/.deploy_webhook_secret',
+  ]
+  for (const c of candidates) {
+    try {
+      if (existsSync(c)) {
+        const s = readFileSync(c, 'utf-8').trim()
+        if (s) return { source: `file:${c}`, secret: s }
+      }
+    } catch { /* ignore */ }
+  }
+  return { source: 'none' }
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
   const ip        = getIp(req)
@@ -148,28 +171,6 @@ export async function POST(req: Request) {
 
   try {
     // ── 1. Secret configured? ─────────────────────────────────────────────────
-    // Resolve deploy webhook secret from env or well-known files on the host.
-    function resolveSecret(): { source: string; secret?: string } {
-      if (process.env.DEPLOY_WEBHOOK_SECRET) return { source: 'env', secret: process.env.DEPLOY_WEBHOOK_SECRET }
-      if (process.env.DEPLOY_WEBHOOK_SECRET_FILE) {
-        try { const s = readFileSync(process.env.DEPLOY_WEBHOOK_SECRET_FILE, 'utf-8').trim(); if (s) return { source: `file:${process.env.DEPLOY_WEBHOOK_SECRET_FILE}`, secret: s } } catch { /* ignore */ }
-      }
-      const candidates = [
-        path.join(process.env.QUANTIX_PROJECT_DIR || '/home/ubuntu/Quantix-Core-1.0', '.deploy_webhook_secret'),
-        '/etc/quantix/deploy_webhook_secret',
-        '/home/ubuntu/.deploy_webhook_secret',
-      ]
-      for (const c of candidates) {
-        try {
-          if (existsSync(c)) {
-            const s = readFileSync(c, 'utf-8').trim()
-            if (s) return { source: `file:${c}`, secret: s }
-          }
-        } catch { /* ignore */ }
-      }
-      return { source: 'none' }
-    }
-
     const resolved = resolveSecret()
 
     const { scriptPath, resolvedVia } = resolveScriptPath()
