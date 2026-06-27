@@ -136,206 +136,246 @@ export async function POST(req: Request) {
     console.log(JSON.stringify({ service: 'deploy', requestAt, ip, result, ...extra }))
   }
 
-  // ── 1. Secret configured? ─────────────────────────────────────────────────
-  // Resolve deploy webhook secret from env or well-known files on the host.
-  function resolveSecret(): { source: string; secret?: string } {
-    if (process.env.DEPLOY_WEBHOOK_SECRET) return { source: 'env', secret: process.env.DEPLOY_WEBHOOK_SECRET }
-    if (process.env.DEPLOY_WEBHOOK_SECRET_FILE) {
-      try { const s = readFileSync(process.env.DEPLOY_WEBHOOK_SECRET_FILE, 'utf-8').trim(); if (s) return { source: `file:${process.env.DEPLOY_WEBHOOK_SECRET_FILE}`, secret: s } } catch { /* ignore */ }
-    }
-    const candidates = [
-      path.join(process.env.QUANTIX_PROJECT_DIR || '/home/ubuntu/Quantix-Core-1.0', '.deploy_webhook_secret'),
-      '/etc/quantix/deploy_webhook_secret',
-      '/home/ubuntu/.deploy_webhook_secret',
-    ]
-    for (const c of candidates) {
-      try {
-        if (existsSync(c)) {
-          const s = readFileSync(c, 'utf-8').trim()
-          if (s) return { source: `file:${c}`, secret: s }
-        }
-      } catch { /* ignore */ }
-    }
-    return { source: 'none' }
-  }
-
-  const resolved = resolveSecret()
-
-  const { scriptPath, resolvedVia } = resolveScriptPath()
-  
-  // Do NOT expose the secret value in logs. Only log configured/not configured
-  console.log(`[Deploy] DEPLOY_WEBHOOK_SECRET = ${resolved.secret ? 'configured' : 'not configured'}`)
-
-  log('webhook_env_diagnostic', {
-    cwd:                process.cwd(),
-    HOSTNAME:           process.env.HOSTNAME   ?? '(not set)',
-    PORT:               process.env.PORT        ?? '(not set)',
-    QUANTIX_PROJECT_DIR:process.env.QUANTIX_PROJECT_DIR ?? '(not set)',
-    resolvedScriptPath: scriptPath,
-    resolvedVia,
-    standaloneConfigSet: !!process.env.__NEXT_PRIVATE_STANDALONE_CONFIG,
-    command:            `/bin/bash -c '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 &'`,
-    deployWebhookSecret: resolved.secret ? 'configured' : 'not configured'
-  })
-
-  if (!resolved.secret) {
-    const diagnostics = {
-      cwd: process.cwd(),
-      pm2Process: process.env.name || process.env.PM2_PROGRAM_NAME || '(not running in PM2)',
-      secretExists: false,
-      deployScriptPath: scriptPath,
-      environmentSource: resolved.source
-    }
-    console.error('[Deploy] DEPLOY_WEBHOOK_SECRET not configured. Server misconfiguration.', diagnostics)
-    
-    if (process.env.NODE_ENV === 'development') {
-      return NextResponse.json({ error: 'Server misconfiguration', diagnostics }, { status: 500 })
-    }
-    
-    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
-  }
-  const secret = resolved.secret
-
-  // ── 2. Rate limit ─────────────────────────────────────────────────────────
-  const rate = checkRateLimit(ip)
-  if (!rate.allowed) {
-    log('rate_limited')
+  // Global error handler — ensure we always return JSON
+  const errorResponse = (error: string, details?: unknown, status = 500) => {
+    console.error(`[Deploy] Error: ${error}`, details)
+    log('error', { error, details: String(details) })
     return NextResponse.json(
-      { error: 'Too many requests' },
-      { status: 429, headers: { 'Retry-After': String(rate.retryAfter ?? 3600) } }
+      { success: false, error, ...(process.env.NODE_ENV === 'development' && { details }) },
+      { status }
     )
   }
 
-  // ── 3. Constant-time secret validation ───────────────────────────────────
-  const provided = req.headers.get('x-deploy-secret') ?? ''
-  if (!provided || !safeEqual(provided, secret)) {
-    log('unauthorized')
-    console.warn('[Deploy] Unauthorized attempt: invalid x-deploy-secret header', { providedPresent: !!provided })
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  try {
+    // ── 1. Secret configured? ─────────────────────────────────────────────────
+    // Resolve deploy webhook secret from env or well-known files on the host.
+    function resolveSecret(): { source: string; secret?: string } {
+      if (process.env.DEPLOY_WEBHOOK_SECRET) return { source: 'env', secret: process.env.DEPLOY_WEBHOOK_SECRET }
+      if (process.env.DEPLOY_WEBHOOK_SECRET_FILE) {
+        try { const s = readFileSync(process.env.DEPLOY_WEBHOOK_SECRET_FILE, 'utf-8').trim(); if (s) return { source: `file:${process.env.DEPLOY_WEBHOOK_SECRET_FILE}`, secret: s } } catch { /* ignore */ }
+      }
+      const candidates = [
+        path.join(process.env.QUANTIX_PROJECT_DIR || '/home/ubuntu/Quantix-Core-1.0', '.deploy_webhook_secret'),
+        '/etc/quantix/deploy_webhook_secret',
+        '/home/ubuntu/.deploy_webhook_secret',
+      ]
+      for (const c of candidates) {
+        try {
+          if (existsSync(c)) {
+            const s = readFileSync(c, 'utf-8').trim()
+            if (s) return { source: `file:${c}`, secret: s }
+          }
+        } catch { /* ignore */ }
+      }
+      return { source: 'none' }
+    }
 
-  // ── 4. Timestamp replay window ────────────────────────────────────────────
-  const tsHeader = req.headers.get('x-deploy-timestamp')
-  if (tsHeader) {
-    const ts = parseInt(tsHeader, 10)
-    const ageSec = Math.floor(Date.now() / 1000) - ts
-    if (isNaN(ts) || ageSec > 300 || ageSec < -30) {
-      log('replay_rejected', { ageSec })
+    const resolved = resolveSecret()
+
+    const { scriptPath, resolvedVia } = resolveScriptPath()
+
+    // Do NOT expose the secret value in logs. Only log configured/not configured
+    console.log(`[Deploy] DEPLOY_WEBHOOK_SECRET = ${resolved.secret ? 'configured' : 'not configured'}`)
+
+    log('webhook_env_diagnostic', {
+      cwd:                process.cwd(),
+      HOSTNAME:           process.env.HOSTNAME   ?? '(not set)',
+      PORT:               process.env.PORT        ?? '(not set)',
+      QUANTIX_PROJECT_DIR:process.env.QUANTIX_PROJECT_DIR ?? '(not set)',
+      resolvedScriptPath: scriptPath,
+      resolvedVia,
+      standaloneConfigSet: !!process.env.__NEXT_PRIVATE_STANDALONE_CONFIG,
+      command:            `/bin/bash -c '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 &'`,
+      deployWebhookSecret: resolved.secret ? 'configured' : 'not configured'
+    })
+
+    if (!resolved.secret) {
+      const diagnostics = {
+        cwd: process.cwd(),
+        pm2Process: process.env.name || process.env.PM2_PROGRAM_NAME || '(not running in PM2)',
+        secretExists: false,
+        deployScriptPath: scriptPath,
+        environmentSource: resolved.source
+      }
+      console.error('[Deploy] DEPLOY_WEBHOOK_SECRET not configured. Server misconfiguration.', diagnostics)
+      return errorResponse('DEPLOY_WEBHOOK_SECRET not configured', diagnostics, 500)
+    }
+    const secret = resolved.secret
+    log('secret_resolved', { source: resolved.source })
+
+    // ── 2. Rate limit ─────────────────────────────────────────────────────────
+    const rate = checkRateLimit(ip)
+    if (!rate.allowed) {
+      log('rate_limited')
       return NextResponse.json(
-        { error: 'Request timestamp out of acceptable window' },
-        { status: 400 }
+        { error: 'Too many requests' },
+        { status: 429, headers: { 'Retry-After': String(rate.retryAfter ?? 3600) } }
       )
     }
-  }
 
-  // ── 5. Atomic lock acquisition ────────────────────────────────────────────
-  try {
-    const fd = openSync(LOCK_FILE, 'wx')
-    closeSync(fd)
-  } catch {
-    let current: Record<string, unknown> = {}
-    try {
-      const { readFileSync } = await import('fs')
-      current = JSON.parse(readFileSync(STATUS_FILE, 'utf-8'))
-    } catch { /* ignore */ }
-    log('concurrent_rejected')
-    return NextResponse.json(
-      { error: 'Deploy already in progress', status: current.status, step: current.step },
-      { status: 409 }
-    )
-  }
-
-  // ── 6. Write initial queued status ───────────────────────────────────────
-  try {
-    writeFileSync(
-      STATUS_FILE,
-      JSON.stringify({
-        status: 'queued',
-        step: 'queued',
-        message: 'Deploy accepted, starting…',
-        triggeredAt: requestAt,
-        triggeredBy: ip,
-      })
-    )
-  } catch { /* non-critical */ }
-
-  // ── 7. Verify script exists ──────────────────────────────────────────────
-  if (!existsSync(scriptPath)) {
-    try { const { unlinkSync } = await import('fs'); unlinkSync(LOCK_FILE) } catch { /* ignore */ }
-    log('script_not_found', { scriptPath, resolvedVia })
-    return NextResponse.json({ error: 'Deploy script not found on server' }, { status: 500 })
-  }
-
-  // ── 8. Build spawn environment ───────────────────────────────────────────
-  // Strip __NEXT_PRIVATE_STANDALONE_CONFIG from the child's env.
-  //
-  // WHY: standalone/server.js sets this variable to a JSON snapshot of the
-  // build-time config.  JSON serialization drops functions, so the JSON has
-  // generateBuildId: undefined.  If the variable leaks into next build, the
-  // config loader takes the standalone fast-path and returns a config where
-  // config.generateBuildId is undefined.  The build then calls
-  // generateBuildId(undefined, nanoid) and throws
-  // "TypeError: generate is not a function" before any route compiles.
-  //
-  // deploy-local.sh already uses `env -i` to create a clean environment for
-  // `npm run build`, which strips this variable from the build subprocess.
-  // This filter is a belt-and-braces defence for the bash script process
-  // itself (git, npm install, prisma steps) which run outside env -i.
-  const {
-    __NEXT_PRIVATE_STANDALONE_CONFIG: _stripped,
-    __NEXT_PRIVATE_RENDER_WORKER:     _stripped2,
-    ...spawnEnv
-  } = process.env
-
-  // ── 9. Spawn — double-fork to escape PM2 TreeKill ───────────────────────
-  //
-  // ROOT CAUSE (why single detached spawn was not enough):
-  //   PM2 uses lib/TreeKill.js when restarting the quantix app.  TreeKill
-  //   runs `ps -e -o pid=,ppid=`, builds childrenMap[ppid → [childPids]],
-  //   then recursively collects and kills every descendant of quantix's PID.
-  //   `detached:true` calls setsid() which gives bash its own session and
-  //   process group — but it does NOT change bash's PPID.  At the moment
-  //   TreeKill's `ps` snapshot is taken, bash still has PPID = quantix PID,
-  //   so collect(quantix_pid) reaches bash and killPid(bash_pid, SIGTERM)
-  //   is called.  Bash dies after "[PM2] Applying action restartProcessId",
-  //   the EXIT trap fires (removing the lock), and status stays frozen at
-  //   {status:"running", step:"restart"} forever.
-  //
-  // FIX — double-fork:
-  //   1. Spawn a short-lived intermediate shell (PPID = quantix PID).
-  //   2. Intermediate forks deploy-local.sh as a background job (&),
-  //      then exits immediately (< 1 ms).
-  //   3. Linux reparents the deploy script to init (PPID = 1).
-  //   4. Minutes later, `pm2 startOrRestart` triggers TreeKill.
-  //      `ps` now shows deploy script with PPID = 1 — it is never in
-  //      quantix's descendant chain, so it is never killed.
-  //
-  // Timing proof: the intermediate exits in microseconds.  The
-  // `pm2 startOrRestart` call in deploy-local.sh happens minutes later
-  // (after git pull, npm install, prisma, build).  There is no race.
-  // disown ensures bash does not send SIGHUP to the deploy script when the
-  // intermediate exits, even on systems where huponexit is enabled.
-  const intermediate = spawn(
-    '/bin/bash',
-    ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown'],
-    {
-      detached: true,
-      stdio:    'ignore',
-      env:      { ...spawnEnv, DEPLOY_SCRIPT: scriptPath },
+    // ── 3. Constant-time secret validation ───────────────────────────────────
+    const provided = req.headers.get('x-deploy-secret') ?? ''
+    if (!provided || !safeEqual(provided, secret)) {
+      log('unauthorized')
+      console.warn('[Deploy] Unauthorized attempt: invalid x-deploy-secret header', { providedPresent: !!provided })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-  )
 
-  intermediate.on('error', (err) => {
-    console.error('[Deploy] Failed to launch deploy process:', err.message)
-    try { const { unlinkSync } = require('fs'); unlinkSync(LOCK_FILE) } catch { /* ignore */ }
-  })
+    // ── 4. Timestamp replay window ────────────────────────────────────────────
+    const tsHeader = req.headers.get('x-deploy-timestamp')
+    if (tsHeader) {
+      const ts = parseInt(tsHeader, 10)
+      const ageSec = Math.floor(Date.now() / 1000) - ts
+      if (isNaN(ts) || ageSec > 300 || ageSec < -30) {
+        log('replay_rejected', { ageSec })
+        return NextResponse.json(
+          { error: 'Request timestamp out of acceptable window' },
+          { status: 400 }
+        )
+      }
+    }
 
-  intermediate.unref()
+    // ── 5. Atomic lock acquisition ────────────────────────────────────────────
+    try {
+      const fd = openSync(LOCK_FILE, 'wx')
+      closeSync(fd)
+    } catch {
+      let current: Record<string, unknown> = {}
+      try {
+        const { readFileSync } = await import('fs')
+        current = JSON.parse(readFileSync(STATUS_FILE, 'utf-8'))
+      } catch { /* ignore */ }
+      log('concurrent_rejected')
+      return NextResponse.json(
+        { error: 'Deploy already in progress', status: current.status, step: current.step },
+        { status: 409 }
+      )
+    }
 
-  log('triggered', { scriptPath, resolvedVia })
+    // ── 6. Write initial queued status ───────────────────────────────────────
+    try {
+      writeFileSync(
+        STATUS_FILE,
+        JSON.stringify({
+          status: 'queued',
+          step: 'queued',
+          message: 'Deploy accepted, starting…',
+          triggeredAt: requestAt,
+          triggeredBy: ip,
+        })
+      )
+    } catch { /* non-critical */ }
 
-  return NextResponse.json({
-    ok:      true,
-    message: 'Deploy triggered. Poll /api/deploy/status for progress.',
-  })
+    // ── 7. Verify script exists ──────────────────────────────────────────────
+    if (!existsSync(scriptPath)) {
+      try { const { unlinkSync } = await import('fs'); unlinkSync(LOCK_FILE) } catch { /* ignore */ }
+      log('script_not_found', { scriptPath, resolvedVia })
+      return errorResponse('Deployment script not found on server', { scriptPath, resolvedVia }, 500)
+    }
+    log('script_verified', { scriptPath, resolvedVia })
+
+    // ── 8. Build spawn environment ───────────────────────────────────────────
+    // Strip __NEXT_PRIVATE_STANDALONE_CONFIG from the child's env.
+    //
+    // WHY: standalone/server.js sets this variable to a JSON snapshot of the
+    // build-time config.  JSON serialization drops functions, so the JSON has
+    // generateBuildId: undefined.  If the variable leaks into next build, the
+    // config loader takes the standalone fast-path and returns a config where
+    // config.generateBuildId is undefined.  The build then calls
+    // generateBuildId(undefined, nanoid) and throws
+    // "TypeError: generate is not a function" before any route compiles.
+    //
+    // deploy-local.sh already uses `env -i` to create a clean environment for
+    // `npm run build`, which strips this variable from the build subprocess.
+    // This filter is a belt-and-braces defence for the bash script process
+    // itself (git, npm install, prisma steps) which run outside env -i.
+    const {
+      __NEXT_PRIVATE_STANDALONE_CONFIG: _stripped,
+      __NEXT_PRIVATE_RENDER_WORKER:     _stripped2,
+      ...spawnEnv
+    } = process.env
+
+      // ── 9. Spawn — double-fork to escape PM2 TreeKill ───────────────────────
+    //
+    // ROOT CAUSE (why single detached spawn was not enough):
+    //   PM2 uses lib/TreeKill.js when restarting the quantix app.  TreeKill
+    //   runs `ps -e -o pid=,ppid=`, builds childrenMap[ppid → [childPids]],
+    //   then recursively collects and kills every descendant of quantix's PID.
+    //   `detached:true` calls setsid() which gives bash its own session and
+    //   process group — but it does NOT change bash's PPID.  At the moment
+    //   TreeKill's `ps` snapshot is taken, bash still has PPID = quantix PID,
+    //   so collect(quantix_pid) reaches bash and killPid(bash_pid, SIGTERM)
+    //   is called.  Bash dies after "[PM2] Applying action restartProcessId",
+    //   the EXIT trap fires (removing the lock), and status stays frozen at
+    //   {status:"running", step:"restart"} forever.
+    //
+    // FIX — double-fork:
+    //   1. Spawn a short-lived intermediate shell (PPID = quantix PID).
+    //   2. Intermediate forks deploy-local.sh as a background job (&),
+    //      then exits immediately (< 1 ms).
+    //   3. Linux reparents the deploy script to init (PPID = 1).
+    //   4. Minutes later, `pm2 startOrRestart` triggers TreeKill.
+    //      `ps` now shows deploy script with PPID = 1 — it is never in
+    //      quantix's descendant chain, so it is never killed.
+    //
+    // Timing proof: the intermediate exits in microseconds.  The
+    // `pm2 startOrRestart` call in deploy-local.sh happens minutes later
+    // (after git pull, npm install, prisma, build).  There is no race.
+    // disown ensures bash does not send SIGHUP to the deploy script when the
+    // intermediate exits, even on systems where huponexit is enabled.
+    let intermediate: ReturnType<typeof spawn>
+    try {
+      intermediate = spawn(
+        '/bin/bash',
+        ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown'],
+        {
+          detached: true,
+          stdio:    'ignore',
+          env:      { ...spawnEnv, DEPLOY_SCRIPT: scriptPath },
+        }
+      )
+
+      intermediate.on('error', (err) => {
+        console.error('[Deploy] Failed to launch deploy process:', err.message)
+        try {
+          const { unlinkSync } = require('fs')
+          unlinkSync(LOCK_FILE)
+        } catch {
+          // Fallback: use dynamic import instead
+          try {
+            import('fs').then(({ unlinkSync: unlink }) => {
+              unlink(LOCK_FILE)
+            })
+          } catch { /* ignore */ }
+        }
+      })
+
+      intermediate.unref()
+    } catch (err) {
+      try { const { unlinkSync } = await import('fs'); unlinkSync(LOCK_FILE) } catch { /* ignore */ }
+      return errorResponse(
+        'Unable to launch deployment process',
+        { error: err instanceof Error ? err.message : String(err) },
+        500
+      )
+    }
+
+    log('triggered', { scriptPath, resolvedVia, pid: intermediate.pid })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Deploy triggered. Poll /api/deploy/status for progress.',
+    })
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err))
+    console.error('[Deploy] Unexpected error in POST handler:', error)
+    return errorResponse(
+      'Unexpected error processing webhook',
+      {
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      },
+      500
+    )
+  }
 }
