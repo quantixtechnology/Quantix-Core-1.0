@@ -81,13 +81,43 @@ export const POST = withMiddleware({
     });
   } catch (error) {
     console.error('[admin/businesses POST] Error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to create business',
-      },
-      { status: 500 }
-    );
+
+    // Return complete Prisma error details for debugging
+    let errorResponse: any = {
+      success: false,
+      error: 'Failed to create business',
+    };
+
+    if (error instanceof Error) {
+      errorResponse.message = error.message;
+      errorResponse.name = error.name;
+    }
+
+    // Include Prisma error details if available
+    if ((error as any).code) {
+      errorResponse.code = (error as any).code;
+    }
+    if ((error as any).meta) {
+      errorResponse.meta = (error as any).meta;
+    }
+    if ((error as any).clientVersion) {
+      errorResponse.clientVersion = (error as any).clientVersion;
+    }
+
+    // Determine HTTP status code
+    let statusCode = 500;
+    if ((error as any).code === 'P2002') {
+      // Unique constraint failed
+      statusCode = 409;
+    } else if ((error as any).code === 'P2000') {
+      // Value too long
+      statusCode = 400;
+    } else if ((error as any).code === 'P2003') {
+      // Foreign key constraint failed
+      statusCode = 400;
+    }
+
+    return NextResponse.json(errorResponse, { status: statusCode });
   }
 });
 

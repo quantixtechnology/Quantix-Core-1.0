@@ -1,8 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 
 interface Props {
@@ -11,62 +18,139 @@ interface Props {
   loading: boolean
 }
 
+// Indian States and Union Territories
+const INDIAN_STATES = [
+  'Andhra Pradesh',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chhattisgarh',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal',
+  // Union Territories
+  'Andaman and Nicobar Islands',
+  'Chandigarh',
+  'Dadra and Nagar Haveli and Daman and Diu',
+  'Lakshadweep',
+  'Delhi',
+  'Puducherry',
+  'Ladakh',
+  'Jammu and Kashmir',
+]
+
 // Generate slug from business name
 function generateSlug(name: string): string {
   return (
     name
       .toLowerCase()
       .trim()
-      // Replace spaces with hyphens
       .replace(/\s+/g, '-')
-      // Remove special characters (keep only alphanumeric and hyphens)
       .replace(/[^a-z0-9-]/g, '')
-      // Remove consecutive hyphens
       .replace(/-+/g, '-')
-      // Trim leading/trailing hyphens
       .replace(/^-+|-+$/g, '')
   )
 }
 
+// Validate PIN code (Indian PIN code format: 6 digits)
+function validatePinCode(pinCode: string): boolean {
+  return /^\d{6}$/.test(pinCode.trim())
+}
+
+// Validate email
+function validateEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+// Validate mobile (10 digits)
+function validateMobile(mobile: string): boolean {
+  return /^\d{10}$/.test(mobile.trim())
+}
+
 export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
-  const [form, setForm] = useState(initialData)
+  const [form, setForm] = useState({
+    businessName: initialData.businessName || '',
+    businessSlug: initialData.businessSlug || '',
+    ownerName: '',
+    contactEmail: initialData.contactEmail || '',
+    contactPhone: initialData.contactPhone || '',
+    address: initialData.address || '',
+    addressLine2: '',
+    city: initialData.city || '',
+    state: initialData.state || '',
+    pinCode: '',
+    country: 'India',
+  })
+
   const [slugValidation, setSlugValidation] = useState<{
     status: 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
     message: string
     suggestion?: string
   }>({ status: 'idle', message: '' })
+
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [slugModifiedByUser, setSlugModifiedByUser] = useState(false)
 
-  // Auto-generate slug when business name changes
-  const handleBusinessNameChange = useCallback((newName: string) => {
-    setForm((prev: any) => ({
+  // Validate a single field
+  const validateField = useCallback((fieldName: string, value: string): string => {
+    switch (fieldName) {
+      case 'contactEmail':
+        return value && !validateEmail(value) ? 'Invalid email format' : ''
+      case 'contactPhone':
+        return value && !validateMobile(value) ? 'Mobile must be 10 digits' : ''
+      case 'pinCode':
+        return value && !validatePinCode(value) ? 'PIN Code must be 6 digits' : ''
+      default:
+        return ''
+    }
+  }, [])
+
+  // Handle field changes
+  const handleFieldChange = useCallback((fieldName: string, value: string) => {
+    setForm((prev) => ({ ...prev, [fieldName]: value }))
+
+    // Clear error for this field if it becomes valid
+    const error = validateField(fieldName, value)
+    setFieldErrors((prev) => ({
       ...prev,
-      businessName: newName,
+      [fieldName]: error,
     }))
 
-    // Only auto-generate if user hasn't manually edited the slug
-    if (!slugModifiedByUser) {
-      const newSlug = generateSlug(newName)
-      setForm((prev: any) => ({
-        ...prev,
-        businessSlug: newSlug,
-      }))
-      // Check availability
+    // Auto-generate slug when business name changes
+    if (fieldName === 'businessName' && !slugModifiedByUser) {
+      const newSlug = generateSlug(value)
+      setForm((prev) => ({ ...prev, businessSlug: newSlug }))
       if (newSlug) {
         checkSlugAvailability(newSlug)
       }
     }
-  }, [slugModifiedByUser])
+  }, [slugModifiedByUser, validateField])
 
-  // Validate slug when user manually edits it
+  // Handle slug change
   const handleSlugChange = useCallback((newSlug: string) => {
-    setForm((prev: any) => ({
-      ...prev,
-      businessSlug: newSlug,
-    }))
+    setForm((prev) => ({ ...prev, businessSlug: newSlug }))
     setSlugModifiedByUser(true)
 
-    // Check availability
     if (newSlug) {
       checkSlugAvailability(newSlug)
     } else {
@@ -74,9 +158,8 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
     }
   }, [])
 
-  // Check if slug is available
+  // Check slug availability
   const checkSlugAvailability = useCallback(async (slug: string) => {
-    // Validate slug format
     const generatedSlug = generateSlug(slug)
     if (generatedSlug !== slug) {
       setSlugValidation({
@@ -89,13 +172,9 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
     setSlugValidation({ status: 'checking', message: 'Checking availability...' })
 
     try {
-      // Check if slug exists by attempting to create a business with it
-      // The API will return a 409 if slug is taken
       const response = await fetch('/api/admin/businesses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Only check, don't actually create
-        // We'll use a HEAD request approach via a simple check
         body: JSON.stringify({
           name: 'Check',
           slug: slug,
@@ -104,12 +183,10 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
       })
 
       if (response.status === 409) {
-        // Slug is taken, suggest next available
         let counter = 2
         let suggestedSlug = `${slug}-${counter}`
         let foundAvailable = false
 
-        // Try up to 10 suggestions
         while (counter < 12 && !foundAvailable) {
           const checkResponse = await fetch('/api/admin/businesses', {
             method: 'POST',
@@ -130,24 +207,16 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
 
         setSlugValidation({
           status: 'taken',
-          message: `This slug is already taken`,
+          message: 'This slug is already taken',
           suggestion: foundAvailable ? suggestedSlug : undefined,
         })
-      } else if (response.status === 400) {
-        // Bad request, might be validation error but slug format is OK
-        setSlugValidation({
-          status: 'available',
-          message: 'Slug is available',
-        })
       } else {
-        // Assume available if not 409
         setSlugValidation({
           status: 'available',
           message: 'Slug is available',
         })
       }
     } catch (error) {
-      // Network error, assume available to not block user
       setSlugValidation({
         status: 'available',
         message: 'Slug is available',
@@ -155,25 +224,36 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
     }
   }, [])
 
-  // Determine if Continue button should be enabled
-  const isFormValid = () => {
+  // Check if form is valid
+  const isFormValid = (): boolean => {
     return (
-      form.businessName &&
-      form.businessSlug &&
-      form.contactEmail &&
+      form.businessName.trim() &&
+      form.businessSlug.trim() &&
+      form.ownerName.trim() &&
+      validateEmail(form.contactEmail) &&
+      validateMobile(form.contactPhone) &&
+      form.address.trim() &&
+      form.city.trim() &&
+      form.state.trim() &&
+      validatePinCode(form.pinCode) &&
       slugValidation.status === 'available' &&
       !loading
     )
   }
 
-  // Determine button text
-  const getButtonText = () => {
+  const getButtonText = (): string => {
     if (loading) return 'Creating...'
     if (!form.businessName) return 'Enter Business Name'
     if (!form.businessSlug) return 'Generate Slug'
     if (slugValidation.status === 'checking') return 'Checking Slug...'
     if (slugValidation.status === 'taken') return 'Slug Not Available'
-    if (!form.contactEmail) return 'Enter Email'
+    if (!form.ownerName) return 'Enter Owner Name'
+    if (!validateEmail(form.contactEmail)) return 'Enter Valid Email'
+    if (!validateMobile(form.contactPhone)) return 'Enter Valid Mobile'
+    if (!form.address) return 'Enter Address'
+    if (!form.city) return 'Enter City'
+    if (!form.state) return 'Select State'
+    if (!validatePinCode(form.pinCode)) return 'Enter Valid PIN Code'
     return 'Continue'
   }
 
@@ -181,19 +261,19 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Business Information</h3>
 
-      <div className="space-y-4">
+      <div className="space-y-4 grid grid-cols-2 gap-4">
         {/* Business Name */}
-        <div className="space-y-2">
+        <div className="space-y-2 col-span-2">
           <label className="text-sm font-medium">Business Name *</label>
           <Input
             placeholder="e.g., Lucky Bakery"
             value={form.businessName}
-            onChange={(e) => handleBusinessNameChange(e.target.value)}
+            onChange={(e) => handleFieldChange('businessName', e.target.value)}
           />
         </div>
 
         {/* Business Slug */}
-        <div className="space-y-2">
+        <div className="space-y-2 col-span-2">
           <label className="text-sm font-medium">Business Slug *</label>
           <div className="relative">
             <Input
@@ -203,11 +283,9 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
               className={`pr-10 ${
                 slugValidation.status === 'available'
                   ? 'border-green-500'
-                  : slugValidation.status === 'taken'
+                  : slugValidation.status === 'taken' || slugValidation.status === 'invalid'
                     ? 'border-red-500'
-                    : slugValidation.status === 'invalid'
-                      ? 'border-red-500'
-                      : ''
+                    : ''
               }`}
             />
             <div className="absolute right-3 top-3">
@@ -222,8 +300,6 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
               )}
             </div>
           </div>
-
-          {/* Validation Message */}
           <div className={`text-sm ${
             slugValidation.status === 'available' ? 'text-green-600' :
             slugValidation.status === 'taken' || slugValidation.status === 'invalid' ? 'text-red-600' :
@@ -231,8 +307,6 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
           }`}>
             {slugValidation.message}
           </div>
-
-          {/* Slug Suggestion */}
           {slugValidation.suggestion && slugValidation.status === 'taken' && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
               <p className="text-sm text-amber-700">
@@ -240,7 +314,7 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
                   className="font-semibold text-amber-800 hover:underline"
                   onClick={() => {
                     const suggested = slugValidation.suggestion!
-                    setForm((prev: any) => ({ ...prev, businessSlug: suggested }))
+                    setForm((prev) => ({ ...prev, businessSlug: suggested }))
                     setSlugModifiedByUser(true)
                     checkSlugAvailability(suggested)
                   }}
@@ -252,44 +326,116 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
           )}
         </div>
 
-        {/* Email */}
+        {/* Owner Name */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Email *</label>
+          <label className="text-sm font-medium">Owner Name *</label>
+          <Input
+            placeholder="e.g., John Doe"
+            value={form.ownerName}
+            onChange={(e) => handleFieldChange('ownerName', e.target.value)}
+          />
+        </div>
+
+        {/* Business Email */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Business Email *</label>
           <Input
             type="email"
             placeholder="owner@example.com"
             value={form.contactEmail}
-            onChange={(e) => setForm({ ...form, contactEmail: e.target.value })}
+            onChange={(e) => handleFieldChange('contactEmail', e.target.value)}
+            className={fieldErrors.contactEmail ? 'border-red-500' : ''}
           />
+          {fieldErrors.contactEmail && (
+            <p className="text-xs text-red-600">{fieldErrors.contactEmail}</p>
+          )}
         </div>
 
-        {/* Phone */}
+        {/* Business Mobile */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Phone</label>
+          <label className="text-sm font-medium">Business Mobile *</label>
           <Input
             placeholder="9999999999"
             value={form.contactPhone}
-            onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
+            onChange={(e) => handleFieldChange('contactPhone', e.target.value.replace(/\D/g, '').slice(0, 10))}
+            maxLength="10"
+            className={fieldErrors.contactPhone ? 'border-red-500' : ''}
+          />
+          {fieldErrors.contactPhone && (
+            <p className="text-xs text-red-600">{fieldErrors.contactPhone}</p>
+          )}
+        </div>
+
+        {/* Address Line 1 */}
+        <div className="space-y-2 col-span-2">
+          <label className="text-sm font-medium">Address Line 1 *</label>
+          <Input
+            placeholder="e.g., 123 Main Street"
+            value={form.address}
+            onChange={(e) => handleFieldChange('address', e.target.value)}
           />
         </div>
 
-        {/* Address */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Address</label>
+        {/* Address Line 2 */}
+        <div className="space-y-2 col-span-2">
+          <label className="text-sm font-medium">Address Line 2</label>
           <Input
-            placeholder="123 Main St"
-            value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
+            placeholder="e.g., Apartment, Suite (optional)"
+            value={form.addressLine2}
+            onChange={(e) => setForm({ ...form, addressLine2: e.target.value })}
           />
         </div>
 
         {/* City */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">City</label>
+          <label className="text-sm font-medium">City *</label>
           <Input
-            placeholder="New York"
+            placeholder="e.g., Mumbai"
             value={form.city}
-            onChange={(e) => setForm({ ...form, city: e.target.value })}
+            onChange={(e) => handleFieldChange('city', e.target.value)}
+          />
+        </div>
+
+        {/* State */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">State *</label>
+          <Select value={form.state} onValueChange={(value) => handleFieldChange('state', value)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select State or UT" />
+            </SelectTrigger>
+            <SelectContent>
+              {INDIAN_STATES.map((state) => (
+                <SelectItem key={state} value={state}>
+                  {state}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* PIN Code */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">PIN Code *</label>
+          <Input
+            placeholder="400001"
+            value={form.pinCode}
+            onChange={(e) => handleFieldChange('pinCode', e.target.value.replace(/\D/g, '').slice(0, 6))}
+            maxLength="6"
+            className={fieldErrors.pinCode ? 'border-red-500' : ''}
+          />
+          {fieldErrors.pinCode && (
+            <p className="text-xs text-red-600">{fieldErrors.pinCode}</p>
+          )}
+        </div>
+
+        {/* Country */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Country</label>
+          <Input
+            placeholder="India"
+            value={form.country}
+            disabled
+            className="bg-gray-100"
           />
         </div>
       </div>

@@ -74,23 +74,25 @@ export function BusinessOnboardingWizard() {
           address: data.address,
           city: data.city,
           state: data.state,
-          pincode: data.pincode,
-          country: data.country,
+          pincode: data.pinCode,
+          country: data.country || 'India',
           contactEmail: data.contactEmail,
           contactPhone: data.contactPhone,
         }),
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to create business')
-      }
-
       const business = await response.json()
+
+      if (!response.ok) {
+        // Provide detailed error message including Prisma errors
+        const errorMsg = business.message || business.error || 'Failed to create business'
+        throw new Error(errorMsg)
+      }
 
       setState((prev) => ({
         ...prev,
         ...data,
-        businessId: business.id,
+        businessId: business.data?.id,
       }))
 
       setCurrentStep('product')
