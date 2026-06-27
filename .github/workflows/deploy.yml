@@ -53,23 +53,51 @@ jobs:
             echo "ℹ️  DEPLOY_VPS_IP not set — routing through Cloudflare"
           fi
 
+      # ── Step 1.5: Check build deployment ──────────────────────────────────────
+      - name: Verify build is deployed
+        run: |
+          APP_URL="${{ secrets.DEPLOY_APP_URL }}"
+          VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
+
+          RESOLVE_FLAG=""
+          if [ -n "$VPS_IP" ]; then
+            HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
+            if echo "$VPS_IP" | grep -q ':'; then
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:[${VPS_IP}]"
+            else
+              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
+            fi
+          fi
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Checking if latest build is deployed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+
+          echo "GET ${APP_URL}/api/build-info"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/build-info" 2>/dev/null | jq . || echo "❌ Cannot reach /api/build-info"
+
+          echo ""
+          echo "GET ${APP_URL}/api/deploy/module"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/module" 2>/dev/null | jq . || echo "❌ Cannot reach /api/deploy/module"
+
+          echo ""
+          echo "GET ${APP_URL}/api/deploy/state"
+          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/state" 2>/dev/null | jq . || echo "❌ Cannot reach /api/deploy/state"
+
       # ── Step 2: Trigger deploy webhook ────────────────────────────────────
       - name: Trigger deploy webhook
         id: trigger
+        continue-on-error: true
         run: |
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
           SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
           VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
           TIMESTAMP=$(date +%s)
 
-          # When DEPLOY_VPS_IP is set, use --resolve to connect directly to the VPS
-          # IP while still sending the correct Host header and TLS SNI. This bypasses
-          # Cloudflare's bot-protection challenge (HTTP 403) without changing any
-          # server-side config or touching the Cloudflare dashboard.
           RESOLVE_FLAG=""
           if [ -n "$VPS_IP" ]; then
             HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
-            # IPv6 addresses must be wrapped in square brackets for curl --resolve
             if echo "$VPS_IP" | grep -q ':'; then
               RESOLVE_FLAG="--resolve ${HOSTNAME}:443:[${VPS_IP}]"
             else
@@ -78,97 +106,79 @@ jobs:
           fi
 
           echo "POST ${APP_URL}/api/deploy (timestamp=${TIMESTAMP})"
+          echo ""
 
-          HTTP_CODE=$(curl -s -o /tmp/trigger_body.json -w "%{http_code}" \
-            --max-time 30 \
+          # Capture full HTTP response including headers
+          curl -i --max-time 30 \
             $RESOLVE_FLAG \
             -X POST \
             -H "x-deploy-secret: ${SECRET}" \
             -H "x-deploy-timestamp: ${TIMESTAMP}" \
             -H "Content-Type: application/json" \
-            "${APP_URL}/api/deploy")
+            "${APP_URL}/api/deploy" > /tmp/trigger_full_response.txt 2>&1
 
-          BODY=$(cat /tmp/trigger_body.json 2>/dev/null || echo "{}")
-          echo "HTTP ${HTTP_CODE} — ${BODY}"
+          # Extract HTTP status code from the response
+          HTTP_CODE=$(head -1 /tmp/trigger_full_response.txt | grep -oE '[0-9]+' | head -1)
+          echo "HTTP Status: ${HTTP_CODE}"
+          echo ""
+          echo "Full response:"
+          cat /tmp/trigger_full_response.txt
+          echo ""
 
-          if [ "$HTTP_CODE" = "409" ]; then
-            echo "⚠️  Deploy already in progress — polling status without re-triggering"
+          # Save for diagnostic step
+          echo "HTTP_CODE=${HTTP_CODE}" >> /tmp/trigger_state.env
+          echo "RESOLVE_FLAG=${RESOLVE_FLAG}" >> /tmp/trigger_state.env
+          echo "APP_URL=${APP_URL}" >> /tmp/trigger_state.env
 
-          elif [ "$HTTP_CODE" = "403" ]; then
-            # Check if this looks like a Cloudflare challenge page
-            if echo "$BODY" | grep -qi "cloudflare\|just a moment\|challenge-platform\|enable javascript"; then
-              echo ""
-              echo "❌ Cloudflare is blocking the webhook (HTTP 403 managed challenge)"
-              echo "   The bot-protection challenge cannot be solved by curl."
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "  Fix option A — Direct VPS IP (recommended, no Cloudflare change)"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "  1. Get your VPS IP:  ssh user@vps 'curl -s ifconfig.me'"
-              echo "  2. GitHub repo → Settings → Secrets and variables → Actions"
-              echo "  3. Add secret:  Name=DEPLOY_VPS_IP  Value=<your VPS IP>"
-              echo "  That's it — next push will route curl directly to the VPS,"
-              echo "  bypassing Cloudflare while keeping TLS valid."
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "  Fix option B — Cloudflare WAF bypass rule"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "  Cloudflare dashboard → Security → WAF → Custom Rules → Create"
-              echo "  Name: Allow deploy webhook"
-              echo "  Expression: (http.request.uri.path eq \"/api/deploy\")"
-              echo "  Action: Skip → Skip all remaining custom rules"
-              echo "  (The x-deploy-secret header still protects the endpoint.)"
-            else
-              echo "❌ Webhook returned 403 — check DEPLOY_WEBHOOK_SECRET matches VPS .env"
-            fi
-            exit 1
-
-          elif [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "409" ]; then
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "409" ]; then
+            echo "✅ Webhook accepted (HTTP ${HTTP_CODE})"
+            exit 0
+          else
             echo "❌ Webhook trigger failed (HTTP ${HTTP_CODE})"
-            echo "Saving response for debugging…"
-            echo "$BODY" > /tmp/webhook_error.json
             exit 1
-
-          else
-            echo "✅ Deploy triggered (or already in progress)"
           fi
 
-      # ── Step 2b: Collect diagnostics on webhook failure ────────────────────────
-      - name: Collect execution diagnostics (on webhook failure)
-        if: failure() && steps.trigger.outcome == 'failure'
+      # ── Step 2b: Collect execution diagnostics (always) ───────────────────────
+      - name: Collect execution diagnostics
+        if: always()
+        continue-on-error: true
         run: |
-          APP_URL="${{ secrets.DEPLOY_APP_URL }}"
-          VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
+          source /tmp/trigger_state.env 2>/dev/null || true
 
-          RESOLVE_FLAG=""
-          if [ -n "$VPS_IP" ]; then
-            HOSTNAME=$(echo "$APP_URL" | sed 's|https\?://||' | cut -d'/' -f1 | cut -d':' -f1)
-            if echo "$VPS_IP" | grep -q ':'; then
-              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:[${VPS_IP}]"
-            else
-              RESOLVE_FLAG="--resolve ${HOSTNAME}:443:${VPS_IP}"
-            fi
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  WEBHOOK RESPONSE (Raw)"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ -f /tmp/trigger_full_response.txt ]; then
+            head -100 /tmp/trigger_full_response.txt
+          else
+            echo "No response captured"
           fi
 
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  1️⃣  Module Load Status"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/module" 2>/dev/null | jq . || echo "❌ Cannot reach module endpoint"
-
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  2️⃣  Handler Execution State"
+          echo "  MODULE LOAD STATUS"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/state" 2>/dev/null | jq . || echo "❌ Cannot reach state endpoint"
-
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  3️⃣  Webhook Trigger Response"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          if [ -f /tmp/webhook_error.json ]; then
-            cat /tmp/webhook_error.json | jq . 2>/dev/null || cat /tmp/webhook_error.json
+          if [ -n "$RESOLVE_FLAG" ] && [ -n "$APP_URL" ]; then
+            curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/module" 2>/dev/null | jq . || echo "❌ Cannot reach /api/deploy/module"
           else
-            echo "No error response saved"
+            echo "❌ Cannot reconstruct RESOLVE_FLAG"
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  HANDLER EXECUTION STATE"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ -n "$RESOLVE_FLAG" ] && [ -n "$APP_URL" ]; then
+            curl -s --max-time 10 $RESOLVE_FLAG "${APP_URL}/api/deploy/state" 2>/dev/null | jq . || echo "❌ Cannot reach /api/deploy/state"
+          else
+            echo "❌ Cannot reconstruct RESOLVE_FLAG"
+          fi
+
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "409" ]; then
+            echo ""
+            echo "❌ Deploy webhook failed with HTTP ${HTTP_CODE}"
+            exit 1
           fi
 
       # ── Step 3: Poll status until done ────────────────────────────────────
