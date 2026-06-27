@@ -1,110 +1,333 @@
 // ============================================================================
-// QUANTIX CORE — Deploy Status Endpoint
-// GET /api/deploy/status
+// QUANTIX CORE — Deploy Webhook Trigger
+// POST /api/deploy
 //
-// Polled by GitHub Actions after triggering /api/deploy.
-// Reads the JSON status file written by deploy-local.sh.
+// GitHub Actions POSTs here to trigger deployment on the VPS.
+// The endpoint spawns deploy-local.sh as a DETACHED process.
 //
-// Security:
-//   - Constant-time secret comparison (same as trigger endpoint)
-//   - Header-only auth (x-deploy-secret) — query-param support removed
-//     because query params appear in Nginx/CDN access logs, leaking the secret
-//   - Response never includes raw env vars; log tail is auth-gated
-//   - durationSeconds derived server-side (client cannot spoof startedAt)
+// Security measures:
+//   - Constant-time secret comparison (timingSafeEqual)
+//   - Atomic lock-file creation (prevents concurrent deploys)
+//   - Rate limit: 10 attempts per hour per IP
+//   - Timestamp replay window: rejects requests >5 minutes old
+//
+// Error Handling:
+//   - All failures return structured JSON (never blank 500)
+//   - Each operation has detailed error with stage/message/stack
+//   - GET /api/deploy/debug provides system diagnostics for remote troubleshooting
 // ============================================================================
 
-import { NextResponse }  from 'next/server'
-import { existsSync, readFileSync } from 'fs'
+import { NextResponse } from 'next/server'
+import { spawn } from 'child_process'
+import { existsSync, openSync, writeFileSync, closeSync } from 'fs'
 import { timingSafeEqual, createHash } from 'crypto'
+import path from 'path'
+import { readFileSync } from 'fs'
 
 export const runtime = 'nodejs'
 
+const LOCK_FILE = '/tmp/quantix-deploy.lock'
 const STATUS_FILE = '/tmp/quantix-deploy-status.json'
-const LOG_FILE    = '/tmp/quantix-deploy.log'
-const LOCK_FILE   = '/tmp/quantix-deploy.lock'
 
-// Shared with trigger route — both must use the same algorithm
 function safeEqual(a: string, b: string): boolean {
   const ha = createHash('sha256').update(a).digest()
   const hb = createHash('sha256').update(b).digest()
   return timingSafeEqual(ha, hb)
 }
 
-function deriveDuration(data: Record<string, unknown>): number | null {
-  const start = data.startedAt as string | undefined
-  const end   = data.updatedAt as string | undefined
-  if (!start || !end) return null
-  const ms = new Date(end).getTime() - new Date(start).getTime()
-  if (isNaN(ms) || ms < 0) return null
-  return Math.round(ms / 1000)
+const RATE_WINDOW_MS = 60 * 60 * 1000
+const RATE_MAX = 10
+
+interface RateBucket { count: number; resetAt: number }
+const rateBuckets = new Map<string, RateBucket>()
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now()
+  const bucket = rateBuckets.get(ip)
+
+  if (!bucket || now > bucket.resetAt) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    return { allowed: true }
+  }
+
+  if (bucket.count >= RATE_MAX) {
+    return { allowed: false, retryAfter: Math.ceil((bucket.resetAt - now) / 1000) }
+  }
+
+  bucket.count++
+  return { allowed: true }
 }
 
-export async function GET(req: Request) {
-  // ── Auth ────────────────────────────────────────────────────────────────────
-  // Resolve secret similarly to trigger route so status polling is consistent.
-  const resolveSecret = (): string | null => {
-    if (process.env.DEPLOY_WEBHOOK_SECRET) return process.env.DEPLOY_WEBHOOK_SECRET
-    try {
-      const candidates = [
-        `${process.env.QUANTIX_PROJECT_DIR || '/root/Quantix-Core-1.0'}/.deploy_webhook_secret`,
-        '/etc/quantix/deploy_webhook_secret',
-        '/root/.deploy_webhook_secret',
-      ]
-      for (const c of candidates) {
-        try { if (existsSync(c)) return readFileSync(c, 'utf-8').trim() } catch { /* ignore */ }
-      }
-    } catch { /* ignore */ }
-    return null
+function getIp(req: Request): string {
+  return (
+    req.headers.get('x-real-ip') ??
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+    'unknown'
+  )
+}
+
+function resolveScriptPath(): { scriptPath: string; resolvedVia: string } {
+  const SCRIPT_FILENAME = 'scripts/deploy-local.sh'
+  const projectDir = process.env.QUANTIX_PROJECT_DIR
+  if (projectDir) {
+    const p = path.join(projectDir, SCRIPT_FILENAME)
+    if (existsSync(p)) return { scriptPath: p, resolvedVia: 'QUANTIX_PROJECT_DIR' }
+    return { scriptPath: p, resolvedVia: 'QUANTIX_PROJECT_DIR (not found)' }
   }
 
-  const secret = resolveSecret()
-  if (!secret) {
-    console.error('[DeployStatus] DEPLOY_WEBHOOK_SECRET not configured; tried env and common secret files')
-    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
-  }
-
-  // Header only — intentionally no ?secret= query-param support.
-  // URL query params are recorded verbatim in Nginx/CDN access logs; putting
-  // a secret in a query param leaks it to any logging infrastructure.
-  const provided = req.headers.get('x-deploy-secret') ?? ''
-  if (!provided || !safeEqual(provided, secret)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  // ── Read status ─────────────────────────────────────────────────────────────
-  if (!existsSync(STATUS_FILE)) {
-    return NextResponse.json({ status: 'idle', locked: existsSync(LOCK_FILE) })
-  }
-
-  let statusData: Record<string, unknown> = {}
-  try {
-    statusData = JSON.parse(readFileSync(STATUS_FILE, 'utf-8'))
-  } catch {
-    return NextResponse.json({
-      status:  'unknown',
-      error:   'Status file unreadable',
-      locked:  existsSync(LOCK_FILE),
-    })
-  }
-
-  // ── Duration ─────────────────────────────────────────────────────────────────
-  const durationSeconds = deriveDuration(statusData)
-
-  // ── Log tail (auth-gated — only returned to authenticated caller) ────────────
-  // Returns the last 40 lines so CI output has context without flooding logs.
-  // Sensitive env vars are never written to the log by deploy-local.sh.
-  let tail: string[] = []
-  try {
-    if (existsSync(LOG_FILE)) {
-      const lines = readFileSync(LOG_FILE, 'utf-8').split('\n')
-      tail = lines.slice(-40).filter(Boolean)
+  let dir = process.cwd()
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(dir, SCRIPT_FILENAME)
+    if (existsSync(candidate) && !candidate.includes('.next')) {
+      return { scriptPath: candidate, resolvedVia: `walk-up[${i}]` }
     }
-  } catch { /* non-critical */ }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
 
-  return NextResponse.json({
-    ...statusData,
-    locked:          existsSync(LOCK_FILE),
-    durationSeconds,
-    tail,
-  })
+  const legacyCandidates = [
+    path.join(process.cwd(), SCRIPT_FILENAME),
+    path.join(process.cwd(), '..', '..', SCRIPT_FILENAME),
+    path.join(process.cwd(), '..', SCRIPT_FILENAME),
+  ]
+  for (const p of legacyCandidates) {
+    try {
+      if (existsSync(p)) return { scriptPath: p, resolvedVia: `legacy:${p}` }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { scriptPath: legacyCandidates[0], resolvedVia: 'legacy:not-found' }
+}
+
+function resolveSecret(): { source: string; secret?: string } {
+  if (process.env.DEPLOY_WEBHOOK_SECRET) return { source: 'env', secret: process.env.DEPLOY_WEBHOOK_SECRET }
+  if (process.env.DEPLOY_WEBHOOK_SECRET_FILE) {
+    try {
+      const s = readFileSync(process.env.DEPLOY_WEBHOOK_SECRET_FILE, 'utf-8').trim()
+      if (s) return { source: `file:${process.env.DEPLOY_WEBHOOK_SECRET_FILE}`, secret: s }
+    } catch {
+      /* ignore */
+    }
+  }
+  const candidates = [
+    path.join(process.env.QUANTIX_PROJECT_DIR || '/home/ubuntu/Quantix-Core-1.0', '.deploy_webhook_secret'),
+    '/etc/quantix/deploy_webhook_secret',
+    '/home/ubuntu/.deploy_webhook_secret',
+  ]
+  for (const c of candidates) {
+    try {
+      if (existsSync(c)) {
+        const s = readFileSync(c, 'utf-8').trim()
+        if (s) return { source: `file:${c}`, secret: s }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { source: 'none' }
+}
+
+export async function POST(req: Request) {
+  const ip = getIp(req)
+  const requestAt = new Date().toISOString()
+
+  try {
+    // ── 1. Rate limit ──────────────────────────────────────────────────────────
+    try {
+      const rate = checkRateLimit(ip)
+      if (!rate.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'rate_limit',
+            message: 'Too many requests',
+            retryAfter: rate.retryAfter,
+          },
+          { status: 429, headers: { 'Retry-After': String(rate.retryAfter ?? 3600) } }
+        )
+      }
+    } catch (err) {
+      throw { stage: 'rate_limit', error: err }
+    }
+
+    // ── 2. Secret validation ───────────────────────────────────────────────────
+    let secret: string
+    try {
+      const resolved = resolveSecret()
+      if (!resolved.secret) {
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'secret_resolution',
+            message: 'DEPLOY_WEBHOOK_SECRET not configured',
+            source: resolved.source,
+          },
+          { status: 500 }
+        )
+      }
+      secret = resolved.secret
+    } catch (err) {
+      throw { stage: 'secret_resolution', error: err }
+    }
+
+    // ── 3. Authenticate request ────────────────────────────────────────────────
+    try {
+      const provided = req.headers.get('x-deploy-secret') ?? ''
+      if (!provided || !safeEqual(provided, secret)) {
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'authentication',
+            message: 'Unauthorized',
+          },
+          { status: 401 }
+        )
+      }
+    } catch (err) {
+      throw { stage: 'authentication', error: err }
+    }
+
+    // ── 4. Timestamp validation ────────────────────────────────────────────────
+    try {
+      const tsHeader = req.headers.get('x-deploy-timestamp')
+      if (tsHeader) {
+        const ts = parseInt(tsHeader, 10)
+        const ageSec = Math.floor(Date.now() / 1000) - ts
+        if (isNaN(ts) || ageSec > 300 || ageSec < -30) {
+          return NextResponse.json(
+            {
+              success: false,
+              stage: 'timestamp_validation',
+              message: 'Request timestamp out of acceptable window',
+              ageSec,
+            },
+            { status: 400 }
+          )
+        }
+      }
+    } catch (err) {
+      throw { stage: 'timestamp_validation', error: err }
+    }
+
+    // ── 5. Lock acquisition ────────────────────────────────────────────────────
+    try {
+      const fd = openSync(LOCK_FILE, 'wx')
+      closeSync(fd)
+    } catch (lockErr) {
+      let current: Record<string, unknown> = {}
+      try {
+        current = JSON.parse(readFileSync(STATUS_FILE, 'utf-8'))
+      } catch {
+        /* ignore */
+      }
+      return NextResponse.json(
+        {
+          success: false,
+          stage: 'lock_acquisition',
+          message: 'Deploy already in progress',
+          currentStatus: current,
+        },
+        { status: 409 }
+      )
+    }
+
+    // ── 6. Script verification ────────────────────────────────────────────────
+    let scriptPath: string
+    try {
+      const resolved = resolveScriptPath()
+      scriptPath = resolved.scriptPath
+      if (!existsSync(scriptPath)) {
+        try {
+          const fs = await import('fs')
+          fs.unlinkSync(LOCK_FILE)
+        } catch {
+          /* ignore */
+        }
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'script_verification',
+            message: 'Deployment script not found',
+            path: scriptPath,
+          },
+          { status: 500 }
+        )
+      }
+    } catch (err) {
+      throw { stage: 'script_verification', error: err }
+    }
+
+    // ── 7. Write initial status ────────────────────────────────────────────────
+    try {
+      writeFileSync(
+        STATUS_FILE,
+        JSON.stringify({
+          status: 'queued',
+          step: 'queued',
+          message: 'Deploy accepted, starting…',
+          triggeredAt: requestAt,
+          triggeredBy: ip,
+        })
+      )
+    } catch (err) {
+      throw { stage: 'status_write', error: err }
+    }
+
+    // ── 8. Spawn process ───────────────────────────────────────────────────────
+    try {
+      const { __NEXT_PRIVATE_STANDALONE_CONFIG: _stripped, ...spawnEnv } = process.env
+
+      const intermediate = spawn('/bin/bash', ['-c', '/bin/bash "$DEPLOY_SCRIPT" </dev/null >/dev/null 2>&1 & disown'], {
+        detached: true,
+        stdio: 'ignore',
+        env: { ...spawnEnv, DEPLOY_SCRIPT: scriptPath },
+      })
+
+      intermediate.on('error', (err) => {
+        console.error('[Deploy] Process spawn error:', err.message)
+        try {
+          const { unlinkSync } = require('fs')
+          unlinkSync(LOCK_FILE)
+        } catch {
+          /* ignore */
+        }
+      })
+
+      intermediate.unref()
+    } catch (err) {
+      throw { stage: 'process_spawn', error: err }
+    }
+
+    // ── 9. Success ─────────────────────────────────────────────────────────────
+    return NextResponse.json({
+      success: true,
+      message: 'Deploy triggered. Poll /api/deploy/status for progress.',
+    })
+  } catch (err: any) {
+    // Clean up lock file on error
+    try {
+      const { unlinkSync } = await import('fs')
+      unlinkSync(LOCK_FILE)
+    } catch {
+      /* ignore */
+    }
+
+    const error = err instanceof Error ? err : new Error(String(err))
+    const stage = err?.stage || 'unknown'
+
+    console.error(`[Deploy] Error at stage: ${stage}`, error)
+
+    return NextResponse.json(
+      {
+        success: false,
+        stage,
+        message: error.message || 'Unknown error',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        timestamp: requestAt,
+      },
+      { status: 500 }
+    )
+  }
 }
