@@ -14,6 +14,7 @@ import { ReviewStep } from './steps/review-step'
 import { ProvisioningProgressStep } from './steps/provisioning-progress-step'
 import { ReadyStep } from './steps/ready-step'
 import { getResumeStep } from '@/lib/business-lifecycle'
+import { getAuthHeaders } from '@/lib/admin-fetch'
 
 export type OnboardingStep = 'info' | 'product' | 'plan' | 'review' | 'provisioning' | 'ready'
 
@@ -170,12 +171,39 @@ export function BusinessOnboardingWizard({ businessId, initialStep = 'info' }: W
   }
 
   // Step 2: Product Selection
-  const handleProductSelect = (productCode: string) => {
+  const handleProductSelect = async (productCode: string) => {
     setState((prev) => ({
       ...prev,
       productCode,
       subscriptionPlanCode: undefined, // Reset plan
     }))
+
+    // Persist the product to the (already-created) business so the lifecycle
+    // advances to "needs_plan" durably. Reuses the existing Business update API
+    // (PUT /api/core/businesses/[id]); product list itself comes from the
+    // Product Registry via ProductSelectionStep.
+    const id = state.businessId || businessId
+    if (id) {
+      try {
+        setLoading(true)
+        setError(null)
+        const res = await fetch(`/api/core/businesses/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ productCode }),
+        })
+        const json = await res.json()
+        if (!res.ok || json.success === false) {
+          throw new Error(json.error || 'Failed to assign product')
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to assign product')
+        setLoading(false)
+        return // stay on the product step so the user can retry
+      }
+      setLoading(false)
+    }
+
     setCurrentStep('plan')
   }
 

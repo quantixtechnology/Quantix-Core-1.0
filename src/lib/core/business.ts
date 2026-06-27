@@ -698,6 +698,23 @@ export async function updateBusiness(
     updateData.businessType = data.businessType;
   }
 
+  // Handle product assignment — productCode is an FK to PlatformProduct.code.
+  // Validate against the Product Registry (read-only) so only a real product
+  // can be assigned. Lifecycle (draft -> needs_plan) follows automatically from
+  // this field. Provisioning/Runtime Registry are untouched here.
+  const productCodeInput = (data as Record<string, unknown>).productCode;
+  if (
+    typeof productCodeInput === 'string' &&
+    productCodeInput &&
+    productCodeInput !== business.productCode
+  ) {
+    const product = await db.platformProduct.findUnique({ where: { code: productCodeInput } });
+    if (!product) {
+      throw new Error(`Product "${productCodeInput}" not found`);
+    }
+    updateData.productCode = productCodeInput;
+  }
+
   const updated = await db.business.update({
     where: { id: businessId },
     data: updateData,
