@@ -164,6 +164,7 @@ log "✅ Super admin verified"
 # If this step fails, the script exits here. PM2 is still running the PREVIOUS
 # .next/standalone — the old version stays live. Production is not disrupted.
 CURRENT_STEP="build"
+BUILD_START=$(date +%s)
 status "build" "Running next build (~3-5 min)"
 log ""
 log "── next build ───────────────────────────────────────────────"
@@ -230,12 +231,15 @@ log "Node $(node --version) | NPM $(npm --version) | ulimit nofile=$(ulimit -n)"
     NEXT_TURBOPACK_USE_WORKER="0" \
     npm run build 2>&1 | tee -a "$LOG_FILE" ) || {
   # Restore the previous standalone so PM2 keeps serving the old version
+  BUILD_END=$(date +%s)
+  BUILD_DURATION=$((BUILD_END - BUILD_START))
   if [ -d "/tmp/quantix-standalone-prev" ]; then
     rm -rf .next/standalone
     cp -r /tmp/quantix-standalone-prev .next/standalone
     log "⚠️  Build failed — previous standalone restored, PM2 continues on old version"
+    fail "next build failed after ${BUILD_DURATION}s — check TypeScript/compilation errors"
   fi
-  fail "next build failed — previous version restored and still running"
+  fail "next build failed after ${BUILD_DURATION}s (standalone backup missing — rollback uncertain)"
 }
 rm -rf /tmp/quantix-standalone-prev
 log "✅ Build complete"
@@ -274,40 +278,71 @@ status "restart" "Restarting app via PM2"
 log ""
 log "── PM2 ──────────────────────────────────────────────────────"
 pm2 startOrRestart "$PROJECT/ecosystem.config.js" --update-env 2>&1 | tee -a "$LOG_FILE" \
-  || fail "pm2 restart failed — check: pm2 logs quantix"
+  || fail "pm2 restart failed — check ecosystem.config.js and run: pm2 logs quantix"
 pm2 save 2>/dev/null || true
 # || true: pm2 list failure must not abort the deploy — the restart already succeeded.
 pm2 list 2>&1 | tee -a "$LOG_FILE" || true
+log "✅ PM2 process restarted, waiting for application startup…"
 
 # ─── Health check ──────────────────────────────────────────────────────────────
-# Retry up to 8 times with 5 s gaps (40 s total window).
+# Retry with exponential backoff: 1s, 2s, 4s, 8s, 10s, 10s, 10s... (120s window)
 # WHY retry: pm2 startOrRestart returns as soon as the process is "online" at
 # the PM2 level, but the Next.js standalone may still be binding its port and
-# loading modules. A single 15 s sleep was sometimes not enough on a loaded VPS.
+# loading modules. Database connection initialization can take time on loaded VPS.
+# Exponential backoff prevents thundering herd while extending total window.
 # A non-2xx on every attempt fails the deploy. The old standalone is gone at
 # this point so we must fail loudly — autorestart will keep trying to serve,
 # but CI must know it failed.
 CURRENT_STEP="health"
-status "health" "Checking app health"
+status "health" "Checking app health (may take up to 120s)"
 log ""
 log "── Health check ─────────────────────────────────────────────"
 HTTP="000"
-for attempt in 1 2 3 4 5 6 7 8; do
-  sleep 5
-  HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
-    http://localhost:3000 2>/dev/null || echo "000")
-  if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
-    log "✅ App healthy (HTTP $HTTP, attempt $attempt)"
+ATTEMPT=0
+MAX_ATTEMPTS=20
+LAST_HTTP="000"
+
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+  ATTEMPT=$((ATTEMPT + 1))
+
+  # Exponential backoff: 1, 2, 4, 8, 10, 10, 10...
+  if [ $ATTEMPT -le 4 ]; then
+    SLEEP=$((2 ** (ATTEMPT - 1)))  # 1, 2, 4, 8
+  else
+    SLEEP=10  # Cap at 10s
+  fi
+
+  sleep "$SLEEP"
+
+  # Try lightweight health endpoint first, then main app
+  HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+    http://localhost:3000/api/deploy/health 2>/dev/null || echo "000")
+
+  if echo "$HTTP" | grep -qE "^(200)$"; then
+    log "✅ App healthy (HTTP $HTTP, attempt $ATTEMPT)"
+    LAST_HTTP="$HTTP"
     break
   fi
-  log "⏳ Attempt $attempt/8 — HTTP $HTTP, retrying…"
-  HTTP="000"
+
+  # Fallback: try main endpoint
+  HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+    http://localhost:3000 2>/dev/null || echo "000")
+
+  if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
+    log "✅ App healthy (HTTP $HTTP, attempt $ATTEMPT)"
+    LAST_HTTP="$HTTP"
+    break
+  fi
+
+  REMAINING=$((MAX_ATTEMPTS - ATTEMPT))
+  log "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS — HTTP $HTTP, sleeping ${SLEEP}s… ($REMAINING remaining)"
+  LAST_HTTP="$HTTP"
 done
 
-if [ "$HTTP" = "000" ] || ! echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
-  log "❌ Health check failed after 8 attempts (last HTTP $HTTP) — PM2 logs:"
+if [ "$LAST_HTTP" = "000" ] || ! echo "$LAST_HTTP" | grep -qE "^(200|301|302|307|308)$"; then
+  log "❌ Health check failed after $ATTEMPT attempts (last HTTP $LAST_HTTP) — PM2 logs:"
   pm2 logs quantix --lines 30 --nostream 2>/dev/null | tee -a "$LOG_FILE" || true
-  fail "App unhealthy after restart (HTTP $HTTP) — check pm2 logs"
+  fail "App unhealthy after restart (HTTP $LAST_HTTP) — check pm2 logs"
 fi
 
 # ─── Success ───────────────────────────────────────────────────────────────────

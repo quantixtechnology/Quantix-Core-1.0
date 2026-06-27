@@ -72,18 +72,27 @@ export async function GET(req: Request) {
   }
 
   // ── Read status ─────────────────────────────────────────────────────────────
+  // CRITICAL: This endpoint must ALWAYS return valid JSON, even if the app is
+  // restarting. Read from disk directly — never depend on in-memory state.
   if (!existsSync(STATUS_FILE)) {
-    return NextResponse.json({ status: 'idle', locked: existsSync(LOCK_FILE) })
+    return NextResponse.json({
+      status: 'idle',
+      locked: existsSync(LOCK_FILE),
+      message: 'No deployment in progress',
+    })
   }
 
   let statusData: Record<string, unknown> = {}
   try {
-    statusData = JSON.parse(readFileSync(STATUS_FILE, 'utf-8'))
-  } catch {
+    const fileContent = readFileSync(STATUS_FILE, 'utf-8')
+    statusData = JSON.parse(fileContent)
+  } catch (error) {
+    console.error('[DeployStatus] Failed to read/parse status file:', error)
     return NextResponse.json({
-      status:  'unknown',
-      error:   'Status file unreadable',
-      locked:  existsSync(LOCK_FILE),
+      status: 'error',
+      error: 'Status file unreadable',
+      locked: existsSync(LOCK_FILE),
+      message: 'Deployment monitor encountered an error reading status',
     })
   }
 
@@ -101,10 +110,16 @@ export async function GET(req: Request) {
     }
   } catch { /* non-critical */ }
 
+  // Always include structured response fields for CI parsing
   return NextResponse.json({
-    ...statusData,
-    locked:          existsSync(LOCK_FILE),
+    status: statusData.status ?? 'unknown',
+    step: statusData.step ?? 'unknown',
+    message: statusData.message ?? '',
+    startedAt: statusData.startedAt,
+    updatedAt: statusData.updatedAt,
+    commit: statusData.commit,
     durationSeconds,
+    locked: existsSync(LOCK_FILE),
     tail,
   })
 }

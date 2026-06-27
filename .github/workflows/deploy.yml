@@ -138,8 +138,10 @@ jobs:
           APP_URL="${{ secrets.DEPLOY_APP_URL }}"
           SECRET="${{ secrets.DEPLOY_WEBHOOK_SECRET }}"
           VPS_IP="${{ secrets.DEPLOY_VPS_IP }}"
-          MAX_POLLS=40
+          MAX_POLL_TIME=600  # 10 minutes total (extended from 20 min to be safer)
+          START_TIME=$(date +%s)
           POLL=0
+          CONSECUTIVE_FAILS=0
 
           RESOLVE_FLAG=""
           if [ -n "$VPS_IP" ]; then
@@ -152,34 +154,75 @@ jobs:
           fi
 
           echo "Polling ${APP_URL}/api/deploy/status …"
+          echo "(Deployment may take several minutes; temporary non-JSON responses are normal during app restart)"
+          echo ""
 
-          while [ "$POLL" -lt "$MAX_POLLS" ]; do
-            sleep 30
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
             POLL=$((POLL + 1))
 
-            RESPONSE=$(curl -s --max-time 20 \
+            # Exponential backoff: 5s, 10s, 15s, 20s, 30s, 30s...
+            # Start aggressive (detect quick failures early), then back off
+            if [ $POLL -le 2 ]; then
+              SLEEP=5
+            elif [ $POLL -le 4 ]; then
+              SLEEP=10
+            elif [ $POLL -le 6 ]; then
+              SLEEP=15
+            elif [ $POLL -le 8 ]; then
+              SLEEP=20
+            else
+              SLEEP=30
+            fi
+
+            if [ $ELAPSED -gt $MAX_POLL_TIME ]; then
+              echo ""
+              echo "⏱  Timed out after ${ELAPSED}s (>${MAX_POLL_TIME}s limit)"
+              echo "   Check VPS: pm2 logs quantix --lines 100"
+              echo "   Status:    cat /tmp/quantix-deploy-status.json"
+              exit 1
+            fi
+
+            sleep "$SLEEP"
+
+            # Fetch status — curl's timeout includes connect time
+            RESPONSE=$(curl -s --max-time 15 \
               $RESOLVE_FLAG \
               -H "x-deploy-secret: ${SECRET}" \
-              "${APP_URL}/api/deploy/status" 2>/dev/null || echo '{"status":"unreachable"}')
+              "${APP_URL}/api/deploy/status" 2>/dev/null)
 
-            # Guard: if the response is not valid JSON (e.g. Nginx 502 HTML during
-            # PM2 restart), replace it so jq doesn't fail the step with exit code 5.
+            # Guard: if the response is not valid JSON (e.g., Nginx 502 during
+            # app restart), treat it as a temporary restart and continue polling.
             if ! echo "$RESPONSE" | jq -e . > /dev/null 2>&1; then
-              echo "[$POLL/$MAX_POLLS] ⚠️  Non-JSON response — app may be restarting, retrying…"
+              CONSECUTIVE_FAILS=$((CONSECUTIVE_FAILS + 1))
+              REMAINING=$((MAX_POLL_TIME - ELAPSED))
+              echo "[$POLL | ${ELAPSED}s/${MAX_POLL_TIME}s] ⚠️  Non-JSON response (app restarting?) — attempt $CONSECUTIVE_FAILS, sleeping ${SLEEP}s…"
+
+              # Allow up to 6 consecutive non-JSON responses (~90 seconds with backoff)
+              # before giving up on connection issues
+              if [ $CONSECUTIVE_FAILS -gt 6 ]; then
+                echo ""
+                echo "❌ Too many non-JSON responses — app may be permanently unreachable"
+                exit 1
+              fi
               continue
             fi
+
+            # Reset consecutive fails when we get valid JSON
+            CONSECUTIVE_FAILS=0
 
             STATUS=$(echo "$RESPONSE" | jq -r '.status  // "unknown"')
             STEP=$(echo "$RESPONSE"   | jq -r '.step    // ""')
             MSG=$(echo "$RESPONSE"    | jq -r '.message // ""')
             COMMIT=$(echo "$RESPONSE" | jq -r '.commit  // ""')
 
-            echo "[$POLL/$MAX_POLLS] status=${STATUS} step=${STEP} — ${MSG}"
+            echo "[$POLL | ${ELAPSED}s/${MAX_POLL_TIME}s] status=${STATUS} step=${STEP} — ${MSG}"
 
             if [ "$STATUS" = "success" ]; then
               echo ""
-              echo "✅ Deploy complete${COMMIT:+ — commit ${COMMIT}}"
-              echo "─── Last log lines ───────────────────────────────────────"
+              echo "✅ Deploy complete${COMMIT:+ — commit ${COMMIT}} (${ELAPSED}s)"
+              echo "─── Last 20 log lines ───────────────────────────────────────"
               echo "$RESPONSE" | jq -r '.tail[-20:][]? // empty' 2>/dev/null || true
               exit 0
             fi
@@ -187,14 +230,11 @@ jobs:
             if [ "$STATUS" = "failed" ]; then
               echo ""
               echo "❌ Deploy failed at step: ${STEP}"
-              echo "   ${MSG}"
+              echo "   Reason: ${MSG}"
               echo "─── Deploy log (last 30 lines) ───────────────────────────"
               echo "$RESPONSE" | jq -r '.tail[-30:][]? // empty' 2>/dev/null || true
               exit 1
             fi
-          done
 
-          echo "⏱  Timed out after $((MAX_POLLS * 30))s"
-          echo "   Check VPS: pm2 logs quantix-core --lines 50"
-          echo "   Status:    cat /tmp/quantix-deploy-status.json" # This file name is fine.
-          exit 1
+            # Continue polling for "running", "queued", "restart", etc.
+          done
