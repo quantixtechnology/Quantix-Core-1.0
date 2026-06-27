@@ -1,6 +1,6 @@
 // ============================================================================
-// GET /api/admin/businesses/[id] — Get business details
-// PATCH /api/admin/businesses/[id] — Update business information
+// GET /api/admin/businesses/[businessId] — Get business details
+// PATCH /api/admin/businesses/[businessId] — Update business information
 // ============================================================================
 
 import { NextResponse } from 'next/server'
@@ -8,18 +8,18 @@ import { withMiddleware } from '@/lib/middleware'
 import { db } from '@/lib/db'
 
 interface RouteContext {
-  params?: Promise<{ id: string }>
+  params?: Promise<{ businessId: string }>
 }
 
 /**
- * GET /api/admin/businesses/[id]
+ * GET /api/admin/businesses/[businessId]
  * Retrieve business details with full lifecycle info
  */
 export const GET = withMiddleware({ requireAuth: true })(
   async (req, ctx: RouteContext) => {
     try {
       const params = await ctx.params
-      const businessId = params?.id
+      const businessId = params?.businessId
 
       if (!businessId) {
         return NextResponse.json(
@@ -59,14 +59,14 @@ export const GET = withMiddleware({ requireAuth: true })(
 )
 
 /**
- * PATCH /api/admin/businesses/[id]
+ * PATCH /api/admin/businesses/[businessId]
  * Update business information
  */
 export const PATCH = withMiddleware({ requireAuth: true, requiredPermission: 'businesses:update' })(
   async (req, ctx: RouteContext) => {
     try {
       const params = await ctx.params
-      const businessId = params?.id
+      const businessId = params?.businessId
 
       if (!businessId) {
         return NextResponse.json(
