@@ -28,13 +28,12 @@ export const GET = withMiddleware({ requireAuth: true })(
         )
       }
 
+      // NOTE: `platformWorkspace` is not a relation on Business; including it
+      // here threw at runtime and broke onboarding resume (which loads the
+      // business via this endpoint). Lifecycle state is derived from the
+      // business's own productCode / subscriptionPlanCode fields.
       const business = await db.business.findUnique({
         where: { id: businessId },
-        include: {
-          platformWorkspace: {
-            select: { id: true, status: true, createdAt: true },
-          },
-        },
       })
 
       if (!business) {

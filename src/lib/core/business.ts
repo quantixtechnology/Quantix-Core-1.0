@@ -655,7 +655,7 @@ export async function updateBusiness(
 
   const stringFields = [
     'name', 'description', 'logo', 'favicon', 'primaryColor', 'secondaryColor',
-    'tagline', 'address', 'city', 'state', 'pincode', 'gstNumber', 'panNumber',
+    'tagline', 'address', 'city', 'state', 'pincode', 'country', 'gstNumber', 'panNumber',
     'cinNumber', 'fssaiLicense', 'contactEmail', 'contactPhone', 'supportEmail',
     'supportPhone', 'timezone', 'defaultCurrency', 'defaultLocale',
   ] as const;
@@ -702,6 +702,21 @@ export async function updateBusiness(
     where: { id: businessId },
     data: updateData,
   });
+
+  // Handle owner name — stored on the CLIENT_OWNER user, not the Business.
+  // (Owner display name only; no credentials/roles are touched.)
+  if (data.ownerName !== undefined && data.ownerName !== null) {
+    const ownerLink = await db.businessUser.findFirst({
+      where: { businessId, role: 'CLIENT_OWNER', isActive: true },
+      select: { userId: true },
+    });
+    if (ownerLink) {
+      await db.user.update({
+        where: { id: ownerLink.userId },
+        data: { name: data.ownerName },
+      });
+    }
+  }
 
   // Handle domain upsert (only when domain is explicitly provided)
   if (data.domain !== undefined && data.domain !== '') {

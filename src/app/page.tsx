@@ -383,7 +383,7 @@ function AppRouter() {
 const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "LAUNDRY_OWNER", "LAUNDRY_STORE_MANAGER", "STORE_EXECUTIVE", "AUDIT_EXECUTIVE", "PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE", "DELIVERY_EXECUTIVE"])
 
 function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string | null; deliveryEntry?: boolean }) {
-  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode } = useAdminStore()
+  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode, resumeBusinessId } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
@@ -467,7 +467,7 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "proposal-documents": return <ErrorBoundary view="admin"><ProposalDocumentsView /></ErrorBoundary>
       case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
-      case "create-business": return <BusinessOnboardingWizard />
+      case "create-business": return <BusinessOnboardingWizard businessId={resumeBusinessId ?? undefined} />
       case "account-billing": return <AccountBillingView />
       case "subscriptions": return <SubscriptionsView />
       case "platform-invoices": return <PlatformInvoicesView />

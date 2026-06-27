@@ -441,6 +441,9 @@ interface AdminState {
   setSelectedLeadId: (id: string | null) => void
   selectedBusinessId: string | null
   setSelectedBusinessId: (id: string | null) => void
+  // Business to resume in the onboarding wizard (null = fresh create)
+  resumeBusinessId: string | null
+  setResumeBusinessId: (id: string | null) => void
   selectedSubscriptionId: string | null
   setSelectedSubscriptionId: (id: string | null) => void
 
@@ -629,6 +632,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   setSelectedLeadId: (id) => set({ selectedLeadId: id, isDetailSheetOpen: id !== null }),
   selectedBusinessId: null,
   setSelectedBusinessId: (id) => set({ selectedBusinessId: id, isDetailSheetOpen: id !== null }),
+  resumeBusinessId: null,
+  setResumeBusinessId: (id) => set({ resumeBusinessId: id }),
   selectedSubscriptionId: null,
   setSelectedSubscriptionId: (id) => set({ selectedSubscriptionId: id, isDetailSheetOpen: id !== null }),
 

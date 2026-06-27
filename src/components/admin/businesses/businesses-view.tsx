@@ -35,6 +35,8 @@ import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { MobileProvisionSection } from "./mobile-provision-section"
 import { resolveImageUrl } from "@/lib/image-url"
+import { getBusinessLifecycle, getStateLabel, type BusinessLifecycleState } from "@/lib/business-lifecycle"
+import { PlayCircle, Rocket } from "lucide-react"
 
 // ---- Plan data type — feature access only, no pricing ----
 interface PlanApiData {
@@ -47,7 +49,8 @@ interface PlanApiData {
 // ---- API data types ----
 interface BusinessApiData {
   id: string; businessCode: string | null; name: string; slug: string; businessType: string; status: string
-  city: string | null; state: string | null; pincode: string | null; address: string | null
+  productCode: string | null; subscriptionPlanCode: string | null
+  city: string | null; state: string | null; pincode: string | null; country: string | null; address: string | null
   contactEmail: string | null; contactPhone: string | null
   supportEmail: string | null; supportPhone: string | null
   gstNumber: string | null; panNumber: string | null; cinNumber: string | null; fssaiLicense: string | null
@@ -107,6 +110,14 @@ function formatCurrency(value: number): string {
   return `₹${value.toLocaleString("en-IN")}`
 }
 
+// Tailwind classes for the lifecycle badge, by state (schema-aligned engine).
+const LIFECYCLE_BADGE_CLASS: Record<BusinessLifecycleState, string> = {
+  draft: "border-gray-300 text-gray-600 bg-gray-50",
+  needs_plan: "border-amber-300 text-amber-700 bg-amber-50",
+  ready_to_provision: "border-blue-300 text-blue-700 bg-blue-50",
+  active: "border-emerald-300 text-emerald-700 bg-emerald-50",
+}
+
 const STATUS_ITEMS: { key: string; label: string }[] = [
   { key: "subscription", label: "Subscription Active" },
   { key: "domain", label: "Domain Configured" },
@@ -126,7 +137,7 @@ const READINESS_ITEMS: { key: string; label: string }[] = [
 
 export function BusinessesView() {
   const router = useRouter()
-  const { searchQuery, setCurrentBusiness, setActivePage } = useAdminStore()
+  const { searchQuery, setCurrentBusiness, setActivePage, setResumeBusinessId } = useAdminStore()
   const { permissions } = useAuthStore()
   const canCreate = permissions.includes("businesses:create" as never)
   const canEdit = permissions.includes("businesses:edit" as never)
@@ -174,6 +185,7 @@ export function BusinessesView() {
   const [editPanelOpen, setEditPanelOpen] = useState(false)
   const [editPanelTab, setEditPanelTab] = useState("info")
   const [epName, setEpName] = useState("")
+  const [epOwnerName, setEpOwnerName] = useState("")
   const [epSlug, setEpSlug] = useState("")
   const [epType, setEpType] = useState("")
   const [epDescription, setEpDescription] = useState("")
@@ -186,6 +198,7 @@ export function BusinessesView() {
   const [epCity, setEpCity] = useState("")
   const [epState, setEpState] = useState("")
   const [epPincode, setEpPincode] = useState("")
+  const [epCountry, setEpCountry] = useState("India")
   const [epGST, setEpGST] = useState("")
   const [epPAN, setEpPAN] = useState("")
   const [epCIN, setEpCIN] = useState("")
@@ -210,6 +223,47 @@ export function BusinessesView() {
     navigator.clipboard.writeText(slug)
     setCopiedId(slug)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  // Resume the onboarding wizard for an incomplete business. The wizard loads
+  // the business and jumps to the correct step via the lifecycle engine.
+  const handleResumeOnboarding = (biz: BusinessApiData) => {
+    setResumeBusinessId(biz.id)
+    setActivePage("create-business")
+  }
+
+  // Edit a business from a list row. openEditPanel does not set the selected
+  // business (handleSaveEditPanel relies on it), so set it here too.
+  const handleEditBusiness = (biz: BusinessApiData) => {
+    setSelectedBusiness(biz)
+    openEditPanel(biz)
+  }
+
+  // Tracks the business whose provisioning is currently in flight (row shows
+  // a disabled "Provisioning…" button while true).
+  const [provisioningId, setProvisioningId] = useState<string | null>(null)
+
+  // Provision a business directly from the list. Reuses the existing
+  // POST /api/admin/businesses/provision endpoint (same one the wizard uses).
+  const handleProvisionBusiness = async (biz: BusinessApiData) => {
+    setProvisioningId(biz.id)
+    try {
+      const res = await fetch("/api/admin/businesses/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ businessId: biz.id }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.success === false) {
+        throw new Error(json.error || json.message || "Provisioning failed")
+      }
+      toast.success(`Provisioning started for ${biz.name}`)
+      fetchBusinesses()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Provisioning failed")
+    } finally {
+      setProvisioningId(null)
+    }
   }
 
   const handleOpenWorkspace = async (biz: BusinessApiData) => {
@@ -495,6 +549,7 @@ export function BusinessesView() {
 
   const openEditPanel = (biz: BusinessApiData) => {
     setEpName(biz.name)
+    setEpOwnerName(biz.ownerName ?? "")
     setEpSlug(biz.slug)
     setEpType(biz.businessType)
     setEpDescription(biz.description ?? "")
@@ -507,6 +562,7 @@ export function BusinessesView() {
     setEpCity(biz.city ?? "")
     setEpState(biz.state ?? "")
     setEpPincode(biz.pincode ?? "")
+    setEpCountry(biz.country ?? "India")
     setEpGST(biz.gstNumber ?? "")
     setEpPAN(biz.panNumber ?? "")
     setEpCIN(biz.cinNumber ?? "")
@@ -527,6 +583,7 @@ export function BusinessesView() {
     try {
       const body: Record<string, unknown> = {
         name: epName,
+        ownerName: epOwnerName || null,
         slug: epSlug,
         businessType: epType,
         description: epDescription || null,
@@ -539,6 +596,7 @@ export function BusinessesView() {
         city: epCity || null,
         state: epState || null,
         pincode: epPincode || null,
+        country: epCountry.trim() || "India", // country is non-nullable (default India)
         gstNumber: epGST || null,
         panNumber: epPAN || null,
         cinNumber: epCIN || null,
@@ -652,7 +710,8 @@ export function BusinessesView() {
         icon={Building2}
         action={canCreate ? (
           <Button className="gap-2" onClick={() => {
-            const { setActivePage } = useAdminStore.getState()
+            const { setActivePage, setResumeBusinessId } = useAdminStore.getState()
+            setResumeBusinessId(null) // fresh create — clear any resume target
             setActivePage("create-business")
           }}><Plus className="h-4 w-4" /> Create Business</Button>
         ) : undefined}
@@ -707,6 +766,9 @@ export function BusinessesView() {
                   {filteredBusinesses.map((biz) => {
                     const typeConf = businessTypeConfig[biz.businessType as BusinessType]
                     const sub = biz.subscription
+                    // Lifecycle state from the schema-aligned engine (Phase 2).
+                    const lc = getBusinessLifecycle(biz)
+                    const isProvisioning = provisioningId === biz.id
                     return (
                       <TableRow key={biz.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>
                         <TableCell>
@@ -738,7 +800,14 @@ export function BusinessesView() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell><StatusBadge status={biz.status} /></TableCell>
+                        <TableCell>
+                          <div className="flex flex-col items-start gap-1">
+                            <StatusBadge status={biz.status} />
+                            <Badge variant="outline" className={`text-[10px] h-4 px-1.5 font-medium ${LIFECYCLE_BADGE_CLASS[lc.state]}`}>
+                              {getStateLabel(lc.state)}
+                            </Badge>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col">
                             <span className="text-sm">{sub?.plan?.name || sub?.plan?.tier || "No Plan"}</span>
@@ -757,17 +826,46 @@ export function BusinessesView() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
-                            {canImpersonate && (
+                            {isProvisioning ? (
+                              <Button size="sm" variant="outline" disabled className="h-7 text-xs gap-1">
+                                <Loader2 className="size-3 animate-spin" /> Provisioning…
+                              </Button>
+                            ) : lc.state === "ready_to_provision" ? (
                               <>
-                                <Button
-                                  variant="outline" size="sm"
-                                  className="h-7 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400"
-                                  onClick={() => { setCurrentBusiness(biz.id, biz.name, biz.businessType, biz.slug) }}
-                                >
-                                  <LogIn className="size-3" />
-                                  Workspace
+                                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleResumeOnboarding(biz)}>
+                                  <Check className="size-3" /> Review
                                 </Button>
+                                {canCreate && (
+                                  <Button size="sm" className="h-7 text-xs gap-1 bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => handleProvisionBusiness(biz)}>
+                                    <Rocket className="size-3" /> Provision
+                                  </Button>
+                                )}
+                              </>
+                            ) : lc.state === "active" ? (
+                              <>
+                                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleOpenWorkspace(biz)}>
+                                  <Globe className="size-3" /> Open Workspace
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => { setSelectedBusiness(biz); setDetailOpen(true) }}>View</Button>
+                                {canEdit && (
+                                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleEditBusiness(biz)}>
+                                    <Edit className="size-3" /> Edit
+                                  </Button>
+                                )}
+                              </>
+                            ) : (
+                              /* draft / needs_plan */
+                              <>
+                                {canEdit && (
+                                  <Button size="sm" className="h-7 text-xs gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleResumeOnboarding(biz)}>
+                                    <PlayCircle className="size-3" /> Resume Setup
+                                  </Button>
+                                )}
+                                {canEdit && (
+                                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleEditBusiness(biz)}>
+                                    <Edit className="size-3" /> Edit
+                                  </Button>
+                                )}
                               </>
                             )}
                           </div>
@@ -804,6 +902,16 @@ export function BusinessesView() {
                       <div className="flex items-center justify-between gap-2">
                         <SheetTitle className="text-lg">{biz.name}</SheetTitle>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          {(!biz.productCode || !biz.subscriptionPlanCode) && canEdit && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs gap-1 bg-blue-600 hover:bg-blue-700 text-white"
+                              onClick={() => handleResumeOnboarding(biz)}
+                            >
+                              <PlayCircle className="size-3" />
+                              Resume Setup
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -839,6 +947,11 @@ export function BusinessesView() {
                       <SheetDescription className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium" style={{ borderColor: typeConf?.color, color: typeConf?.color }}>{typeConf?.label}</Badge>
                         <StatusBadge status={biz.status} />
+                        {(!biz.productCode || !biz.subscriptionPlanCode) && (
+                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-blue-300 text-blue-700 bg-blue-50">
+                            {getStateLabel(getBusinessLifecycle(biz).state)}
+                          </Badge>
+                        )}
                         {biz.isOnline ? <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium"><Wifi className="h-3 w-3" /> Online</span>
                           : <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium"><WifiOff className="h-3 w-3" /> Offline</span>}
                       </SheetDescription>
@@ -1547,6 +1660,10 @@ export function BusinessesView() {
                         <Label className="text-xs font-medium">Business Name *</Label>
                         <Input value={epName} onChange={e => setEpName(e.target.value)} className="h-9 text-sm" />
                       </div>
+                      <div className="col-span-2 space-y-1.5">
+                        <Label className="text-xs font-medium">Owner Name</Label>
+                        <Input value={epOwnerName} onChange={e => setEpOwnerName(e.target.value)} className="h-9 text-sm" placeholder="e.g., John Doe" />
+                      </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-medium">Slug (URL identifier)</Label>
                         <Input value={epSlug} onChange={e => setEpSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} className="h-9 text-sm font-mono" placeholder="my-business" />
@@ -1618,6 +1735,10 @@ export function BusinessesView() {
                       <div className="space-y-1.5">
                         <Label className="text-xs font-medium">Pincode</Label>
                         <Input value={epPincode} onChange={e => setEpPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} className="h-9 text-sm font-mono" placeholder="560001" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Country</Label>
+                        <Input value={epCountry} onChange={e => setEpCountry(e.target.value)} className="h-9 text-sm" placeholder="India" />
                       </div>
                     </div>
                   </TabsContent>

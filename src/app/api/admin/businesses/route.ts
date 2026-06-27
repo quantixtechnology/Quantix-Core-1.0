@@ -317,9 +317,13 @@ export const GET = withMiddleware({
       slug: b.slug,
       businessType: b.businessType,
       status: b.status,
+      // Lifecycle fields — drive onboarding resume state in the UI
+      productCode: b.productCode,
+      subscriptionPlanCode: b.subscriptionPlanCode,
       city: b.city,
       state: b.state,
       pincode: b.pincode,
+      country: b.country,
       address: b.address,
       contactEmail: b.contactEmail,
       contactPhone: b.contactPhone,

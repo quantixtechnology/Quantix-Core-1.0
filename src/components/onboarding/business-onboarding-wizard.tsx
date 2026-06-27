@@ -13,6 +13,7 @@ import { PlanSelectionStep } from './steps/plan-selection-step'
 import { ReviewStep } from './steps/review-step'
 import { ProvisioningProgressStep } from './steps/provisioning-progress-step'
 import { ReadyStep } from './steps/ready-step'
+import { getResumeStep } from '@/lib/business-lifecycle'
 
 export type OnboardingStep = 'info' | 'product' | 'plan' | 'review' | 'provisioning' | 'ready'
 
@@ -102,6 +103,14 @@ export function BusinessOnboardingWizard({ businessId, initialStep = 'info' }: W
               subscriptionPlanCode: business.subscriptionPlanCode || undefined,
               businessId: business.id,
             }))
+
+            // Resume at the correct step for an already-created business.
+            // The business record exists, so skip the info step and jump to
+            // whichever step the lifecycle engine says is next.
+            if (initialStep === 'info') {
+              const resume = getResumeStep(business)
+              if (resume) setCurrentStep(resume)
+            }
           }
         } catch (err) {
           console.error('Failed to load business:', err)
