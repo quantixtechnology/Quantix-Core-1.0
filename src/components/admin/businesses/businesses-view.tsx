@@ -651,7 +651,10 @@ export function BusinessesView() {
         description="Manage all platform businesses, subscriptions, and configurations"
         icon={Building2}
         action={canCreate ? (
-          <Button className="gap-2" onClick={() => router.push("?slug=create-business")}><Plus className="h-4 w-4" /> Create Business</Button>
+          <Button className="gap-2" onClick={() => {
+            const { setActivePage } = useAdminStore.getState()
+            setActivePage("create-business")
+          }}><Plus className="h-4 w-4" /> Create Business</Button>
         ) : undefined}
       />
 

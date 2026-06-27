@@ -31,6 +31,7 @@ export type AdminPage =
   | "dashboard"
   | "leads"
   | "businesses"
+  | "create-business"
   | "subscriptions"
   | "onboarding"
   | "domains"

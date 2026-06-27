@@ -4,6 +4,7 @@ import { DollarSign, Building2, TrendingUp, Users, ArrowUpRight, Plus, ShoppingC
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useAdminStore } from '@/stores/admin-store';
 import { businesses, revenueData, businessTypeData, leads, clientSubscriptions, leadSourceData } from './data';
 
 const formatCurrency = (val: number) => {
@@ -209,7 +210,7 @@ export function PlatformOverview() {
             <span className="text-xs font-semibold text-slate-900">Quick Actions</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700"><Plus className="h-3.5 w-3.5 mr-1.5" />Create Business</Button>
+            <Button size="sm" className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700" onClick={() => useAdminStore.getState().setActivePage("create-business")}><Plus className="h-3.5 w-3.5 mr-1.5" />Create Business</Button>
             <Button variant="outline" size="sm" className="text-xs h-8"><Plus className="h-3.5 w-3.5 mr-1.5" />Add Lead</Button>
             <Button variant="outline" size="sm" className="text-xs h-8">View Deployments</Button>
             <Button variant="outline" size="sm" className="text-xs h-8">Manage Plans</Button>
