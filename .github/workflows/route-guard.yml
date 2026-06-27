@@ -1,0 +1,52 @@
+name: Route Guard & Build Check
+
+# ─── Purpose ──────────────────────────────────────────────────────────────────
+# Continuous-integration gate that BLOCKS any future sibling dynamic-route slug
+# conflict (e.g. `[id]` next to `[businessId]` under the same parent), which
+# previously took down the entire Next.js route tree and broke production
+# deployment.
+#
+# This is a standalone CI check. It does NOT touch the deployment workflow
+# (deploy.yml), the webhook trigger, deploy-local.sh, nginx, or PM2. The
+# production build command in package.json is intentionally left unchanged so
+# production builds stay clean; enforcement lives here in CI instead.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  route-guard:
+    name: check:routes + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Build-time env mirrors the known-good local build. SQLite file URL is
+      # sufficient for `prisma generate` and `next build`; no real DB needed.
+      DATABASE_URL: "file:./db/custom.db"
+      NEXT_PUBLIC_STOREFRONT_DOMAIN: "quantixtechnology.in"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # ── The route conflict guard — fails the build on any slug conflict ──────
+      - name: Route conflict guard
+        run: npm run check:routes
+
+      - name: Build
+        run: npm run build
