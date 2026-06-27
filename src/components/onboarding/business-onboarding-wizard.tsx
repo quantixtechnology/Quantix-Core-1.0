@@ -20,14 +20,15 @@ interface OnboardingState {
   // Business Info
   businessName: string
   businessSlug: string
-  businessType: string
-  address?: string
-  city?: string
-  state?: string
-  pincode?: string
-  country: string
+  ownerName?: string
   contactEmail: string
   contactPhone: string
+  address?: string
+  addressLine2?: string
+  city?: string
+  state?: string
+  pinCode?: string
+  country: string
 
   // Product & Plan
   productCode?: string
@@ -58,41 +59,43 @@ export function BusinessOnboardingWizard() {
   }>>([])
 
   // Step 1: Business Information
-  const handleBusinessInfoSubmit = async (data: Partial<OnboardingState>) => {
+  const handleBusinessInfoSubmit = async (data: any) => {
     try {
       setLoading(true)
       setError(null)
 
-      // Create business
+      // Create business with new payload format
       const response = await fetch('/api/admin/businesses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: data.businessName,
+          businessName: data.businessName,
           slug: data.businessSlug,
-          businessType: data.businessType,
-          address: data.address,
+          ownerName: data.ownerName,
+          email: data.contactEmail,
+          phone: data.contactPhone,
+          address1: data.address,
+          address2: data.addressLine2,
           city: data.city,
           state: data.state,
           pincode: data.pinCode,
           country: data.country || 'India',
-          contactEmail: data.contactEmail,
-          contactPhone: data.contactPhone,
         }),
       })
 
-      const business = await response.json()
+      const result = await response.json()
 
       if (!response.ok) {
-        // Provide detailed error message including Prisma errors
-        const errorMsg = business.message || business.error || 'Failed to create business'
-        throw new Error(errorMsg)
+        // Display error message
+        const errorMsg = result.message || result.error || 'Failed to create business'
+        setError(errorMsg)
+        return
       }
 
       setState((prev) => ({
         ...prev,
         ...data,
-        businessId: business.data?.id,
+        businessId: result.data?.id,
       }))
 
       setCurrentStep('product')

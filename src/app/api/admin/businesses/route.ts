@@ -10,60 +10,143 @@ import { withMiddleware } from '@/lib/middleware';
 /**
  * POST /api/admin/businesses
  * Create a new business (called during onboarding)
- * Auto-creates owner user account
+ *
+ * Accepts new payload format:
+ * {
+ *   businessName, slug, ownerName, email, phone,
+ *   address1, address2, city, state, pincode, country
+ * }
+ *
+ * businessType is NOT required - it comes from Product Selection
+ * productCode is NOT required - it comes from Product Selection
  */
 export const POST = withMiddleware({
   requireAuth: false,
 })(async (req) => {
   try {
     const body = await req.json();
-    const {
-      name,
-      slug,
-      businessType,
-      address,
-      city,
-      state,
-      pincode,
-      country,
-      contactEmail,
-      contactPhone,
-    } = body;
+
+    // Accept both new and legacy payload formats
+    const businessName = body.businessName || body.name;
+    const slug = body.slug;
+    const ownerName = body.ownerName;
+    const email = body.email || body.contactEmail;
+    const phone = body.phone || body.contactPhone;
+    const address1 = body.address1 || body.address;
+    const address2 = body.address2;
+    const city = body.city;
+    const state = body.state;
+    const pincode = body.pincode || body.pinCode;
+    const country = body.country || 'India';
+    const businessType = body.businessType || 'GROCERY'; // Default to GROCERY if not provided
 
     // Validate required fields
-    if (!name || !slug || !businessType) {
+    if (!businessName?.trim()) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: name, slug, businessType' },
+        { success: false, message: 'Business name is required', field: 'businessName' },
+        { status: 400 }
+      );
+    }
+
+    if (!slug?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Slug is required', field: 'slug' },
+        { status: 400 }
+      );
+    }
+
+    if (!email?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Email is required', field: 'email' },
+        { status: 400 }
+      );
+    }
+
+    if (!phone?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Phone is required', field: 'phone' },
+        { status: 400 }
+      );
+    }
+
+    if (!address1?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Address is required', field: 'address1' },
+        { status: 400 }
+      );
+    }
+
+    if (!city?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'City is required', field: 'city' },
+        { status: 400 }
+      );
+    }
+
+    if (!state?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'State is required', field: 'state' },
+        { status: 400 }
+      );
+    }
+
+    if (!pincode?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'PIN Code is required', field: 'pincode' },
         { status: 400 }
       );
     }
 
     // Check slug uniqueness
-    const existingBusiness = await db.business.findUnique({
-      where: { slug },
+    const existingSlug = await db.business.findUnique({
+      where: { slug: slug.toLowerCase() },
     });
 
-    if (existingBusiness) {
+    if (existingSlug) {
       return NextResponse.json(
-        { success: false, error: `Slug '${slug}' is already taken` },
+        { success: false, message: 'Slug already exists', field: 'slug', code: 'DUPLICATE_SLUG' },
         { status: 409 }
       );
     }
 
-    // Create business
+    // Check email uniqueness if exists
+    const existingEmail = await db.business.findFirst({
+      where: { contactEmail: email.toLowerCase() },
+    });
+
+    if (existingEmail) {
+      return NextResponse.json(
+        { success: false, message: 'Email already exists', field: 'email', code: 'DUPLICATE_EMAIL' },
+        { status: 409 }
+      );
+    }
+
+    // Check phone uniqueness if exists
+    const existingPhone = await db.business.findFirst({
+      where: { contactPhone: phone },
+    });
+
+    if (existingPhone) {
+      return NextResponse.json(
+        { success: false, message: 'Phone already exists', field: 'phone', code: 'DUPLICATE_PHONE' },
+        { status: 409 }
+      );
+    }
+
+    // Create business with all provided information
     const business = await db.business.create({
       data: {
-        name,
-        slug,
+        name: businessName.trim(),
+        slug: slug.toLowerCase().trim(),
         businessType,
         businessCode: `BIZ-${slug.toUpperCase()}-${Date.now()}`,
-        address: address || null,
-        city: city || null,
-        state: state || null,
-        pincode: pincode || null,
+        address: address1.trim(),
+        city: city.trim(),
+        state: state.trim(),
+        pincode: pincode.trim(),
         country: country || 'India',
-        contactEmail: contactEmail || '',
-        contactPhone: contactPhone || '',
+        contactEmail: email.toLowerCase().trim(),
+        contactPhone: phone.trim(),
         status: 'ONBOARDING',
         isOnline: false,
       },
@@ -75,7 +158,6 @@ export const POST = withMiddleware({
         id: business.id,
         name: business.name,
         slug: business.slug,
-        businessType: business.businessType,
         status: business.status,
       },
     });
@@ -85,12 +167,11 @@ export const POST = withMiddleware({
     // Return complete Prisma error details for debugging
     let errorResponse: any = {
       success: false,
-      error: 'Failed to create business',
+      message: 'Failed to create business',
     };
 
     if (error instanceof Error) {
       errorResponse.message = error.message;
-      errorResponse.name = error.name;
     }
 
     // Include Prisma error details if available
@@ -100,21 +181,34 @@ export const POST = withMiddleware({
     if ((error as any).meta) {
       errorResponse.meta = (error as any).meta;
     }
-    if ((error as any).clientVersion) {
-      errorResponse.clientVersion = (error as any).clientVersion;
-    }
 
-    // Determine HTTP status code
+    // Determine HTTP status code and provide field-specific errors
     let statusCode = 500;
     if ((error as any).code === 'P2002') {
       // Unique constraint failed
       statusCode = 409;
+      const target = (error as any).meta?.target?.[0];
+      if (target === 'slug') {
+        errorResponse.field = 'slug';
+        errorResponse.message = 'Slug already exists';
+        errorResponse.code = 'DUPLICATE_SLUG';
+      } else if (target === 'contactEmail') {
+        errorResponse.field = 'email';
+        errorResponse.message = 'Email already exists';
+        errorResponse.code = 'DUPLICATE_EMAIL';
+      } else if (target === 'businessCode') {
+        errorResponse.field = 'businessName';
+        errorResponse.message = 'Business code conflict';
+        errorResponse.code = 'DUPLICATE_BUSINESS_CODE';
+      }
     } else if ((error as any).code === 'P2000') {
       // Value too long
       statusCode = 400;
+      errorResponse.message = 'One or more fields exceed maximum length';
     } else if ((error as any).code === 'P2003') {
       // Foreign key constraint failed
       statusCode = 400;
+      errorResponse.message = 'Invalid reference to another record';
     }
 
     return NextResponse.json(errorResponse, { status: statusCode });

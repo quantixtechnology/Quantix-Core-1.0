@@ -91,15 +91,15 @@ export function BusinessInfoStep({ initialData, onSubmit, loading }: Props) {
   const [form, setForm] = useState({
     businessName: initialData.businessName || '',
     businessSlug: initialData.businessSlug || '',
-    ownerName: '',
+    ownerName: initialData.ownerName || '',
     contactEmail: initialData.contactEmail || '',
     contactPhone: initialData.contactPhone || '',
     address: initialData.address || '',
-    addressLine2: '',
+    addressLine2: initialData.addressLine2 || '',
     city: initialData.city || '',
     state: initialData.state || '',
-    pinCode: '',
-    country: 'India',
+    pinCode: initialData.pinCode || '',
+    country: initialData.country || 'India',
   })
 
   const [slugValidation, setSlugValidation] = useState<{
