@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle2, Loader2, Package, MapPin, TrendingUp, Check } from 'lucide-react'
+import { CheckCircle2, Loader2, Package, MapPin, TrendingUp, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 
 // Step components
 import { BusinessInfoStep } from './steps/business-info-step'
@@ -15,6 +15,12 @@ import { ProvisioningProgressStep } from './steps/provisioning-progress-step'
 import { ReadyStep } from './steps/ready-step'
 
 export type OnboardingStep = 'info' | 'product' | 'plan' | 'review' | 'provisioning' | 'ready'
+
+interface ResourceAllocation {
+  storageGB: number
+  maxUsers: number
+  maxStores: number
+}
 
 interface OnboardingState {
   // Business Info
@@ -34,6 +40,9 @@ interface OnboardingState {
   productCode?: string
   subscriptionPlanCode?: string
 
+  // Resource Allocation
+  resourceAllocation: ResourceAllocation
+
   // Workspace
   businessId?: string
   workspaceId?: string
@@ -47,10 +56,14 @@ export function BusinessOnboardingWizard() {
   const [state, setState] = useState<OnboardingState>({
     businessName: '',
     businessSlug: '',
-    businessType: 'COMMERCE',
     country: 'India',
     contactEmail: '',
     contactPhone: '',
+    resourceAllocation: {
+      storageGB: 10,
+      maxUsers: 10,
+      maxStores: 1,
+    },
   })
 
   const [provisioningProgress, setProvisioningProgress] = useState<Array<{
@@ -125,7 +138,7 @@ export function BusinessOnboardingWizard() {
     setCurrentStep('review')
   }
 
-  // Step 4: Review
+  // Step 4: Review & Provisioning
   const handleReviewSubmit = async () => {
     try {
       setLoading(true)
@@ -148,12 +161,13 @@ export function BusinessOnboardingWizard() {
 
       setCurrentStep('provisioning')
 
-      // Trigger provisioning
+      // Trigger provisioning with customized resource allocation
       const provisionResponse = await fetch('/api/admin/businesses/provision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           businessId: state.businessId,
+          resourceAllocation: state.resourceAllocation,
         }),
       })
 
@@ -175,6 +189,33 @@ export function BusinessOnboardingWizard() {
       setCurrentStep('review')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Navigation handlers
+  const handlePrevious = () => {
+    const stepOrder: OnboardingStep[] = ['info', 'product', 'plan', 'review', 'provisioning', 'ready']
+    const currentIndex = stepOrder.indexOf(currentStep)
+    if (currentIndex > 0) {
+      setCurrentStep(stepOrder[currentIndex - 1])
+      setError(null)
+    }
+  }
+
+  const handleNext = () => {
+    const stepOrder: OnboardingStep[] = ['info', 'product', 'plan', 'review', 'provisioning', 'ready']
+    const currentIndex = stepOrder.indexOf(currentStep)
+    if (currentIndex < stepOrder.length - 1) {
+      setCurrentStep(stepOrder[currentIndex + 1])
+      setError(null)
+    }
+  }
+
+  const handleClose = () => {
+    // Navigate back to businesses list
+    const adminStore = (globalThis as any).__ADMIN_STORE
+    if (adminStore?.setActivePage) {
+      adminStore.setActivePage('businesses')
     }
   }
 
@@ -311,7 +352,7 @@ export function BusinessOnboardingWizard() {
 
         {/* Step Content */}
         <Card className="shadow-xl">
-          <CardContent className="pt-8">
+          <CardContent className="pt-8 pb-8">
             {currentStep === 'info' && (
               <BusinessInfoStep
                 initialData={state}
@@ -321,23 +362,56 @@ export function BusinessOnboardingWizard() {
             )}
 
             {currentStep === 'product' && (
-              <ProductSelectionStep onProductSelect={handleProductSelect} />
+              <>
+                <ProductSelectionStep onProductSelect={handleProductSelect} />
+                <div className="flex justify-between gap-2 mt-8 pt-6 border-t">
+                  <Button variant="outline" onClick={handlePrevious}>
+                    <ChevronLeft className="w-4 h-4 mr-2" />
+                    Previous
+                  </Button>
+                  <div className="w-px bg-gray-200" />
+                </div>
+              </>
             )}
 
             {currentStep === 'plan' && state.productCode && (
-              <PlanSelectionStep
-                productCode={state.productCode}
-                onPlanSelect={handlePlanSelect}
-              />
+              <>
+                <PlanSelectionStep
+                  productCode={state.productCode}
+                  onPlanSelect={handlePlanSelect}
+                />
+                <div className="flex justify-between gap-2 mt-8 pt-6 border-t">
+                  <Button variant="outline" onClick={handlePrevious}>
+                    <ChevronLeft className="w-4 h-4 mr-2" />
+                    Previous
+                  </Button>
+                  <div className="w-px bg-gray-200" />
+                </div>
+              </>
             )}
 
             {currentStep === 'review' && (
-              <ReviewStep
-                state={state}
-                onSubmit={handleReviewSubmit}
-                loading={loading}
-                onBack={() => setCurrentStep('plan')}
-              />
+              <>
+                <ReviewStep
+                  state={state}
+                  resourceAllocation={state.resourceAllocation}
+                  onResourceChange={(allocation) =>
+                    setState((prev) => ({ ...prev, resourceAllocation: allocation }))
+                  }
+                  onSubmit={handleReviewSubmit}
+                  loading={loading}
+                />
+                <div className="flex justify-between gap-2 mt-8 pt-6 border-t">
+                  <Button variant="outline" onClick={handlePrevious}>
+                    <ChevronLeft className="w-4 h-4 mr-2" />
+                    Previous
+                  </Button>
+                  <Button onClick={handleReviewSubmit} disabled={loading} size="lg">
+                    {loading ? 'Starting Provisioning...' : 'Start Provisioning'}
+                    <ChevronRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              </>
             )}
 
             {currentStep === 'provisioning' && (
@@ -347,7 +421,7 @@ export function BusinessOnboardingWizard() {
             )}
 
             {currentStep === 'ready' && state.businessId && (
-              <ReadyStep businessId={state.businessId} state={state} />
+              <ReadyStep businessId={state.businessId} state={state} onClose={handleClose} />
             )}
           </CardContent>
         </Card>

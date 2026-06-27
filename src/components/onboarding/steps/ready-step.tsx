@@ -10,9 +10,10 @@ import Link from 'next/link'
 interface Props {
   businessId: string
   state: any
+  onClose?: () => void
 }
 
-export function ReadyStep({ businessId, state }: Props) {
+export function ReadyStep({ businessId, state, onClose }: Props) {
   const router = useRouter()
 
   // Auto-redirect to product workspace after 2 seconds
@@ -50,9 +51,11 @@ export function ReadyStep({ businessId, state }: Props) {
       </Card>
       <p className="text-sm text-gray-600">Redirecting to workspace in 2 seconds...</p>
       <div className="flex justify-center gap-2">
-        <Button variant="outline" asChild>
-          <Link href="/admin/dashboard">View Dashboard</Link>
-        </Button>
+        {onClose && (
+          <Button variant="outline" onClick={onClose}>
+            Back to Businesses
+          </Button>
+        )}
         <Button asChild>
           <Link href={`/${state.productCode?.toLowerCase() || 'commerce'}/dashboard`}>
             <ArrowRight className="w-4 h-4 mr-2" />
