@@ -957,6 +957,11 @@ export function BusinessesView() {
                             <Package className="h-2.5 w-2.5 mr-1" /> {biz.productCode}
                           </Badge>
                         )}
+                        {biz.subscriptionPlanCode && (
+                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-violet-300 text-violet-700 bg-violet-50">
+                            <CreditCard className="h-2.5 w-2.5 mr-1" /> {biz.subscriptionPlanCode}
+                          </Badge>
+                        )}
                         {biz.isOnline ? <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium"><Wifi className="h-3 w-3" /> Online</span>
                           : <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium"><WifiOff className="h-3 w-3" /> Offline</span>}
                       </SheetDescription>

@@ -208,11 +208,38 @@ export function BusinessOnboardingWizard({ businessId, initialStep = 'info' }: W
   }
 
   // Step 3: Plan Selection
-  const handlePlanSelect = (planCode: string) => {
+  const handlePlanSelect = async (planCode: string) => {
     setState((prev) => ({
       ...prev,
       subscriptionPlanCode: planCode,
     }))
+
+    // Persist the plan to the business so the lifecycle advances to
+    // "ready_to_provision" durably. Reuses the existing Business update API
+    // (PUT /api/core/businesses/[id]); plans themselves come from the Plan
+    // Registry via the existing PlanSelectionStep.
+    const id = state.businessId || businessId
+    if (id) {
+      try {
+        setLoading(true)
+        setError(null)
+        const res = await fetch(`/api/core/businesses/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ subscriptionPlanCode: planCode }),
+        })
+        const json = await res.json()
+        if (!res.ok || json.success === false) {
+          throw new Error(json.error || 'Failed to assign plan')
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to assign plan')
+        setLoading(false)
+        return // stay on the plan step so the user can retry
+      }
+      setLoading(false)
+    }
+
     setCurrentStep('review')
   }
 

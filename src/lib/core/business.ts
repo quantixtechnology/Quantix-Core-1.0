@@ -703,6 +703,7 @@ export async function updateBusiness(
   // can be assigned. Lifecycle (draft -> needs_plan) follows automatically from
   // this field. Provisioning/Runtime Registry are untouched here.
   const productCodeInput = (data as Record<string, unknown>).productCode;
+  let effectiveProductCode = business.productCode;
   if (
     typeof productCodeInput === 'string' &&
     productCodeInput &&
@@ -713,6 +714,28 @@ export async function updateBusiness(
       throw new Error(`Product "${productCodeInput}" not found`);
     }
     updateData.productCode = productCodeInput;
+    effectiveProductCode = productCodeInput;
+  }
+
+  // Handle plan assignment — subscriptionPlanCode is a ProductPlan.code, unique
+  // per product. Validate against the Plan Registry (read-only) for the assigned
+  // product. Lifecycle (needs_plan -> ready_to_provision) follows automatically.
+  const planCodeInput = (data as Record<string, unknown>).subscriptionPlanCode;
+  if (
+    typeof planCodeInput === 'string' &&
+    planCodeInput &&
+    planCodeInput !== business.subscriptionPlanCode
+  ) {
+    if (!effectiveProductCode) {
+      throw new Error('Cannot assign a plan before a product');
+    }
+    const plan = await db.productPlan.findUnique({
+      where: { productCode_code: { productCode: effectiveProductCode, code: planCodeInput } },
+    });
+    if (!plan) {
+      throw new Error(`Plan "${planCodeInput}" not found for product "${effectiveProductCode}"`);
+    }
+    updateData.subscriptionPlanCode = planCodeInput;
   }
 
   const updated = await db.business.update({
