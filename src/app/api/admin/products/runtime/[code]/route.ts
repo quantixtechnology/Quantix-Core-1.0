@@ -8,9 +8,12 @@ import { withMiddleware } from '@/lib/middleware'
 import { ProductRuntimeRegistry } from '@/lib/product-runtime-registry'
 
 export const GET = withMiddleware({ permission: 'products:view' })(
-  async (req, { params }) => {
+  async (req, ctx) => {
     try {
-      const { code } = params
+      // Next.js 16: route params are async and must be awaited before use.
+      // (Reading them synchronously left `code` undefined → 400.)
+      const params = await ctx?.params
+      const code = params?.code as string | undefined
 
       if (!code) {
         return new Response(
