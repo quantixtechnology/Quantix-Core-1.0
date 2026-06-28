@@ -274,7 +274,9 @@ export function BusinessesView() {
     }
 
     try {
-      const response = await fetch(`/api/admin/businesses/${biz.id}`)
+      // Admin API is Bearer-only; without the auth headers this returned 401
+      // and the guard below misreported it as "Business has no product assigned".
+      const response = await fetch(`/api/admin/businesses/${biz.id}`, { headers: getAuthHeaders() })
       const result = await response.json()
 
       if (!result.success || !result.data?.productCode) {
