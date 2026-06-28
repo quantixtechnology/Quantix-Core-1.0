@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CheckCircle2, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
+import { getWorkspaceEntryRoute } from '@/lib/workspace-routes'
 
 interface Props {
   businessId: string
@@ -16,15 +17,19 @@ interface Props {
 export function ReadyStep({ businessId, state, onClose }: Props) {
   const router = useRouter()
 
+  // Real in-app entry route for this product (single source of truth).
+  // Previously this built `/<product>/dashboard`, which 404'd for LAUNDRY
+  // because no /laundry/dashboard route exists.
+  const workspaceRoute = getWorkspaceEntryRoute(state.productCode)
+
   // Auto-redirect to product workspace after 2 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
-      const productWorkspaceUrl = `/${state.productCode?.toLowerCase() || 'commerce'}/dashboard`
-      router.push(productWorkspaceUrl)
+      router.push(workspaceRoute)
     }, 2000)
 
     return () => clearTimeout(timer)
-  }, [state.productCode, router])
+  }, [workspaceRoute, router])
 
   return (
     <div className="space-y-6 text-center py-12">
@@ -57,7 +62,7 @@ export function ReadyStep({ businessId, state, onClose }: Props) {
           </Button>
         )}
         <Button asChild>
-          <Link href={`/${state.productCode?.toLowerCase() || 'commerce'}/dashboard`}>
+          <Link href={workspaceRoute}>
             <ArrowRight className="w-4 h-4 mr-2" />
             Launch {state.productCode} Workspace
           </Link>
