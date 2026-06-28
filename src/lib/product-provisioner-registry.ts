@@ -5,6 +5,8 @@
 // ============================================================================
 
 import type { ProductProvisioner, ProductProvisioningConfig, ProductProvisioningResult } from './product-provisioning-interface'
+import { commerceProvisioner } from './products/commerce-provisioner'
+import { laundryProvisioner } from './products/laundry-provisioner'
 
 /**
  * Registry entry for a product provisioner
@@ -169,6 +171,26 @@ class ProductProvisionerRegistryImpl {
  * Used throughout the application
  */
 export const ProductProvisionerRegistry = new ProductProvisionerRegistryImpl()
+
+// ── First-party provisioner bootstrap ───────────────────────────────────────
+// Provisioning runs inside API route handlers (engine: business-provisioning.ts
+// → this module). Under Next.js the route-handler module graph is isolated from
+// the RSC layout where <PlatformInitializer> registers products, and also from
+// the startup instrumentation hook — so provisioners registered there were not
+// visible to the engine and `has()` fell through to its no-op fallback, silently
+// skipping Commerce/Laundry resource creation. Registering the first-party
+// provisioners here, at module load in the same graph the engine imports,
+// guarantees the registry is populated for every provision request, in every
+// runtime. Registration is idempotent: skip if already present (e.g. when
+// PlatformInitializer also runs in this graph).
+for (const [code, provisioner] of [
+  ['COMMERCE', commerceProvisioner],
+  ['LAUNDRY', laundryProvisioner],
+] as const) {
+  if (!ProductProvisionerRegistry.has(code)) {
+    ProductProvisionerRegistry.register(code, provisioner)
+  }
+}
 
 /**
  * Helper function for Quantix Core to safely call product provisioners

@@ -28,49 +28,71 @@ class CommerceProvisioner implements ProductProvisioner {
         }
       }
 
-      // Commerce-specific provisioning
+      // Commerce-specific provisioning. Each step is idempotent (find-or-create)
+      // so a re-provision of the same business never duplicates resources or
+      // trips a unique constraint.
+
       // 1. Create default store
       // Field names must match the Store model: name + slug are required, the
       // contact field is `phone` (not phoneNumber), and storeCode is the
       // per-business code. (Previously used storeName/phoneNumber and omitted
       // name/slug, which made store.create throw and be swallowed.)
-      const store = await db.store.create({
-        data: {
-          businessId,
-          name: `${business.name} Store`,
-          slug: `${business.slug}-store-1`,
-          storeCode: `${business.slug}-store-1`,
-          address: business.address || '',
-          city: business.city || '',
-          state: business.state || '',
-          pincode: business.pincode || '',
-          status: 'ACTIVE',
-          isMainStore: true,
-          phone: business.contactPhone || '',
-          email: business.contactEmail || '',
-        },
+      let store = await db.store.findFirst({
+        where: { businessId, isMainStore: true },
       })
+      if (!store) {
+        store = await db.store.create({
+          data: {
+            businessId,
+            name: `${business.name} Store`,
+            slug: `${business.slug}-store-1`,
+            storeCode: `${business.slug}-store-1`,
+            address: business.address || '',
+            city: business.city || '',
+            state: business.state || '',
+            pincode: business.pincode || '',
+            status: 'ACTIVE',
+            isMainStore: true,
+            phone: business.contactPhone || '',
+            email: business.contactEmail || '',
+          },
+        })
+      }
 
       // 2. Set up default payment gateway
-      const paymentGateway = await db.paymentGateway.create({
-        data: {
-          storeId: store.id,
-          businessId,
-          provider: 'RAZORPAY',
-          status: 'ACTIVE',
-          metadata: '{}',
-        },
+      // Field names must match the PaymentGateway model: `name` + `gateway` are
+      // required, the enabled flag is `isActive`, and credentials live in
+      // `config`. (Previously used storeId/provider/status/metadata, none of
+      // which exist on the model — the create threw and was swallowed.)
+      const existingGateway = await db.paymentGateway.findFirst({
+        where: { businessId, name: 'Razorpay' },
       })
+      if (!existingGateway) {
+        await db.paymentGateway.create({
+          data: {
+            businessId,
+            name: 'Razorpay',
+            gateway: 'RAZORPAY',
+            isActive: true,
+            config: '{}',
+          },
+        })
+      }
 
-      // 3. Initialize billing account
-      const billingAccount = await db.billingAccount.create({
-        data: {
-          businessId,
-          status: 'ACTIVE',
-          currency: 'INR',
-          metadata: '{}',
-        },
+      // 3. Initialize billing account (one per business — businessId is unique)
+      // The BillingAccount model has no status/metadata fields; currency is the
+      // meaningful default. (Previously passed status/metadata, which threw.)
+      const existingBilling = await db.billingAccount.findUnique({
+        where: { businessId },
       })
+      if (!existingBilling) {
+        await db.billingAccount.create({
+          data: {
+            businessId,
+            currency: 'INR',
+          },
+        })
+      }
 
       return {
         success: true,
