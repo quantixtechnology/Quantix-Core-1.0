@@ -290,7 +290,13 @@ export function BusinessesView() {
         return
       }
 
-      const workspaceUrl = `${runtimeResult.data.runtime.workspaceUrl}/${biz.id}`
+      // Runtime Registry stores workspaceUrl without a scheme (e.g.
+      // "commerce.quantixtechnology.in"). window.open treats a scheme-less value
+      // as a relative path under the admin host, so normalise to https:// here —
+      // matching how every other consumer (workspaces-view) builds the link.
+      const baseUrl: string = runtimeResult.data.runtime.workspaceUrl
+      const normalizedBase = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`
+      const workspaceUrl = `${normalizedBase}/${biz.id}`
       window.open(workspaceUrl, '_blank')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to open workspace")
