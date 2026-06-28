@@ -84,7 +84,10 @@ export function BusinessOnboardingWizard({ businessId, initialStep = 'info' }: W
     if (businessId && isResumingExisting) {
       const loadBusiness = async () => {
         try {
-          const res = await fetch(`/api/admin/businesses/${businessId}`)
+          // Admin API is Bearer-only; without the auth headers this returned
+          // 401, the business never loaded, and the wizard silently fell back to
+          // create mode (info step + "slug already exists" on submit).
+          const res = await fetch(`/api/admin/businesses/${businessId}`, { headers: getAuthHeaders() })
           if (res.ok) {
             const result = await res.json()
             const business = result.data
