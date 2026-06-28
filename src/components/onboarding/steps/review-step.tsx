@@ -87,7 +87,9 @@ export function ReviewStep({ state }: Props) {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(`/api/admin/businesses/${businessId}`)
+      // Admin API is Bearer-only; without the auth headers this returned 401
+      // ("Session not found. Please sign in.") and Review never loaded.
+      const res = await fetch(`/api/admin/businesses/${businessId}`, { headers: getAuthHeaders() })
       const json = await res.json()
       if (!res.ok || json.success === false) throw new Error(json.error || 'Failed to load business')
       const b = json.data as PersistedBusiness
@@ -101,7 +103,9 @@ export function ReviewStep({ state }: Props) {
 
       // Plan defaults from the Plan Registry (product profile), read-only
       if (b.productCode && b.subscriptionPlanCode) {
-        const pr = await fetch(`/api/admin/products/${encodeURIComponent(b.productCode)}/profile`)
+        // Same Bearer-only requirement; missing headers => 401 => planDefaults
+        // stays null => the Storage/Users/Stores override controls never render.
+        const pr = await fetch(`/api/admin/products/${encodeURIComponent(b.productCode)}/profile`, { headers: getAuthHeaders() })
         const pj = await pr.json()
         const plan = (pj?.data?.plans ?? []).find((p: { code: string }) => p.code === b.subscriptionPlanCode)
         if (plan) {
