@@ -30,18 +30,23 @@ class CommerceProvisioner implements ProductProvisioner {
 
       // Commerce-specific provisioning
       // 1. Create default store
+      // Field names must match the Store model: name + slug are required, the
+      // contact field is `phone` (not phoneNumber), and storeCode is the
+      // per-business code. (Previously used storeName/phoneNumber and omitted
+      // name/slug, which made store.create throw and be swallowed.)
       const store = await db.store.create({
         data: {
           businessId,
+          name: `${business.name} Store`,
+          slug: `${business.slug}-store-1`,
           storeCode: `${business.slug}-store-1`,
-          storeName: `${business.name} Store`,
           address: business.address || '',
           city: business.city || '',
           state: business.state || '',
           pincode: business.pincode || '',
           status: 'ACTIVE',
           isMainStore: true,
-          phoneNumber: business.contactPhone || '',
+          phone: business.contactPhone || '',
           email: business.contactEmail || '',
         },
       })
