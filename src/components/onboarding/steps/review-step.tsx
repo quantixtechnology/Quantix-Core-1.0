@@ -237,7 +237,7 @@ export function ReviewStep({ state }: Props) {
       <Card className="p-6 bg-green-50 border-green-200">
         <div className="flex items-center justify-between mb-1">
           <h4 className="font-semibold">Resource Allocation</h4>
-          <Button size="sm" onClick={saveOverrides} disabled={saving || !planDefaults} className="gap-1">
+          <Button size="sm" onClick={saveOverrides} disabled={saving} className="gap-1">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             Save Overrides
           </Button>
@@ -246,10 +246,11 @@ export function ReviewStep({ state }: Props) {
           Leave an override blank to use the plan default. Overrides apply only to this business and never change the plan.
         </p>
 
-        {!planDefaults ? (
-          <p className="text-sm text-gray-500 italic">Plan defaults unavailable.</p>
-        ) : (
-          <div className="space-y-3">
+        {/* Override inputs always render and stay editable, even if plan
+            defaults could not be loaded — the Plan Default column then shows
+            "—" but Storage/Users/Stores remain editable and savable. (Blank =
+            use plan default; provisioning resolves the real default.) */}
+        <div className="space-y-3">
             <div className="grid grid-cols-4 gap-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
               <span>Resource</span>
               <span>Plan Default</span>
@@ -281,8 +282,7 @@ export function ReviewStep({ state }: Props) {
                 </div>
               )
             })}
-          </div>
-        )}
+        </div>
 
         {/* Not configurable in this phase */}
         <div className="mt-5 pt-4 border-t">
