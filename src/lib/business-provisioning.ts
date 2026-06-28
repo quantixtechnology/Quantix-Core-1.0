@@ -143,6 +143,16 @@ export async function provisionBusiness(businessId: string): Promise<Provisionin
       },
     })
 
+    // Advance the business lifecycle to provisioned/live. The lifecycle engine
+    // treats any status outside { ONBOARDING, PROVISIONING_FAILED } as
+    // provisioned ('active'), so a successful provision must reflect ACTIVE on
+    // the business (mirrors the existing failure path that sets
+    // PROVISIONING_FAILED). ACTIVE is an existing BusinessStatus value.
+    await db.business.update({
+      where: { id: businessId },
+      data: { status: 'ACTIVE' },
+    })
+
     return {
       success: true,
       workspaceId: workspace.id,
@@ -416,11 +426,31 @@ async function allocateStorageStep(businessId: string, workspaceId: string, prod
     throw new Error('Plan not found for storage allocation')
   }
 
+  // Effective storage = Business Override ?? Plan Default.
+  // Per-business override lives in settings.resourceOverrides.storageGB (Phase 7),
+  // stored in the same GB convention the Review UI uses (GB = storageQuotaMB / 1024 / 1024),
+  // so convert back to the plan's storageQuotaMB unit before allocating.
+  let effectiveStorageMB = plan.storageQuotaMB
+  try {
+    const settings = business.settings ? JSON.parse(business.settings) : {}
+    const overrideStorageGB = settings?.resourceOverrides?.storageGB
+    if (typeof overrideStorageGB === 'number' && overrideStorageGB >= 1) {
+      effectiveStorageMB = overrideStorageGB * 1024 * 1024
+    }
+  } catch {
+    // Malformed settings JSON — fall back to plan default.
+  }
+
+  // NOTE: Users (plan.userLimit) and Stores/Branches (plan.branchLimit) overrides
+  // are persisted on the business but are NOT consumed anywhere in provisioning
+  // yet (ProductProvisioningConfig carries no resource limits). They remain
+  // FUTURE INTEGRATION POINTS and are intentionally left untouched here.
+
   // Update workspace with storage allocation
   await db.platformWorkspace.update({
     where: { id: workspaceId },
     data: {
-      storageAllocatedMB: plan.storageQuotaMB,
+      storageAllocatedMB: effectiveStorageMB,
     },
   })
 }
