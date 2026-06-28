@@ -684,6 +684,23 @@ export async function updateBusiness(
     updateData.notificationConfig = JSON.stringify(data.notificationConfig);
   }
 
+  // Resource overrides — per-business optional overrides of plan defaults.
+  // Stored under settings.resourceOverrides (merged into existing settings so
+  // other keys are preserved). Plan defaults (ProductPlan) are NEVER modified;
+  // effective resources = override ?? plan default, resolved by the caller.
+  const resourceOverridesInput = (data as Record<string, unknown>).resourceOverrides;
+  if (resourceOverridesInput !== undefined && resourceOverridesInput !== null) {
+    let settings: Record<string, unknown> = {};
+    const raw = (updateData.settings as string | undefined) ?? business.settings;
+    try {
+      settings = raw ? JSON.parse(raw) : {};
+    } catch {
+      settings = {};
+    }
+    settings.resourceOverrides = resourceOverridesInput;
+    updateData.settings = JSON.stringify(settings);
+  }
+
   // Handle slug update — check uniqueness
   if (data.slug && data.slug !== business.slug) {
     const slugExists = await db.business.findUnique({ where: { slug: data.slug } });

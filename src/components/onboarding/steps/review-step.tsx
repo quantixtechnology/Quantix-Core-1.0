@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Loader2, Save } from 'lucide-react'
+import { getAuthHeaders } from '@/lib/admin-fetch'
+import { toast } from 'sonner'
 
 interface Props {
   // Wizard onboarding state; only businessId is needed here. All displayed
@@ -11,7 +15,6 @@ interface Props {
   state: { businessId?: string }
 }
 
-// Authoritative Business shape we read from the API (persisted values only).
 interface PersistedBusiness {
   name?: string | null
   ownerName?: string | null
@@ -26,10 +29,33 @@ interface PersistedBusiness {
   subscriptionPlanCode?: string | null
   businessType?: string | null
   status?: string | null
+  settings?: string | null
 }
 
-// Values not implemented yet (Resource Allocation, Phase 7). Never fabricated.
+// Plan defaults read from the Plan Registry (ProductPlan) — never modified here.
+interface PlanDefaults {
+  storageGB: number
+  users: number
+  stores: number
+}
+
+// Per-business overrides, stored under settings.resourceOverrides.
+interface ResourceOverrides {
+  storageGB?: number
+  users?: number
+  stores?: number
+}
+
 const PLAN_DEFAULT = 'Will use plan defaults'
+
+function parseOverrides(settings?: string | null): ResourceOverrides {
+  try {
+    const s = settings ? JSON.parse(settings) : {}
+    return (s?.resourceOverrides ?? {}) as ResourceOverrides
+  } catch {
+    return {}
+  }
+}
 
 function Field({ label, value }: { label: string; value?: string | null }) {
   return (
@@ -40,45 +66,100 @@ function Field({ label, value }: { label: string; value?: string | null }) {
   )
 }
 
-function PlaceholderField({ label }: { label: string }) {
-  return (
-    <div>
-      <p className="text-sm text-gray-600">{label}</p>
-      <p className="font-medium text-gray-400 italic">{PLAN_DEFAULT}</p>
-    </div>
-  )
-}
-
 export function ReviewStep({ state }: Props) {
+  const businessId = state.businessId
   const [biz, setBiz] = useState<PersistedBusiness | null>(null)
+  const [planDefaults, setPlanDefaults] = useState<PlanDefaults | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const businessId = state.businessId
+  // Override inputs as strings ('' = no override -> effective falls back to default)
+  const [storageInput, setStorageInput] = useState('')
+  const [usersInput, setUsersInput] = useState('')
+  const [storesInput, setStoresInput] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
     if (!businessId) {
       setLoading(false)
       return
     }
-    let active = true
-    ;(async () => {
-      try {
-        const res = await fetch(`/api/admin/businesses/${businessId}`)
-        const json = await res.json()
-        if (!res.ok || json.success === false) {
-          throw new Error(json.error || 'Failed to load business')
+    try {
+      setLoading(true)
+      setError(null)
+      const res = await fetch(`/api/admin/businesses/${businessId}`)
+      const json = await res.json()
+      if (!res.ok || json.success === false) throw new Error(json.error || 'Failed to load business')
+      const b = json.data as PersistedBusiness
+      setBiz(b)
+
+      // Seed override inputs from persisted overrides
+      const ov = parseOverrides(b.settings)
+      setStorageInput(ov.storageGB != null ? String(ov.storageGB) : '')
+      setUsersInput(ov.users != null ? String(ov.users) : '')
+      setStoresInput(ov.stores != null ? String(ov.stores) : '')
+
+      // Plan defaults from the Plan Registry (product profile), read-only
+      if (b.productCode && b.subscriptionPlanCode) {
+        const pr = await fetch(`/api/admin/products/${encodeURIComponent(b.productCode)}/profile`)
+        const pj = await pr.json()
+        const plan = (pj?.data?.plans ?? []).find((p: { code: string }) => p.code === b.subscriptionPlanCode)
+        if (plan) {
+          setPlanDefaults({
+            storageGB: Math.round((plan.storageQuotaMB ?? 0) / 1024 / 1024),
+            users: plan.userLimit ?? 0,
+            stores: plan.branchLimit ?? 0,
+          })
         }
-        if (active) setBiz(json.data as PersistedBusiness)
-      } catch (err) {
-        if (active) setError(err instanceof Error ? err.message : 'Failed to load business')
-      } finally {
-        if (active) setLoading(false)
       }
-    })()
-    return () => {
-      active = false
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load business')
+    } finally {
+      setLoading(false)
     }
-  }, [state.businessId])
+  }, [businessId])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  // Parse an override input: blank/invalid/<1 => undefined (no override)
+  const parseInput = (raw: string): number | undefined => {
+    const n = parseInt(raw, 10)
+    return Number.isFinite(n) && n >= 1 ? n : undefined
+  }
+
+  const effective = (override: string, def?: number) => {
+    const o = parseInput(override)
+    return o != null ? o : def
+  }
+
+  const saveOverrides = async () => {
+    if (!businessId) return
+    const overrides: ResourceOverrides = {}
+    const s = parseInput(storageInput)
+    const u = parseInput(usersInput)
+    const st = parseInput(storesInput)
+    if (s != null) overrides.storageGB = s
+    if (u != null) overrides.users = u
+    if (st != null) overrides.stores = st
+    try {
+      setSaving(true)
+      const res = await fetch(`/api/core/businesses/${businessId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ resourceOverrides: overrides }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.success === false) throw new Error(json.error || 'Failed to save overrides')
+      toast.success('Resource overrides saved')
+      await load() // re-read so displayed values match persisted data
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save overrides')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -100,6 +181,19 @@ export function ReviewStep({ state }: Props) {
     (p) => p && String(p).trim()
   )
   const fullAddress = addressParts.length ? addressParts.join(', ') : null
+
+  const resources: Array<{
+    key: string
+    label: string
+    unit: string
+    input: string
+    setInput: (v: string) => void
+    def?: number
+  }> = [
+    { key: 'storage', label: 'Storage', unit: 'GB', input: storageInput, setInput: setStorageInput, def: planDefaults?.storageGB },
+    { key: 'users', label: 'Users', unit: '', input: usersInput, setInput: setUsersInput, def: planDefaults?.users },
+    { key: 'stores', label: 'Stores / Branches', unit: '', input: storesInput, setInput: setStoresInput, def: planDefaults?.stores },
+  ]
 
   return (
     <div className="space-y-6">
@@ -135,15 +229,61 @@ export function ReviewStep({ state }: Props) {
         </div>
       </Card>
 
-      {/* Resource Allocation — not implemented yet (Phase 7). Plan defaults apply. */}
+      {/* Resource Allocation — Plan Default -> Optional Override -> Effective */}
       <Card className="p-6 bg-green-50 border-green-200">
-        <h4 className="font-semibold mb-1">Resource Allocation</h4>
-        <p className="text-xs text-gray-500 mb-4">Configured during provisioning.</p>
-        <div className="grid grid-cols-2 gap-4">
-          <PlaceholderField label="Storage" />
-          <PlaceholderField label="Users" />
-          <PlaceholderField label="Stores" />
-          <PlaceholderField label="Licensed Features" />
+        <div className="flex items-center justify-between mb-1">
+          <h4 className="font-semibold">Resource Allocation</h4>
+          <Button size="sm" onClick={saveOverrides} disabled={saving || !planDefaults} className="gap-1">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Save Overrides
+          </Button>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Leave an override blank to use the plan default. Overrides apply only to this business and never change the plan.
+        </p>
+
+        {!planDefaults ? (
+          <p className="text-sm text-gray-500 italic">Plan defaults unavailable.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+              <span>Resource</span>
+              <span>Plan Default</span>
+              <span>Business Override</span>
+              <span>Effective</span>
+            </div>
+            {resources.map((r) => {
+              const eff = effective(r.input, r.def)
+              return (
+                <div key={r.key} className="grid grid-cols-4 gap-3 items-center">
+                  <span className="text-sm font-medium">{r.label}</span>
+                  <span className="text-sm text-gray-700">
+                    {r.def != null ? `${r.def}${r.unit ? ' ' + r.unit : ''}` : '—'}
+                  </span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={r.input}
+                    onChange={(e) => r.setInput(e.target.value)}
+                    placeholder="default"
+                    className="h-8 w-28 text-sm"
+                  />
+                  <span className="text-sm font-semibold">
+                    {eff != null ? `${eff}${r.unit ? ' ' + r.unit : ''}` : '—'}
+                    {parseInput(r.input) == null && (
+                      <span className="ml-1 text-[10px] font-normal text-gray-400">(default)</span>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Not configurable in this phase */}
+        <div className="mt-5 pt-4 border-t">
+          <p className="text-sm text-gray-600">Licensed Features</p>
+          <p className="font-medium text-gray-400 italic">{PLAN_DEFAULT}</p>
         </div>
       </Card>
     </div>
