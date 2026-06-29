@@ -13,6 +13,16 @@ import { setBusinessContext } from "@/lib/api-client";
 import { LoginPage } from "@/components/auth/login-page";
 import { Loader2 } from "lucide-react";
 import type { Role } from "@/lib/types";
+import { getProductCodeForHost } from "@/lib/product-hosts";
+
+const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in";
+// True when the app is served on a product workspace subdomain (commerce.*, …).
+// There, the workspace bootstrap in page.tsx owns viewMode (it activates the
+// selected business), so the role-based default must not override it.
+function isOnProductHost(): boolean {
+  if (typeof window === "undefined") return false;
+  return !!getProductCodeForHost(window.location.hostname.split(":")[0], STOREFRONT_BASE);
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -91,8 +101,13 @@ export function AuthProvider({
     if (isAuthenticated && user && !hasSyncedRef.current) {
       hasSyncedRef.current = true;
 
-      const viewMode = getViewModeForRole(user.role as Role);
-      setViewMode(viewMode);
+      // On a product workspace host the selected business is activated by the
+      // page.tsx bootstrap; setting the role-based viewMode here would replace
+      // it with the Platform workspace (the reported bug). Skip it there.
+      if (!isOnProductHost()) {
+        const viewMode = getViewModeForRole(user.role as Role);
+        setViewMode(viewMode);
+      }
 
       if (currentBusinessId) {
         setCurrentBusinessId(currentBusinessId);
