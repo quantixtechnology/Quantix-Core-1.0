@@ -59,7 +59,8 @@ const workflowNavMap: Record<WorkflowType, { key: BusinessPage; label: string; i
   ],
   SUBSCRIPTION: [
     { key: "customers", label: "Customers",          icon: Users },
-    { key: "offers",    label: "Subscription Plans", icon: CreditCard },
+    // "Subscription Plans" (offers) is a static mock dashboard with no API/DB —
+    // hidden until a real module exists, to avoid exposing fake data.
   ],
   POST_SERVICE_BILLING: [
     { key: "orders",   label: "Service Orders", icon: Receipt },
@@ -84,10 +85,11 @@ const coreManagementItems: { key: BusinessPage; label: string; icon: React.Compo
 ]
 
 // ── Flag-gated items — hidden when flag is disabled ───────────────────────────
+// Marketing and Loyalty Program are static mock dashboards (hardcoded sample
+// data, no API/DB), so they are omitted here and hidden from navigation until
+// real modules exist. POS Billing is a real module (POSEnterprise).
 const flagGatedItems: { key: BusinessPage; label: string; icon: React.ComponentType<{ className?: string }>; flag: string }[] = [
   { key: "pos",       label: "POS Billing",     icon: Monitor,  flag: "pos_enabled" },
-  { key: "marketing", label: "Marketing",        icon: Megaphone, flag: "promo_codes_enabled" },
-  { key: "loyalty",   label: "Loyalty Program",  icon: Heart,    flag: "loyalty_enabled" },
 ]
 
 // ── Storefront — shown only when online_orders is enabled ─────────────────────
