@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
     const userSelect = {
       id: true, name: true, email: true, loginId: true, avatar: true,
-      passwordHash: true, isActive: true, mustChangePassword: true, platformRole: true, platformPermissions: true,
+      passwordHash: true, isActive: true, mustChangePassword: true, failedLoginAttempts: true, lockedUntil: true, platformRole: true, platformPermissions: true,
       businessUsers: {
         where: { isActive: true },
         select: {
@@ -97,11 +97,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Account is deactivated. Please contact support.' }, { status: 403 });
     }
 
+    // Account lockout: block while locked.
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      console.log(`[login] FAIL — account locked for ${user.email} (${mins}m left)`);
+      return NextResponse.json({ success: false, error: `Account locked. Try again in ${mins} minute(s).` }, { status: 423 });
+    }
+
     // Verify password
     const isValid = await verifyPassword(password, user.passwordHash);
     console.log(`[login] Password comparison result: ${isValid ? 'VALID' : 'INVALID'} for ${user.email}`);
 
     if (!isValid) {
+      // Lockout: count consecutive failures; lock for 15 min after 5.
+      const MAX_ATTEMPTS = 5;
+      const LOCK_MINUTES = 15;
+      const attempts = (user.failedLoginAttempts ?? 0) + 1;
+      const lockedUntil = attempts >= MAX_ATTEMPTS ? new Date(Date.now() + LOCK_MINUTES * 60000) : null;
+      await db.user.update({ where: { id: user.id }, data: { failedLoginAttempts: attempts, lockedUntil } }).catch(() => null);
       try {
         await logAuthActivity(null, 'auth.login_failed', { email: normalizedEmail, reason: 'invalid_password' }, request as unknown as { headers?: { get(name: string): string | null } });
       } catch { /* audit logging is non-blocking */ }
@@ -116,8 +129,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Invalid email or password' }, { status: 401 });
     }
 
-    // Update last login
-    await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    // Update last login + clear any failed-attempt lockout state
+    await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null } });
 
     // Determine role
     let role: Role = 'CUSTOMER';

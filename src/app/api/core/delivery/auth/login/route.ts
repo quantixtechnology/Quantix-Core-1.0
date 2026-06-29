@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { verifyPassword, createAccessToken } from '@/lib/password-utils';
 
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     } as const;
 
     // Lookup by email / loginId / phone
-    let user = null as Awaited<ReturnType<typeof db.user.findFirst>> | null;
+    let user: Prisma.UserGetPayload<{ select: typeof userSelect }> | null = null;
 
     if (email) {
       const identifier = email.toLowerCase().trim();

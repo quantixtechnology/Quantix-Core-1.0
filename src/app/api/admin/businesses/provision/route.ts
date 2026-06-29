@@ -11,7 +11,7 @@ export const POST = withMiddleware({ permission: 'businesses:create' })(
   async (req) => {
     try {
       const body = await req.json()
-      const { businessId } = body
+      const { businessId, ownerPassword, confirmPassword } = body
 
       if (!businessId) {
         return new Response(
@@ -23,8 +23,25 @@ export const POST = withMiddleware({ permission: 'businesses:create' })(
         )
       }
 
+      // Initial owner password is optional; when provided it must be confirmed
+      // and meet the minimum length. (If omitted, provisioning generates a temp.)
+      if (ownerPassword !== undefined && ownerPassword !== null && ownerPassword !== '') {
+        if (typeof ownerPassword !== 'string' || ownerPassword.length < 6) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Owner password must be at least 6 characters' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          )
+        }
+        if (confirmPassword !== undefined && confirmPassword !== ownerPassword) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Passwords do not match' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+
       // Trigger provisioning
-      const result = await provisionBusiness(businessId)
+      const result = await provisionBusiness(businessId, { ownerPassword: ownerPassword || undefined })
 
       return new Response(
         JSON.stringify({
@@ -34,6 +51,8 @@ export const POST = withMiddleware({ permission: 'businesses:create' })(
             success: result.success,
             error: result.error,
             steps: result.steps,
+            // Present only when the Super Admin did not supply a password.
+            ownerTempPassword: result.ownerTempPassword,
           },
         }),
         { status: result.success ? 200 : 500, headers: { 'Content-Type': 'application/json' } }

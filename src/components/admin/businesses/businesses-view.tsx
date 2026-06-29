@@ -243,22 +243,29 @@ export function BusinessesView() {
   // Tracks the business whose provisioning is currently in flight (row shows
   // a disabled "Provisioning…" button while true).
   const [provisioningId, setProvisioningId] = useState<string | null>(null)
+  // Provisioning password dialog (Super Admin sets the initial owner password).
+  const [provisionTarget, setProvisionTarget] = useState<BusinessApiData | null>(null)
+  const [ownerPw, setOwnerPw] = useState("")
+  const [ownerPwConfirm, setOwnerPwConfirm] = useState("")
+  const [ownerPwError, setOwnerPwError] = useState<string | null>(null)
 
   // Provision a business directly from the list. Reuses the existing
   // POST /api/admin/businesses/provision endpoint (same one the wizard uses).
-  const handleProvisionBusiness = async (biz: BusinessApiData) => {
+  const handleProvisionBusiness = async (biz: BusinessApiData, ownerPassword?: string, confirmPassword?: string) => {
     setProvisioningId(biz.id)
     try {
       const res = await fetch("/api/admin/businesses/provision", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ businessId: biz.id }),
+        body: JSON.stringify({ businessId: biz.id, ownerPassword, confirmPassword }),
       })
       const json = await res.json()
       if (!res.ok || json.success === false) {
         throw new Error(json.error || json.message || "Provisioning failed")
       }
-      toast.success(`Provisioning started for ${biz.name}`)
+      // Surface a generated temp password only when the admin didn't set one.
+      const temp = json.data?.ownerTempPassword
+      toast.success(temp ? `${biz.name} provisioned. Temp owner password: ${temp}` : `Provisioning started for ${biz.name}`)
       fetchBusinesses()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Provisioning failed")
@@ -845,7 +852,7 @@ export function BusinessesView() {
                                   <Check className="size-3" /> Review
                                 </Button>
                                 {canCreate && (
-                                  <Button size="sm" className="h-7 text-xs gap-1 bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => handleProvisionBusiness(biz)}>
+                                  <Button size="sm" className="h-7 text-xs gap-1 bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => { setProvisionTarget(biz); setOwnerPw(""); setOwnerPwConfirm(""); setOwnerPwError(null) }}>
                                     <Rocket className="size-3" /> Provision
                                   </Button>
                                 )}
@@ -1951,6 +1958,49 @@ export function BusinessesView() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* ── Provision: set the initial Business Owner password ──────────────── */}
+      <Dialog open={!!provisionTarget} onOpenChange={(open) => { if (!open) setProvisionTarget(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Rocket className="size-4" /> Provision {provisionTarget?.name}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Set the initial password for the Business Owner ({provisionTarget?.contactEmail}). They must change it on first login.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {ownerPwError && <div className="rounded bg-red-50 p-2 text-xs text-red-700">{ownerPwError}</div>}
+            <div>
+              <label className="text-xs text-muted-foreground">Initial Password</label>
+              <Input type="password" value={ownerPw} onChange={(e) => setOwnerPw(e.target.value)} autoComplete="new-password" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Confirm Password</label>
+              <Input type="password" value={ownerPwConfirm} onChange={(e) => setOwnerPwConfirm(e.target.value)} autoComplete="new-password" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setProvisionTarget(null)}>Cancel</Button>
+            <Button
+              size="sm"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              disabled={provisioningId === provisionTarget?.id}
+              onClick={() => {
+                setOwnerPwError(null)
+                if (ownerPw.length < 6) { setOwnerPwError('Password must be at least 6 characters'); return }
+                if (ownerPw !== ownerPwConfirm) { setOwnerPwError('Passwords do not match'); return }
+                const target = provisionTarget!
+                setProvisionTarget(null)
+                handleProvisionBusiness(target, ownerPw, ownerPwConfirm)
+              }}
+            >
+              <Rocket className="size-3" /> Provision
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

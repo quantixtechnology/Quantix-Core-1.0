@@ -80,6 +80,7 @@ export const POST = withMiddleware({
 
     const rawPassword = password || `User@${Math.random().toString(36).slice(2, 8).toUpperCase()}`
     const passwordHash = await hashPassword(rawPassword)
+    const createdBy = (req as unknown as { user?: { id?: string } }).user?.id ?? null
 
     const newUser = await db.user.create({
       data: {
@@ -90,6 +91,11 @@ export const POST = withMiddleware({
         passwordHash,
         authProvider: 'PASSWORD',
         isActive: true,
+        hasPassword: true,
+        // Every newly created employee must change the temporary password on first login.
+        mustChangePassword: true,
+        emailVerified: true,
+        createdBy,
       },
     })
 

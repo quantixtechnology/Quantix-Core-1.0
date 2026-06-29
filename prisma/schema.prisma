@@ -813,6 +813,10 @@ model User {
   isActive            Boolean           @default(true)
   fcmToken            String?
   lastLoginAt         DateTime?
+  passwordChangedAt   DateTime?
+  failedLoginAttempts Int               @default(0)
+  lockedUntil         DateTime?
+  createdBy           String?
   metadata            String            @default("{}")
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt

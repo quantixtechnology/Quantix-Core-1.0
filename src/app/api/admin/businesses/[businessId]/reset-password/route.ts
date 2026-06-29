@@ -48,7 +48,7 @@ export const POST = withMiddleware({
 
     await db.user.update({
       where: { id: businessUser.userId },
-      data: { passwordHash: hash },
+      data: { passwordHash: hash, hasPassword: true, authProvider: 'PASSWORD', mustChangePassword: true },
     });
 
     return NextResponse.json({

@@ -138,6 +138,7 @@ export const POST = withMiddleware({ requireAuth: true, requiredRoles: ['CLIENT_
         data: {
           name: body.name, email: body.email, loginId: body.email, phone: body.phone || null,
           passwordHash, authProvider: 'PASSWORD', emailVerified: false, isActive: true,
+          hasPassword: true, mustChangePassword: true, // force change on first login
         },
       });
     }

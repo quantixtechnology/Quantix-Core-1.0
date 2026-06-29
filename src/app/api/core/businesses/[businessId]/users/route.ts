@@ -118,6 +118,8 @@ export const POST = withMiddleware({
             authProvider: 'PASSWORD',
             emailVerified: false,
             isActive: true,
+            hasPassword: true,
+            mustChangePassword: true, // force change on first login
           },
         })
       }

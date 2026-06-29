@@ -31,7 +31,7 @@ export async function POST(
       if (rawPassword.length < 6) return createErrorResponse('Password must be at least 6 characters', 400);
 
       const passwordHash = await hashPassword(rawPassword);
-      await db.user.update({ where: { id: userId }, data: { passwordHash, authProvider: 'PASSWORD' } });
+      await db.user.update({ where: { id: userId }, data: { passwordHash, authProvider: 'PASSWORD', hasPassword: true, mustChangePassword: true } });
 
       await db.activityLog.create({
         data: {

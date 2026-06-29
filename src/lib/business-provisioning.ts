@@ -7,6 +7,14 @@
 import { db } from '@/lib/db'
 import { getCompleteProductProfile } from '@/lib/product-management'
 import { ProductProvisionerRegistry, provisionWithRegistry } from '@/lib/product-provisioner-registry'
+import { hashPassword, generateTempPassword } from '@/lib/password-utils'
+
+/** Options threaded into a provisioning run. */
+export interface ProvisionOptions {
+  // Initial Business Owner password set by the Super Admin during provisioning.
+  // If omitted, a temporary password is generated and returned so it can be shared.
+  ownerPassword?: string
+}
 
 export interface ProvisioningStep {
   name: string
@@ -23,6 +31,9 @@ export interface ProvisioningResult {
     error?: string
   }>
   error?: string
+  // Set only when provisioning generated a temporary owner password
+  // (i.e. the Super Admin did not supply one). Surface it so it can be shared.
+  ownerTempPassword?: string
 }
 
 /**
@@ -52,9 +63,11 @@ export interface ProductProvisioningResult {
  * Pure platform orchestrator - delegates product provisioning to Products
  * All steps are idempotent and retry-safe
  */
-export async function provisionBusiness(businessId: string): Promise<ProvisioningResult> {
+export async function provisionBusiness(businessId: string, opts: ProvisionOptions = {}): Promise<ProvisioningResult> {
   const startTime = Date.now()
   const steps: ProvisioningResult['steps'] = []
+  // Holder so the owner-account step can report a generated temp password.
+  const ownerCtx: { tempPassword?: string } = {}
 
   try {
     // Get business and product information
@@ -105,7 +118,7 @@ export async function provisionBusiness(businessId: string): Promise<Provisionin
     }
 
     // Execute platform provisioning steps in order
-    const provisioningSteps = getPlatformProvisioningSteps(businessId, workspace.id, business.productCode)
+    const provisioningSteps = getPlatformProvisioningSteps(businessId, workspace.id, business.productCode, opts, ownerCtx)
 
     for (const step of provisioningSteps) {
       const stepStartTime = Date.now()
@@ -157,6 +170,7 @@ export async function provisionBusiness(businessId: string): Promise<Provisionin
       success: true,
       workspaceId: workspace.id,
       steps,
+      ownerTempPassword: ownerCtx.tempPassword,
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
@@ -198,7 +212,7 @@ export async function provisionBusiness(businessId: string): Promise<Provisionin
  * Get all platform provisioning steps in execution order
  * These are ONLY platform-level steps, not product-specific
  */
-function getPlatformProvisioningSteps(businessId: string, workspaceId: string, productCode: string): ProvisioningStep[] {
+function getPlatformProvisioningSteps(businessId: string, workspaceId: string, productCode: string, opts: ProvisionOptions = {}, ownerCtx: { tempPassword?: string } = {}): ProvisioningStep[] {
   return [
     {
       name: 'validate_product',
@@ -210,7 +224,7 @@ function getPlatformProvisioningSteps(businessId: string, workspaceId: string, p
     },
     {
       name: 'create_owner_account',
-      execute: async () => createOwnerAccountStep(businessId),
+      execute: async () => createOwnerAccountStep(businessId, opts, ownerCtx),
     },
     {
       name: 'assign_licensed_features',
@@ -289,7 +303,7 @@ async function validateSubscriptionPlanStep(businessId: string, productCode: str
 /**
  * Step 3: Create Owner Account
  */
-async function createOwnerAccountStep(businessId: string) {
+async function createOwnerAccountStep(businessId: string, opts: ProvisionOptions = {}, ownerCtx: { tempPassword?: string } = {}) {
   const business = await db.business.findUnique({
     where: { id: businessId },
   })
@@ -314,6 +328,16 @@ async function createOwnerAccountStep(businessId: string) {
     return // Owner already exists
   }
 
+  // Initial owner password: the Super Admin sets it during provisioning. If none
+  // was supplied, generate a temporary one (surfaced via the provisioning result).
+  // Either way the owner must change it on first login (mustChangePassword).
+  let rawPassword = opts.ownerPassword
+  if (!rawPassword) {
+    rawPassword = generateTempPassword()
+    ownerCtx.tempPassword = rawPassword
+  }
+  const passwordHash = await hashPassword(rawPassword)
+
   // Create owner user account
   // Use unique loginId based on email + business ID to avoid collisions
   const loginId = `${business.slug}-owner-${business.id.substring(0, 8)}`
@@ -325,9 +349,12 @@ async function createOwnerAccountStep(businessId: string) {
       name: business.name,
       phone: business.contactPhone || '',
       isActive: true,
-      authProvider: 'EMAIL_OTP',
-      hasPassword: false,
-      emailVerified: false,
+      authProvider: 'PASSWORD',
+      passwordHash,
+      hasPassword: true,
+      mustChangePassword: true, // force change on first login
+      emailVerified: true, // owner identity verified by the Super Admin
+      createdBy: 'PROVISIONING',
     },
   })
 
@@ -340,8 +367,6 @@ async function createOwnerAccountStep(businessId: string) {
       isActive: true,
     },
   })
-
-  // TODO: Send welcome email with OTP or password reset link to business.contactEmail
 }
 
 /**

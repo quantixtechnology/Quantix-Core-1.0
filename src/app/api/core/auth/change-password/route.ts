@@ -63,7 +63,13 @@ export async function POST(request: Request) {
     const newHash = await hashPassword(newPassword);
     await db.user.update({
       where: { id: userId },
-      data: { passwordHash: newHash, authProvider: 'PASSWORD' },
+      data: {
+        passwordHash: newHash,
+        authProvider: 'PASSWORD',
+        hasPassword: true,
+        mustChangePassword: false,
+        passwordChangedAt: new Date(),
+      },
     });
 
     await db.activityLog.create({
