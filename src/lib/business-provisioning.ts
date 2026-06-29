@@ -93,12 +93,23 @@ export async function provisionBusiness(businessId: string, opts: ProvisionOptio
       },
     })
 
+    // Registry-driven workspace host (never hardcoded). Falls back to the
+    // conventional <product>.<base> only if the product is unregistered.
+    const productRecord = await db.platformProduct.findUnique({
+      where: { code: business.productCode },
+      select: { workspaceUrl: true },
+    })
+    const workspaceHost = (productRecord?.workspaceUrl || `${business.productCode.toLowerCase()}.quantixtechnology.in`)
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/+$/, '')
+      .split('/')[0]
+
     if (!workspace) {
       workspace = await db.platformWorkspace.create({
         data: {
           businessId,
           productCode: business.productCode,
-          workspaceUrl: `${business.productCode.toLowerCase()}.quantixtechnology.in/${businessId}`,
+          workspaceUrl: `${workspaceHost}/${businessId}`,
           status: 'PROVISIONING',
           provisioningStatus: 'IN_PROGRESS',
           provisioningStartedAt: new Date(),

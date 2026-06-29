@@ -18,6 +18,8 @@ export interface InitialProduct {
   slug: string
   description: string
   workspaceUrl: string
+  // Each product is served on its own permanent subdomain (see src/lib/product-hosts.ts).
+  deploymentMode: 'LOCAL_MODULE' | 'SUBDOMAIN' | 'REMOTE_SERVICE' | 'CONTAINER'
   currentVersion: string
   status: 'ACTIVE' | 'PLANNED' | 'DEPRECATED' | 'DISABLED'
   defaultStorageQuotaMB: number
@@ -32,6 +34,7 @@ const DEFAULT_PRODUCTS: InitialProduct[] = [
     slug: 'commerce-os',
     description: 'E-commerce platform for online retail, food delivery, and general commerce businesses',
     workspaceUrl: 'commerce.quantixtechnology.in',
+    deploymentMode: 'SUBDOMAIN',
     currentVersion: '2.1.0',
     status: 'ACTIVE',
     defaultStorageQuotaMB: 52428800, // 50GB
@@ -43,6 +46,7 @@ const DEFAULT_PRODUCTS: InitialProduct[] = [
     slug: 'laundry-os',
     description: 'Complete laundry and dry cleaning business management system',
     workspaceUrl: 'laundry.quantixtechnology.in',
+    deploymentMode: 'SUBDOMAIN',
     currentVersion: '1.3.0',
     status: 'ACTIVE',
     defaultStorageQuotaMB: 31457280, // 30GB
@@ -54,6 +58,7 @@ const DEFAULT_PRODUCTS: InitialProduct[] = [
     slug: 'carwash-os',
     description: 'Car wash and automotive detailing service management platform',
     workspaceUrl: 'carwash.quantixtechnology.in',
+    deploymentMode: 'SUBDOMAIN',
     currentVersion: '1.0.0',
     status: 'PLANNED',
     defaultStorageQuotaMB: 41943040, // 40GB
@@ -82,6 +87,7 @@ export async function initializeProductRegistry(): Promise<number> {
           slug: product.slug,
           description: product.description,
           workspaceUrl: product.workspaceUrl,
+          deploymentMode: product.deploymentMode,
           currentVersion: product.currentVersion,
           status: product.status,
           isEnabled: product.status === 'ACTIVE',
@@ -99,6 +105,20 @@ export async function initializeProductRegistry(): Promise<number> {
         },
       })
       created++
+    } else if (
+      existing.deploymentMode !== product.deploymentMode ||
+      existing.workspaceUrl !== product.workspaceUrl
+    ) {
+      // Idempotently migrate already-seeded core products onto the subdomain
+      // model (older rows defaulted to LOCAL_MODULE). Only the deployment host
+      // config is touched — names, catalogs and admin edits are left alone.
+      await db.platformProduct.update({
+        where: { code: product.code },
+        data: {
+          deploymentMode: product.deploymentMode,
+          workspaceUrl: product.workspaceUrl,
+        },
+      })
     }
   }
 

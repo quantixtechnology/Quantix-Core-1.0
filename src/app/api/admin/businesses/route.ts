@@ -6,6 +6,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withMiddleware } from '@/lib/middleware';
+import { getReservedHostPrefixes } from '@/lib/product-hosts';
 
 /**
  * POST /api/admin/businesses
@@ -52,6 +53,17 @@ export const POST = withMiddleware({
       return NextResponse.json(
         { success: false, message: 'Slug is required', field: 'slug' },
         { status: 400 }
+      );
+    }
+
+    // A tenant slug becomes <slug>.<base>, so it must never collide with a
+    // reserved platform/product subdomain (app, admin, commerce, laundry, …) —
+    // otherwise the proxy would route that tenant's storefront to a product
+    // workspace. Reserved set is registry-aligned (see src/lib/product-hosts.ts).
+    if (getReservedHostPrefixes().includes(slug.toLowerCase().trim())) {
+      return NextResponse.json(
+        { success: false, message: 'This slug is reserved by the platform and cannot be used', field: 'slug', code: 'RESERVED_SLUG' },
+        { status: 409 }
       );
     }
 

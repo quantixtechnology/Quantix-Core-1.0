@@ -9,8 +9,13 @@
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { getProductCodeForHost, getProductEntryRoute, isReservedHostPrefix, SHARED_HOST_PATHS } from '@/lib/product-hosts'
 
 const STOREFRONT_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || 'quantixtechnology.in'
+
+// Per-request tracing is opt-in (PROXY_DEBUG=1) to avoid log-spam/cost in prod.
+const DEBUG = process.env.PROXY_DEBUG === '1'
+const log = (...args: unknown[]) => { if (DEBUG) console.log(...args) }
 
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
@@ -31,17 +36,45 @@ export default function proxy(request: NextRequest) {
   const host = request.headers.get('host') || ''
   const { pathname } = request.nextUrl
 
-  console.log(`[proxy] host=${host} pathname=${pathname} base=${STOREFRONT_BASE}`)
+  log(`[proxy] host=${host} pathname=${pathname} base=${STOREFRONT_BASE}`)
 
   // Storefront subdomain detection — skip for API, uploads, static assets, and Next internals
   const SKIP_PATHS = ['/api', '/uploads', '/sw.js', '/manifest.json', '/robots.txt', '/sitemap.xml', '/.well-known']
   if (!SKIP_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     const hostWithoutPort = host.split(':')[0]
 
+    // 1) Product workspace host (commerce.*, laundry.*, …) — handled BEFORE
+    // storefront so a product subdomain is never mistaken for a tenant slug.
+    const productCode = getProductCodeForHost(hostWithoutPort, STOREFRONT_BASE)
+    if (productCode) {
+      const productSeg = `/${productCode.toLowerCase()}` // e.g. /commerce
+      const segments = pathname.split('/').filter(Boolean)
+      // Pass through unchanged when:
+      //   - already inside the product's own route tree (deep links), or
+      //   - a shared cross-host app route (/reset-password, /change-password, …).
+      const isDeepLink = pathname === productSeg || pathname.startsWith(`${productSeg}/`)
+      const isSharedPath = SHARED_HOST_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+      if (isDeepLink || isSharedPath) {
+        return withSecurityHeaders(NextResponse.next())
+      }
+      // Otherwise rewrite to the product's real entry route. Only a single bare
+      // segment is treated as a businessId (workspace URLs are
+      // <product>.<base>/<businessId>); deeper unknown paths just land on the
+      // entry route. The rewrite target is never itself a product host, so this
+      // cannot re-enter the product branch (no rewrite loop).
+      const url = request.nextUrl.clone()
+      url.pathname = getProductEntryRoute(productCode)
+      if (segments.length === 1) url.searchParams.set('businessId', segments[0])
+      url.searchParams.set('_product', productCode)
+      log(`[proxy] PRODUCT host=${hostWithoutPort} product=${productCode} → ${url.toString()}`)
+      return withSecurityHeaders(NextResponse.rewrite(url))
+    }
+
+    // 2) Tenant storefront subdomain.
     if (hostWithoutPort.endsWith(`.${STOREFRONT_BASE}`)) {
       const slug = hostWithoutPort.slice(0, -(STOREFRONT_BASE.length + 1))
 
-      if (slug && !['www', 'app', 'admin', 'api', 'mail'].includes(slug)) {
+      if (slug && !isReservedHostPrefix(slug)) {
         const url = request.nextUrl.clone()
         // Public pages keep their path; all other storefront paths rewrite to /
         const PUBLIC_PATHS = ['/delete-account', '/reset-password']
@@ -55,7 +88,7 @@ export default function proxy(request: NextRequest) {
         if (pathname === '/delivery' || pathname.startsWith('/delivery/')) {
           url.searchParams.set('_delivery', '1')
         }
-        console.log(`[proxy] REWRITE slug=${slug} → ${url.toString()}`)
+        log(`[proxy] REWRITE slug=${slug} → ${url.toString()}`)
         return withSecurityHeaders(NextResponse.rewrite(url))
       }
     }

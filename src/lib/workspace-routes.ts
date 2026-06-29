@@ -13,21 +13,31 @@
 // .workspaceUrl (the external subdomain used by the admin "Open Workspace").
 // ============================================================================
 
-// Keyed by product code (uppercase). Values must match an existing route under
-// src/app/.
-const WORKSPACE_ENTRY_ROUTES: Record<string, string> = {
-  COMMERCE: '/commerce/dashboard', // src/app/commerce/dashboard/page.tsx
-  LAUNDRY: '/laundry/login', // src/app/laundry/login/page.tsx (no /laundry/dashboard exists)
+// Explicit overrides ONLY for products whose entry route deviates from the
+// convention below. Keyed by product code (uppercase); values must match an
+// existing route under src/app/.
+//   - COMMERCE follows the convention (/commerce/dashboard) but is listed for clarity.
+//   - LAUNDRY deviates: its entry is /laundry/login (there is no /laundry/dashboard).
+const WORKSPACE_ENTRY_OVERRIDES: Record<string, string> = {
+  COMMERCE: '/commerce/dashboard',
+  LAUNDRY: '/laundry/login',
 }
 
-// Fallback to a route that is guaranteed to exist.
+// Legacy fallback when no product code is supplied at all.
 const DEFAULT_WORKSPACE_ROUTE = '/commerce/dashboard'
 
 /**
  * Resolve the real in-app workspace entry route for a product code.
- * @param productCode e.g. 'COMMERCE' | 'LAUNDRY' (case-insensitive)
+ *
+ * Convention (NO code change needed for future products): a product served on
+ * `<product>.<base>` enters at `/<product>/dashboard`. Products that deviate
+ * are listed in WORKSPACE_ENTRY_OVERRIDES. This keeps routing generic so adding
+ * Restaurant/Pharmacy/Salon/… requires only a registry entry + its route tree.
+ *
+ * @param productCode e.g. 'COMMERCE' | 'LAUNDRY' | 'RESTAURANT' (case-insensitive)
  */
 export function getWorkspaceEntryRoute(productCode?: string | null): string {
   const code = (productCode || '').toUpperCase()
-  return WORKSPACE_ENTRY_ROUTES[code] || DEFAULT_WORKSPACE_ROUTE
+  if (!code) return DEFAULT_WORKSPACE_ROUTE
+  return WORKSPACE_ENTRY_OVERRIDES[code] || `/${code.toLowerCase()}/dashboard`
 }

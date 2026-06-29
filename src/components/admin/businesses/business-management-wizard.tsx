@@ -258,8 +258,23 @@ export function BusinessManagementWizard({ businessId }: Props) {
   }
 
   const productCode = biz?.productCode || form.productCode
-  const subdomain = productCode ? `${productCode.toLowerCase()}.quantixtechnology.in` : '—'
-  const workspaceUrl = useMemo(() => bizId && productCode ? `https://${productCode.toLowerCase()}.quantixtechnology.in/${bizId}` : '', [bizId, productCode])
+  // Workspace host resolved from the Product Registry (registry-driven launcher),
+  // not constructed here. Falls back to the conventional host until it loads.
+  const [wsHost, setWsHost] = useState<string | null>(null)
+  useEffect(() => {
+    if (!productCode) { setWsHost(null); return }
+    fetch(`/api/admin/products/runtime/${encodeURIComponent(productCode)}`, { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then((j) => {
+        const url: string | undefined = j?.data?.runtime?.workspaceUrl
+        if (url) setWsHost(url.replace(/^https?:\/\//i, '').replace(/\/+$/, '').split('/')[0])
+      })
+      .catch(() => {})
+  }, [productCode])
+  const subdomain = wsHost || (productCode ? `${productCode.toLowerCase()}.quantixtechnology.in` : '—')
+  const workspaceUrl = useMemo(() => (bizId && (wsHost || productCode))
+    ? `https://${wsHost || `${productCode!.toLowerCase()}.quantixtechnology.in`}/${bizId}`
+    : '', [bizId, wsHost, productCode])
 
   const next = async () => {
     if (section === 0) { const ok = await saveSetup(); if (!ok) return }
