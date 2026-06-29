@@ -13,31 +13,22 @@
 // .workspaceUrl (the external subdomain used by the admin "Open Workspace").
 // ============================================================================
 
-// Explicit overrides ONLY for products whose entry route deviates from the
-// convention below. Keyed by product code (uppercase); values must match an
-// existing route under src/app/.
-//   - COMMERCE follows the convention (/commerce/dashboard) but is listed for clarity.
-//   - LAUNDRY deviates: its entry is /laundry/login (there is no /laundry/dashboard).
-const WORKSPACE_ENTRY_OVERRIDES: Record<string, string> = {
-  COMMERCE: '/commerce/dashboard',
-  LAUNDRY: '/laundry/login',
-}
-
-// Legacy fallback when no product code is supplied at all.
-const DEFAULT_WORKSPACE_ROUTE = '/commerce/dashboard'
+// The product workspace IS the root SPA (src/app/page.tsx) served on the
+// product subdomain — NOT the standalone /<product>/* routes (those are
+// placeholders). The SPA renders the correct product workspace from the
+// authenticated session plus the `_product` / `businessId` query the proxy
+// forwards. So every product's in-app workspace entry is the SPA root "/".
+//
+// This keeps adding a future product (Restaurant/Pharmacy/…) zero-routing:
+// it enters the same root SPA; no per-product entry route is needed.
+const ROOT_WORKSPACE_ROUTE = '/'
 
 /**
- * Resolve the real in-app workspace entry route for a product code.
+ * Resolve the in-app workspace entry route for a product code.
+ * Always the root SPA "/" under the subdomain architecture.
  *
- * Convention (NO code change needed for future products): a product served on
- * `<product>.<base>` enters at `/<product>/dashboard`. Products that deviate
- * are listed in WORKSPACE_ENTRY_OVERRIDES. This keeps routing generic so adding
- * Restaurant/Pharmacy/Salon/… requires only a registry entry + its route tree.
- *
- * @param productCode e.g. 'COMMERCE' | 'LAUNDRY' | 'RESTAURANT' (case-insensitive)
+ * @param productCode unused — kept for call-site compatibility and clarity.
  */
-export function getWorkspaceEntryRoute(productCode?: string | null): string {
-  const code = (productCode || '').toUpperCase()
-  if (!code) return DEFAULT_WORKSPACE_ROUTE
-  return WORKSPACE_ENTRY_OVERRIDES[code] || `/${code.toLowerCase()}/dashboard`
+export function getWorkspaceEntryRoute(_productCode?: string | null): string {
+  return ROOT_WORKSPACE_ROUTE
 }

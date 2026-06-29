@@ -13,6 +13,7 @@ import { CustomerLayout } from "@/components/customer/layout/customer-layout"
 import { DeliveryLayout } from "@/components/delivery/layout/delivery-layout"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import { getProductHostPrefixes } from "@/lib/product-hosts"
 import { ErrorBoundary } from "@/components/error/error-boundary"
 
 // ── Storefront context loader ─────────────────────────────────────────────
@@ -322,7 +323,12 @@ function SplashLoader() {
 //   app, www, admin, api, mail → Quantix Core admin app
 // Everything else → storefront slug (validated against DB by StorefrontContextLoader)
 const _SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
-const _SF_RESERVED = new Set(["www", "app", "admin", "api", "mail"])
+// Reserved subdomains that are NEVER tenant storefronts: platform hosts plus
+// product workspace hosts (commerce, laundry, …). Without reserving the product
+// prefixes the SPA would treat commerce.<base> as a storefront slug instead of
+// rendering the product workspace. Product prefixes come from the single source
+// (product-hosts) so this stays in sync as products are added.
+const _SF_RESERVED = new Set(["www", "app", "admin", "api", "mail", ...getProductHostPrefixes()])
 
 // Hosts that are ALWAYS the Quantix Core admin app — never a storefront.
 // Belt-and-suspenders: _SF_RESERVED already blocks "app", but an explicit
