@@ -44,6 +44,24 @@ import { toast } from "sonner"
 import { authFetch } from "@/lib/admin-fetch"
 import { Badge } from "@/components/ui/badge"
 
+interface ProvisioningLog {
+  id: string
+  productCode: string
+  hostname: string
+  requestedBy: string | null
+  status: string // PENDING | RUNNING | SUCCESS | FAILED
+  nginxStatus: string | null
+  certbotStatus: string | null
+  nginxReloadStatus: string | null
+  httpsReachable: boolean
+  success: boolean
+  errorMessage: string | null
+  durationMs: number | null
+  startedAt: string
+  completedAt: string | null
+  createdAt: string
+}
+
 interface Product {
   id: string
   code: string
@@ -57,6 +75,7 @@ interface Product {
   defaultStorageQuotaMB: number
   createdAt: string
   updatedAt: string
+  provisioning?: ProvisioningLog | null
 }
 
 interface PaginationData {
@@ -76,6 +95,7 @@ export function ProductsView() {
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isToggleOpen, setIsToggleOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [provisioningDetail, setProvisioningDetail] = useState<ProvisioningLog | null>(null)
 
   const [formData, setFormData] = useState({
     code: '',
@@ -245,6 +265,32 @@ export function ProductsView() {
     DISABLED: 'bg-red-100 text-red-800',
   }
 
+  // Latest product-host provisioning status (Pending / Running / Successful / Failed).
+  const PROVISIONING_UI: Record<string, { label: string; cls: string }> = {
+    PENDING: { label: 'Pending', cls: 'bg-gray-100 text-gray-700' },
+    RUNNING: { label: 'Running', cls: 'bg-blue-100 text-blue-800' },
+    SUCCESS: { label: 'Successful', cls: 'bg-green-100 text-green-800' },
+    FAILED: { label: 'Failed', cls: 'bg-red-100 text-red-800' },
+  }
+  function renderProvisioning(p: Product) {
+    const log = p.provisioning
+    if (!log) return <span className="text-xs text-muted-foreground">Not provisioned</span>
+    const ui = PROVISIONING_UI[log.status] || { label: log.status, cls: 'bg-gray-100 text-gray-700' }
+    return (
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary" className={ui.cls}>
+          {log.status === 'RUNNING' && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+          {ui.label}
+        </Badge>
+        {log.status === 'FAILED' && (
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-600" onClick={() => setProvisioningDetail(log)}>
+            View error
+          </Button>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -278,6 +324,7 @@ export function ProductsView() {
                   <TableHead>Workspace URL</TableHead>
                   <TableHead>Version</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Provisioning</TableHead>
                   <TableHead>Enabled</TableHead>
                   <TableHead>Storage</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -300,6 +347,7 @@ export function ProductsView() {
                         {product.status}
                       </Badge>
                     </TableCell>
+                    <TableCell>{renderProvisioning(product)}</TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         {product.isEnabled ? (
@@ -569,6 +617,41 @@ export function ProductsView() {
           <AlertDialogCancel>Cancel</AlertDialogCancel>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Provisioning detail / error dialog */}
+      <Dialog open={!!provisioningDetail} onOpenChange={(o) => { if (!o) setProvisioningDetail(null) }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Provisioning Details — {provisioningDetail?.productCode}</DialogTitle>
+            <DialogDescription>{provisioningDetail?.hostname}</DialogDescription>
+          </DialogHeader>
+          {provisioningDetail && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                <div><span className="text-muted-foreground">Status:</span> {provisioningDetail.status}</div>
+                <div><span className="text-muted-foreground">HTTPS reachable:</span> {String(provisioningDetail.httpsReachable)}</div>
+                <div><span className="text-muted-foreground">nginx:</span> {provisioningDetail.nginxStatus ?? '—'}</div>
+                <div><span className="text-muted-foreground">certbot:</span> {provisioningDetail.certbotStatus ?? '—'}</div>
+                <div><span className="text-muted-foreground">nginx reload:</span> {provisioningDetail.nginxReloadStatus ?? '—'}</div>
+                <div><span className="text-muted-foreground">Duration:</span> {provisioningDetail.durationMs != null ? `${provisioningDetail.durationMs} ms` : '—'}</div>
+                <div><span className="text-muted-foreground">Requested by:</span> {provisioningDetail.requestedBy ?? '—'}</div>
+                <div><span className="text-muted-foreground">When:</span> {new Date(provisioningDetail.createdAt).toLocaleString('en-IN')}</div>
+              </div>
+              {provisioningDetail.errorMessage && (
+                <div>
+                  <div className="text-muted-foreground mb-1">Complete error message:</div>
+                  <pre className="whitespace-pre-wrap break-words rounded-md bg-red-50 border border-red-200 p-3 text-xs text-red-800 max-h-64 overflow-auto">
+                    {provisioningDetail.errorMessage}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProvisioningDetail(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

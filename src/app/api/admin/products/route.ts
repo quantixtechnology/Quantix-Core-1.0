@@ -32,9 +32,25 @@ export const GET = withMiddleware({
       db.platformProduct.count(),
     ])
 
+    // Attach each product's latest host-provisioning attempt (observability).
+    // Best-effort: a logging/table issue must not break the products list.
+    let data: Array<Record<string, unknown>> = products
+    try {
+      const codes = products.map((p) => p.code)
+      const logs = codes.length
+        ? await db.productHostProvisioningLog.findMany({
+            where: { productCode: { in: codes } },
+            orderBy: { createdAt: 'desc' },
+          })
+        : []
+      const latestByCode = new Map<string, (typeof logs)[number]>()
+      for (const l of logs) if (!latestByCode.has(l.productCode)) latestByCode.set(l.productCode, l)
+      data = products.map((p) => ({ ...p, provisioning: latestByCode.get(p.code) ?? null }))
+    } catch { /* observability is non-fatal */ }
+
     return NextResponse.json({
       success: true,
-      data: products,
+      data,
       pagination: {
         total,
         page,

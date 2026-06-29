@@ -27,6 +27,8 @@ export interface ProductHostResult {
   host: string
   nginx: 'created' | 'existing' | 'failed'
   ssl: 'issued' | 'existing' | 'failed'
+  // Observability only: reports the outcome of the (unchanged) nginx reload step.
+  reload: 'reloaded' | 'failed' | 'not_reached'
   httpsReachable: boolean
   expiryDate: string | null
   error: string | null
@@ -141,7 +143,7 @@ async function checkHttps(host: string): Promise<boolean> {
  */
 export async function provisionProductHost(host: string): Promise<ProductHostResult> {
   const result: ProductHostResult = {
-    host, nginx: 'failed', ssl: 'failed', httpsReachable: false, expiryDate: null, error: null,
+    host, nginx: 'failed', ssl: 'failed', reload: 'not_reached', httpsReachable: false, expiryDate: null, error: null,
   }
 
   const prereq = await verifyPrerequisites()
@@ -157,7 +159,14 @@ export async function provisionProductHost(host: string): Promise<ProductHostRes
       result.ssl = 'issued'
     }
 
-    await reloadNginx()
+    // Reload behaviour is unchanged; we only record its outcome for diagnostics.
+    try {
+      await reloadNginx()
+      result.reload = 'reloaded'
+    } catch (reloadErr) {
+      result.reload = 'failed'
+      throw reloadErr
+    }
 
     const expiry = await getCertExpiry(host)
     result.expiryDate = expiry?.toISOString() ?? null

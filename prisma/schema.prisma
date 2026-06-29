@@ -308,6 +308,41 @@ model ProvisioningAuditLog {
 }
 
 // ============================================================================
+// PRODUCT HOST PROVISIONING LOG (observability)
+// One row per product-host provisioning attempt (POST /api/admin/products/[id]/
+// provision-host). Records the per-step outcome so admins can diagnose nginx /
+// certbot failures without server access. Does not affect provisioning behaviour.
+// ============================================================================
+model ProductHostProvisioningLog {
+  id                String    @id @default(cuid())
+
+  productCode       String
+  hostname          String
+  requestedBy       String?   // Super Admin who triggered it (user id / email)
+
+  // Lifecycle: PENDING -> RUNNING -> SUCCESS | FAILED
+  status            String    @default("RUNNING")
+
+  // Per-step status (mirror of the provisioner result; null until reached)
+  nginxStatus       String?   // created | existing | failed | not_reached
+  certbotStatus     String?   // issued | existing | failed | not_reached
+  nginxReloadStatus String?   // reloaded | failed | not_reached
+
+  httpsReachable    Boolean   @default(false)
+  success           Boolean   @default(false)
+  errorMessage      String?   // complete error message on failure
+
+  durationMs        Int?      // execution duration
+  startedAt         DateTime  @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([productCode])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================================
 // PRODUCT MANAGEMENT
 // Product Plans, Website Templates, Mobile Apps, Default Settings
 // ============================================================================

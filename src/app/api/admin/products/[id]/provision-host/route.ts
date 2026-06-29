@@ -36,6 +36,20 @@ export const POST = withMiddleware({ requireAuth: true, requirePlatformAdmin: tr
         return json({ success: false, error: `Product ${code} has an invalid workspaceUrl: "${runtime.workspaceUrl}"` }, 400)
       }
 
+      // Observability only — must never affect provisioning. Open a RUNNING log
+      // entry, then update it with the outcome. All log I/O is best-effort.
+      const user = (req as { user?: { id?: string; email?: string } }).user
+      const requestedBy = user?.email || user?.id || null
+      const startedAt = Date.now()
+      let logId: string | null = null
+      try {
+        const entry = await db.productHostProvisioningLog.create({
+          data: { productCode: code, hostname: host, requestedBy, status: 'RUNNING' },
+        })
+        logId = entry.id
+      } catch { /* logging is non-fatal */ }
+
+      // ── Provisioning logic is unchanged ──────────────────────────────────
       const result = await provisionProductHost(host)
 
       // Mark the product as subdomain-served once the host has a vhost + cert.
@@ -49,6 +63,23 @@ export const POST = withMiddleware({ requireAuth: true, requirePlatformAdmin: tr
           },
         })
       }
+
+      // Persist the outcome (best-effort).
+      try {
+        const data = {
+          status: result.error === null ? 'SUCCESS' : 'FAILED',
+          nginxStatus: result.nginx,
+          certbotStatus: result.ssl,
+          nginxReloadStatus: result.reload,
+          httpsReachable: result.httpsReachable,
+          success: result.error === null,
+          errorMessage: result.error,
+          durationMs: Date.now() - startedAt,
+          completedAt: new Date(),
+        }
+        if (logId) await db.productHostProvisioningLog.update({ where: { id: logId }, data })
+        else await db.productHostProvisioningLog.create({ data: { productCode: code, hostname: host, requestedBy, startedAt: new Date(startedAt), ...data } })
+      } catch { /* logging is non-fatal */ }
 
       return json({
         success: result.error === null,
