@@ -461,12 +461,15 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     // Don't override viewMode when Laundry OS support mode is active
     if (supportMode.active) return
 
+    const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM", "SUPPORT_TEAM", "FINANCE_TEAM", "DEPLOYMENT_TEAM"])
+    const isPlatformRole = PLATFORM_ROLES.has(currentRole || "")
+
     // Product workspace host (commerce.*, laundry.*): initialize the selected
     // business's PRODUCT workspace — for its owner, or for a platform admin who
-    // launched "Open Workspace" (impersonation permission). Takes precedence
-    // over the role-based default below, which would otherwise render the
-    // PLATFORM workspace for a platform admin (the reported bug).
-    if (productWorkspaceCode && (isBusinessRole || canImpersonate)) {
+    // launched "Open Workspace". Keyed off ROLE (stable across permission sync),
+    // not the canImpersonate PERMISSION, which could flip during syncPermissions()
+    // and bounce the user back to the PLATFORM workspace → Access Denied.
+    if (productWorkspaceCode && (isBusinessRole || isPlatformRole)) {
       const bizId = workspaceBusinessId || currentBusinessId
       if (bizId && viewMode !== "business_owner") {
         const bizType = productWorkspaceCode === "LAUNDRY" ? "LAUNDRY" : (currentBusinessType || "COMMERCE")
@@ -475,8 +478,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       if (bizId) return
     }
 
-    const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM", "SUPPORT_TEAM", "FINANCE_TEAM", "DEPLOYMENT_TEAM"])
-    if (PLATFORM_ROLES.has(currentRole || "")) {
+    if (isPlatformRole) {
       if (viewMode !== "super_admin") setViewMode("super_admin")
     } else if (BUSINESS_ROLES.has(currentRole || "")) {
       if (currentBusinessId && viewMode !== "business_owner") {
@@ -493,13 +495,17 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
   }, [isAuthenticated, currentRole, currentBusinessId, supportMode.active, productWorkspaceCode, workspaceBusinessId])
 
   // Guard: if somehow in business_owner view without the right role/permission,
-  // redirect via effect (never setState during render — that triggers the error boundary loop)
+  // redirect via effect (never setState during render — that triggers the error boundary loop).
+  // Skip on a product workspace host: there business_owner is the intended mode
+  // (set from the product host above), and reverting it on a transient
+  // canImpersonate=false during permission sync caused the Access Denied flicker.
   useEffect(() => {
     if (supportMode.active) return
+    if (productWorkspaceCode) return
     if (viewMode === "business_owner" && _isHydrated && !isBusinessRole && !canImpersonate) {
       setViewMode("super_admin")
     }
-  }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, supportMode.active, setViewMode])
+  }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, supportMode.active, setViewMode, productWorkspaceCode])
 
   const renderSuperAdminPage = () => {
     // Wait for syncPermissions() to finish before running access checks —
