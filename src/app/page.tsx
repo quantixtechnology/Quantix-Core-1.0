@@ -13,7 +13,7 @@ import { CustomerLayout } from "@/components/customer/layout/customer-layout"
 import { DeliveryLayout } from "@/components/delivery/layout/delivery-layout"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { getProductHostPrefixes } from "@/lib/product-hosts"
+import { getProductHostPrefixes, getProductCodeForHost } from "@/lib/product-hosts"
 import { ErrorBoundary } from "@/components/error/error-boundary"
 
 // ── Storefront context loader ─────────────────────────────────────────────
@@ -370,26 +370,57 @@ function detectDeliveryEntry(searchParams: ReturnType<typeof useSearchParams>): 
   return false
 }
 
+// Detect a PRODUCT workspace request (commerce.<base>, laundry.<base>, …).
+// Mirrors detectStorefrontSlug: the proxy injects ?_product & ?businessId on the
+// server, but after hydration the browser URL is the original product host, so
+// derive the product from the hostname and the businessId from the first path
+// segment (workspace URLs are <product>.<base>/<businessId>).
+function detectProductWorkspace(
+  searchParams: ReturnType<typeof useSearchParams>,
+): { productCode: string | null; businessId: string | null } {
+  let productCode = searchParams.get("_product")
+  let businessId = searchParams.get("businessId")
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname.split(":")[0]
+    const fromHost = getProductCodeForHost(hostname, _SF_BASE)
+    if (fromHost) productCode = fromHost
+    if (!businessId) {
+      const seg = window.location.pathname.split("/").filter(Boolean)[0]
+      if (seg) businessId = seg
+    }
+  }
+  return { productCode: productCode || null, businessId: businessId || null }
+}
+
 function AppRouter() {
   const searchParams = useSearchParams()
   const storefrontSlug = detectStorefrontSlug(searchParams)
   const deliveryEntry = detectDeliveryEntry(searchParams)
+  const { productCode: productWorkspaceCode, businessId: workspaceBusinessId } = detectProductWorkspace(searchParams)
   if (typeof window !== "undefined") {
     const host = window.location.hostname
     console.log(
       "[AppRouter] host=", host,
       "| isPlatformHost=", PLATFORM_HOSTS.has(host),
       "| storefrontSlug=", storefrontSlug,
-      "| _storefront param=", searchParams.get("_storefront"),
+      "| productWorkspace=", productWorkspaceCode,
+      "| workspaceBusinessId=", workspaceBusinessId,
       "| deliveryEntry=", deliveryEntry,
     )
   }
-  return <AppContent storefrontSlug={storefrontSlug} deliveryEntry={deliveryEntry} />
+  return (
+    <AppContent
+      storefrontSlug={storefrontSlug}
+      deliveryEntry={deliveryEntry}
+      productWorkspaceCode={productWorkspaceCode}
+      workspaceBusinessId={workspaceBusinessId}
+    />
+  )
 }
 
 const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "LAUNDRY_OWNER", "LAUNDRY_STORE_MANAGER", "STORE_EXECUTIVE", "AUDIT_EXECUTIVE", "PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE", "DELIVERY_EXECUTIVE"])
 
-function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string | null; deliveryEntry?: boolean }) {
+function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, workspaceBusinessId }: { storefrontSlug?: string | null; deliveryEntry?: boolean; productWorkspaceCode?: string | null; workspaceBusinessId?: string | null }) {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode, resumeBusinessId, manageBusinessId } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
@@ -401,6 +432,9 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
 
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
+  // Business id the workspace operates on: the one launched on a product host
+  // (Open Workspace) when present, otherwise the authenticated session business.
+  const wsBusinessId = (productWorkspaceCode ? (workspaceBusinessId || currentBusinessId) : currentBusinessId) || ""
 
   // Guard: on admin host (no storefront slug), ALWAYS reset stale customer/delivery
   // viewMode — regardless of auth state. An authenticated CUSTOMER visiting
@@ -427,6 +461,20 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
     // Don't override viewMode when Laundry OS support mode is active
     if (supportMode.active) return
 
+    // Product workspace host (commerce.*, laundry.*): initialize the selected
+    // business's PRODUCT workspace — for its owner, or for a platform admin who
+    // launched "Open Workspace" (impersonation permission). Takes precedence
+    // over the role-based default below, which would otherwise render the
+    // PLATFORM workspace for a platform admin (the reported bug).
+    if (productWorkspaceCode && (isBusinessRole || canImpersonate)) {
+      const bizId = workspaceBusinessId || currentBusinessId
+      if (bizId && viewMode !== "business_owner") {
+        const bizType = productWorkspaceCode === "LAUNDRY" ? "LAUNDRY" : (currentBusinessType || "COMMERCE")
+        setBusinessOwnerContext(bizId, currentBusinessName || "", bizType)
+      }
+      if (bizId) return
+    }
+
     const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM", "SUPPORT_TEAM", "FINANCE_TEAM", "DEPLOYMENT_TEAM"])
     if (PLATFORM_ROLES.has(currentRole || "")) {
       if (viewMode !== "super_admin") setViewMode("super_admin")
@@ -442,7 +490,7 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       if (storefrontSlug && viewMode !== "delivery_partner") setViewMode("delivery_partner")
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, currentRole, currentBusinessId, supportMode.active])
+  }, [isAuthenticated, currentRole, currentBusinessId, supportMode.active, productWorkspaceCode, workspaceBusinessId])
 
   // Guard: if somehow in business_owner view without the right role/permission,
   // redirect via effect (never setState during render — that triggers the error boundary loop)
@@ -558,10 +606,10 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "orders": return <LaundryOrdersView />
       case "new-order": return <LaundryNewOrder />
       case "customers": return <LaundryCustomersView />
-      case "stores": return <LaundryStoresWorkspace businessId={currentBusinessId} />
+      case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
       case "processing-centers": return <LaundryProcessingCentersView />
       case "reports": return <LaundryReportsView />
-      case "settings": return <LaundryWorkspaceSettings businessId={currentBusinessId} />
+      case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
       default: return <LaundryDashboard />
     }
   }
@@ -730,7 +778,10 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
 
   if (viewMode === "business_owner") {
     if (_isHydrated && !isBusinessRole && !canImpersonate) return null
-    if (currentBusinessType === "LAUNDRY") {
+    // Laundry workspace is chosen by the business type OR, on a product host,
+    // by the product itself (so a platform admin launching laundry.* gets the
+    // Laundry workspace even though their session has no business type).
+    if (currentBusinessType === "LAUNDRY" || productWorkspaceCode === "LAUNDRY") {
       return (
         <LaundryLayout>
           {renderLaundryPage()}
