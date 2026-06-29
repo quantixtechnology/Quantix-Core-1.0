@@ -31,22 +31,21 @@ type NavItem = {
 
 const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
 
+// Orders / Customers / Reports / Settings are not yet implemented as real
+// modules (their views are static "coming soon"/"future update" stubs), so they
+// are hidden from navigation rather than shown as placeholder screens. The
+// page-validation effect below redirects any stale laundryPage value to
+// "dashboard", so the stub views are unreachable.
 const processingNavItems: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "orders",    label: "Orders",    icon: ShoppingBag },
-  { key: "reports",   label: "Reports",   icon: BarChart3 },
 ]
 
 const storeNavItems: NavItem[] = [
   { key: "dashboard",          label: "Dashboard",          icon: LayoutDashboard },
   { key: "inbox",              label: "My Inbox",           icon: Inbox },
-  { key: "orders",             label: "Orders",             icon: ShoppingBag },
   { key: "new-order",          label: "New Order",          icon: Plus },
-  { key: "customers",          label: "Customers",          icon: Users },
   { key: "stores",             label: "Stores",             icon: Store,               feature: "multiStoreEnabled" },
   { key: "processing-centers", label: "Processing Centers", icon: Factory,             feature: "multiProcessingEnabled" },
-  { key: "reports",            label: "Reports",            icon: BarChart3 },
-  { key: "settings",           label: "Settings",           icon: Settings },
 ]
 
 interface LaundrySidebarProps {
