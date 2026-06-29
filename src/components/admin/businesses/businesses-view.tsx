@@ -1,9 +1,16 @@
 "use client"
 
+// ============================================================================
+// Businesses list. The single way to manage a business is the full-page
+// Business Wizard (openManage -> activePage "manage-business"); creating a
+// business opens the same wizard in create mode ("create-business"). This view
+// only lists + filters tenants and routes into that one experience — all edit/
+// provision/branding/owner controls live in the wizard, not here.
+// ============================================================================
+
 import { useState, useMemo, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
 import { PageHeader } from "../shared/page-header"
-import { StatusBadge, CurrencyBadge } from "../shared/status-badge"
+import { StatusBadge } from "../shared/status-badge"
 import { EmptyState } from "../shared/empty-state"
 import { businessTypeConfig } from "@/components/dashboard/data"
 import type { BusinessType } from "@/components/dashboard/data"
@@ -12,40 +19,19 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Switch } from "@/components/ui/switch"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Building2, Plus, Search, X, MapPin, Phone, Mail, IndianRupee,
-  ShoppingCart, Users, Wifi, WifiOff, Puzzle, Store, CreditCard, RefreshCw, AlertTriangle,
-  LogIn, Copy, Check, Hash, Globe, ImageIcon, Save, Palette, Trash2, Loader2, KeyRound, Eye, EyeOff,
-  Upload, Edit, FileText, Shield, Package, PlusCircle, ChevronDown, ChevronUp,
+  Building2, Plus, Search, X, MapPin, RefreshCw, AlertTriangle,
+  Copy, Check, Hash, Globe, Edit, PlayCircle, Rocket,
 } from "lucide-react"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AvatarImage } from "@/components/ui/avatar"
-import { useAdminStore, BUSINESS_TYPE_WORKFLOWS, type PlanTier } from "@/stores/admin-store"
+import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
-import { MobileProvisionSection } from "./mobile-provision-section"
-import { resolveImageUrl } from "@/lib/image-url"
 import { getBusinessLifecycle, getStateLabel, type BusinessLifecycleState } from "@/lib/business-lifecycle"
-import { PlayCircle, Rocket } from "lucide-react"
-
-// ---- Plan data type — feature access only, no pricing ----
-interface PlanApiData {
-  id: string;
-  tier: PlanTier;
-  name: string;
-}
-
 
 // ---- API data types ----
 interface BusinessApiData {
@@ -59,12 +45,10 @@ interface BusinessApiData {
   isOnline: boolean; primaryColor: string; logo: string | null; createdAt: string; onboardedAt: string | null; activatedAt: string | null
   subscription: {
     id: string; status: string
-    // New billing fields
     subscriptionAmount: number | null; discountAmount: number | null; finalAmount: number | null
     implementationAmount: number | null
     iosAppAmount: number | null; iosDiscountAmount: number | null; iosFinalAmount: number | null; iosSubscriptionCycle: string | null
     addOns: string
-    // Legacy
     planPrice: number | null; customPrice: number | null; discountPercentage: number | null
     manualPriceOverride: boolean; overrideReason: string | null; notes: string | null
     billingCycle: string; billingCycleDay: number | null; currentPeriodStart: string; nextBillingDate: string
@@ -119,36 +103,12 @@ const LIFECYCLE_BADGE_CLASS: Record<BusinessLifecycleState, string> = {
   active: "border-emerald-300 text-emerald-700 bg-emerald-50",
 }
 
-const STATUS_ITEMS: { key: string; label: string }[] = [
-  { key: "subscription", label: "Subscription Active" },
-  { key: "domain", label: "Domain Configured" },
-  { key: "ssl", label: "SSL Active" },
-  { key: "online", label: "Online Enabled" },
-]
-
-const READINESS_ITEMS: { key: string; label: string }[] = [
-  { key: "storeSettings", label: "Store Settings Configured" },
-  { key: "category", label: "Categories Created" },
-  { key: "product", label: "Products Added" },
-  { key: "adminUser", label: "Admin User Created" },
-  { key: "logo", label: "Logo Uploaded" },
-  { key: "paymentGateway", label: "Payment Gateway Configured" },
-  { key: "deliveryConfig", label: "Delivery Configuration" },
-]
-
 export function BusinessesView() {
-  const router = useRouter()
-  const { searchQuery, setCurrentBusiness, setActivePage, setResumeBusinessId, setManageBusinessId } = useAdminStore()
-
-  // Open the full-page Business Management wizard (replaces the old drawer).
-  const openManage = (biz: BusinessApiData) => {
-    setManageBusinessId(biz.id)
-    setActivePage("manage-business")
-  }
+  const { searchQuery, setActivePage, setResumeBusinessId, setManageBusinessId } = useAdminStore()
   const { permissions } = useAuthStore()
   const canCreate = permissions.includes("businesses:create" as never)
   const canEdit = permissions.includes("businesses:edit" as never)
-  const canImpersonate = permissions.includes("businesses:impersonate" as never)
+
   const [businesses, setBusinesses] = useState<BusinessApiData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -156,74 +116,25 @@ export function BusinessesView() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [typeFilter, setTypeFilter] = useState<string>("ALL")
   const [onlineFilter, setOnlineFilter] = useState<string>("ALL")
-  const [selectedBusiness, setSelectedBusiness] = useState<BusinessApiData | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
-  const [drawerTab, setDrawerTab] = useState("overview")
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  // Module toggle state (super admin)
-  const [togglingModule, setTogglingModule] = useState<string | null>(null)
+  // Open the full-page Business Wizard in manage/edit mode.
+  const openManage = (biz: BusinessApiData) => {
+    setManageBusinessId(biz.id)
+    setActivePage("manage-business")
+  }
 
-  // Owner password reset state
-  const [resettingPassword, setResettingPassword] = useState(false)
-  const [newOwnerPassword, setNewOwnerPassword] = useState<string | null>(null)
-  const [copiedPassword, setCopiedPassword] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
+  // Open the Business Wizard in create mode (fresh — clear any resume target).
+  const startCreate = () => {
+    setResumeBusinessId(null)
+    setActivePage("create-business")
+  }
 
-  // Edit Login ID state
-  const [editingLoginId, setEditingLoginId] = useState(false)
-  const [newLoginIdValue, setNewLoginIdValue] = useState("")
-  const [savingLoginId, setSavingLoginId] = useState(false)
-
-  // Activation checklist state
-  const [checklistItems, setChecklistItems] = useState<Record<string, boolean>>({})
-  const [checklistLoading, setChecklistLoading] = useState(false)
-
-  // Branding & domain edit state (inline editor)
-  const [brandingOpen, setBrandingOpen] = useState(false)
-  const [editLogo, setEditLogo] = useState("")
-  const [editDomain, setEditDomain] = useState("")
-  const [editSubdomain, setEditSubdomain] = useState("")
-  const [editPrimaryColor, setEditPrimaryColor] = useState("")
-  const [savingBranding, setSavingBranding] = useState(false)
-  const [uploadingInlineLogo, setUploadingInlineLogo] = useState(false)
-
-  // Comprehensive Edit Panel state
-  const [editPanelOpen, setEditPanelOpen] = useState(false)
-  const [editPanelTab, setEditPanelTab] = useState("info")
-  const [epName, setEpName] = useState("")
-  const [epOwnerName, setEpOwnerName] = useState("")
-  const [epSlug, setEpSlug] = useState("")
-  const [epType, setEpType] = useState("")
-  const [epDescription, setEpDescription] = useState("")
-  const [epTagline, setEpTagline] = useState("")
-  const [epPhone, setEpPhone] = useState("")
-  const [epEmail, setEpEmail] = useState("")
-  const [epSupportPhone, setEpSupportPhone] = useState("")
-  const [epSupportEmail, setEpSupportEmail] = useState("")
-  const [epAddress, setEpAddress] = useState("")
-  const [epCity, setEpCity] = useState("")
-  const [epState, setEpState] = useState("")
-  const [epPincode, setEpPincode] = useState("")
-  const [epCountry, setEpCountry] = useState("India")
-  const [epGST, setEpGST] = useState("")
-  const [epPAN, setEpPAN] = useState("")
-  const [epCIN, setEpCIN] = useState("")
-  const [epFSSAI, setEpFSSAI] = useState("")
-  const [epLogo, setEpLogo] = useState("")
-  const [epFavicon, setEpFavicon] = useState("")
-  const [epPrimaryColor, setEpPrimaryColor] = useState("")
-  const [epSecondaryColor, setEpSecondaryColor] = useState("")
-  const [epDomain, setEpDomain] = useState("")
-  const [epSubdomain, setEpSubdomain] = useState("")
-  const [uploadingEpLogo, setUploadingEpLogo] = useState(false)
-  const [uploadingEpFavicon, setUploadingEpFavicon] = useState(false)
-  const [savingPanel, setSavingPanel] = useState(false)
-
-  // Order stage config state
-  const [stageLabels, setStageLabels] = useState<{ status: string; label: string; order: number }[]>([])
-  const [stageSaving, setStageSaving] = useState(false)
-  const [stageEditing, setStageEditing] = useState(false)
+  // Resume the wizard for an incomplete business (jumps to the right section).
+  const handleResumeOnboarding = (biz: BusinessApiData) => {
+    setResumeBusinessId(biz.id)
+    setActivePage("create-business")
+  }
 
   const copyBusinessId = (slug: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -232,88 +143,34 @@ export function BusinessesView() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  // Resume the onboarding wizard for an incomplete business. The wizard loads
-  // the business and jumps to the correct step via the lifecycle engine.
-  const handleResumeOnboarding = (biz: BusinessApiData) => {
-    setResumeBusinessId(biz.id)
-    setActivePage("create-business")
-  }
-
-  // Edit a business from a list row. openEditPanel does not set the selected
-  // business (handleSaveEditPanel relies on it), so set it here too.
-  const handleEditBusiness = (biz: BusinessApiData) => {
-    setSelectedBusiness(biz)
-    openEditPanel(biz)
-  }
-
-  // Tracks the business whose provisioning is currently in flight (row shows
-  // a disabled "Provisioning…" button while true).
-  const [provisioningId, setProvisioningId] = useState<string | null>(null)
-  // Provisioning password dialog (Super Admin sets the initial owner password).
-  const [provisionTarget, setProvisionTarget] = useState<BusinessApiData | null>(null)
-  const [ownerPw, setOwnerPw] = useState("")
-  const [ownerPwConfirm, setOwnerPwConfirm] = useState("")
-  const [ownerPwError, setOwnerPwError] = useState<string | null>(null)
-
-  // Provision a business directly from the list. Reuses the existing
-  // POST /api/admin/businesses/provision endpoint (same one the wizard uses).
-  const handleProvisionBusiness = async (biz: BusinessApiData, ownerPassword?: string, confirmPassword?: string) => {
-    setProvisioningId(biz.id)
-    try {
-      const res = await fetch("/api/admin/businesses/provision", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ businessId: biz.id, ownerPassword, confirmPassword }),
-      })
-      const json = await res.json()
-      if (!res.ok || json.success === false) {
-        throw new Error(json.error || json.message || "Provisioning failed")
-      }
-      // Surface a generated temp password only when the admin didn't set one.
-      const temp = json.data?.ownerTempPassword
-      toast.success(temp ? `${biz.name} provisioned. Temp owner password: ${temp}` : `Provisioning started for ${biz.name}`)
-      fetchBusinesses()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Provisioning failed")
-    } finally {
-      setProvisioningId(null)
-    }
-  }
-
+  // Open the live tenant workspace in a new tab (resolves the runtime URL).
   const handleOpenWorkspace = async (biz: BusinessApiData) => {
     if (!biz.id) {
       toast.error("Business ID not found")
       return
     }
-
     try {
       // Admin API is Bearer-only; without the auth headers this returned 401
       // and the guard below misreported it as "Business has no product assigned".
       const response = await fetch(`/api/admin/businesses/${biz.id}`, { headers: getAuthHeaders() })
       const result = await response.json()
-
       if (!result.success || !result.data?.productCode) {
         toast.error("Business has no product assigned")
         return
       }
-
       const productCode = result.data.productCode
       const runtimeResponse = await fetch(`/api/admin/products/runtime/${encodeURIComponent(productCode)}`)
       const runtimeResult = await runtimeResponse.json()
-
       if (!runtimeResult.success || !runtimeResult.data?.runtime?.workspaceUrl) {
         toast.error("Cannot determine workspace URL")
         return
       }
-
       // Runtime Registry stores workspaceUrl without a scheme (e.g.
       // "commerce.quantixtechnology.in"). window.open treats a scheme-less value
-      // as a relative path under the admin host, so normalise to https:// here —
-      // matching how every other consumer (workspaces-view) builds the link.
+      // as a relative path under the admin host, so normalise to https:// here.
       const baseUrl: string = runtimeResult.data.runtime.workspaceUrl
       const normalizedBase = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`
-      const workspaceUrl = `${normalizedBase}/${biz.id}`
-      window.open(workspaceUrl, '_blank')
+      window.open(`${normalizedBase}/${biz.id}`, '_blank')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to open workspace")
     }
@@ -323,9 +180,7 @@ export function BusinessesView() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/admin/businesses?limit=100", {
-        headers: getAuthHeaders(),
-      })
+      const res = await fetch("/api/admin/businesses?limit=100", { headers: getAuthHeaders() })
       if (!res.ok) throw new Error("Failed to fetch businesses")
       const json = await res.json()
       if (json.success) setBusinesses(json.data)
@@ -341,40 +196,7 @@ export function BusinessesView() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchBusinesses()
-  }, [])
-
-  // Fetch order stage config when a business is selected
-  useEffect(() => {
-    if (!selectedBusiness) return
-    const id = selectedBusiness.id
-    fetch(`/api/core/businesses/${id}/order-stages`, { headers: getAuthHeaders() })
-      .then(r => r.json())
-      .then(j => { if (j.success) setStageLabels(j.data.stages) })
-      .catch(() => {/* non-critical */})
-  }, [selectedBusiness])
-
-  // Fetch activation checklist when detail sheet opens
-  useEffect(() => {
-    if (!detailOpen || !selectedBusiness) {
-      setChecklistItems({})
-      return
-    }
-    setChecklistLoading(true)
-    fetch(`/api/core/businesses/${selectedBusiness.id}`, { headers: getAuthHeaders() })
-      .then(r => r.json())
-      .then(j => {
-        if (j.success && j.data) {
-          try {
-            const parsed = typeof j.data.activationChecklist === "string"
-              ? JSON.parse(j.data.activationChecklist)
-              : (j.data.activationChecklist || {})
-            setChecklistItems(parsed)
-          } catch { setChecklistItems({}) }
-        }
-      })
-      .catch(() => {})
-      .finally(() => setChecklistLoading(false))
-  }, [detailOpen, selectedBusiness])
+  }, [fetchBusinesses])
 
   const filteredBusinesses = useMemo(() => {
     return businesses.filter((biz) => {
@@ -390,265 +212,6 @@ export function BusinessesView() {
       return matchSearch && matchStatus && matchType && matchOnline
     })
   }, [businesses, searchQuery, statusFilter, typeFilter, onlineFilter])
-
-  const openBrandingEditor = (biz: BusinessApiData) => {
-    setEditLogo(biz.logo ?? "")
-    setEditDomain(biz.domain?.domain ?? "")
-    setEditSubdomain("")
-    setEditPrimaryColor(biz.primaryColor ?? "#10B981")
-    setBrandingOpen(true)
-  }
-
-  const handleToggleModule = async (biz: BusinessApiData, moduleKey: string, currentStatus: string) => {
-    setTogglingModule(moduleKey)
-    const newStatus = currentStatus === "ENABLED" ? "DISABLED" : "ENABLED"
-    try {
-      await fetch(`/api/core/businesses/${biz.id}/modules`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ moduleKey, status: newStatus }),
-      })
-      await fetchBusinesses()
-    } finally {
-      setTogglingModule(null)
-    }
-  }
-
-  const handleResetPassword = async (biz: BusinessApiData) => {
-    setResettingPassword(true)
-    setNewOwnerPassword(null)
-    setCopiedPassword(false)
-    try {
-      const res = await fetch(`/api/admin/businesses/${biz.id}/reset-password`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-      })
-      const json = await res.json()
-      if (json.success) {
-        setNewOwnerPassword(json.data.newPassword)
-        toast.success("Password reset — share it securely with the owner")
-      } else {
-        toast.error(json.error || "Failed to reset password")
-      }
-    } catch {
-      toast.error("Failed to reset password")
-    } finally {
-      setResettingPassword(false)
-    }
-  }
-
-  const handleSaveLoginId = async (biz: BusinessApiData) => {
-    if (!newLoginIdValue.trim()) {
-      toast.error("Login ID cannot be empty")
-      return
-    }
-    if (!biz.ownerInternalId) {
-      toast.error("Owner account not found")
-      return
-    }
-    setSavingLoginId(true)
-    try {
-      const res = await fetch(`/api/admin/businesses/${biz.id}/update-login-id`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ userId: biz.ownerInternalId, newLoginId: newLoginIdValue.trim(), userType: "owner" }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        toast.success("Login ID updated successfully")
-        setEditingLoginId(false)
-        setNewLoginIdValue("")
-        fetchBusinesses()
-      } else {
-        toast.error(json.error || "Failed to update Login ID")
-      }
-    } catch {
-      toast.error("Failed to update Login ID")
-    } finally {
-      setSavingLoginId(false)
-    }
-  }
-
-  const handleSaveBranding = async (biz: BusinessApiData) => {
-    setSavingBranding(true)
-    try {
-      const body: Record<string, unknown> = {
-        logo: editLogo || null,
-        primaryColor: editPrimaryColor,
-      }
-      if (editDomain) {
-        body.domain = editDomain
-        body.subdomain = editSubdomain || undefined
-      }
-      const res = await fetch(`/api/core/businesses/${biz.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify(body),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save")
-      toast.success("Branding & domain saved")
-      setBrandingOpen(false)
-      fetchBusinesses()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save")
-    } finally {
-      setSavingBranding(false)
-    }
-  }
-
-  const handleToggleChecklistItem = async (item: string) => {
-    if (!selectedBusiness) return
-    const current = checklistItems[item] ?? false
-    setChecklistItems(prev => ({ ...prev, [item]: !current }))
-    try {
-      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}/activation-checklist`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ item, value: !current }),
-      })
-      const json = await res.json()
-      if (!json.success) {
-        setChecklistItems(prev => ({ ...prev, [item]: current }))
-        toast.error(json.error || "Failed to update")
-      } else {
-        fetchBusinesses()
-      }
-    } catch {
-      setChecklistItems(prev => ({ ...prev, [item]: current }))
-      toast.error("Network error")
-    }
-  }
-
-  // Upload a business logo or favicon.
-  // IMPORTANT: Do NOT set Content-Type — the browser sets the multipart boundary automatically.
-  // Only pass Authorization + x-business-id headers.
-  const uploadBusinessAsset = async (
-    file: File,
-    businessId: string,
-    field: "logo" | "favicon"
-  ): Promise<string | null> => {
-    const allHeaders = getAuthHeaders()
-    const headers: Record<string, string> = {}
-    if (allHeaders["Authorization"]) headers["Authorization"] = allHeaders["Authorization"]
-    if (allHeaders["x-business-id"]) headers["x-business-id"] = allHeaders["x-business-id"]
-    // Never set Content-Type — let browser set multipart/form-data with boundary
-
-    const fd = new FormData()
-    fd.append("file", file)
-    fd.append("businessId", businessId)
-    fd.append("field", field)
-
-    let res: Response
-    try {
-      res = await fetch("/api/business/logo/upload", { method: "POST", headers, body: fd })
-    } catch (networkErr) {
-      toast.error(`Network error: ${networkErr instanceof Error ? networkErr.message : "Could not reach server"}`)
-      return null
-    }
-
-    // 413 = proxy (nginx/Caddy) rejected the body before it reached the API
-    if (res.status === 413) {
-      toast.error("File too large — the server proxy rejected it. Run: nginx -T | grep client_max_body_size and add client_max_body_size 20m; to the server{} block, then reload nginx.")
-      return null
-    }
-
-    let json: { success: boolean; url?: string; error?: string; warning?: string }
-    try {
-      json = await res.json()
-    } catch {
-      toast.error(`Server error (HTTP ${res.status}) — check PM2 logs: pm2 logs --lines 50`)
-      return null
-    }
-
-    if (json.success) {
-      if (json.warning) toast.warning(json.warning)
-      return json.url as string
-    }
-    toast.error(json.error || `Upload failed (HTTP ${res.status})`)
-    return null
-  }
-
-  const openEditPanel = (biz: BusinessApiData) => {
-    setEpName(biz.name)
-    setEpOwnerName(biz.ownerName ?? "")
-    setEpSlug(biz.slug)
-    setEpType(biz.businessType)
-    setEpDescription(biz.description ?? "")
-    setEpTagline(biz.tagline ?? "")
-    setEpPhone(biz.contactPhone ?? "")
-    setEpEmail(biz.contactEmail ?? "")
-    setEpSupportPhone(biz.supportPhone ?? "")
-    setEpSupportEmail(biz.supportEmail ?? "")
-    setEpAddress(biz.address ?? "")
-    setEpCity(biz.city ?? "")
-    setEpState(biz.state ?? "")
-    setEpPincode(biz.pincode ?? "")
-    setEpCountry(biz.country ?? "India")
-    setEpGST(biz.gstNumber ?? "")
-    setEpPAN(biz.panNumber ?? "")
-    setEpCIN(biz.cinNumber ?? "")
-    setEpFSSAI(biz.fssaiLicense ?? "")
-    setEpLogo(biz.logo ?? "")
-    setEpFavicon(biz.favicon ?? "")
-    setEpPrimaryColor(biz.primaryColor ?? "#10B981")
-    setEpSecondaryColor(biz.secondaryColor ?? "")
-    setEpDomain(biz.domain?.domain ?? "")
-    setEpSubdomain("")
-    setEditPanelTab("info")
-    setEditPanelOpen(true)
-  }
-
-  const handleSaveEditPanel = async () => {
-    if (!selectedBusiness) return
-    setSavingPanel(true)
-    try {
-      const body: Record<string, unknown> = {
-        name: epName,
-        ownerName: epOwnerName || null,
-        slug: epSlug,
-        businessType: epType,
-        description: epDescription || null,
-        tagline: epTagline || null,
-        contactPhone: epPhone || null,
-        contactEmail: epEmail || null,
-        supportPhone: epSupportPhone || null,
-        supportEmail: epSupportEmail || null,
-        address: epAddress || null,
-        city: epCity || null,
-        state: epState || null,
-        pincode: epPincode || null,
-        country: epCountry.trim() || "India", // country is non-nullable (default India)
-        gstNumber: epGST || null,
-        panNumber: epPAN || null,
-        cinNumber: epCIN || null,
-        fssaiLicense: epFSSAI || null,
-        logo: epLogo || null,
-        favicon: epFavicon || null,
-        primaryColor: epPrimaryColor || "#10B981",
-        secondaryColor: epSecondaryColor || null,
-      }
-      if (epDomain) {
-        body.domain = epDomain
-        if (epSubdomain) body.subdomain = epSubdomain
-      }
-      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify(body),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error || "Failed to save")
-      toast.success("Business information saved")
-      setEditPanelOpen(false)
-      fetchBusinesses()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save")
-    } finally {
-      setSavingPanel(false)
-    }
-  }
-
 
   const handleToggleOnline = async (biz: BusinessApiData) => {
     try {
@@ -667,38 +230,6 @@ export function BusinessesView() {
     } catch {
       toast.error("Failed to toggle online status")
     }
-  }
-
-  const handleSaveStages = async () => {
-    if (!selectedBusiness) return
-    setStageSaving(true)
-    try {
-      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}/order-stages`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ stages: stageLabels }),
-      })
-      const json = await res.json()
-      if (json.success) { toast.success('Order stages saved'); setStageEditing(false) }
-      else toast.error(json.error || 'Failed to save stages')
-    } catch { toast.error('Failed to save stages') }
-    finally { setStageSaving(false) }
-  }
-
-  const handleResetStages = async () => {
-    if (!selectedBusiness) return
-    setStageSaving(true)
-    try {
-      await fetch(`/api/core/businesses/${selectedBusiness.id}/order-stages`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      })
-      // Reload defaults
-      const res = await fetch(`/api/core/businesses/${selectedBusiness.id}/order-stages`, { headers: getAuthHeaders() })
-      const json = await res.json()
-      if (json.success) { setStageLabels(json.data.stages); setStageEditing(false); toast.success('Reset to defaults') }
-    } catch { toast.error('Failed to reset') }
-    finally { setStageSaving(false) }
   }
 
   // Loading state
@@ -731,11 +262,7 @@ export function BusinessesView() {
         description="Manage all platform businesses, subscriptions, and configurations"
         icon={Building2}
         action={canCreate ? (
-          <Button className="gap-2" onClick={() => {
-            const { setActivePage, setResumeBusinessId } = useAdminStore.getState()
-            setResumeBusinessId(null) // fresh create — clear any resume target
-            setActivePage("create-business")
-          }}><Plus className="h-4 w-4" /> Create Business</Button>
+          <Button className="gap-2" onClick={startCreate}><Plus className="h-4 w-4" /> Create Business</Button>
         ) : undefined}
       />
 
@@ -766,7 +293,7 @@ export function BusinessesView() {
 
       {/* Business Table */}
       {filteredBusinesses.length === 0 ? (
-        <EmptyState icon={Building2} title="No businesses found" description="Try adjusting your filters or create a new business" action={{ label: "Create Business", onClick: () => setCreateOpen(true) }} />
+        <EmptyState icon={Building2} title="No businesses found" description="Try adjusting your filters or create a new business" action={canCreate ? { label: "Create Business", onClick: startCreate } : undefined} />
       ) : (
         <Card>
           <CardContent className="p-0">
@@ -790,7 +317,6 @@ export function BusinessesView() {
                     const sub = biz.subscription
                     // Lifecycle state from the schema-aligned engine (Phase 2).
                     const lc = getBusinessLifecycle(biz)
-                    const isProvisioning = provisioningId === biz.id
                     return (
                       <TableRow key={biz.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openManage(biz)}>
                         <TableCell>
@@ -848,11 +374,7 @@ export function BusinessesView() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            {isProvisioning ? (
-                              <Button size="sm" variant="outline" disabled className="h-7 text-xs gap-1">
-                                <Loader2 className="size-3 animate-spin" /> Provisioning…
-                              </Button>
-                            ) : lc.state === "ready_to_provision" ? (
+                            {lc.state === "ready_to_provision" ? (
                               <>
                                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleResumeOnboarding(biz)}>
                                   <Check className="size-3" /> Review
@@ -901,8 +423,6 @@ export function BusinessesView() {
           </CardContent>
         </Card>
       )}
-
-
     </div>
   )
 }

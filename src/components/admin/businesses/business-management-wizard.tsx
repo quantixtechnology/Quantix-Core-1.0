@@ -7,22 +7,19 @@
 //                       provisions, sets the initial owner password).
 //   - businessId set -> Edit/Manage mode (loads + edits an existing tenant).
 //
-// Three sections separate concerns:
-//   1. Business Setup     — tenant identity, branding, contact & legal, owner.
-//   2. Commercial Features— product, plan, resource overrides, modules,
-//                           payment-gateway availability.
-//   3. Platform           — digital assets (read-only) + provisioning.
+// Sections:
+//   1. Business Setup       — tenant identity, branding, contact & legal, owner.
+//   2. Licensed Features    — product, plan, resource overrides, modules,
+//                             payment-gateway availability (what the tenant bought).
+//   3. Review Configuration — read-only summary before provisioning.
+//   4. Provision Workspace  — run/re-run provisioning + logs.
+//   5. Deployment Status    — read-only digital-asset cards ("Managed by Quantix").
+//
+// A persistent Business Summary header is shown across every section.
 //
 // Reuses existing components/APIs only — no new APIs, no provisioning-logic,
-// schema or business-rule changes:
-//   POST /api/admin/businesses                (create tenant)
-//   PUT  /api/core/businesses/{id}            (edit profile/branding/legal, assign product/plan)
-//   PUT  /api/core/businesses/{id}/modules    (feature provisioning)
-//   POST /api/admin/businesses/assign-product (review submit)
-//   POST /api/admin/businesses/provision      (provision w/ initial owner password)
-//   GET  /api/admin/businesses/provision?businessId= (status/logs)
-//   POST /api/admin/businesses/{id}/reset-password   (owner credentials)
-// Sub-steps reused: ProductSelectionStep, PlanSelectionStep, ReviewStep.
+// schema, auth/RBAC or lifecycle changes. Sub-steps reused: ProductSelectionStep,
+// PlanSelectionStep, ReviewStep.
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -32,8 +29,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import {
-  ArrowLeft, ArrowRight, Loader2, Check, Building2, Boxes, Globe, Save,
-  KeyRound, ShieldCheck, ExternalLink, Rocket,
+  ArrowLeft, ArrowRight, Loader2, Check, Building2, Boxes, ClipboardCheck, Rocket, Server,
+  Save, KeyRound, ShieldCheck, ExternalLink, Globe, Smartphone, Apple, Lock, HardDrive, Activity,
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/admin-fetch'
 import { useAdminStore } from '@/stores/admin-store'
@@ -63,8 +60,10 @@ interface Props { businessId?: string }
 
 const SECTIONS = [
   { key: 'setup', label: 'Business Setup', icon: Building2 },
-  { key: 'commercial', label: 'Commercial Features', icon: Boxes },
-  { key: 'platform', label: 'Platform', icon: Globe },
+  { key: 'licensed', label: 'Licensed Features', icon: Boxes },
+  { key: 'review', label: 'Review Configuration', icon: ClipboardCheck },
+  { key: 'provision', label: 'Provision Workspace', icon: Rocket },
+  { key: 'deployment', label: 'Deployment Status', icon: Server },
 ] as const
 
 const GATEWAYS = ['COD', 'Razorpay', 'PhonePe', 'Stripe', 'Cashfree', 'PayU', 'CCAvenue']
@@ -80,11 +79,27 @@ function Field({ label, value, mono }: { label: string; value?: string | number 
 function Lbl({ children }: { children: React.ReactNode }) {
   return <label className="text-xs text-muted-foreground">{children}</label>
 }
+// Read-only digital-asset card (Deployment Status).
+function AssetCard({ icon: Icon, title, status, detail, managed = true }: { icon: React.ElementType; title: string; status: string; detail?: string; managed?: boolean }) {
+  const tone = /ready|active|live|healthy|completed|available/i.test(status) ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+    : /fail|error|offline|unhealthy/i.test(status) ? 'text-red-700 bg-red-50 border-red-200'
+    : 'text-gray-600 bg-gray-50 border-gray-200'
+  return (
+    <Card className="p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2"><Icon className="size-4 text-indigo-600" /><span className="text-sm font-semibold">{title}</span></div>
+        <Badge variant="outline" className={`text-[10px] ${tone}`}>{status}</Badge>
+      </div>
+      {detail && <p className="text-xs text-muted-foreground font-mono break-words">{detail}</p>}
+      {managed && <p className="text-[10px] text-indigo-600 flex items-center gap-1"><ShieldCheck className="size-3" /> Managed by Quantix</p>}
+    </Card>
+  )
+}
 
 export function BusinessManagementWizard({ businessId }: Props) {
   const { setActivePage, setManageBusinessId } = useAdminStore()
   const [bizId, setBizId] = useState<string | undefined>(businessId)
-  const isCreate = !businessId // started without an id => create flow
+  const isCreate = !businessId
 
   const [biz, setBiz] = useState<Biz | null>(null)
   const [loading, setLoading] = useState(!!businessId)
@@ -93,14 +108,12 @@ export function BusinessManagementWizard({ businessId }: Props) {
   const [saving, setSaving] = useState(false)
   const [provStatus, setProvStatus] = useState<{ status?: string; steps?: Array<{ name: string; status: string; error?: string | null }> } | null>(null)
 
-  // Unified editable form (used in both create and edit).
   type Form = Partial<Biz> & { ownerName?: string | null; ownerEmail?: string | null; ownerPhone?: string | null; ownerPassword?: string; ownerPasswordConfirm?: string }
   const [form, setForm] = useState<Form>({ country: 'India', primaryColor: '#10B981' })
   const set = (k: keyof Form, v: string) => setForm((p) => ({ ...p, [k]: v }))
 
   const goBackToList = () => { setManageBusinessId(null); setActivePage('businesses') }
 
-  // Load existing business (edit/manage mode) from the same list API the table uses.
   const load = useCallback(async (id: string) => {
     try {
       setLoading(true); setError(null)
@@ -122,13 +135,11 @@ export function BusinessManagementWizard({ businessId }: Props) {
 
   useEffect(() => { if (bizId) load(bizId) }, [bizId, load])
 
-  // ── Persist Business Setup ────────────────────────────────────────────────
-  // Create mode: POST a new tenant. Edit mode: PUT the existing one. Same fields.
+  // ── Persist Business Setup (create => POST; edit => PUT) ──────────────────
   const saveSetup = async (): Promise<boolean> => {
     setSaving(true)
     try {
       if (!bizId) {
-        // CREATE the tenant.
         if (!form.name?.trim() || !form.slug?.trim() || !form.contactEmail?.trim() || !form.contactPhone?.trim()) {
           toast.error('Name, slug, owner email and phone are required'); return false
         }
@@ -147,7 +158,6 @@ export function BusinessManagementWizard({ businessId }: Props) {
         if (!res.ok || json.success === false) throw new Error(json.message || json.error || 'Failed to create business')
         const id = json.data?.id
         if (!id) throw new Error('Create returned no id')
-        // Persist branding/legal that the create endpoint does not take.
         await fetch(`/api/core/businesses/${id}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
@@ -161,7 +171,6 @@ export function BusinessManagementWizard({ businessId }: Props) {
         toast.success('Business created')
         return true
       }
-      // EDIT existing.
       const body: Record<string, unknown> = {
         name: form.name, businessType: form.businessType, slug: form.slug,
         tagline: form.tagline ?? null, description: form.description ?? null,
@@ -190,7 +199,6 @@ export function BusinessManagementWizard({ businessId }: Props) {
     }
   }
 
-  // ── Commercial: assign product / plan (create) ───────────────────────────
   const assign = async (patch: Record<string, unknown>) => {
     if (!bizId) return
     await fetch(`/api/core/businesses/${bizId}`, {
@@ -210,12 +218,10 @@ export function BusinessManagementWizard({ businessId }: Props) {
       .catch(() => toast.error('Failed to update module'))
   }
 
-  // ── Platform: provision / re-provision ───────────────────────────────────
   const provision = async () => {
     if (!bizId || !biz) return
     setSaving(true)
     try {
-      // Confirm product+plan are present (review submit), then provision.
       if (biz.productCode && biz.subscriptionPlanCode) {
         await fetch('/api/admin/businesses/assign-product', {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -251,9 +257,10 @@ export function BusinessManagementWizard({ businessId }: Props) {
     }
   }
 
-  const workspaceUrl = useMemo(() => bizId ? `https://${(biz?.productCode || 'commerce').toLowerCase()}.quantixtechnology.in/${bizId}` : '', [bizId, biz])
+  const productCode = biz?.productCode || form.productCode
+  const subdomain = productCode ? `${productCode.toLowerCase()}.quantixtechnology.in` : '—'
+  const workspaceUrl = useMemo(() => bizId && productCode ? `https://${productCode.toLowerCase()}.quantixtechnology.in/${bizId}` : '', [bizId, productCode])
 
-  // Section navigation. Editable sections persist on Continue.
   const next = async () => {
     if (section === 0) { const ok = await saveSetup(); if (!ok) return }
     setSection((s) => Math.min(s + 1, SECTIONS.length - 1))
@@ -267,20 +274,30 @@ export function BusinessManagementWizard({ businessId }: Props) {
   )
 
   const Sec = SECTIONS[section]
+  const enabledModules = (biz?.modules ?? []).filter((m) => m.status === 'ENABLED')
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <Button variant="ghost" size="sm" onClick={goBackToList} className="gap-1 shrink-0"><ArrowLeft className="size-4" /> Businesses</Button>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold truncate">{isCreate && !bizId ? 'New Business' : (biz?.name || form.name || 'Business')}</h1>
-            <p className="text-xs text-muted-foreground">Quantix Platform · {isCreate && !bizId ? 'Create' : 'Manage'} · {biz?.businessCode || bizId || '—'}</p>
+    <div className="mx-auto max-w-6xl p-4 md:p-6 space-y-4">
+      {/* Back */}
+      <Button variant="ghost" size="sm" onClick={goBackToList} className="gap-1 w-max"><ArrowLeft className="size-4" /> Businesses</Button>
+
+      {/* Persistent Business Summary header */}
+      <Card className="p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="col-span-2 sm:col-span-1">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Business</p>
+            <p className="text-sm font-bold truncate">{biz?.name || form.name || (isCreate ? 'New Business' : '—')}</p>
+          </div>
+          <Field label="Business ID" value={bizId || '— (unsaved)'} mono />
+          <Field label="Workspace" value={subdomain} mono />
+          <Field label="Product" value={productCode} />
+          <Field label="Plan" value={biz?.subscriptionPlanCode || form.subscriptionPlanCode} />
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Status</p>
+            <Badge variant="outline" className="mt-0.5">{biz?.status || (isCreate ? 'Draft' : '—')}</Badge>
           </div>
         </div>
-        {biz && <Badge variant="outline" className="shrink-0">{biz.status}</Badge>}
-      </div>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6">
         {/* Section nav */}
@@ -290,17 +307,12 @@ export function BusinessManagementWizard({ businessId }: Props) {
               const Icon = s.icon
               const active = i === section
               const done = i < section
-              const locked = isCreate && !bizId && i > 0 // create: must finish Setup first
+              const locked = isCreate && !bizId && i > 0
               return (
                 <li key={s.key}>
-                  <button
-                    onClick={() => { if (!locked) setSection(i) }}
-                    disabled={locked}
-                    className={`w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${active ? 'bg-indigo-600 text-white' : done ? 'text-indigo-700 hover:bg-indigo-50' : locked ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-100'}`}
-                  >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${active ? 'bg-white/20' : done ? 'bg-indigo-100' : 'bg-gray-200'}`}>
-                      {done ? <Check className="size-3" /> : i + 1}
-                    </span>
+                  <button onClick={() => { if (!locked) setSection(i) }} disabled={locked}
+                    className={`w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${active ? 'bg-indigo-600 text-white' : done ? 'text-indigo-700 hover:bg-indigo-50' : locked ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-100'}`}>
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${active ? 'bg-white/20' : done ? 'bg-indigo-100' : 'bg-gray-200'}`}>{done ? <Check className="size-3" /> : i + 1}</span>
                     <Icon className="size-4 shrink-0" /><span className="truncate">{s.label}</span>
                   </button>
                 </li>
@@ -313,7 +325,7 @@ export function BusinessManagementWizard({ businessId }: Props) {
         <div className="space-y-4 min-w-0">
           <div className="flex items-center gap-2"><Sec.icon className="size-5 text-indigo-600" /><h2 className="text-lg font-semibold">{Sec.label}</h2></div>
 
-          {/* ── SECTION 1 — BUSINESS SETUP ──────────────────────────────── */}
+          {/* ── 1 — BUSINESS SETUP ──────────────────────────────────────── */}
           {section === 0 && (
             <div className="space-y-4">
               <Card className="p-6 space-y-4">
@@ -323,8 +335,6 @@ export function BusinessManagementWizard({ businessId }: Props) {
                   <div><Lbl>Slug</Lbl><Input value={form.slug ?? ''} onChange={(e) => set('slug', e.target.value)} /></div>
                   <div><Lbl>Business Type</Lbl><Input value={form.businessType ?? ''} onChange={(e) => set('businessType', e.target.value)} placeholder="e.g. GROCERY" /></div>
                   <div><Lbl>Tagline</Lbl><Input value={form.tagline ?? ''} onChange={(e) => set('tagline', e.target.value)} /></div>
-                  {!isCreate && <Field label="Business Code" value={biz?.businessCode} mono />}
-                  {!isCreate && <Field label="Business ID" value={bizId} mono />}
                 </div>
               </Card>
               <Card className="p-6 space-y-4">
@@ -355,7 +365,6 @@ export function BusinessManagementWizard({ businessId }: Props) {
                   <div><Lbl>FSSAI</Lbl><Input value={form.fssaiLicense ?? ''} onChange={(e) => set('fssaiLicense', e.target.value)} /></div>
                 </div>
               </Card>
-              {/* Owner credentials: initial password (create) / reset (edit). */}
               <Card className="p-6 space-y-4">
                 <h3 className="font-semibold text-sm flex items-center gap-2"><KeyRound className="size-4" /> Owner Account</h3>
                 {isCreate ? (
@@ -379,36 +388,24 @@ export function BusinessManagementWizard({ businessId }: Props) {
             </div>
           )}
 
-          {/* ── SECTION 2 — COMMERCIAL FEATURES ─────────────────────────── */}
+          {/* ── 2 — LICENSED FEATURES ───────────────────────────────────── */}
           {section === 1 && bizId && (
             <div className="space-y-4">
               <Card className="p-6">
                 <h3 className="font-semibold text-sm mb-3">Product</h3>
                 {biz?.productCode ? (
-                  <div className="flex items-center gap-3">
-                    <Badge className="bg-indigo-100 text-indigo-700">{biz.productCode}</Badge>
-                    <span className="text-xs text-muted-foreground">Assigned</span>
-                  </div>
-                ) : (
-                  <ProductSelectionStep onProductSelect={(code) => assign({ productCode: code })} />
-                )}
+                  <div className="flex items-center gap-3"><Badge className="bg-indigo-100 text-indigo-700">{biz.productCode}</Badge><span className="text-xs text-muted-foreground">Licensed</span></div>
+                ) : <ProductSelectionStep onProductSelect={(code) => assign({ productCode: code })} />}
               </Card>
               <Card className="p-6">
                 <h3 className="font-semibold text-sm mb-3">Plan</h3>
                 {!biz?.productCode ? <p className="text-sm text-muted-foreground">Select a product first.</p>
-                  : biz?.subscriptionPlanCode ? (
-                    <div className="flex items-center gap-3"><Badge className="bg-emerald-100 text-emerald-700">{biz.subscriptionPlanCode}</Badge><span className="text-xs text-muted-foreground">Assigned</span></div>
-                  ) : (
-                    <PlanSelectionStep productCode={biz.productCode} onPlanSelect={(code) => assign({ subscriptionPlanCode: code })} />
-                  )}
+                  : biz?.subscriptionPlanCode ? <div className="flex items-center gap-3"><Badge className="bg-emerald-100 text-emerald-700">{biz.subscriptionPlanCode}</Badge><span className="text-xs text-muted-foreground">Licensed</span></div>
+                  : <PlanSelectionStep productCode={biz.productCode} onPlanSelect={(code) => assign({ subscriptionPlanCode: code })} />}
               </Card>
-              {/* Resource overrides — reuse the self-contained ReviewStep. */}
-              {biz?.productCode && biz?.subscriptionPlanCode && (
-                <Card className="p-6"><ReviewStep state={{ businessId: bizId }} /></Card>
-              )}
-              {/* Modules / feature provisioning */}
+              {biz?.productCode && biz?.subscriptionPlanCode && (<Card className="p-6"><ReviewStep state={{ businessId: bizId }} /></Card>)}
               <Card className="p-6">
-                <h3 className="font-semibold text-sm mb-3">Modules (purchased features)</h3>
+                <h3 className="font-semibold text-sm mb-3">Modules (licensed features)</h3>
                 {(!biz || biz.modules.length === 0) ? <p className="text-sm text-muted-foreground">Modules appear after provisioning.</p> : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {biz.modules.map((m) => (
@@ -433,41 +430,67 @@ export function BusinessManagementWizard({ businessId }: Props) {
             </div>
           )}
 
-          {/* ── SECTION 3 — PLATFORM ────────────────────────────────────── */}
+          {/* ── 3 — REVIEW CONFIGURATION (read-only) ─────────────────────── */}
           {section === 2 && bizId && (
-            <div className="space-y-4">
-              <Card className="p-6 space-y-3">
-                <div className="flex items-center gap-2 text-xs text-indigo-700"><ShieldCheck className="size-4" /> Managed by Quantix — the Business Owner receives generated URLs only (no deploy/SSL/DNS/hosting controls).</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field label="Website / Workspace URL" value={workspaceUrl} mono />
-                  <Field label="Subdomain" value={`${(biz?.productCode || 'commerce').toLowerCase()}.quantixtechnology.in`} mono />
-                  <Field label="Custom Domain" value={biz?.domain?.domain} />
-                  <Field label="SSL / Domain Status" value={biz?.domain?.status} />
-                  <Field label="In-app Workspace Route" value={getWorkspaceEntryRoute(biz?.productCode)} mono />
-                  {(biz?.deployments ?? []).map((d) => <Field key={d.id} label={`Deployment · ${d.type}`} value={`${d.status} (health ${d.healthStatus})`} />)}
+            <Card className="p-6 space-y-4">
+              <p className="text-xs text-muted-foreground">Confirm the tenant configuration before provisioning.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Business" value={biz?.name} />
+                <Field label="Slug" value={biz?.slug} mono />
+                <Field label="Business Type" value={biz?.businessType} />
+                <Field label="Owner" value={`${biz?.ownerName ?? '—'} (${biz?.ownerEmail ?? '—'})`} />
+                <Field label="Product" value={biz?.productCode} />
+                <Field label="Plan" value={biz?.subscriptionPlanCode} />
+                <Field label="Address" value={[biz?.address, biz?.city, biz?.state, biz?.pincode, biz?.country].filter(Boolean).join(', ') || '—'} />
+                <Field label="GST / PAN" value={`${biz?.gstNumber ?? '—'} / ${biz?.panNumber ?? '—'}`} />
+                <Field label="Modules enabled" value={`${enabledModules.length}${enabledModules.length ? ` (${enabledModules.map((m) => m.moduleName).join(', ')})` : ''}`} />
+                <Field label="Current Status" value={biz?.status} />
+              </div>
+            </Card>
+          )}
+
+          {/* ── 4 — PROVISION WORKSPACE ─────────────────────────────────── */}
+          {section === 3 && bizId && (
+            <Card className="p-6 space-y-3">
+              <p className="text-xs text-muted-foreground">{biz?.status === 'ACTIVE' ? 'Workspace is provisioned. Re-running is idempotent.' : 'Provision the tenant workspace and create the owner account.'}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Field label="Workspace Status" value={biz?.status} />
+                <Field label="Provisioning" value={provStatus?.status || '—'} />
+                <Field label="Product / Plan" value={`${biz?.productCode ?? '—'} / ${biz?.subscriptionPlanCode ?? '—'}`} />
+              </div>
+              <Button size="sm" className="gap-1 bg-indigo-600 hover:bg-indigo-700 text-white w-max" onClick={provision} disabled={saving || !biz?.productCode || !biz?.subscriptionPlanCode}>
+                {saving ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />} {biz?.status === 'ACTIVE' ? 'Provision Again' : 'Provision Workspace'}
+              </Button>
+              {!biz?.productCode || !biz?.subscriptionPlanCode ? <p className="text-xs text-amber-600">Assign a product and plan in Licensed Features first.</p> : null}
+              {provStatus?.steps?.length ? (
+                <div className="space-y-1 text-xs font-mono pt-2 border-t">
+                  {provStatus.steps.map((s, i) => (
+                    <div key={i} className={s.status === 'FAILED' ? 'text-red-600' : 'text-gray-600'}>
+                      {s.status === 'COMPLETED' ? '✓' : s.status === 'FAILED' ? '✗' : '•'} {s.name}: {s.status}{s.error ? ` — ${s.error}` : ''}
+                    </div>
+                  ))}
                 </div>
-                <Button variant="outline" size="sm" className="gap-1 w-max" onClick={() => window.open(workspaceUrl, '_blank')}><ExternalLink className="size-3" /> Open Website</Button>
-              </Card>
-              <Card className="p-6 space-y-3">
-                <h3 className="font-semibold text-sm">Provisioning</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <Field label="Workspace Status" value={biz?.status} />
-                  <Field label="Website / Domain" value={biz?.domain?.status || 'PENDING'} />
-                  <Field label="Provisioning" value={provStatus?.status || '—'} />
-                </div>
-                <Button size="sm" className="gap-1 bg-indigo-600 hover:bg-indigo-700 text-white w-max" onClick={provision} disabled={saving}>
-                  {saving ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />} {biz?.status === 'ACTIVE' ? 'Provision Again' : 'Provision'}
-                </Button>
-                {provStatus?.steps?.length ? (
-                  <div className="space-y-1 text-xs font-mono pt-2 border-t">
-                    {provStatus.steps.map((s, i) => (
-                      <div key={i} className={s.status === 'FAILED' ? 'text-red-600' : 'text-gray-600'}>
-                        {s.status === 'COMPLETED' ? '✓' : s.status === 'FAILED' ? '✗' : '•'} {s.name}: {s.status}{s.error ? ` — ${s.error}` : ''}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </Card>
+              ) : null}
+            </Card>
+          )}
+
+          {/* ── 5 — DEPLOYMENT STATUS (read-only cards) ──────────────────── */}
+          {section === 4 && bizId && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs text-indigo-700"><ShieldCheck className="size-4" /> Read-only. The Business Owner receives the generated URLs — no deploy / SSL / DNS / hosting controls.</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <AssetCard icon={Globe} title="Website" status={biz?.status === 'ACTIVE' ? 'Live' : 'Pending'} detail={workspaceUrl || subdomain} />
+                <AssetCard icon={Smartphone} title="PWA" status={biz?.status === 'ACTIVE' ? 'Available' : 'Pending'} detail={getWorkspaceEntryRoute(biz?.productCode)} />
+                <AssetCard icon={Smartphone} title="Android App" status="Generated on demand" detail="Quantix build pipeline" />
+                <AssetCard icon={Apple} title="iOS App" status="Generated on demand" detail="Quantix build pipeline" />
+                <AssetCard icon={Globe} title="Domain" status={biz?.domain?.status || 'Default subdomain'} detail={biz?.domain?.domain || subdomain} />
+                <AssetCard icon={Lock} title="SSL" status={biz?.domain?.status === 'ACTIVE' ? 'Active' : 'Auto-managed'} detail="Issued & renewed by Quantix" />
+                <AssetCard icon={HardDrive} title="Hosting" status="Active" detail="Quantix Cloud (AWS)" />
+                <AssetCard icon={Activity} title="Deployment Health"
+                  status={(biz?.deployments ?? []).some((d) => /unhealthy|fail/i.test(d.healthStatus)) ? 'Unhealthy' : (biz?.deployments?.length ? 'Healthy' : (biz?.status === 'ACTIVE' ? 'Healthy' : 'Pending'))}
+                  detail={(biz?.deployments ?? []).map((d) => `${d.type}:${d.status}`).join(', ') || 'No deployment records'} />
+              </div>
+              <Button variant="outline" size="sm" className="gap-1 w-max" disabled={!workspaceUrl} onClick={() => window.open(workspaceUrl, '_blank')}><ExternalLink className="size-3" /> Open Website</Button>
             </div>
           )}
 
