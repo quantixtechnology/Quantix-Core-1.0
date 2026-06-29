@@ -134,7 +134,7 @@ const PlatformInvoicesView = dynamic(() => import("@/components/admin/invoices/p
 const AddonsView = dynamic(() => import("@/components/admin/addons/addons-view").then(m => ({ default: m.AddonsView })), { loading: () => <PageLoader /> })
 const AccountBillingView = dynamic(() => import("@/components/admin/account-billing/account-billing-view").then(m => ({ default: m.AccountBillingView })), { loading: () => <PageLoader /> })
 const OnboardingView = dynamic(() => import("@/components/admin/onboarding/onboarding-view").then(m => ({ default: m.OnboardingView })), { loading: () => <PageLoader /> })
-const BusinessOnboardingWizard = dynamic(() => import("@/components/onboarding/business-onboarding-wizard").then(m => ({ default: m.BusinessOnboardingWizard })), { loading: () => <PageLoader /> })
+// Single business experience: one wizard for Create + Manage (replaces the onboarding wizard).
 const BusinessManagementWizard = dynamic(() => import("@/components/admin/businesses/business-management-wizard").then(m => ({ default: m.BusinessManagementWizard })), { loading: () => <PageLoader /> })
 const DomainsView = dynamic(() => import("@/components/admin/domains/domains-view").then(m => ({ default: m.DomainsView })), { loading: () => <PageLoader /> })
 const SalesView = dynamic(() => import("@/components/admin/sales/sales-view").then(m => ({ default: m.SalesView })), { loading: () => <PageLoader /> })
@@ -468,7 +468,8 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "proposal-documents": return <ErrorBoundary view="admin"><ProposalDocumentsView /></ErrorBoundary>
       case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
-      case "create-business": return <BusinessOnboardingWizard businessId={resumeBusinessId ?? undefined} />
+      // Single business experience: same wizard for Create (no id / resume draft) and Manage (existing id).
+      case "create-business": return <BusinessManagementWizard businessId={resumeBusinessId ?? undefined} />
       case "manage-business": return <BusinessManagementWizard businessId={manageBusinessId ?? undefined} />
       case "account-billing": return <AccountBillingView />
       case "subscriptions": return <SubscriptionsView />
