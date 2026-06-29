@@ -7,6 +7,7 @@
 
 import { create } from "zustand";
 import type { Role, BusinessType, Permission, SessionUser } from "@/lib/types";
+import { importSessionFromHash } from "@/lib/session-handoff";
 
 // ============================================================================
 // TYPES
@@ -182,6 +183,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // ─── Initialize from localStorage (hydration) ───────────────────────
   initialize: () => {
+    // Import a cross-subdomain session handoff (Open Workspace → product host)
+    // into this origin's localStorage BEFORE hydration. No-op when absent.
+    importSessionFromHash();
     const stored = loadFromStorage();
     if (stored.token && stored.user) {
       set({

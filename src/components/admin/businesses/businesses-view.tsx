@@ -31,6 +31,7 @@ import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { buildSessionHandoffHash } from "@/lib/session-handoff"
 import { getBusinessLifecycle, getStateLabel, type BusinessLifecycleState } from "@/lib/business-lifecycle"
 
 // ---- API data types ----
@@ -170,7 +171,11 @@ export function BusinessesView() {
       // as a relative path under the admin host, so normalise to https:// here.
       const baseUrl: string = runtimeResult.data.runtime.workspaceUrl
       const normalizedBase = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`
-      window.open(`${normalizedBase}/${biz.id}`, '_blank')
+      // Hand the current session to the product subdomain (different origin →
+      // separate localStorage) so the workspace opens authenticated instead of
+      // hitting "Session not found" / Access Denied.
+      const handoff = buildSessionHandoffHash()
+      window.open(`${normalizedBase}/${biz.id}${handoff ? `#${handoff}` : ''}`, '_blank')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to open workspace")
     }
