@@ -32,6 +32,7 @@ export type AdminPage =
   | "leads"
   | "businesses"
   | "create-business"
+  | "manage-business"
   | "subscriptions"
   | "onboarding"
   | "domains"
@@ -444,6 +445,9 @@ interface AdminState {
   // Business to resume in the onboarding wizard (null = fresh create)
   resumeBusinessId: string | null
   setResumeBusinessId: (id: string | null) => void
+  // Business opened in the full-page Business Management wizard
+  manageBusinessId: string | null
+  setManageBusinessId: (id: string | null) => void
   selectedSubscriptionId: string | null
   setSelectedSubscriptionId: (id: string | null) => void
 
@@ -634,6 +638,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   setSelectedBusinessId: (id) => set({ selectedBusinessId: id, isDetailSheetOpen: id !== null }),
   resumeBusinessId: null,
   setResumeBusinessId: (id) => set({ resumeBusinessId: id }),
+  manageBusinessId: null,
+  setManageBusinessId: (id) => set({ manageBusinessId: id }),
   selectedSubscriptionId: null,
   setSelectedSubscriptionId: (id) => set({ selectedSubscriptionId: id, isDetailSheetOpen: id !== null }),
 

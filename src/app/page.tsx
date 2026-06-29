@@ -135,6 +135,7 @@ const AddonsView = dynamic(() => import("@/components/admin/addons/addons-view")
 const AccountBillingView = dynamic(() => import("@/components/admin/account-billing/account-billing-view").then(m => ({ default: m.AccountBillingView })), { loading: () => <PageLoader /> })
 const OnboardingView = dynamic(() => import("@/components/admin/onboarding/onboarding-view").then(m => ({ default: m.OnboardingView })), { loading: () => <PageLoader /> })
 const BusinessOnboardingWizard = dynamic(() => import("@/components/onboarding/business-onboarding-wizard").then(m => ({ default: m.BusinessOnboardingWizard })), { loading: () => <PageLoader /> })
+const BusinessManagementWizard = dynamic(() => import("@/components/admin/businesses/business-management-wizard").then(m => ({ default: m.BusinessManagementWizard })), { loading: () => <PageLoader /> })
 const DomainsView = dynamic(() => import("@/components/admin/domains/domains-view").then(m => ({ default: m.DomainsView })), { loading: () => <PageLoader /> })
 const SalesView = dynamic(() => import("@/components/admin/sales/sales-view").then(m => ({ default: m.SalesView })), { loading: () => <PageLoader /> })
 const NotificationsView = dynamic(() => import("@/components/admin/notifications/notifications-view").then(m => ({ default: m.NotificationsView })), { loading: () => <PageLoader /> })
@@ -383,7 +384,7 @@ function AppRouter() {
 const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "LAUNDRY_OWNER", "LAUNDRY_STORE_MANAGER", "STORE_EXECUTIVE", "AUDIT_EXECUTIVE", "PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE", "DELIVERY_EXECUTIVE"])
 
 function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string | null; deliveryEntry?: boolean }) {
-  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode, resumeBusinessId } = useAdminStore()
+  const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode, resumeBusinessId, manageBusinessId } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
@@ -468,6 +469,7 @@ function AppContent({ storefrontSlug, deliveryEntry }: { storefrontSlug?: string
       case "payment-config": return <PaymentConfigView />
       case "businesses": return <BusinessesView />
       case "create-business": return <BusinessOnboardingWizard businessId={resumeBusinessId ?? undefined} />
+      case "manage-business": return <BusinessManagementWizard businessId={manageBusinessId ?? undefined} />
       case "account-billing": return <AccountBillingView />
       case "subscriptions": return <SubscriptionsView />
       case "platform-invoices": return <PlatformInvoicesView />
