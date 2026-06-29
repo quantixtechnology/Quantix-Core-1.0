@@ -1,0 +1,46 @@
+// ============================================================================
+// GET /api/laundry/orders/stats?businessId=&storeId=
+// Operational workload counts for the Store Counter dashboard — real DB
+// aggregation (groupBy status + today's intake), not generic KPIs.
+// ============================================================================
+
+import { NextResponse } from "next/server"
+import { prisma } from "@/lib/prisma"
+
+export const runtime = "nodejs"
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const businessId = searchParams.get("businessId")
+    const storeId = searchParams.get("storeId")
+
+    if (!businessId) {
+      return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
+    }
+
+    const where: Record<string, unknown> = { businessId }
+    if (storeId) where.storeId = storeId
+
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+
+    const [grouped, todayCount, total] = await Promise.all([
+      prisma.laundryOrder.groupBy({
+        by: ["status"],
+        where: where as never,
+        _count: { _all: true },
+      }),
+      prisma.laundryOrder.count({ where: { ...where, createdAt: { gte: startOfToday } } as never }),
+      prisma.laundryOrder.count({ where: where as never }),
+    ])
+
+    const byStatus: Record<string, number> = {}
+    for (const g of grouped) byStatus[g.status as string] = g._count._all
+
+    return NextResponse.json({ success: true, data: { byStatus, today: todayCount, total } })
+  } catch (error) {
+    console.error("[laundry-orders/stats] GET Error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}

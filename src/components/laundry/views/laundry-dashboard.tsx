@@ -1,151 +1,118 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import {
-  ShoppingBag, ClipboardCheck, Package, Cog, Truck, CheckCircle, IndianRupee,
-  Scan, List, Shield, ArrowDown,
+  ShoppingBag, ClipboardCheck, Package, Cog, Truck, CheckCircle,
+  CreditCard, RefreshCw, Plus,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/stores/auth-store"
-import { useToast } from "@/hooks/use-toast"
+import { useAdminStore } from "@/stores/admin-store"
 import LaundrySetupWizard from "./laundry-setup-wizard"
 
-const KPI_CONFIG = [
-  { label: "Today's Orders", icon: ShoppingBag, color: "text-sky-600 bg-sky-100" },
-  { label: "Pending Audit", icon: ClipboardCheck, color: "text-amber-600 bg-amber-100" },
-  { label: "Ready For Processing", icon: Package, color: "text-violet-600 bg-violet-100" },
-  { label: "In Processing", icon: Cog, color: "text-blue-600 bg-blue-100" },
-  { label: "Ready For Delivery", icon: Truck, color: "text-emerald-600 bg-emerald-100" },
-  { label: "Delivered Today", icon: CheckCircle, color: "text-green-600 bg-green-100" },
-  { label: "Revenue Today", icon: IndianRupee, color: "text-rose-600 bg-rose-100" },
+// Store Counter operational workload — each card is the live count of orders
+// currently sitting in that workflow stage (real data from /orders/stats).
+const WORKLOAD: { key: string; label: string; icon: typeof ShoppingBag; color: string }[] = [
+  { key: "PENDING_STORE_AUDIT", label: "Pending Store Audit", icon: ClipboardCheck, color: "text-amber-600 bg-amber-100" },
+  { key: "UNDER_AUDIT",         label: "Under Audit",         icon: ClipboardCheck, color: "text-orange-600 bg-orange-100" },
+  { key: "PAYMENT_PENDING",     label: "Payment Pending",     icon: CreditCard,     color: "text-rose-600 bg-rose-100" },
+  { key: "READY_FOR_PROCESSING",label: "Ready for Processing",icon: Package,        color: "text-violet-600 bg-violet-100" },
+  { key: "PROCESSING",          label: "In Processing",       icon: Cog,            color: "text-blue-600 bg-blue-100" },
+  { key: "QC_PENDING",          label: "QC Pending",          icon: ClipboardCheck, color: "text-fuchsia-600 bg-fuchsia-100" },
+  { key: "READY_FOR_DELIVERY",  label: "Ready for Delivery",  icon: Truck,          color: "text-emerald-600 bg-emerald-100" },
+  { key: "DELIVERED",           label: "Delivered",           icon: CheckCircle,    color: "text-green-600 bg-green-100" },
 ]
 
-const QUICK_ACTIONS = [
-  { label: "New Order", icon: ShoppingBag },
-  { label: "Store Audit", icon: ClipboardCheck },
-  { label: "Collect Payment", icon: IndianRupee },
-  { label: "Dispatch Orders", icon: Truck },
-  { label: "Receive at Processing Center", icon: Package },
-  { label: "Generate Barcodes", icon: Scan },
-  { label: "Queue Allocation", icon: List },
-  { label: "Quality Check", icon: Shield },
-  { label: "Delivery Management", icon: Truck },
-]
-
-const WORKFLOW_STEPS = [
-  "Order Intake",
-  "Store Audit",
-  "Payment Collection",
-  "Packing & Dispatch",
-  "Processing Center Intake",
-  "Barcode Generation",
-  "Queue Allocation",
-  "Processing",
-  "Quality Check",
-  "Packing",
-  "Dispatch",
-  "Delivery",
-]
+interface OrderStats { byStatus: Record<string, number>; today: number; total: number }
 
 function KpiSkeleton() {
   return (
     <div className="flex items-center gap-3 p-4">
       <Skeleton className="h-10 w-10 rounded-lg" />
-      <div className="space-y-1.5">
-        <Skeleton className="h-3 w-20" />
-        <Skeleton className="h-5 w-12" />
-      </div>
+      <div className="space-y-1.5"><Skeleton className="h-3 w-20" /><Skeleton className="h-5 w-12" /></div>
     </div>
   )
 }
 
 function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) {
-  const { toast } = useToast()
-  const [kpiValues, setKpiValues] = useState<number[]>([])
-  const [kpiLoading, setKpiLoading] = useState(true)
+  const { setLaundryPage } = useAdminStore()
+  const [stats, setStats] = useState<OrderStats | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    async function loadKpis() {
-      try {
-        const res = await fetch(`/api/laundry/businesses/${laundryBusinessId}/stores`)
-        if (!res.ok) return
-        const stores = await res.json()
-        const storeCount = Array.isArray(stores) ? stores.length : 0
-        setKpiValues([storeCount, 0, 0, 0, 0, 0, 0])
-      } catch {
-        setKpiValues([0, 0, 0, 0, 0, 0, 0])
-      } finally {
-        setKpiLoading(false)
-      }
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/laundry/orders/stats?businessId=${encodeURIComponent(laundryBusinessId)}`)
+      const json = await res.json()
+      if (json.success) setStats(json.data)
+      else setStats({ byStatus: {}, today: 0, total: 0 })
+    } catch {
+      setStats({ byStatus: {}, today: 0, total: 0 })
+    } finally {
+      setLoading(false)
     }
-    loadKpis()
   }, [laundryBusinessId])
+
+  useEffect(() => { load() }, [load])
+
+  const count = (key: string) => stats?.byStatus[key] ?? 0
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Laundry Dashboard</h2>
-        <p className="text-sm text-muted-foreground">Real-time overview of your laundry operations</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Store Counter</h2>
+          <p className="text-sm text-muted-foreground">Live operational workload across the order pipeline</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}>
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+          <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => setLaundryPage("new-order")}>
+            <Plus className="h-3.5 w-3.5" /> New Order
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
-        {KPI_CONFIG.map((kpi, i) => (
-          <Card key={kpi.label}>
-            <CardContent className="p-4">
-              {kpiLoading ? (
-                <KpiSkeleton />
-              ) : (
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${kpi.color}`}>
-                    <kpi.icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">{kpi.label}</p>
-                    <p className="text-xl font-bold">{kpiValues[i] ?? "—"}</p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+      {/* Today / total intake */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card><CardContent className="p-4">
+          {loading ? <KpiSkeleton /> : (
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg text-sky-600 bg-sky-100"><ShoppingBag className="h-5 w-5" /></div>
+              <div><p className="text-xs text-muted-foreground">Today&apos;s Orders</p><p className="text-2xl font-bold">{stats?.today ?? 0}</p></div>
+            </div>
+          )}
+        </CardContent></Card>
+        <Card><CardContent className="p-4">
+          {loading ? <KpiSkeleton /> : (
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 bg-slate-100"><Package className="h-5 w-5" /></div>
+              <div><p className="text-xs text-muted-foreground">Total Orders</p><p className="text-2xl font-bold">{stats?.total ?? 0}</p></div>
+            </div>
+          )}
+        </CardContent></Card>
       </div>
 
+      {/* Per-stage workload */}
       <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-3">Quick Actions</h3>
-        <div className="flex flex-wrap gap-3">
-          {QUICK_ACTIONS.map(action => (
-            <Card key={action.label} className="cursor-pointer hover:bg-accent/50 transition-colors">
-              <CardContent className="p-3 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
-                  <action.icon className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <span className="text-sm whitespace-nowrap">{action.label}</span>
+        <h3 className="text-sm font-medium text-muted-foreground mb-3">Workload by Stage</h3>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {WORKLOAD.map(w => (
+            <Card key={w.key}>
+              <CardContent className="p-4">
+                {loading ? <KpiSkeleton /> : (
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${w.color}`}><w.icon className="h-5 w-5" /></div>
+                    <div><p className="text-xs text-muted-foreground">{w.label}</p><p className="text-xl font-bold">{count(w.key)}</p></div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
         </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-3">Order Workflow</h3>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex flex-wrap items-center gap-1">
-              {WORKFLOW_STEPS.map((step, i) => (
-                <div key={step} className="flex items-center gap-1">
-                  <div className="rounded-full bg-primary/10 text-primary px-3 py-1.5 text-xs font-medium whitespace-nowrap border border-primary/20">
-                    {step}
-                  </div>
-                  {i < WORKFLOW_STEPS.length - 1 && (
-                    <ArrowDown className="h-3 w-3 text-muted-foreground rotate-[-90deg] shrink-0" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )
