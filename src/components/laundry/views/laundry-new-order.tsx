@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
@@ -11,47 +10,30 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   Search, UserPlus, User, Phone, MapPin, Clock, CreditCard,
-  FileText, ArrowLeft, Save, Send, ArrowRight, AlertCircle,
-  Loader2, CheckCircle2, ShoppingBag,
+  FileText, ArrowLeft, Save, Send, ArrowRight,
+  Loader2, ShoppingBag, Plus, Trash2, Zap, Package,
 } from "lucide-react"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
+import type { BillingQuote } from "@/lib/laundry-billing"
 
-const DEFAULT_SERVICES = [
-  { name: "Wash + Dry + Fold", hours: 24 },
-  { name: "Wash + Dry + Iron", hours: 24 },
-  { name: "Dry Clean", hours: 48 },
-  { name: "Steam Iron", hours: 12 },
-  { name: "Shoe Cleaning", hours: 48 },
-  { name: "Carpet Cleaning", hours: 72 },
-]
-
+// Order Type → Customer Type used by the Pricing Engine to resolve rules.
 const ORDER_TYPES = [
-  { value: "WALK_IN", label: "Walk-In" },
-  { value: "STORE_DROP", label: "Store Drop" },
-  { value: "HOME_PICKUP", label: "Home Pickup" },
-  { value: "CORPORATE", label: "Corporate Customer" },
-  { value: "SUBSCRIPTION", label: "Subscription Customer" },
+  { value: "WALK_IN", label: "Walk-In", customerType: "WALK_IN" },
+  { value: "STORE_DROP", label: "Store Drop", customerType: "WALK_IN" },
+  { value: "HOME_PICKUP", label: "Home Pickup", customerType: "PICKUP" },
+  { value: "CORPORATE", label: "Corporate Customer", customerType: "CORPORATE" },
+  { value: "SUBSCRIPTION", label: "Subscription Customer", customerType: "SUBSCRIPTION" },
 ]
 
 const PAYMENT_PREFERENCES = [
@@ -73,8 +55,39 @@ interface CustomerResult {
   addresses: { addressLine1: string; city: string }[]
 }
 
+interface ServiceMaster {
+  id: string
+  name: string
+  categoryId: string | null
+  defaultTurnaroundHours: number
+  availableInStore: boolean
+  availableForPickup: boolean
+  isActive: boolean
+}
+
+interface GarmentMaster {
+  id: string
+  name: string
+  categoryId: string | null
+  defaultService: string | null
+  defaultUnit: string // PIECE | KG
+  isActive: boolean
+}
+
+interface OrderLine {
+  uid: string
+  serviceId: string
+  garmentId: string
+  quantity: number
+  weightKg: number
+}
+
+let lineSeq = 0
+const newLine = (): OrderLine => ({ uid: `L${++lineSeq}`, serviceId: "", garmentId: "", quantity: 1, weightKg: 0 })
+
+const inr = (n: number) => `₹${n.toFixed(2)}`
+
 export default function LaundryNewOrder() {
-  const router = useRouter()
   const { currentBusinessId } = useAuthStore()
   const { setLaundryPage } = useAdminStore()
   const { toast } = useToast()
@@ -86,7 +99,6 @@ export default function LaundryNewOrder() {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerResult | null>(null)
   const [showNewCustomer, setShowNewCustomer] = useState(false)
 
-  // New customer form
   const [newCustName, setNewCustName] = useState("")
   const [newCustMobile, setNewCustMobile] = useState("")
   const [newCustAltMobile, setNewCustAltMobile] = useState("")
@@ -98,8 +110,18 @@ export default function LaundryNewOrder() {
   // ── Section 2: Order Type ────────────────────────────────────────────
   const [orderType, setOrderType] = useState("WALK_IN")
 
-  // ── Section 3: Services ──────────────────────────────────────────────
-  const [selectedServices, setSelectedServices] = useState<string[]>([])
+  // ── Masters (loaded from the master data — never hardcoded) ──────────
+  const [services, setServices] = useState<ServiceMaster[]>([])
+  const [garments, setGarments] = useState<GarmentMaster[]>([])
+  const [mastersLoaded, setMastersLoaded] = useState(false)
+
+  // ── Section 3: Items (service + garment + qty/weight) ────────────────
+  const [lineItems, setLineItems] = useState<OrderLine[]>([newLine()])
+  const [express, setExpress] = useState(false)
+
+  // ── Live billing (resolved by the Pricing Engine) ────────────────────
+  const [quote, setQuote] = useState<BillingQuote | null>(null)
+  const [quoting, setQuoting] = useState(false)
 
   // ── Section 4: Expected Delivery ─────────────────────────────────────
   const [overrideDelivery, setOverrideDelivery] = useState(false)
@@ -112,10 +134,8 @@ export default function LaundryNewOrder() {
   const [pickupAddress, setPickupAddress] = useState("")
   const [pickupInstructions, setPickupInstructions] = useState("")
 
-  // ── Section 6: Payment Preference ────────────────────────────────────
+  // ── Section 6/7 ──────────────────────────────────────────────────────
   const [paymentPreference, setPaymentPreference] = useState("COD")
-
-  // ── Section 7: Special Instructions ──────────────────────────────────
   const [specialInstructions, setSpecialInstructions] = useState("")
 
   // ── Store list ───────────────────────────────────────────────────────
@@ -123,21 +143,13 @@ export default function LaundryNewOrder() {
   const [selectedStoreId, setSelectedStoreId] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
-  // ── Computed ─────────────────────────────────────────────────────────
-  const computedDeliveryDate = useCallback(() => {
-    if (overrideDelivery && customDeliveryDate) return customDeliveryDate
-    if (selectedServices.length === 0) return ""
-    const maxHours = Math.max(
-      ...selectedServices.map(
-        (s) => DEFAULT_SERVICES.find((ds) => ds.name === s)?.hours || 24
-      )
-    )
-    const date = new Date()
-    date.setHours(date.getHours() + maxHours)
-    return date.toISOString().split("T")[0]
-  }, [selectedServices, overrideDelivery, customDeliveryDate])
+  const customerType = useMemo(
+    () => ORDER_TYPES.find((o) => o.value === orderType)?.customerType || "WALK_IN",
+    [orderType],
+  )
+  const isPickup = orderType === "HOME_PICKUP"
 
-  // ── Fetch stores on mount ────────────────────────────────────────────
+  // ── Fetch stores + masters on mount ──────────────────────────────────
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/businesses/${currentBusinessId}`)
@@ -145,14 +157,110 @@ export default function LaundryNewOrder() {
       .then((biz) => {
         if (biz.stores?.length) {
           setStores(biz.stores)
-          if (!selectedStoreId) setSelectedStoreId(biz.stores[0].id)
+          setSelectedStoreId((prev) => prev || biz.stores[0].id)
         }
       })
       .catch(() => {})
+
+    Promise.all([
+      fetch(`/api/laundry/services?businessId=${currentBusinessId}`).then((r) => r.json()),
+      fetch(`/api/laundry/garments?businessId=${currentBusinessId}`).then((r) => r.json()),
+    ])
+      .then(([svc, grm]) => {
+        if (svc.success) setServices((svc.data as ServiceMaster[]).filter((s) => s.isActive))
+        if (grm.success) setGarments((grm.data as GarmentMaster[]).filter((g) => g.isActive))
+      })
+      .catch(() => {})
+      .finally(() => setMastersLoaded(true))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBusinessId])
 
-  // ── Customer search ──────────────────────────────────────────────────
+  // Services available for the chosen order channel.
+  const availableServices = useMemo(
+    () => services.filter((s) => (isPickup ? s.availableForPickup : s.availableInStore)),
+    [services, isPickup],
+  )
+
+  const garmentById = useCallback((id: string) => garments.find((g) => g.id === id), [garments])
+
+  // ── Live billing: resolve every line through the Pricing Engine ──────
+  const validLines = useMemo(
+    () => lineItems.filter((l) => l.serviceId && l.garmentId),
+    [lineItems],
+  )
+  const quoteKey = JSON.stringify({ validLines, selectedStoreId, customerType, express, isPickup })
+  const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!currentBusinessId || validLines.length === 0) {
+      setQuote(null)
+      return
+    }
+    if (quoteTimer.current) clearTimeout(quoteTimer.current)
+    quoteTimer.current = setTimeout(async () => {
+      setQuoting(true)
+      try {
+        const items = validLines.map((l) => {
+          const g = garmentById(l.garmentId)
+          return {
+            serviceId: l.serviceId,
+            garmentId: l.garmentId,
+            categoryId: g?.categoryId || null,
+            quantity: l.quantity,
+            weightKg: l.weightKg,
+          }
+        })
+        const res = await fetch("/api/laundry/billing/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            businessId: currentBusinessId,
+            storeId: selectedStoreId || null,
+            customerType,
+            express,
+            delivery: isPickup,
+            pickup: isPickup,
+            items,
+          }),
+        })
+        const json = await res.json()
+        setQuote(json.success ? json.data : null)
+      } catch {
+        setQuote(null)
+      } finally {
+        setQuoting(false)
+      }
+    }, 350)
+    return () => {
+      if (quoteTimer.current) clearTimeout(quoteTimer.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, currentBusinessId])
+
+  // Map a valid-line index back to its quote line (quote preserves order).
+  const lineQuote = (line: OrderLine) => {
+    const idx = validLines.findIndex((l) => l.uid === line.uid)
+    return idx >= 0 && quote ? quote.lines[idx] : null
+  }
+
+  // ── Expected delivery from the selected services' turnaround ─────────
+  const maxTurnaroundHours = useMemo(() => {
+    const hrs = validLines
+      .map((l) => services.find((s) => s.id === l.serviceId)?.defaultTurnaroundHours || 0)
+      .filter((h) => h > 0)
+    const base = hrs.length ? Math.max(...hrs) : 0
+    return express && base > 0 ? Math.max(4, Math.round(base / 2)) : base
+  }, [validLines, services, express])
+
+  const computedDeliveryDate = useCallback(() => {
+    if (overrideDelivery && customDeliveryDate) return customDeliveryDate
+    if (maxTurnaroundHours === 0) return ""
+    const date = new Date()
+    date.setHours(date.getHours() + maxTurnaroundHours)
+    return date.toISOString().split("T")[0]
+  }, [maxTurnaroundHours, overrideDelivery, customDeliveryDate])
+
+  // ── Customer search / create (unchanged behaviour) ───────────────────
   const handleSearch = async () => {
     if (!searchQuery.trim() || !currentBusinessId) return
     setSearching(true)
@@ -167,7 +275,6 @@ export default function LaundryNewOrder() {
     }
   }
 
-  // ── Create new customer ──────────────────────────────────────────────
   const handleCreateCustomer = async () => {
     if (!newCustName.trim() || !newCustMobile.trim()) {
       toast({ title: "Error", description: "Name and Mobile are required", variant: "destructive" })
@@ -179,18 +286,13 @@ export default function LaundryNewOrder() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           businessId: currentBusinessId,
-          name: newCustName,
-          mobile: newCustMobile,
-          alternateMobile: newCustAltMobile,
-          email: newCustEmail,
-          address: newCustAddress,
-          area: newCustArea,
-          landmark: newCustLandmark,
+          name: newCustName, mobile: newCustMobile, alternateMobile: newCustAltMobile,
+          email: newCustEmail, address: newCustAddress, area: newCustArea, landmark: newCustLandmark,
         }),
       })
       const json = await res.json()
       if (res.status === 409 && json.data) {
-        setSelectedCustomer({ ...json.data, address: [] })
+        setSelectedCustomer({ ...json.data, addresses: [] })
         setShowNewCustomer(false)
         toast({ title: "Customer Exists", description: "Using existing customer record" })
         return
@@ -201,15 +303,9 @@ export default function LaundryNewOrder() {
       }
       const cust = json.data
       setSelectedCustomer({
-        id: cust.id,
-        name: cust.name,
-        phone: cust.phone,
-        email: cust.email,
-        loyaltyTier: cust.loyaltyTier || "BRONZE",
-        walletBalance: cust.walletBalance || 0,
-        customerCode: cust.customerCode,
-        totalOrders: cust.totalOrders || 0,
-        addresses: [],
+        id: cust.id, name: cust.name, phone: cust.phone, email: cust.email,
+        loyaltyTier: cust.loyaltyTier || "BRONZE", walletBalance: cust.walletBalance || 0,
+        customerCode: cust.customerCode, totalOrders: cust.totalOrders || 0, addresses: [],
       })
       setShowNewCustomer(false)
       toast({ title: "Customer Created", description: `${cust.name} saved successfully` })
@@ -218,12 +314,22 @@ export default function LaundryNewOrder() {
     }
   }
 
-  // ── Service toggle ───────────────────────────────────────────────────
-  const toggleService = (name: string) => {
-    setSelectedServices((prev) =>
-      prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name]
-    )
-  }
+  // ── Line item helpers ────────────────────────────────────────────────
+  const updateLine = (uid: string, patch: Partial<OrderLine>) =>
+    setLineItems((prev) => prev.map((l) => (l.uid === uid ? { ...l, ...patch } : l)))
+  const addLine = () => setLineItems((prev) => [...prev, newLine()])
+  const removeLine = (uid: string) =>
+    setLineItems((prev) => (prev.length > 1 ? prev.filter((l) => l.uid !== uid) : prev))
+
+  // Distinct services for the order workflow record (LaundryOrderService lines).
+  const distinctServices = useMemo(() => {
+    const map = new Map<string, { serviceName: string; turnaroundHours: number }>()
+    validLines.forEach((l) => {
+      const svc = services.find((s) => s.id === l.serviceId)
+      if (svc && !map.has(svc.id)) map.set(svc.id, { serviceName: svc.name, turnaroundHours: svc.defaultTurnaroundHours })
+    })
+    return Array.from(map.values())
+  }, [validLines, services])
 
   // ── Submit order ─────────────────────────────────────────────────────
   const handleSubmit = async (action: "create" | "draft" | "audit") => {
@@ -231,8 +337,8 @@ export default function LaundryNewOrder() {
       toast({ title: "Error", description: "No business or store selected", variant: "destructive" })
       return
     }
-    if (selectedServices.length === 0) {
-      toast({ title: "Error", description: "Select at least one service", variant: "destructive" })
+    if (validLines.length === 0) {
+      toast({ title: "Error", description: "Add at least one item (service + garment)", variant: "destructive" })
       return
     }
 
@@ -243,18 +349,15 @@ export default function LaundryNewOrder() {
         storeId: selectedStoreId,
         customerId: selectedCustomer?.id || null,
         orderType,
-        services: selectedServices.map((name) => {
-          const svc = DEFAULT_SERVICES.find((s) => s.name === name)
-          return { serviceName: name, turnaroundHours: svc?.hours || 24 }
-        }),
+        services: distinctServices,
         expectedDeliveryDate: computedDeliveryDate(),
         deliveryOverride: overrideDelivery,
         overrideReason: overrideDelivery ? overrideReason : null,
         paymentPreference,
-        pickupDate: orderType === "HOME_PICKUP" ? pickupDate : null,
-        pickupTimeSlot: orderType === "HOME_PICKUP" ? pickupTimeSlot : null,
-        pickupAddress: orderType === "HOME_PICKUP" ? pickupAddress : null,
-        pickupInstructions: orderType === "HOME_PICKUP" ? pickupInstructions : null,
+        pickupDate: isPickup ? pickupDate : null,
+        pickupTimeSlot: isPickup ? pickupTimeSlot : null,
+        pickupAddress: isPickup ? pickupAddress : null,
+        pickupInstructions: isPickup ? pickupInstructions : null,
         specialInstructions,
         notes: null,
         createdBy: "laundry_user",
@@ -270,17 +373,8 @@ export default function LaundryNewOrder() {
         toast({ title: "Error", description: json.error || "Failed to create order", variant: "destructive" })
         return
       }
-
-      toast({
-        title: "Order Created",
-        description: `Order ${json.data.orderNumber} is now PENDING_STORE_AUDIT`,
-      })
-
-      if (action === "audit") {
-        setLaundryPage("inbox")
-      } else {
-        setLaundryPage("orders")
-      }
+      toast({ title: "Order Created", description: `Order ${json.data.orderNumber} is now PENDING_STORE_AUDIT` })
+      setLaundryPage(action === "audit" ? "inbox" : "orders")
     } catch {
       toast({ title: "Error", description: "Failed to create order", variant: "destructive" })
     } finally {
@@ -288,9 +382,7 @@ export default function LaundryNewOrder() {
     }
   }
 
-  const maxDeliveryHours = selectedServices.length > 0
-    ? Math.max(...selectedServices.map((s) => DEFAULT_SERVICES.find((ds) => ds.name === s)?.hours || 24))
-    : 0
+  const noMasters = mastersLoaded && (availableServices.length === 0 || garments.length === 0)
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
@@ -301,7 +393,7 @@ export default function LaundryNewOrder() {
         </Button>
         <div>
           <h1 className="text-xl font-bold">New Laundry Order</h1>
-          <p className="text-sm text-muted-foreground">Create a new order and start the laundry workflow</p>
+          <p className="text-sm text-muted-foreground">Pricing is resolved live from the Pricing Engine</p>
         </div>
       </div>
 
@@ -328,17 +420,11 @@ export default function LaundryNewOrder() {
                 )}
                 <div className="flex items-center gap-2 mt-1">
                   <Badge variant="outline" className="text-xs">{selectedCustomer.loyaltyTier}</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    Wallet: ₹{selectedCustomer.walletBalance.toFixed(2)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    Orders: {selectedCustomer.totalOrders}
-                  </span>
+                  <span className="text-xs text-muted-foreground">Wallet: ₹{selectedCustomer.walletBalance.toFixed(2)}</span>
+                  <span className="text-xs text-muted-foreground">Orders: {selectedCustomer.totalOrders}</span>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setSelectedCustomer(null)}>
-                Change
-              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedCustomer(null)}>Change</Button>
             </div>
           ) : (
             <div className="space-y-4">
@@ -377,7 +463,6 @@ export default function LaundryNewOrder() {
               )}
 
               <Separator />
-
               <div className="text-center">
                 <Button variant="outline" onClick={() => setShowNewCustomer(true)}>
                   <UserPlus className="h-4 w-4 mr-2" /> New Customer
@@ -437,14 +522,14 @@ export default function LaundryNewOrder() {
         </DialogContent>
       </Dialog>
 
-      {/* Section 2: Order Type */}
+      {/* Section 2: Order Type + Store */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ShoppingBag className="h-4 w-4" /> Order Type
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <RadioGroup value={orderType} onValueChange={setOrderType} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
             {ORDER_TYPES.map((ot) => (
               <div key={ot.value} className="flex items-center space-x-2">
@@ -453,34 +538,104 @@ export default function LaundryNewOrder() {
               </div>
             ))}
           </RadioGroup>
+          {stores.length > 1 && (
+            <div className="space-y-1 max-w-xs">
+              <Label className="text-sm">Store</Label>
+              <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+                <SelectTrigger><SelectValue placeholder="Select store" /></SelectTrigger>
+                <SelectContent>
+                  {stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.storeName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Section 3: Service Selection */}
+      {/* Section 3: Items & Billing (master-driven) */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CheckCircle2 className="h-4 w-4" /> Service Selection
+          <CardTitle className="flex items-center justify-between text-base">
+            <span className="flex items-center gap-2"><Package className="h-4 w-4" /> Items &amp; Pricing</span>
+            <div className="flex items-center gap-2">
+              <Zap className={`h-4 w-4 ${express ? "text-amber-500" : "text-muted-foreground"}`} />
+              <Label htmlFor="express" className="text-xs font-normal cursor-pointer">Express</Label>
+              <Switch id="express" checked={express} onCheckedChange={setExpress} />
+            </div>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {DEFAULT_SERVICES.map((svc) => (
-              <div
-                key={svc.name}
-                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                  selectedServices.includes(svc.name) ? "border-primary bg-primary/5" : "hover:bg-muted/50"
-                }`}
-                onClick={() => toggleService(svc.name)}
-              >
-                <Checkbox checked={selectedServices.includes(svc.name)} onCheckedChange={() => toggleService(svc.name)} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{svc.name}</p>
-                  <p className="text-xs text-muted-foreground">{svc.hours}h TAT</p>
-                </div>
+        <CardContent className="space-y-3">
+          {noMasters ? (
+            <div className="text-sm text-muted-foreground border rounded-lg p-4">
+              No active Services or Garments found. Add them under <strong>Masters → Services</strong> and{" "}
+              <strong>Masters → Garments</strong>, then configure prices in the <strong>Pricing Engine</strong>.
+            </div>
+          ) : (
+            <>
+              <div className="hidden sm:grid grid-cols-12 gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-1">
+                <div className="col-span-4">Service</div>
+                <div className="col-span-4">Garment</div>
+                <div className="col-span-2">Qty / Weight</div>
+                <div className="col-span-2 text-right">Amount</div>
               </div>
-            ))}
-          </div>
+              {lineItems.map((line) => {
+                const g = garmentById(line.garmentId)
+                const byWeight = g?.defaultUnit === "KG"
+                const lq = lineQuote(line)
+                return (
+                  <div key={line.uid} className="grid grid-cols-12 gap-2 items-center border rounded-lg p-2">
+                    <div className="col-span-12 sm:col-span-4">
+                      <Select value={line.serviceId} onValueChange={(v) => updateLine(line.uid, { serviceId: v })}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Service" /></SelectTrigger>
+                        <SelectContent>
+                          {availableServices.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-7 sm:col-span-4">
+                      <Select value={line.garmentId} onValueChange={(v) => updateLine(line.uid, { garmentId: v })}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Garment" /></SelectTrigger>
+                        <SelectContent>
+                          {garments.map((gm) => <SelectItem key={gm.id} value={gm.id}>{gm.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-3 sm:col-span-2">
+                      {byWeight ? (
+                        <Input
+                          type="number" min={0} step={0.5} className="h-9" placeholder="kg"
+                          value={line.weightKg || ""}
+                          onChange={(e) => updateLine(line.uid, { weightKg: parseFloat(e.target.value) || 0 })}
+                        />
+                      ) : (
+                        <Input
+                          type="number" min={1} step={1} className="h-9" placeholder="qty"
+                          value={line.quantity || ""}
+                          onChange={(e) => updateLine(line.uid, { quantity: parseInt(e.target.value) || 0 })}
+                        />
+                      )}
+                    </div>
+                    <div className="col-span-2 sm:col-span-2 flex items-center justify-end gap-1">
+                      <span className="text-sm font-medium tabular-nums">
+                        {lq ? (lq.matchedRuleId ? inr(lq.lineTotal) : "—") : (line.serviceId && line.garmentId ? "…" : "")}
+                      </span>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLine(line.uid)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    {lq && !lq.matchedRuleId && line.serviceId && line.garmentId && (
+                      <div className="col-span-12 text-[11px] text-amber-600">
+                        No pricing rule matches this combination — configure it in the Pricing Engine.
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              <Button variant="outline" size="sm" onClick={addLine}>
+                <Plus className="h-4 w-4 mr-2" /> Add Item
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -494,8 +649,8 @@ export default function LaundryNewOrder() {
         <CardContent className="space-y-3">
           <div className="flex items-center gap-3 text-sm">
             <span className="text-muted-foreground">Auto-calculated:</span>
-            <Badge variant="secondary">{computedDeliveryDate() || "Select services"}</Badge>
-            {maxDeliveryHours > 0 && <span className="text-xs text-muted-foreground">(Based on highest TAT: {maxDeliveryHours}h)</span>}
+            <Badge variant="secondary">{computedDeliveryDate() || "Add items"}</Badge>
+            {maxTurnaroundHours > 0 && <span className="text-xs text-muted-foreground">(Highest TAT: {maxTurnaroundHours}h{express ? ", express" : ""})</span>}
           </div>
           <div className="flex items-center gap-3">
             <Switch checked={overrideDelivery} onCheckedChange={setOverrideDelivery} id="override-delivery" />
@@ -517,7 +672,7 @@ export default function LaundryNewOrder() {
       </Card>
 
       {/* Section 5: Pickup Details (Home Pickup only) */}
-      {orderType === "HOME_PICKUP" && (
+      {isPickup && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -533,9 +688,7 @@ export default function LaundryNewOrder() {
               <div className="space-y-1">
                 <Label>Pickup Time Slot</Label>
                 <Select value={pickupTimeSlot} onValueChange={setPickupTimeSlot}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select time slot" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select time slot" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="07:00-09:00">07:00 - 09:00</SelectItem>
                     <SelectItem value="09:00-12:00">09:00 - 12:00</SelectItem>
@@ -574,7 +727,7 @@ export default function LaundryNewOrder() {
               </div>
             ))}
           </RadioGroup>
-          <p className="text-xs text-muted-foreground mt-2">No payment is collected at order intake. Payment will be processed during Stage 2 (Store Audit).</p>
+          <p className="text-xs text-muted-foreground mt-2">Payment is collected during Stage 2 (Store Audit), after the store confirms the resolved amount.</p>
         </CardContent>
       </Card>
 
@@ -589,37 +742,35 @@ export default function LaundryNewOrder() {
           <Textarea
             value={specialInstructions}
             onChange={(e) => setSpecialInstructions(e.target.value)}
-            placeholder="Examples: Starch Shirts, Separate White Clothes, Gentle Wash, Express Delivery..."
+            placeholder="Examples: Starch Shirts, Separate White Clothes, Gentle Wash..."
             className="min-h-[80px]"
           />
         </CardContent>
       </Card>
 
-      {/* Order Summary */}
+      {/* Order Summary — resolved live from the Pricing Engine */}
       <Card className="bg-muted/20">
         <CardHeader>
-          <CardTitle className="text-base">Order Summary</CardTitle>
+          <CardTitle className="flex items-center justify-between text-base">
+            <span>Order Summary</span>
+            {quoting && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {selectedServices.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {selectedServices.map((s) => (
-                <Badge key={s} variant="secondary">{s}</Badge>
-              ))}
-            </div>
+        <CardContent className="space-y-2 text-sm">
+          {quote ? (
+            <>
+              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular-nums">{inr(quote.subtotal)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span className="tabular-nums">{inr(quote.gstTotal)}</span></div>
+              {quote.expressCharge > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Express Charge</span><span className="tabular-nums">{inr(quote.expressCharge)}</span></div>}
+              {quote.pickupCharge > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Pickup Charge</span><span className="tabular-nums">{inr(quote.pickupCharge)}</span></div>}
+              {quote.deliveryCharge > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Charge</span><span className="tabular-nums">{inr(quote.deliveryCharge)}</span></div>}
+              <Separator />
+              <div className="flex justify-between text-base font-semibold"><span>Estimated Total</span><span className="tabular-nums">{inr(quote.grandTotal)}</span></div>
+              <p className="text-xs text-muted-foreground pt-1">Final amount is confirmed during Store Audit.</p>
+            </>
           ) : (
-            <p className="text-sm text-muted-foreground">No services selected</p>
+            <p className="text-muted-foreground">{validLines.length > 0 ? "Resolving prices…" : "Add items to see the resolved price"}</p>
           )}
-          <div className="grid grid-cols-2 gap-2 text-sm pt-2 border-t">
-            <div>
-              <span className="text-muted-foreground">Total Items:</span>
-              <span className="ml-2 font-medium">Pending Audit</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Estimated Amount:</span>
-              <span className="ml-2 font-medium">Pending Audit</span>
-            </div>
-          </div>
         </CardContent>
       </Card>
 
