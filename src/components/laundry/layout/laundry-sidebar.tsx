@@ -19,7 +19,7 @@ import { LAUNDRY_ROLES } from "@/lib/permissions"
 import {
   LayoutDashboard, Inbox, ShoppingBag, Users, Store,
   Factory, BarChart3, Settings, ChevronLeft, Sparkles, Plus,
-  ClipboardCheck, CreditCard, Truck, Building2,
+  ClipboardCheck, CreditCard, Truck, Tags, Shirt,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -51,12 +51,14 @@ const storeNavItems: NavItem[] = [
   { key: "dispatch-queue",     label: "Dispatch",           icon: Truck },
 ]
 
-// MASTERS — permanent, always-editable master data (replaces the setup wizard).
+// MASTERS — permanent, always-editable OPERATIONAL master data. The Business /
+// Tenant itself is owned by the Quantix Platform and is NOT recreated here.
 // Processing Center is a Store Type, not a separate module. Services / Pricing /
-// Categories / Garments / Subscription Plans are added as their masters ship.
+// Subscription Plans / Employees / etc. are added as their masters ship.
 const mastersNavItems: NavItem[] = [
-  { key: "business-profile", label: "Business Profile", icon: Building2 },
-  { key: "stores",           label: "Stores",           icon: Store },
+  { key: "stores",     label: "Stores",     icon: Store },
+  { key: "categories", label: "Categories", icon: Tags },
+  { key: "garments",   label: "Garments",   icon: Shirt },
 ]
 
 interface LaundrySidebarProps {

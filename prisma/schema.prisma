@@ -4199,6 +4199,42 @@ model LaundryOrder {
   @@index([orderNumber])
 }
 
+// ── Operational master data (per laundry business) ─────────────────────────
+// Category master — garment/service grouping (Wash, Dry Clean, Premium, …).
+model LaundryCategory {
+  id           String   @id @default(cuid())
+  businessId   String
+  name         String
+  description  String?
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  garments LaundryGarment[]
+
+  @@index([businessId])
+}
+
+// Garment master — referenced by pricing. Default unit Piece/Kg.
+model LaundryGarment {
+  id             String   @id @default(cuid())
+  businessId     String
+  name           String
+  categoryId     String?
+  defaultService String?
+  defaultUnit    String   @default("PIECE") // PIECE | KG
+  displayOrder   Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([categoryId])
+}
+
 // Per-order workflow event log — the audit trail / timeline of every stage
 // transition (who moved it, from which status to which, when, with a note).
 model LaundryOrderEvent {
