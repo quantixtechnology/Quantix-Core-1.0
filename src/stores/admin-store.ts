@@ -103,7 +103,7 @@ export type LaundryBusinessPage =
   | "processing-centers"
   | "reports"
   | "settings"
-  | "business-config"
+  | "business-profile"
 
 export type BusinessPage =
   | "dashboard"

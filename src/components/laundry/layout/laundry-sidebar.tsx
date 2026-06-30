@@ -19,7 +19,7 @@ import { LAUNDRY_ROLES } from "@/lib/permissions"
 import {
   LayoutDashboard, Inbox, ShoppingBag, Users, Store,
   Factory, BarChart3, Settings, ChevronLeft, Sparkles, Plus,
-  ClipboardCheck, CreditCard, Truck,
+  ClipboardCheck, CreditCard, Truck, Building2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -41,6 +41,7 @@ const processingNavItems: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
 ]
 
+// OPERATIONS — the live workflow (engine-driven). Unchanged.
 const storeNavItems: NavItem[] = [
   { key: "dashboard",          label: "Dashboard",          icon: LayoutDashboard },
   { key: "inbox",              label: "My Inbox",           icon: Inbox },
@@ -48,9 +49,14 @@ const storeNavItems: NavItem[] = [
   { key: "audit-queue",        label: "Store Audit",        icon: ClipboardCheck },
   { key: "payment-queue",      label: "Payment Collection", icon: CreditCard },
   { key: "dispatch-queue",     label: "Dispatch",           icon: Truck },
-  { key: "stores",             label: "Stores",             icon: Store,               feature: "multiStoreEnabled" },
-  { key: "processing-centers", label: "Processing Centers", icon: Factory,             feature: "multiProcessingEnabled" },
-  { key: "business-config",    label: "Business Configuration", icon: Settings },
+]
+
+// MASTERS — permanent, always-editable master data (replaces the setup wizard).
+// Processing Center is a Store Type, not a separate module. Services / Pricing /
+// Categories / Garments / Subscription Plans are added as their masters ship.
+const mastersNavItems: NavItem[] = [
+  { key: "business-profile", label: "Business Profile", icon: Building2 },
+  { key: "stores",           label: "Stores",           icon: Store },
 ]
 
 interface LaundrySidebarProps {
@@ -82,7 +88,9 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   } as React.CSSProperties
 
   const isProcessingRole = currentRole ? PROCESSING_ROLES.has(currentRole) : false
-  const laundryNavItems = isProcessingRole ? processingNavItems : storeNavItems
+  const operationsItems = isProcessingRole ? processingNavItems : storeNavItems
+  const masterItems = isProcessingRole ? [] : mastersNavItems
+  const laundryNavItems = [...operationsItems, ...masterItems]
 
   // Redirect to dashboard if current page is hidden by licensing or role
   useEffect(() => {
@@ -118,34 +126,41 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
       </SidebarHeader>
 
       <SidebarContent className="py-3 gap-0">
-        <SidebarGroup className="px-2 py-0">
-          <SidebarGroupLabel
-            className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 h-auto py-1"
-            style={{ color: "var(--sidebar-heading)" }}
-          >
-            Workspace
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-0.5">
-              {laundryNavItems.filter(item => !item.feature || isEnabled(item.feature)).map((item) => {
-                const isActive = laundryPage === item.key
-                return (
-                  <SidebarMenuItem key={item.key}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => handleNavigate(item.key)}
-                      tooltip={item.label}
-                      className={`font-semibold text-xs h-9 ${isActive ? "admin-nav-active" : "!text-white/72 hover:!text-white hover:!bg-white/8"}`}
-                    >
-                      <item.icon className="size-4 shrink-0" />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {([
+          { title: "Operations", items: operationsItems },
+          { title: "Masters", items: masterItems },
+        ] as { title: string; items: NavItem[] }[])
+          .filter(section => section.items.length > 0)
+          .map(section => (
+            <SidebarGroup key={section.title} className="px-2 py-0">
+              <SidebarGroupLabel
+                className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 h-auto py-1"
+                style={{ color: "var(--sidebar-heading)" }}
+              >
+                {section.title}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="gap-0.5">
+                  {section.items.filter(item => !item.feature || isEnabled(item.feature)).map((item) => {
+                    const isActive = laundryPage === item.key
+                    return (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          onClick={() => handleNavigate(item.key)}
+                          tooltip={item.label}
+                          className={`font-semibold text-xs h-9 ${isActive ? "admin-nav-active" : "!text-white/72 hover:!text-white hover:!bg-white/8"}`}
+                        >
+                          <item.icon className="size-4 shrink-0" />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
       </SidebarContent>
 
       <SidebarFooter className="p-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>

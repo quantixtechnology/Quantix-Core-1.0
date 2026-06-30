@@ -159,8 +159,14 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                   <TableCell className="font-mono text-xs">{s.storeCode}</TableCell>
                   <TableCell className="font-medium">{s.storeName}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={s.storeType === "PROCESSING_CENTER" ? "border-amber-300 text-amber-700" : "border-blue-300 text-blue-700"}>
-                      {s.storeType === "PROCESSING_CENTER" ? "Processing Center" : "Retail Store"}
+                    <Badge variant="outline" className={
+                      s.storeType === "PROCESSING_CENTER" ? "border-amber-300 text-amber-700"
+                      : s.storeType === "BOTH" ? "border-emerald-300 text-emerald-700"
+                      : "border-blue-300 text-blue-700"
+                    }>
+                      {s.storeType === "PROCESSING_CENTER" ? "Processing Center"
+                        : s.storeType === "BOTH" ? "Retail + Processing"
+                        : "Retail Store"}
                     </Badge>
                   </TableCell>
                   <TableCell>{s.managerName || "—"}</TableCell>
@@ -199,6 +205,7 @@ export function LaundryStoresView({ businessId }: { businessId: string }) {
                 <SelectContent>
                   <SelectItem value="RETAIL_STORE">Retail Store</SelectItem>
                   <SelectItem value="PROCESSING_CENTER">Processing Center</SelectItem>
+                  <SelectItem value="BOTH">Both (Retail + Processing)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

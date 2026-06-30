@@ -191,7 +191,7 @@ const LaundryInboxView = dynamic(() => import("@/components/laundry/views/laundr
 const LaundryOrdersView = dynamic(() => import("@/components/laundry/views/laundry-orders-view").then(m => ({ default: m.LaundryOrdersView })), { loading: () => <PageLoader /> })
 const LaundryNewOrder = dynamic(() => import("@/components/laundry/views/laundry-new-order").then(m => ({ default: m.default })), { loading: () => <PageLoader /> })
 const LaundryCounterQueue = dynamic(() => import("@/components/laundry/views/laundry-counter-queue").then(m => ({ default: m.LaundryCounterQueue })), { loading: () => <PageLoader /> })
-const LaundryBusinessConfig = dynamic(() => import("@/components/laundry/views/laundry-business-config").then(m => ({ default: m.LaundryBusinessConfig })), { loading: () => <PageLoader /> })
+const LaundryBusinessProfile = dynamic(() => import("@/components/laundry/views/laundry-business-profile").then(m => ({ default: m.LaundryBusinessProfile })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
@@ -627,7 +627,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "processing-centers": return <LaundryProcessingCentersView />
       case "reports": return <LaundryReportsView />
       case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
-      case "business-config": return <LaundryBusinessConfig />
+      case "business-profile": return <LaundryBusinessProfile />
       default: return <LaundryDashboard />
     }
   }
