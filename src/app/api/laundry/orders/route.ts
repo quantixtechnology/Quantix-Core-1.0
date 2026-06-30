@@ -1,20 +1,27 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } from "@/lib/laundry-billing-server"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId: businessIdInput, storeId, customerId, orderType, services, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupDate, pickupTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
+    const { businessId: businessIdInput, storeId, customerId, orderType, services, items, isExpress, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupDate, pickupTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
 
     if (!businessIdInput || !storeId) {
       return NextResponse.json({ error: "Missing required fields: businessId, storeId" }, { status: 400 })
     }
 
-    if (!services || !Array.isArray(services) || services.length === 0) {
-      return NextResponse.json({ error: "At least one service must be selected" }, { status: 400 })
+    // Billing line items drive the financial snapshot. `services` is the legacy
+    // workflow service list — still accepted, and derived from items if omitted.
+    const billingItems: ResolvedItemInput[] = Array.isArray(items) ? items : []
+    const hasItems = billingItems.length > 0
+    const hasServices = Array.isArray(services) && services.length > 0
+
+    if (!hasItems && !hasServices) {
+      return NextResponse.json({ error: "At least one item or service must be provided" }, { status: 400 })
     }
 
     // Accept either LaundryBusiness.id (owner) or platform Business.id (admin).
@@ -57,13 +64,42 @@ export async function POST(request: Request) {
     }
     const orderNumber = `${prefix}${String(nextSeq).padStart(6, "0")}`
 
+    // ── Resolve the financial snapshot from the Pricing Engine (server-side,
+    //    authoritative) and persist it on the order. Never recalculated later. ──
+    const resolvedOrderType = orderType || "WALK_IN"
+    const customerType = orderTypeToCustomerType(resolvedOrderType)
+    const isPickup = resolvedOrderType === "HOME_PICKUP"
+    let billing: Awaited<ReturnType<typeof resolveOrderBilling>> | null = null
+    if (hasItems) {
+      billing = await resolveOrderBilling(
+        businessId,
+        { storeId, customerType, express: !!isExpress, pickup: isPickup, delivery: isPickup },
+        billingItems,
+      )
+    }
+    const q = billing?.quote
+    const grandTotal = q?.grandTotal ?? 0
+
+    // Workflow service lines: use provided services, else distinct from items.
+    const serviceLines: { serviceId: string | null; serviceName: string; turnaroundHours: number }[] = hasServices
+      ? services.map((s: { serviceId?: string; serviceName: string; turnaroundHours?: number }) => ({
+          serviceId: s.serviceId || null, serviceName: s.serviceName, turnaroundHours: s.turnaroundHours || 24,
+        }))
+      : Array.from(
+          new Map(
+            (billing?.lines || [])
+              .filter((l) => l.serviceId)
+              .map((l) => [l.serviceId, { serviceId: l.serviceId, serviceName: l.serviceName, turnaroundHours: 24 }]),
+          ).values(),
+        )
+
     const order = await prisma.laundryOrder.create({
       data: {
         orderNumber,
         businessId,
         storeId,
         customerId: customerId || null,
-        orderType: orderType || "WALK_IN",
+        orderType: resolvedOrderType,
         source: "MANUAL",
         status: "PENDING_STORE_AUDIT",
         paymentPreference: paymentPreference || "COD",
@@ -77,16 +113,35 @@ export async function POST(request: Request) {
         specialInstructions: specialInstructions || null,
         notes: notes || null,
         createdBy: createdBy || null,
-        services: {
-          create: services.map((s: { serviceId?: string; serviceName: string; turnaroundHours?: number }) => ({
-            serviceId: s.serviceId || null,
-            serviceName: s.serviceName,
-            turnaroundHours: s.turnaroundHours || 24,
-          })),
-        },
+        // Financial snapshot
+        subtotal: q?.subtotal ?? 0,
+        gstTotal: q?.gstTotal ?? 0,
+        pickupCharge: q?.pickupCharge ?? 0,
+        deliveryCharge: q?.deliveryCharge ?? 0,
+        expressCharge: q?.expressCharge ?? 0,
+        discount: 0,
+        grandTotal,
+        amountPaid: 0,
+        balanceDue: grandTotal,
+        paymentStatus: customerType === "SUBSCRIPTION" && grandTotal === 0 ? "SUBSCRIPTION" : "UNPAID",
+        isExpress: !!isExpress,
+        customerType,
+        billedAt: hasItems ? new Date() : null,
+        services: { create: serviceLines },
+        items: billing
+          ? { create: billing.lines.map((l) => ({
+              serviceId: l.serviceId, serviceName: l.serviceName,
+              garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId,
+              pricingRuleId: l.pricingRuleId, pricingType: l.pricingType,
+              quantity: l.quantity, weightKg: l.weightKg, unitPrice: l.unitPrice,
+              lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount,
+              discount: l.discount, total: l.total,
+            })) }
+          : undefined,
       },
       include: {
         services: true,
+        items: true,
         store: { select: { storeName: true, storeCode: true } },
       },
     })

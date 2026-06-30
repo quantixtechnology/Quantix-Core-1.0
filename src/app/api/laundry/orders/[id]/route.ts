@@ -11,6 +11,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       where: { id },
       include: {
         services: true,
+        items: { orderBy: { createdAt: "asc" } },
+        payments: { orderBy: { createdAt: "desc" } },
         store: { select: { storeName: true, storeCode: true } },
         timestamps: {
           include: { stage: { select: { name: true, code: true, sequence: true } } },

@@ -4186,9 +4186,30 @@ model LaundryOrder {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
+  // ── Financial snapshot ───────────────────────────────────────────────────
+  // Resolved by the Billing Engine and PERSISTED at order creation. This is the
+  // immutable financial record of the order — invoices, payments and reports
+  // read these values and must NEVER recalculate from the Pricing Engine, so
+  // later price changes never alter historical orders.
+  subtotal       Float    @default(0)
+  gstTotal       Float    @default(0)
+  pickupCharge   Float    @default(0)
+  deliveryCharge Float    @default(0)
+  expressCharge  Float    @default(0)
+  discount       Float    @default(0)
+  grandTotal     Float    @default(0)
+  amountPaid     Float    @default(0)
+  balanceDue     Float    @default(0)
+  paymentStatus  String   @default("UNPAID") // UNPAID | PARTIAL | PAID | SUBSCRIPTION
+  isExpress      Boolean  @default(false)
+  customerType   String?                     // resolved customer type used for pricing
+  billedAt       DateTime?                    // when the financial snapshot was persisted
+
   business   LaundryBusiness     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   store      LaundryStore        @relation(fields: [storeId],    references: [id])
   services   LaundryOrderService[]
+  items      LaundryOrderItem[]
+  payments   LaundryPayment[]
   timestamps LaundryStageTimestamp[]
   events     LaundryOrderEvent[]
 
@@ -4198,6 +4219,7 @@ model LaundryOrder {
   @@index([status])
   @@index([createdAt])
   @@index([orderNumber])
+  @@index([paymentStatus])
 }
 
 // ── Operational master data (per laundry business) ─────────────────────────
@@ -4332,6 +4354,58 @@ model LaundryOrderService {
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+}
+
+// Per-order billing line — the persisted financial snapshot of one priced
+// garment+service line. Captures the Pricing Rule used and every computed
+// figure so invoices/reports never recalculate. Distinct from
+// LaundryOrderService, which records the workflow service lines.
+model LaundryOrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  serviceId     String?
+  serviceName   String
+  garmentId     String?
+  garmentName   String
+  categoryId    String?
+  pricingRuleId String?                       // which rule resolved this line
+  pricingType   String   @default("PER_PIECE")
+  quantity      Float    @default(0)
+  weightKg      Float    @default(0)
+  unitPrice     Float    @default(0)
+  lineAmount    Float    @default(0)          // base, pre-GST, post-discount
+  gstPercent    Float    @default(0)
+  gstAmount     Float    @default(0)
+  discount      Float    @default(0)
+  total         Float    @default(0)          // lineAmount + gstAmount
+  createdAt     DateTime @default(now())
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([serviceId])
+  @@index([garmentId])
+}
+
+// Per-order payment record. Payment Collection reads the order's persisted
+// totals and appends these; amountPaid/balanceDue/paymentStatus on the order
+// are the running summary.
+model LaundryPayment {
+  id         String   @id @default(cuid())
+  orderId    String
+  businessId String
+  method     String   // CASH | UPI | CARD | WALLET | CREDIT | SUBSCRIPTION | PARTIAL
+  amount     Float
+  reference  String?
+  note       String?
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([businessId])
+  @@index([createdAt])
 }
 
 // ============================================================================

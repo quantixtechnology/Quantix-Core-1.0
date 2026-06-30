@@ -350,6 +350,13 @@ export default function LaundryNewOrder() {
         customerId: selectedCustomer?.id || null,
         orderType,
         services: distinctServices,
+        items: validLines.map((l) => ({
+          serviceId: l.serviceId,
+          garmentId: l.garmentId,
+          quantity: l.quantity,
+          weightKg: l.weightKg,
+        })),
+        isExpress: express,
         expectedDeliveryDate: computedDeliveryDate(),
         deliveryOverride: overrideDelivery,
         overrideReason: overrideDelivery ? overrideReason : null,
