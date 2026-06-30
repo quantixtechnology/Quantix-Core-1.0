@@ -19,6 +19,7 @@ const pageTitles: Record<LaundryBusinessPage, string> = {
   garments: "Garments",
   services: "Services",
   pricing: "Pricing Engine",
+  setup: "Guided Setup",
   customers: "Customers",
   stores: "Stores",
   "processing-centers": "Processing Centers",

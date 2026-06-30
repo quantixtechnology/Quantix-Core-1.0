@@ -1,493 +1,185 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronLeft, ChevronRight, Check, Building2, Store, Wrench, IndianRupee, Factory, Rocket } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import { useToast } from "@/hooks/use-toast"
+// Guided Initial Business Setup — the first experience after Quantix provisions
+// a laundry business. Pure orchestration: it embeds the EXISTING master modules
+// and APIs (stores, templates/bulk-import, categories, services, garments,
+// pricing) into a guided flow. It never recreates the business/tenant (Quantix
+// owns that) and never touches the billing/pricing/workflow engines.
 
-const DEFAULT_SERVICES = [
-  { id: "wash-fold", label: "Wash + Dry + Fold" },
-  { id: "wash-iron", label: "Wash + Dry + Iron" },
-  { id: "dry-clean", label: "Dry Clean" },
-  { id: "steam-iron", label: "Steam Iron" },
-  { id: "shoe-clean", label: "Shoe Cleaning" },
-  { id: "carpet-clean", label: "Carpet Cleaning" },
-]
+import { useCallback, useEffect, useState } from "react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Store, Sparkles, Tags, WashingMachine, Shirt, IndianRupee, CheckCircle2, Rocket,
+  ChevronLeft, ChevronRight, Loader2, Download, Check,
+} from "lucide-react"
+import { toast } from "sonner"
+import { useAdminStore } from "@/stores/admin-store"
+import { LAUNDRY_TEMPLATES } from "@/lib/laundry-templates"
+import { LaundryStoresView } from "@/components/admin/laundry/laundry-stores-view"
+import { LaundryCategoriesMaster } from "./laundry-categories-master"
+import { LaundryServicesMaster } from "./laundry-services-master"
+import { LaundryGarmentsMaster } from "./laundry-garments-master"
+import { LaundryPricingEngine } from "./laundry-pricing-engine"
+
+interface Counts { stores: number; categories: number; services: number; garments: number; pricingRules: number }
+const ZERO: Counts = { stores: 0, categories: 0, services: 0, garments: 0, pricingRules: 0 }
 
 const STEPS = [
-  { num: 1 as const, label: "Business", icon: Building2 },
-  { num: 2 as const, label: "Store", icon: Store },
-  { num: 3 as const, label: "Services", icon: Wrench },
-  { num: 4 as const, label: "Pricing", icon: IndianRupee },
-  { num: 5 as const, label: "Processing", icon: Factory },
-  { num: 6 as const, label: "Activate", icon: Rocket },
-]
+  { key: "stores", label: "Stores", icon: Store, hint: "Configure your operational locations" },
+  { key: "template", label: "Templates", icon: Sparkles, hint: "Load a ready-made master data set" },
+  { key: "categories", label: "Categories", icon: Tags, hint: "Organise garments & services" },
+  { key: "services", label: "Services", icon: WashingMachine, hint: "What you do to garments" },
+  { key: "garments", label: "Garments", icon: Shirt, hint: "Your priceable items" },
+  { key: "pricing", label: "Pricing", icon: IndianRupee, hint: "Rules that bill every order" },
+  { key: "finish", label: "Finish", icon: Rocket, hint: "Review & go live" },
+] as const
 
-interface SetupWizardProps {
-  laundryBusinessId: string
-  onComplete?: () => void
-}
+export function LaundrySetupWizard({ businessId }: { businessId: string }) {
+  const { setLaundryPage } = useAdminStore()
+  const [step, setStep] = useState(0)
+  const [counts, setCounts] = useState<Counts>(ZERO)
+  const [loadingTpl, setLoadingTpl] = useState(false)
+  const [finishing, setFinishing] = useState(false)
+  const template = LAUNDRY_TEMPLATES[0]
 
-export default function LaundrySetupWizard({ laundryBusinessId, onComplete }: SetupWizardProps) {
-  const { toast } = useToast()
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [showCustomServices, setShowCustomServices] = useState(false)
-
-  const [businessInfo, setBusinessInfo] = useState({
-    laundryName: "",
-    gstNumber: "",
-    contactNumber: "",
-    email: "",
-    businessAddress: "",
-  })
-
-  const [storeSetup, setStoreSetup] = useState({
-    storeName: "",
-    storeCode: "",
-    storeAddress: "",
-  })
-
-  const [selectedServices, setSelectedServices] = useState<string[]>(["wash-fold", "wash-iron"])
-  const [customServices, setCustomServices] = useState<string[]>([])
-
-  const [pricing, setPricing] = useState<Record<string, string>>({})
-
-  const [processingCenter, setProcessingCenter] = useState({
-    centerName: "",
-    centerAddress: "",
-    dailyCapacity: "",
-  })
-
-  const toggleService = (id: string) => {
-    setSelectedServices(prev =>
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-    )
-  }
-
-  const addCustomService = () => {
-    setCustomServices(prev => [...prev, ""])
-  }
-
-  const updateCustomService = (index: number, value: string) => {
-    setCustomServices(prev => {
-      const next = [...prev]
-      next[index] = value
-      return next
-    })
-  }
-
-  const removeCustomService = (index: number) => {
-    setCustomServices(prev => prev.filter((_, i) => i !== index))
-  }
-
-  const getSelectedServiceLabels = () => {
-    const labels: string[] = []
-    selectedServices.forEach(id => {
-      const found = DEFAULT_SERVICES.find(s => s.id === id)
-      if (found) labels.push(found.label)
-    })
-    return labels
-  }
-
-  const updatePricing = (serviceLabel: string, value: string) => {
-    setPricing(prev => ({ ...prev, [serviceLabel]: value }))
-  }
-
-  const updateBusinessInfo = (field: string, value: string) => {
-    setBusinessInfo(prev => ({ ...prev, [field]: value }))
-  }
-
-  const updateStoreSetup = (field: string, value: string) => {
-    setStoreSetup(prev => ({ ...prev, [field]: value }))
-  }
-
-  const updateProcessingCenter = (field: string, value: string) => {
-    setProcessingCenter(prev => ({ ...prev, [field]: value }))
-  }
-
-  const canProceed = (): boolean => {
-    switch (step) {
-      case 1:
-        return businessInfo.laundryName.trim().length > 0 &&
-               businessInfo.contactNumber.trim().length > 0
-      case 2:
-        return storeSetup.storeName.trim().length > 0
-      case 3:
-        return selectedServices.length > 0
-      case 4: {
-        const labels = [...getSelectedServiceLabels(), ...customServices.filter(Boolean)]
-        return labels.every(l => pricing[l] && parseFloat(pricing[l]) > 0)
-      }
-      case 5:
-        return true
-      default:
-        return true
-    }
-  }
-
-  const nextStep = () => {
-    if (step < 6) setStep((step + 1) as 1 | 2 | 3 | 4 | 5 | 6)
-  }
-
-  const prevStep = () => {
-    if (step > 1) setStep((step - 1) as 1 | 2 | 3 | 4 | 5 | 6)
-  }
-
-  const handleActivate = async () => {
-    setLoading(true)
-    setError(null)
-
-    const serviceLabels = [...getSelectedServiceLabels(), ...customServices.filter(Boolean)]
-
-    const payload = {
-      businessInfo,
-      storeSetup,
-      services: serviceLabels,
-      pricing,
-      processingCenter,
-    }
-
+  const refresh = useCallback(async () => {
+    if (!businessId) return
     try {
-      const res = await fetch(`/api/laundry/businesses/${laundryBusinessId}/setup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const json = await fetch(`/api/laundry/setup?businessId=${encodeURIComponent(businessId)}`).then((r) => r.json())
+      if (json.success) setCounts(json.counts)
+    } catch {}
+  }, [businessId])
+  useEffect(() => { refresh() }, [refresh, step])
+
+  const loadTemplate = async () => {
+    if (!businessId) return
+    setLoadingTpl(true)
+    try {
+      const res = await fetch("/api/laundry/masters/bulk-import", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, template: template.id }),
       })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || "Setup failed")
-        toast({ title: "Error", description: data.error || "Setup failed", variant: "destructive" })
-        return
-      }
-
-      toast({ title: "Success", description: "Workspace activated successfully" })
-      onComplete?.()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Setup failed"
-      setError(msg)
-      toast({ title: "Error", description: msg, variant: "destructive" })
-    } finally {
-      setLoading(false)
-    }
+      const json = await res.json()
+      if (!res.ok || json.success === false) throw new Error(json.error || "Import failed")
+      const created = json.categoriesCreated + json.servicesCreated + json.garmentsCreated
+      toast.success(`Loaded ${created} item(s)${json.skipped ? `, ${json.skipped} already existed` : ""}`)
+      await refresh()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Import failed") } finally { setLoadingTpl(false) }
   }
 
-  const renderStepIndicator = () => (
-    <div className="flex items-center justify-center gap-2 mb-8">
-      {STEPS.map((s, i) => (
-        <div key={s.num} className="flex items-center gap-2">
-          <div
-            className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium transition-colors ${
-              step === s.num
-                ? "bg-primary text-primary-foreground"
-                : step > s.num
-                  ? "bg-primary/20 text-primary"
-                  : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {step > s.num ? <Check className="h-4 w-4" /> : s.num}
-          </div>
-          <span className={`text-xs hidden sm:inline ${step === s.num ? "font-medium text-foreground" : "text-muted-foreground"}`}>
-            {s.label}
-          </span>
-          {i < STEPS.length - 1 && (
-            <div className={`h-px w-6 ${step > s.num ? "bg-primary" : "bg-muted"}`} />
-          )}
-        </div>
-      ))}
-    </div>
-  )
-
-  const renderStep = () => {
-    switch (step) {
-      case 1:
-        return (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Business Name *</Label>
-              <Input
-                placeholder="My Laundry Services"
-                value={businessInfo.laundryName}
-                onChange={e => updateBusinessInfo("laundryName", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>GST Number</Label>
-              <Input
-                placeholder="22AAAAA0000A1Z5"
-                value={businessInfo.gstNumber}
-                onChange={e => updateBusinessInfo("gstNumber", e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Contact Number *</Label>
-                <Input
-                  placeholder="+91 9876543210"
-                  value={businessInfo.contactNumber}
-                  onChange={e => updateBusinessInfo("contactNumber", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Email</Label>
-                <Input
-                  placeholder="contact@laundry.com"
-                  type="email"
-                  value={businessInfo.email}
-                  onChange={e => updateBusinessInfo("email", e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Business Address</Label>
-              <Textarea
-                placeholder="Enter your business address"
-                value={businessInfo.businessAddress}
-                onChange={e => updateBusinessInfo("businessAddress", e.target.value)}
-              />
-            </div>
-          </div>
-        )
-
-      case 2:
-        return (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Store Name *</Label>
-              <Input
-                placeholder="Main Store"
-                value={storeSetup.storeName}
-                onChange={e => updateStoreSetup("storeName", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Store Code</Label>
-              <Input
-                value={storeSetup.storeCode || "Auto-generated"}
-                disabled
-                className="text-muted-foreground"
-              />
-              <p className="text-xs text-muted-foreground">Store code is auto-generated after activation</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Store Address</Label>
-              <Textarea
-                placeholder="Enter store address"
-                value={storeSetup.storeAddress}
-                onChange={e => updateStoreSetup("storeAddress", e.target.value)}
-              />
-            </div>
-          </div>
-        )
-
-      case 3:
-        return (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Select the services you offer</p>
-            <div className="grid gap-3">
-              {DEFAULT_SERVICES.map(service => (
-                <label key={service.id} className="flex items-center gap-3 rounded-lg border p-3 cursor-pointer hover:bg-accent/50 transition-colors">
-                  <Checkbox
-                    checked={selectedServices.includes(service.id)}
-                    onCheckedChange={() => toggleService(service.id)}
-                  />
-                  <span className="text-sm font-medium">{service.label}</span>
-                </label>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 pt-2">
-              <Checkbox
-                checked={showCustomServices}
-                onCheckedChange={(checked) => setShowCustomServices(checked === true)}
-                id="custom-services"
-              />
-              <Label htmlFor="custom-services" className="text-sm cursor-pointer">Allow custom services</Label>
-            </div>
-            {showCustomServices && (
-              <div className="space-y-2 pl-6">
-                {customServices.map((cs, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input
-                      placeholder="Custom service name"
-                      value={cs}
-                      onChange={e => updateCustomService(i, e.target.value)}
-                    />
-                    <Button variant="ghost" size="sm" onClick={() => removeCustomService(i)} className="text-destructive">
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={addCustomService}>
-                  + Add Service
-                </Button>
-              </div>
-            )}
-          </div>
-        )
-
-      case 4: {
-        const serviceLabels = [...getSelectedServiceLabels(), ...customServices.filter(Boolean)]
-        return (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Set pricing for each selected service</p>
-            <div className="rounded-lg border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left p-3 font-medium">Service</th>
-                    <th className="text-right p-3 font-medium">Price (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {serviceLabels.map(label => (
-                    <tr key={label} className="border-b last:border-0">
-                      <td className="p-3">{label}</td>
-                      <td className="p-3 text-right">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={pricing[label] || ""}
-                          onChange={e => updatePricing(label, e.target.value)}
-                          className="w-28 ml-auto text-right"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )
-      }
-
-      case 5:
-        return (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Processing Center Name</Label>
-              <Input
-                placeholder="Main Processing Center"
-                value={processingCenter.centerName}
-                onChange={e => updateProcessingCenter("centerName", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Center Address</Label>
-              <Textarea
-                placeholder="Enter processing center address"
-                value={processingCenter.centerAddress}
-                onChange={e => updateProcessingCenter("centerAddress", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Daily Capacity (kg)</Label>
-              <Input
-                type="number"
-                min="0"
-                placeholder="100"
-                value={processingCenter.dailyCapacity}
-                onChange={e => updateProcessingCenter("dailyCapacity", e.target.value)}
-              />
-            </div>
-          </div>
-        )
-
-      case 6:
-        return (
-          <div className="space-y-4">
-            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <h3 className="font-medium">Setup Summary</h3>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <span className="text-muted-foreground">Business:</span>
-                <span className="font-medium">{businessInfo.laundryName}</span>
-                <span className="text-muted-foreground">GST:</span>
-                <span>{businessInfo.gstNumber || "—"}</span>
-                <span className="text-muted-foreground">Contact:</span>
-                <span>{businessInfo.contactNumber}</span>
-                <span className="text-muted-foreground">Store:</span>
-                <span>{storeSetup.storeName}</span>
-                <span className="text-muted-foreground">Services:</span>
-                <span>{getSelectedServiceLabels().length + customServices.filter(Boolean).length} selected</span>
-                <span className="text-muted-foreground">Processing Center:</span>
-                <span>{processingCenter.centerName || "—"}</span>
-              </div>
-            </div>
-
-            {error && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
-              </div>
-            )}
-
-            <Button
-              className="w-full gap-2"
-              size="lg"
-              onClick={handleActivate}
-              disabled={loading}
-            >
-              {loading ? (
-                <>Activating...</>
-              ) : (
-                <><Rocket className="h-4 w-4" /> Activate Workspace</>
-              )}
-            </Button>
-          </div>
-        )
-    }
+  const finish = async () => {
+    if (!businessId) return
+    setFinishing(true)
+    try {
+      await fetch("/api/laundry/setup", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, completed: true }),
+      })
+      toast.success("Setup complete — your laundry is ready to take orders!")
+      setLaundryPage("dashboard")
+    } catch { toast.error("Could not finish setup") } finally { setFinishing(false) }
   }
+
+  const current = STEPS[step]
+  const isLast = step === STEPS.length - 1
 
   return (
-    <Card className="max-w-2xl mx-auto">
-      <CardHeader className="text-center pb-2">
-        <CardTitle className="text-xl">
-          {step === 1 && "Business Information"}
-          {step === 2 && "Store Setup"}
-          {step === 3 && "Service Setup"}
-          {step === 4 && "Pricing Setup"}
-          {step === 5 && "Processing Center Setup"}
-          {step === 6 && "Complete Setup"}
-        </CardTitle>
-        <CardDescription>
-          {step === 1 && "Tell us about your laundry business"}
-          {step === 2 && "Create your first store location"}
-          {step === 3 && "Select the services you offer"}
-          {step === 4 && "Configure your service pricing"}
-          {step === 5 && "Set up your processing facility"}
-          {step === 6 && "Review and activate your workspace"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {renderStepIndicator()}
-        {renderStep()}
-
-        <div className="flex justify-between mt-6 pt-4 border-t">
-          <Button
-            variant="outline"
-            onClick={prevStep}
-            disabled={step === 1}
-            className="gap-1"
-          >
-            <ChevronLeft className="h-4 w-4" /> Back
-          </Button>
-          {step < 6 ? (
-            <Button onClick={nextStep} disabled={!canProceed()} className="gap-1">
-              Next <ChevronRight className="h-4 w-4" />
-            </Button>
-          ) : (
-            <div />
-          )}
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white"><Rocket className="h-5 w-5" /></div>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Set up your Laundry</h1>
+          <p className="text-sm text-muted-foreground">A few quick steps and you’re ready to take orders. {current.hint}.</p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      {/* Stepper rail */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+        {STEPS.map((s, i) => (
+          <button key={s.key} onClick={() => i <= step && setStep(i)} disabled={i > step}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs whitespace-nowrap transition-colors ${
+              i === step ? "bg-sky-600 text-white" : i < step ? "bg-sky-100 text-sky-700" : "bg-muted text-muted-foreground"}`}>
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">{i < step ? <Check className="h-2.5 w-2.5" /> : i + 1}</span>
+            <s.icon className="h-3.5 w-3.5" /> {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Step content */}
+      <div className="min-h-[300px]">
+        {current.key === "stores" && businessId && <LaundryStoresView businessId={businessId} />}
+        {current.key === "categories" && <LaundryCategoriesMaster />}
+        {current.key === "services" && <LaundryServicesMaster />}
+        {current.key === "garments" && <LaundryGarmentsMaster />}
+        {current.key === "pricing" && <LaundryPricingEngine />}
+
+        {current.key === "template" && (
+          <Card><CardContent className="p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-100 text-sky-700"><Sparkles className="h-5 w-5" /></div>
+              <div>
+                <h3 className="font-semibold">{template.label}</h3>
+                <p className="text-sm text-muted-foreground">{template.description}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">✔ {template.categories.length} Categories</Badge>
+              <Badge variant="outline">✔ {template.services.length} Services</Badge>
+              <Badge variant="outline">✔ {template.garments.length} Garments</Badge>
+            </div>
+            <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
+              You currently have <strong>{counts.categories}</strong> categories, <strong>{counts.services}</strong> services and <strong>{counts.garments}</strong> garments. Loading a template only adds what’s missing — nothing is duplicated.
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={loadTemplate} disabled={loadingTpl} className="gap-2 bg-sky-600 hover:bg-sky-700 text-white">
+                {loadingTpl ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Load Template
+              </Button>
+              <Button variant="outline" onClick={() => setStep((s) => s + 1)}>Skip — I’ll add my own</Button>
+            </div>
+          </CardContent></Card>
+        )}
+
+        {current.key === "finish" && (
+          <Card><CardContent className="p-6 space-y-5">
+            <div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="h-6 w-6" /><h3 className="text-lg font-semibold">Almost there — review your setup</h3></div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {[
+                { label: "Stores", value: counts.stores, icon: Store },
+                { label: "Categories", value: counts.categories, icon: Tags },
+                { label: "Services", value: counts.services, icon: WashingMachine },
+                { label: "Garments", value: counts.garments, icon: Shirt },
+                { label: "Pricing Rules", value: counts.pricingRules, icon: IndianRupee },
+              ].map((c) => (
+                <div key={c.label} className="rounded-lg border p-3 flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><c.icon className="h-4 w-4" /></div>
+                  <div><p className="text-2xl font-bold tabular-nums leading-none">{c.value}</p><p className="text-xs text-muted-foreground mt-0.5">{c.label}</p></div>
+                </div>
+              ))}
+            </div>
+            {(counts.stores === 0 || counts.pricingRules === 0) && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                Tip: add at least one <strong>store</strong> and one <strong>pricing rule</strong> so the counter can create and bill orders. You can still finish and add these later.
+              </div>
+            )}
+            <Button onClick={finish} disabled={finishing} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+              {finishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />} Finish Setup &amp; Go Live
+            </Button>
+          </CardContent></Card>
+        )}
+      </div>
+
+      {/* Footer nav */}
+      <div className="flex items-center justify-between border-t pt-4">
+        <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0} className="gap-1"><ChevronLeft className="h-4 w-4" /> Back</Button>
+        <span className="text-xs text-muted-foreground">Step {step + 1} of {STEPS.length}</span>
+        {!isLast ? (
+          <Button onClick={() => setStep((s) => s + 1)} className="gap-1 bg-sky-600 hover:bg-sky-700 text-white">Next <ChevronRight className="h-4 w-4" /></Button>
+        ) : (
+          <span className="w-[72px]" />
+        )}
+      </div>
+    </div>
   )
 }

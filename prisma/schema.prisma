@@ -3920,6 +3920,7 @@ model LaundryBusiness {
   defaultServiceRadius       Float?
   defaultDailyCapacity       Float?
   platformBusinessId        String?  @unique
+  setupCompletedAt          DateTime?  // Guided Initial Setup finished → dashboard is operational
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
