@@ -16,7 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Search, UserPlus, User, Phone, MapPin, Clock, CreditCard,
   FileText, ArrowLeft, Save, Send, ArrowRight,
-  Loader2, ShoppingBag, Plus, Trash2, Zap, Package,
+  Loader2, ShoppingBag, Plus, Minus, Trash2, Zap, WashingMachine, Shirt,
 } from "lucide-react"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -82,9 +82,6 @@ interface OrderLine {
   weightKg: number
 }
 
-let lineSeq = 0
-const newLine = (): OrderLine => ({ uid: `L${++lineSeq}`, serviceId: "", garmentId: "", quantity: 1, weightKg: 0 })
-
 const inr = (n: number) => `₹${n.toFixed(2)}`
 
 export default function LaundryNewOrder() {
@@ -115,8 +112,13 @@ export default function LaundryNewOrder() {
   const [garments, setGarments] = useState<GarmentMaster[]>([])
   const [mastersLoaded, setMastersLoaded] = useState(false)
 
-  // ── Section 3: Items (service + garment + qty/weight) ────────────────
-  const [lineItems, setLineItems] = useState<OrderLine[]>([newLine()])
+  // ── Section 3: Service + Garments ────────────────────────────────────
+  // Operational flow: pick ONE service, then add garments with quantities
+  // (e.g. Wash & Iron → 5 Shirts, 3 Pants, 1 Blazer). Each garment becomes a
+  // billing line under the chosen service.
+  const [selectedServiceId, setSelectedServiceId] = useState("")
+  const [garmentQty, setGarmentQty] = useState<Record<string, number>>({})
+  const [garmentWeight, setGarmentWeight] = useState<Record<string, number>>({})
   const [express, setExpress] = useState(false)
 
   // ── Live billing (resolved by the Pricing Engine) ────────────────────
@@ -183,11 +185,30 @@ export default function LaundryNewOrder() {
 
   const garmentById = useCallback((id: string) => garments.find((g) => g.id === id), [garments])
 
+  // Default the service to the first available one once masters load.
+  useEffect(() => {
+    if (!selectedServiceId && availableServices.length) setSelectedServiceId(availableServices[0].id)
+  }, [availableServices, selectedServiceId])
+
+  // ── Derive billing line items from the chosen service + garment quantities ──
+  const lineItems = useMemo<OrderLine[]>(() => {
+    if (!selectedServiceId) return []
+    return garments
+      .map((g) => {
+        const byWeight = g.defaultUnit === "KG"
+        const quantity = byWeight ? 0 : (garmentQty[g.id] || 0)
+        const weightKg = byWeight ? (garmentWeight[g.id] || 0) : 0
+        return { uid: g.id, serviceId: selectedServiceId, garmentId: g.id, quantity, weightKg }
+      })
+      .filter((l) => l.quantity > 0 || l.weightKg > 0)
+  }, [garments, selectedServiceId, garmentQty, garmentWeight])
+
   // ── Live billing: resolve every line through the Pricing Engine ──────
   const validLines = useMemo(
     () => lineItems.filter((l) => l.serviceId && l.garmentId),
     [lineItems],
   )
+  const totalPieces = useMemo(() => Object.values(garmentQty).reduce((s, n) => s + (n || 0), 0), [garmentQty])
   const quoteKey = JSON.stringify({ validLines, selectedStoreId, customerType, express, isPickup })
   const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -314,12 +335,14 @@ export default function LaundryNewOrder() {
     }
   }
 
-  // ── Line item helpers ────────────────────────────────────────────────
-  const updateLine = (uid: string, patch: Partial<OrderLine>) =>
-    setLineItems((prev) => prev.map((l) => (l.uid === uid ? { ...l, ...patch } : l)))
-  const addLine = () => setLineItems((prev) => [...prev, newLine()])
-  const removeLine = (uid: string) =>
-    setLineItems((prev) => (prev.length > 1 ? prev.filter((l) => l.uid !== uid) : prev))
+  // ── Garment quantity helpers ─────────────────────────────────────────
+  const bumpQty = (garmentId: string, delta: number) =>
+    setGarmentQty((prev) => ({ ...prev, [garmentId]: Math.max(0, (prev[garmentId] || 0) + delta) }))
+  const setQty = (garmentId: string, value: number) =>
+    setGarmentQty((prev) => ({ ...prev, [garmentId]: Math.max(0, value) }))
+  const setWeight = (garmentId: string, value: number) =>
+    setGarmentWeight((prev) => ({ ...prev, [garmentId]: Math.max(0, value) }))
+  const clearGarments = () => { setGarmentQty({}); setGarmentWeight({}) }
 
   // Distinct services for the order workflow record (LaundryOrderService lines).
   const distinctServices = useMemo(() => {
@@ -559,11 +582,11 @@ export default function LaundryNewOrder() {
         </CardContent>
       </Card>
 
-      {/* Section 3: Items & Billing (master-driven) */}
+      {/* Section 3: Service */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
-            <span className="flex items-center gap-2"><Package className="h-4 w-4" /> Items &amp; Pricing</span>
+            <span className="flex items-center gap-2"><WashingMachine className="h-4 w-4" /> Service</span>
             <div className="flex items-center gap-2">
               <Zap className={`h-4 w-4 ${express ? "text-amber-500" : "text-muted-foreground"}`} />
               <Label htmlFor="express" className="text-xs font-normal cursor-pointer">Express</Label>
@@ -571,80 +594,96 @@ export default function LaundryNewOrder() {
             </div>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent>
           {noMasters ? (
             <div className="text-sm text-muted-foreground border rounded-lg p-4">
-              No active Services or Garments found. Add them under <strong>Masters → Services</strong> and{" "}
-              <strong>Masters → Garments</strong>, then configure prices in the <strong>Pricing Engine</strong>.
+              No services or garments are configured yet. Ask your administrator to set them up before taking orders.
             </div>
           ) : (
-            <>
-              <div className="hidden sm:grid grid-cols-12 gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-1">
-                <div className="col-span-4">Service</div>
-                <div className="col-span-4">Garment</div>
-                <div className="col-span-2">Qty / Weight</div>
-                <div className="col-span-2 text-right">Amount</div>
+            <div className="flex flex-wrap gap-2">
+              {availableServices.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedServiceId(s.id)}
+                  className={`rounded-lg border px-3 py-2 text-sm transition-colors ${selectedServiceId === s.id ? "border-primary bg-primary/5 font-medium" : "hover:bg-muted/50"}`}
+                >
+                  {s.name}
+                  <span className="block text-[11px] text-muted-foreground">{s.defaultTurnaroundHours}h TAT</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Section 4: Garments */}
+      {!noMasters && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-base">
+              <span className="flex items-center gap-2"><Shirt className="h-4 w-4" /> Garments</span>
+              <div className="flex items-center gap-3 text-xs font-normal text-muted-foreground">
+                <span>{totalPieces} pc{totalPieces === 1 ? "" : "s"} · {validLines.length} type{validLines.length === 1 ? "" : "s"}</span>
+                {validLines.length > 0 && (
+                  <Button variant="ghost" size="sm" className="h-7 gap-1 text-muted-foreground hover:text-destructive" onClick={clearGarments}>
+                    <Trash2 className="h-3.5 w-3.5" /> Clear
+                  </Button>
+                )}
               </div>
-              {lineItems.map((line) => {
-                const g = garmentById(line.garmentId)
-                const byWeight = g?.defaultUnit === "KG"
-                const lq = lineQuote(line)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {garments.map((g) => {
+                const byWeight = g.defaultUnit === "KG"
+                const qty = garmentQty[g.id] || 0
+                const wt = garmentWeight[g.id] || 0
+                const active = byWeight ? wt > 0 : qty > 0
+                const lq = active ? lineQuote({ uid: g.id } as OrderLine) : null
                 return (
-                  <div key={line.uid} className="grid grid-cols-12 gap-2 items-center border rounded-lg p-2">
-                    <div className="col-span-12 sm:col-span-4">
-                      <Select value={line.serviceId} onValueChange={(v) => updateLine(line.uid, { serviceId: v })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="Service" /></SelectTrigger>
-                        <SelectContent>
-                          {availableServices.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                  <div key={g.id} className={`rounded-lg border p-2.5 ${active ? "border-primary/40 bg-primary/5" : ""}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{g.name}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {byWeight ? "Per kg" : "Per piece"}
+                          {lq && lq.matchedRuleId ? ` · ${inr(lq.lineTotal)}` : ""}
+                        </p>
+                      </div>
                     </div>
-                    <div className="col-span-7 sm:col-span-4">
-                      <Select value={line.garmentId} onValueChange={(v) => updateLine(line.uid, { garmentId: v })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="Garment" /></SelectTrigger>
-                        <SelectContent>
-                          {garments.map((gm) => <SelectItem key={gm.id} value={gm.id}>{gm.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="col-span-3 sm:col-span-2">
+                    <div className="mt-2">
                       {byWeight ? (
                         <Input
-                          type="number" min={0} step={0.5} className="h-9" placeholder="kg"
-                          value={line.weightKg || ""}
-                          onChange={(e) => updateLine(line.uid, { weightKg: parseFloat(e.target.value) || 0 })}
+                          type="number" min={0} step={0.5} className="h-8" placeholder="Weight (kg)"
+                          value={wt || ""}
+                          onChange={(e) => setWeight(g.id, parseFloat(e.target.value) || 0)}
                         />
                       ) : (
-                        <Input
-                          type="number" min={1} step={1} className="h-9" placeholder="qty"
-                          value={line.quantity || ""}
-                          onChange={(e) => updateLine(line.uid, { quantity: parseInt(e.target.value) || 0 })}
-                        />
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => bumpQty(g.id, -1)} disabled={qty === 0}>
+                            <Minus className="h-3.5 w-3.5" />
+                          </Button>
+                          <Input
+                            type="number" min={0} className="h-8 text-center"
+                            value={qty || ""}
+                            onChange={(e) => setQty(g.id, parseInt(e.target.value) || 0)}
+                          />
+                          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => bumpQty(g.id, 1)}>
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       )}
                     </div>
-                    <div className="col-span-2 sm:col-span-2 flex items-center justify-end gap-1">
-                      <span className="text-sm font-medium tabular-nums">
-                        {lq ? (lq.matchedRuleId ? inr(lq.lineTotal) : "—") : (line.serviceId && line.garmentId ? "…" : "")}
-                      </span>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeLine(line.uid)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                    {lq && !lq.matchedRuleId && line.serviceId && line.garmentId && (
-                      <div className="col-span-12 text-[11px] text-amber-600">
-                        No pricing rule matches this combination — configure it in the Pricing Engine.
-                      </div>
+                    {active && lq && !lq.matchedRuleId && (
+                      <p className="mt-1 text-[11px] text-amber-600">No price configured for this combination.</p>
                     )}
                   </div>
                 )
               })}
-              <Button variant="outline" size="sm" onClick={addLine}>
-                <Plus className="h-4 w-4 mr-2" /> Add Item
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Section 4: Expected Delivery */}
       <Card>
