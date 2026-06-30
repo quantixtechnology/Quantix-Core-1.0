@@ -16,6 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           include: { stage: { select: { name: true, code: true, sequence: true } } },
           orderBy: { createdAt: "desc" },
         },
+        events: { orderBy: { createdAt: "desc" } },
       },
     })
 

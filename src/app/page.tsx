@@ -190,6 +190,7 @@ const LaundryDashboard = dynamic(() => import("@/components/laundry/views/laundr
 const LaundryInboxView = dynamic(() => import("@/components/laundry/views/laundry-inbox-view").then(m => ({ default: m.LaundryInboxView })), { loading: () => <PageLoader /> })
 const LaundryOrdersView = dynamic(() => import("@/components/laundry/views/laundry-orders-view").then(m => ({ default: m.LaundryOrdersView })), { loading: () => <PageLoader /> })
 const LaundryNewOrder = dynamic(() => import("@/components/laundry/views/laundry-new-order").then(m => ({ default: m.default })), { loading: () => <PageLoader /> })
+const LaundryCounterQueue = dynamic(() => import("@/components/laundry/views/laundry-counter-queue").then(m => ({ default: m.LaundryCounterQueue })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
@@ -611,6 +612,9 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "inbox": return <LaundryInboxView />
       case "orders": return <LaundryOrdersView />
       case "new-order": return <LaundryNewOrder />
+      case "audit-queue": return <LaundryCounterQueue status="PENDING_STORE_AUDIT" title="Store Audit" />
+      case "payment-queue": return <LaundryCounterQueue status="PAYMENT_PENDING" title="Payment Collection" />
+      case "dispatch-queue": return <LaundryCounterQueue status="READY_FOR_PROCESSING" title="Dispatch to Processing" />
       case "customers": return <LaundryCustomersView />
       case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
       case "processing-centers": return <LaundryProcessingCentersView />

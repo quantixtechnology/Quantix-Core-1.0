@@ -19,6 +19,7 @@ import { LAUNDRY_ROLES } from "@/lib/permissions"
 import {
   LayoutDashboard, Inbox, ShoppingBag, Users, Store,
   Factory, BarChart3, Settings, ChevronLeft, Sparkles, Plus,
+  ClipboardCheck, CreditCard, Truck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -44,6 +45,9 @@ const storeNavItems: NavItem[] = [
   { key: "dashboard",          label: "Dashboard",          icon: LayoutDashboard },
   { key: "inbox",              label: "My Inbox",           icon: Inbox },
   { key: "new-order",          label: "New Order",          icon: Plus },
+  { key: "audit-queue",        label: "Store Audit",        icon: ClipboardCheck },
+  { key: "payment-queue",      label: "Payment Collection", icon: CreditCard },
+  { key: "dispatch-queue",     label: "Dispatch",           icon: Truck },
   { key: "stores",             label: "Stores",             icon: Store,               feature: "multiStoreEnabled" },
   { key: "processing-centers", label: "Processing Centers", icon: Factory,             feature: "multiProcessingEnabled" },
 ]

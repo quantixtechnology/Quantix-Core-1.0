@@ -4189,6 +4189,7 @@ model LaundryOrder {
   store      LaundryStore        @relation(fields: [storeId],    references: [id])
   services   LaundryOrderService[]
   timestamps LaundryStageTimestamp[]
+  events     LaundryOrderEvent[]
 
   @@index([businessId])
   @@index([storeId])
@@ -4196,6 +4197,27 @@ model LaundryOrder {
   @@index([status])
   @@index([createdAt])
   @@index([orderNumber])
+}
+
+// Per-order workflow event log — the audit trail / timeline of every stage
+// transition (who moved it, from which status to which, when, with a note).
+model LaundryOrderEvent {
+  id         String   @id @default(cuid())
+  orderId    String
+  businessId String
+  fromStatus String?
+  toStatus   String
+  action     String   // e.g. STORE_AUDIT, COLLECT_PAYMENT, DISPATCH_TO_PROCESSING
+  actorId    String?
+  actorName  String?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([businessId])
+  @@index([createdAt])
 }
 
 model LaundryOrderService {
