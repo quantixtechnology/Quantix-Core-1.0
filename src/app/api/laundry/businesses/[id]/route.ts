@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const business = await prisma.laundryBusiness.findUnique({
-      where: { id },
+    const resolved = await resolveLaundryBusiness(id)
+    const business = resolved ? await prisma.laundryBusiness.findUnique({
+      where: { id: resolved.id },
       include: { stores: { orderBy: { createdAt: "desc" } } },
-    })
+    }) : null
     if (!business) {
       return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     }

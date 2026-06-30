@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
@@ -12,10 +13,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields: businessId, name, mobile" }, { status: 400 })
     }
 
-    const laundryBusiness = await prisma.laundryBusiness.findUnique({
-      where: { id: businessId },
-      select: { platformBusinessId: true },
-    })
+    // Accept either LaundryBusiness.id (owner) or platform Business.id (admin via Open Workspace).
+    const laundryBusiness = await resolveLaundryBusiness(businessId)
 
     if (!laundryBusiness?.platformBusinessId) {
       return NextResponse.json({ error: "Platform business not linked" }, { status: 404 })

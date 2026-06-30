@@ -1,20 +1,28 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, storeId, customerId, orderType, services, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupDate, pickupTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
+    const { businessId: businessIdInput, storeId, customerId, orderType, services, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupDate, pickupTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
 
-    if (!businessId || !storeId) {
+    if (!businessIdInput || !storeId) {
       return NextResponse.json({ error: "Missing required fields: businessId, storeId" }, { status: 400 })
     }
 
     if (!services || !Array.isArray(services) || services.length === 0) {
       return NextResponse.json({ error: "At least one service must be selected" }, { status: 400 })
     }
+
+    // Accept either LaundryBusiness.id (owner) or platform Business.id (admin).
+    const laundryBusiness = await resolveLaundryBusiness(businessIdInput)
+    if (!laundryBusiness) {
+      return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+    }
+    const businessId = laundryBusiness.id
 
     const store = await prisma.laundryStore.findFirst({
       where: { id: storeId, laundryBusinessId: businessId },
@@ -23,18 +31,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Store not found" }, { status: 404 })
     }
 
-    if (customerId) {
-      const business = await prisma.laundryBusiness.findUnique({
-        where: { id: businessId },
-        select: { platformBusinessId: true },
+    if (customerId && laundryBusiness.platformBusinessId) {
+      const customer = await prisma.customer.findFirst({
+        where: { id: customerId, businessId: laundryBusiness.platformBusinessId },
       })
-      if (business?.platformBusinessId) {
-        const customer = await prisma.customer.findFirst({
-          where: { id: customerId, businessId: business.platformBusinessId },
-        })
-        if (!customer) {
-          return NextResponse.json({ error: "Customer not found" }, { status: 404 })
-        }
+      if (!customer) {
+        return NextResponse.json({ error: "Customer not found" }, { status: 404 })
       }
     }
 
@@ -126,7 +128,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
 
-    const where: Record<string, unknown> = { businessId }
+    const resolved = await resolveLaundryBusiness(businessId)
+    if (!resolved) {
+      return NextResponse.json({ success: true, data: [], total: 0, limit, offset })
+    }
+
+    const where: Record<string, unknown> = { businessId: resolved.id }
     if (status) where.status = status
     if (storeId) where.storeId = storeId
     if (customerId) where.customerId = customerId

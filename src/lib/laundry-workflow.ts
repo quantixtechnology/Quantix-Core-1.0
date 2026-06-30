@@ -52,7 +52,8 @@ export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   PENDING_STORE_AUDIT: [
-    { to: "UNDER_AUDIT", action: "START_AUDIT", label: "Start Audit", primary: true },
+    { to: "PAYMENT_PENDING", action: "APPROVE_AUDIT", label: "Approve Audit", primary: true },
+    { to: "UNDER_AUDIT", action: "HOLD_FOR_AUDIT", label: "Hold for Audit" },
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   UNDER_AUDIT: [

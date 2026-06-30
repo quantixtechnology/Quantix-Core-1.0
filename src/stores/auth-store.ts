@@ -50,6 +50,7 @@ interface AuthState {
   refreshAuthToken: () => Promise<void>;
   syncPermissions: () => Promise<void>;
   switchBusiness: (businessId: string) => void;
+  setActiveBusinessId: (businessId: string) => void;
   setToken: (token: string) => void;
   clearError: () => void;
   initialize: () => void;
@@ -498,6 +499,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // ─── Set token manually ─────────────────────────────────────────────
   setToken: (token: string) => {
     const updates: Partial<AuthState> = { token };
+    saveToStorage(updates);
+    set(updates);
+  },
+
+  // ─── Set the active business id (Open Workspace / impersonation) ──────
+  // The workspace operates on a specific business; a platform admin entering a
+  // product workspace has no business in their session, so the bootstrap sets
+  // it from the URL. Only updates when changed (avoids effect loops).
+  setActiveBusinessId: (businessId: string) => {
+    if (!businessId || get().currentBusinessId === businessId) return;
+    const updates: Partial<AuthState> = { currentBusinessId: businessId };
     saveToStorage(updates);
     set(updates);
   },

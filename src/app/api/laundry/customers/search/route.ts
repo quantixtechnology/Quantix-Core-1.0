@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
@@ -14,10 +15,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
 
-    const laundryBusiness = await prisma.laundryBusiness.findUnique({
-      where: { id: businessId },
-      select: { platformBusinessId: true },
-    })
+    const laundryBusiness = await resolveLaundryBusiness(businessId)
 
     if (!laundryBusiness?.platformBusinessId) {
       return NextResponse.json({ error: "Platform business not linked" }, { status: 404 })

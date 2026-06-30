@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateStoreCode } from "@/lib/laundry-codes"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const stores = await prisma.laundryStore.findMany({
-      where: { laundryBusinessId: id },
+    // Accept either LaundryBusiness.id or the platform Business.id.
+    const resolved = await resolveLaundryBusiness(id)
+    const stores = resolved ? await prisma.laundryStore.findMany({
+      where: { laundryBusinessId: resolved.id },
       orderBy: { createdAt: "desc" },
-    })
+    }) : []
     return NextResponse.json(stores)
   } catch (error) {
     console.error("Error fetching laundry stores:", error)

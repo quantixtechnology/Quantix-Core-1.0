@@ -423,7 +423,7 @@ const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF"
 
 function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, workspaceBusinessId }: { storefrontSlug?: string | null; deliveryEntry?: boolean; productWorkspaceCode?: string | null; workspaceBusinessId?: string | null }) {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode, resumeBusinessId, manageBusinessId } = useAdminStore()
-  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced } = useAuthStore()
+  const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced, setActiveBusinessId } = useAuthStore()
 
   const [storefrontNotFound, setStorefrontNotFound] = useState(false)
   // True only after store-context API confirms the business exists in DB.
@@ -472,11 +472,17 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     // and bounce the user back to the PLATFORM workspace → Access Denied.
     if (productWorkspaceCode && (isBusinessRole || isPlatformRole)) {
       const bizId = workspaceBusinessId || currentBusinessId
-      if (bizId && viewMode !== "business_owner") {
-        const bizType = productWorkspaceCode === "LAUNDRY" ? "LAUNDRY" : (currentBusinessType || "COMMERCE")
-        setBusinessOwnerContext(bizId, currentBusinessName || "", bizType)
+      if (bizId) {
+        // The product workspace operates on this business; a platform admin's
+        // session has no business, so set it here. Laundry/commerce APIs accept
+        // either the LaundryBusiness.id or the platform business id.
+        if (currentBusinessId !== bizId) setActiveBusinessId(bizId)
+        if (viewMode !== "business_owner") {
+          const bizType = productWorkspaceCode === "LAUNDRY" ? "LAUNDRY" : (currentBusinessType || "COMMERCE")
+          setBusinessOwnerContext(bizId, currentBusinessName || "", bizType)
+        }
+        return
       }
-      if (bizId) return
     }
 
     if (isPlatformRole) {

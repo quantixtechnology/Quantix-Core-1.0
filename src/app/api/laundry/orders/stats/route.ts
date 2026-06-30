@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
@@ -19,7 +20,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
 
-    const where: Record<string, unknown> = { businessId }
+    const resolved = await resolveLaundryBusiness(businessId)
+    if (!resolved) {
+      return NextResponse.json({ success: true, data: { byStatus: {}, today: 0, total: 0 } })
+    }
+
+    const where: Record<string, unknown> = { businessId: resolved.id }
     if (storeId) where.storeId = storeId
 
     const startOfToday = new Date()
