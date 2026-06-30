@@ -4225,14 +4225,22 @@ model LaundryOrder {
 // ── Operational master data (per laundry business) ─────────────────────────
 // Category master — garment/service grouping (Wash, Dry Clean, Premium, …).
 model LaundryCategory {
-  id           String   @id @default(cuid())
-  businessId   String
-  name         String
-  description  String?
-  displayOrder Int      @default(0)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String   @id @default(cuid())
+  businessId        String
+  name              String
+  code              String?
+  description       String?
+  color             String?              // hex swatch
+  icon              String?              // icon name / emoji
+  image             String?              // image URL
+  defaultGstPercent Float?               // GST default for garments/services in this category
+  displayOnWebsite  Boolean  @default(true)
+  displayInPOS      Boolean  @default(true)
+  displayInApp      Boolean  @default(true)
+  displayOrder      Int      @default(0) // = sort priority
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   garments     LaundryGarment[]
   services     LaundryService[]
@@ -4243,16 +4251,23 @@ model LaundryCategory {
 
 // Garment master — referenced by pricing. Default unit Piece/Kg.
 model LaundryGarment {
-  id             String   @id @default(cuid())
-  businessId     String
-  name           String
-  categoryId     String?
-  defaultService String?
-  defaultUnit    String   @default("PIECE") // PIECE | KG
-  displayOrder   Int      @default(0)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(cuid())
+  businessId       String
+  name             String
+  code             String?
+  categoryId       String?
+  defaultService   String?
+  defaultUnit      String   @default("PIECE") // PIECE | KG
+  image            String?              // image URL
+  material         String?              // Cotton, Silk, Wool, …
+  careInstructions String?
+  barcodePrefix    String?
+  weightFactor     Float?               // multiplier for weight-based pricing
+  averageWeight    Float?               // avg weight (kg) for estimates
+  displayOrder     Int      @default(0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   category     LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   pricingRules LaundryPricingRule[]
@@ -4266,8 +4281,16 @@ model LaundryService {
   id                     String   @id @default(cuid())
   businessId             String
   name                   String
+  code                   String?
   categoryId             String?
+  description            String?
+  icon                   String?
+  color                  String?
+  defaultPricingType     String   @default("PER_PIECE") // PER_PIECE | PER_KG | FIXED | SUBSCRIPTION | CORPORATE
+  defaultGstPercent      Float?
   defaultTurnaroundHours Int      @default(24)
+  processingSequence     Int      @default(0)            // order in the processing line
+  expressAvailable       Boolean  @default(false)
   displayOnWebsite       Boolean  @default(true)
   availableInStore       Boolean  @default(true)
   availableForPickup     Boolean  @default(true)

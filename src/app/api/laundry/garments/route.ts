@@ -27,17 +27,25 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, name, categoryId, defaultService, defaultUnit, displayOrder, isActive } = body
+    const { businessId, name, code, categoryId, defaultService, defaultUnit, image, material, careInstructions, barcodePrefix, weightFactor, averageWeight, displayOrder, isActive } = body
     if (!businessId || !name?.trim()) return NextResponse.json({ error: "businessId and name are required" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+    const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
     const data = await prisma.laundryGarment.create({
       data: {
         businessId: biz.id,
         name: name.trim(),
+        code: code?.trim() || null,
         categoryId: categoryId || null,
         defaultService: defaultService || null,
         defaultUnit: defaultUnit === "KG" ? "KG" : "PIECE",
+        image: image?.trim() || null,
+        material: material?.trim() || null,
+        careInstructions: careInstructions?.trim() || null,
+        barcodePrefix: barcodePrefix?.trim() || null,
+        weightFactor: NUM(weightFactor),
+        averageWeight: NUM(averageWeight),
         displayOrder: typeof displayOrder === "number" ? displayOrder : 0,
         isActive: isActive !== undefined ? !!isActive : true,
       },

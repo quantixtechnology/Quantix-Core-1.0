@@ -30,12 +30,21 @@ export async function POST(request: Request) {
     if (!b.businessId || !b.name?.trim()) return NextResponse.json({ error: "businessId and name are required" }, { status: 400 })
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+    const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
     const data = await prisma.laundryService.create({
       data: {
         businessId: biz.id,
         name: b.name.trim(),
+        code: b.code?.trim() || null,
         categoryId: b.categoryId || null,
+        description: b.description?.trim() || null,
+        icon: b.icon?.trim() || null,
+        color: b.color?.trim() || null,
+        defaultPricingType: b.defaultPricingType || "PER_PIECE",
+        defaultGstPercent: NUM(b.defaultGstPercent),
         defaultTurnaroundHours: typeof b.defaultTurnaroundHours === "number" ? b.defaultTurnaroundHours : 24,
+        processingSequence: typeof b.processingSequence === "number" ? b.processingSequence : 0,
+        expressAvailable: b.expressAvailable ?? false,
         displayOnWebsite: b.displayOnWebsite ?? true,
         availableInStore: b.availableInStore ?? true,
         availableForPickup: b.availableForPickup ?? true,

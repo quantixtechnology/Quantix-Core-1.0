@@ -8,14 +8,22 @@ export const runtime = "nodejs"
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const { name, categoryId, defaultService, defaultUnit, displayOrder, isActive } = await request.json()
+    const { name, code, categoryId, defaultService, defaultUnit, image, material, careInstructions, barcodePrefix, weightFactor, averageWeight, displayOrder, isActive } = await request.json()
+    const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
     const data = await prisma.laundryGarment.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
+        ...(code !== undefined && { code: code?.trim() || null }),
         ...(categoryId !== undefined && { categoryId: categoryId || null }),
         ...(defaultService !== undefined && { defaultService: defaultService || null }),
         ...(defaultUnit !== undefined && { defaultUnit: defaultUnit === "KG" ? "KG" : "PIECE" }),
+        ...(image !== undefined && { image: image?.trim() || null }),
+        ...(material !== undefined && { material: material?.trim() || null }),
+        ...(careInstructions !== undefined && { careInstructions: careInstructions?.trim() || null }),
+        ...(barcodePrefix !== undefined && { barcodePrefix: barcodePrefix?.trim() || null }),
+        ...(weightFactor !== undefined && { weightFactor: NUM(weightFactor) }),
+        ...(averageWeight !== undefined && { averageWeight: NUM(averageWeight) }),
         ...(displayOrder !== undefined && { displayOrder }),
         ...(isActive !== undefined && { isActive: !!isActive }),
       },

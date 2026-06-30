@@ -8,12 +8,21 @@ export const runtime = "nodejs"
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const { name, description, displayOrder, isActive } = await request.json()
+    const { name, code, description, color, icon, image, defaultGstPercent, displayOnWebsite, displayInPOS, displayInApp, displayOrder, isActive } = await request.json()
+    const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
     const data = await prisma.laundryCategory.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
+        ...(code !== undefined && { code: code?.trim() || null }),
         ...(description !== undefined && { description: description || null }),
+        ...(color !== undefined && { color: color?.trim() || null }),
+        ...(icon !== undefined && { icon: icon?.trim() || null }),
+        ...(image !== undefined && { image: image?.trim() || null }),
+        ...(defaultGstPercent !== undefined && { defaultGstPercent: NUM(defaultGstPercent) }),
+        ...(displayOnWebsite !== undefined && { displayOnWebsite: !!displayOnWebsite }),
+        ...(displayInPOS !== undefined && { displayInPOS: !!displayInPOS }),
+        ...(displayInApp !== undefined && { displayInApp: !!displayInApp }),
         ...(displayOrder !== undefined && { displayOrder }),
         ...(isActive !== undefined && { isActive: !!isActive }),
       },
