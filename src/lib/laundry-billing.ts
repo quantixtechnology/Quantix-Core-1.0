@@ -165,6 +165,64 @@ export function computeLine(rule: PricingRule | null, line: BillingLineInput, ct
   }
 }
 
+// ── Evaluation trace (for the Pricing Simulator / Resolution Visualizer) ─────
+// Additive: reuses the exact same matching predicate as resolveLineRule, but
+// returns every candidate with the reason it applied or was skipped, ranked in
+// the order the resolver considers them. The billing logic itself is unchanged.
+export interface RuleEvaluation {
+  ruleId: string
+  ruleName: string | null
+  applies: boolean
+  score: number
+  priority: number
+  isWinner: boolean
+  reasons: string[]
+}
+
+export interface LineEvaluation {
+  winnerId: string | null
+  evaluations: RuleEvaluation[]
+}
+
+export function evaluateLine(rules: PricingRule[], line: BillingLineInput, ctx: BillingContext, now = new Date()): LineEvaluation {
+  const winner = resolveLineRule(rules, line, ctx, now)
+  const evals: RuleEvaluation[] = rules.map((rule) => {
+    const reasons: string[] = []
+    let applies = true
+    if (!rule.isActive) { applies = false; reasons.push("Inactive / archived — excluded") }
+    if (!inEffect(rule, now)) { applies = false; reasons.push("Outside effective dates — excluded") }
+    const score = matchScore(rule, line, ctx)
+    if (score < 0) {
+      applies = false
+      reasons.push("Scope mismatch (a required Store/Customer/Category/Garment/Service does not match)")
+    } else {
+      const matched: string[] = []
+      if (rule.serviceId != null) matched.push("Service")
+      if (rule.garmentId != null) matched.push("Garment")
+      if (rule.categoryId != null) matched.push("Category")
+      if (rule.storeId != null) matched.push("Store")
+      if (rule.customerType != null) matched.push("Customer Type")
+      reasons.push(matched.length ? `Matches on ${matched.join(", ")} (specificity ${score})` : "Applies to all (generic rule)")
+    }
+    return {
+      ruleId: rule.id,
+      ruleName: (rule as PricingRule & { name?: string | null }).name ?? null,
+      applies: applies && score >= 0,
+      score: Math.max(score, 0),
+      priority: rule.priority,
+      isWinner: winner?.id === rule.id,
+    reasons,
+    }
+  })
+  // Rank: applicable first, then specificity desc, then priority desc.
+  evals.sort((a, b) => {
+    if (a.applies !== b.applies) return a.applies ? -1 : 1
+    if (b.score !== a.score) return b.score - a.score
+    return b.priority - a.priority
+  })
+  return { winnerId: winner?.id ?? null, evaluations: evals }
+}
+
 export function computeQuote(rules: PricingRule[], items: BillingLineInput[], ctx: BillingContext, now = new Date()): BillingQuote {
   const matchedRules: PricingRule[] = []
   const lines = items.map((line) => {

@@ -4289,6 +4289,9 @@ model LaundryService {
 model LaundryPricingRule {
   id                String   @id @default(cuid())
   businessId        String
+  name              String?                          // human label for the rule
+  description       String?
+  notes             String?
   serviceId         String?
   garmentId         String?
   categoryId        String?
@@ -4298,16 +4301,31 @@ model LaundryPricingRule {
   price             Float    @default(0)
   gstPercent        Float    @default(0)
   minCharge         Float?
-  maxWeightKg       Float?
-  extraWeightCharge Float?
+  maxCharge         Float?                           // optional cap
+  minWeightKg       Float?                           // Per-KG minimum billable weight
+  maxWeightKg       Float?                           // Per-KG / Subscription included cap
+  extraWeightCharge Float?                           // excess rate beyond cap
+  includedPieces    Int?                             // Subscription included pieces (future consumption)
+  discountPercent   Float?                           // Corporate discount %
   weekendPrice      Float?
   expressCharge     Float?
   pickupCharge      Float?
   deliveryCharge    Float?
+  hsnCode           String?                          // future-ready GST HSN
   effectiveFrom     DateTime?
   effectiveTo       DateTime?
   priority          Int      @default(0)
+  // Lifecycle: DRAFT | ACTIVE | INACTIVE | ARCHIVED. isActive stays in sync
+  // (ACTIVE => true, else false) so the Billing Resolver — which filters on
+  // isActive — is never matched against draft/inactive/archived rules.
+  status            String   @default("ACTIVE")
   isActive          Boolean  @default(true)
+  // Audit / versioning — history is never overwritten.
+  createdById       String?
+  createdByName     String?
+  modifiedById      String?
+  modifiedByName    String?
+  version           Int      @default(1)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -4320,6 +4338,25 @@ model LaundryPricingRule {
   @@index([serviceId])
   @@index([garmentId])
   @@index([storeId])
+  @@index([status])
+}
+
+// Append-only audit trail for pricing rules — one row per create/update/
+// archive/restore/duplicate, with a JSON snapshot of the rule at that version.
+// History is never overwritten.
+model LaundryPricingRuleAudit {
+  id         String   @id @default(cuid())
+  ruleId     String
+  businessId String
+  version    Int
+  action     String   // CREATE | UPDATE | ARCHIVE | RESTORE | DUPLICATE
+  actorId    String?
+  actorName  String?
+  snapshot   String   // JSON of the rule at this version
+  createdAt  DateTime @default(now())
+
+  @@index([ruleId])
+  @@index([businessId])
 }
 
 // Per-order workflow event log — the audit trail / timeline of every stage
