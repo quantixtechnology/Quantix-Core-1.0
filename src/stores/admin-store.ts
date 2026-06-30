@@ -105,6 +105,8 @@ export type LaundryBusinessPage =
   | "settings"
   | "categories"
   | "garments"
+  | "services"
+  | "pricing"
 
 export type BusinessPage =
   | "dashboard"

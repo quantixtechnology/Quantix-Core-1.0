@@ -19,7 +19,7 @@ import { LAUNDRY_ROLES } from "@/lib/permissions"
 import {
   LayoutDashboard, Inbox, ShoppingBag, Users, Store,
   Factory, BarChart3, Settings, ChevronLeft, Sparkles, Plus,
-  ClipboardCheck, CreditCard, Truck, Tags, Shirt,
+  ClipboardCheck, CreditCard, Truck, Tags, Shirt, WashingMachine, IndianRupee,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -56,9 +56,11 @@ const storeNavItems: NavItem[] = [
 // Processing Center is a Store Type, not a separate module. Services / Pricing /
 // Subscription Plans / Employees / etc. are added as their masters ship.
 const mastersNavItems: NavItem[] = [
-  { key: "stores",     label: "Stores",     icon: Store },
+  { key: "stores",     label: "Stores & Processing Centers", icon: Store },
   { key: "categories", label: "Categories", icon: Tags },
+  { key: "services",   label: "Services",   icon: WashingMachine },
   { key: "garments",   label: "Garments",   icon: Shirt },
+  { key: "pricing",    label: "Pricing Engine", icon: IndianRupee },
 ]
 
 interface LaundrySidebarProps {

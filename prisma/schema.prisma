@@ -4124,6 +4124,7 @@ model LaundryStore {
   departments         LaundryDepartment[]
   assignments         LaundryUserAssignment[]
   orders              LaundryOrder[]
+  pricingRules        LaundryPricingRule[]
 
   @@index([laundryBusinessId])
   @@index([storeCode])
@@ -4211,7 +4212,9 @@ model LaundryCategory {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  garments LaundryGarment[]
+  garments     LaundryGarment[]
+  services     LaundryService[]
+  pricingRules LaundryPricingRule[]
 
   @@index([businessId])
 }
@@ -4229,10 +4232,72 @@ model LaundryGarment {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  category LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category     LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  pricingRules LaundryPricingRule[]
 
   @@index([businessId])
   @@index([categoryId])
+}
+
+// Service master — what is done to a garment (Wash, Dry Clean, …).
+model LaundryService {
+  id                     String   @id @default(cuid())
+  businessId             String
+  name                   String
+  categoryId             String?
+  defaultTurnaroundHours Int      @default(24)
+  displayOnWebsite       Boolean  @default(true)
+  availableInStore       Boolean  @default(true)
+  availableForPickup     Boolean  @default(true)
+  subscriptionEligible   Boolean  @default(false)
+  displayOrder           Int      @default(0)
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  category     LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  pricingRules LaundryPricingRule[]
+
+  @@index([businessId])
+  @@index([categoryId])
+}
+
+// Pricing Engine — every billable rule. Connected to Service / Garment /
+// Category / Store; customerType + pricingType drive bill calculation.
+model LaundryPricingRule {
+  id                String   @id @default(cuid())
+  businessId        String
+  serviceId         String?
+  garmentId         String?
+  categoryId        String?
+  storeId           String?
+  customerType      String?  // WALK_IN|PICKUP|CORPORATE|HOTEL|HOSPITAL|SUBSCRIPTION|VIP
+  pricingType       String   @default("PER_PIECE") // PER_PIECE|PER_KG|FIXED|SUBSCRIPTION|CORPORATE
+  price             Float    @default(0)
+  gstPercent        Float    @default(0)
+  minCharge         Float?
+  maxWeightKg       Float?
+  extraWeightCharge Float?
+  weekendPrice      Float?
+  expressCharge     Float?
+  pickupCharge      Float?
+  deliveryCharge    Float?
+  effectiveFrom     DateTime?
+  effectiveTo       DateTime?
+  priority          Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  service  LaundryService?  @relation(fields: [serviceId],  references: [id], onDelete: SetNull)
+  garment  LaundryGarment?  @relation(fields: [garmentId],  references: [id], onDelete: SetNull)
+  category LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  store    LaundryStore?    @relation(fields: [storeId],    references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([serviceId])
+  @@index([garmentId])
+  @@index([storeId])
 }
 
 // Per-order workflow event log — the audit trail / timeline of every stage

@@ -193,6 +193,8 @@ const LaundryNewOrder = dynamic(() => import("@/components/laundry/views/laundry
 const LaundryCounterQueue = dynamic(() => import("@/components/laundry/views/laundry-counter-queue").then(m => ({ default: m.LaundryCounterQueue })), { loading: () => <PageLoader /> })
 const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views/laundry-categories-master").then(m => ({ default: m.LaundryCategoriesMaster })), { loading: () => <PageLoader /> })
 const LaundryGarmentsMaster = dynamic(() => import("@/components/laundry/views/laundry-garments-master").then(m => ({ default: m.LaundryGarmentsMaster })), { loading: () => <PageLoader /> })
+const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/laundry-services-master").then(m => ({ default: m.LaundryServicesMaster })), { loading: () => <PageLoader /> })
+const LaundryPricingEngine = dynamic(() => import("@/components/laundry/views/laundry-pricing-engine").then(m => ({ default: m.LaundryPricingEngine })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
@@ -630,6 +632,8 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
       case "categories": return <LaundryCategoriesMaster />
       case "garments": return <LaundryGarmentsMaster />
+      case "services": return <LaundryServicesMaster />
+      case "pricing": return <LaundryPricingEngine />
       default: return <LaundryDashboard />
     }
   }
