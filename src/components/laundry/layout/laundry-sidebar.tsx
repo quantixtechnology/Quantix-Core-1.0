@@ -50,6 +50,7 @@ const storeNavItems: NavItem[] = [
   { key: "dispatch-queue",     label: "Dispatch",           icon: Truck },
   { key: "stores",             label: "Stores",             icon: Store,               feature: "multiStoreEnabled" },
   { key: "processing-centers", label: "Processing Centers", icon: Factory,             feature: "multiProcessingEnabled" },
+  { key: "business-config",    label: "Business Configuration", icon: Settings },
 ]
 
 interface LaundrySidebarProps {

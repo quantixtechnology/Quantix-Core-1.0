@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
-import LaundrySetupWizard from "./laundry-setup-wizard"
 
 // Store Counter operational workload — each card is the live count of orders
 // currently sitting in that workflow stage (real data from /orders/stats).
@@ -118,53 +117,17 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
   )
 }
 
+// The Laundry Dashboard is the operational command center — it ALWAYS opens to
+// the live workflow dashboard. Business configuration (the setup wizard) was
+// moved out of here to Settings → Business Configuration; it must never block
+// access to the operational ERP once a tenant exists.
 export function LaundryDashboard() {
   const { currentBusinessId } = useAuthStore()
-  const [showSetup, setShowSetup] = useState(false)
-  const [checking, setChecking] = useState(true)
-
-  useEffect(() => {
-    if (!currentBusinessId) {
-      setChecking(false)
-      return
-    }
-    fetch(`/api/laundry/businesses/${currentBusinessId}/stores`)
-      .then(res => res.json())
-      .then(stores => {
-        if (Array.isArray(stores) && stores.length === 0) {
-          setShowSetup(true)
-        }
-      })
-      .catch(() => {})
-      .finally(() => setChecking(false))
-  }, [currentBusinessId])
-
-  if (checking) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-      </div>
-    )
-  }
 
   if (!currentBusinessId) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
         <p className="text-sm">No business selected</p>
-      </div>
-    )
-  }
-
-  if (showSetup) {
-    return (
-      <div className="py-8">
-        <LaundrySetupWizard
-          laundryBusinessId={currentBusinessId}
-          onComplete={() => {
-            setShowSetup(false)
-            window.location.href = "/"
-          }}
-        />
       </div>
     )
   }

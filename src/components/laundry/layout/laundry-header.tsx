@@ -15,6 +15,7 @@ const pageTitles: Record<LaundryBusinessPage, string> = {
   "payment-queue": "Payment Collection",
   "dispatch-queue": "Dispatch",
   "order-detail": "Order",
+  "business-config": "Business Configuration",
   customers: "Customers",
   stores: "Stores",
   "processing-centers": "Processing Centers",
