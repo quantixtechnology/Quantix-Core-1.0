@@ -2,11 +2,11 @@
 
 // New Order — the store counter intake. ONE job: create the order with its
 // garments. Fast flow: Customer (mobile → load/create) → Service → Garments
-// (qty) → Create Order (PENDING_STORE_AUDIT). No payment collection, no manual
-// delivery date, no CRM. Defects/photos/remarks are captured later at Store
-// Audit; the order already carries the garment list so Audit only inspects.
+// (tap +) → Order Type → Create (PENDING_STORE_AUDIT). No payment collection,
+// no manual delivery date, no CRM. Garments are recorded here so Store Audit
+// only inspects them.
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
@@ -20,7 +20,6 @@ import {
 } from "lucide-react"
 import type { BillingQuote } from "@/lib/laundry-billing"
 
-// Order/customer type — drives Pricing Engine resolution.
 const ORDER_TYPES = [
   { value: "WALK_IN", label: "Walk-In", customerType: "WALK_IN" },
   { value: "CORPORATE", label: "Corporate", customerType: "CORPORATE" },
@@ -35,11 +34,11 @@ const PAYMENT_PREFS = [
 ]
 
 interface CustomerResult { id: string; name: string; phone: string | null; customerCode: string | null }
-interface ServiceMaster { id: string; name: string; defaultTurnaroundHours: number; availableInStore: boolean; isActive: boolean }
+interface ServiceMaster { id: string; name: string; categoryId: string | null; defaultTurnaroundHours: number; availableInStore: boolean; isActive: boolean }
 interface GarmentMaster { id: string; name: string; categoryId: string | null; defaultUnit: string; isActive: boolean }
 
 const inr = (n: number) => `₹${n.toFixed(2)}`
-const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })
+const fmtReady = (d: Date) => `${d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} ${d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
 
 export default function LaundryNewOrder() {
   const { currentBusinessId, user } = useAuthStore()
@@ -61,6 +60,7 @@ export default function LaundryNewOrder() {
   const [services, setServices] = useState<ServiceMaster[]>([])
   const [garments, setGarments] = useState<GarmentMaster[]>([])
   const [selectedServiceId, setSelectedServiceId] = useState("")
+  const [garmentSearch, setGarmentSearch] = useState("")
   const [qty, setQty] = useState<Record<string, number>>({})
   const [weight, setWeight] = useState<Record<string, number>>({})
 
@@ -71,7 +71,6 @@ export default function LaundryNewOrder() {
 
   const customerType = useMemo(() => ORDER_TYPES.find((o) => o.value === orderType)?.customerType || "WALK_IN", [orderType])
 
-  // Load stores + masters
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/businesses/${currentBusinessId}`).then((r) => r.json()).then((biz) => {
@@ -85,18 +84,33 @@ export default function LaundryNewOrder() {
 
   const selectedService = services.find((s) => s.id === selectedServiceId)
 
-  // Garment lines derived from the chosen service + quantities.
+  // Garments applicable to the chosen service (by category), fallback to all so
+  // the operator never sees an empty list. Drives the order lines + totals.
+  const serviceGarments = useMemo(() => {
+    if (selectedService?.categoryId) {
+      const inCat = garments.filter((g) => g.categoryId === selectedService.categoryId)
+      if (inCat.length) return inCat
+    }
+    return garments
+  }, [garments, selectedService])
+
+  // Text search filters the DISPLAY only (not the counted lines).
+  const displayGarments = useMemo(() => {
+    const q = garmentSearch.trim().toLowerCase()
+    return q ? serviceGarments.filter((g) => g.name.toLowerCase().includes(q)) : serviceGarments
+  }, [serviceGarments, garmentSearch])
+
   const lines = useMemo(() => {
     if (!selectedServiceId) return []
-    return garments.map((g) => {
+    return serviceGarments.map((g) => {
       const byWeight = g.defaultUnit === "KG"
       const q = byWeight ? 0 : (qty[g.id] || 0)
       const w = byWeight ? (weight[g.id] || 0) : 0
-      return { garment: g, serviceId: selectedServiceId, garmentId: g.id, quantity: q, weightKg: w, byWeight }
+      return { garment: g, serviceId: selectedServiceId, garmentId: g.id, quantity: q, weightKg: w }
     }).filter((l) => l.quantity > 0 || l.weightKg > 0)
-  }, [garments, selectedServiceId, qty, weight])
+  }, [serviceGarments, selectedServiceId, qty, weight])
 
-  const totalPieces = useMemo(() => Object.values(qty).reduce((s, n) => s + (n || 0), 0), [qty])
+  const totalPieces = useMemo(() => lines.reduce((s, l) => s + l.quantity, 0), [lines])
 
   // Auto delivery date = now + selected service TAT (operator does not decide).
   const expectedDelivery = useMemo(() => {
@@ -141,8 +155,7 @@ export default function LaundryNewOrder() {
     try {
       const res = await fetch("/api/laundry/customers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, name: newName, mobile }) })
       const json = await res.json()
-      if (res.status === 409 && json.data) { setCustomer({ id: json.data.id, name: json.data.name, phone: json.data.phone, customerCode: json.data.customerCode }) }
-      else if (json.success) { setCustomer({ id: json.data.id, name: json.data.name, phone: json.data.phone, customerCode: json.data.customerCode }) }
+      if ((res.status === 409 || json.success) && json.data) setCustomer({ id: json.data.id, name: json.data.name, phone: json.data.phone, customerCode: json.data.customerCode })
       else { toast({ title: "Error", description: json.error || "Could not create customer", variant: "destructive" }); return }
     } catch { toast({ title: "Error", description: "Could not create customer", variant: "destructive" }) } finally { setCreating(false) }
   }
@@ -155,7 +168,7 @@ export default function LaundryNewOrder() {
   const canCreate = !!customer && !!selectedServiceId && lines.length > 0 && !!storeId
 
   const handleCreateOrder = async () => {
-    if (!canCreate) { toast({ title: "Incomplete", description: "Add a customer, a service and at least one garment", variant: "destructive" }); return }
+    if (!canCreate) return
     setSubmitting(true)
     try {
       const payload = {
@@ -174,10 +187,12 @@ export default function LaundryNewOrder() {
     } catch { toast({ title: "Error", description: "Failed to create order", variant: "destructive" }) } finally { setSubmitting(false) }
   }
 
+  const stepNum = (n: number) => <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-600 text-white text-[11px]">{n}</span>
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-28 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold flex items-center gap-2"><ShoppingBagIcon /> New Order</h1>
+        <h1 className="text-xl font-bold flex items-center gap-2"><Badge variant="outline" className="border-sky-300 text-sky-700 bg-sky-50 rounded-md px-1.5">Counter</Badge> New Order</h1>
         {stores.length > 1 ? (
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="text-sm border rounded-md px-2 py-1">
             {stores.map((s) => <option key={s.id} value={s.id}>{s.storeName}</option>)}
@@ -187,7 +202,7 @@ export default function LaundryNewOrder() {
 
       {/* Step 1 — Customer */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-600 text-white text-[11px]">1</span> Customer</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2">{stepNum(1)} Customer</CardTitle></CardHeader>
         <CardContent>
           {customer ? (
             <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
@@ -216,10 +231,10 @@ export default function LaundryNewOrder() {
         </CardContent>
       </Card>
 
-      {/* Step 2 — Service + order type */}
+      {/* Step 2 — Service */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-600 text-white text-[11px]">2</span> Service</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
+        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2">{stepNum(2)} Service</CardTitle></CardHeader>
+        <CardContent>
           <div className="flex flex-wrap gap-2">
             {services.length === 0 ? <p className="text-sm text-muted-foreground">No services configured.</p> : services.map((s) => (
               <button key={s.id} onClick={() => setSelectedServiceId(s.id)} className={`rounded-lg border px-3 py-2 text-sm transition-colors ${selectedServiceId === s.id ? "border-primary bg-primary/5 font-medium" : "hover:bg-muted/50"}`}>
@@ -228,24 +243,23 @@ export default function LaundryNewOrder() {
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-muted-foreground mr-1">Type:</span>
-            {ORDER_TYPES.map((o) => (
-              <button key={o.value} onClick={() => setOrderType(o.value)} className={`rounded-full border px-2.5 py-1 ${orderType === o.value ? "border-primary bg-primary/5 font-medium" : "text-muted-foreground hover:bg-muted/50"}`}>{o.label}</button>
-            ))}
-          </div>
         </CardContent>
       </Card>
 
       {/* Step 3 — Garments */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center justify-between"><span className="flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-600 text-white text-[11px]">3</span> Garments</span><span className="text-xs font-normal text-muted-foreground">{totalPieces} pc{totalPieces === 1 ? "" : "s"} · {lines.length} type{lines.length === 1 ? "" : "s"}</span></CardTitle></CardHeader>
-        <CardContent>
+        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center justify-between"><span className="flex items-center gap-2">{stepNum(3)} Garments</span><span className="text-xs font-normal text-muted-foreground">{totalPieces} pc{totalPieces === 1 ? "" : "s"} · {lines.length} type{lines.length === 1 ? "" : "s"}</span></CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {garments.length > 8 && (
+            <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search garment…" className="pl-9 h-9" value={garmentSearch} onChange={(e) => setGarmentSearch(e.target.value)} /></div>
+          )}
           {garments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No garments configured.</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">No garments configured.</p>
+          ) : displayGarments.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No garments match “{garmentSearch}”.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {garments.map((g) => {
+              {displayGarments.map((g) => {
                 const byWeight = g.defaultUnit === "KG"
                 const q = qty[g.id] || 0, w = weight[g.id] || 0
                 const active = byWeight ? w > 0 : q > 0
@@ -269,13 +283,19 @@ export default function LaundryNewOrder() {
         </CardContent>
       </Card>
 
-      {/* Payment preference (recorded only — collected later at Payment stage) */}
+      {/* Step 4 — Order Type + Payment Preference (pricing only; after garments) */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CreditCard className="h-4 w-4" /> Payment Preference</CardTitle></CardHeader>
-        <CardContent>
+        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2">{stepNum(4)} Order Type</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
+            {ORDER_TYPES.map((o) => (
+              <button key={o.value} onClick={() => setOrderType(o.value)} className={`rounded-full border px-3 py-1.5 text-sm ${orderType === o.value ? "border-primary bg-primary/5 font-medium" : "text-muted-foreground hover:bg-muted/50"}`}>{o.label}</button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" /> Payment:</span>
             {PAYMENT_PREFS.map((p) => (
-              <button key={p.value} onClick={() => setPaymentPref(p.value)} className={`rounded-full border px-3 py-1.5 text-sm ${paymentPref === p.value ? "border-primary bg-primary/5 font-medium" : "text-muted-foreground hover:bg-muted/50"}`}>{p.label}</button>
+              <button key={p.value} onClick={() => setPaymentPref(p.value)} className={`rounded-full border px-2.5 py-1 text-xs ${paymentPref === p.value ? "border-primary bg-primary/5 font-medium" : "text-muted-foreground hover:bg-muted/50"}`}>{p.label}</button>
             ))}
           </div>
         </CardContent>
@@ -285,7 +305,7 @@ export default function LaundryNewOrder() {
       <div className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur px-4 py-3">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <div className="text-sm">
-            <div className="flex items-center gap-1.5 text-muted-foreground"><Clock className="h-3.5 w-3.5" /> Ready by <span className="font-medium text-foreground">{expectedDelivery ? fmtDate(expectedDelivery) : "—"}</span></div>
+            <div className="flex items-center gap-1.5 text-muted-foreground"><Clock className="h-3.5 w-3.5" /> Ready By <span className="font-semibold text-foreground">{expectedDelivery ? fmtReady(expectedDelivery) : "—"}</span></div>
             {quote && <div className="text-xs text-muted-foreground">Est. <span className="font-semibold text-foreground">{inr(quote.grandTotal)}</span> · confirmed at audit</div>}
           </div>
           <Button size="lg" onClick={handleCreateOrder} disabled={!canCreate || submitting} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
@@ -295,8 +315,4 @@ export default function LaundryNewOrder() {
       </div>
     </div>
   )
-}
-
-function ShoppingBagIcon() {
-  return <Badge variant="outline" className="border-sky-300 text-sky-700 bg-sky-50 rounded-md px-1.5">Counter</Badge>
 }

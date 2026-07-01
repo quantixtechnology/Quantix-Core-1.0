@@ -31,6 +31,11 @@ type NavItem = {
 }
 
 const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
+// Masters (Stores/Categories/Services/Garments/Pricing) are admin/owner only.
+const ADMIN_ROLES = new Set(["LAUNDRY_OWNER", "QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
+// Counter operators get a trimmed Operations set (no Payment/Dispatch).
+const OPERATOR_ROLES = new Set(["STORE_EXECUTIVE", "AUDIT_EXECUTIVE"])
+const OPERATOR_OPS = new Set(["dashboard", "inbox", "new-order", "audit-queue"])
 
 // Orders / Customers / Reports / Settings are not yet implemented as real
 // modules (their views are static "coming soon"/"future update" stubs), so they
@@ -92,8 +97,20 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   } as React.CSSProperties
 
   const isProcessingRole = currentRole ? PROCESSING_ROLES.has(currentRole) : false
-  const operationsItems = isProcessingRole ? processingNavItems : storeNavItems
-  const masterItems = isProcessingRole ? [] : mastersNavItems
+  // Unknown role → treat as admin so the owner is never locked out; operators
+  // always have a known role, so Masters is correctly hidden from them.
+  const isAdmin = currentRole ? ADMIN_ROLES.has(currentRole) : true
+  const isOperator = currentRole ? OPERATOR_ROLES.has(currentRole) : false
+
+  let operationsItems: NavItem[]
+  let masterItems: NavItem[]
+  if (isProcessingRole) {
+    operationsItems = processingNavItems
+    masterItems = []
+  } else {
+    operationsItems = isOperator ? storeNavItems.filter((i) => OPERATOR_OPS.has(i.key)) : storeNavItems
+    masterItems = isAdmin ? mastersNavItems : []
+  }
   const laundryNavItems = [...operationsItems, ...masterItems]
 
   // Redirect to dashboard if current page is hidden by licensing or role
