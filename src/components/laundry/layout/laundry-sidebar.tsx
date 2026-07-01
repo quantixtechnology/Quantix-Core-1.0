@@ -1,72 +1,99 @@
 "use client"
 
+// Laundry OS shell — enterprise white sidebar. Presentation only: navigation is
+// built from a config with per-item role tier + optional route. Items whose
+// destination doesn't exist yet render as "Soon" (disabled) rather than being
+// hidden, giving the full enterprise nav without inventing backend modules.
+// Branding is the logged-in tenant's Business Name (never hardcoded).
+
 import {
   Sidebar, SidebarContent, SidebarFooter,
   SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail,
 } from "@/components/ui/sidebar"
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
-} from "@/components/ui/sheet"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Badge } from "@/components/ui/badge"
 import { useEffect } from "react"
 import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
-import { useLaundryLicensing } from "@/hooks/use-laundry-licensing"
-import { LAUNDRY_ROLES } from "@/lib/permissions"
 import {
-  LayoutDashboard, Inbox, ShoppingBag, Users, Store,
-  Factory, BarChart3, Settings, ChevronLeft, Sparkles, Plus,
-  ClipboardCheck, CreditCard, Truck, Tags, Shirt, WashingMachine, IndianRupee,
+  LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
+  Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
+  UsersRound, Shirt,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
 
-type NavItem = {
-  key: LaundryBusinessPage
+type NavCfg = {
+  key: string
   label: string
   icon: React.ComponentType<{ className?: string }>
-  feature?: string
+  page?: LaundryBusinessPage
+  comingSoon?: boolean
+  minRank: number // 1=operator+, 2=manager+, 3=admin/owner
 }
 
 const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
-// Masters (Stores/Categories/Services/Garments/Pricing) are admin/owner only.
 const ADMIN_ROLES = new Set(["LAUNDRY_OWNER", "QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
-// Counter operators get a trimmed Operations set (no Payment/Dispatch).
+const MANAGER_ROLES = new Set(["LAUNDRY_STORE_MANAGER"])
 const OPERATOR_ROLES = new Set(["STORE_EXECUTIVE", "AUDIT_EXECUTIVE"])
-const OPERATOR_OPS = new Set(["dashboard", "inbox", "new-order", "audit-queue"])
 
-// Orders / Customers / Reports / Settings are not yet implemented as real
-// modules (their views are static "coming soon"/"future update" stubs), so they
-// are hidden from navigation rather than shown as placeholder screens. The
-// page-validation effect below redirects any stale laundryPage value to
-// "dashboard", so the stub views are unreachable.
-const processingNavItems: NavItem[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+// Unknown role → admin tier so the owner is never locked out; operators/managers
+// have known roles and are correctly restricted.
+function rankOf(role: string | null): number {
+  if (!role) return 3
+  if (ADMIN_ROLES.has(role)) return 3
+  if (MANAGER_ROLES.has(role)) return 2
+  if (OPERATOR_ROLES.has(role)) return 1
+  return 3
+}
+
+const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
+  {
+    label: null,
+    items: [
+      { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
+      { key: "new-order", label: "New Order", icon: Plus, page: "new-order", minRank: 1 },
+      { key: "audit-queue", label: "Store Audit", icon: ClipboardCheck, page: "audit-queue", minRank: 1 },
+      { key: "payment-queue", label: "Payment Collection", icon: CreditCard, page: "payment-queue", minRank: 2 },
+      { key: "dispatch-queue", label: "Dispatch", icon: Truck, page: "dispatch-queue", minRank: 2 },
+      { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2 },
+      { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2 },
+      { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3 },
+      { key: "processing-centers", label: "Processing Center", icon: Factory, page: "processing-centers", minRank: 3 },
+      { key: "staff", label: "Staff", icon: UsersRound, comingSoon: true, minRank: 3 },
+    ],
+  },
+  {
+    label: "Management",
+    items: [
+      { key: "pricing", label: "Services & Pricing", icon: IndianRupee, page: "pricing", minRank: 3 },
+      { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3 },
+      { key: "payments", label: "Payments", icon: Wallet, comingSoon: true, minRank: 3 },
+      { key: "invoices", label: "Invoices", icon: Receipt, comingSoon: true, minRank: 3 },
+      { key: "settings", label: "Settings", icon: Settings, page: "settings", minRank: 3 },
+    ],
+  },
 ]
 
-// OPERATIONS — the live workflow (engine-driven). Unchanged.
-const storeNavItems: NavItem[] = [
-  { key: "dashboard",          label: "Dashboard",          icon: LayoutDashboard },
-  { key: "inbox",              label: "My Inbox",           icon: Inbox },
-  { key: "new-order",          label: "New Order",          icon: Plus },
-  { key: "audit-queue",        label: "Store Audit",        icon: ClipboardCheck },
-  { key: "payment-queue",      label: "Payment Collection", icon: CreditCard },
-  { key: "dispatch-queue",     label: "Dispatch",           icon: Truck },
+// Processing-center roles get a focused view.
+const PROCESSING_GROUPS: { label: string | null; items: NavCfg[] }[] = [
+  { label: null, items: [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
+    { key: "processing-centers", label: "Processing Center", icon: Factory, page: "processing-centers", minRank: 1 },
+  ] },
 ]
 
-// MASTERS — permanent, always-editable OPERATIONAL master data. The Business /
-// Tenant itself is owned by the Quantix Platform and is NOT recreated here.
-// Processing Center is a Store Type, not a separate module. Services / Pricing /
-// Subscription Plans / Employees / etc. are added as their masters ship.
-const mastersNavItems: NavItem[] = [
-  { key: "stores",     label: "Stores & Processing Centers", icon: Store },
-  { key: "categories", label: "Categories", icon: Tags },
-  { key: "services",   label: "Services",   icon: WashingMachine },
-  { key: "garments",   label: "Garments",   icon: Shirt },
-  { key: "pricing",    label: "Pricing Engine", icon: IndianRupee },
-]
+const WHITE_THEME = {
+  "--sidebar": "#FFFFFF",
+  "--sidebar-foreground": "#475569",
+  "--sidebar-accent": "#EFF6FF",
+  "--sidebar-accent-foreground": "#1D4ED8",
+  "--sidebar-border": "#E2E8F0",
+  "--sidebar-primary": "#2563EB",
+  "--sidebar-primary-foreground": "#FFFFFF",
+  "--sidebar-ring": "#2563EB",
+} as React.CSSProperties
 
 interface LaundrySidebarProps {
   mobileOpen?: boolean
@@ -75,190 +102,121 @@ interface LaundrySidebarProps {
 
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
   const { laundryPage, setLaundryPage } = useAdminStore()
-  const { user, currentBusinessId, currentRole } = useAuthStore()
+  const { user, currentRole } = useAuthStore()
   const { isMobile } = useResponsive()
-  const { isEnabled } = useLaundryLicensing(currentBusinessId)
 
-  const userInitials = user?.name
-    ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
-    : "LB"
-  const userName = user?.name ?? "Laundry User"
+  const isProcessing = currentRole ? PROCESSING_ROLES.has(currentRole) : false
+  const rank = rankOf(currentRole)
+  const brand = user?.businessName || "Laundry OS"
+  const brandInitials = brand.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 
-  const sidebarVars = {
-    "--sidebar": "#04132E",
-    "--sidebar-foreground": "#FFFFFF",
-    "--sidebar-accent": "rgba(255,255,255,0.06)",
-    "--sidebar-accent-foreground": "#FFFFFF",
-    "--sidebar-border": "rgba(255,255,255,0.08)",
-    "--sidebar-primary": "#0284C7",
-    "--sidebar-primary-foreground": "#ffffff",
-    "--sidebar-ring": "#0284C7",
-    "--sidebar-heading": "rgba(56,189,248,0.55)",
-  } as React.CSSProperties
+  const groups = (isProcessing ? PROCESSING_GROUPS : NAV_GROUPS)
+    .map((g) => ({ label: g.label, items: g.items.filter((i) => rank >= i.minRank) }))
+    .filter((g) => g.items.length > 0)
 
-  const isProcessingRole = currentRole ? PROCESSING_ROLES.has(currentRole) : false
-  // Unknown role → treat as admin so the owner is never locked out; operators
-  // always have a known role, so Masters is correctly hidden from them.
-  const isAdmin = currentRole ? ADMIN_ROLES.has(currentRole) : true
-  const isOperator = currentRole ? OPERATOR_ROLES.has(currentRole) : false
+  const validPages = new Set(groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page))
 
-  let operationsItems: NavItem[]
-  let masterItems: NavItem[]
-  if (isProcessingRole) {
-    operationsItems = processingNavItems
-    masterItems = []
-  } else {
-    operationsItems = isOperator ? storeNavItems.filter((i) => OPERATOR_OPS.has(i.key)) : storeNavItems
-    masterItems = isAdmin ? mastersNavItems : []
-  }
-  const laundryNavItems = [...operationsItems, ...masterItems]
-
-  // Redirect to dashboard if current page is hidden by licensing or role
+  // Redirect to dashboard if the current page isn't visible for this role.
   useEffect(() => {
-    const validKeys = new Set(laundryNavItems.map(i => i.key))
-    if (!validKeys.has(laundryPage)) {
-      setLaundryPage("dashboard")
-      return
-    }
-    const hiddenPage = laundryNavItems.find(
-      item => item.key === laundryPage && item.feature && !isEnabled(item.feature)
-    )
-    if (hiddenPage) {
-      setLaundryPage("dashboard")
-    }
-  }, [laundryPage, isEnabled, setLaundryPage, currentRole])
+    if (!validPages.has(laundryPage)) setLaundryPage("dashboard")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [laundryPage, currentRole])
 
-  const handleNavigate = (page: LaundryBusinessPage) => {
+  const navigate = (page?: LaundryBusinessPage) => {
+    if (!page) return
     setLaundryPage(page)
     if (isMobile && onMobileOpenChange) onMobileOpenChange(false)
   }
 
-  const sidebarContent = (
+  const Brand = (
+    <div className="flex items-center gap-2.5 px-2">
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 shadow-sm">
+        <Shirt className="h-[18px] w-[18px]" />
+      </div>
+      <div className="min-w-0 leading-tight">
+        <p className="truncate text-[15px] font-bold text-slate-800">{brand}</p>
+        <p className="text-[10px] font-semibold tracking-[0.15em] text-blue-500 uppercase">Laundry</p>
+      </div>
+    </div>
+  )
+
+  const NavList = ({ collapsedTooltips = true }: { collapsedTooltips?: boolean }) => (
     <>
-      <SidebarHeader className="p-0 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <div className="flex items-center justify-between h-[60px] px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500">
-              <Sparkles className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-sm font-bold tracking-wide text-white">Laundry OS</span>
-          </div>
-        </div>
-      </SidebarHeader>
-
-      <SidebarContent className="py-3 gap-0">
-        {([
-          { title: "Operations", items: operationsItems },
-          { title: "Masters", items: masterItems },
-        ] as { title: string; items: NavItem[] }[])
-          .filter(section => section.items.length > 0)
-          .map(section => (
-            <SidebarGroup key={section.title} className="px-2 py-0">
-              <SidebarGroupLabel
-                className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 h-auto py-1"
-                style={{ color: "var(--sidebar-heading)" }}
-              >
-                {section.title}
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu className="gap-0.5">
-                  {section.items.filter(item => !item.feature || isEnabled(item.feature)).map((item) => {
-                    const isActive = laundryPage === item.key
-                    return (
-                      <SidebarMenuItem key={item.key}>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          onClick={() => handleNavigate(item.key)}
-                          tooltip={item.label}
-                          className={`font-semibold text-xs h-9 ${isActive ? "admin-nav-active" : "!text-white/72 hover:!text-white hover:!bg-white/8"}`}
-                        >
-                          <item.icon className="size-4 shrink-0" />
-                          <span>{item.label}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
-      </SidebarContent>
-
-      <SidebarFooter className="p-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="hover:!bg-white/8 h-auto py-2" tooltip={userName}>
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarFallback className="text-xs font-bold text-white" style={{ background: "#0284C7" }}>
-                  {userInitials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-sm font-semibold text-white">{userName}</span>
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+      {groups.map((section, gi) => (
+        <SidebarGroup key={section.label || `g${gi}`} className="px-2 py-0">
+          {section.label && (
+            <SidebarGroupLabel className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 mt-2 h-auto py-1 text-slate-400">
+              {section.label}
+            </SidebarGroupLabel>
+          )}
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-0.5">
+              {section.items.map((item) => {
+                const isActive = item.page === laundryPage
+                if (item.comingSoon) {
+                  return (
+                    <SidebarMenuItem key={item.key}>
+                      <SidebarMenuButton disabled tooltip={collapsedTooltips ? `${item.label} (Coming Soon)` : undefined}
+                        className="font-medium text-[13px] h-9 !text-slate-400 cursor-not-allowed opacity-70">
+                        <item.icon className="size-[18px] shrink-0" />
+                        <span className="flex-1">{item.label}</span>
+                        <Badge variant="outline" className="h-4 px-1.5 text-[9px] font-semibold border-slate-200 text-slate-400 bg-slate-50">Soon</Badge>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                }
+                return (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton isActive={isActive} onClick={() => navigate(item.page)}
+                      tooltip={collapsedTooltips ? item.label : undefined}
+                      className={`font-medium text-[13px] h-9 ${isActive ? "!bg-blue-600 !text-white shadow-sm" : "!text-slate-600 hover:!bg-blue-50 hover:!text-blue-700"}`}>
+                      <item.icon className="size-[18px] shrink-0" />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      ))}
     </>
+  )
+
+  const Footer = (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 text-xs font-bold shrink-0">{brandInitials}</div>
+        <div className="min-w-0"><p className="truncate text-[13px] font-semibold text-slate-700">{brand}</p><p className="text-[11px] text-slate-400">Workspace</p></div>
+      </div>
+    </div>
   )
 
   if (isMobile) {
     return (
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent side="left" className="w-[272px] p-0 flex flex-col" style={{ ...sidebarVars, background: "#04132E", borderColor: "rgba(255,255,255,0.08)" }}>
-          <SheetHeader className="p-0 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <SheetContent side="left" className="w-[280px] p-0 flex flex-col bg-white">
+          <SheetHeader className="p-0 shrink-0 border-b border-slate-200">
             <SheetTitle className="sr-only">Laundry Workspace</SheetTitle>
-            <SheetDescription className="sr-only">Laundry business workspace navigation</SheetDescription>
-            <div className="flex items-center justify-between h-[60px] px-4">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500">
-                  <Sparkles className="h-4 w-4 text-white" />
-                </div>
-            <span className="text-sm font-bold tracking-wide text-white">{isProcessingRole ? "Processing" : "Laundry OS"}</span>
-              </div>
-            </div>
+            <SheetDescription className="sr-only">Navigation</SheetDescription>
+            <div className="flex items-center h-16 px-4">{Brand}</div>
           </SheetHeader>
-          <ScrollArea className="flex-1 px-1 py-3">
-            <div className="space-y-0.5 px-2">
-              {laundryNavItems.filter(item => !item.feature || isEnabled(item.feature)).map((item) => {
-                const isActive = laundryPage === item.key
-                return (
-                  <button
-                    key={item.key}
-                    onClick={() => handleNavigate(item.key)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition-all min-h-[34px] ${
-                      isActive ? "admin-nav-active" : "hover:bg-white/8"
-                    }`}
-                    style={isActive ? undefined : { color: "rgba(255,255,255,0.72)" }}
-                  >
-                    <item.icon className="shrink-0 size-4" />
-                    <span>{item.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </ScrollArea>
-          <div className="p-3 shrink-0" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-            <div className="flex items-center gap-3 px-2 py-2 rounded-lg" style={{ background: "rgba(255,255,255,0.05)" }}>
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarFallback className="text-xs font-bold text-white" style={{ background: "#0284C7" }}>
-                  {userInitials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="truncate text-sm font-semibold text-white">{userName}</p>
-              </div>
-            </div>
-          </div>
+          <ScrollArea className="flex-1 py-3" style={WHITE_THEME}><NavList collapsedTooltips={false} /></ScrollArea>
+          <div className="p-3 shrink-0 border-t border-slate-200">{Footer}</div>
         </SheetContent>
       </Sheet>
     )
   }
 
   return (
-    <Sidebar collapsible="icon" className="border-r-0" style={sidebarVars}>
-      {sidebarContent}
+    <Sidebar collapsible="icon" className="border-r border-slate-200" style={WHITE_THEME}>
+      <SidebarHeader className="p-0 shrink-0 border-b border-slate-200">
+        <div className="flex items-center h-16 px-2">{Brand}</div>
+      </SidebarHeader>
+      <SidebarContent className="py-3 gap-0">
+        <NavList />
+      </SidebarContent>
+      <SidebarFooter className="p-3 border-t border-slate-200">{Footer}</SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )
