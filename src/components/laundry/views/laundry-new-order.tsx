@@ -26,7 +26,6 @@ import {
   Wallet, BadgeCheck, Crown, ImagePlus, Upload, Truck, Paperclip, Plus, Building2,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 
 const ORDER_TYPES = [
   { value: "WALK_IN", label: "Walk-In" },
@@ -195,8 +194,8 @@ export default function LaundryNewOrder() {
   }
 
   const CardHead = ({ icon: Icon, title, note, right }: { icon: typeof User; title: string; note?: string; right?: React.ReactNode }) => (
-    <CardHeader className="flex-row items-center justify-between space-y-0 border-b bg-white px-5 py-3.5 rounded-t-xl">
-      <CardTitle className="flex items-center gap-2 text-[15px] font-semibold text-slate-800"><Icon className="h-4 w-4 text-blue-600" /> {title}{note && <span className="text-xs font-normal text-slate-400">{note}</span>}</CardTitle>
+    <CardHeader className="flex-row items-center justify-between space-y-0 px-5 pt-5 pb-3.5">
+      <CardTitle className="flex items-center gap-2 text-[15px] font-semibold text-slate-800"><Icon className="h-[18px] w-[18px] text-blue-600" /> {title}{note && <span className="text-xs font-normal text-slate-400">{note}</span>}</CardTitle>
       {right}
     </CardHeader>
   )
@@ -241,7 +240,7 @@ export default function LaundryNewOrder() {
           {/* Customer Information */}
           <Card className="rounded-xl border-slate-200 shadow-sm">
             <CardHead icon={User} title="Customer Information" />
-            <CardContent className="p-5">
+            <CardContent className="px-5 pb-5 pt-0">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <p className="text-sm font-semibold text-blue-700">Existing Customer</p>
@@ -259,23 +258,27 @@ export default function LaundryNewOrder() {
                   </div>
 
                   {selectedCustomer ? (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
-                      <div className="flex items-center gap-1.5 text-emerald-600 text-sm font-medium"><CheckCircle2 className="h-4 w-4" /> Customer Found</div>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex gap-3">
-                          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-slate-600 font-semibold shrink-0">{selectedCustomer.name.slice(0, 2).toUpperCase()}</div>
-                          <div className="space-y-0.5">
-                            <p className="font-semibold text-slate-800">{selectedCustomer.name}</p>
-                            <p className="text-sm text-slate-500 flex items-center gap-1"><Phone className="h-3 w-3" /> {selectedCustomer.phone || "—"}</p>
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-emerald-600 text-sm font-medium"><CheckCircle2 className="h-4 w-4" /> Customer Found</div>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedCustomer(null)}><X className="h-4 w-4" /></Button>
+                        </div>
+                        <div className="grid grid-cols-[auto_1fr] gap-4 mt-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-slate-600 font-semibold shrink-0">{selectedCustomer.name.slice(0, 2).toUpperCase()}</div>
+                            <div className="space-y-0.5">
+                              <p className="font-semibold text-slate-800 leading-tight">{selectedCustomer.name}</p>
+                              <p className="text-sm text-slate-500">{selectedCustomer.phone || "—"}</p>
+                            </div>
+                          </div>
+                          <div className="space-y-2 text-sm">
+                            {selectedCustomer.addresses?.[0] && (<div><p className="text-slate-500 text-xs">Address</p><p className="text-slate-700 leading-snug">{selectedCustomer.addresses[0].addressLine1}, {selectedCustomer.addresses[0].city}</p></div>)}
+                            <div><p className="text-slate-500 text-xs">Membership Status</p><Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-emerald-300 text-emerald-700 bg-emerald-50"><Crown className="h-3 w-3" />{selectedCustomer.loyaltyTier || "Bronze"} Member</Badge></div>
+                            <div><p className="text-slate-500 text-xs">Subscription Status</p><Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-blue-300 text-blue-700 bg-blue-50"><BadgeCheck className="h-3 w-3" />Active</Badge></div>
+                            <div><p className="text-slate-500 text-xs">Wallet Balance</p><p className="font-semibold text-emerald-600">₹{selectedCustomer.walletBalance.toFixed(2)}</p></div>
                           </div>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedCustomer(null)}><X className="h-4 w-4" /></Button>
-                      </div>
-                      <div className="space-y-2 border-t border-emerald-200/70 pt-3 text-sm">
-                        {selectedCustomer.addresses?.[0] && <div className="flex justify-between gap-3"><span className="text-slate-500">Address</span><span className="text-right text-slate-700 max-w-[65%]">{selectedCustomer.addresses[0].addressLine1}, {selectedCustomer.addresses[0].city}</span></div>}
-                        <div className="flex items-center justify-between"><span className="text-slate-500">Membership Status</span><Badge variant="outline" className="text-[11px] gap-1 border-emerald-300 text-emerald-700 bg-emerald-50"><Crown className="h-3 w-3" />{selectedCustomer.loyaltyTier || "Bronze"} Member</Badge></div>
-                        <div className="flex items-center justify-between"><span className="text-slate-500">Subscription Status</span><Badge variant="outline" className="text-[11px] gap-1 border-blue-300 text-blue-700 bg-blue-50"><BadgeCheck className="h-3 w-3" />Active</Badge></div>
-                        <div className="flex items-center justify-between"><span className="text-slate-500">Wallet Balance</span><span className="font-semibold text-slate-800 flex items-center gap-1"><Wallet className="h-3.5 w-3.5 text-emerald-600" />₹{selectedCustomer.walletBalance.toFixed(2)}</span></div>
                       </div>
                       <Button onClick={() => handleSubmit("create")} disabled={submitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white">Create Order</Button>
                     </div>
@@ -314,7 +317,7 @@ export default function LaundryNewOrder() {
           <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-5">
             <Card className="rounded-xl border-slate-200 shadow-sm">
               <CardHead icon={ShoppingBag} title="Order Type" />
-              <CardContent className="p-5">
+              <CardContent className="px-5 pb-5 pt-0">
                 <RadioGroup value={orderType} onValueChange={setOrderType} className="space-y-3.5">
                   {ORDER_TYPES.map((ot) => (
                     <div key={ot.value} className="flex items-center space-x-2"><RadioGroupItem value={ot.value} id={`ot-${ot.value}`} className="text-blue-600" /><Label htmlFor={`ot-${ot.value}`} className="text-sm cursor-pointer">{ot.label}</Label></div>
@@ -326,7 +329,7 @@ export default function LaundryNewOrder() {
             <Card className="rounded-xl border-slate-200 shadow-sm">
               <CardHead icon={WashingMachine} title="Service Selection" note="(Select multiple services)"
                 right={<Button variant="outline" size="sm" className="h-8 gap-1 border-blue-200 text-blue-700 hover:bg-blue-50"><Plus className="h-3.5 w-3.5" /> Add Service</Button>} />
-              <CardContent className="p-5">
+              <CardContent className="px-5 pb-5 pt-0">
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_210px] gap-4">
                   <div className="rounded-lg border border-slate-200 overflow-hidden">
                     <div className="grid grid-cols-[1fr_auto] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-200"><span>Service</span><span>Estimated Turnaround</span></div>
@@ -360,12 +363,15 @@ export default function LaundryNewOrder() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <Card className="rounded-xl border-slate-200 shadow-sm">
               <CardHead icon={Clock} title="Expected Delivery" />
-              <CardContent className="p-5 space-y-3 text-sm">
+              <CardContent className="px-5 pb-5 pt-0 space-y-3 text-sm">
                 <div className="flex justify-between"><span className="text-slate-500">Order Created</span><span className="font-medium text-slate-700">{fmtDateTime(now)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Estimated Delivery</span><span className="text-emerald-600 font-semibold">{expectedDelivery ? fmtDateTime(expectedDelivery) : "Select services"}</span></div>
                 <p className="text-[11px] text-slate-400 -mt-1">(Based on max. turnaround time)</p>
-                <div className="flex items-center gap-4 pt-1"><span className="text-slate-500">Override Allowed</span>
-                  <div className="flex items-center gap-2"><Switch checked={overrideDelivery} onCheckedChange={setOverrideDelivery} className="data-[state=checked]:bg-blue-600" /><span className="text-xs">{overrideDelivery ? "Yes" : "No"}</span></div>
+                <div className="flex items-center gap-5 pt-1"><span className="text-slate-500">Override Allowed</span>
+                  <RadioGroup value={overrideDelivery ? "yes" : "no"} onValueChange={(v) => setOverrideDelivery(v === "yes")} className="flex items-center gap-4">
+                    <div className="flex items-center space-x-1.5"><RadioGroupItem value="yes" id="ov-yes" className="text-blue-600" /><Label htmlFor="ov-yes" className="text-sm cursor-pointer">Yes</Label></div>
+                    <div className="flex items-center space-x-1.5"><RadioGroupItem value="no" id="ov-no" className="text-blue-600" /><Label htmlFor="ov-no" className="text-sm cursor-pointer">No</Label></div>
+                  </RadioGroup>
                 </div>
                 <div className="space-y-1 pt-1">
                   <Label className="text-xs text-slate-500">Reason (Required if overridden)</Label>
@@ -377,7 +383,7 @@ export default function LaundryNewOrder() {
 
             <Card className={`rounded-xl border-slate-200 shadow-sm ${isPickup ? "" : "opacity-75"}`}>
               <CardHead icon={Truck} title="Pickup Details" note="(Only for Pickup Orders)" />
-              <CardContent className="p-5 space-y-3">
+              <CardContent className="px-5 pb-5 pt-0 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Date</Label><Input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} disabled={!isPickup} className="bg-slate-50 border-slate-200" /></div>
                   <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Time Slot</Label>
@@ -395,7 +401,7 @@ export default function LaundryNewOrder() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             <Card className="rounded-xl border-slate-200 shadow-sm">
               <CardHead icon={FileText} title="Order Summary" />
-              <CardContent className="p-5">
+              <CardContent className="px-5 pb-5 pt-0">
                 <div className="rounded-lg border border-slate-200 overflow-hidden text-xs">
                   <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 font-semibold text-slate-500 bg-slate-50 border-b border-slate-200"><span>Service</span><span>Qty</span><span>Est. Value</span></div>
                   {selectedServices.length === 0 ? <p className="px-3 py-4 text-slate-400 text-center">No services selected</p> : selectedServices.map((s) => (
@@ -411,7 +417,7 @@ export default function LaundryNewOrder() {
 
             <Card className="rounded-xl border-slate-200 shadow-sm">
               <CardHead icon={CreditCard} title="Payment Preference" />
-              <CardContent className="p-5">
+              <CardContent className="px-5 pb-5 pt-0">
                 <RadioGroup value={paymentPreference} onValueChange={setPaymentPreference} className="space-y-2.5">
                   {PAYMENT_PREFERENCES.map((p) => (
                     <div key={p.value} className="flex items-center space-x-2"><RadioGroupItem value={p.value} id={`pp-${p.value}`} className="text-blue-600" /><Label htmlFor={`pp-${p.value}`} className="text-sm cursor-pointer">{p.label}</Label></div>
@@ -423,7 +429,7 @@ export default function LaundryNewOrder() {
 
             <Card className="rounded-xl border-slate-200 shadow-sm">
               <CardHead icon={CheckCircle2} title="Notes / Special Instructions" />
-              <CardContent className="p-5 space-y-3">
+              <CardContent className="px-5 pb-5 pt-0 space-y-3">
                 <div className="space-y-2.5">
                   {QUICK_NOTES.map((n) => (
                     <label key={n} className="flex items-center gap-2 text-sm cursor-pointer"><Checkbox checked={quickNotes.includes(n)} onCheckedChange={() => setQuickNotes((p) => p.includes(n) ? p.filter((x) => x !== n) : [...p, n])} className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600" /> {n}</label>
@@ -437,7 +443,7 @@ export default function LaundryNewOrder() {
           {/* Attachments */}
           <Card className="rounded-xl border-slate-200 shadow-sm">
             <CardHead icon={Paperclip} title="Attachments" note="(Optional)" />
-            <CardContent className="p-5">
+            <CardContent className="px-5 pb-5 pt-0">
               <p className="text-xs text-slate-500 mb-3">Upload images (if any)</p>
               <div className="flex flex-wrap items-center gap-3">
                 {[{ kind: "garment", label: "Upload Garment Photos", icon: ImagePlus }, { kind: "pickup", label: "Upload Pickup Photo", icon: Truck }, { kind: "other", label: "Upload Other Files", icon: Upload }].map((u) => (
@@ -466,7 +472,7 @@ export default function LaundryNewOrder() {
         {/* RIGHT — Quick Summary */}
         <Card className="rounded-xl border-slate-200 shadow-sm xl:sticky xl:top-4">
           <CardHead icon={Info} title="Quick Summary" />
-          <CardContent className="p-5 space-y-3.5 text-sm">
+          <CardContent className="px-5 pb-5 pt-0 space-y-3.5 text-sm">
             <div><p className="text-xs text-slate-400">Order Type</p><p className="font-semibold text-slate-800">{ORDER_TYPES.find((o) => o.value === orderType)?.label}</p></div>
             <div className="border-t border-slate-100 pt-3">
               <p className="text-xs text-slate-400 mb-1.5">Services ({selectedServices.length})</p>
