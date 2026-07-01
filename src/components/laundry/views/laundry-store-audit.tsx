@@ -108,8 +108,8 @@ export function LaundryStoreAudit() {
         fd.append("file", file); fd.append("businessId", currentBusinessId); fd.append("type", "document")
         const res = await fetch("/api/uploads", { method: "POST", body: fd })
         const json = await res.json()
-        if (json.success && json.data?.uploadPath) setPhotos((p) => [...p, json.data.uploadPath])
-        else if (json.uploadPath) setPhotos((p) => [...p, json.uploadPath])
+        const url = json?.data?.url || json?.data?.uploadPath || json?.url
+        if (json.success && url) setPhotos((p) => [...p, url])
         else toast({ title: "Upload failed", description: json.error || "Try again", variant: "destructive" })
       }
     } catch { toast({ title: "Upload failed", variant: "destructive" }) } finally { setUploading(false) }
