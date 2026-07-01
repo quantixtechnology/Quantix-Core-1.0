@@ -219,7 +219,7 @@ export default function LaundryNewOrder() {
           {/* Info strip */}
           <Card className="rounded-xl border-slate-200 shadow-sm">
             <CardContent className="grid grid-cols-2 lg:grid-cols-4 gap-y-4 p-0 py-5 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
-              <InfoCell icon={Hash} label="Order No." value="Auto Generated" sub="On Create" />
+              <InfoCell icon={Hash} label="Order No." value="Auto Generated" />
               <div className="flex items-center gap-3 px-5">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 shrink-0"><Building2 className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
@@ -349,7 +349,7 @@ export default function LaundryNewOrder() {
                     ) : (
                       <ol className="space-y-1.5">
                         {selectedServices.map((s, i) => (
-                          <li key={s.id} className="flex items-center justify-between text-sm bg-white rounded-md border border-slate-200 px-2.5 py-1.5"><span className="text-slate-700">{i + 1}. {s.name}</span><button className="text-slate-400 hover:text-red-500" onClick={() => toggleService(s.id)}><Trash2 className="h-3.5 w-3.5" /></button></li>
+                          <li key={s.id} className="flex items-center justify-between text-sm bg-white rounded-md border border-slate-200 px-2.5 py-1.5"><span className="text-slate-700">{i + 1}. {s.name}</span><button className="text-red-500 hover:text-red-600" onClick={() => toggleService(s.id)}><Trash2 className="h-3.5 w-3.5" /></button></li>
                         ))}
                       </ol>
                     )}
@@ -447,7 +447,7 @@ export default function LaundryNewOrder() {
               <p className="text-xs text-slate-500 mb-3">Upload images (if any)</p>
               <div className="flex flex-wrap items-center gap-3">
                 {[{ kind: "garment", label: "Upload Garment Photos", icon: ImagePlus }, { kind: "pickup", label: "Upload Pickup Photo", icon: Truck }, { kind: "other", label: "Upload Other Files", icon: Upload }].map((u) => (
-                  <label key={u.kind} className="flex items-center gap-2 rounded-lg border border-dashed border-blue-300 px-4 py-2.5 text-sm cursor-pointer text-blue-700 hover:bg-blue-50">
+                  <label key={u.kind} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm cursor-pointer text-blue-700 hover:bg-blue-50 hover:border-blue-200 shadow-sm">
                     {uploading === u.kind ? <Loader2 className="h-4 w-4 animate-spin" /> : <u.icon className="h-4 w-4" />} {u.label}
                     <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={(e) => handleUpload(u.kind, e.target.files)} />
                   </label>
