@@ -26,7 +26,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Order not found" }, { status: 404 })
     }
 
-    return NextResponse.json({ success: true, data: order })
+    // Attach the customer (platform Customer, referenced by id) for display.
+    let customer: { id: string; name: string; phone: string | null; customerCode: string | null } | null = null
+    if (order.customerId) {
+      customer = await prisma.customer.findUnique({
+        where: { id: order.customerId },
+        select: { id: true, name: true, phone: true, customerCode: true },
+      }).catch(() => null)
+    }
+
+    return NextResponse.json({ success: true, data: { ...order, customer } })
   } catch (error) {
     console.error("[laundry-order-detail] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

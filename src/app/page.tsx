@@ -195,6 +195,7 @@ const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views
 const LaundryGarmentsMaster = dynamic(() => import("@/components/laundry/views/laundry-garments-master").then(m => ({ default: m.LaundryGarmentsMaster })), { loading: () => <PageLoader /> })
 const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/laundry-services-master").then(m => ({ default: m.LaundryServicesMaster })), { loading: () => <PageLoader /> })
 const LaundryPricingEngine = dynamic(() => import("@/components/laundry/views/laundry-pricing-engine").then(m => ({ default: m.LaundryPricingEngine })), { loading: () => <PageLoader /> })
+const LaundryStoreAudit = dynamic(() => import("@/components/laundry/views/laundry-store-audit").then(m => ({ default: m.LaundryStoreAudit })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
@@ -622,7 +623,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "inbox": return <LaundryInboxView />
       case "orders": return <LaundryOrdersView />
       case "new-order": return <LaundryNewOrder />
-      case "audit-queue": return <LaundryCounterQueue status="PENDING_STORE_AUDIT" title="Store Audit" />
+      case "audit-queue": return <LaundryStoreAudit />
       case "payment-queue": return <LaundryCounterQueue status="PAYMENT_PENDING" title="Payment Collection" />
       case "dispatch-queue": return <LaundryCounterQueue status="READY_FOR_PROCESSING" title="Dispatch to Processing" />
       case "customers": return <LaundryCustomersView />

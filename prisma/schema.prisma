@@ -4206,6 +4206,13 @@ model LaundryOrder {
   customerType   String?                     // resolved customer type used for pricing
   billedAt       DateTime?                    // when the financial snapshot was persisted
 
+  // ── Store Audit (Stage 2) — inspection captured against the garments the
+  //    order already carries; the audit does not re-enter garments. ──
+  auditNotes     String?
+  auditPhotos    String?                      // JSON array of uploaded photo URLs
+  auditedBy      String?
+  auditedAt      DateTime?
+
   business   LaundryBusiness     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   store      LaundryStore        @relation(fields: [storeId],    references: [id])
   services   LaundryOrderService[]
@@ -4439,6 +4446,11 @@ model LaundryOrderItem {
   gstAmount     Float    @default(0)
   discount      Float    @default(0)
   total         Float    @default(0)          // lineAmount + gstAmount
+  // Store Audit inspection (captured at Stage 2, never re-entering garments).
+  condition       String?                     // GOOD | DAMAGED
+  defects         String?                     // CSV of defect codes
+  inspectionNotes String?
+  inspectedAt     DateTime?
   createdAt     DateTime @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
