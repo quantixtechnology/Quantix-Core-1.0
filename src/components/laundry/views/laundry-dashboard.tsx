@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import {
   ShoppingBag, ClipboardCheck, Package, Cog, Truck, CheckCircle,
-  CreditCard, RefreshCw, Plus, Rocket, ArrowRight,
+  CreditCard, RefreshCw, Plus,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -39,7 +39,6 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
   const { setLaundryPage } = useAdminStore()
   const [stats, setStats] = useState<OrderStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [setupDone, setSetupDone] = useState<boolean | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -56,29 +55,11 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
   }, [laundryBusinessId])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => {
-    fetch(`/api/laundry/setup?businessId=${encodeURIComponent(laundryBusinessId)}`)
-      .then((r) => r.json())
-      .then((j) => setSetupDone(j.success ? !!j.completed : true))
-      .catch(() => setSetupDone(true))
-  }, [laundryBusinessId])
 
   const count = (key: string) => stats?.byStatus[key] ?? 0
 
   return (
     <div className="space-y-6">
-      {setupDone === false && (
-        <div className="flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white"><Rocket className="h-5 w-5" /></div>
-          <div className="flex-1">
-            <p className="font-semibold text-sky-900">Finish setting up your laundry</p>
-            <p className="text-sm text-sky-800/80">Configure stores, load templates and set pricing so you can start taking orders.</p>
-          </div>
-          <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => setLaundryPage("setup")}>
-            Complete Setup <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Store Counter</h2>
