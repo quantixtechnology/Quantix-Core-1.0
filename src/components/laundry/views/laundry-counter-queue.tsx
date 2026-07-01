@@ -130,7 +130,7 @@ export function LaundryCounterQueue({ status, title }: { status: LaundryOrderSta
           ) : (
             <div className="space-y-2 max-h-[70vh] overflow-auto pr-1">
               {orders.map((o) => (
-                <Card key={o.id} className={`cursor-pointer transition-colors ${selected?.id === o.id ? "ring-2 ring-sky-500" : "hover:bg-accent/50"}`} onClick={() => openOrder(o.id)}>
+                <Card key={o.id} className={`cursor-pointer transition-colors ${selected?.id === o.id ? "ring-2 ring-blue-500" : "hover:bg-accent/50"}`} onClick={() => openOrder(o.id)}>
                   <CardContent className="p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono text-xs font-semibold">{o.orderNumber}</span>
@@ -161,7 +161,7 @@ export function LaundryCounterQueue({ status, title }: { status: LaundryOrderSta
                     <p className="font-mono text-sm font-bold">{selected.orderNumber}</p>
                     <p className="text-xs text-muted-foreground">{selected.store?.storeName || "—"} · {selected.orderType}</p>
                   </div>
-                  <Badge className="bg-sky-100 text-sky-700">{statusLabel(selected.status)}</Badge>
+                  <Badge className="bg-blue-100 text-blue-700">{statusLabel(selected.status)}</Badge>
                 </div>
 
                 {selected.services && selected.services.length > 0 && (
@@ -186,7 +186,7 @@ export function LaundryCounterQueue({ status, title }: { status: LaundryOrderSta
                     ) : (
                       selected.events!.map((ev) => (
                         <div key={ev.id} className="flex items-start gap-2 text-xs">
-                          <div className="mt-0.5 h-2 w-2 rounded-full bg-sky-500 shrink-0" />
+                          <div className="mt-0.5 h-2 w-2 rounded-full bg-blue-500 shrink-0" />
                           <div>
                             <span className="font-medium">{statusLabel(ev.fromStatus || "")} → {statusLabel(ev.toStatus)}</span>
                             <span className="text-muted-foreground">
@@ -208,7 +208,7 @@ export function LaundryCounterQueue({ status, title }: { status: LaundryOrderSta
                     {getTransitions(selected.status).map((t) => (
                       <Button key={t.to} size="sm" disabled={acting}
                         variant={t.primary ? "default" : "outline"}
-                        className={t.primary ? "gap-1 bg-sky-600 hover:bg-sky-700 text-white" : "gap-1"}
+                        className={t.primary ? "gap-1 bg-blue-600 hover:bg-blue-700 text-white" : "gap-1"}
                         onClick={() => advance(t.to, t.label)}>
                         {acting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />} {t.label}
                       </Button>

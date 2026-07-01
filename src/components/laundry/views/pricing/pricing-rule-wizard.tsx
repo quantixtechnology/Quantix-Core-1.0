@@ -173,7 +173,7 @@ export function PricingRuleWizard({
           {STEPS.map((s, i) => (
             <button key={s} onClick={() => i <= step && setStep(i)} disabled={i > step}
               className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] whitespace-nowrap transition-colors ${
-                i === step ? "bg-sky-600 text-white" : i < step ? "bg-sky-100 text-sky-700" : "bg-muted text-muted-foreground"}`}>
+                i === step ? "bg-blue-600 text-white" : i < step ? "bg-blue-100 text-blue-700" : "bg-muted text-muted-foreground"}`}>
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">{i < step ? <Check className="h-2.5 w-2.5" /> : i + 1}</span>
               {s}
             </button>
@@ -195,7 +195,7 @@ export function PricingRuleWizard({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[{ value: NONE, label: "All Customers" }, ...CUSTOMER_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))].map((o) => (
                   <button key={o.value} onClick={() => set("customerType", o.value)}
-                    className={`rounded-lg border px-3 py-2.5 text-sm text-left transition-colors ${form.customerType === o.value ? "border-sky-500 bg-sky-50 font-medium" : "hover:bg-muted/50"}`}>{o.label}</button>
+                    className={`rounded-lg border px-3 py-2.5 text-sm text-left transition-colors ${form.customerType === o.value ? "border-blue-500 bg-blue-50 font-medium" : "hover:bg-muted/50"}`}>{o.label}</button>
                 ))}
               </div>
             </div>
@@ -208,7 +208,7 @@ export function PricingRuleWizard({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {refOpts(masters.stores, "storeName").map((o) => (
                   <button key={o.value} onClick={() => set("storeId", o.value)}
-                    className={`rounded-lg border px-3 py-2.5 text-sm text-left transition-colors ${form.storeId === o.value ? "border-sky-500 bg-sky-50 font-medium" : "hover:bg-muted/50"}`}>{o.value === NONE ? "All Stores" : o.label}</button>
+                    className={`rounded-lg border px-3 py-2.5 text-sm text-left transition-colors ${form.storeId === o.value ? "border-blue-500 bg-blue-50 font-medium" : "hover:bg-muted/50"}`}>{o.value === NONE ? "All Stores" : o.label}</button>
                 ))}
               </div>
             </div>
@@ -245,7 +245,7 @@ export function PricingRuleWizard({
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {PRICING_TYPES.map((t) => (
                   <button key={t} onClick={() => set("pricingType", t)}
-                    className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${form.pricingType === t ? "border-sky-500 bg-sky-50 font-medium" : "hover:bg-muted/50"}`}>{typeLabel(t)}</button>
+                    className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${form.pricingType === t ? "border-blue-500 bg-blue-50 font-medium" : "hover:bg-muted/50"}`}>{typeLabel(t)}</button>
                 ))}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
@@ -281,7 +281,7 @@ export function PricingRuleWizard({
           {step === 7 && (
             <div className="space-y-3">
               <Question>Review &amp; save</Question>
-              <div className="rounded-lg border bg-sky-50/50 p-4">
+              <div className="rounded-lg border bg-blue-50/50 p-4">
                 <div className="flex flex-wrap items-center gap-1.5 text-sm">
                   {[form.customerType === NONE ? "All Customers" : typeLabel(form.customerType),
                     nameOf(masters.stores, form.storeId, "storeName"),
@@ -290,11 +290,11 @@ export function PricingRuleWizard({
                     nameOf(masters.garments, form.garmentId)].map((v, i, arr) => (
                     <span key={i} className="flex items-center gap-1.5">
                       <Badge variant="outline" className="bg-white">{v}</Badge>
-                      {i < arr.length - 1 && <ArrowDown className="h-3 w-3 text-sky-400 rotate-[-90deg]" />}
+                      {i < arr.length - 1 && <ArrowDown className="h-3 w-3 text-blue-400 rotate-[-90deg]" />}
                     </span>
                   ))}
                 </div>
-                <div className="mt-3 text-2xl font-bold text-sky-800">{inr(Number(form.price) || 0)} <span className="text-sm font-normal text-muted-foreground">/ {typeLabel(form.pricingType)}</span></div>
+                <div className="mt-3 text-2xl font-bold text-blue-800">{inr(Number(form.price) || 0)} <span className="text-sm font-normal text-muted-foreground">/ {typeLabel(form.pricingType)}</span></div>
                 <div className="mt-2 flex flex-wrap gap-2 text-xs">
                   <Badge variant="outline" className="bg-white">Priority {form.priority || 0}</Badge>
                   <Badge variant="outline" className="bg-white">GST {form.gstPercent || 0}%</Badge>
@@ -323,9 +323,9 @@ export function PricingRuleWizard({
             <ChevronLeft className="h-4 w-4" /> {step === 0 ? "Cancel" : "Back"}
           </Button>
           {step < last ? (
-            <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="gap-1 bg-sky-600 hover:bg-sky-700 text-white">Next <ChevronRight className="h-4 w-4" /></Button>
+            <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">Next <ChevronRight className="h-4 w-4" /></Button>
           ) : (
-            <Button onClick={doSave} disabled={saving} className="gap-1 bg-sky-600 hover:bg-sky-700 text-white">
+            <Button onClick={doSave} disabled={saving} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {conflicts && conflicts.length > 0 && overrideConflicts ? "Save Anyway" : "Save Rule"}
             </Button>

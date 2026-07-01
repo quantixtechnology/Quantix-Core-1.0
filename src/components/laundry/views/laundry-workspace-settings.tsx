@@ -65,7 +65,7 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
               <Card key={s.key}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 text-sky-600">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
                       <Icon className="h-4 w-4" />
                     </div>
                     <div>

@@ -85,7 +85,7 @@ export function PricingSimulator({ businessId, masters }: { businessId: string; 
               </label>
             ))}
           </div>
-          <Button onClick={calculate} disabled={loading} className="w-full gap-2 bg-sky-600 hover:bg-sky-700 text-white">
+          <Button onClick={calculate} disabled={loading} className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />} Calculate
           </Button>
         </CardContent>

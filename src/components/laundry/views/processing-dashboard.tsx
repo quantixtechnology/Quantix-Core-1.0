@@ -45,7 +45,7 @@ export function ProcessingDashboard() {
     { label: "In Progress", value: summary.inProgress, icon: Clock, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "QC Pending", value: summary.qcPending, icon: AlertTriangle, color: "text-purple-600", bg: "bg-purple-50" },
     { label: "Completed Today", value: summary.completedToday, icon: CheckCircle2, color: "text-green-600", bg: "bg-green-50" },
-    { label: "In Transit", value: summary.inTransit, icon: ArrowRight, color: "text-sky-600", bg: "bg-sky-50" },
+    { label: "In Transit", value: summary.inTransit, icon: ArrowRight, color: "text-blue-600", bg: "bg-blue-50" },
   ]
 
   return (
@@ -104,7 +104,7 @@ export function ProcessingDashboard() {
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">In Transit to Processing</span>
-              <Badge variant="outline" className={summary.inTransit > 0 ? "border-sky-300 text-sky-700" : ""}>
+              <Badge variant="outline" className={summary.inTransit > 0 ? "border-blue-300 text-blue-700" : ""}>
                 {summary.inTransit} items
               </Badge>
             </div>

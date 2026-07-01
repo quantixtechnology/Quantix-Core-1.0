@@ -154,7 +154,7 @@ export function LaundryStoreAudit() {
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={backToQueue}><ArrowLeft className="h-5 w-5" /></Button>
-          <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-sky-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect garments and approve the order</p></div>
+          <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-blue-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect garments and approve the order</p></div>
         </div>
 
         {loadingDetail || !detail ? (
@@ -185,7 +185,7 @@ export function LaundryStoreAudit() {
                   return (
                     <div key={it.id} className={`rounded-lg border p-3 ${damaged ? "border-amber-300 bg-amber-50/40" : ""}`}>
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2"><span className="flex h-9 min-w-9 px-1.5 items-center justify-center rounded-lg bg-sky-50 text-sky-600 text-xs font-semibold">{it.weightKg > 0 ? `${it.weightKg}kg` : `×${it.quantity}`}</span><div><p className="font-medium text-sm">{it.garmentName}</p><p className="text-[11px] text-muted-foreground">{it.serviceName}</p></div></div>
+                        <div className="flex items-center gap-2"><span className="flex h-9 min-w-9 px-1.5 items-center justify-center rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold">{it.weightKg > 0 ? `${it.weightKg}kg` : `×${it.quantity}`}</span><div><p className="font-medium text-sm">{it.garmentName}</p><p className="text-[11px] text-muted-foreground">{it.serviceName}</p></div></div>
                         <Badge variant="outline" className={damaged ? "border-amber-300 text-amber-700 bg-amber-50" : "border-emerald-300 text-emerald-700 bg-emerald-50"}>{damaged ? "Damaged" : "Good"}</Badge>
                       </div>
                       <div className="flex flex-wrap gap-1.5 mb-2">
@@ -235,7 +235,7 @@ export function LaundryStoreAudit() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-sky-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect and approve orders waiting for audit</p></div>
+        <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-blue-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect and approve orders waiting for audit</p></div>
         <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">{rows.length} pending</Badge>
       </div>
       <div className="relative max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search order no…" className="pl-9 h-9" value={search} onChange={(e) => setSearch(e.target.value)} /></div>

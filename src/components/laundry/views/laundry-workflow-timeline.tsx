@@ -42,7 +42,7 @@ export function LaundryWorkflowTimeline({ status, className = "" }: { status: st
             : completed
               ? "bg-emerald-500 text-white border-emerald-500"
               : current
-                ? "bg-sky-600 text-white border-sky-600 ring-4 ring-sky-100"
+                ? "bg-blue-600 text-white border-blue-600 ring-4 ring-blue-100"
                 : "bg-white text-muted-foreground border-slate-200"
           const lineClass = !cancelled && i < cur ? "bg-emerald-400" : "bg-slate-200"
           return (
@@ -54,7 +54,7 @@ export function LaundryWorkflowTimeline({ status, className = "" }: { status: st
                 </div>
                 <div className={`h-0.5 flex-1 ${i === STAGES.length - 1 ? "opacity-0" : (!cancelled && i < cur ? "bg-emerald-400" : "bg-slate-200")}`} />
               </div>
-              <p className={`mt-1.5 text-[10px] text-center leading-tight px-1 ${current ? "font-semibold text-sky-700" : completed ? "text-emerald-700" : "text-muted-foreground"}`}>{stage.label}</p>
+              <p className={`mt-1.5 text-[10px] text-center leading-tight px-1 ${current ? "font-semibold text-blue-700" : completed ? "text-emerald-700" : "text-muted-foreground"}`}>{stage.label}</p>
             </div>
           )
         })}

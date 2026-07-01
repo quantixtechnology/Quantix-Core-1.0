@@ -141,7 +141,7 @@ export function LaundryPricingEngine() {
   const SortHead = ({ col, children }: { col: string; children: React.ReactNode }) => (
     <TableHead className="whitespace-nowrap">
       <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort(col)}>
-        {children}<ArrowUpDown className={`h-3 w-3 ${sortBy === col ? "text-sky-600" : "opacity-40"}`} />
+        {children}<ArrowUpDown className={`h-3 w-3 ${sortBy === col ? "text-blue-600" : "opacity-40"}`} />
       </button>
     </TableHead>
   )
@@ -150,7 +150,7 @@ export function LaundryPricingEngine() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2"><IndianRupee className="h-5 w-5 text-sky-600" /> Pricing Engine</h2>
+          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2"><IndianRupee className="h-5 w-5 text-blue-600" /> Pricing Engine</h2>
           <p className="text-sm text-muted-foreground">Configure every pricing rule. The Billing Resolver applies the most specific, highest-priority active rule.</p>
         </div>
       </div>
@@ -171,7 +171,7 @@ export function LaundryPricingEngine() {
             <FilterSelect value={status} onChange={(v) => { setPage(1); setStatus(v) }} all="All Status" options={STATUSES.map((s) => ({ value: s, label: typeLabel(s) }))} />
             <FilterSelect value={customerType} onChange={(v) => { setPage(1); setCustomerType(v) }} all="All Customers" options={CUSTOMER_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))} />
             <FilterSelect value={pricingType} onChange={(v) => { setPage(1); setPricingType(v) }} all="All Types" options={PRICING_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))} />
-            <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white h-9" onClick={() => setWizard({ mode: "create", rule: null })}>
+            <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white h-9" onClick={() => setWizard({ mode: "create", rule: null })}>
               <Plus className="h-3.5 w-3.5" /> New Rule
             </Button>
           </div>

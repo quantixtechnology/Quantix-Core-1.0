@@ -69,7 +69,7 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
           <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
-          <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => setLaundryPage("new-order")}>
+          <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}>
             <Plus className="h-3.5 w-3.5" /> New Order
           </Button>
         </div>
@@ -80,7 +80,7 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
         <Card><CardContent className="p-4">
           {loading ? <KpiSkeleton /> : (
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg text-sky-600 bg-sky-100"><ShoppingBag className="h-5 w-5" /></div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg text-blue-600 bg-blue-100"><ShoppingBag className="h-5 w-5" /></div>
               <div><p className="text-xs text-muted-foreground">Today&apos;s Orders</p><p className="text-2xl font-bold">{stats?.today ?? 0}</p></div>
             </div>
           )}

@@ -105,7 +105,7 @@ export function LaundryServicesMaster() {
         <div><h2 className="text-lg font-semibold tracking-tight">Services</h2><p className="text-sm text-muted-foreground">Service catalog consumed by pricing, orders and the website.</p></div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="gap-1" onClick={() => setImportOpen(true)}><Download className="h-3.5 w-3.5" /> Import / Templates</Button>
-          <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={openNew}><Plus className="h-3.5 w-3.5" /> New Service</Button>
+          <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNew}><Plus className="h-3.5 w-3.5" /> New Service</Button>
         </div>
       </div>
       <div className="relative max-w-sm"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Search services…" className="pl-8 h-9" value={search} onChange={(e) => setSearch(e.target.value)} /></div>

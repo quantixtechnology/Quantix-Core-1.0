@@ -87,7 +87,7 @@ export function MasterImportDialog({
                 <Badge variant="outline">{template.garments.length} garments</Badge>
               </div>
             </div>
-            <Button onClick={() => run({ template: template.id })} disabled={busy} className="w-full gap-2 bg-sky-600 hover:bg-sky-700 text-white">
+            <Button onClick={() => run({ template: template.id })} disabled={busy} className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Load “{template.label}”
             </Button>
           </TabsContent>
@@ -102,7 +102,7 @@ export function MasterImportDialog({
                 className="min-h-[140px] font-mono text-xs"
               />
             </div>
-            <Button onClick={importCsv} disabled={busy || !csv.trim()} className="w-full gap-2 bg-sky-600 hover:bg-sky-700 text-white">
+            <Button onClick={importCsv} disabled={busy || !csv.trim()} className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />} Import Pasted Garments
             </Button>
           </TabsContent>
