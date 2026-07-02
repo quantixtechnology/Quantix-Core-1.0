@@ -23,9 +23,16 @@ export async function POST(request: Request) {
 
     // Accept either LaundryBusiness.id (owner) or platform Business.id (admin via Open Workspace).
     const laundryBusiness = await resolveLaundryBusiness(businessId)
+    const tag = `[cust-create ${Date.now().toString(36)}]`
+    console.log(tag, "input.businessId=", businessId, "resolved=", laundryBusiness, "hasAddress=", !!(addressLine1 || area || city || state || pincode))
 
-    if (!laundryBusiness?.platformBusinessId) {
-      return NextResponse.json({ error: "Platform business not linked" }, { status: 404 })
+    if (!laundryBusiness) {
+      console.error(tag, "RESOLVE FAILED — no LaundryBusiness matches this id (create aborted)")
+      return NextResponse.json({ error: `No laundry workspace matches businessId "${businessId}"` }, { status: 404 })
+    }
+    if (!laundryBusiness.platformBusinessId) {
+      console.error(tag, "TENANT NOT LINKED — LaundryBusiness", laundryBusiness.id, "has null platformBusinessId (create aborted)")
+      return NextResponse.json({ error: "Platform business not linked to this workspace" }, { status: 404 })
     }
 
     const existing = await prisma.customer.findFirst({
@@ -79,6 +86,7 @@ export async function POST(request: Request) {
       })
     }
 
+    console.log(tag, "CREATED customer", customer.id, customer.customerCode, "under platformBusinessId=", laundryBusiness.platformBusinessId)
     return NextResponse.json({ success: true, data: customer }, { status: 201 })
   } catch (error) {
     console.error("[laundry-customers] POST Error:", error)

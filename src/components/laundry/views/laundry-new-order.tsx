@@ -158,23 +158,51 @@ export default function LaundryNewOrder() {
     if (!isValidPincode(newCustPincode)) { toast({ title: "Invalid PIN Code", description: "PIN Code must be a 6-digit Indian pincode", variant: "destructive" }); return }
     const addressPayload: AddressRow = { addressLine1: newCustAddress, addressLine2: newCustAddress2, area: newCustArea, landmark: newCustLandmark, city: newCustCity, state: newCustState, pincode: newCustPincode, country: "India" }
     const resetForm = () => { setNewCustName(""); setNewCustMobile(""); setNewCustAltMobile(""); setNewCustEmail(""); setNewCustAddress(""); setNewCustAddress2(""); setNewCustArea(""); setNewCustLandmark(""); setNewCustCity(""); setNewCustState(""); setNewCustPincode(""); setCustomers([]) }
+    const mobile = newCustMobile
+    const payload = { businessId: currentBusinessId, name: newCustName, mobile, alternateMobile: newCustAltMobile, email: newCustEmail, ...addressPayload }
+    // ── Production instrumentation (open DevTools console to read the trace) ──
+    console.group("%c[Save Customer & Continue]", "color:#2563eb;font-weight:bold")
+    console.log("1. payload", payload)
+    console.log("2/3. tenantId/workspaceId (currentBusinessId)", currentBusinessId)
+    console.log("4. authenticated user", user)
+    console.log("5. request URL", "/api/laundry/customers")
     setCreatingCust(true)
     try {
-      const res = await fetch("/api/laundry/customers", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, name: newCustName, mobile: newCustMobile, alternateMobile: newCustAltMobile, email: newCustEmail, ...addressPayload }) })
-      const json = await res.json()
+      const res = await fetch("/api/laundry/customers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      console.log("6. response status", res.status)
+      const json = await res.json().catch(() => ({}))
+      console.log("7. response body", json)
       if (res.status === 409 && json.data) {
         const c = json.data
+        console.log("8. existing customer id (409)", c.id)
         setSelectedCustomer({ id: c.id, name: c.name, phone: c.phone, email: c.email, loyaltyTier: c.loyaltyTier || "BRONZE", walletBalance: c.walletBalance || 0, customerCode: c.customerCode, totalOrders: c.totalOrders || 0, addresses: [addressPayload] })
-        resetForm(); toast({ title: "Customer Exists", description: "Loaded the existing customer for this order." }); return
+        resetForm(); toast({ title: "Customer Exists", description: "Loaded the existing customer for this order." }); console.groupEnd(); return
       }
-      if (!json.success) { toast({ title: "Could not save customer", description: json.error || "Failed to create customer", variant: "destructive" }); return }
+      if (!res.ok || !json.success) {
+        console.error("SAVE FAILED at API layer:", res.status, json.error)
+        toast({ title: "Could not save customer", description: `${json.error || "Failed to create customer"} (HTTP ${res.status})`, variant: "destructive" }); console.groupEnd(); return
+      }
       const c = json.data
-      // Move the new customer into the Existing Customer panel (selected + coded).
+      console.log("8. created customer id", c.id, "| code", c.customerCode)
+
+      // 9/10/11. Immediately re-query via the SAME tenant + search endpoint to
+      // prove the write is visible to reads (same DB/tenant/filters).
+      let appears = false
+      try {
+        const vr = await fetch(`/api/laundry/customers/search?businessId=${encodeURIComponent(currentBusinessId)}&q=${encodeURIComponent(mobile)}`)
+        const vj = await vr.json().catch(() => ({}))
+        appears = !!(vj.data || []).find((x: { id: string }) => x.id === c.id)
+        console.log("10/11. search re-query via same tenant → appears?", appears, "| results", vj.data?.length)
+      } catch (e) { console.warn("verification search failed", e) }
+
+      // 12. Auto-select in the Existing Customer panel.
       setSelectedCustomer({ id: c.id, name: c.name, phone: c.phone, email: c.email, loyaltyTier: c.loyaltyTier || "BRONZE", walletBalance: c.walletBalance || 0, customerCode: c.customerCode, totalOrders: c.totalOrders || 0, addresses: [addressPayload] })
       resetForm()
-      toast({ title: "Customer Saved", description: `${c.name} (${c.customerCode}) is ready for this order.` })
-    } catch { toast({ title: "Error", description: "Network error — customer not saved.", variant: "destructive" }) } finally { setCreatingCust(false) }
+      toast({ title: "Customer Saved", description: appears ? `${c.name} (${c.customerCode}) — verified in search.` : `${c.name} (${c.customerCode}) saved. ⚠ not returned by search — check tenant.`, variant: appears ? undefined : "destructive" })
+    } catch (e) {
+      console.error("SAVE FAILED (network/exception)", e)
+      toast({ title: "Error", description: "Network error — customer not saved.", variant: "destructive" })
+    } finally { setCreatingCust(false); console.groupEnd() }
   }
 
   const handleUpload = async (kind: string, files: FileList | null) => {

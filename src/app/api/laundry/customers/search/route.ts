@@ -16,8 +16,11 @@ export async function GET(request: Request) {
     }
 
     const laundryBusiness = await resolveLaundryBusiness(businessId)
+    const tag = `[cust-search ${Date.now().toString(36)}]`
+    console.log(tag, "input.businessId=", businessId, "resolved=", laundryBusiness, "q=", JSON.stringify(query))
 
     if (!laundryBusiness?.platformBusinessId) {
+      console.error(tag, "TENANT NOT RESOLVED/LINKED (search aborted)")
       return NextResponse.json({ error: "Platform business not linked" }, { status: 404 })
     }
 
@@ -45,6 +48,7 @@ export async function GET(request: Request) {
       orderBy: { name: "asc" },
     })
 
+    console.log(tag, "platformBusinessId=", laundryBusiness.platformBusinessId, "→", customers.length, "result(s)")
     return NextResponse.json({ success: true, data: customers })
   } catch (error) {
     console.error("[laundry-customers-search] GET Error:", error)
