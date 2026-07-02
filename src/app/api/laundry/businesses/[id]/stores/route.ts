@@ -31,15 +31,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Store name is required" }, { status: 400 })
     }
 
+    // Accept either LaundryBusiness.id or the platform Business.id (self-heals
+    // the workspace link if missing) — same resolution the GET uses.
+    const resolved = await resolveLaundryBusiness(id)
+    if (!resolved) {
+      return NextResponse.json({ error: `No laundry workspace matches businessId "${id}"` }, { status: 404 })
+    }
+    const laundryBusinessId = resolved.id
+
     const business = await prisma.laundryBusiness.findUnique({
-      where: { id },
+      where: { id: laundryBusinessId },
       select: { businessCode: true },
     })
     if (!business) {
-      return NextResponse.json({ error: "Business not found" }, { status: 404 })
+      return NextResponse.json({ error: "Laundry workspace not found" }, { status: 404 })
     }
 
-    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId: id } })
+    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId: laundryBusinessId } })
     if (limits && limits.storesUsed >= limits.storesAllowed) {
       return NextResponse.json({ error: `Store limit reached (${limits.storesAllowed}). Contact Quantix to increase capacity.` }, { status: 403 })
     }
@@ -49,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const store = await prisma.laundryStore.create({
       data: {
         storeCode,
-        laundryBusinessId: id,
+        laundryBusinessId,
         storeName,
         storeType: storeType || "RETAIL_STORE",
         managerName: managerName || null,
@@ -67,8 +75,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
     })
 
-    await prisma.laundryScalingLimit.update({
-      where: { businessId: id },
+    // Safe increment — never fails the create if no scaling-limit row exists.
+    await prisma.laundryScalingLimit.updateMany({
+      where: { businessId: laundryBusinessId },
       data: { storesUsed: { increment: 1 } },
     })
 
