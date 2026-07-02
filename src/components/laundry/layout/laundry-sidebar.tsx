@@ -21,7 +21,7 @@ import { useResponsive } from "@/hooks/use-responsive"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
-  UsersRound, Shirt,
+  UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck,
 } from "lucide-react"
 
 type NavCfg = {
@@ -60,8 +60,19 @@ const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
       { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2 },
       { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2 },
       { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3 },
-      { key: "processing-centers", label: "Processing Center", icon: Factory, page: "processing-centers", minRank: 3 },
       { key: "staff", label: "Staff", icon: UsersRound, comingSoon: true, minRank: 3 },
+    ],
+  },
+  {
+    label: "Processing Center",
+    items: [
+      { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3 },
+      { key: "ws-wash", label: "Wash", icon: Droplets, page: "ws-wash", minRank: 3 },
+      { key: "ws-dryclean", label: "Dry Clean", icon: Wind, page: "ws-dryclean", minRank: 3 },
+      { key: "ws-steam", label: "Steam", icon: Flame, page: "ws-steam", minRank: 3 },
+      { key: "ws-iron", label: "Iron", icon: Shirt, page: "ws-iron", minRank: 3 },
+      { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 3 },
+      { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3 },
     ],
   },
   {
@@ -80,7 +91,15 @@ const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
 const PROCESSING_GROUPS: { label: string | null; items: NavCfg[] }[] = [
   { label: null, items: [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
-    { key: "processing-centers", label: "Processing Center", icon: Factory, page: "processing-centers", minRank: 1 },
+    { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 1 },
+  ] },
+  { label: "Departments", items: [
+    { key: "ws-wash", label: "Wash", icon: Droplets, page: "ws-wash", minRank: 1 },
+    { key: "ws-dryclean", label: "Dry Clean", icon: Wind, page: "ws-dryclean", minRank: 1 },
+    { key: "ws-steam", label: "Steam", icon: Flame, page: "ws-steam", minRank: 1 },
+    { key: "ws-iron", label: "Iron", icon: Shirt, page: "ws-iron", minRank: 1 },
+    { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 1 },
+    { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 1 },
   ] },
 ]
 

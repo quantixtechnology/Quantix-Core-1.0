@@ -198,6 +198,7 @@ const LaundryPricingEngine = dynamic(() => import("@/components/laundry/views/la
 const LaundryStoreAudit = dynamic(() => import("@/components/laundry/views/laundry-store-audit").then(m => ({ default: m.LaundryStoreAudit })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryProcessingConsole = dynamic(() => import("@/components/laundry/views/laundry-processing-console").then(m => ({ default: m.LaundryProcessingConsole })), { loading: () => <PageLoader /> })
+const LaundryWorkstation = dynamic(() => import("@/components/laundry/views/laundry-workstation").then(m => ({ default: m.LaundryWorkstation })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
@@ -614,6 +615,12 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       switch (laundryPage) {
         case "dashboard": return <ProcessingDashboard />
         case "processing-centers": return <LaundryProcessingConsole />
+        case "ws-wash": return <LaundryWorkstation stage="WASH" />
+        case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
+        case "ws-steam": return <LaundryWorkstation stage="STEAM" />
+        case "ws-iron": return <LaundryWorkstation stage="IRON" />
+        case "ws-fold": return <LaundryWorkstation stage="FOLD" />
+        case "ws-qc": return <LaundryWorkstation stage="QC" />
         case "orders": return <LaundryOrdersView />
         case "reports": return <LaundryReportsView />
         default: return <ProcessingDashboard />
@@ -630,6 +637,12 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "customers": return <LaundryCustomersView />
       case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
       case "processing-centers": return <LaundryProcessingConsole />
+      case "ws-wash": return <LaundryWorkstation stage="WASH" />
+      case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
+      case "ws-steam": return <LaundryWorkstation stage="STEAM" />
+      case "ws-iron": return <LaundryWorkstation stage="IRON" />
+      case "ws-fold": return <LaundryWorkstation stage="FOLD" />
+      case "ws-qc": return <LaundryWorkstation stage="QC" />
       case "reports": return <LaundryReportsView />
       case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
       case "categories": return <LaundryCategoriesMaster />

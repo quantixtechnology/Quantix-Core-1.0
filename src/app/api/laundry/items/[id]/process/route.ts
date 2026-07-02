@@ -24,7 +24,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     switch (action) {
       case "RECEIVE": stage = firstStage(item.serviceName); status = "WAITING"; dept = departmentFor(stage); toStage = stage; break
-      case "START": status = "IN_PROGRESS"; break
+      case "START": case "RESUME": status = "IN_PROGRESS"; break
+      case "PAUSE": status = "PAUSED"; break
       case "COMPLETE": case "QC_PASS": {
         const nxt = nextStage(item.serviceName, cur)
         stage = nxt || "PACKED"; status = nxt ? "WAITING" : "DONE"; dept = departmentFor(stage); toStage = stage; break

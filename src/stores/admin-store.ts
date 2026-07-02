@@ -107,6 +107,12 @@ export type LaundryBusinessPage =
   | "garments"
   | "services"
   | "pricing"
+  | "ws-wash"
+  | "ws-dryclean"
+  | "ws-steam"
+  | "ws-iron"
+  | "ws-fold"
+  | "ws-qc"
 
 export type BusinessPage =
   | "dashboard"
