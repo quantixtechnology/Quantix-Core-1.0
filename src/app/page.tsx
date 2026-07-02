@@ -197,7 +197,7 @@ const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/l
 const LaundryPricingEngine = dynamic(() => import("@/components/laundry/views/laundry-pricing-engine").then(m => ({ default: m.LaundryPricingEngine })), { loading: () => <PageLoader /> })
 const LaundryStoreAudit = dynamic(() => import("@/components/laundry/views/laundry-store-audit").then(m => ({ default: m.LaundryStoreAudit })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
-const LaundryProcessingCentersView = dynamic(() => import("@/components/laundry/views/laundry-processing-centers-view").then(m => ({ default: m.LaundryProcessingCentersView })), { loading: () => <PageLoader /> })
+const LaundryProcessingConsole = dynamic(() => import("@/components/laundry/views/laundry-processing-console").then(m => ({ default: m.LaundryProcessingConsole })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
@@ -628,7 +628,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "dispatch-queue": return <LaundryCounterQueue status="READY_FOR_PROCESSING" title="Dispatch to Processing" />
       case "customers": return <LaundryCustomersView />
       case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
-      case "processing-centers": return <LaundryProcessingCentersView />
+      case "processing-centers": return <LaundryProcessingConsole />
       case "reports": return <LaundryReportsView />
       case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
       case "categories": return <LaundryCategoriesMaster />
