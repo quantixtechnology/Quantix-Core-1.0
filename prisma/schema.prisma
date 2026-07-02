@@ -4432,7 +4432,12 @@ model LaundryOrderItem {
   id            String   @id @default(cuid())
   orderId       String
   itemNumber    String?  // permanent garment ID: ITM-{orderNumber}-NNNN
-  barcode       String?  // barcode value = itemNumber (per-garment)
+  barcode       String?  @unique // barcode value = itemNumber (per-garment)
+  // ── Processing Center per-garment stage tracking ──
+  processingStage   String?  // RECEIVED|SORTING|WASH|DRYCLEAN|DRY|STEAM|IRON|FOLD|QC|PACKED|DISPATCHED
+  processingStatus  String?  // WAITING|IN_PROGRESS|DONE|REJECTED
+  processingDept    String?  // department that owns the current stage
+  receivedAt        DateTime?
   serviceId     String?
   serviceName   String
   garmentId     String?
@@ -4460,6 +4465,28 @@ model LaundryOrderItem {
   @@index([orderId])
   @@index([serviceId])
   @@index([garmentId])
+}
+
+// Per-garment timeline — every scan/action on an item (Processing Center).
+model LaundryItemEvent {
+  id          String   @id @default(cuid())
+  itemId      String
+  orderId     String
+  businessId  String
+  stage       String?  // stage the event relates to (WASH, IRON, QC, …)
+  action      String   // RECEIVED|START|COMPLETE|REJECT|QC_PASS|QC_FAIL|PACKED|SCAN|NOTE
+  fromStage   String?
+  toStage     String?
+  department  String?
+  actorId     String?
+  actorName   String?
+  note        String?
+  photos      String?  // JSON array of URLs
+  createdAt   DateTime @default(now())
+
+  @@index([itemId])
+  @@index([orderId])
+  @@index([businessId])
 }
 
 // Per-order payment record. Payment Collection reads the order's persisted
