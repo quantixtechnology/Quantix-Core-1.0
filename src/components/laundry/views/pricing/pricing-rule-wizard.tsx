@@ -14,9 +14,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import {
-  Loader2, AlertTriangle, Save, Check, ChevronLeft, ChevronRight, Trophy, X,
+  Loader2, AlertTriangle, Save, Check, ChevronLeft, ChevronRight, X, CheckCircle2, Plus,
   User, Truck, Building2, Hotel, Cross, Repeat, Crown, Users2,
   Coins, Package, Scale, Percent, Tag, Calculator, Store as StoreIcon, WashingMachine, Shirt, Info,
+  Wind, Flame, Zap, Droplets, ListChecks,
 } from "lucide-react"
 import { toast } from "sonner"
 import { SearchableSelect, type Option } from "./searchable-select"
@@ -69,6 +70,33 @@ function methodFields(m: string): FieldSpec[] {
 const refOpts = (refs: Ref[], k: "name" | "storeName" = "name"): Option[] =>
   [{ value: NONE, label: "All" }, ...refs.map((r) => ({ value: r.id, label: (r[k] as string) || r.name || r.storeName || r.id }))]
 
+const svcIcon = (name?: string) => {
+  const n = (name || "").toLowerCase()
+  if (n.includes("dry clean")) return Wind
+  if (n.includes("steam")) return Flame
+  if (n.includes("iron")) return Shirt
+  if (n.includes("express")) return Zap
+  if (n.includes("premium") || n.includes("vip")) return Crown
+  if (n.includes("wash")) return Droplets
+  return WashingMachine
+}
+
+// Client-side pricing simulation for the live preview (core methods only).
+function simulate(form: Form): { rows: [string, number][]; gstAmt: number; total: number } {
+  const p = Number(form.price) || 0, gst = Number(form.gstPercent) || 0
+  const rows: [string, number][] = []
+  switch (form.pricingType) {
+    case "PER_KG": [1, 3, 5].forEach((kg) => rows.push([`${kg} KG`, p * kg])); break
+    case "FIXED": rows.push(["Flat", p]); break
+    case "PERCENTAGE_DISCOUNT": { const d = Number(form.discountPercent) || 0; rows.push(["Base", p], [`After −${d}%`, p * (1 - d / 100)]); break }
+    case "FLAT_DISCOUNT": { const d = Number(form.discount) || 0; rows.push(["Base", p], [`After −₹${d}`, Math.max(0, p - d)]); break }
+    default: [1, 2, 5].forEach((q) => rows.push([`${q} pc${q > 1 ? "s" : ""}`, p * q]))
+  }
+  const sub = rows.length ? rows[rows.length - 1][1] : 0
+  const gstAmt = (sub * gst) / 100
+  return { rows, gstAmt, total: sub + gstAmt }
+}
+
 export function PricingRuleWizard({
   open, mode, rule, businessId, masters, actor, onClose, onSaved,
 }: {
@@ -80,6 +108,7 @@ export function PricingRuleWizard({
   const [saving, setSaving] = useState(false)
   const [conflicts, setConflicts] = useState<Rule[] | null>(null)
   const [overrideConflicts, setOverrideConflicts] = useState(false)
+  const [saved, setSaved] = useState<{ name: string; method: string; price: number } | null>(null)
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }))
   const autosave = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -108,7 +137,7 @@ export function PricingRuleWizard({
 
   useEffect(() => {
     if (!open) return
-    setStep(0); setConflicts(null); setOverrideConflicts(false)
+    setStep(0); setConflicts(null); setOverrideConflicts(false); setSaved(null)
     if (rule) { setForm(fromRule(rule, mode === "duplicate")); return }
     try { const s = localStorage.getItem(draftKey(businessId)); setForm(s ? { ...EMPTY, ...JSON.parse(s) } : EMPTY) } catch { setForm(EMPTY) }
   }, [open, rule, mode, businessId, fromRule])
@@ -176,9 +205,13 @@ export function PricingRuleWizard({
       if (!res.ok || json.success === false) throw new Error(json.error || "Save failed")
       if (!isEdit) { try { localStorage.removeItem(draftKey(businessId)) } catch {} }
       toast.success(isEdit ? "Pricing rule updated" : "Pricing rule created")
-      onSaved(); onClose()
+      onSaved() // refresh the list behind the modal
+      if (isEdit) { onClose(); return }
+      setSaved({ name: form.name, method: METHODS.find((m) => m.value === form.pricingType)?.title || form.pricingType, price: Number(form.price) || 0 })
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
   }
+
+  const createAnother = () => { setForm(EMPTY); setStep(0); setConflicts(null); setOverrideConflicts(false); setSaved(null) }
 
   const Field = ({ f }: { f: FieldSpec }) => (
     <div className="space-y-1.5">
@@ -189,21 +222,21 @@ export function PricingRuleWizard({
     </div>
   )
   const Heading = ({ title, sub }: { title: string; sub?: string }) => (
-    <div className="mb-4"><h3 className="text-lg font-semibold text-slate-800">{title}</h3>{sub && <p className="text-sm text-slate-500 mt-0.5">{sub}</p>}</div>
+    <div className="mb-6"><h3 className="text-xl font-semibold text-slate-800">{title}</h3>{sub && <p className="text-sm text-slate-500 mt-1">{sub}</p>}</div>
   )
-  const SelectCards = ({ options, value, onPick }: { options: { value: string; title: string; desc: string; icon: typeof User; adv?: boolean }[]; value: string; onPick: (v: string) => void }) => (
-    <div className="grid grid-cols-2 gap-2.5">
+  const SelectCards = ({ options, value, onPick, cols = 2 }: { options: { value: string; title: string; desc: string; icon: typeof User; adv?: boolean }[]; value: string; onPick: (v: string) => void; cols?: number }) => (
+    <div className={`grid ${cols === 3 ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
       {options.map((o) => {
         const active = value === o.value
         return (
           <button key={o.value} type="button" onClick={() => onPick(o.value)}
-            className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${active ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}>
-            <div className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}><o.icon className="h-4.5 w-4.5" /></div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">{o.title}{o.adv && <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-600 bg-violet-50 px-1">Beta</Badge>}</p>
-              <p className="text-[11px] text-slate-400 leading-tight mt-0.5">{o.desc}</p>
+            className={`relative flex flex-col items-start gap-2.5 rounded-xl border p-4 text-left transition-all ${active ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500 shadow-sm" : "border-slate-200 hover:border-blue-300 hover:bg-slate-50"}`}>
+            <div className={`flex h-11 w-11 items-center justify-center rounded-xl shrink-0 ${active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}><o.icon className="h-[22px] w-[22px]" /></div>
+            <div className="min-w-0 w-full">
+              <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5">{o.title}{o.adv && <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-600 bg-violet-50 px-1">Beta</Badge>}</p>
+              <p className="text-[11px] text-slate-400 leading-snug mt-0.5">{o.desc}</p>
             </div>
-            {active && <Check className="h-4 w-4 text-blue-600 shrink-0" />}
+            {active && <span className="absolute top-3 right-3 inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600"><Check className="h-3.5 w-3.5" /> Selected</span>}
           </button>
         )
       })}
@@ -225,6 +258,20 @@ export function PricingRuleWizard({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[840px] max-h-[94vh] p-0 overflow-hidden gap-0">
+        {saved ? (
+          <div className="px-8 py-12 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><CheckCircle2 className="h-9 w-9" /></div>
+            <h2 className="mt-4 text-xl font-bold text-slate-800">Pricing Rule Created</h2>
+            <p className="mt-1 text-slate-500">{saved.name}</p>
+            <p className="mt-3 text-2xl font-bold text-blue-700">{inr(saved.price)} <span className="text-sm font-normal text-slate-400">/ {saved.method}</span></p>
+            <p className="mt-6 text-sm font-medium text-slate-600">What would you like to do?</p>
+            <div className="mt-3 flex flex-col sm:flex-row items-center justify-center gap-2">
+              <Button onClick={createAnother} className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto"><Plus className="h-4 w-4" /> Create Another</Button>
+              <Button variant="outline" onClick={onClose} className="gap-1.5 w-full sm:w-auto"><ListChecks className="h-4 w-4" /> View Rules</Button>
+              <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto">Close</Button>
+            </div>
+          </div>
+        ) : (<>
         {/* Header + progress + stepper */}
         <div className="px-6 pt-5 pb-4 border-b border-slate-100">
           <div className="flex items-center justify-between">
@@ -261,19 +308,31 @@ export function PricingRuleWizard({
 
             {step === 1 && (<>
               <Heading title="Which store?" sub="Limit this price to one store, or apply to all." />
-              <SelectCards options={[{ value: NONE, title: "All Stores", desc: "Every location", icon: StoreIcon }, ...masters.stores.map((s) => ({ value: s.id, title: (s.storeName || s.name || s.id), desc: "Store", icon: StoreIcon }))]} value={form.storeId} onPick={(v) => set("storeId", v)} />
+              <SelectCards value={form.storeId} onPick={(v) => set("storeId", v)}
+                options={[{ value: NONE, title: "All Stores", desc: "Apply pricing to every branch", icon: StoreIcon }, ...masters.stores.map((s) => ({ value: s.id, title: (s.storeName || s.name || s.id) as string, desc: "This store only", icon: StoreIcon }))]} />
             </>)}
 
             {step === 2 && (<>
-              <Heading title="Which service?" sub="The laundry service this price is for." />
-              <div className="flex items-center gap-2 mb-2 text-slate-500"><WashingMachine className="h-4 w-4" /><span className="text-sm">Service</span></div>
-              <SearchableSelect value={form.serviceId} onChange={(v) => set("serviceId", v)} options={refOpts(masters.services)} placeholder="All services" />
+              <Heading title="Which service?" sub="Pick the laundry service this price is for." />
+              <SelectCards value={form.serviceId} onPick={(v) => set("serviceId", v)} cols={masters.services.length > 4 ? 3 : 2}
+                options={[{ value: NONE, title: "All Services", desc: "Every service", icon: WashingMachine }, ...masters.services.map((s) => ({ value: s.id, title: (s.name || s.id) as string, desc: "Service", icon: svcIcon(s.name) }))]} />
             </>)}
 
             {step === 3 && (<>
-              <Heading title="Which garment?" sub="Target a specific garment and/or category." />
+              <Heading title="Which garment?" sub="Search, or pick from popular garments. Optionally target a category." />
               <div className="space-y-4">
-                <div><div className="flex items-center gap-2 mb-1.5 text-slate-500"><Shirt className="h-4 w-4" /><span className="text-sm">Garment</span></div><SearchableSelect value={form.garmentId} onChange={(v) => set("garmentId", v)} options={refOpts(masters.garments)} placeholder="All garments" /></div>
+                <SearchableSelect value={form.garmentId} onChange={(v) => set("garmentId", v)} options={refOpts(masters.garments)} placeholder="Search garment…" />
+                {masters.garments.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Popular</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => set("garmentId", NONE)} className={`rounded-lg border px-3 py-2 text-sm ${form.garmentId === NONE ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50"}`}>All garments</button>
+                      {masters.garments.slice(0, 8).map((g) => (
+                        <button key={g.id} type="button" onClick={() => set("garmentId", g.id)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${form.garmentId === g.id ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50"}`}><Shirt className="h-3.5 w-3.5 text-slate-400" /> {g.name}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div><div className="flex items-center gap-2 mb-1.5 text-slate-500"><Package className="h-4 w-4" /><span className="text-sm">Category (optional)</span></div><SearchableSelect value={form.categoryId} onChange={(v) => set("categoryId", v)} options={refOpts(masters.cats)} placeholder="All categories" /></div>
               </div>
             </>)}
@@ -289,18 +348,27 @@ export function PricingRuleWizard({
             </>)}
 
             {step === 5 && (<>
-              <Heading title="Conditions & business rules" sub="Optional charges and limits." />
-              <div className="grid grid-cols-2 gap-3">
-                <Field f={{ key: "minCharge", label: "Minimum Charge (₹)" }} />
-                <Field f={{ key: "maxCharge", label: "Maximum Charge (₹)" }} />
-                <Field f={{ key: "weekendPrice", label: "Weekend Price (₹)" }} />
-                <Field f={{ key: "expressCharge", label: "Express Charge (₹)" }} />
-                <Field f={{ key: "pickupCharge", label: "Pickup Charge (₹)" }} />
-                <Field f={{ key: "deliveryCharge", label: "Delivery Charge (₹)" }} />
-              </div>
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Effective From (holiday/season)</Label><Input type="date" value={form.effectiveFrom} onChange={(e) => set("effectiveFrom", e.target.value)} className="h-10" /></div>
-                <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Effective To</Label><Input type="date" value={form.effectiveTo} onChange={(e) => set("effectiveTo", e.target.value)} className="h-10" /></div>
+              <Heading title="Conditions & business rules" sub="All optional — leave blank to skip." />
+              <div className="space-y-5">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Charges</p>
+                  <div className="grid grid-cols-2 gap-3"><Field f={{ key: "minCharge", label: "Minimum Charge (₹)" }} /><Field f={{ key: "maxCharge", label: "Maximum Charge (₹)" }} /></div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Delivery</p>
+                  <div className="grid grid-cols-2 gap-3"><Field f={{ key: "pickupCharge", label: "Pickup Charge (₹)" }} /><Field f={{ key: "deliveryCharge", label: "Delivery Charge (₹)" }} /></div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Special Pricing</p>
+                  <div className="grid grid-cols-2 gap-3"><Field f={{ key: "weekendPrice", label: "Weekend Premium (₹)" }} /><Field f={{ key: "expressCharge", label: "Express Charge (₹)" }} /></div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Validity</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Start Date</Label><Input type="date" value={form.effectiveFrom} onChange={(e) => set("effectiveFrom", e.target.value)} className="h-10" /></div>
+                    <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">End Date</Label><Input type="date" value={form.effectiveTo} onChange={(e) => set("effectiveTo", e.target.value)} className="h-10" /></div>
+                  </div>
+                </div>
               </div>
             </>)}
 
@@ -319,15 +387,21 @@ export function PricingRuleWizard({
 
             {step === 7 && (<>
               <Heading title="Review & create" sub="Confirm everything before saving." />
-              <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm">
-                {[["Rule Name", form.name || "—"], ["Status", form.isActiveStatus === "ACTIVE" ? "Active" : typeLabel(form.isActiveStatus)],
-                  ["Scope", scope.join(" · ")], ["Pricing", `${method?.title} · ${inr(Number(form.price) || 0)}`],
-                  ["GST", `${form.gstPercent || 0}%`], ["Conditions", [form.weekendPrice && "Weekend", form.expressCharge && "Express", form.pickupCharge && "Pickup", form.deliveryCharge && "Delivery", form.minCharge && "Min", form.maxCharge && "Max"].filter(Boolean).join(", ") || "None"],
-                  ["Priority", form.priority || "0"], ["Effective", form.effectiveFrom || form.effectiveTo ? `${form.effectiveFrom || "…"} → ${form.effectiveTo || "…"}` : "Always"]].map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-4 px-4 py-2.5"><span className="text-slate-500">{k}</span><span className="font-medium text-slate-800 text-right">{v}</span></div>
-                ))}
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="flex items-center justify-between bg-slate-50 px-5 py-3 border-b border-slate-200">
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Pricing Rule</p>
+                  <Badge variant="outline" className={form.isActiveStatus === "ACTIVE" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-300 text-slate-500 bg-white"}>{form.isActiveStatus === "ACTIVE" ? "🟢 Active" : typeLabel(form.isActiveStatus)}</Badge>
+                </div>
+                <div className="divide-y divide-slate-100 text-sm">
+                  {[["Rule", form.name || "—"], ["Customer", scope[0]], ["Store", scope[1]], ["Service", scope[2]], ["Garment", scope[3]],
+                    ["Pricing", `${inr(Number(form.price) || 0)} / ${method?.title}`], ["GST", `${form.gstPercent || 0}%`],
+                    ["Conditions", [form.weekendPrice && "Weekend", form.expressCharge && "Express", form.pickupCharge && "Pickup", form.deliveryCharge && "Delivery", form.minCharge && "Min", form.maxCharge && "Max"].filter(Boolean).join(", ") || "None"],
+                    ["Priority", form.priority || "0"], ["Effective", form.effectiveFrom || form.effectiveTo ? `${form.effectiveFrom || "…"} → ${form.effectiveTo || "…"}` : "Always"]].map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-4 px-5 py-3"><span className="text-slate-400">{k}</span><span className="font-semibold text-slate-800 text-right">{v}</span></div>
+                  ))}
+                  <div className="flex justify-between gap-4 px-5 py-3.5 bg-blue-50/50"><span className="font-semibold text-slate-700">Estimated (2 pcs + GST)</span><span className="font-bold text-blue-700">{inr(simulate(form).total > 0 ? simulate(form).total : Number(form.price) || 0)}</span></div>
+                </div>
               </div>
-              <div className="mt-3 flex items-center gap-1.5 text-emerald-700 text-sm font-medium"><Trophy className="h-4 w-4" /> Rule ready to save</div>
               {conflicts && conflicts.length > 0 && (
                 <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
                   <div className="flex items-center gap-2 mb-2 text-amber-800"><AlertTriangle className="h-4 w-4" /><span className="text-xs font-semibold">Overlaps with {conflicts.length} active rule(s)</span></div>
@@ -338,26 +412,49 @@ export function PricingRuleWizard({
             </>)}
           </div>
 
-          {/* Live summary panel */}
+          {/* Live preview + simulator panel */}
           <div className="hidden md:block border-l border-slate-100 bg-slate-50/60 px-5 py-5 overflow-y-auto">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> Live Summary</p>
-            <p className="text-sm font-semibold text-slate-800">{form.name || "Untitled rule"}</p>
-            <Badge variant="outline" className={`mt-1 text-[10px] ${form.isActiveStatus === "ACTIVE" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-300 text-slate-500 bg-white"}`}>{form.isActiveStatus === "ACTIVE" ? "Active" : typeLabel(form.isActiveStatus)}</Badge>
-            <div className="mt-4 space-y-1.5">
-              {[["Customer", scope[0]], ["Store", scope[1]], ["Service", scope[2]], ["Category", scope[3]], ["Garment", scope[4]]].map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-2 text-xs"><span className="text-slate-400">{k}</span><span className="font-medium text-slate-700 text-right truncate">{v}</span></div>
-              ))}
-            </div>
-            <div className="mt-4 pt-3 border-t border-slate-200">
-              <p className="text-[11px] text-slate-400">{method?.title}</p>
-              <p className="text-2xl font-bold text-blue-700">{inr(Number(form.price) || 0)}</p>
-              <div className="mt-2 flex flex-wrap gap-1">
-                <Badge variant="outline" className="bg-white text-[10px]">GST {form.gstPercent || 0}%</Badge>
-                <Badge variant="outline" className="bg-white text-[10px]">Priority {form.priority || 0}</Badge>
-                {form.weekendPrice && <Badge variant="outline" className="bg-white text-[10px]">Weekend</Badge>}
-                {form.expressCharge && <Badge variant="outline" className="bg-white text-[10px]">Express</Badge>}
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> Live Preview</p>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2.5">
+                {(() => { const GI = form.serviceId !== NONE ? svcIcon(masters.services.find((s) => s.id === form.serviceId)?.name) : Shirt; return <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><GI className="h-5 w-5" /></div> })()}
+                <div className="min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{scope[4] !== "All" ? scope[4] : (form.name || "New Rule")}</p><p className="text-[11px] text-slate-400">{scope[2] !== "All" ? scope[2] : "All services"}</p></div>
+              </div>
+              <p className="mt-3 text-2xl font-bold text-blue-700">{inr(Number(form.price) || 0)} <span className="text-xs font-normal text-slate-400">/ {method?.title}</span></p>
+
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Applies To</p>
+                {[["All Customers", scope[0]], ["All Stores", scope[1]], ["Category", scope[3]]].map(([def, v]) => (
+                  <p key={def} className="flex items-center gap-1.5 text-xs text-slate-600 py-0.5"><Check className="h-3 w-3 text-emerald-500 shrink-0" /> {v === "All" ? def : v}</p>
+                ))}
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Conditions</p>
+                <div className="flex flex-wrap gap-1">
+                  {[form.weekendPrice && "Weekend", form.expressCharge && "Express", form.pickupCharge && "Pickup", form.deliveryCharge && "Delivery", form.minCharge && "Min", form.maxCharge && "Max"].filter(Boolean).length === 0
+                    ? <span className="text-xs text-slate-400">None</span>
+                    : [form.weekendPrice && "Weekend", form.expressCharge && "Express", form.pickupCharge && "Pickup", form.deliveryCharge && "Delivery", form.minCharge && "Min", form.maxCharge && "Max"].filter(Boolean).map((c) => <Badge key={c as string} variant="outline" className="bg-white text-[10px]">{c}</Badge>)}
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="text-slate-400">Priority <b className="text-slate-700">{form.priority || 0}</b></span>
+                <Badge variant="outline" className={`text-[10px] ${form.isActiveStatus === "ACTIVE" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-300 text-slate-500 bg-white"}`}>{form.isActiveStatus === "ACTIVE" ? "🟢 Active" : typeLabel(form.isActiveStatus)}</Badge>
               </div>
             </div>
+
+            {/* Simulator */}
+            {(() => { const sim = simulate(form); return (Number(form.price) > 0) ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-1.5"><ListChecks className="h-3 w-3" /> Simulation</p>
+                <div className="space-y-1">
+                  {sim.rows.map(([lbl, amt]) => <div key={lbl} className="flex justify-between text-xs"><span className="text-slate-500">{lbl}</span><span className="font-medium text-slate-700">{inr(amt)}</span></div>)}
+                  {Number(form.gstPercent) > 0 && <div className="flex justify-between text-xs"><span className="text-slate-500">GST {form.gstPercent}%</span><span className="font-medium text-slate-700">{inr(sim.gstAmt)}</span></div>}
+                  <div className="flex justify-between text-sm pt-1.5 mt-1 border-t border-slate-100"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-blue-700">{inr(sim.total)}</span></div>
+                </div>
+              </div>
+            ) : null })()}
           </div>
         </div>
 
@@ -368,6 +465,7 @@ export function PricingRuleWizard({
             ? <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white px-6">Next <ChevronRight className="h-4 w-4" /></Button>
             : <Button onClick={doSave} disabled={saving} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white px-6">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} {conflicts && conflicts.length > 0 && overrideConflicts ? "Save Anyway" : "Create Rule"}</Button>}
         </div>
+        </>)}
       </DialogContent>
     </Dialog>
   )
