@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import crypto from 'crypto'
+import { limitBytesForPlan } from '@/lib/laundry-storage'
 
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || './public/uploads'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -27,6 +28,8 @@ export async function POST(request: Request) {
     const file = formData.get('file') as File
     const businessId = formData.get('businessId') as string
     const fileType = formData.get('type') as string
+    // Optional tenant storage category (customers|garments|audit|invoice|…).
+    const category = (formData.get('category') as string) || null
 
     // Validate inputs
     if (!file) {
@@ -77,6 +80,19 @@ export async function POST(request: Request) {
       )
     }
 
+    // Tenant storage limit — block new uploads once the plan quota is reached.
+    const limit = limitBytesForPlan((business as { plan?: string | null }).plan)
+    if (limit !== null) {
+      const agg = await db.fileUpload.aggregate({ where: { businessId, status: 'COMPLETED' }, _sum: { size: true } })
+      const used = agg._sum.size || 0
+      if (used + file.size > limit) {
+        return NextResponse.json(
+          { success: false, error: 'Storage limit reached. Upgrade your plan to upload more files.', code: 'STORAGE_LIMIT' },
+          { status: 413 }
+        )
+      }
+    }
+
     // Generate unique filename
     const timestamp = Date.now()
     const random = crypto.randomBytes(4).toString('hex')
@@ -101,6 +117,7 @@ export async function POST(request: Request) {
         size: file.size,
         mimeType: file.type,
         uploadPath: `/uploads/${businessId}/${fileType}/${filename}`,
+        category,
         status: 'COMPLETED',
       },
     })

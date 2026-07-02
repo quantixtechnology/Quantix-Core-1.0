@@ -1,16 +1,24 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { isValidPincode } from "@/lib/india"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, name, mobile, alternateMobile, email, address, area, landmark } = body
+    const { businessId, name, mobile, alternateMobile, email } = body
+    // India-format address (backward compatible: legacy `address` → addressLine1).
+    const addressLine1 = body.addressLine1 ?? body.address ?? ""
+    const { addressLine2, area, landmark, city, state, pincode } = body
+    const country = body.country || "India"
 
     if (!businessId || !name || !mobile) {
       return NextResponse.json({ error: "Missing required fields: businessId, name, mobile" }, { status: 400 })
+    }
+    if (pincode && !isValidPincode(pincode)) {
+      return NextResponse.json({ error: "PIN Code must be a valid 6-digit Indian pincode" }, { status: 400 })
     }
 
     // Accept either LaundryBusiness.id (owner) or platform Business.id (admin via Open Workspace).
@@ -54,16 +62,18 @@ export async function POST(request: Request) {
       },
     })
 
-    if (address || area || landmark) {
+    if (addressLine1 || area || landmark || city || state || pincode) {
       await prisma.address.create({
         data: {
           customerId: customer.id,
-          addressLine1: address || "",
+          addressLine1: addressLine1 || "",
+          addressLine2: addressLine2 || null,
           area: area || null,
           landmark: landmark || null,
-          city: "",
-          state: "",
-          pincode: "",
+          city: city || "",
+          state: state || "",
+          pincode: pincode || "",
+          country,
           isDefault: true,
         },
       })

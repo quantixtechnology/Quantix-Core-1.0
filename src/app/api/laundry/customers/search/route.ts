@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         name: true,
         phone: true,
         email: true,
-        addresses: { where: { isDefault: true }, take: 1, select: { addressLine1: true, city: true } },
+        addresses: { orderBy: { isDefault: "desc" }, take: 1, select: { addressLine1: true, addressLine2: true, area: true, landmark: true, city: true, state: true, pincode: true, country: true } },
         loyaltyTier: true,
         walletBalance: true,
         customerCode: true,

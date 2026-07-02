@@ -105,7 +105,7 @@ export function LaundryStoreAudit() {
     try {
       for (const file of Array.from(files)) {
         const fd = new FormData()
-        fd.append("file", file); fd.append("businessId", currentBusinessId); fd.append("type", "document")
+        fd.append("file", file); fd.append("businessId", currentBusinessId); fd.append("type", "document"); fd.append("category", "audit")
         const res = await fetch("/api/uploads", { method: "POST", body: fd })
         const json = await res.json()
         const url = json?.data?.url || json?.data?.uploadPath || json?.url

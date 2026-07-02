@@ -4,6 +4,7 @@ import { useLaundryLicensing } from "@/hooks/use-laundry-licensing"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Truck, Scan, Thermometer, Home, Shield } from "lucide-react"
+import { LaundryStorageWidget } from "./laundry-storage-widget"
 
 interface WorkspaceSettingsProps {
   businessId: string
@@ -55,6 +56,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
           Configure operational settings for your laundry business. Feature availability depends on your plan.
         </p>
       </div>
+
+      <LaundryStorageWidget businessId={businessId} />
 
       <div className="grid gap-4">
         {sections

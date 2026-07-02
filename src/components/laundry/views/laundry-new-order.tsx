@@ -26,6 +26,8 @@ import {
   Wallet, BadgeCheck, Crown, ImagePlus, Upload, Truck, Paperclip, Plus, Building2,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { SearchableSelect } from "./pricing/searchable-select"
+import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 
 const ORDER_TYPES = [
   { value: "WALK_IN", label: "Walk-In" },
@@ -47,10 +49,11 @@ const PAYMENT_PREFERENCES = [
 const QUICK_NOTES = ["Starch Shirts", "Separate White Clothes", "Gentle Wash", "Express Delivery"]
 const PICKUP_SLOTS = ["07:00 - 09:00", "09:00 - 12:00", "12:00 - 15:00", "15:00 - 18:00", "18:00 - 21:00"]
 
+interface AddressRow { addressLine1?: string | null; addressLine2?: string | null; area?: string | null; landmark?: string | null; city?: string | null; state?: string | null; pincode?: string | null; country?: string | null }
 interface CustomerResult {
   id: string; name: string; phone: string | null; email: string | null
   loyaltyTier: string; walletBalance: number; customerCode: string | null
-  totalOrders: number; addresses: { addressLine1: string; city: string }[]
+  totalOrders: number; addresses: AddressRow[]
 }
 interface ServiceMaster {
   id: string; name: string; defaultTurnaroundHours: number
@@ -79,8 +82,12 @@ export default function LaundryNewOrder() {
   const [newCustAltMobile, setNewCustAltMobile] = useState("")
   const [newCustEmail, setNewCustEmail] = useState("")
   const [newCustAddress, setNewCustAddress] = useState("")
+  const [newCustAddress2, setNewCustAddress2] = useState("")
   const [newCustArea, setNewCustArea] = useState("")
   const [newCustLandmark, setNewCustLandmark] = useState("")
+  const [newCustCity, setNewCustCity] = useState("")
+  const [newCustState, setNewCustState] = useState("")
+  const [newCustPincode, setNewCustPincode] = useState("")
 
   const [orderType, setOrderType] = useState("WALK_IN")
   const [services, setServices] = useState<ServiceMaster[]>([])
@@ -140,14 +147,16 @@ export default function LaundryNewOrder() {
 
   const handleCreateCustomer = async () => {
     if (!newCustName.trim() || !newCustMobile.trim()) { toast({ title: "Error", description: "Name and Mobile are required", variant: "destructive" }); return }
+    if (newCustPincode.trim() && !isValidPincode(newCustPincode)) { toast({ title: "Invalid PIN Code", description: "PIN Code must be 6 digits", variant: "destructive" }); return }
+    const addressPayload: AddressRow = { addressLine1: newCustAddress, addressLine2: newCustAddress2, area: newCustArea, landmark: newCustLandmark, city: newCustCity, state: newCustState, pincode: newCustPincode, country: "India" }
     try {
       const res = await fetch("/api/laundry/customers", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: currentBusinessId, name: newCustName, mobile: newCustMobile, alternateMobile: newCustAltMobile, email: newCustEmail, address: newCustAddress, area: newCustArea, landmark: newCustLandmark }) })
+        body: JSON.stringify({ businessId: currentBusinessId, name: newCustName, mobile: newCustMobile, alternateMobile: newCustAltMobile, email: newCustEmail, ...addressPayload }) })
       const json = await res.json()
       if (res.status === 409 && json.data) { setSelectedCustomer({ ...json.data, addresses: [] }); toast({ title: "Customer Exists", description: "Using existing customer record" }); return }
       if (!json.success) { toast({ title: "Error", description: json.error || "Failed to create customer", variant: "destructive" }); return }
       const c = json.data
-      setSelectedCustomer({ id: c.id, name: c.name, phone: c.phone, email: c.email, loyaltyTier: c.loyaltyTier || "BRONZE", walletBalance: c.walletBalance || 0, customerCode: c.customerCode, totalOrders: c.totalOrders || 0, addresses: [] })
+      setSelectedCustomer({ id: c.id, name: c.name, phone: c.phone, email: c.email, loyaltyTier: c.loyaltyTier || "BRONZE", walletBalance: c.walletBalance || 0, customerCode: c.customerCode, totalOrders: c.totalOrders || 0, addresses: [addressPayload] })
       toast({ title: "Customer Created", description: `${c.name} saved successfully` })
     } catch { toast({ title: "Error", description: "Failed to create customer", variant: "destructive" }) }
   }
@@ -157,7 +166,8 @@ export default function LaundryNewOrder() {
     setUploading(kind)
     try {
       for (const file of Array.from(files)) {
-        const fd = new FormData(); fd.append("file", file); fd.append("businessId", currentBusinessId); fd.append("type", "document")
+        const category = kind === "garment" ? "garments" : kind === "pickup" ? "delivery" : "documents"
+        const fd = new FormData(); fd.append("file", file); fd.append("businessId", currentBusinessId); fd.append("type", "document"); fd.append("category", category)
         const res = await fetch("/api/uploads", { method: "POST", body: fd })
         const json = await res.json(); const url = json?.data?.url || json?.data?.uploadPath || json?.url
         if (json.success && url) setAttachments((p) => [...p, { url, kind }])
@@ -273,7 +283,7 @@ export default function LaundryNewOrder() {
                             </div>
                           </div>
                           <div className="space-y-2 text-sm">
-                            {selectedCustomer.addresses?.[0] && (<div><p className="text-slate-500 text-xs">Address</p><p className="text-slate-700 leading-snug">{selectedCustomer.addresses[0].addressLine1}, {selectedCustomer.addresses[0].city}</p></div>)}
+                            {selectedCustomer.addresses?.[0] && formatAddressLines(selectedCustomer.addresses[0]).length > 0 && (<div><p className="text-slate-500 text-xs">Address</p><p className="text-slate-700 leading-snug whitespace-pre-line">{formatAddressLines(selectedCustomer.addresses[0]).join("\n")}</p></div>)}
                             <div><p className="text-slate-500 text-xs">Membership Status</p><Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-emerald-300 text-emerald-700 bg-emerald-50"><Crown className="h-3 w-3" />{selectedCustomer.loyaltyTier || "Bronze"} Member</Badge></div>
                             <div><p className="text-slate-500 text-xs">Subscription Status</p><Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-blue-300 text-blue-700 bg-blue-50"><BadgeCheck className="h-3 w-3" />Active</Badge></div>
                             <div><p className="text-slate-500 text-xs">Wallet Balance</p><p className="font-semibold text-emerald-600">₹{selectedCustomer.walletBalance.toFixed(2)}</p></div>
@@ -302,10 +312,19 @@ export default function LaundryNewOrder() {
                     <div className="space-y-1"><Label className="text-xs text-slate-600">Alternate Mobile</Label><Input value={newCustAltMobile} onChange={(e) => setNewCustAltMobile(e.target.value)} placeholder="Enter alternate mobile" className="bg-slate-50 border-slate-200" /></div>
                   </div>
                   <div className="space-y-1"><Label className="text-xs text-slate-600">Email</Label><Input value={newCustEmail} onChange={(e) => setNewCustEmail(e.target.value)} placeholder="Enter email" className="bg-slate-50 border-slate-200" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-slate-600">Address *</Label><Input value={newCustAddress} onChange={(e) => setNewCustAddress(e.target.value)} placeholder="Enter address" className="bg-slate-50 border-slate-200" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-slate-600">Address Line 1 *</Label><Input value={newCustAddress} onChange={(e) => setNewCustAddress(e.target.value)} placeholder="House / Flat / Building" className="bg-slate-50 border-slate-200" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-slate-600">Address Line 2</Label><Input value={newCustAddress2} onChange={(e) => setNewCustAddress2(e.target.value)} placeholder="Street / Road (optional)" className="bg-slate-50 border-slate-200" /></div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1"><Label className="text-xs text-slate-600">Area *</Label><Input value={newCustArea} onChange={(e) => setNewCustArea(e.target.value)} placeholder="Enter area" className="bg-slate-50 border-slate-200" /></div>
-                    <div className="space-y-1"><Label className="text-xs text-slate-600">Landmark</Label><Input value={newCustLandmark} onChange={(e) => setNewCustLandmark(e.target.value)} placeholder="Enter landmark" className="bg-slate-50 border-slate-200" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">Area / Locality *</Label><Input value={newCustArea} onChange={(e) => setNewCustArea(e.target.value)} placeholder="Area / Locality" className="bg-slate-50 border-slate-200" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">Landmark</Label><Input value={newCustLandmark} onChange={(e) => setNewCustLandmark(e.target.value)} placeholder="Landmark (optional)" className="bg-slate-50 border-slate-200" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">City / District *</Label><Input value={newCustCity} onChange={(e) => setNewCustCity(e.target.value)} placeholder="City / District" className="bg-slate-50 border-slate-200" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">State *</Label><SearchableSelect value={newCustState} onChange={setNewCustState} options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} placeholder="Select state" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">PIN Code *</Label><Input value={newCustPincode} inputMode="numeric" maxLength={6} onChange={(e) => setNewCustPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit PIN" className="bg-slate-50 border-slate-200" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">Country</Label><Input value="India" disabled className="bg-slate-100 border-slate-200 text-slate-500" /></div>
                   </div>
                   <Button onClick={handleCreateCustomer} className="w-full gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"><UserPlus className="h-4 w-4" /> Save Customer &amp; Continue</Button>
                 </div>

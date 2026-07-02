@@ -4646,6 +4646,7 @@ model FileUpload {
   size          Int
   mimeType      String
   uploadPath    String
+  category      String?  // customers|garments|audit|invoice|documents|branding|orders|processing|delivery|temp
   status        String   @default("COMPLETED") // COMPLETED, PROCESSING, FAILED
   error         String?
   createdAt     DateTime @default(now())
@@ -4656,6 +4657,7 @@ model FileUpload {
   @@index([businessId])
   @@index([status])
   @@index([createdAt])
+  @@index([category])
 }
 
 // Payment records from Razorpay webhooks
