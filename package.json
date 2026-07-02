@@ -8,6 +8,7 @@
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp -r .next/server/chunks/. .next/standalone/.next/server/chunks/",
     "start": "NODE_ENV=production node .next/standalone/Quantix-Core-1.0/server.js",
     "lint": "eslint .",
+    "test:customer-address": "tsx scripts/test-customer-address.mjs",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

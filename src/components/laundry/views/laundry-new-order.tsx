@@ -146,8 +146,15 @@ export default function LaundryNewOrder() {
   }
 
   const handleCreateCustomer = async () => {
+    if (!currentBusinessId) { toast({ title: "No workspace selected", description: "Reopen the laundry workspace and try again.", variant: "destructive" }); return }
     if (!newCustName.trim() || !newCustMobile.trim()) { toast({ title: "Error", description: "Name and Mobile are required", variant: "destructive" }); return }
-    if (newCustPincode.trim() && !isValidPincode(newCustPincode)) { toast({ title: "Invalid PIN Code", description: "PIN Code must be 6 digits", variant: "destructive" }); return }
+    // India address — required fields (per the * marks) must be complete.
+    const missing = [
+      !newCustAddress.trim() && "Address Line 1", !newCustArea.trim() && "Area / Locality",
+      !newCustCity.trim() && "City / District", !newCustState.trim() && "State", !newCustPincode.trim() && "PIN Code",
+    ].filter(Boolean)
+    if (missing.length) { toast({ title: "Complete the address", description: `Required: ${missing.join(", ")}`, variant: "destructive" }); return }
+    if (!isValidPincode(newCustPincode)) { toast({ title: "Invalid PIN Code", description: "PIN Code must be a 6-digit Indian pincode", variant: "destructive" }); return }
     const addressPayload: AddressRow = { addressLine1: newCustAddress, addressLine2: newCustAddress2, area: newCustArea, landmark: newCustLandmark, city: newCustCity, state: newCustState, pincode: newCustPincode, country: "India" }
     try {
       const res = await fetch("/api/laundry/customers", { method: "POST", headers: { "Content-Type": "application/json" },
