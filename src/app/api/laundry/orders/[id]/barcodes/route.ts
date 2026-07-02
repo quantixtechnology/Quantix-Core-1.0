@@ -16,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     where: { id },
     select: {
       id: true, orderNumber: true, status: true, storeId: true, customerId: true, grandTotal: true, expectedDeliveryDate: true,
-      items: { orderBy: { itemNumber: "asc" }, select: { id: true, itemNumber: true, barcode: true, barcodeGenerated: true, garmentName: true, serviceName: true, quantity: true, processingStage: true, condition: true, defects: true, inspectionNotes: true } },
+      items: { orderBy: { itemNumber: "asc" }, select: { id: true, itemNumber: true, barcode: true, barcodeGenerated: true, printCount: true, lastPrintedBy: true, garmentName: true, serviceName: true, quantity: true, processingStage: true, condition: true, defects: true, inspectionNotes: true } },
     },
   })
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params
     const b = await request.json().catch(() => ({}))
     const action = String(b.action || "").toUpperCase()
-    const order = await prisma.laundryOrder.findUnique({ where: { id }, select: { id: true, businessId: true, items: { select: { id: true, serviceName: true, barcodeGenerated: true, processingStage: true } } } })
+    const order = await prisma.laundryOrder.findUnique({ where: { id }, select: { id: true, businessId: true, paymentStatus: true, items: { select: { id: true, serviceName: true, barcodeGenerated: true, processingStage: true } } } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
 
     if (action === "GENERATE_ALL") {
@@ -50,6 +50,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const notBarcoded = order.items.filter((i) => !i.barcodeGenerated)
       if (order.items.length === 0 || notBarcoded.length > 0) {
         return NextResponse.json({ error: `All garments must have a barcode before processing (${notBarcoded.length} pending).`, code: "BARCODES_PENDING" }, { status: 409 })
+      }
+      // Business rule: block processing until payment is collected (unless the
+      // workspace allows processing before payment). SUBSCRIPTION orders are ok.
+      const paid = order.paymentStatus === "PAID" || order.paymentStatus === "SUBSCRIPTION"
+      if (!paid) {
+        const biz = await prisma.laundryBusiness.findUnique({ where: { id: order.businessId }, select: { allowProcessingBeforePayment: true } })
+        if (!biz?.allowProcessingBeforePayment) {
+          return NextResponse.json({ error: "Payment pending — collect payment before moving to processing.", code: "PAYMENT_PENDING" }, { status: 402 })
+        }
       }
       for (const it of order.items) {
         const stage = firstStage(it.serviceName)

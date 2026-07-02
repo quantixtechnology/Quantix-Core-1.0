@@ -3917,6 +3917,8 @@ model LaundryBusiness {
   address                 String?
   plan                    String   @default("STANDARD")
   status                  String   @default("ONBOARDING")
+  // Business rule: may garments move to processing before payment is collected?
+  allowProcessingBeforePayment Boolean @default(false)
   defaultServiceRadius       Float?
   defaultDailyCapacity       Float?
   platformBusinessId        String?  @unique
@@ -4435,6 +4437,8 @@ model LaundryOrderItem {
   barcode          String?  @unique // barcode value = itemNumber (per-garment)
   barcodeGenerated Boolean  @default(false) // label generated at Processing Center
   barcodePrintedAt DateTime?
+  printCount       Int      @default(0)
+  lastPrintedBy    String?
   // ── Processing Center per-garment stage tracking ──
   processingStage   String?  // RECEIVED|SORTING|WASH|DRYCLEAN|DRY|STEAM|IRON|FOLD|QC|PACKED|DISPATCHED
   processingStatus  String?  // WAITING|IN_PROGRESS|DONE|REJECTED
