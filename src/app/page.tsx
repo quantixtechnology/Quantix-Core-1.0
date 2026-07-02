@@ -199,6 +199,7 @@ const LaundryStoreAudit = dynamic(() => import("@/components/laundry/views/laund
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryProcessingConsole = dynamic(() => import("@/components/laundry/views/laundry-processing-console").then(m => ({ default: m.LaundryProcessingConsole })), { loading: () => <PageLoader /> })
 const LaundryWorkstation = dynamic(() => import("@/components/laundry/views/laundry-workstation").then(m => ({ default: m.LaundryWorkstation })), { loading: () => <PageLoader /> })
+const LaundryAuditBarcodePage = dynamic(() => import("@/components/laundry/views/laundry-audit-barcode-page").then(m => ({ default: m.LaundryAuditBarcodePage })), { loading: () => <PageLoader /> })
 const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laundry-reports-view").then(m => ({ default: m.LaundryReportsView })), { loading: () => <PageLoader /> })
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
@@ -615,6 +616,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       switch (laundryPage) {
         case "dashboard": return <ProcessingDashboard />
         case "processing-centers": return <LaundryProcessingConsole />
+        case "audit-barcode": return <LaundryAuditBarcodePage />
         case "ws-wash": return <LaundryWorkstation stage="WASH" />
         case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
         case "ws-steam": return <LaundryWorkstation stage="STEAM" />
@@ -637,6 +639,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "customers": return <LaundryCustomersView />
       case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
       case "processing-centers": return <LaundryProcessingConsole />
+      case "audit-barcode": return <LaundryAuditBarcodePage />
       case "ws-wash": return <LaundryWorkstation stage="WASH" />
       case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
       case "ws-steam": return <LaundryWorkstation stage="STEAM" />

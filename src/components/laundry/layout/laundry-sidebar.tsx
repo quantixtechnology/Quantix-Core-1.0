@@ -21,7 +21,7 @@ import { useResponsive } from "@/hooks/use-responsive"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
-  UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck,
+  UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck, Barcode,
 } from "lucide-react"
 
 type NavCfg = {
@@ -67,6 +67,7 @@ const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
     label: "Processing Center",
     items: [
       { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3 },
+      { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 3 },
       { key: "ws-wash", label: "Wash", icon: Droplets, page: "ws-wash", minRank: 3 },
       { key: "ws-dryclean", label: "Dry Clean", icon: Wind, page: "ws-dryclean", minRank: 3 },
       { key: "ws-steam", label: "Steam", icon: Flame, page: "ws-steam", minRank: 3 },
@@ -92,6 +93,7 @@ const PROCESSING_GROUPS: { label: string | null; items: NavCfg[] }[] = [
   { label: null, items: [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
     { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 1 },
+    { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 1 },
   ] },
   { label: "Departments", items: [
     { key: "ws-wash", label: "Wash", icon: Droplets, page: "ws-wash", minRank: 1 },
