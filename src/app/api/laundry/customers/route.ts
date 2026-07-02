@@ -5,6 +5,43 @@ import { isValidPincode } from "@/lib/india"
 
 export const runtime = "nodejs"
 
+// GET /api/laundry/customers?businessId=&q=&limit=&offset=  — paginated listing
+// with per-customer KPIs (orders, lifetime value, wallet, membership, status).
+export async function GET(request: Request) {
+  try {
+    const sp = new URL(request.url).searchParams
+    const businessId = sp.get("businessId")
+    const q = (sp.get("q") || "").trim()
+    const limit = Math.min(parseInt(sp.get("limit") || "10"), 100)
+    const offset = parseInt(sp.get("offset") || "0")
+    if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const biz = await resolveLaundryBusiness(businessId)
+    if (!biz?.platformBusinessId) return NextResponse.json({ success: true, data: [], total: 0 })
+
+    const where: Record<string, unknown> = { businessId: biz.platformBusinessId }
+    if (q) where.OR = [{ name: { contains: q } }, { phone: { contains: q } }, { customerCode: { contains: q } }, { email: { contains: q } }]
+
+    const [rows, total, stats] = await Promise.all([
+      prisma.customer.findMany({
+        where: where as never,
+        select: {
+          id: true, name: true, phone: true, email: true, customerCode: true,
+          loyaltyTier: true, walletBalance: true, totalOrders: true, totalSpent: true,
+          status: true, isActive: true, lastOrderAt: true, createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit, skip: offset,
+      }),
+      prisma.customer.count({ where: where as never }),
+      prisma.customer.aggregate({ where: { businessId: biz.platformBusinessId }, _count: true, _sum: { totalOrders: true } }),
+    ])
+    return NextResponse.json({ success: true, data: rows, total, limit, offset, summary: { totalCustomers: stats._count, totalOrders: stats._sum.totalOrders || 0 } })
+  } catch (e) {
+    console.error("[laundry-customers] GET list", e)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()

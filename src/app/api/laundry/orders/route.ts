@@ -159,6 +159,14 @@ export async function POST(request: Request) {
       },
     })
 
+    // Update customer history (order count + lifetime value + last order).
+    if (customerId) {
+      await prisma.customer.update({
+        where: { id: customerId },
+        data: { totalOrders: { increment: 1 }, totalSpent: { increment: order.grandTotal || 0 }, lastOrderAt: now },
+      }).catch((e) => console.error("[laundry-orders] customer history update failed:", e))
+    }
+
     return NextResponse.json({ success: true, data: order }, { status: 201 })
   } catch (error) {
     console.error("[laundry-orders] POST Error:", error)
@@ -211,6 +219,7 @@ export async function GET(request: Request) {
         include: {
           services: true,
           store: { select: { storeName: true, storeCode: true } },
+          _count: { select: { items: true } },
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -219,7 +228,15 @@ export async function GET(request: Request) {
       prisma.laundryOrder.count({ where: where as any }),
     ])
 
-    return NextResponse.json({ success: true, data: orders, total, limit, offset })
+    // Attach customer name/phone (platform Customer, referenced by id) + item count.
+    const customerIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
+    const customers = customerIds.length
+      ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true, phone: true, customerCode: true } })
+      : []
+    const custMap = new Map(customers.map((c) => [c.id, c]))
+    const data = orders.map((o) => ({ ...o, customer: o.customerId ? custMap.get(o.customerId) || null : null, itemCount: o._count.items }))
+
+    return NextResponse.json({ success: true, data, total, limit, offset })
   } catch (error) {
     console.error("[laundry-orders] GET Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
