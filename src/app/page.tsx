@@ -613,6 +613,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     if (isProcessingRole) {
       switch (laundryPage) {
         case "dashboard": return <ProcessingDashboard />
+        case "processing-centers": return <LaundryProcessingConsole />
         case "orders": return <LaundryOrdersView />
         case "reports": return <LaundryReportsView />
         default: return <ProcessingDashboard />
