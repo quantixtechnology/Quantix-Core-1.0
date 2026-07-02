@@ -6,7 +6,7 @@
 // PENDING_STORE_AUDIT. Garment counting / final bill happen at Store Audit, so
 // amounts read "Pending Audit". Services load from the Services master.
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { useToast } from "@/hooks/use-toast"
@@ -19,10 +19,11 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import {
   Search, UserPlus, User, Phone, MapPin, Clock, CreditCard, Store as StoreIcon,
   FileText, Save, Send, ArrowRight, Loader2, ShoppingBag, ShoppingCart, CheckCircle2,
-  Hash, Calendar, UserCircle, Trash2, WashingMachine, Info, X,
+  Hash, Calendar, UserCircle, Trash2, Info, X, Shirt, Plus, Minus,
   Wallet, BadgeCheck, Crown, ImagePlus, Upload, Truck, Paperclip, Building2,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -59,10 +60,12 @@ interface ServiceMaster {
   id: string; name: string; defaultTurnaroundHours: number
   availableInStore: boolean; availableForPickup: boolean; isActive: boolean
 }
+interface GarmentMaster { id: string; name: string; categoryId: string | null; defaultUnit: string; isActive: boolean }
+interface LineItem { uid: string; garmentId: string; serviceId: string; quantity: number }
 interface StoreInfo { id: string; storeName: string; city?: string | null }
+const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 
 const turnaroundLabel = (h: number) => (h <= 0 ? "Custom" : h <= 12 ? "Same Day" : `${h} Hours`)
-const turnaroundClass = (h: number) => (h <= 0 ? "text-violet-600" : h <= 12 ? "text-blue-600" : h <= 24 ? "text-emerald-600" : "text-orange-500")
 const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
 const fmtDateTime = (d: Date) => `${fmtDate(d)} ${d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
 
@@ -91,7 +94,18 @@ export default function LaundryNewOrder() {
 
   const [orderType, setOrderType] = useState("WALK_IN")
   const [services, setServices] = useState<ServiceMaster[]>([])
-  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
+  const [garments, setGarments] = useState<GarmentMaster[]>([])
+  const [lineItems, setLineItems] = useState<LineItem[]>([])
+  const [seeding, setSeeding] = useState(false)
+  // Add-Garment modal
+  const [addOpen, setAddOpen] = useState(false)
+  const [mGarment, setMGarment] = useState("")
+  const [mService, setMService] = useState("")
+  const [mQty, setMQty] = useState(1)
+  const [mPrice, setMPrice] = useState<number | null>(null)
+  const [mPricing, setMPricing] = useState(false)
+  // live quote for the whole order
+  const [quote, setQuote] = useState<{ grandTotal: number; lines: { lineTotal: number; matchedRuleId: string | null }[] } | null>(null)
   const [overrideDelivery, setOverrideDelivery] = useState(false)
   const [overrideReason, setOverrideReason] = useState("")
   const [customDeliveryDate, setCustomDeliveryDate] = useState("")
@@ -113,23 +127,97 @@ export default function LaundryNewOrder() {
   const isPickup = orderType === "HOME_PICKUP"
   const selectedStore = stores.find((s) => s.id === selectedStoreId)
 
+  const loadMasters = useCallback(async () => {
+    if (!currentBusinessId) return { svc: 0, grm: 0 }
+    const [svcJson, grmJson] = await Promise.all([
+      fetch(`/api/laundry/services?businessId=${currentBusinessId}`).then((r) => r.json()).catch(() => ({})),
+      fetch(`/api/laundry/garments?businessId=${currentBusinessId}`).then((r) => r.json()).catch(() => ({})),
+    ])
+    const svc = svcJson.success ? (svcJson.data as ServiceMaster[]).filter((s) => s.isActive) : []
+    const grm = grmJson.success ? (grmJson.data as GarmentMaster[]).filter((g) => g.isActive) : []
+    setServices(svc); setGarments(grm)
+    return { svc: svc.length, grm: grm.length }
+  }, [currentBusinessId])
+
+  const seededRef = useRef(false)
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/businesses/${currentBusinessId}`).then((r) => r.json())
       .then((biz) => { if (biz.stores?.length) { setStores(biz.stores); setSelectedStoreId((p) => p || biz.stores[0].id) } }).catch(() => {})
-    fetch(`/api/laundry/services?businessId=${currentBusinessId}`).then((r) => r.json())
-      .then((j) => { if (j.success) setServices((j.data as ServiceMaster[]).filter((s) => s.isActive)) }).catch(() => {})
-  }, [currentBusinessId])
+    loadMasters().then(async ({ svc, grm }) => {
+      // Auto-seed demo masters once if the workspace has none (removes the
+      // "No services configured" blocker). Idempotent server-side.
+      if ((svc === 0 || grm === 0) && !seededRef.current) {
+        seededRef.current = true
+        setSeeding(true)
+        try {
+          await fetch("/api/laundry/seed-demo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId }) })
+          await loadMasters()
+        } catch { /* noop */ } finally { setSeeding(false) }
+      }
+    })
+  }, [currentBusinessId, loadMasters])
 
   const availableServices = useMemo(() => services.filter((s) => (isPickup ? s.availableForPickup : s.availableInStore)), [services, isPickup])
-  const selectedServices = useMemo(() => selectedServiceIds.map((id) => services.find((s) => s.id === id)).filter(Boolean) as ServiceMaster[], [selectedServiceIds, services])
-  const toggleService = (id: string) => setSelectedServiceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const svcById = useCallback((id: string) => services.find((s) => s.id === id), [services])
+  const grmById = useCallback((id: string) => garments.find((g) => g.id === id), [garments])
+  // Distinct services used across the order's line items (drives TAT + records).
+  const selectedServices = useMemo(() => {
+    const ids = [...new Set(lineItems.map((l) => l.serviceId))]
+    return ids.map((id) => services.find((s) => s.id === id)).filter(Boolean) as ServiceMaster[]
+  }, [lineItems, services])
 
   const maxTat = useMemo(() => {
     const hrs = selectedServices.map((s) => s.defaultTurnaroundHours).filter((h) => h > 0)
     const base = hrs.length ? Math.max(...hrs) : 0
     return quickNotes.includes("Express Delivery") && base > 0 ? Math.max(4, Math.round(base / 2)) : base
   }, [selectedServices, quickNotes])
+
+  const customerType = useMemo(() => (orderType === "CORPORATE" ? "CORPORATE" : orderType === "SUBSCRIPTION" ? "SUBSCRIPTION" : orderType === "HOME_PICKUP" ? "PICKUP" : "WALK_IN"), [orderType])
+  const totalPieces = useMemo(() => lineItems.reduce((s, l) => s + l.quantity, 0), [lineItems])
+
+  // ── Live billing for the whole order (Pricing Engine; never hardcoded) ──
+  const quoteKey = JSON.stringify({ items: lineItems.map((l) => [l.serviceId, l.garmentId, l.quantity]), storeId: selectedStoreId, customerType })
+  const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!currentBusinessId || lineItems.length === 0) { setQuote(null); return }
+    if (quoteTimer.current) clearTimeout(quoteTimer.current)
+    quoteTimer.current = setTimeout(async () => {
+      try {
+        const items = lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, categoryId: grmById(l.garmentId)?.categoryId || null, quantity: l.quantity }))
+        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items }) })
+        const json = await res.json(); setQuote(json.success ? json.data : null)
+      } catch { setQuote(null) }
+    }, 250)
+    return () => { if (quoteTimer.current) clearTimeout(quoteTimer.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, currentBusinessId])
+
+  const lineAmount = (uid: string) => { const idx = lineItems.findIndex((l) => l.uid === uid); return idx >= 0 && quote ? quote.lines[idx]?.lineTotal ?? null : null }
+  const grandTotal = quote?.grandTotal ?? 0
+
+  // ── Add-Garment modal: live single-line price ──
+  useEffect(() => {
+    if (!addOpen || !mGarment || !mService || !currentBusinessId) { setMPrice(null); return }
+    setMPricing(true)
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items: [{ serviceId: mService, garmentId: mGarment, categoryId: grmById(mGarment)?.categoryId || null, quantity: mQty || 1 }] }) })
+        const json = await res.json(); setMPrice(json.success ? json.data.grandTotal : null)
+      } catch { setMPrice(null) } finally { setMPricing(false) }
+    }, 200)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addOpen, mGarment, mService, mQty, currentBusinessId, selectedStoreId, customerType])
+
+  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMPrice(null); setAddOpen(true) }
+  const confirmAddGarment = () => {
+    if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
+    setLineItems((p) => [...p, { uid: `L${Date.now()}${p.length}`, garmentId: mGarment, serviceId: mService, quantity: Math.max(1, mQty || 1) }])
+    setAddOpen(false)
+  }
+  const removeLine = (uid: string) => setLineItems((p) => p.filter((l) => l.uid !== uid))
+  const setLineQty = (uid: string, q: number) => setLineItems((p) => p.map((l) => (l.uid === uid ? { ...l, quantity: Math.max(1, q) } : l)))
 
   const expectedDelivery = useMemo(() => {
     if (overrideDelivery && customDeliveryDate) return new Date(customDeliveryDate)
@@ -225,12 +313,13 @@ export default function LaundryNewOrder() {
   const handleSubmit = async (action: "create" | "draft" | "audit") => {
     if (!currentBusinessId || !selectedStoreId) { toast({ title: "Error", description: "No business or store selected", variant: "destructive" }); return }
     if (!selectedCustomer) { toast({ title: "Error", description: "Select or create a customer first", variant: "destructive" }); return }
-    if (selectedServices.length === 0) { toast({ title: "Error", description: "Select at least one service", variant: "destructive" }); return }
+    if (lineItems.length === 0) { toast({ title: "Add a garment", description: "Add at least one garment to the order.", variant: "destructive" }); return }
     setSubmitting(true)
     try {
       const payload = {
         businessId: currentBusinessId, storeId: selectedStoreId, customerId: selectedCustomer.id, orderType,
         services: selectedServices.map((s) => ({ serviceId: s.id, serviceName: s.name, turnaroundHours: s.defaultTurnaroundHours })),
+        items: lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity })),
         isExpress: quickNotes.includes("Express Delivery"),
         expectedDeliveryDate: expectedDelivery ? expectedDelivery.toISOString().split("T")[0] : null,
         deliveryOverride: overrideDelivery, overrideReason: overrideDelivery ? overrideReason : null,
@@ -390,37 +479,82 @@ export default function LaundryNewOrder() {
             </Card>
 
             <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={WashingMachine} title="Service Selection" note="(Tick services to add them)"
-                right={selectedServices.length > 0 ? <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[11px]">{selectedServices.length} added</Badge> : undefined} />
+              <CardHead icon={Shirt} title="Garments &amp; Services" note={seeding ? "· loading demo data…" : undefined}
+                right={<Button type="button" size="sm" onClick={openAddGarment} disabled={garments.length === 0} className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-3.5 w-3.5" /> Add Garment</Button>} />
               <CardContent className="px-5 pb-5 pt-0">
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_210px] gap-4">
+                {lineItems.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 py-10 text-center">
+                    <Shirt className="h-7 w-7 text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500">No garments added yet.</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{garments.length === 0 ? (seeding ? "Loading demo services & garments…" : "Masters loading…") : "Click “Add Garment” to add an item."}</p>
+                  </div>
+                ) : (
                   <div className="rounded-lg border border-slate-200 overflow-hidden">
-                    <div className="grid grid-cols-[1fr_auto] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-200"><span>Service</span><span>Estimated Turnaround</span></div>
-                    {availableServices.length === 0 ? (
-                      <p className="px-4 py-6 text-sm text-slate-400 text-center">No services configured.</p>
-                    ) : availableServices.map((s) => (
-                      <label key={s.id} className={`grid grid-cols-[1fr_auto] items-center px-4 py-2.5 cursor-pointer border-b border-slate-100 last:border-0 transition-colors ${selectedServiceIds.includes(s.id) ? "bg-blue-50/60" : "hover:bg-slate-50"}`}>
-                        <span className="flex items-center gap-2.5"><Checkbox checked={selectedServiceIds.includes(s.id)} onCheckedChange={() => toggleService(s.id)} className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600" /><span className="text-sm text-slate-700">{s.name}</span></span>
-                        <span className={`text-xs font-semibold ${turnaroundClass(s.defaultTurnaroundHours)}`}>{turnaroundLabel(s.defaultTurnaroundHours)}</span>
-                      </label>
-                    ))}
+                    <div className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-200"><span>Garment</span><span>Service</span><span className="text-center">Qty</span><span className="text-right">Amount</span><span /></div>
+                    {lineItems.map((l) => {
+                      const amt = lineAmount(l.uid)
+                      return (
+                        <div key={l.uid} className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-center px-4 py-2.5 border-b border-slate-100 last:border-0">
+                          <span className="text-sm font-medium text-slate-700">{grmById(l.garmentId)?.name || "—"}</span>
+                          <span className="text-sm text-slate-600">{svcById(l.serviceId)?.name || "—"}</span>
+                          <div className="flex items-center gap-1">
+                            <Button type="button" variant="outline" size="icon" className="h-7 w-7" onClick={() => setLineQty(l.uid, l.quantity - 1)} disabled={l.quantity <= 1}><Minus className="h-3 w-3" /></Button>
+                            <span className="w-7 text-center text-sm tabular-nums">{l.quantity}</span>
+                            <Button type="button" variant="outline" size="icon" className="h-7 w-7" onClick={() => setLineQty(l.uid, l.quantity + 1)}><Plus className="h-3 w-3" /></Button>
+                          </div>
+                          <span className="text-sm font-semibold text-slate-800 text-right w-16 tabular-nums">{amt != null ? inr(amt) : "…"}</span>
+                          <button className="text-red-500 hover:text-red-600" onClick={() => removeLine(l.uid)}><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      )
+                    })}
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 text-sm">
+                      <span className="text-slate-500">{totalPieces} piece{totalPieces === 1 ? "" : "s"} · {lineItems.length} item{lineItems.length === 1 ? "" : "s"}</span>
+                      <span className="font-bold text-slate-800">Total {inr(grandTotal)}</span>
+                    </div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-                    <p className="text-sm font-semibold text-slate-700 mb-2">Selected Services ({selectedServices.length})</p>
-                    {selectedServices.length === 0 ? (
-                      <p className="text-xs text-slate-400">None selected yet.</p>
-                    ) : (
-                      <ol className="space-y-1.5">
-                        {selectedServices.map((s, i) => (
-                          <li key={s.id} className="flex items-center justify-between text-sm bg-white rounded-md border border-slate-200 px-2.5 py-1.5"><span className="text-slate-700">{i + 1}. {s.name}</span><button className="text-red-500 hover:text-red-600" onClick={() => toggleService(s.id)}><Trash2 className="h-3.5 w-3.5" /></button></li>
-                        ))}
-                      </ol>
-                    )}
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>
+
+          {/* Add Garment modal */}
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2"><Shirt className="h-5 w-5 text-blue-600" /> Add Garment</DialogTitle>
+                <DialogDescription>Pick a garment and service, set the quantity — the price is applied automatically.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-1">
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-600">Garment</Label>
+                  <SearchableSelect value={mGarment} onChange={setMGarment} options={garments.map((g) => ({ value: g.id, label: g.name }))} placeholder="Search garment…" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-slate-600">Service</Label>
+                  <SearchableSelect value={mService} onChange={setMService} options={availableServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder="Select service…" />
+                </div>
+                <div className="flex items-end justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">Quantity</Label>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => setMQty((q) => Math.max(1, q - 1))} disabled={mQty <= 1}><Minus className="h-4 w-4" /></Button>
+                      <span className="w-10 text-center text-lg font-semibold tabular-nums">{mQty}</span>
+                      <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => setMQty((q) => q + 1)}><Plus className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-500">Price</p>
+                    <p className="text-2xl font-bold text-slate-800">{mPricing ? <Loader2 className="h-5 w-5 animate-spin inline" /> : mPrice != null ? inr(mPrice) : mGarment && mService ? "—" : ""}</p>
+                    {mGarment && mService && mPrice == null && !mPricing && <p className="text-[11px] text-amber-600">No price configured</p>}
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+                <Button type="button" onClick={confirmAddGarment} disabled={!mGarment || !mService} className="bg-blue-600 hover:bg-blue-700 text-white gap-1"><Plus className="h-4 w-4" /> Add Item</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Expected Delivery + Pickup */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -466,14 +600,17 @@ export default function LaundryNewOrder() {
               <CardHead icon={FileText} title="Order Summary" />
               <CardContent className="px-5 pb-5 pt-0">
                 <div className="rounded-lg border border-slate-200 overflow-hidden text-xs">
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 font-semibold text-slate-500 bg-slate-50 border-b border-slate-200"><span>Service</span><span>Qty</span><span>Est. Value</span></div>
-                  {selectedServices.length === 0 ? <p className="px-3 py-4 text-slate-400 text-center">No services selected</p> : selectedServices.map((s) => (
-                    <div key={s.id} className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 border-b border-slate-100 last:border-0 text-slate-700"><span>{s.name}</span><span className="text-slate-400">Pending Audit</span><span className="text-slate-400">₹0</span></div>
-                  ))}
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 font-semibold text-slate-500 bg-slate-50 border-b border-slate-200"><span>Item</span><span>Qty</span><span className="text-right">Amount</span></div>
+                  {lineItems.length === 0 ? <p className="px-3 py-4 text-slate-400 text-center">No garments added</p> : lineItems.map((l) => {
+                    const amt = lineAmount(l.uid)
+                    return (
+                      <div key={l.uid} className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 border-b border-slate-100 last:border-0 text-slate-700"><span>{grmById(l.garmentId)?.name} · {svcById(l.serviceId)?.name}</span><span className="text-slate-400 text-center">{l.quantity}</span><span className="text-right tabular-nums">{amt != null ? inr(amt) : "…"}</span></div>
+                    )
+                  })}
                 </div>
                 <div className="mt-3 space-y-2 text-sm border-t border-slate-100 pt-3">
-                  <div className="flex justify-between"><span className="font-medium text-slate-600">Total Items</span><span className="text-orange-500 font-medium">Pending Audit</span></div>
-                  <div className="flex justify-between"><span className="font-medium text-slate-600">Estimated Amount</span><span className="text-orange-500 font-semibold">Pending Audit</span></div>
+                  <div className="flex justify-between"><span className="font-medium text-slate-600">Total Items</span><span className="font-medium text-slate-800">{totalPieces}</span></div>
+                  <div className="flex justify-between"><span className="font-medium text-slate-600">Estimated Amount</span><span className="text-blue-700 font-bold">{inr(grandTotal)}</span></div>
                 </div>
               </CardContent>
             </Card>
@@ -538,9 +675,10 @@ export default function LaundryNewOrder() {
           <CardContent className="px-5 pb-5 pt-0 space-y-3.5 text-sm">
             <div><p className="text-xs text-slate-400">Order Type</p><p className="font-semibold text-slate-800">{ORDER_TYPES.find((o) => o.value === orderType)?.label}</p></div>
             <div className="border-t border-slate-100 pt-3">
-              <p className="text-xs text-slate-400 mb-1.5">Services ({selectedServices.length})</p>
+              <p className="text-xs text-slate-400 mb-1.5">Garments ({totalPieces}) · Services ({selectedServices.length})</p>
               {selectedServices.length === 0 ? <p className="text-slate-400 text-xs">None</p> : <ul className="space-y-1">{selectedServices.map((s) => <li key={s.id} className="text-sm text-slate-700 flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-blue-500" />{s.name}</li>)}</ul>}
             </div>
+            <div className="border-t border-slate-100 pt-3 flex items-center justify-between"><p className="text-xs text-slate-400">Estimated Total</p><p className="text-lg font-bold text-blue-700">{inr(grandTotal)}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Est. Delivery</p><p className="font-semibold text-slate-800">{expectedDelivery ? fmtDateTime(expectedDelivery) : "—"}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Pickup</p><p className="font-semibold text-slate-800">{isPickup ? (pickupDate || "Scheduled") : "Not Applicable"}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Payment Pref.</p><p className="font-semibold text-slate-800">{PAYMENT_PREFERENCES.find((p) => p.value === paymentPreference)?.label}</p></div>
