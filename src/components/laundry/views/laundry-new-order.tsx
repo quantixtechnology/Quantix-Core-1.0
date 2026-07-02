@@ -23,7 +23,7 @@ import {
   Search, UserPlus, User, Phone, MapPin, Clock, CreditCard, Store as StoreIcon,
   FileText, Save, Send, ArrowRight, Loader2, ShoppingBag, ShoppingCart, CheckCircle2,
   Hash, Calendar, UserCircle, Trash2, WashingMachine, Info, X,
-  Wallet, BadgeCheck, Crown, ImagePlus, Upload, Truck, Paperclip, Plus, Building2,
+  Wallet, BadgeCheck, Crown, ImagePlus, Upload, Truck, Paperclip, Building2,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "./pricing/searchable-select"
@@ -104,6 +104,7 @@ export default function LaundryNewOrder() {
   const [otherInstructions, setOtherInstructions] = useState("")
   const [attachments, setAttachments] = useState<{ url: string; kind: string }[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
+  const [creatingCust, setCreatingCust] = useState(false)
 
   const [stores, setStores] = useState<StoreInfo[]>([])
   const [selectedStoreId, setSelectedStoreId] = useState("")
@@ -156,16 +157,24 @@ export default function LaundryNewOrder() {
     if (missing.length) { toast({ title: "Complete the address", description: `Required: ${missing.join(", ")}`, variant: "destructive" }); return }
     if (!isValidPincode(newCustPincode)) { toast({ title: "Invalid PIN Code", description: "PIN Code must be a 6-digit Indian pincode", variant: "destructive" }); return }
     const addressPayload: AddressRow = { addressLine1: newCustAddress, addressLine2: newCustAddress2, area: newCustArea, landmark: newCustLandmark, city: newCustCity, state: newCustState, pincode: newCustPincode, country: "India" }
+    const resetForm = () => { setNewCustName(""); setNewCustMobile(""); setNewCustAltMobile(""); setNewCustEmail(""); setNewCustAddress(""); setNewCustAddress2(""); setNewCustArea(""); setNewCustLandmark(""); setNewCustCity(""); setNewCustState(""); setNewCustPincode(""); setCustomers([]) }
+    setCreatingCust(true)
     try {
       const res = await fetch("/api/laundry/customers", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ businessId: currentBusinessId, name: newCustName, mobile: newCustMobile, alternateMobile: newCustAltMobile, email: newCustEmail, ...addressPayload }) })
       const json = await res.json()
-      if (res.status === 409 && json.data) { setSelectedCustomer({ ...json.data, addresses: [] }); toast({ title: "Customer Exists", description: "Using existing customer record" }); return }
-      if (!json.success) { toast({ title: "Error", description: json.error || "Failed to create customer", variant: "destructive" }); return }
+      if (res.status === 409 && json.data) {
+        const c = json.data
+        setSelectedCustomer({ id: c.id, name: c.name, phone: c.phone, email: c.email, loyaltyTier: c.loyaltyTier || "BRONZE", walletBalance: c.walletBalance || 0, customerCode: c.customerCode, totalOrders: c.totalOrders || 0, addresses: [addressPayload] })
+        resetForm(); toast({ title: "Customer Exists", description: "Loaded the existing customer for this order." }); return
+      }
+      if (!json.success) { toast({ title: "Could not save customer", description: json.error || "Failed to create customer", variant: "destructive" }); return }
       const c = json.data
+      // Move the new customer into the Existing Customer panel (selected + coded).
       setSelectedCustomer({ id: c.id, name: c.name, phone: c.phone, email: c.email, loyaltyTier: c.loyaltyTier || "BRONZE", walletBalance: c.walletBalance || 0, customerCode: c.customerCode, totalOrders: c.totalOrders || 0, addresses: [addressPayload] })
-      toast({ title: "Customer Created", description: `${c.name} saved successfully` })
-    } catch { toast({ title: "Error", description: "Failed to create customer", variant: "destructive" }) }
+      resetForm()
+      toast({ title: "Customer Saved", description: `${c.name} (${c.customerCode}) is ready for this order.` })
+    } catch { toast({ title: "Error", description: "Network error — customer not saved.", variant: "destructive" }) } finally { setCreatingCust(false) }
   }
 
   const handleUpload = async (kind: string, files: FileList | null) => {
@@ -333,7 +342,7 @@ export default function LaundryNewOrder() {
                     <div className="space-y-1"><Label className="text-xs text-slate-600">PIN Code *</Label><Input value={newCustPincode} inputMode="numeric" maxLength={6} onChange={(e) => setNewCustPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit PIN" className="bg-slate-50 border-slate-200" /></div>
                     <div className="space-y-1"><Label className="text-xs text-slate-600">Country</Label><Input value="India" disabled className="bg-slate-100 border-slate-200 text-slate-500" /></div>
                   </div>
-                  <Button onClick={handleCreateCustomer} className="w-full gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"><UserPlus className="h-4 w-4" /> Save Customer &amp; Continue</Button>
+                  <Button type="button" onClick={handleCreateCustomer} disabled={creatingCust} className="w-full gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">{creatingCust ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Save Customer &amp; Continue</Button>
                 </div>
               </div>
             </CardContent>
@@ -353,8 +362,8 @@ export default function LaundryNewOrder() {
             </Card>
 
             <Card className="rounded-xl border-slate-200 shadow-sm">
-              <CardHead icon={WashingMachine} title="Service Selection" note="(Select multiple services)"
-                right={<Button variant="outline" size="sm" className="h-8 gap-1 border-blue-200 text-blue-700 hover:bg-blue-50"><Plus className="h-3.5 w-3.5" /> Add Service</Button>} />
+              <CardHead icon={WashingMachine} title="Service Selection" note="(Tick services to add them)"
+                right={selectedServices.length > 0 ? <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50 text-[11px]">{selectedServices.length} added</Badge> : undefined} />
               <CardContent className="px-5 pb-5 pt-0">
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_210px] gap-4">
                   <div className="rounded-lg border border-slate-200 overflow-hidden">
