@@ -24,9 +24,17 @@ export interface LabelData { itemNumber: string; garment: string; service: strin
 function barcodeDataURL(value: string, cfg: LabelConfig): string {
   const canvas = document.createElement("canvas")
   try {
-    JsBarcode(canvas, value, { format: "CODE128", displayValue: false, margin: 0, height: Math.max(30, cfg.dpi / 4), width: cfg.dpi >= 300 ? 1.6 : 1.2 })
+    // margin = quiet zone baked into the image (scales with the barcode);
+    // tall bars + a crisp module width for reliable scanning on thermal heads.
+    JsBarcode(canvas, value, { format: "CODE128", displayValue: false, margin: 10, height: 150, width: cfg.dpi >= 300 ? 3 : 2 })
     return canvas.toDataURL("image/png")
   } catch { return "" }
+}
+
+// Break a long Item ID cleanly at its hyphen segments (2–3 logical lines)
+// rather than splitting at random character positions.
+function idHtml(value: string): string {
+  return escapeHtml(value).replace(/-/g, "-<wbr>")
 }
 
 function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
@@ -38,18 +46,19 @@ function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
         <div class="g">${escapeHtml(l.garment)}</div>
         <div class="s">${escapeHtml(l.service)}</div>
         ${bc ? `<img class="bc" src="${bc}" alt="barcode"/>` : ""}
-        <div class="id">${escapeHtml(l.itemNumber)}</div>
+        <div class="id">${idHtml(l.itemNumber)}</div>
       </div>`
   })
   return `<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
     @page { size: ${w}mm ${h}mm; margin: 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    html,body { margin:0; padding:0; background:#fff; font-family: Arial, sans-serif; }
-    .label { width:${w}mm; height:${h}mm; padding:1mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; overflow:hidden; }
-    .g { font-weight:800; font-size:${fs}pt; line-height:1.05; }
-    .s { font-size:${fs - 1}pt; margin-bottom:0.5mm; }
-    .bc { width:${w - 2}mm; height:${Math.round(h * 0.42)}mm; object-fit:contain; }
-    .id { font-size:${Math.max(5, fs - 2)}pt; font-family:monospace; word-break:break-all; line-height:1.05; margin-top:0.3mm; }
+    html,body { margin:0; padding:0; background:#fff; font-family: Arial, Helvetica, sans-serif; }
+    .label { width:${w}mm; height:${h}mm; padding:0.8mm 0.4mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; overflow:hidden; }
+    .g { font-weight:800; text-transform:uppercase; letter-spacing:0.3px; font-size:${fs + 1}pt; line-height:1.1; margin-bottom:1mm; }
+    .s { font-weight:700; font-size:${fs}pt; line-height:1.1; margin-bottom:1.2mm; }
+    /* Code128 ~98% of the printable width; quiet zones come from the baked-in image margin. */
+    .bc { width:98%; height:${Math.round(h * 0.47)}mm; object-fit:fill; margin-bottom:1.2mm; }
+    .id { font-family:'Roboto Mono','Consolas','Courier New',monospace; font-weight:600; font-size:${Math.max(5, fs - 1)}pt; line-height:1.25; letter-spacing:-0.2px; word-break:normal; overflow-wrap:break-word; max-width:100%; }
     @media screen { body{background:#eef2f7;padding:10px;} .label{border:1px dashed #cbd5e1;margin:6px auto;background:#fff;} }
   </style></head><body>${rows.join("")}</body></html>`
 }
