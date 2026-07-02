@@ -4431,8 +4431,10 @@ model LaundryOrderService {
 model LaundryOrderItem {
   id            String   @id @default(cuid())
   orderId       String
-  itemNumber    String?  // permanent garment ID: ITM-{orderNumber}-NNNN
-  barcode       String?  @unique // barcode value = itemNumber (per-garment)
+  itemNumber       String?  // permanent garment ID: ITM-{orderNumber}-NNNN
+  barcode          String?  @unique // barcode value = itemNumber (per-garment)
+  barcodeGenerated Boolean  @default(false) // label generated at Processing Center
+  barcodePrintedAt DateTime?
   // ── Processing Center per-garment stage tracking ──
   processingStage   String?  // RECEIVED|SORTING|WASH|DRYCLEAN|DRY|STEAM|IRON|FOLD|QC|PACKED|DISPATCHED
   processingStatus  String?  // WAITING|IN_PROGRESS|DONE|REJECTED

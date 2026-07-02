@@ -4,7 +4,6 @@
 // order to PROCESSING if it was READY_FOR_PROCESSING.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { firstStage, departmentFor } from "@/lib/laundry-processing"
 
 export const runtime = "nodejs"
 
@@ -19,9 +18,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     let received = 0
     for (const it of order.items) {
       if (it.receivedAt) continue // idempotent — already received
-      const stage = firstStage(it.serviceName)
-      await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { processingStage: stage, processingStatus: "WAITING", processingDept: departmentFor(stage), receivedAt: now } })
-      await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "RECEIVED", toStage: stage, department: "Receiving", actorName: b.actorName || null } })
+      // Received garments wait at Audit & Barcode Generation — they only enter
+      // the processing queues after barcodes are generated + "Move to Processing".
+      await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { processingStage: "RECEIVED", processingStatus: "WAITING", processingDept: "Audit & Barcode", receivedAt: now } })
+      await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "RECEIVED", toStage: "RECEIVED", department: "Receiving", actorName: b.actorName || null } })
       received++
     }
     if (order.status === "READY_FOR_PROCESSING") {

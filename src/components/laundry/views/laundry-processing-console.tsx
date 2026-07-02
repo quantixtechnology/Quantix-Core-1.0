@@ -13,8 +13,9 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { ScanLine, Loader2, PackageCheck, Play, Check, ShieldCheck, ShieldX, User, ShoppingBag, Factory, ArrowRight, Clock } from "lucide-react"
+import { ScanLine, Loader2, PackageCheck, Play, Check, ShieldCheck, ShieldX, User, ShoppingBag, Factory, ArrowRight, Clock, Barcode as BarcodeIcon } from "lucide-react"
 import { WORKSTATIONS, stageLabel } from "@/lib/laundry-processing"
+import { LaundryAuditBarcode } from "./laundry-audit-barcode"
 
 interface ScanData {
   item: { id: string; itemNumber: string | null; barcode: string | null; garmentName: string; serviceName: string; quantity: number; processingStage: string | null; processingStatus: string | null; stageLabel: string; department: string | null }
@@ -33,6 +34,8 @@ export function LaundryProcessingConsole() {
   const { currentBusinessId, user } = useAuthStore()
   const { toast } = useToast()
   const [incoming, setIncoming] = useState<{ id: string; orderNumber: string; items: number; customer: string | null; status: string }[]>([])
+  const [awaitingBarcode, setAwaitingBarcode] = useState<{ id: string; orderNumber: string; customer: string | null; items: number; barcoded: number }[]>([])
+  const [auditOrderId, setAuditOrderId] = useState<string | null>(null)
   const [stageCounts, setStageCounts] = useState<Record<string, number>>({})
   const [activeStage, setActiveStage] = useState<string>("WASH")
   const [queue, setQueue] = useState<{ id: string; barcode: string | null; garmentName: string; serviceName: string; orderNumber: string; customer: string | null; processingStatus: string | null }[]>([])
@@ -48,7 +51,7 @@ export function LaundryProcessingConsole() {
     setLoading(true)
     try {
       const j = await fetch(`/api/laundry/processing?businessId=${currentBusinessId}&stage=${activeStage}`).then((r) => r.json())
-      setIncoming(j.incoming || []); setStageCounts(j.stageCounts || {}); setQueue(j.items || [])
+      setIncoming(j.incoming || []); setAwaitingBarcode(j.awaitingBarcode || []); setStageCounts(j.stageCounts || {}); setQueue(j.items || [])
     } catch { /* noop */ } finally { setLoading(false) }
   }, [currentBusinessId, activeStage])
   useEffect(() => { loadOverview() }, [loadOverview])
@@ -82,8 +85,8 @@ export function LaundryProcessingConsole() {
       const res = await fetch(`/api/laundry/orders/${orderId}/receive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actorName: user?.name || "operator" }) })
       const j = await res.json()
       if (!res.ok || !j.success) { toast({ title: "Receive failed", description: j.error, variant: "destructive" }); return }
-      toast({ title: "Order received", description: `${j.data.received} garment(s) moved into processing.` })
-      loadOverview()
+      toast({ title: "Order received", description: `${j.data.received} garment(s) ready for Audit & Barcode.` })
+      setAuditOrderId(orderId) // go straight to Audit & Barcode Generation
     } catch { toast({ title: "Receive failed", variant: "destructive" }) } finally { setActing(false) }
   }
 
@@ -94,6 +97,11 @@ export function LaundryProcessingConsole() {
     if (st === "PACKED") return []
     if (st === "QC") return status === "IN_PROGRESS" ? [{ label: "QC Pass", action: "QC_PASS", icon: ShieldCheck }, { label: "QC Fail (rework)", action: "QC_FAIL", icon: ShieldX }] : [{ label: "Start QC", action: "START", icon: Play }]
     return status === "IN_PROGRESS" ? [{ label: "Complete", action: "COMPLETE", icon: Check }] : [{ label: "Start", action: "START", icon: Play }]
+  }
+
+  // Audit & Barcode Generation takes over the screen for the selected package.
+  if (auditOrderId) {
+    return <LaundryAuditBarcode orderId={auditOrderId} onBack={() => { setAuditOrderId(null); loadOverview() }} onMoved={() => { setAuditOrderId(null); loadOverview() }} />
   }
 
   return (
@@ -129,6 +137,29 @@ export function LaundryProcessingConsole() {
                   <TableCell className="text-center">{o.items}</TableCell>
                   <TableCell><Badge variant="outline" className="border-violet-300 text-violet-700 bg-violet-50">{o.status}</Badge></TableCell>
                   <TableCell className="text-right"><Button size="sm" onClick={() => receive(o.id)} disabled={acting} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"><PackageCheck className="h-3.5 w-3.5" /> Receive</Button></TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Awaiting Audit & Barcode Generation */}
+      <Card className="rounded-xl border-slate-200 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Audit &amp; Barcode Generation <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">{awaitingBarcode.length}</Badge></CardTitle></CardHeader>
+        <CardContent className="p-0">
+          {awaitingBarcode.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400">No packages awaiting audit &amp; barcode.</p>
+          ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>Barcodes</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+              <TableBody>{awaitingBarcode.map((o) => (
+                <TableRow key={o.id}>
+                  <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
+                  <TableCell className="text-sm">{o.customer || "—"}</TableCell>
+                  <TableCell className="text-center">{o.items}</TableCell>
+                  <TableCell><Badge variant="outline" className={o.barcoded === o.items ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-amber-300 text-amber-700 bg-amber-50"}>{o.barcoded}/{o.items} barcoded</Badge></TableCell>
+                  <TableCell className="text-right"><Button size="sm" onClick={() => setAuditOrderId(o.id)} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"><BarcodeIcon className="h-3.5 w-3.5" /> Audit &amp; Barcode <ArrowRight className="h-3 w-3" /></Button></TableCell>
                 </TableRow>
               ))}</TableBody>
             </Table>

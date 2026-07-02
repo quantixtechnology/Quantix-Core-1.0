@@ -29,6 +29,17 @@ export async function GET(request: Request) {
     const cmap = new Map(custs.map((c) => [c.id, c.name]))
     const incoming = incomingOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, items: o._count.items, customer: o.customerId ? cmap.get(o.customerId) || null : null, createdAt: o.createdAt }))
 
+    // Awaiting Audit & Barcode Generation — received, not yet moved to processing.
+    const abOrders = await prisma.laundryOrder.findMany({
+      where: { businessId: biz.id, items: { some: { processingStage: "RECEIVED" } } },
+      select: { id: true, orderNumber: true, customerId: true, items: { where: { processingStage: "RECEIVED" }, select: { id: true, barcodeGenerated: true } } },
+      orderBy: { createdAt: "desc" }, take: 50,
+    })
+    const abCustIds = [...new Set(abOrders.map((o) => o.customerId).filter(Boolean) as string[])]
+    const abCusts = abCustIds.length ? await prisma.customer.findMany({ where: { id: { in: abCustIds } }, select: { id: true, name: true } }) : []
+    const abMap = new Map(abCusts.map((c) => [c.id, c.name]))
+    const awaitingBarcode = abOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, customer: o.customerId ? abMap.get(o.customerId) || null : null, items: o.items.length, barcoded: o.items.filter((i) => i.barcodeGenerated).length }))
+
     // Per-stage counts across all received garments.
     const grouped = await prisma.laundryOrderItem.groupBy({
       by: ["processingStage"],
@@ -59,7 +70,7 @@ export async function GET(request: Request) {
       }))
     }
 
-    return NextResponse.json({ success: true, incoming, stageCounts, items })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, stageCounts, items })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

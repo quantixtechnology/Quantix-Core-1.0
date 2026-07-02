@@ -163,11 +163,6 @@ const websiteNavItems: NavItem[] = [
   { key: "quantix-website", label: "Quantix Website", icon: Globe },
 ]
 
-const laundryNavItems: NavItem[] = [
-  { key: "laundry-os",                label: "Dashboard",             icon: Sparkles },
-  { key: "laundry-businesses",        label: "Businesses",            icon: LayoutList },
-]
-
 function CollapsibleSection({
   title, items, activePage, onNavigate, defaultOpen = false,
 }: {
@@ -287,7 +282,8 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
 
   const sections = [
     { title: "Platform Control",  items: filterItems(platformNavItems), open: true },
-    { title: "Laundry OS",        items: filterItems(laundryNavItems),  open: true },
+    // "Laundry OS" section removed — the operational Laundry workspace is the
+    // single source of truth; a second admin-side operational dashboard is a duplicate.
     { title: "Mobile & Apps",     items: filterItems(mobileNavItems),   open: true },
     { title: "Deployment & Ops",  items: filterItems(deployNavItems),   open: false },
     { title: "Client Operations", items: filterItems(clientNavItems),   open: false },
