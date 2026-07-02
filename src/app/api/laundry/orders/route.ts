@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } from "@/lib/laundry-billing-server"
+import { generateOrderNumber } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -48,21 +49,14 @@ export async function POST(request: Request) {
     }
 
     const now = new Date()
-    const monthPrefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`
-    const prefix = `ORD-${monthPrefix}-`
-
-    const lastOrder = await prisma.laundryOrder.findFirst({
-      where: { orderNumber: { startsWith: prefix } },
-      orderBy: { orderNumber: "desc" },
-      select: { orderNumber: true },
-    })
-
-    let nextSeq = 1
-    if (lastOrder) {
-      const parts = lastOrder.orderNumber.split("-")
-      nextSeq = parseInt(parts[parts.length - 1], 10) + 1
-    }
-    const orderNumber = `${prefix}${String(nextSeq).padStart(6, "0")}`
+    // Enterprise order number via the shared generator, scoped to the store:
+    // ORD-{storeCode}-NNNNNN. Falls back to a business-scoped number if the
+    // store has no code yet.
+    const storeRow = storeId ? await prisma.laundryStore.findUnique({ where: { id: storeId }, select: { storeCode: true } }) : null
+    const businessCodeRow = await prisma.laundryBusiness.findUnique({ where: { id: laundryBusiness.id }, select: { businessCode: true } })
+    const orderNumber = storeRow?.storeCode
+      ? await generateOrderNumber(storeRow.storeCode)
+      : await generateOrderNumber(businessCodeRow?.businessCode || `LND-${laundryBusiness.id}`)
 
     // ── Resolve the financial snapshot from the Pricing Engine (server-side,
     //    authoritative) and persist it on the order. Never recalculated later. ──
@@ -129,14 +123,19 @@ export async function POST(request: Request) {
         billedAt: hasItems ? new Date() : null,
         services: { create: serviceLines },
         items: billing
-          ? { create: billing.lines.map((l) => ({
-              serviceId: l.serviceId, serviceName: l.serviceName,
-              garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId,
-              pricingRuleId: l.pricingRuleId, pricingType: l.pricingType,
-              quantity: l.quantity, weightKg: l.weightKg, unitPrice: l.unitPrice,
-              lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount,
-              discount: l.discount, total: l.total,
-            })) }
+          ? { create: billing.lines.map((l, i) => {
+              // Permanent per-garment ID + barcode: ITM-{orderNumber}-NNNN.
+              const itemNumber = `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`
+              return {
+                itemNumber, barcode: itemNumber,
+                serviceId: l.serviceId, serviceName: l.serviceName,
+                garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId,
+                pricingRuleId: l.pricingRuleId, pricingType: l.pricingType,
+                quantity: l.quantity, weightKg: l.weightKg, unitPrice: l.unitPrice,
+                lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount,
+                discount: l.discount, total: l.total,
+              }
+            }) }
           : undefined,
       },
       include: {

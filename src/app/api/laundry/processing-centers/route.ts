@@ -1,22 +1,18 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateProcessingCenterCode } from "@/lib/laundry-codes"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const businessId = searchParams.get("businessId")
-
-    const where: Record<string, unknown> = {}
-    if (businessId) where.businessId = businessId
-
-    const centers = await prisma.laundryProcessingCenter.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-    })
-
+    const businessId = new URL(request.url).searchParams.get("businessId")
+    // Accept either LaundryBusiness.id or the platform Business.id.
+    const resolved = businessId ? await resolveLaundryBusiness(businessId) : null
+    const centers = resolved
+      ? await prisma.laundryProcessingCenter.findMany({ where: { businessId: resolved.id }, orderBy: { createdAt: "desc" } })
+      : []
     return NextResponse.json(centers)
   } catch (error) {
     console.error("Error fetching processing centers:", error)
@@ -33,15 +29,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Business ID and center name are required" }, { status: 400 })
     }
 
+    // Resolve tenant (self-healing) — same as Stores/Services.
+    const resolved = await resolveLaundryBusiness(businessId)
+    if (!resolved) {
+      return NextResponse.json({ error: `No laundry workspace matches businessId "${businessId}"` }, { status: 404 })
+    }
+    const laundryBusinessId = resolved.id
+
     const business = await prisma.laundryBusiness.findUnique({
-      where: { id: businessId },
+      where: { id: laundryBusinessId },
       select: { businessCode: true },
     })
     if (!business) {
-      return NextResponse.json({ error: "Business not found" }, { status: 404 })
+      return NextResponse.json({ error: "Laundry workspace not found" }, { status: 404 })
     }
 
-    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId } })
+    const limits = await prisma.laundryScalingLimit.findUnique({ where: { businessId: laundryBusinessId } })
     if (limits && limits.processingCentersUsed >= limits.processingCentersAllowed) {
       return NextResponse.json({ error: `Processing center limit reached (${limits.processingCentersAllowed}). Contact Quantix to increase capacity.` }, { status: 403 })
     }
@@ -51,7 +54,7 @@ export async function POST(request: Request) {
     const center = await prisma.laundryProcessingCenter.create({
       data: {
         centerCode,
-        businessId,
+        businessId: laundryBusinessId,
         centerName,
         centerType: centerType || "PROCESSING_HUB",
         managerName: managerName || null,
@@ -67,8 +70,9 @@ export async function POST(request: Request) {
       },
     })
 
-    await prisma.laundryScalingLimit.update({
-      where: { businessId },
+    // Safe increment — never fails the create if no scaling-limit row exists.
+    await prisma.laundryScalingLimit.updateMany({
+      where: { businessId: laundryBusinessId },
       data: { processingCentersUsed: { increment: 1 } },
     })
 

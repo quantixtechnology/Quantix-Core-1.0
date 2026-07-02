@@ -4431,6 +4431,8 @@ model LaundryOrderService {
 model LaundryOrderItem {
   id            String   @id @default(cuid())
   orderId       String
+  itemNumber    String?  // permanent garment ID: ITM-{orderNumber}-NNNN
+  barcode       String?  // barcode value = itemNumber (per-garment)
   serviceId     String?
   serviceName   String
   garmentId     String?

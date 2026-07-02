@@ -10,8 +10,13 @@ const CODES = {
   BUSINESS_PREFIX: "LND",
   STORE_PREFIX: "STR",
   PROCESSING_CENTER_PREFIX: "PC",
+  CUSTOMER_PREFIX: "CUS",
   ORDER_PREFIX: "ORD",
+  PACKET_PREFIX: "PKT",
   ITEM_PREFIX: "ITM",
+  INVOICE_PREFIX: "INV",
+  RECEIPT_PREFIX: "RCT",
+  PAYMENT_PREFIX: "PAY",
   TRANSPORT_BATCH_PREFIX: "TB",
 } as const
 
@@ -87,6 +92,31 @@ export async function generateItemNumber(orderNumber: string): Promise<string> {
   const next = await getNextSequential("laundryOrderItem", "itemNumber", prefix)
   return `${prefix}${padNumber(next, 4)}`
 }
+
+// ─── Customer Code: CUS-{businessCode}-NNNNNN ──────────────────────────────
+// Example: CUS-LND-202607-0001-000001  (sequential within the business)
+export async function generateCustomerCode(businessCode: string): Promise<string> {
+  const prefix = `${CODES.CUSTOMER_PREFIX}-${businessCode}-`
+  const next = await getNextSequential("customer", "customerCode", prefix)
+  return `${prefix}${padNumber(next, 6)}`
+}
+
+// ─── Packet Number: PKT-{orderNumber} ──────────────────────────────────────
+// Example: PKT-ORD-STR-LND-202607-0001-001-000001  (QR opens the order)
+export function generatePacketNumber(orderNumber: string): string {
+  return `${CODES.PACKET_PREFIX}-${orderNumber}`
+}
+
+// ─── Invoice / Receipt / Payment: {PREFIX}-LND-YYYYMM-NNNNNN ───────────────
+// Example: INV-LND-202607-000001 · RCT-LND-202607-000001 · PAY-LND-202607-000001
+async function monthScoped(prefixCode: string, model: string, field: string): Promise<string> {
+  const prefix = `${prefixCode}-${CODES.BUSINESS_PREFIX}-${getMonthPrefix()}-`
+  const next = await getNextSequential(model, field, prefix)
+  return `${prefix}${padNumber(next, 6)}`
+}
+export const generateInvoiceNumber = () => monthScoped(CODES.INVOICE_PREFIX, "laundryInvoice", "invoiceNumber")
+export const generateReceiptNumber = () => monthScoped(CODES.RECEIPT_PREFIX, "laundryPayment", "receiptNumber")
+export const generatePaymentNumber = () => monthScoped(CODES.PAYMENT_PREFIX, "laundryPayment", "paymentNumber")
 
 // ─── Transport Batch Number: TB-LND-YYYYMM-NNNN-NNNNNN ────────────────────
 // Example: TB-LND-202606-0001-000001

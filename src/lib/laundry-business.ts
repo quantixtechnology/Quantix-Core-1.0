@@ -11,6 +11,7 @@
 // ============================================================================
 
 import { prisma } from "@/lib/prisma"
+import { generateBusinessCode } from "@/lib/laundry-codes"
 
 export interface ResolvedLaundryBusiness {
   id: string                    // LaundryBusiness.id — used for laundry FKs (stores, orders)
@@ -43,7 +44,7 @@ export async function resolveLaundryBusiness(input: string | null | undefined): 
   try {
     const created = await prisma.laundryBusiness.create({
       data: {
-        businessCode: business.businessCode ? `LND-${business.businessCode}` : `LND-${business.id}`,
+        businessCode: await generateBusinessCode(), // LND-YYYYMM-0001 (enterprise format)
         businessName: business.name || "Laundry",
         ownerName: business.name || "Owner",
         mobile: business.contactPhone || "",

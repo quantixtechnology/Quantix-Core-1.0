@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { isValidPincode } from "@/lib/india"
+import { generateCustomerCode } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -79,19 +80,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Customer with this mobile number already exists", data: existing }, { status: 409 })
     }
 
-    const monthPrefix = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}`
-    const prefix = `CUS-${monthPrefix}-`
-    const last = await prisma.customer.findFirst({
-      where: { customerCode: { startsWith: prefix } },
-      orderBy: { customerCode: "desc" },
-      select: { customerCode: true },
-    })
-    let nextSeq = 1
-    if (last?.customerCode) {
-      const parts = last.customerCode.split("-")
-      nextSeq = parseInt(parts[parts.length - 1], 10) + 1
-    }
-    const customerCode = `${prefix}${String(nextSeq).padStart(4, "0")}`
+    // Enterprise ID via the shared generator: CUS-{businessCode}-NNNNNN
+    const lb = await prisma.laundryBusiness.findUnique({ where: { id: laundryBusiness.id }, select: { businessCode: true } })
+    const customerCode = await generateCustomerCode(lb?.businessCode || `LND-${laundryBusiness.id}`)
 
     const customer = await prisma.customer.create({
       data: {
