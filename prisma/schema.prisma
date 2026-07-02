@@ -3917,8 +3917,11 @@ model LaundryBusiness {
   address                 String?
   plan                    String   @default("STANDARD")
   status                  String   @default("ONBOARDING")
-  // Business rule: may garments move to processing before payment is collected?
-  allowProcessingBeforePayment Boolean @default(false)
+  // Payment policy: ADVANCE_REQUIRED | BEFORE_DELIVERY | SUBSCRIPTION | CUSTOM.
+  // Only ADVANCE_REQUIRED blocks processing before payment; the default lets
+  // garments process and requires payment before delivery.
+  paymentPolicy String @default("BEFORE_DELIVERY")
+  allowProcessingBeforePayment Boolean @default(false) // deprecated (kept for compat)
   defaultServiceRadius       Float?
   defaultDailyCapacity       Float?
   platformBusinessId        String?  @unique

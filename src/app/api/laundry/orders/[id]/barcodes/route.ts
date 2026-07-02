@@ -51,13 +51,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (order.items.length === 0 || notBarcoded.length > 0) {
         return NextResponse.json({ error: `All garments must have a barcode before processing (${notBarcoded.length} pending).`, code: "BARCODES_PENDING" }, { status: 409 })
       }
-      // Business rule: block processing until payment is collected (unless the
-      // workspace allows processing before payment). SUBSCRIPTION orders are ok.
+      // Payment policy: only ADVANCE_REQUIRED blocks processing before payment.
+      // BEFORE_DELIVERY / SUBSCRIPTION / CUSTOM allow processing (payment is
+      // enforced at delivery instead).
       const paid = order.paymentStatus === "PAID" || order.paymentStatus === "SUBSCRIPTION"
       if (!paid) {
-        const biz = await prisma.laundryBusiness.findUnique({ where: { id: order.businessId }, select: { allowProcessingBeforePayment: true } })
-        if (!biz?.allowProcessingBeforePayment) {
-          return NextResponse.json({ error: "Payment pending — collect payment before moving to processing.", code: "PAYMENT_PENDING" }, { status: 402 })
+        const biz = await prisma.laundryBusiness.findUnique({ where: { id: order.businessId }, select: { paymentPolicy: true } })
+        if (biz?.paymentPolicy === "ADVANCE_REQUIRED") {
+          return NextResponse.json({ error: "This workspace requires advance payment before processing.", code: "PAYMENT_PENDING" }, { status: 402 })
         }
       }
       for (const it of order.items) {

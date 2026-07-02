@@ -16,7 +16,6 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { ArrowLeft, Loader2, Barcode as BarcodeIcon, Printer, ArrowRight, User, ShoppingBag, Check, RefreshCw, Eye, Settings } from "lucide-react"
 import { Barcode } from "./barcode"
 import { LaundryPaymentBanner } from "./laundry-payment-banner"
@@ -42,7 +41,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
   }, [orderId])
   useEffect(() => { load() }, [load])
 
-  const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName, customer: data?.customer?.name, orderNumber: data?.order.orderNumber })
+  const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName })
 
   const genOne = async (it: Item, reprint = false) => {
     setBusy(true)
@@ -79,12 +78,10 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
           <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-5 w-5 text-blue-600" /> Audit &amp; Barcode Generation <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">In Progress</Badge></h1>
           <p className="text-sm text-slate-500 font-mono">{data.order.orderNumber}</p>
         </div>
+        <LaundryPaymentBanner orderId={orderId} />
         <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowCfg(true)}><Settings className="h-4 w-4" /> Label {cfg.widthMm}mm</Button>
         <Button variant="outline" className="gap-1" onClick={printAll}><Printer className="h-4 w-4" /> Print All</Button>
       </div>
-
-      {/* Payment banner — visible on this stage */}
-      <LaundryPaymentBanner orderId={orderId} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[{ label: "Customer", value: data.customer?.name || "—" }, { label: "Store", value: data.store?.storeName || "—" }, { label: "Total Garments", value: String(data.totalItems) }, { label: "Barcoded", value: `${data.barcoded} / ${data.totalItems}` }].map((s) => (
@@ -140,9 +137,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
               <div className="space-y-1"><Label className="text-xs">Height (mm)</Label><Select value={String(cfg.heightMm)} onValueChange={(v) => setCfg({ ...cfg, heightMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{HEIGHTS.map((h) => <SelectItem key={h} value={String(h)}>{h} mm</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><Label className="text-xs">Printer DPI</Label><Select value={String(cfg.dpi)} onValueChange={(v) => setCfg({ ...cfg, dpi: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DPIS.map((d) => <SelectItem key={d} value={String(d)}>{d}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            {([["printBarcode", "Print Barcode"], ["printQR", "Print QR"], ["printCustomer", "Print Customer Name"], ["printOrder", "Print Order Number"], ["printLogo", "Print Logo"]] as const).map(([k, lbl]) => (
-              <label key={k} className="flex items-center justify-between text-sm"><span>{lbl}</span><Switch checked={cfg[k]} onCheckedChange={(v) => setCfg({ ...cfg, [k]: v })} /></label>
-            ))}
+            <p className="text-[11px] text-slate-400 leading-snug">Garment labels carry only garment name, service, Code128 barcode and the Item ID. QR codes are printed at the package level, not per garment.</p>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setShowCfg(false)}>Close</Button><Button className="bg-blue-600 hover:bg-blue-700 text-white gap-1" onClick={() => { saveLabelConfig(cfg); setShowCfg(false); toast({ title: "Label settings saved" }) }}><Check className="h-4 w-4" /> Save</Button></DialogFooter>
         </DialogContent>
