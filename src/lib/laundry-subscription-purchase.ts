@@ -38,11 +38,11 @@ export function verifyRazorpaySignature(orderId: string, paymentId: string, sign
   return expected === signature
 }
 
-export interface CreatePurchaseInput { businessId: string; customerId: string; planId: string }
+export interface CreatePurchaseInput { businessId: string; customerId: string; planId: string; laundryOrderId?: string | null }
 
 // Create a PENDING purchase. Never activates. Returns the purchase + whether an
 // online gateway is available for this tenant so the UI can route to payment.
-export async function createSubscriptionPurchase({ businessId, customerId, planId }: CreatePurchaseInput) {
+export async function createSubscriptionPurchase({ businessId, customerId, planId, laundryOrderId }: CreatePurchaseInput) {
   const plan = await prisma.subscriptionPlan.findFirst({ where: { id: planId, businessId, isActive: true } })
   if (!plan) return { ok: false as const, error: "Plan not found" }
 
@@ -57,8 +57,10 @@ export async function createSubscriptionPurchase({ businessId, customerId, planI
   })
   if (!purchase) {
     purchase = await prisma.subscriptionPurchase.create({
-      data: { businessId, customerId, planId, amount: plan.price, currency: "INR", status: "PAYMENT_PENDING", paymentStatus: "PENDING" },
+      data: { businessId, customerId, planId, amount: plan.price, currency: "INR", status: "PAYMENT_PENDING", paymentStatus: "PENDING", laundryOrderId: laundryOrderId || null },
     })
+  } else if (laundryOrderId && !purchase.laundryOrderId) {
+    purchase = await prisma.subscriptionPurchase.update({ where: { id: purchase.id }, data: { laundryOrderId } })
   }
 
   const gateways = await prisma.paymentGateway.findMany({ where: { businessId, isActive: true }, select: { gateway: true } })
@@ -119,6 +121,71 @@ export async function confirmSubscriptionPurchase({ purchaseId, customerId, paym
   })
 
   return { ok: true as const, subscriptionId: result.sub.id, purchase: result.purchase, plan, cycle: { start, end } }
+}
+
+// Apply a collected payment amount to a pending subscription purchase (used by
+// the laundry Payment Collection screen). Supports partial settlement. The
+// subscription (allowance) is ACTIVATED only when the purchase is FULLY paid.
+// Returns how much of the passed amount was consumed by the subscription.
+export async function applyPaymentToPurchase(purchaseId: string, amount: number) {
+  const purchase = await prisma.subscriptionPurchase.findUnique({ where: { id: purchaseId } })
+  if (!purchase) return { applied: 0, activated: false, error: "Purchase not found" as string | undefined }
+  if (purchase.status === "ACTIVATED") return { applied: 0, activated: true, subscriptionId: purchase.customerSubscriptionId || undefined }
+
+  const outstanding = Math.max(0, purchase.amount - purchase.amountPaid)
+  const applied = Math.min(Math.max(0, amount), outstanding)
+  const newPaid = Math.round((purchase.amountPaid + applied) * 100) / 100
+  const fullyPaid = newPaid >= purchase.amount - 0.001
+
+  if (!fullyPaid) {
+    await prisma.subscriptionPurchase.update({ where: { id: purchase.id }, data: { amountPaid: newPaid, paymentStatus: "PROCESSING" } })
+    return { applied, activated: false, remaining: Math.round((purchase.amount - newPaid) * 100) / 100 }
+  }
+
+  // Fully paid → activate the subscription + allowance (transaction-safe).
+  const plan = await prisma.subscriptionPlan.findUnique({ where: { id: purchase.planId } })
+  if (!plan) return { applied, activated: false, error: "Plan not found" }
+  const start = new Date()
+  const end = cycleEnd(plan.billingCycle, start)
+  const sub = await prisma.$transaction(async (tx) => {
+    let s = await tx.customerSubscription.findFirst({ where: { businessId: purchase.businessId, customerId: purchase.customerId, planId: plan.id, status: "ACTIVE" } })
+    if (!s) {
+      s = await tx.customerSubscription.create({
+        data: { businessId: purchase.businessId, customerId: purchase.customerId, planId: plan.id, status: "ACTIVE",
+          currentPeriodStart: start, currentPeriodEnd: end, nextBillingDate: end,
+          totalCredits: plan.totalCredits, usedCredits: 0, remainingCredits: plan.totalCredits,
+          lastPaymentAmount: purchase.amount, lastPaymentAt: start },
+      })
+      await tx.subscriptionPlan.update({ where: { id: plan.id }, data: { currentSubscribers: { increment: 1 } } }).catch(() => {})
+    }
+    await tx.subscriptionPurchase.update({ where: { id: purchase.id }, data: { amountPaid: newPaid, status: "ACTIVATED", paymentStatus: "COMPLETED", paidAt: start, customerSubscriptionId: s.id } })
+    return s
+  })
+  return { applied, activated: true, subscriptionId: sub.id, remaining: 0 }
+}
+
+// The customer's current subscription financial picture: active plan (if any)
+// plus any pending purchase due. Used by My Account + admin customer detail.
+export async function customerSubscriptionSummary(businessId: string, customerId: string) {
+  const [activeSub, pending] = await Promise.all([
+    prisma.customerSubscription.findFirst({ where: { businessId, customerId, status: "ACTIVE" }, include: { plan: { select: { name: true, maxOrdersPerCycle: true } }, usages: { select: { creditsUsed: true } } } }),
+    prisma.subscriptionPurchase.findFirst({ where: { businessId, customerId, status: { in: ["INITIATED", "PAYMENT_PENDING"] } }, orderBy: { createdAt: "desc" } }),
+  ])
+  let pendingPlanName: string | null = null
+  if (pending) { const p = await prisma.subscriptionPlan.findUnique({ where: { id: pending.planId }, select: { name: true } }); pendingPlanName = p?.name || null }
+  const used = activeSub ? activeSub.usages.reduce((s, u) => s + (u.creditsUsed || 0), 0) : 0
+  return {
+    active: activeSub ? {
+      planName: activeSub.plan.name, status: "ACTIVE",
+      allowance: activeSub.totalCredits, used, remaining: Math.max(0, activeSub.totalCredits - used),
+      maxOrders: activeSub.plan.maxOrdersPerCycle,
+      cycleStart: activeSub.currentPeriodStart, cycleEnd: activeSub.currentPeriodEnd,
+    } : null,
+    pending: pending ? {
+      purchaseId: pending.id, planName: pendingPlanName, amount: pending.amount, amountPaid: pending.amountPaid,
+      due: Math.round((pending.amount - pending.amountPaid) * 100) / 100, status: "PAYMENT_PENDING",
+    } : null,
+  }
 }
 
 export async function markPurchaseFailed(purchaseId: string, customerId: string) {

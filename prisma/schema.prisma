@@ -1820,6 +1820,7 @@ model SubscriptionPurchase {
   customerId             String
   planId                 String
   amount                 Float
+  amountPaid             Float     @default(0) // supports partial settlement
   currency               String    @default("INR")
   status                 String    @default("INITIATED")
   paymentStatus          String    @default("PENDING")
@@ -1827,7 +1828,11 @@ model SubscriptionPurchase {
   gateway                String?
   paymentReference       String?   // gateway order id / provider reference
   paymentTransactionId   String?   // gateway payment id after verification
-  customerSubscriptionId String?   // set once activated
+  // A subscription can be purchased in the SAME cart as a laundry order and its
+  // due collected together at Payment Collection. This links the pending
+  // purchase to that order (nullable — a standalone online purchase has none).
+  laundryOrderId         String?
+  customerSubscriptionId String?   // set once activated (only after PAID)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   paidAt                 DateTime?
@@ -1835,6 +1840,7 @@ model SubscriptionPurchase {
   @@index([businessId])
   @@index([customerId])
   @@index([status])
+  @@index([laundryOrderId])
 }
 
 model Customer {
