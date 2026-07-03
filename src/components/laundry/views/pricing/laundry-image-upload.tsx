@@ -18,22 +18,32 @@ export function LaundryImageUpload({ value, businessId, folder, onChange }: { va
   const [uploading, setUploading] = useState(false)
   const preview = value ? resolveImageUrl(value) : ""
 
+  const MAX_MB = 20
+  const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/gif"]
   const pick = () => inputRef.current?.click()
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !businessId) return
+    if (!file) return
+    if (!businessId) { toast.error("No business context — please reload and try again."); return }
+    // Client-side guards with clear, compact messages (kept in sync with the server).
+    if (!ALLOWED.includes(file.type)) { toast.error("Unsupported image format. Use JPEG, PNG, WebP or GIF."); if (inputRef.current) inputRef.current.value = ""; return }
+    if (file.size > MAX_MB * 1024 * 1024) { toast.error(`Image is too large. Maximum size is ${MAX_MB} MB.`); if (inputRef.current) inputRef.current.value = ""; return }
     setUploading(true)
     try {
       const fd = new FormData()
       fd.append("file", file)
       fd.append("businessId", businessId)
       fd.append("folder", folder)
+      // Strip JSON Content-Type so the browser sets multipart/form-data + boundary.
       const { "Content-Type": _ct, ...headers } = getAuthHeaders()
       const res = await fetch("/api/core/upload", { method: "POST", body: fd, headers })
-      const json = await res.json()
-      if (json.success) onChange(json.url)
-      else toast.error(json.error || "Upload failed")
-    } catch { toast.error("Upload failed") } finally { setUploading(false); if (inputRef.current) inputRef.current.value = "" }
+      let json: { success?: boolean; url?: string; error?: string } = {}
+      try { json = await res.json() } catch { /* non-JSON (e.g. 413 from proxy) */ }
+      if (res.ok && json.success && json.url) { onChange(json.url); toast.success("Image uploaded") }
+      else if (res.status === 401) toast.error("Your session expired. Please sign in again.")
+      else if (res.status === 413) toast.error(`Image is too large. Maximum size is ${MAX_MB} MB.`)
+      else toast.error(json.error || "Upload failed. Please try again.")
+    } catch { toast.error("Upload failed. Please check your connection and try again.") } finally { setUploading(false); if (inputRef.current) inputRef.current.value = "" }
   }
 
   return (
@@ -56,7 +66,7 @@ export function LaundryImageUpload({ value, businessId, folder, onChange }: { va
         </Button>
         {preview && <Button type="button" size="sm" variant="ghost" className="h-8 text-rose-600" onClick={() => onChange(null)}>Remove</Button>}
       </div>
-      <p className="text-[10px] text-slate-400">JPEG / PNG / WebP / GIF, up to 5&nbsp;MB. Optional — a service/plan without an image uses the default icon.</p>
+      <p className="text-[10px] text-slate-400">JPEG / PNG / WebP / GIF, up to 20&nbsp;MB. Optional — a service/plan without an image uses the default icon.</p>
     </div>
   )
 }

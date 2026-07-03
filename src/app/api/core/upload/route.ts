@@ -14,7 +14,12 @@ import { join } from 'path';
 import { withMiddleware } from '@/lib/middleware';
 import { UPLOAD_ROOT, ensureDir } from '@/lib/upload-root';
 
-const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+// 20 MB — aligned with the platform upload infra (next.config serverActions
+// bodySizeLimit '20mb' + the 20MB reverse-proxy target). The previous 5 MB app
+// cap silently rejected normal phone marketing photos even though the infra
+// allowed them.
+const MAX_MB = 20;
+const MAX_SIZE = MAX_MB * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
   'image/svg+xml',                    // SVG for logos
@@ -38,7 +43,7 @@ export const POST = withMiddleware({ requireAuth: true })(async (req) => {
     }
 
     if (file.size > MAX_SIZE) {
-      return NextResponse.json({ success: false, error: 'File must be under 5 MB' }, { status: 400 });
+      return NextResponse.json({ success: false, error: `Image is too large. Maximum size is ${MAX_MB} MB.` }, { status: 400 });
     }
 
     const ext      = file.name.split('.').pop()?.toLowerCase() || 'jpg';
