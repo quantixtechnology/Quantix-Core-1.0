@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Calculator, Loader2, Trophy, ArrowDown, CheckCircle2, XCircle } from "lucide-react"
 import { SearchableSelect } from "./searchable-select"
-import { NONE, CUSTOMER_TYPES, typeLabel, inr, type Ref } from "./pricing-shared"
+import { NONE, typeLabel, inr, type Ref } from "./pricing-shared"
 
 interface Masters { services: Ref[]; garments: Ref[]; cats: Ref[]; stores: Ref[] }
 
@@ -26,7 +26,7 @@ const opt = (refs: Ref[], k: "name" | "storeName" = "name") =>
 
 export function PricingSimulator({ businessId, masters }: { businessId: string; masters: Masters }) {
   const [storeId, setStoreId] = useState(NONE)
-  const [customerType, setCustomerType] = useState(NONE)
+  const customerType = NONE // laundry pricing is universal — no customer segmentation
   const [serviceId, setServiceId] = useState(NONE)
   const [categoryId, setCategoryId] = useState(NONE)
   const [garmentId, setGarmentId] = useState(NONE)
@@ -70,11 +70,9 @@ export function PricingSimulator({ businessId, masters }: { businessId: string; 
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1"><Label className="text-xs">Store</Label><SearchableSelect value={storeId} onChange={setStoreId} options={opt(masters.stores, "storeName")} /></div>
-            <div className="space-y-1"><Label className="text-xs">Customer Type</Label><SearchableSelect value={customerType} onChange={setCustomerType} options={[{ value: NONE, label: "Any" }, ...CUSTOMER_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))]} /></div>
             <div className="space-y-1"><Label className="text-xs">Service</Label><SearchableSelect value={serviceId} onChange={setServiceId} options={opt(masters.services)} /></div>
             <div className="space-y-1"><Label className="text-xs">Category</Label><SearchableSelect value={categoryId} onChange={setCategoryId} options={opt(masters.cats)} /></div>
             <div className="space-y-1"><Label className="text-xs">Garment</Label><SearchableSelect value={garmentId} onChange={setGarmentId} options={opt(masters.garments)} /></div>
-            <div />
             <div className="space-y-1"><Label className="text-xs">Quantity</Label><Input type="number" min={0} value={quantity} onChange={(e) => setQuantity(e.target.value)} className="h-9" /></div>
             <div className="space-y-1"><Label className="text-xs">Weight (KG)</Label><Input type="number" min={0} step="any" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} className="h-9" /></div>
           </div>

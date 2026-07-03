@@ -87,8 +87,8 @@ export async function POST(request: Request) {
     }
     // Rule A — Shirt across ALL services @ ₹40 (garment-scoped, service-generic)
     await ensureRule("Shirt", { serviceId: null, garmentId: shirt.id, categoryId: null, price: 40 })
-    // Rule B — Wash & Iron + Pant @ ₹50 (service + garment)
-    await ensureRule("Wash & Iron — Pant", { serviceId: washIron.id, garmentId: pant.id, categoryId: null, price: 50 })
+    // Rule B — Wash & Iron + Pant @ ₹40 (service + garment) — standard menu price
+    await ensureRule("Wash & Iron — Pant", { serviceId: washIron.id, garmentId: pant.id, categoryId: null, price: 40 })
     // Rule C — Dry Clean + Men + Blazer @ ₹100 (service + category + garment)
     await ensureRule("Blazer", { serviceId: dryClean.id, garmentId: blazer.id, categoryId: men.id, price: 100 })
 

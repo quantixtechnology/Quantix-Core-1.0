@@ -59,13 +59,18 @@ export async function POST(request: Request) {
     }
 
     // ── Subscription context (optional) ──────────────────────────────────────
-    let sub: { id: string; totalCredits: number; planName: string } | null = null
+    let sub: { id: string; totalCredits: number; planName: string; maxOrders: number | null } | null = null
     let allocation: ReturnType<typeof computeSubscriptionAllocation> | null = null
     if (useSubscription) {
       const active = await prisma.customerSubscription.findFirst({
         where: { businessId: platformId, customerId: customerRow.id, status: "ACTIVE" },
         include: { plan: { select: { name: true, totalCredits: true, maxOrdersPerCycle: true, serviceType: true } }, usages: { select: { creditsUsed: true } } },
       })
+      // Entitlement guard: the checkbox must never silently create a subscription
+      // order when there is no active plan.
+      if (!active && !forceNormal) {
+        return NextResponse.json({ success: false, noSubscription: true, reason: "You don't have an active laundry subscription." }, { status: 200 })
+      }
       if (active) {
         const usedCredits = active.usages.reduce((s, u) => s + (u.creditsUsed || 0), 0)
         const state: SubscriptionState = { totalCredits: active.totalCredits || active.plan.totalCredits, usedCredits, ordersUsed: active.usages.length, maxOrdersPerCycle: active.plan.maxOrdersPerCycle ?? null }
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
         if (allocation.blocked && !forceNormal) {
           return NextResponse.json({ success: false, needsNormalOrder: true, reason: allocation.reason, subscription: { remaining: state.totalCredits - usedCredits, ordersUsed: state.ordersUsed, maxOrders: state.maxOrdersPerCycle } })
         }
-        if (!allocation.blocked) sub = { id: active.id, totalCredits: state.totalCredits, planName: active.plan.name }
+        if (!allocation.blocked) sub = { id: active.id, totalCredits: state.totalCredits, planName: active.plan.name, maxOrders: state.maxOrdersPerCycle }
       }
     }
 
@@ -143,7 +148,7 @@ export async function POST(request: Request) {
         where: { id: sub.id },
         data: { usedCredits: allocation.usedAfter, remainingCredits: allocation.remainingAfter },
       })
-      subscriptionResult = { covered: allocation.covered, extra: allocation.extra, remaining: allocation.remainingAfter, planAllowance: sub.totalCredits, ordersUsed: allocation.ordersUsedAfter, extraCharge: grandTotal }
+      subscriptionResult = { covered: allocation.covered, extra: allocation.extra, remaining: allocation.remainingAfter, planAllowance: sub.totalCredits, ordersUsed: allocation.ordersUsedAfter, maxOrders: sub.maxOrders ?? 0, extraCharge: grandTotal }
     }
 
     await prisma.customer.update({ where: { id: customerRow.id }, data: { totalOrders: { increment: 1 }, totalSpent: { increment: grandTotal }, lastOrderAt: new Date() } }).catch(() => {})

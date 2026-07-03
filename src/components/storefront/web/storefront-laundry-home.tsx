@@ -164,27 +164,54 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
         </>
       )}
 
-      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} onClose={() => setActiveService(null)} />}
+      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} onClose={() => setActiveService(null)} />}
       {subscribePlan && <SubscribeSheet plan={subscribePlan} businessId={currentBusinessId} brandColor={brandColor} onClose={() => setSubscribePlan(null)} />}
     </div>
   )
 }
 
 // ── Order flow: Select garments → Details/Pickup → Confirm → Success ─────────
-function ServiceSheet({ service, businessId, brandColor, nav, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; onClose: () => void }) {
+interface SubStatus { active: boolean; subscriptionId?: string; planName?: string; allowance?: number; used?: number; remaining?: number; ordersUsed?: number; maxOrders?: number | null }
+interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
+function ServiceSheet({ service, businessId, brandColor, nav, plans, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; onClose: () => void }) {
   const [step, setStep] = useState<"select" | "details" | "success">("select")
   const [qty, setQty] = useState<Record<string, number>>({})
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [address, setAddress] = useState("")
   const [date, setDate] = useState(""); const [slot, setSlot] = useState("Morning (9AM–12PM)")
   const [useSub, setUseSub] = useState(false); const [forceNormal, setForceNormal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState<{ orderNumber: string; grandTotal: number; subtotal: number; gstTotal: number; pickup: { date: string | null; timeSlot: string | null }; subscription: { covered: number; extra: number; remaining: number; planAllowance: number; ordersUsed: number; extraCharge: number } | null } | null>(null)
+  const [result, setResult] = useState<{ orderNumber: string; grandTotal: number; subtotal: number; gstTotal: number; pickup: { date: string | null; timeSlot: string | null }; subscription: { covered: number; extra: number; remaining: number; planAllowance: number; ordersUsed: number; maxOrders: number; extraCharge: number } | null } | null>(null)
   const [limitNotice, setLimitNotice] = useState<string | null>(null)
+  const [subStatus, setSubStatus] = useState<SubStatus | null>(null)
+  const [coverage, setCoverage] = useState<Coverage | null>(null)
+  const [checkingSub, setCheckingSub] = useState(false)
+  const [showSubRequired, setShowSubRequired] = useState(false)
+  const [subscribeNow, setSubscribeNow] = useState<Plan | null>(null)
 
   const selected = service.items.filter((it) => it.available && (qty[it.garmentId] || 0) > 0)
   const clientSubtotal = selected.reduce((s, it) => s + (it.unitPrice || 0) * (qty[it.garmentId] || 0), 0)
   const bump = (id: string, d: number) => setQty((p) => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) }))
   const accentBg = { backgroundColor: brandColor }
+  const orderItems = () => selected.map((it) => ({ serviceId: service.id, garmentId: it.garmentId, quantity: qty[it.garmentId] }))
+
+  // Entitlement check — runs when the customer ticks "Use my subscription
+  // allowance". Never consumes allowance. No active plan → Subscription Required.
+  const onToggleSub = async (checked: boolean) => {
+    setForceNormal(false); setLimitNotice(null); setCoverage(null)
+    if (!checked) { setUseSub(false); setSubStatus(null); return }
+    if (!phone.trim()) { toast.error("Enter your phone number first"); return }
+    setCheckingSub(true)
+    try {
+      const res = await fetch("/api/core/storefront/laundry-subscription/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, phone }) })
+      const j = await res.json()
+      if (j.success && j.data.active) {
+        setSubStatus(j.data); setUseSub(true)
+        // Coverage preview (read-only — does not consume allowance)
+        const pv = await fetch("/api/core/storefront/laundry-subscription/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, subscriptionId: j.data.subscriptionId, items: orderItems() }) })
+        const pj = await pv.json(); if (pj.success) setCoverage({ covered: pj.data.covered, extra: pj.data.extra, extraCharge: pj.data.extraCharge })
+      } else { setUseSub(false); setSubStatus(null); setShowSubRequired(true) }
+    } catch { toast.error("Could not check subscription") } finally { setCheckingSub(false) }
+  }
 
   const submit = async (force = false) => {
     if (!name.trim() || !phone.trim()) { toast.error("Name and phone are required"); return }
@@ -194,14 +221,15 @@ function ServiceSheet({ service, businessId, brandColor, nav, onClose }: { servi
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           businessId,
-          items: selected.map((it) => ({ serviceId: service.id, garmentId: it.garmentId, quantity: qty[it.garmentId] })),
+          items: orderItems(),
           customer: { name, phone, email: "" },
           pickup: { address, date: date || null, timeSlot: slot },
           useSubscription: useSub, forceNormal: force || forceNormal,
         }),
       })
       const j = await res.json()
-      if (j.needsNormalOrder) { setLimitNotice(j.reason || "Subscription limit reached."); setForceNormal(true); setSubmitting(false); return }
+      if (j.noSubscription) { setUseSub(false); setShowSubRequired(true); setSubmitting(false); return }
+      if (j.needsNormalOrder) { setLimitNotice(j.reason || "Subscription limit reached."); setForceNormal(true); setUseSub(false); setSubmitting(false); return }
       if (!res.ok || !j.success) throw new Error(j.error || "Order failed")
       setResult(j.data); setStep("success")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Order failed") } finally { setSubmitting(false) }
@@ -217,6 +245,29 @@ function ServiceSheet({ service, businessId, brandColor, nav, onClose }: { servi
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-50"><X className="w-4 h-4 text-gray-500" /></button>
         </div>
+
+        {/* Subscription Required popup */}
+        {showSubRequired && (
+          <div className="absolute inset-0 z-10 bg-white/95 flex items-center justify-center p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-sm">
+              <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center"><AlertCircle className="w-6 h-6 text-amber-600" /></div>
+              <h3 className="mt-3 text-center text-base font-bold text-gray-900">Subscription Required</h3>
+              <p className="mt-1 text-center text-sm text-gray-500">You don&apos;t have an active laundry subscription. Subscribe to use monthly cloth allowance and plan benefits.</p>
+              {plans[0] && (
+                <div className="mt-3 rounded-xl border border-gray-100 p-3 text-sm">
+                  <p className="font-semibold text-gray-900">{plans[0].name}</p>
+                  <p className="text-gray-500">{inr(plans[0].price)} / {plans[0].billingCycle.toLowerCase()} · {plans[0].totalCredits} clothes{plans[0].maxOrdersPerCycle ? ` · up to ${plans[0].maxOrdersPerCycle} orders` : ""}</p>
+                </div>
+              )}
+              <div className="mt-4 flex flex-col gap-2">
+                {plans[0] && <button onClick={() => { setShowSubRequired(false); setSubscribeNow(plans[0]) }} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white" style={accentBg}>View Plan &amp; Subscribe</button>}
+                <button onClick={() => { setShowSubRequired(false); setUseSub(false) }} className="w-full rounded-xl py-2.5 text-sm font-semibold border border-gray-200 text-gray-600">Continue Without Subscription</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {subscribeNow && <SubscribeSheet plan={subscribeNow} businessId={businessId} brandColor={brandColor} presetPhone={phone} presetName={name}
+          onClose={() => setSubscribeNow(null)} onSubscribed={() => { setSubscribeNow(null); onToggleSub(true) }} />}
 
         {/* STEP: select garments */}
         {step === "select" && (<>
@@ -264,7 +315,23 @@ function ServiceSheet({ service, businessId, brandColor, nav, onClose }: { servi
                 </select>
               </Field>
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={useSub} onChange={(e) => { setUseSub(e.target.checked); setForceNormal(false); setLimitNotice(null) }} /> Use my subscription allowance</label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={useSub} disabled={checkingSub} onChange={(e) => onToggleSub(e.target.checked)} />
+              Use my subscription allowance {checkingSub && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
+            </label>
+            {useSub && subStatus?.active && (
+              <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs space-y-1">
+                <p className="font-semibold text-gray-800">{subStatus.planName}</p>
+                <div className="flex justify-between text-gray-600"><span>{subStatus.used} of {subStatus.allowance} clothes used</span><span>{subStatus.remaining} remaining</span></div>
+                <div className="text-gray-600">{subStatus.ordersUsed} of {subStatus.maxOrders ?? "∞"} orders used</div>
+                {coverage && (
+                  <div className="pt-1 mt-1 border-t border-blue-100 text-gray-700">
+                    <div className="flex justify-between"><span>Covered by plan</span><span className="font-medium">{coverage.covered} clothes</span></div>
+                    <div className="flex justify-between"><span>Extra (billed normally)</span><span className="font-medium">{coverage.extra} clothes · {inr(coverage.extraCharge.grandTotal)}</span></div>
+                  </div>
+                )}
+              </div>
+            )}
             {limitNotice && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 flex gap-2"><AlertCircle className="w-4 h-4 shrink-0" /><span>{limitNotice}</span></div>
             )}
@@ -292,7 +359,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, onClose }: { servi
                 <div className="pt-1.5 mt-1.5 border-t border-gray-100" />
                 <Row k="Subscription Used" v={`${result.subscription.covered} clothes`} />
                 <Row k="Remaining Allowance" v={`${result.subscription.remaining} / ${result.subscription.planAllowance}`} />
-                <Row k="Orders Used" v={`${result.subscription.ordersUsed} / 2`} />
+                <Row k="Orders Used" v={`${result.subscription.ordersUsed} / ${result.subscription.maxOrders || "∞"}`} />
                 {result.subscription.extra > 0 && <Row k="Extra Garments" v={`${result.subscription.extra} · ${inr(result.subscription.extraCharge)}`} />}
               </>)}
             </div>
@@ -307,8 +374,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, onClose }: { servi
   )
 }
 
-function SubscribeSheet({ plan, businessId, brandColor, onClose }: { plan: Plan; businessId: string; brandColor: string; onClose: () => void }) {
-  const [name, setName] = useState(""); const [phone, setPhone] = useState("")
+function SubscribeSheet({ plan, businessId, brandColor, presetName = "", presetPhone = "", onClose, onSubscribed }: { plan: Plan; businessId: string; brandColor: string; presetName?: string; presetPhone?: string; onClose: () => void; onSubscribed?: () => void }) {
+  const [name, setName] = useState(presetName); const [phone, setPhone] = useState(presetPhone)
   const [submitting, setSubmitting] = useState(false); const [done, setDone] = useState(false)
   const accentBg = { backgroundColor: brandColor }
   const subscribe = async () => {
@@ -322,25 +389,35 @@ function SubscribeSheet({ plan, businessId, brandColor, onClose }: { plan: Plan;
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Subscribe failed")
       setDone(true)
+      if (onSubscribed) setTimeout(onSubscribed, 900)
     } catch (e) { toast.error(e instanceof Error ? e.message : "Subscribe failed") } finally { setSubmitting(false) }
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
       <div className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100"><p className="font-bold text-gray-900">{plan.name}</p><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-50"><X className="w-4 h-4 text-gray-500" /></button></div>
         {done ? (
           <div className="px-6 py-8 text-center">
             <div className="mx-auto w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center"><CheckCircle2 className="w-8 h-8 text-emerald-600" /></div>
             <h2 className="mt-3 text-lg font-bold text-gray-900">Subscription Active</h2>
-            <p className="text-sm text-gray-500 mt-1">{plan.totalCredits} {plan.creditLabel} available this cycle. Tick “Use my subscription allowance” at checkout.</p>
-            <button onClick={onClose} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white" style={accentBg}>Done</button>
+            <p className="text-sm text-gray-500 mt-1">{plan.totalCredits} {plan.creditLabel} available this cycle.</p>
+            <button onClick={onSubscribed || onClose} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white" style={accentBg}>Done</button>
           </div>
         ) : (
           <div className="px-5 py-4 space-y-3">
-            <p className="text-2xl font-extrabold text-gray-900">{inr(plan.price)} <span className="text-sm font-medium text-gray-400">/ {plan.billingCycle.toLowerCase()}</span></p>
+            {/* Plan Review */}
+            <div className="rounded-xl border border-gray-100 p-3 text-sm space-y-1">
+              <Row k="Plan Price" v={`${inr(plan.price)}`} />
+              <Row k="Billing" v={plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase()} />
+              <Row k="Included" v={`${plan.totalCredits} clothes`} />
+              <Row k="Order Limit" v={plan.maxOrdersPerCycle ? `Max ${plan.maxOrdersPerCycle} orders / cycle` : "Unlimited"} />
+              <Row k="Extra Clothes" v="Normal service prices" />
+              <div className="pt-1 mt-1 border-t border-gray-100"><Row k="Amount Payable" v={inr(plan.price)} /></div>
+            </div>
             <Field label="Full Name"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your name" /></Field>
             <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
-            <button disabled={submitting} onClick={subscribe} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 flex items-center justify-center gap-2" style={accentBg}>{submitting && <Loader2 className="w-4 h-4 animate-spin" />} Subscribe</button>
+            <button disabled={submitting} onClick={subscribe} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 flex items-center justify-center gap-2" style={accentBg}>{submitting && <Loader2 className="w-4 h-4 animate-spin" />} Pay {inr(plan.price)} &amp; Subscribe</button>
+            <p className="text-[10px] text-gray-400 text-center">Payment gateway integration pending — the plan activates on confirmation for now.</p>
           </div>
         )}
       </div>

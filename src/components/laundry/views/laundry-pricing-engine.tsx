@@ -24,14 +24,15 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Loader2, Plus, Search, MoreHorizontal, Pencil, Copy, Archive, ArchiveRestore,
-  Trash2, Eye, Power, IndianRupee, Calculator, ArrowUpDown, ChevronLeft, ChevronRight, History,
+  Trash2, Eye, Power, IndianRupee, Calculator, ArrowUpDown, ChevronLeft, ChevronRight, History, Repeat,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { PricingRuleWizard } from "./pricing/pricing-rule-wizard"
 import { PricingSimulator } from "./pricing/pricing-simulator"
+import { LaundrySubscriptionPlans } from "./pricing/laundry-subscription-plans"
 import {
-  PRICING_TYPES, CUSTOMER_TYPES, STATUSES, typeLabel, inr, scopeSummary,
+  PRICING_TYPES, STATUSES, typeLabel, inr, scopeSummary,
   statusBadgeClass, type Rule, type Ref, type RuleAudit,
 } from "./pricing/pricing-shared"
 
@@ -158,6 +159,7 @@ export function LaundryPricingEngine() {
       <Tabs defaultValue="rules">
         <TabsList>
           <TabsTrigger value="rules" className="gap-1.5"><IndianRupee className="h-3.5 w-3.5" /> Pricing Rules</TabsTrigger>
+          <TabsTrigger value="plans" className="gap-1.5"><Repeat className="h-3.5 w-3.5" /> Subscription Plans</TabsTrigger>
           <TabsTrigger value="simulator" className="gap-1.5"><Calculator className="h-3.5 w-3.5" /> Pricing Simulator</TabsTrigger>
         </TabsList>
 
@@ -169,7 +171,6 @@ export function LaundryPricingEngine() {
               <Input placeholder="Search rules, service, garment, category…" className="pl-9 h-9" value={qInput} onChange={(e) => setQInput(e.target.value)} />
             </div>
             <FilterSelect value={status} onChange={(v) => { setPage(1); setStatus(v) }} all="All Status" options={STATUSES.map((s) => ({ value: s, label: typeLabel(s) }))} />
-            <FilterSelect value={customerType} onChange={(v) => { setPage(1); setCustomerType(v) }} all="All Customers" options={CUSTOMER_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))} />
             <FilterSelect value={pricingType} onChange={(v) => { setPage(1); setPricingType(v) }} all="All Types" options={PRICING_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))} />
             <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white h-9" onClick={() => setWizard({ mode: "create", rule: null })}>
               <Plus className="h-3.5 w-3.5" /> New Rule
@@ -254,6 +255,11 @@ export function LaundryPricingEngine() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        {/* ── Subscription Plans tab ── */}
+        <TabsContent value="plans">
+          {currentBusinessId && <LaundrySubscriptionPlans businessId={currentBusinessId} />}
         </TabsContent>
 
         {/* ── Simulator tab ── */}

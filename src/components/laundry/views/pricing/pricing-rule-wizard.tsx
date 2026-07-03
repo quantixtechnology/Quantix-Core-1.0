@@ -2,8 +2,9 @@
 
 // Enterprise Pricing Wizard — a modern two-column, stepped rule builder.
 // Reuses the existing pricing API + conflict detection. Does NOT touch the
-// Billing Resolver. Steps: Customer → Store → Service → Garment → Pricing →
-// Conditions → Priority → Review.
+// Billing Resolver. Steps: Store → Service → Garment → Pricing → Conditions →
+// Priority → Review. (Customer segmentation is intentionally not exposed —
+// laundry pricing is universal standard pricing.)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
@@ -14,8 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import {
-  Loader2, AlertTriangle, Save, Check, ChevronLeft, ChevronRight, X, CheckCircle2, Plus,
-  User, Truck, Building2, Hotel, Cross, Repeat, Crown, Users2,
+  Loader2, AlertTriangle, Save, Check, ChevronLeft, ChevronRight, X, CheckCircle2, Plus, Crown,
   Coins, Package, Scale, Percent, Tag, Calculator, Store as StoreIcon, WashingMachine, Shirt, Info,
   Wind, Flame, Zap, Droplets, ListChecks,
 } from "lucide-react"
@@ -35,19 +35,13 @@ const EMPTY: Form = {
   effectiveFrom: "", effectiveTo: "", isActiveStatus: "ACTIVE",
 }
 
-const STEPS = ["Customer", "Store", "Service", "Garment", "Pricing", "Conditions", "Priority", "Review"]
+// Laundry pricing is universal standard pricing: Store → Service → Garment →
+// Pricing. Customer segmentation (Walk-in/Pickup/Corporate/Hotel/VIP/…) is
+// intentionally NOT part of the current product. The backend customerType field
+// is preserved (rules default to null = all customers) for a future deliberate
+// contract-pricing feature — it is simply not exposed in this UI.
+const STEPS = ["Store", "Service", "Garment", "Pricing", "Conditions", "Priority", "Review"]
 const draftKey = (b: string) => `qx-pricing-draft-${b}`
-
-const CUSTOMER_CARDS = [
-  { value: NONE, title: "All Customers", desc: "Applies to everyone", icon: Users2 },
-  { value: "WALK_IN", title: "Walk-In", desc: "Counter customers", icon: User },
-  { value: "PICKUP", title: "Pickup", desc: "Home pickup orders", icon: Truck },
-  { value: "CORPORATE", title: "Corporate", desc: "Business accounts", icon: Building2 },
-  { value: "HOTEL", title: "Hotel", desc: "Hotel contracts", icon: Hotel },
-  { value: "HOSPITAL", title: "Hospital", desc: "Hospital contracts", icon: Cross },
-  { value: "SUBSCRIPTION", title: "Subscription", desc: "Plan members", icon: Repeat },
-  { value: "VIP", title: "VIP", desc: "Priority customers", icon: Crown },
-]
 const METHODS = [
   { value: "FIXED", title: "Fixed Price", desc: "One flat price", icon: Coins },
   { value: "PER_PIECE", title: "Per Piece", desc: "Price × quantity", icon: Package },
@@ -239,7 +233,7 @@ export function PricingRuleWizard({
   const Heading = ({ title, sub }: { title: string; sub?: string }) => (
     <div className="mb-6"><h3 className="text-xl font-semibold text-slate-800">{title}</h3>{sub && <p className="text-sm text-slate-500 mt-1">{sub}</p>}</div>
   )
-  const SelectCards = ({ options, value, onPick, cols = 2 }: { options: { value: string; title: string; desc: string; icon: typeof User; adv?: boolean }[]; value: string; onPick: (v: string) => void; cols?: number }) => (
+  const SelectCards = ({ options, value, onPick, cols = 2 }: { options: { value: string; title: string; desc: string; icon: typeof Crown; adv?: boolean }[]; value: string; onPick: (v: string) => void; cols?: number }) => (
     <div className={`grid ${cols === 3 ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
       {options.map((o) => {
         const active = value === o.value
@@ -315,31 +309,26 @@ export function PricingRuleWizard({
         <div className="grid md:grid-cols-[1fr_270px] max-h-[62vh] overflow-hidden">
           <div className="overflow-y-auto px-6 py-5">
             {step === 0 && (<>
-              <Heading title="Rule identity & customer" sub="Name the rule and choose who it applies to." />
+              <Heading title="Rule identity & store" sub="Name the rule and choose the store it applies to." />
               <div className="space-y-4">
                 <div className="grid grid-cols-[1fr_auto] gap-4 items-end">
-                  <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Rule Name *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. VIP Dry Clean — Blazer" className="h-10" /></div>
+                  <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Rule Name *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Wash & Iron — Shirt" className="h-10" /></div>
                   <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Status</Label>
                     <div className="flex items-center gap-2 h-10"><Switch checked={form.isActiveStatus === "ACTIVE"} onCheckedChange={(v) => set("isActiveStatus", v ? "ACTIVE" : "INACTIVE")} className="data-[state=checked]:bg-emerald-600" /><span className="text-sm font-medium text-slate-700">{form.isActiveStatus === "ACTIVE" ? "Active" : "Inactive"}</span></div>
                   </div>
                 </div>
-                <SelectCards options={CUSTOMER_CARDS} value={form.customerType} onPick={(v) => set("customerType", v)} />
+                <SelectCards value={form.storeId} onPick={(v) => set("storeId", v)}
+                  options={[{ value: NONE, title: "All Stores", desc: "Apply pricing to every branch", icon: StoreIcon }, ...masters.stores.map((s) => ({ value: s.id, title: (s.storeName || s.name || s.id) as string, desc: "This store only", icon: StoreIcon }))]} />
               </div>
             </>)}
 
             {step === 1 && (<>
-              <Heading title="Which store?" sub="Limit this price to one store, or apply to all." />
-              <SelectCards value={form.storeId} onPick={(v) => set("storeId", v)}
-                options={[{ value: NONE, title: "All Stores", desc: "Apply pricing to every branch", icon: StoreIcon }, ...masters.stores.map((s) => ({ value: s.id, title: (s.storeName || s.name || s.id) as string, desc: "This store only", icon: StoreIcon }))]} />
-            </>)}
-
-            {step === 2 && (<>
               <Heading title="Which service?" sub="Pick the laundry service this price is for." />
               <SelectCards value={form.serviceId} onPick={(v) => set("serviceId", v)} cols={masters.services.length > 4 ? 3 : 2}
                 options={[{ value: NONE, title: "All Services", desc: "Every service", icon: WashingMachine }, ...masters.services.map((s) => ({ value: s.id, title: (s.name || s.id) as string, desc: "Service", icon: svcIcon(s.name) }))]} />
             </>)}
 
-            {step === 3 && (<>
+            {step === 2 && (<>
               <Heading title="Category & garment" sub="Choose the garment group first, then the garment." />
               <div className="space-y-6">
                 {/* A. Category — chosen first */}
@@ -374,7 +363,7 @@ export function PricingRuleWizard({
               </div>
             </>)}
 
-            {step === 4 && (<>
+            {step === 3 && (<>
               <Heading title="Pricing method" sub="How the price is calculated." />
               <SelectCards options={METHODS} value={form.pricingType} onPick={(v) => set("pricingType", v)} />
               <div className="grid grid-cols-2 gap-3 mt-4">
@@ -384,7 +373,7 @@ export function PricingRuleWizard({
               {method?.adv && <p className="mt-3 text-[11px] text-violet-600 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">Advanced methods are captured here; the billing engine currently computes Fixed / Per Piece / Per KG. Discount & formula methods need a billing add-on to affect live charges.</p>}
             </>)}
 
-            {step === 5 && (<>
+            {step === 4 && (<>
               <Heading title="Conditions & business rules" sub="All optional — leave blank to skip." />
               <div className="space-y-5">
                 <div>
@@ -409,7 +398,7 @@ export function PricingRuleWizard({
               </div>
             </>)}
 
-            {step === 6 && (<>
+            {step === 5 && (<>
               <Heading title="Priority & notes" sub="Breaks ties when two equally-specific rules match the same item." />
               <div className="space-y-5">
                 <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Priority</Label>
@@ -429,8 +418,8 @@ export function PricingRuleWizard({
                     ))}
                   </div>
                   <div className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-600 leading-relaxed">
-                    <p className="flex items-start gap-1.5"><Info className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" /><span>The billing engine picks the <b>most specific</b> matching rule first (a rule that targets Customer + Service + Category + Garment beats a generic one). <b>Priority only breaks ties</b> between rules of equal specificity — the higher number wins.</span></p>
-                    <p className="mt-2 pl-5 text-slate-500">e.g. two rules both scoped to <i>VIP · Dry Clean · Blazer</i>: the one with Priority 50 wins over Priority 0.</p>
+                    <p className="flex items-start gap-1.5"><Info className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" /><span>The billing engine picks the <b>most specific</b> matching rule first (a rule that targets Store + Service + Category + Garment beats a generic one). <b>Priority only breaks ties</b> between rules of equal specificity — the higher number wins.</span></p>
+                    <p className="mt-2 pl-5 text-slate-500">e.g. two rules both scoped to <i>Dry Clean · Men · Blazer</i>: the one with Priority 50 wins over Priority 0.</p>
                   </div>
                 </div>
 
@@ -438,7 +427,7 @@ export function PricingRuleWizard({
               </div>
             </>)}
 
-            {step === 7 && (<>
+            {step === 6 && (<>
               <Heading title="Review & create" sub="Confirm everything before saving." />
               <div className="rounded-xl border border-slate-200 overflow-hidden">
                 <div className="flex items-center justify-between bg-slate-50 px-5 py-3 border-b border-slate-200">
@@ -446,7 +435,7 @@ export function PricingRuleWizard({
                   <Badge variant="outline" className={form.isActiveStatus === "ACTIVE" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-300 text-slate-500 bg-white"}>{form.isActiveStatus === "ACTIVE" ? "🟢 Active" : typeLabel(form.isActiveStatus)}</Badge>
                 </div>
                 <div className="divide-y divide-slate-100 text-sm">
-                  {[["Rule", form.name || "—"], ["Customer", scope[0]], ["Store", scope[1]], ["Service", scope[2]], ["Category", catDisplay], ["Garment", grmDisplay],
+                  {[["Rule", form.name || "—"], ["Store", scope[1]], ["Service", scope[2]], ["Category", catDisplay], ["Garment", grmDisplay],
                     ["Pricing", `${inr(Number(form.price) || 0)} / ${method?.title}`], ["GST", `${form.gstPercent || 0}%`],
                     ["Conditions", [form.weekendPrice && "Weekend", form.expressCharge && "Express", form.pickupCharge && "Pickup", form.deliveryCharge && "Delivery", form.minCharge && "Min", form.maxCharge && "Max"].filter(Boolean).join(", ") || "None"],
                     ["Priority", `${prio} · ${priorityLabel(prio)}`], ["Effective", form.effectiveFrom || form.effectiveTo ? `${form.effectiveFrom || "…"} → ${form.effectiveTo || "…"}` : "Always"]].map(([k, v]) => (
@@ -477,7 +466,7 @@ export function PricingRuleWizard({
 
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Applies To</p>
-                {[["All Customers", scope[0]], ["All Stores", scope[1]]].map(([def, v]) => (
+                {[["All Stores", scope[1]]].map(([def, v]) => (
                   <p key={def} className="flex items-center gap-1.5 text-xs text-slate-600 py-0.5"><Check className="h-3 w-3 text-emerald-500 shrink-0" /> {v === "All" ? def : v}</p>
                 ))}
               </div>
