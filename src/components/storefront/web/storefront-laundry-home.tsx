@@ -10,7 +10,8 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle } from "lucide-react"
+import { useAuthStore } from "@/stores/auth-store"
+import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
 import { toast } from "sonner"
 import type { WebNav } from "./storefront-website"
 
@@ -22,6 +23,7 @@ interface Plan { id: string; name: string; slug: string; description: string | n
 
 export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string; nav: WebNav; storeClosed?: boolean }) {
   const { currentBusinessId, currentStoreId } = useAdminStore()
+  const { isAuthenticated, token } = useAuthStore()
   const [services, setServices] = useState<Service[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
@@ -164,8 +166,8 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
         </>
       )}
 
-      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} onClose={() => setActiveService(null)} />}
-      {subscribePlan && <SubscribeSheet plan={subscribePlan} businessId={currentBusinessId} brandColor={brandColor} onClose={() => setSubscribePlan(null)} />}
+      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} onClose={() => setActiveService(null)} />}
+      {subscribePlan && <SubscribeSheet plan={subscribePlan} businessId={currentBusinessId} brandColor={brandColor} nav={nav} isAuthenticated={isAuthenticated} token={token} onClose={() => setSubscribePlan(null)} />}
     </div>
   )
 }
@@ -173,7 +175,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
 // ── Order flow: Select garments → Details/Pickup → Confirm → Success ─────────
 interface SubStatus { active: boolean; subscriptionId?: string; planName?: string; allowance?: number; used?: number; remaining?: number; ordersUsed?: number; maxOrders?: number | null }
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
-function ServiceSheet({ service, businessId, brandColor, nav, plans, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; onClose: () => void }) {
+function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; onClose: () => void }) {
   const [step, setStep] = useState<"select" | "details" | "success">("select")
   const [qty, setQty] = useState<Record<string, number>>({})
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [address, setAddress] = useState("")
@@ -266,8 +268,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, onClose }: 
             </div>
           </div>
         )}
-        {subscribeNow && <SubscribeSheet plan={subscribeNow} businessId={businessId} brandColor={brandColor} presetPhone={phone} presetName={name}
-          onClose={() => setSubscribeNow(null)} onSubscribed={() => { setSubscribeNow(null); onToggleSub(true) }} />}
+        {subscribeNow && <SubscribeSheet plan={subscribeNow} businessId={businessId} brandColor={brandColor} nav={nav} isAuthenticated={isAuthenticated} token={token}
+          onClose={() => setSubscribeNow(null)} onActivated={() => { setSubscribeNow(null); onToggleSub(true) }} />}
 
         {/* STEP: select garments */}
         {step === "select" && (<>
@@ -374,50 +376,80 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, onClose }: 
   )
 }
 
-function SubscribeSheet({ plan, businessId, brandColor, presetName = "", presetPhone = "", onClose, onSubscribed }: { plan: Plan; businessId: string; brandColor: string; presetName?: string; presetPhone?: string; onClose: () => void; onSubscribed?: () => void }) {
-  const [name, setName] = useState(presetName); const [phone, setPhone] = useState(presetPhone)
-  const [submitting, setSubmitting] = useState(false); const [done, setDone] = useState(false)
+// Subscription PURCHASE — reuses the existing customer session + payment cycle.
+// Guests are sent to the existing Sign In / Create Account flow (nav → "auth").
+// Authenticated customers get a Plan Review with their identity from the session
+// (no name/phone fields) → Continue to Payment. The CustomerSubscription is
+// activated only after the payment is verified server-side.
+type SubStep = "review" | "pending" | "success"
+function SubscribeSheet({ plan, businessId, brandColor, nav, isAuthenticated, token, onClose, onActivated }: { plan: Plan; businessId: string; brandColor: string; nav: WebNav; isAuthenticated: boolean; token: string | null; onClose: () => void; onActivated?: () => void }) {
+  const [step, setStep] = useState<SubStep>("review")
+  const [submitting, setSubmitting] = useState(false)
+  const [purchase, setPurchase] = useState<{ purchaseId: string; onlineGateways: string[]; paymentPending: boolean; customer?: { name?: string; email?: string; phone?: string } } | null>(null)
+  const [activated, setActivated] = useState<{ cycle?: { start: string; end: string }; plan?: { name: string; totalCredits: number; maxOrdersPerCycle: number | null } } | null>(null)
   const accentBg = { backgroundColor: brandColor }
-  const subscribe = async () => {
-    if (!name.trim() || !phone.trim()) { toast.error("Name and phone are required"); return }
+  const authHeaders = () => ({ "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) })
+
+  const continueToSubscribe = async () => {
+    if (!isAuthenticated) { onClose(); nav.go("auth"); return } // reuse existing customer auth
     setSubmitting(true)
     try {
-      const res = await fetch("/api/core/storefront/laundry-subscription/subscribe", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId, planId: plan.id, customer: { name, phone } }),
-      })
+      const res = await fetch("/api/core/storefront/laundry-subscription/purchase", { method: "POST", headers: authHeaders(), body: JSON.stringify({ businessId, planId: plan.id }) })
       const j = await res.json()
-      if (!res.ok || !j.success) throw new Error(j.error || "Subscribe failed")
-      setDone(true)
-      if (onSubscribed) setTimeout(onSubscribed, 900)
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Subscribe failed") } finally { setSubmitting(false) }
+      if (j.alreadyActive) { toast.success("You're already subscribed to this plan."); if (onActivated) onActivated(); else onClose(); return }
+      if (!res.ok || !j.success) throw new Error(j.error || "Could not start purchase")
+      setPurchase(j.data)
+      if (j.data.paymentPending) { setStep("pending"); return }
+      // Online gateway available → hand off to the existing payment checkout.
+      // (Razorpay client handoff is wired to the platform's payment routes; the
+      //  confirm step below activates only after verified payment.)
+      setStep("pending")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setSubmitting(false) }
   }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
       <div className="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100"><p className="font-bold text-gray-900">{plan.name}</p><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-50"><X className="w-4 h-4 text-gray-500" /></button></div>
-        {done ? (
-          <div className="px-6 py-8 text-center">
-            <div className="mx-auto w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center"><CheckCircle2 className="w-8 h-8 text-emerald-600" /></div>
-            <h2 className="mt-3 text-lg font-bold text-gray-900">Subscription Active</h2>
-            <p className="text-sm text-gray-500 mt-1">{plan.totalCredits} {plan.creditLabel} available this cycle.</p>
-            <button onClick={onSubscribed || onClose} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white" style={accentBg}>Done</button>
-          </div>
-        ) : (
+
+        {step === "review" && (
           <div className="px-5 py-4 space-y-3">
-            {/* Plan Review */}
+            <p className="text-2xl font-extrabold text-gray-900">{inr(plan.price)} <span className="text-sm font-medium text-gray-400">/ {plan.billingCycle.toLowerCase()}</span></p>
             <div className="rounded-xl border border-gray-100 p-3 text-sm space-y-1">
-              <Row k="Plan Price" v={`${inr(plan.price)}`} />
+              <Row k="Plan Price" v={inr(plan.price)} />
               <Row k="Billing" v={plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase()} />
               <Row k="Included" v={`${plan.totalCredits} clothes`} />
               <Row k="Order Limit" v={plan.maxOrdersPerCycle ? `Max ${plan.maxOrdersPerCycle} orders / cycle` : "Unlimited"} />
               <Row k="Extra Clothes" v="Normal service prices" />
               <div className="pt-1 mt-1 border-t border-gray-100"><Row k="Amount Payable" v={inr(plan.price)} /></div>
             </div>
-            <Field label="Full Name"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your name" /></Field>
-            <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
-            <button disabled={submitting} onClick={subscribe} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 flex items-center justify-center gap-2" style={accentBg}>{submitting && <Loader2 className="w-4 h-4 animate-spin" />} Pay {inr(plan.price)} &amp; Subscribe</button>
-            <p className="text-[10px] text-gray-400 text-center">Payment gateway integration pending — the plan activates on confirmation for now.</p>
+            {!isAuthenticated && <p className="text-xs text-gray-500">Sign in or create your account to subscribe — we&apos;ll bring you right back.</p>}
+            <button disabled={submitting} onClick={continueToSubscribe} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 flex items-center justify-center gap-2" style={accentBg}>
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : isAuthenticated ? <CreditCard className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+              {isAuthenticated ? "Continue to Payment" : "Sign In / Create Account to Subscribe"}
+            </button>
+          </div>
+        )}
+
+        {step === "pending" && purchase && (
+          <div className="px-6 py-8 text-center">
+            <div className="mx-auto w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center"><CreditCard className="w-7 h-7 text-amber-600" /></div>
+            <h2 className="mt-3 text-lg font-bold text-gray-900">Payment Pending</h2>
+            <p className="text-sm text-gray-500 mt-1">Your purchase of <b>{plan.name}</b> for {inr(plan.price)} is created and awaiting payment.</p>
+            {purchase.paymentPending
+              ? <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">No online payment gateway is configured for this store yet, so payment can&apos;t be completed here. Your subscription will activate only after a verified payment — nothing is charged and no allowance is available yet.</p>
+              : <p className="mt-2 text-xs text-gray-500">Complete the payment in the checkout to activate your plan.</p>}
+            <p className="mt-2 text-[11px] text-gray-400 font-mono">Ref: {purchase.purchaseId}</p>
+            <button onClick={onClose} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold border border-gray-200 text-gray-600">Close</button>
+          </div>
+        )}
+
+        {step === "success" && (
+          <div className="px-6 py-8 text-center">
+            <div className="mx-auto w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center"><CheckCircle2 className="w-8 h-8 text-emerald-600" /></div>
+            <h2 className="mt-3 text-lg font-bold text-gray-900">Subscription Activated</h2>
+            <p className="text-sm text-gray-500 mt-1">{activated?.plan?.totalCredits ?? plan.totalCredits} clothes available this cycle.</p>
+            <button onClick={onActivated || onClose} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white" style={accentBg}>Done</button>
           </div>
         )}
       </div>

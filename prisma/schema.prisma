@@ -1806,6 +1806,37 @@ model SubscriptionUsage {
   @@index([createdAt])
 }
 
+// A customer's PURCHASE of a SubscriptionPlan — the paid commercial transaction
+// that precedes activation. This reuses the shared Customer + payment provider
+// (PaymentGateway / Razorpay); it is NOT a separate checkout engine. The plan is
+// activated (CustomerSubscription) ONLY after the payment is verified — the
+// status machine below enforces that. Scalar FKs (no relations) keep this fully
+// additive to the existing Customer/Business/Plan/Subscription models.
+// status:        INITIATED | PAYMENT_PENDING | PAID | ACTIVATED | FAILED
+// paymentStatus: PENDING | PROCESSING | COMPLETED | FAILED  (reuses platform names)
+model SubscriptionPurchase {
+  id                     String    @id @default(cuid())
+  businessId             String
+  customerId             String
+  planId                 String
+  amount                 Float
+  currency               String    @default("INR")
+  status                 String    @default("INITIATED")
+  paymentStatus          String    @default("PENDING")
+  paymentMethod          String?
+  gateway                String?
+  paymentReference       String?   // gateway order id / provider reference
+  paymentTransactionId   String?   // gateway payment id after verification
+  customerSubscriptionId String?   // set once activated
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  paidAt                 DateTime?
+
+  @@index([businessId])
+  @@index([customerId])
+  @@index([status])
+}
+
 model Customer {
   id            String                 @id @default(cuid())
   businessId    String
