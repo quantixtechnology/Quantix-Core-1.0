@@ -21,7 +21,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { SearchableSelect, type Option } from "./searchable-select"
-import { NONE, typeLabel, inr, type Ref, type Rule } from "./pricing-shared"
+import { NONE, typeLabel, inr, priorityLabel, type Ref, type Rule } from "./pricing-shared"
 
 type Mode = "create" | "edit" | "duplicate"
 interface Masters { services: Ref[]; garments: Ref[]; cats: Ref[]; stores: Ref[] }
@@ -151,6 +151,21 @@ export function PricingRuleWizard({
 
   const fields = useMemo(() => methodFields(form.pricingType), [form.pricingType])
 
+  // Garments belonging to the chosen category (all garments when "All Categories").
+  const visibleGarments = useMemo(
+    () => (form.categoryId === NONE ? masters.garments : masters.garments.filter((g) => g.categoryId === form.categoryId)),
+    [masters.garments, form.categoryId],
+  )
+
+  // Category is chosen BEFORE garment. Changing category clears a garment that no
+  // longer belongs to it (Women → Bedding must drop "Pant").
+  const pickCategory = (v: string) => setForm((p) => {
+    if (v === p.categoryId) return p
+    const g = v !== NONE && p.garmentId !== NONE ? masters.garments.find((x) => x.id === p.garmentId) : undefined
+    const clear = v !== NONE && p.garmentId !== NONE && (!g || g.categoryId !== v)
+    return { ...p, categoryId: v, garmentId: clear ? NONE : p.garmentId }
+  })
+
   const buildPayload = () => {
     const num = (v: string) => (v === "" ? "" : v)
     return {
@@ -254,6 +269,12 @@ export function PricingRuleWizard({
     nameOf(masters.cats, form.categoryId),
     nameOf(masters.garments, form.garmentId),
   ]
+  // Category and Garment are a hierarchy (Category › Garment), NOT part of the
+  // customer/store "Applies To" scope. Category is never the garment.
+  const catDisplay = form.categoryId === NONE ? "All Categories" : scope[3]
+  const grmDisplay = form.garmentId === NONE ? "All Garments" : scope[4]
+  const garmentPath = `${catDisplay} › ${grmDisplay}`
+  const prio = Number(form.priority) || 0
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -319,21 +340,37 @@ export function PricingRuleWizard({
             </>)}
 
             {step === 3 && (<>
-              <Heading title="Which garment?" sub="Search, or pick from popular garments. Optionally target a category." />
-              <div className="space-y-4">
-                <SearchableSelect value={form.garmentId} onChange={(v) => set("garmentId", v)} options={refOpts(masters.garments)} placeholder="Search garment…" />
-                {masters.garments.length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Popular</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => set("garmentId", NONE)} className={`rounded-lg border px-3 py-2 text-sm ${form.garmentId === NONE ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50"}`}>All garments</button>
-                      {masters.garments.slice(0, 8).map((g) => (
-                        <button key={g.id} type="button" onClick={() => set("garmentId", g.id)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${form.garmentId === g.id ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50"}`}><Shirt className="h-3.5 w-3.5 text-slate-400" /> {g.name}</button>
-                      ))}
-                    </div>
+              <Heading title="Category & garment" sub="Choose the garment group first, then the garment." />
+              <div className="space-y-6">
+                {/* A. Category — chosen first */}
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 mb-1">Which category?</p>
+                  <p className="text-xs text-slate-400 mb-3">Choose the garment group first.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => pickCategory(NONE)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${form.categoryId === NONE ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50 text-slate-600"}`}>
+                      <Package className="h-3.5 w-3.5 text-slate-400" /> All Categories</button>
+                    {masters.cats.map((c) => (
+                      <button key={c.id} type="button" onClick={() => pickCategory(c.id)}
+                        className={`rounded-lg border px-3 py-2 text-sm transition-colors ${form.categoryId === c.id ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50 text-slate-600"}`}>{c.name}</button>
+                    ))}
                   </div>
-                )}
-                <div><div className="flex items-center gap-2 mb-1.5 text-slate-500"><Package className="h-4 w-4" /><span className="text-sm">Category (optional)</span></div><SearchableSelect value={form.categoryId} onChange={(v) => set("categoryId", v)} options={refOpts(masters.cats)} placeholder="All categories" /></div>
+                  {form.categoryId !== NONE && <p className="mt-2 text-xs text-slate-500">Selected: <b className="text-slate-700">{catDisplay}</b></p>}
+                </div>
+
+                {/* B. Garment — filtered by the chosen category */}
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 mb-1">Which garment?</p>
+                  <p className="text-xs text-slate-400 mb-3">{form.categoryId === NONE ? "Search across all garments, or apply to every garment." : `Garments in ${catDisplay}.`}</p>
+                  <SearchableSelect value={form.garmentId} onChange={(v) => set("garmentId", v)} options={refOpts(visibleGarments)} placeholder="Search garment…" />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => set("garmentId", NONE)} className={`rounded-lg border px-3 py-2 text-sm ${form.garmentId === NONE ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50 text-slate-600"}`}>All Garments</button>
+                    {visibleGarments.slice(0, 10).map((g) => (
+                      <button key={g.id} type="button" onClick={() => set("garmentId", g.id)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${form.garmentId === g.id ? "border-blue-500 bg-blue-50 font-medium text-blue-700" : "border-slate-200 hover:bg-slate-50 text-slate-600"}`}><Shirt className="h-3.5 w-3.5 text-slate-400" /> {g.name}</button>
+                    ))}
+                    {visibleGarments.length === 0 && form.categoryId !== NONE && <p className="text-xs text-slate-400 py-2">No garments in this category yet — “All Garments” will apply the rule to the whole category.</p>}
+                  </div>
+                </div>
               </div>
             </>)}
 
@@ -373,14 +410,30 @@ export function PricingRuleWizard({
             </>)}
 
             {step === 6 && (<>
-              <Heading title="Priority & notes" sub="Higher priority wins when rules overlap." />
-              <div className="space-y-4">
+              <Heading title="Priority & notes" sub="Breaks ties when two equally-specific rules match the same item." />
+              <div className="space-y-5">
                 <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Priority</Label>
                   <div className="flex items-center gap-3">
-                    <input type="range" min={0} max={100} value={Number(form.priority) || 0} onChange={(e) => set("priority", e.target.value)} className="flex-1 accent-blue-600" />
+                    <input type="range" min={0} max={100} value={prio} onChange={(e) => set("priority", e.target.value)} className="flex-1 accent-blue-600" />
                     <Input type="number" value={form.priority} onChange={(e) => set("priority", e.target.value)} className="h-10 w-20" />
                   </div>
+                  <p className="text-xs text-slate-500 pt-0.5">{prio} · <b className="text-slate-700">{priorityLabel(prio)}</b></p>
                 </div>
+
+                {/* Priority reference + how the resolver actually decides */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Rule Priority</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                    {[["0", "Normal"], ["25", "Preferred"], ["50", "High"], ["75", "Override"], ["100", "Highest"]].map(([n, lbl]) => (
+                      <div key={n} className="flex items-center justify-between"><span className="font-mono text-slate-500">{n}</span><span className="font-medium text-slate-700">{lbl}</span></div>
+                    ))}
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-600 leading-relaxed">
+                    <p className="flex items-start gap-1.5"><Info className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" /><span>The billing engine picks the <b>most specific</b> matching rule first (a rule that targets Customer + Service + Category + Garment beats a generic one). <b>Priority only breaks ties</b> between rules of equal specificity — the higher number wins.</span></p>
+                    <p className="mt-2 pl-5 text-slate-500">e.g. two rules both scoped to <i>VIP · Dry Clean · Blazer</i>: the one with Priority 50 wins over Priority 0.</p>
+                  </div>
+                </div>
+
                 <div className="space-y-1.5"><Label className="text-xs font-medium text-slate-600">Rule Notes</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} className="min-h-[70px]" placeholder="Internal notes about this rule…" /></div>
               </div>
             </>)}
@@ -393,10 +446,10 @@ export function PricingRuleWizard({
                   <Badge variant="outline" className={form.isActiveStatus === "ACTIVE" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-300 text-slate-500 bg-white"}>{form.isActiveStatus === "ACTIVE" ? "🟢 Active" : typeLabel(form.isActiveStatus)}</Badge>
                 </div>
                 <div className="divide-y divide-slate-100 text-sm">
-                  {[["Rule", form.name || "—"], ["Customer", scope[0]], ["Store", scope[1]], ["Service", scope[2]], ["Garment", scope[3]],
+                  {[["Rule", form.name || "—"], ["Customer", scope[0]], ["Store", scope[1]], ["Service", scope[2]], ["Category", catDisplay], ["Garment", grmDisplay],
                     ["Pricing", `${inr(Number(form.price) || 0)} / ${method?.title}`], ["GST", `${form.gstPercent || 0}%`],
                     ["Conditions", [form.weekendPrice && "Weekend", form.expressCharge && "Express", form.pickupCharge && "Pickup", form.deliveryCharge && "Delivery", form.minCharge && "Min", form.maxCharge && "Max"].filter(Boolean).join(", ") || "None"],
-                    ["Priority", form.priority || "0"], ["Effective", form.effectiveFrom || form.effectiveTo ? `${form.effectiveFrom || "…"} → ${form.effectiveTo || "…"}` : "Always"]].map(([k, v]) => (
+                    ["Priority", `${prio} · ${priorityLabel(prio)}`], ["Effective", form.effectiveFrom || form.effectiveTo ? `${form.effectiveFrom || "…"} → ${form.effectiveTo || "…"}` : "Always"]].map(([k, v]) => (
                     <div key={k} className="flex justify-between gap-4 px-5 py-3"><span className="text-slate-400">{k}</span><span className="font-semibold text-slate-800 text-right">{v}</span></div>
                   ))}
                   <div className="flex justify-between gap-4 px-5 py-3.5 bg-blue-50/50"><span className="font-semibold text-slate-700">Estimated (2 pcs + GST)</span><span className="font-bold text-blue-700">{inr(simulate(form).total > 0 ? simulate(form).total : Number(form.price) || 0)}</span></div>
@@ -424,9 +477,14 @@ export function PricingRuleWizard({
 
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Applies To</p>
-                {[["All Customers", scope[0]], ["All Stores", scope[1]], ["Category", scope[3]]].map(([def, v]) => (
+                {[["All Customers", scope[0]], ["All Stores", scope[1]]].map(([def, v]) => (
                   <p key={def} className="flex items-center gap-1.5 text-xs text-slate-600 py-0.5"><Check className="h-3 w-3 text-emerald-500 shrink-0" /> {v === "All" ? def : v}</p>
                 ))}
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Garment</p>
+                <p className="text-xs font-medium text-slate-700">{garmentPath}</p>
               </div>
 
               <div className="mt-3 pt-3 border-t border-slate-100">
@@ -439,7 +497,7 @@ export function PricingRuleWizard({
               </div>
 
               <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-slate-400">Priority <b className="text-slate-700">{form.priority || 0}</b></span>
+                <span className="text-slate-400">Priority <b className="text-slate-700">{prio} · {priorityLabel(prio)}</b></span>
                 <Badge variant="outline" className={`text-[10px] ${form.isActiveStatus === "ACTIVE" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-300 text-slate-500 bg-white"}`}>{form.isActiveStatus === "ACTIVE" ? "🟢 Active" : typeLabel(form.isActiveStatus)}</Badge>
               </div>
             </div>

@@ -13,7 +13,19 @@ export const typeLabel = (t?: string | null) =>
 export const inr = (n: number | null | undefined) =>
   n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
 
-export interface Ref { id: string; name?: string; storeName?: string }
+export interface Ref { id: string; name?: string; storeName?: string; categoryId?: string | null }
+
+// Human-readable priority band. The Billing Resolver uses the numeric value; this
+// label is display-only (ranges: 0–24 Normal, 25–49 Preferred, 50–74 High,
+// 75–99 Override, 100 Highest).
+export const priorityLabel = (n: number | null | undefined): string => {
+  const v = Number(n) || 0
+  if (v >= 100) return "Highest"
+  if (v >= 75) return "Override"
+  if (v >= 50) return "High"
+  if (v >= 25) return "Preferred"
+  return "Normal"
+}
 
 export interface Rule {
   id: string
@@ -104,7 +116,15 @@ export function priceFieldsFor(pricingType: string): FieldSpec[] {
   }
 }
 
-export const scopeSummary = (r: Pick<Rule, "service" | "garment" | "category" | "store" | "customerType">) =>
-  [r.service?.name, r.garment?.name, r.category?.name, r.store?.storeName, r.customerType && typeLabel(r.customerType)]
-    .filter(Boolean)
-    .join(" · ") || "All (generic)"
+// Scope in pricing hierarchy order: Service › Category › Garment, with the
+// customer/store scope appended when set. Category/Garment fall back to
+// "All Categories" / "All Garments" so the hierarchy reads correctly (Category
+// is NOT the garment). e.g. "Wash & Iron · Women · Pant", "Wash · All
+// Categories · All Garments", "Dry Clean · Men · All Garments".
+export const scopeSummary = (r: Pick<Rule, "service" | "garment" | "category" | "store" | "customerType">) => {
+  const svc = r.service?.name, cat = r.category?.name, grm = r.garment?.name
+  const extra = [r.customerType && typeLabel(r.customerType), r.store?.storeName].filter(Boolean)
+  if (!svc && !cat && !grm && extra.length === 0) return "All (generic)"
+  const core = [svc || "All Services", cat || "All Categories", grm || "All Garments"].join(" · ")
+  return extra.length ? `${core} · ${extra.join(" · ")}` : core
+}
