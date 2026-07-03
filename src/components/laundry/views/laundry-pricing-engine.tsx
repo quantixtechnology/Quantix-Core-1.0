@@ -24,13 +24,15 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Loader2, Plus, Search, MoreHorizontal, Pencil, Copy, Archive, ArchiveRestore,
-  Trash2, Eye, Power, IndianRupee, Calculator, ArrowUpDown, ChevronLeft, ChevronRight, History, Repeat,
+  Trash2, Eye, Power, IndianRupee, Calculator, ArrowUpDown, ChevronLeft, ChevronRight, History, Repeat, WashingMachine, Shirt,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { PricingRuleWizard } from "./pricing/pricing-rule-wizard"
 import { PricingSimulator } from "./pricing/pricing-simulator"
 import { LaundrySubscriptionPlans } from "./pricing/laundry-subscription-plans"
+import { LaundryServicesPricing } from "./pricing/laundry-services-pricing"
+import { LaundryGarmentsMaster } from "./laundry-garments-master"
 import {
   PRICING_TYPES, STATUSES, typeLabel, inr, scopeSummary,
   statusBadgeClass, type Rule, type Ref, type RuleAudit,
@@ -156,15 +158,28 @@ export function LaundryPricingEngine() {
         </div>
       </div>
 
-      <Tabs defaultValue="rules">
+      <Tabs defaultValue="services">
         <TabsList>
-          <TabsTrigger value="rules" className="gap-1.5"><IndianRupee className="h-3.5 w-3.5" /> Pricing Rules</TabsTrigger>
+          <TabsTrigger value="services" className="gap-1.5"><WashingMachine className="h-3.5 w-3.5" /> Services</TabsTrigger>
+          <TabsTrigger value="garments" className="gap-1.5"><Shirt className="h-3.5 w-3.5" /> Garments</TabsTrigger>
           <TabsTrigger value="plans" className="gap-1.5"><Repeat className="h-3.5 w-3.5" /> Subscription Plans</TabsTrigger>
+          <TabsTrigger value="rules" className="gap-1.5"><IndianRupee className="h-3.5 w-3.5" /> Advanced Pricing</TabsTrigger>
           <TabsTrigger value="simulator" className="gap-1.5"><Calculator className="h-3.5 w-3.5" /> Pricing Simulator</TabsTrigger>
         </TabsList>
 
-        {/* ── Rules tab ── */}
+        {/* ── Services tab (default) — simple price menu ── */}
+        <TabsContent value="services">
+          {currentBusinessId && <LaundryServicesPricing businessId={currentBusinessId} />}
+        </TabsContent>
+
+        {/* ── Garments master tab ── */}
+        <TabsContent value="garments">
+          {currentBusinessId && <LaundryGarmentsMaster />}
+        </TabsContent>
+
+        {/* ── Advanced Pricing tab (existing rule engine) ── */}
         <TabsContent value="rules" className="space-y-3">
+          <p className="text-xs text-muted-foreground -mt-1">Optional advanced pricing rules for special pricing scenarios. Most laundries only need the Services tab.</p>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

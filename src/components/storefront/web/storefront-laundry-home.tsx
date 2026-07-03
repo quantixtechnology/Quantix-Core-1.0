@@ -109,18 +109,17 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
             {filteredServices.length === 0 ? (
               <p className="text-sm text-gray-400 py-8 text-center">No laundry services configured yet.</p>
             ) : (
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filteredServices.map((s) => (
                   <div key={s.id} className="rounded-2xl border border-gray-100 bg-white shadow-sm flex flex-col overflow-hidden">
                     <CardImage src={s.imageUrl} brandColor={brandColor} />
-                    <div className="p-4 flex flex-col flex-1">
+                    <div className="p-3.5 flex flex-col flex-1">
                       <p className="font-semibold text-gray-900 truncate">{s.name}</p>
-                      {s.fromPrice != null ? <p className="text-xs text-gray-400">From {inr(s.fromPrice)} / {s.fromUnit}</p> : <p className="text-xs text-gray-400">Pricing unavailable</p>}
-                      {s.description && <p className="mt-2 text-xs text-gray-500 line-clamp-2">{s.description}</p>}
-                      <button onClick={() => setActiveService(s)} disabled={s.pricedCount === 0}
-                        className="mt-3 rounded-lg py-2 text-xs font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>
-                        {s.pricedCount ? "Select Service" : "No pricing yet"}
-                      </button>
+                      {s.fromPrice != null ? <p className="text-xs text-gray-500">From {inr(s.fromPrice)} / {s.fromUnit}</p> : <p className="text-xs text-gray-400">Pricing unavailable</p>}
+                      {s.description && <p className="mt-1.5 text-xs text-gray-500 line-clamp-2 flex-1">{s.description}</p>}
+                      {s.pricedCount > 0
+                        ? <button onClick={() => setActiveService(s)} className="mt-3 rounded-lg py-2 text-xs font-semibold text-white active:opacity-80" style={accentBg}>Select Service</button>
+                        : <p className="mt-3 text-[11px] text-gray-400">Not available for ordering yet.</p>}
                     </div>
                   </div>
                 ))}

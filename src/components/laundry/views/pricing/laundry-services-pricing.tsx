@@ -1,0 +1,248 @@
+"use client"
+
+// Services tab — the PRIMARY laundry price-menu admin. Service → Garments →
+// Price, with one Save. No wizard, no customer scope, no priority. It reads/
+// writes the simple per-service price API (/api/laundry/services/[id]/prices)
+// which upserts the exact LaundryPricingRule records the resolver already uses.
+
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Loader2, Plus, Pencil, IndianRupee, Tag, ArrowLeft, Trash2, Search, WashingMachine } from "lucide-react"
+import { toast } from "sonner"
+import { inr } from "./pricing-shared"
+import { LaundryImageUpload } from "./laundry-image-upload"
+
+interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean }
+interface Garment { id: string; name: string; category?: { name: string | null } | null }
+interface PriceRow { garmentId: string; garmentName: string; category: string | null; price: number }
+
+const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true }
+
+export function LaundryServicesPricing({ businessId }: { businessId: string }) {
+  const [services, setServices] = useState<Service[]>([])
+  const [garments, setGarments] = useState<Garment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [managing, setManaging] = useState<Service | null>(null)
+
+  const load = useCallback(() => {
+    if (!businessId) return
+    setLoading(true)
+    Promise.all([
+      fetch(`/api/laundry/services?businessId=${businessId}`).then((r) => r.json()),
+      fetch(`/api/laundry/garments?businessId=${businessId}`).then((r) => r.json()),
+    ]).then(([s, g]) => { if (s.success) setServices(s.data || []); if (g.success) setGarments(g.data || []) })
+      .catch(() => {}).finally(() => setLoading(false))
+  }, [businessId])
+  useEffect(() => { load() }, [load])
+
+  if (managing) return <ManagePrices service={managing} garments={garments} businessId={businessId} onBack={() => { setManaging(null); load() }} onGarmentsChanged={load} />
+
+  return <ServicesList services={services} garments={garments} businessId={businessId} loading={loading} onChanged={load} onManage={setManaging} />
+}
+
+function ServicesList({ services, businessId, loading, onChanged, onManage }: { services: Service[]; garments: Garment[]; businessId: string; loading: boolean; onChanged: () => void; onManage: (s: Service) => void }) {
+  const [edit, setEdit] = useState<Service | null>(null)
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ ...SVC_EMPTY })
+  const [saving, setSaving] = useState(false)
+  const [stats, setStats] = useState<Record<string, { count: number; from: number | null }>>({})
+  const set = (k: string, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }))
+
+  // Per-service garment count + starting price (from the simple price API).
+  useEffect(() => {
+    let cancel = false
+    Promise.all(services.map((s) => fetch(`/api/laundry/services/${s.id}/prices?businessId=${businessId}`).then((r) => r.json()).then((j) => [s.id, j.success ? j.data : null] as const).catch(() => [s.id, null] as const)))
+      .then((pairs) => { if (cancel) return; const m: Record<string, { count: number; from: number | null }> = {}; for (const [id, d] of pairs) { const rows = (d?.rows || []) as PriceRow[]; const prices = rows.map((r) => r.price).filter((p) => p > 0); m[id] = { count: rows.length, from: prices.length ? Math.min(...prices) : (d?.perKg?.price ?? null) } } setStats(m) })
+    return () => { cancel = true }
+  }, [services, businessId])
+
+  const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setOpen(true) }
+  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite }); setOpen(true) }
+  const save = async () => {
+    if (!form.name.trim()) { toast.error("Service name is required"); return }
+    setSaving(true)
+    try {
+      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite }
+      const res = await fetch(edit ? `/api/laundry/services/${edit.id}` : `/api/laundry/services`, { method: edit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      const j = await res.json()
+      if (!res.ok || j.error) throw new Error(j.error || "Save failed")
+      toast.success(edit ? "Service updated" : "Service created"); setOpen(false); onChanged()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Manage laundry services, garments and customer prices.</p>
+        <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white h-9 shrink-0" onClick={openNew}><Plus className="h-3.5 w-3.5" /> Add Service</Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+      ) : services.length === 0 ? (
+        <Card><CardContent className="text-center py-16"><WashingMachine className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">No services yet</p><p className="text-xs text-muted-foreground mt-1">Add a service like “Wash & Iron”, then set garment prices.</p></CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {services.map((s) => (
+            <Card key={s.id} className={s.isActive ? "" : "opacity-60"}><CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <p className="font-semibold text-slate-800">{s.name}</p>
+                {!s.isActive && <span className="text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Inactive</span>}
+              </div>
+              {s.description && <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{s.description}</p>}
+              <div className="mt-2 text-xs text-slate-500">{stats[s.id]?.count ?? 0} garments configured{stats[s.id]?.from != null && <> · <span className="font-medium text-slate-700">from {inr(stats[s.id]!.from)}</span></>}</div>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" variant="outline" className="h-8 gap-1 flex-1" onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
+                <Button size="sm" className="h-8 gap-1 flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onManage(s)}><Tag className="h-3.5 w-3.5" /> Manage Prices</Button>
+              </div>
+            </CardContent></Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader><DialogTitle>{edit ? "Edit Service" : "Add Service"}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5"><Label className="text-xs">Service Photo</Label><p className="text-[10px] text-slate-400 -mt-1">Shown on your laundry website and customer app.</p><LaundryImageUpload value={form.image || null} businessId={businessId} folder="laundry-services" onChange={(url) => set("image", url || "")} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Service Name *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Wash & Iron" /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Description</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Professional washing and steam ironing for everyday clothes." className="min-h-[56px]" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label className="text-xs">Display Order</Label><Input type="number" value={form.displayOrder} onChange={(e) => set("displayOrder", e.target.value)} /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Website</Label><div className="flex items-center gap-2 h-9"><Switch checked={form.displayOnWebsite} onCheckedChange={(v) => set("displayOnWebsite", v)} /><span className="text-sm text-slate-600">{form.displayOnWebsite ? "Visible" : "Hidden"}</span></div></div>
+            </div>
+            <div className="flex items-center gap-2"><Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} className="data-[state=checked]:bg-emerald-600" /><span className="text-sm font-medium">{form.isActive ? "Active" : "Inactive"}</span></div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={saving} onClick={save} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Service</Button></div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function ManagePrices({ service, garments, businessId, onBack, onGarmentsChanged }: { service: Service; garments: Garment[]; businessId: string; onBack: () => void; onGarmentsChanged: () => void }) {
+  const [mode, setMode] = useState<"PER_GARMENT" | "PER_KG">("PER_GARMENT")
+  const [rows, setRows] = useState<{ garmentId: string; garmentName: string; price: string }[]>([])
+  const [perKg, setPerKg] = useState({ price: "", minWeightKg: "" })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    fetch(`/api/laundry/services/${service.id}/prices?businessId=${businessId}`).then((r) => r.json()).then((j) => {
+      if (j.success) { setMode(j.data.mode); setRows((j.data.rows as PriceRow[]).map((r) => ({ garmentId: r.garmentId, garmentName: r.garmentName, price: String(r.price) }))); if (j.data.perKg) setPerKg({ price: String(j.data.perKg.price), minWeightKg: j.data.perKg.minWeightKg == null ? "" : String(j.data.perKg.minWeightKg) }) }
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [service.id, businessId])
+  useEffect(() => { load() }, [load])
+
+  const existingIds = new Set(rows.map((r) => r.garmentId))
+  const setPrice = (id: string, v: string) => setRows((p) => p.map((r) => r.garmentId === id ? { ...r, price: v } : r))
+  const removeRow = (id: string) => setRows((p) => p.filter((r) => r.garmentId !== id))
+  const addGarments = (ids: string[]) => setRows((p) => [...p, ...ids.filter((id) => !existingIds.has(id)).map((id) => ({ garmentId: id, garmentName: garments.find((g) => g.id === id)?.name || "Garment", price: "0" }))])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const body = mode === "PER_KG" ? { businessId, mode, perKg } : { businessId, mode, rows: rows.map((r) => ({ garmentId: r.garmentId, price: Number(r.price) || 0 })) }
+      const res = await fetch(`/api/laundry/services/${service.id}/prices`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
+      toast.success("Prices saved")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" className="gap-1 h-8" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Services</Button>
+      </div>
+      <div><h3 className="text-base font-semibold text-slate-800">{service.name} Pricing</h3><p className="text-sm text-muted-foreground">Set garment prices for this service.</p></div>
+
+      <div className="flex items-center gap-4 text-sm">
+        <span className="text-slate-500">Pricing mode:</span>
+        <label className="flex items-center gap-1.5"><input type="radio" checked={mode === "PER_GARMENT"} onChange={() => setMode("PER_GARMENT")} /> Per Garment</label>
+        <label className="flex items-center gap-1.5"><input type="radio" checked={mode === "PER_KG"} onChange={() => setMode("PER_KG")} /> Per KG</label>
+      </div>
+
+      {loading ? <div className="flex items-center gap-2 py-10 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div> : mode === "PER_KG" ? (
+        <Card><CardContent className="p-4 grid grid-cols-2 gap-3 max-w-md">
+          <div className="space-y-1.5"><Label className="text-xs">Price Per KG (₹)</Label><Input type="number" value={perKg.price} onChange={(e) => setPerKg((p) => ({ ...p, price: e.target.value }))} placeholder="80" /></div>
+          <div className="space-y-1.5"><Label className="text-xs">Minimum Weight (KG)</Label><Input type="number" value={perKg.minWeightKg} onChange={(e) => setPerKg((p) => ({ ...p, minWeightKg: e.target.value }))} placeholder="1" /></div>
+        </CardContent></Card>
+      ) : (
+        <Card><CardContent className="p-0">
+          <div className="divide-y divide-slate-100">
+            <div className="grid grid-cols-[1fr_140px_40px] gap-2 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400"><span>Garment</span><span>Price (₹) · Per Piece</span><span /></div>
+            {rows.length === 0 && <p className="px-4 py-6 text-sm text-slate-400 text-center">No garments yet — add garments to set their prices.</p>}
+            {rows.map((r) => (
+              <div key={r.garmentId} className="grid grid-cols-[1fr_140px_40px] gap-2 px-4 py-2 items-center">
+                <span className="text-sm text-slate-700">{r.garmentName}</span>
+                <Input type="number" value={r.price} onChange={(e) => setPrice(r.garmentId, e.target.value)} className="h-9" />
+                <button onClick={() => removeRow(r.garmentId)} className="text-rose-500 hover:text-rose-700 flex justify-center"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 px-4 py-3 border-t border-slate-100">
+            <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => setAddOpen(true)}><Plus className="h-3.5 w-3.5" /> Add Garment</Button>
+            <Button size="sm" variant="ghost" className="h-8 gap-1 text-blue-600" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" /> Create New Garment</Button>
+          </div>
+        </CardContent></Card>
+      )}
+
+      <div className="flex justify-end"><Button disabled={saving} onClick={save} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Prices</Button></div>
+
+      {addOpen && <AddGarmentsDialog garments={garments.filter((g) => !existingIds.has(g.id))} onAdd={(ids) => { addGarments(ids); setAddOpen(false) }} onClose={() => setAddOpen(false)} />}
+      {createOpen && <CreateGarmentDialog businessId={businessId} onCreated={(g) => { onGarmentsChanged(); addGarments([g.id]); setCreateOpen(false) }} onClose={() => setCreateOpen(false)} />}
+    </div>
+  )
+}
+
+function AddGarmentsDialog({ garments, onAdd, onClose }: { garments: Garment[]; onAdd: (ids: string[]) => void; onClose: () => void }) {
+  const [q, setQ] = useState(""); const [sel, setSel] = useState<Set<string>>(new Set())
+  const filtered = useMemo(() => { const s = q.trim().toLowerCase(); return s ? garments.filter((g) => g.name.toLowerCase().includes(s)) : garments }, [garments, q])
+  const toggle = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
+  return (
+    <Dialog open onOpenChange={onClose}><DialogContent className="sm:max-w-[420px]">
+      <DialogHeader><DialogTitle>Add Garments</DialogTitle></DialogHeader>
+      <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search garments…" className="pl-9" /></div>
+      <div className="max-h-[300px] overflow-y-auto -mx-1 px-1 space-y-1">
+        {filtered.length === 0 ? <p className="text-sm text-slate-400 py-4 text-center">No garments</p> : filtered.map((g) => (
+          <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer"><input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} /><span className="text-sm">{g.name}</span>{g.category?.name && <span className="text-[10px] text-slate-400">· {g.category.name}</span>}</label>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={sel.size === 0} onClick={() => onAdd([...sel])} className="bg-blue-600 hover:bg-blue-700 text-white">Add Selected ({sel.size})</Button></div>
+    </DialogContent></Dialog>
+  )
+}
+
+function CreateGarmentDialog({ businessId, onCreated, onClose }: { businessId: string; onCreated: (g: Garment) => void; onClose: () => void }) {
+  const [name, setName] = useState(""); const [image, setImage] = useState(""); const [saving, setSaving] = useState(false)
+  const create = async () => {
+    if (!name.trim()) { toast.error("Garment name is required"); return }
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/laundry/garments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name, image: image || null }) })
+      const j = await res.json()
+      if (!res.ok || (j.error && !j.success)) throw new Error(j.error || "Create failed")
+      toast.success("Garment created"); onCreated(j.data || j)
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Create failed") } finally { setSaving(false) }
+  }
+  return (
+    <Dialog open onOpenChange={onClose}><DialogContent className="sm:max-w-[400px]">
+      <DialogHeader><DialogTitle>Create New Garment</DialogTitle></DialogHeader>
+      <div className="space-y-3">
+        <div className="space-y-1.5"><Label className="text-xs">Garment Name *</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Sherwani" /></div>
+        <div className="space-y-1.5"><Label className="text-xs">Garment Photo (optional)</Label><LaundryImageUpload value={image || null} businessId={businessId} folder="laundry-garments" onChange={(url) => setImage(url || "")} /></div>
+      </div>
+      <div className="flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={saving} onClick={create} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Create Garment</Button></div>
+    </DialogContent></Dialog>
+  )
+}
