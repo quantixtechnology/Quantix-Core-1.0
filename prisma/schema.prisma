@@ -1720,6 +1720,11 @@ model SubscriptionPlan {
   setupFee           Float                    @default(0)
   totalCredits       Int                      @default(0)
   creditLabel        String?
+  // Laundry cloth-allowance plans: how the allowance is consumed and how many
+  // orders/pickups it may be spread across per billing cycle. Nullable/additive
+  // — legacy plans keep prior behaviour (null maxOrders = unlimited orders).
+  allowanceType      String?                  // e.g. CLOTH_ALLOWANCE | KG_ALLOWANCE
+  maxOrdersPerCycle  Int?                     // max orders the allowance covers per cycle
   features           String                   @default("[]")
   isFeatured         Boolean                  @default(false)
   maxSubscribers     Int?

@@ -11,6 +11,7 @@ import { StorefrontCategoryCard, StorefrontCategoryCardSkeleton } from "./storef
 import type { StorefrontCategory } from "./storefront-category-card"
 import { StorefrontBanner } from "./storefront-banner"
 import { StorefrontEmptyState } from "./storefront-empty-state"
+import { StorefrontLaundryHome } from "./storefront-laundry-home"
 import { PwaInstallBanner } from "./pwa-install-banner"
 import { usePwaModeCtx } from "@/contexts/pwa-mode-context"
 import {
@@ -100,6 +101,11 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
   } = useAdminStore()
 
   const isPwa      = usePwaModeCtx()
+
+  // LAUNDRY workspaces are service-driven (Services/Garments/Pricing/
+  // Subscriptions), not ecommerce Product-driven. Render the laundry home and
+  // skip the ecommerce Product/ProductCategory flow entirely. Non-laundry
+  // storefronts are unaffected.
   const config     = getBusinessTypeConfig(currentBusinessType)
   const heroContent  = getHeroContent(currentBusinessType)
   const deliveryMeta = getDeliveryMeta(currentBusinessType)
@@ -164,6 +170,14 @@ export function StorefrontHome({ brandColor, nav, storeClosed = false }: Storefr
     if (e.key === "Enter" && searchQuery.trim()) {
       nav.go("category", { categoryId: undefined, categoryName: `Search: ${searchQuery.trim()}` })
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // LAUNDRY HOME — service-driven (Services/Garments/Pricing/Subscriptions).
+  // Bypasses the ecommerce Product/ProductCategory flow entirely.
+  // ══════════════════════════════════════════════════════════════════════
+  if (currentBusinessType === "LAUNDRY") {
+    return <StorefrontLaundryHome brandColor={brandColor} nav={nav} storeClosed={storeClosed} />
   }
 
   // ══════════════════════════════════════════════════════════════════════
