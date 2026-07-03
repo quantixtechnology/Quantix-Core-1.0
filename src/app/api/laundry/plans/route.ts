@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, name, description, price, billingCycle, totalCredits, maxOrdersPerCycle, features, isActive } = body
+    const { businessId, name, description, price, billingCycle, totalCredits, maxOrdersPerCycle, features, isActive, image } = body
     if (!businessId || !name?.trim()) return NextResponse.json({ success: false, error: "businessId and name are required" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
         businessId: platformId, name: name.trim(), slug, description: description || null,
         serviceType: "LAUNDRY", billingCycle: billingCycle || "MONTHLY",
         price: Number(price) || 0, totalCredits: Math.max(0, Math.floor(Number(totalCredits) || 0)),
-        creditLabel: "clothes", allowanceType: "CLOTH_ALLOWANCE",
+        creditLabel: "clothes", allowanceType: "CLOTH_ALLOWANCE", image: image || null,
         maxOrdersPerCycle: maxOrdersPerCycle == null || maxOrdersPerCycle === "" ? null : Math.max(1, Math.floor(Number(maxOrdersPerCycle))),
         features: JSON.stringify(Array.isArray(features) ? features : []),
         isActive: isActive !== false,

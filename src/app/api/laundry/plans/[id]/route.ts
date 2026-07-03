@@ -24,6 +24,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.totalCredits != null) d.totalCredits = Math.max(0, Math.floor(Number(body.totalCredits) || 0))
     if (body.maxOrdersPerCycle !== undefined) d.maxOrdersPerCycle = body.maxOrdersPerCycle == null || body.maxOrdersPerCycle === "" ? null : Math.max(1, Math.floor(Number(body.maxOrdersPerCycle)))
     if (body.features !== undefined) d.features = JSON.stringify(Array.isArray(body.features) ? body.features : [])
+    if (body.image !== undefined) d.image = body.image || null
     if (body.isActive !== undefined) d.isActive = !!body.isActive
 
     const plan = await prisma.subscriptionPlan.update({ where: { id }, data: d })

@@ -39,6 +39,7 @@ export async function POST(request: Request) {
         categoryId: b.categoryId || null,
         description: b.description?.trim() || null,
         icon: b.icon?.trim() || null,
+        image: b.image?.trim() || null,
         color: b.color?.trim() || null,
         defaultPricingType: b.defaultPricingType || "PER_PIECE",
         defaultGstPercent: NUM(b.defaultGstPercent),

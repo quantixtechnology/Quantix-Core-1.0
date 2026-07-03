@@ -107,6 +107,7 @@ export type LaundryBusinessPage =
   | "garments"
   | "services"
   | "pricing"
+  | "subscriptions"
   | "ws-wash"
   | "ws-dryclean"
   | "ws-steam"

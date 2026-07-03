@@ -12,6 +12,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { computeQuote, type PricingRule } from "@/lib/laundry-billing"
+import { resolveImageUrl } from "@/lib/image-url"
 
 export const runtime = "nodejs"
 
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     const [business, rules, services, garments, plans] = await Promise.all([
       prisma.business.findUnique({ where: { id: platformId }, select: { name: true, businessType: true, isOnline: true } }),
       prisma.laundryPricingRule.findMany({ where: { businessId: lbId, isActive: true } }),
-      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true } }),
+      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true, image: true } }),
       prisma.laundryGarment.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, categoryId: true, category: { select: { name: true } } } }),
       prisma.subscriptionPlan.findMany({ where: { businessId: platformId, serviceType: "LAUNDRY", isActive: true }, orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }] }),
     ])
@@ -73,6 +74,7 @@ export async function GET(request: Request) {
       const prices = priced.map((it) => it.unitPrice!).filter((p) => p > 0)
       return {
         id: svc.id, name: svc.name, description: svc.description, icon: svc.icon,
+        imageUrl: svc.image ? resolveImageUrl(svc.image) : null,
         items,
         pricedCount: priced.length,
         fromPrice: prices.length ? Math.min(...prices) : null,
@@ -85,6 +87,7 @@ export async function GET(request: Request) {
       try { features = JSON.parse(p.features || "[]") } catch { features = [] }
       return {
         id: p.id, name: p.name, slug: p.slug, description: p.description,
+        imageUrl: p.image ? resolveImageUrl(p.image) : null,
         price: p.price, billingCycle: p.billingCycle,
         totalCredits: p.totalCredits, creditLabel: p.creditLabel || "clothes",
         allowanceType: p.allowanceType, maxOrdersPerCycle: p.maxOrdersPerCycle,

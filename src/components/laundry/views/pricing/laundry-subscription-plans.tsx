@@ -17,10 +17,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2, Plus, Pencil, Repeat, Shirt, Package } from "lucide-react"
 import { toast } from "sonner"
 import { inr } from "./pricing-shared"
+import { LaundryImageUpload } from "./laundry-image-upload"
 
-interface Plan { id: string; name: string; description: string | null; price: number; billingCycle: string; totalCredits: number; maxOrdersPerCycle: number | null; isActive: boolean; _count?: { subscriptions: number } }
+interface Plan { id: string; name: string; description: string | null; price: number; billingCycle: string; totalCredits: number; maxOrdersPerCycle: number | null; isActive: boolean; image?: string | null; _count?: { subscriptions: number } }
 const CYCLES = ["WEEKLY", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "YEARLY"]
-const EMPTY = { name: "", description: "", price: "", billingCycle: "MONTHLY", totalCredits: "", maxOrdersPerCycle: "", isActive: true }
+const EMPTY = { name: "", description: "", price: "", billingCycle: "MONTHLY", totalCredits: "", maxOrdersPerCycle: "", isActive: true, image: "" }
 
 export function LaundrySubscriptionPlans({ businessId }: { businessId: string }) {
   const [plans, setPlans] = useState<Plan[]>([])
@@ -40,14 +41,14 @@ export function LaundrySubscriptionPlans({ businessId }: { businessId: string })
   useEffect(() => { load() }, [load])
 
   const openNew = () => { setEditing(null); setForm({ ...EMPTY }); setOpen(true) }
-  const openEdit = (p: Plan) => { setEditing(p); setForm({ name: p.name, description: p.description || "", price: String(p.price), billingCycle: p.billingCycle, totalCredits: String(p.totalCredits), maxOrdersPerCycle: p.maxOrdersPerCycle == null ? "" : String(p.maxOrdersPerCycle), isActive: p.isActive }); setOpen(true) }
+  const openEdit = (p: Plan) => { setEditing(p); setForm({ name: p.name, description: p.description || "", price: String(p.price), billingCycle: p.billingCycle, totalCredits: String(p.totalCredits), maxOrdersPerCycle: p.maxOrdersPerCycle == null ? "" : String(p.maxOrdersPerCycle), isActive: p.isActive, image: p.image || "" }); setOpen(true) }
 
   const save = async () => {
     if (!form.name.trim()) { toast.error("Plan name is required"); return }
     if (!form.totalCredits || Number(form.totalCredits) <= 0) { toast.error("Cloth allowance must be greater than 0"); return }
     setSaving(true)
     try {
-      const payload = { businessId, name: form.name, description: form.description, price: form.price, billingCycle: form.billingCycle, totalCredits: form.totalCredits, maxOrdersPerCycle: form.maxOrdersPerCycle, isActive: form.isActive }
+      const payload = { businessId, name: form.name, description: form.description, price: form.price, billingCycle: form.billingCycle, totalCredits: form.totalCredits, maxOrdersPerCycle: form.maxOrdersPerCycle, isActive: form.isActive, image: form.image || null }
       const res = await fetch(editing ? `/api/laundry/plans/${editing.id}` : `/api/laundry/plans`, { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
@@ -98,6 +99,7 @@ export function LaundrySubscriptionPlans({ businessId }: { businessId: string })
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader><DialogTitle>{editing ? "Edit Plan" : "New Subscription Plan"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            <div className="space-y-1.5"><Label className="text-xs">Plan Image</Label><LaundryImageUpload value={form.image || null} businessId={businessId} folder="laundry-plans" onChange={(url) => set("image", url || "")} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Plan Name *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Monthly 70 Clothes Plan" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Description</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="70 clothes included every month with up to 2 laundry orders." className="min-h-[56px]" /></div>
             <div className="grid grid-cols-2 gap-3">

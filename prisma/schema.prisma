@@ -1720,6 +1720,7 @@ model SubscriptionPlan {
   setupFee           Float                    @default(0)
   totalCredits       Int                      @default(0)
   creditLabel        String?
+  image              String?                  // tenant marketing image (upload URL)
   // Laundry cloth-allowance plans: how the allowance is consumed and how many
   // orders/pickups it may be spread across per billing cycle. Nullable/additive
   // — legacy plans keep prior behaviour (null maxOrders = unlimited orders).
@@ -4340,6 +4341,7 @@ model LaundryService {
   categoryId             String?
   description            String?
   icon                   String?
+  image                  String?              // tenant marketing image (upload URL)
   color                  String?
   defaultPricingType     String   @default("PER_PIECE") // PER_PIECE | PER_KG | FIXED | SUBSCRIPTION | CORPORATE
   defaultGstPercent      Float?

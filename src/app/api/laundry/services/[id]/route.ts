@@ -17,6 +17,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(b.categoryId !== undefined && { categoryId: b.categoryId || null }),
         ...(b.description !== undefined && { description: b.description?.trim() || null }),
         ...(b.icon !== undefined && { icon: b.icon?.trim() || null }),
+        ...(b.image !== undefined && { image: b.image?.trim() || null }),
         ...(b.color !== undefined && { color: b.color?.trim() || null }),
         ...(b.defaultPricingType !== undefined && { defaultPricingType: b.defaultPricingType }),
         ...(b.defaultGstPercent !== undefined && { defaultGstPercent: NUM(b.defaultGstPercent) }),

@@ -21,7 +21,7 @@ import { useResponsive } from "@/hooks/use-responsive"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
-  UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck, Barcode,
+  UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck, Barcode, Repeat,
 } from "lucide-react"
 
 type NavCfg = {
@@ -80,6 +80,7 @@ const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
     label: "Management",
     items: [
       { key: "pricing", label: "Services & Pricing", icon: IndianRupee, page: "pricing", minRank: 3 },
+      { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3 },
       { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3 },
       { key: "payments", label: "Payments", icon: Wallet, comingSoon: true, minRank: 3 },
       { key: "invoices", label: "Invoices", icon: Receipt, comingSoon: true, minRank: 3 },

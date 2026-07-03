@@ -8,7 +8,7 @@
 // Laundry terminology throughout (Services, Garments, Pickup, Subscription).
 // Functional integration only — no visual polish in this pass.
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
@@ -17,13 +17,30 @@ import type { WebNav } from "./storefront-website"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
 
+type AuthCustomer = { name: string; phone: string; email: string } | null
+const maskPhone = (p: string) => p && p.length >= 4 ? `••••••${p.slice(-4)}` : p
+const maskEmail = (e: string) => { const [u, d] = e.split("@"); return u && d ? `${u.slice(0, 3)}•••@${d}` : e }
 interface SvcItem { garmentId: string; garmentName: string; categoryName: string | null; available: boolean; unitPrice: number | null; pricingType: string | null; unit: string | null; gstPercent: number | null }
-interface Service { id: string; name: string; description: string | null; icon: string | null; items: SvcItem[]; pricedCount: number; fromPrice: number | null; fromUnit: string }
-interface Plan { id: string; name: string; slug: string; description: string | null; price: number; billingCycle: string; totalCredits: number; creditLabel: string; allowanceType: string | null; maxOrdersPerCycle: number | null; features: string[]; isFeatured: boolean }
+interface Service { id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; items: SvcItem[]; pricedCount: number; fromPrice: number | null; fromUnit: string }
+interface Plan { id: string; name: string; slug: string; description: string | null; imageUrl: string | null; price: number; billingCycle: string; totalCredits: number; creditLabel: string; allowanceType: string | null; maxOrdersPerCycle: number | null; features: string[]; isFeatured: boolean }
+
+// Tenant marketing image with a graceful icon fallback (no distortion, lazy).
+function CardImage({ src, brandColor, aspect = "aspect-[16/9]" }: { src: string | null; brandColor: string; aspect?: string }) {
+  const [broken, setBroken] = useState(false)
+  if (!src || broken) {
+    return <div className={`${aspect} w-full rounded-t-2xl flex items-center justify-center`} style={{ background: `${brandColor}12` }}><Shirt className="w-8 h-8" style={{ color: brandColor }} /></div>
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} className={`${aspect} w-full rounded-t-2xl object-cover`} />
+}
 
 export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string; nav: WebNav; storeClosed?: boolean }) {
   const { currentBusinessId, currentStoreId } = useAdminStore()
-  const { isAuthenticated, token } = useAuthStore()
+  const { isAuthenticated, token, user } = useAuthStore()
+  // Authenticated customer identity (reused from the shared Quantix session — no
+  // laundry-specific login, no re-entering name/phone).
+  const authCustomer = isAuthenticated && user ? { name: user.name, phone: user.phone || "", email: user.email || "" } : null
+  const [subSummary, setSubSummary] = useState<{ active: { planName: string; remaining: number; allowance: number; maxOrders: number | null } | null; pending: { planName: string | null; due: number } | null } | null>(null)
   const [services, setServices] = useState<Service[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
@@ -43,6 +60,15 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [currentBusinessId, currentStoreId])
+
+  // Resolve THIS customer's subscription (active plan / pending due) from the
+  // shared CustomerSubscription — same record used by walk-in + admin.
+  const refreshSummary = useCallback(() => {
+    if (!currentBusinessId || !authCustomer?.phone) { setSubSummary(null); return }
+    fetch("/api/core/storefront/laundry-subscription/summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, phone: authCustomer.phone }) })
+      .then((r) => r.json()).then((j) => { if (j.success) setSubSummary(j.data) }).catch(() => {})
+  }, [currentBusinessId, authCustomer?.phone])
+  useEffect(() => { refreshSummary() }, [refreshSummary])
 
   const popular = useMemo(() => services.filter((s) => s.pricedCount > 0), [services])
   const q = search.trim().toLowerCase()
@@ -85,17 +111,17 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
             ) : (
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {filteredServices.map((s) => (
-                  <div key={s.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm flex flex-col">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${brandColor}14` }}><Shirt className="w-5 h-5" style={accent} /></div>
-                      <div className="min-w-0"><p className="font-semibold text-gray-900 truncate">{s.name}</p>
-                        {s.fromPrice != null ? <p className="text-xs text-gray-400">From {inr(s.fromPrice)} / {s.fromUnit}</p> : <p className="text-xs text-gray-400">Pricing unavailable</p>}</div>
+                  <div key={s.id} className="rounded-2xl border border-gray-100 bg-white shadow-sm flex flex-col overflow-hidden">
+                    <CardImage src={s.imageUrl} brandColor={brandColor} />
+                    <div className="p-4 flex flex-col flex-1">
+                      <p className="font-semibold text-gray-900 truncate">{s.name}</p>
+                      {s.fromPrice != null ? <p className="text-xs text-gray-400">From {inr(s.fromPrice)} / {s.fromUnit}</p> : <p className="text-xs text-gray-400">Pricing unavailable</p>}
+                      {s.description && <p className="mt-2 text-xs text-gray-500 line-clamp-2">{s.description}</p>}
+                      <button onClick={() => setActiveService(s)} disabled={s.pricedCount === 0}
+                        className="mt-3 rounded-lg py-2 text-xs font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>
+                        {s.pricedCount ? "Select Service" : "No pricing yet"}
+                      </button>
                     </div>
-                    {s.description && <p className="mt-2 text-xs text-gray-500 line-clamp-2">{s.description}</p>}
-                    <button onClick={() => setActiveService(s)} disabled={s.pricedCount === 0}
-                      className="mt-3 rounded-lg py-2 text-xs font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>
-                      {s.pricedCount ? "Select Service" : "No pricing yet"}
-                    </button>
                   </div>
                 ))}
               </div>
@@ -130,20 +156,40 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
             <section className="px-4 sm:px-6 mt-8">
               <h2 className="text-lg font-bold text-gray-900">Subscription Plans</h2>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {plans.map((p) => (
-                  <div key={p.id} className="rounded-2xl border-2 bg-white p-5 shadow-sm" style={{ borderColor: p.isFeatured ? brandColor : "#f3f4f6" }}>
+                {plans.map((p) => {
+                  const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
+                  const isPendingPlan = subSummary?.pending && subSummary.pending.planName === p.name
+                  return (
+                  <div key={p.id} className="rounded-2xl border-2 bg-white shadow-sm overflow-hidden flex flex-col" style={{ borderColor: p.isFeatured ? brandColor : "#f3f4f6" }}>
+                    <CardImage src={p.imageUrl} brandColor={brandColor} />
+                    <div className="p-5 flex flex-col flex-1">
                     <div className="flex items-center gap-2"><Repeat className="w-4 h-4" style={accent} /><p className="font-bold text-gray-900">{p.name}</p></div>
                     <p className="mt-2 text-2xl font-extrabold text-gray-900">{inr(p.price)} <span className="text-sm font-medium text-gray-400">/ {p.billingCycle.toLowerCase()}</span></p>
-                    <ul className="mt-3 space-y-1.5">
+                    <ul className="mt-3 space-y-1.5 flex-1">
                       {(p.features.length ? p.features : [`${p.totalCredits} ${p.creditLabel} included`]).map((f, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-600"><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" style={accent} /> {f}</li>
                       ))}
                     </ul>
-                    {subscriptionInCart?.id === p.id
-                      ? <button onClick={() => setSubscriptionInCart(null)} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
-                      : <button onClick={() => { setSubscriptionInCart(p); toast.success(`${p.name} added — ₹${p.price} will be added at checkout`) }} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80" style={accentBg}>Add Subscription</button>}
+                    {isActivePlan ? (
+                      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs">
+                        <p className="font-bold text-emerald-700">YOUR ACTIVE PLAN</p>
+                        <p className="text-gray-600 mt-0.5">{subSummary!.active!.remaining} / {subSummary!.active!.allowance} clothes remaining</p>
+                        <button onClick={() => nav.go("orders")} className="mt-2 w-full rounded-lg py-2 text-xs font-semibold border border-emerald-300 text-emerald-700">View Plan</button>
+                      </div>
+                    ) : isPendingPlan ? (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
+                        <p className="font-bold text-amber-700">PAYMENT PENDING</p>
+                        <p className="text-gray-600 mt-0.5">{inr(subSummary!.pending!.due)} due</p>
+                        <button onClick={() => setSubOnlyCheckout(p)} className="mt-2 w-full rounded-lg py-2 text-xs font-semibold text-white" style={accentBg}>Pay Now</button>
+                      </div>
+                    ) : subscriptionInCart?.id === p.id ? (
+                      <button onClick={() => setSubscriptionInCart(null)} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
+                    ) : (
+                      <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } setSubscriptionInCart(p); toast.success(`${p.name} added — ₹${p.price} at checkout`) }} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Add to Cart" : "Sign in to Subscribe"}</button>
+                    )}
+                    </div>
                   </div>
-                ))}
+                )})}
               </div>
             </section>
           )}
@@ -178,8 +224,8 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
         </div>
       )}
 
-      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} subscriptionInCart={subscriptionInCart} addSubscription={(p) => setSubscriptionInCart(p)} clearSubscription={() => setSubscriptionInCart(null)} onClose={() => setActiveService(null)} />}
-      {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} onDone={() => { setSubOnlyCheckout(null); setSubscriptionInCart(null) }} onClose={() => setSubOnlyCheckout(null)} />}
+      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={(p) => setSubscriptionInCart(p)} clearSubscription={() => setSubscriptionInCart(null)} onClose={() => setActiveService(null)} />}
+      {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); setSubscriptionInCart(null); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
     </div>
   )
 }
@@ -187,10 +233,10 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
 // ── Order flow: Select garments → Details/Pickup → Confirm → Success ─────────
 interface SubStatus { active: boolean; subscriptionId?: string; planName?: string; allowance?: number; used?: number; remaining?: number; ordersUsed?: number; maxOrders?: number | null }
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
-function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, subscriptionInCart, addSubscription, clearSubscription, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; clearSubscription: () => void; onClose: () => void }) {
+function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, clearSubscription, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; clearSubscription: () => void; onClose: () => void }) {
   const [step, setStep] = useState<"select" | "details" | "success">("select")
   const [qty, setQty] = useState<Record<string, number>>({})
-  const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [address, setAddress] = useState("")
+  const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || ""); const [address, setAddress] = useState("")
   const [date, setDate] = useState(""); const [slot, setSlot] = useState("Morning (9AM–12PM)")
   const [useSub, setUseSub] = useState(false); const [forceNormal, setForceNormal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -338,8 +384,16 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                 <div className="flex justify-between text-sm pt-1 border-t border-gray-100 mt-1"><span className="font-semibold text-gray-700">Total Due</span><span className="font-bold" style={{ color: brandColor }}>{inr(clientSubtotal + (subscriptionInCart?.price || 0))}</span></div>
               </div>
             </div>
-            <Field label="Full Name"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your name" /></Field>
-            <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
+            {authCustomer ? (
+              <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-sm">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Ordering As</p>
+                <p className="font-semibold text-gray-800">{authCustomer.name}</p>
+                <p className="text-xs text-gray-500">{authCustomer.email && maskEmail(authCustomer.email)}{authCustomer.email && authCustomer.phone ? " · " : ""}{maskPhone(authCustomer.phone)}</p>
+              </div>
+            ) : (<>
+              <Field label="Full Name"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your name" /></Field>
+              <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
+            </>)}
             <Field label="Pickup Address"><textarea value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none min-h-[56px]" placeholder="Flat, building, area…" /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Pickup Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
@@ -434,8 +488,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
 // Subscription-only checkout (Case B) — plan added to cart, no garments. Places
 // a COD/pay-later purchase (pending customer due); allowance activates only when
 // the subscription is paid at collection. Reuses the shared checkout endpoint.
-function SubscriptionCheckoutSheet({ plan, businessId, brandColor, onDone, onClose }: { plan: Plan; businessId: string; brandColor: string; onDone: () => void; onClose: () => void }) {
-  const [name, setName] = useState(""); const [phone, setPhone] = useState("")
+function SubscriptionCheckoutSheet({ plan, businessId, brandColor, authCustomer, onDone, onClose }: { plan: Plan; businessId: string; brandColor: string; authCustomer: AuthCustomer; onDone: () => void; onClose: () => void }) {
+  const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || "")
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState<{ due: number } | null>(null)
   const accentBg = { backgroundColor: brandColor }
@@ -470,8 +524,12 @@ function SubscriptionCheckoutSheet({ plan, businessId, brandColor, onDone, onClo
               <Row k="Order Limit" v={plan.maxOrdersPerCycle ? `Max ${plan.maxOrdersPerCycle} orders / cycle` : "Unlimited"} />
               <div className="pt-1 mt-1 border-t border-gray-100"><Row k="Amount Due" v={inr(plan.price)} /></div>
             </div>
-            <Field label="Full Name"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your name" /></Field>
-            <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
+            {authCustomer ? (
+              <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-sm"><p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Subscribing As</p><p className="font-semibold text-gray-800">{authCustomer.name}</p><p className="text-xs text-gray-500">{authCustomer.email && maskEmail(authCustomer.email)}{authCustomer.email && authCustomer.phone ? " · " : ""}{maskPhone(authCustomer.phone)}</p></div>
+            ) : (<>
+              <Field label="Full Name"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your name" /></Field>
+              <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
+            </>)}
             <button disabled={submitting} onClick={place} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 flex items-center justify-center gap-2" style={accentBg}>{submitting && <Loader2 className="w-4 h-4 animate-spin" />} Place Subscription · Pay Later</button>
             <p className="text-[10px] text-gray-400 text-center">Online payment gateway isn\'t exercised here; the plan activates only after a verified/collected payment.</p>
           </div>
