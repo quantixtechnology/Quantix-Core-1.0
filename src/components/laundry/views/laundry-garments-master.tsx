@@ -104,7 +104,7 @@ export function LaundryGarmentsMaster() {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Garments</h2>
-          <p className="text-sm text-muted-foreground">Garment master used by the pricing engine. {items.length} item(s).</p>
+          <p className="text-sm text-muted-foreground">Manage clothes and items accepted by your laundry. {items.length} item(s).</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="gap-1" onClick={() => setImportOpen(true)}><Download className="h-3.5 w-3.5" /> Import / Templates</Button>

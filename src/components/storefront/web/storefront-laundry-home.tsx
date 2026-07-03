@@ -20,8 +20,8 @@ const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(
 type AuthCustomer = { name: string; phone: string; email: string } | null
 const maskPhone = (p: string) => p && p.length >= 4 ? `••••••${p.slice(-4)}` : p
 const maskEmail = (e: string) => { const [u, d] = e.split("@"); return u && d ? `${u.slice(0, 3)}•••@${d}` : e }
-interface SvcItem { garmentId: string; garmentName: string; categoryName: string | null; available: boolean; unitPrice: number | null; pricingType: string | null; unit: string | null; gstPercent: number | null }
-interface Service { id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; items: SvcItem[]; pricedCount: number; fromPrice: number | null; fromUnit: string }
+interface SvcItem { garmentId: string; garmentName: string; categoryName: string | null; unitPrice: number; pricingType: string | null; unit: string | null; gstPercent: number | null }
+interface Service { id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; pricingMode: string; items: SvcItem[]; perKg: { price: number; minWeightKg: number | null; gstPercent: number | null } | null; pricedCount: number; fromPrice: number | null; fromUnit: string }
 interface Plan { id: string; name: string; slug: string; description: string | null; imageUrl: string | null; price: number; billingCycle: string; totalCredits: number; creditLabel: string; allowanceType: string | null; maxOrdersPerCycle: number | null; features: string[]; isFeatured: boolean }
 
 // Tenant marketing image with a graceful icon fallback (no distortion, lazy).
@@ -136,7 +136,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
                   <div key={s.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
                     <p className="font-semibold text-gray-900">{s.name}</p>
                     <div className="mt-2 divide-y divide-gray-50">
-                      {s.items.filter((it) => it.available).slice(0, 5).map((it) => (
+                      {s.items.slice(0, 5).map((it) => (
                         <div key={it.garmentId} className="flex items-center justify-between py-1.5 text-sm">
                           <span className="text-gray-600">{it.garmentName}</span>
                           <span className="font-semibold text-gray-900">{inr(it.unitPrice)} <span className="text-xs font-normal text-gray-400">/ {it.unit}</span></span>
@@ -246,12 +246,21 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [checkingSub, setCheckingSub] = useState(false)
   const [showSubRequired, setShowSubRequired] = useState(false)
   const [combined, setCombined] = useState<{ orderNumber: string; laundryCharges: number; subscriptionDue: number; totalDue: number; planName: string } | null>(null)
+  const [gSearch, setGSearch] = useState("")
+  const [weightKg, setWeightKg] = useState("")
+  const isPerKg = service.pricingMode === "PER_KG"
 
-  const selected = service.items.filter((it) => it.available && (qty[it.garmentId] || 0) > 0)
-  const clientSubtotal = selected.reduce((s, it) => s + (it.unitPrice || 0) * (qty[it.garmentId] || 0), 0)
+  const gq = gSearch.trim().toLowerCase()
+  const visibleItems = gq ? service.items.filter((it) => it.garmentName.toLowerCase().includes(gq)) : service.items
+  const selected = service.items.filter((it) => (qty[it.garmentId] || 0) > 0)
+  const kgAmount = isPerKg && service.perKg ? service.perKg.price * (Number(weightKg) || 0) : 0
+  const clientSubtotal = isPerKg ? kgAmount : selected.reduce((s, it) => s + (it.unitPrice || 0) * (qty[it.garmentId] || 0), 0)
+  const canContinue = isPerKg ? (Number(weightKg) || 0) > 0 : selected.length > 0
   const bump = (id: string, d: number) => setQty((p) => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) }))
   const accentBg = { backgroundColor: brandColor }
-  const orderItems = () => selected.map((it) => ({ serviceId: service.id, garmentId: it.garmentId, quantity: qty[it.garmentId] }))
+  const orderItems = () => isPerKg
+    ? [{ serviceId: service.id, garmentId: null, weightKg: Number(weightKg) || 0 }]
+    : selected.map((it) => ({ serviceId: service.id, garmentId: it.garmentId, quantity: qty[it.garmentId] }))
 
   // Entitlement check — runs when the customer ticks "Use my subscription
   // allowance". Never consumes allowance. No active plan → Subscription Required.
@@ -341,27 +350,39 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
           </div>
         )}
 
-        {/* STEP: select garments */}
+        {/* STEP: select garments (or weight for PER_KG services) */}
         {step === "select" && (<>
-          <div className="overflow-y-auto px-5 py-3 flex-1">
-            {service.items.map((it) => (
-              <div key={it.garmentId} className="flex items-center justify-between py-2.5 border-b border-gray-50">
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{it.garmentName}</p>
-                  {it.available ? <p className="text-xs text-gray-400">{inr(it.unitPrice)} / {it.unit}</p>
-                    : <p className="text-xs text-gray-400">Price unavailable · Not available for this service</p>}
+          {isPerKg ? (
+            <div className="overflow-y-auto px-5 py-4 flex-1 space-y-3">
+              <p className="text-sm text-gray-600">This service is priced by weight at <b>{inr(service.perKg?.price)} / kg</b>{service.perKg?.minWeightKg ? ` (min ${service.perKg.minWeightKg} kg)` : ""}.</p>
+              <Field label="Estimated Weight (kg)"><input type="number" min={0} step="0.5" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="e.g. 3" /></Field>
+              <p className="text-[11px] text-gray-400">Final weight is confirmed at pickup; this is an estimate.</p>
+            </div>
+          ) : (
+            <div className="overflow-y-auto px-5 py-3 flex-1">
+              {service.items.length > 8 && (
+                <div className="relative mb-2 sticky top-0 bg-white pt-1"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={gSearch} onChange={(e) => setGSearch(e.target.value)} placeholder="Search garments…" className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm outline-none" /></div>
+              )}
+              {visibleItems.map((it) => (
+                <div key={it.garmentId} className="flex items-center justify-between py-2.5 border-b border-gray-50">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{it.garmentName}</p>
+                    <p className="text-xs text-gray-500">{inr(it.unitPrice)} / {it.unit}</p>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <button onClick={() => bump(it.garmentId, -1)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center active:bg-gray-50"><Minus className="w-3.5 h-3.5 text-gray-600" /></button>
+                    <span className="w-5 text-center text-sm font-semibold">{qty[it.garmentId] || 0}</span>
+                    <button onClick={() => bump(it.garmentId, 1)} className="w-7 h-7 rounded-lg flex items-center justify-center text-white active:opacity-80" style={accentBg}><Plus className="w-3.5 h-3.5" /></button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2.5">
-                  <button disabled={!it.available} onClick={() => bump(it.garmentId, -1)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center disabled:opacity-30 active:bg-gray-50"><Minus className="w-3.5 h-3.5 text-gray-600" /></button>
-                  <span className="w-5 text-center text-sm font-semibold">{qty[it.garmentId] || 0}</span>
-                  <button disabled={!it.available} onClick={() => bump(it.garmentId, 1)} className="w-7 h-7 rounded-lg flex items-center justify-center text-white disabled:opacity-30 active:opacity-80" style={accentBg}><Plus className="w-3.5 h-3.5" /></button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+              {visibleItems.length === 0 && <p className="text-sm text-gray-400 py-6 text-center">No garments match “{gSearch}”.</p>}
+            </div>
+          )}
           <div className="border-t border-gray-100 px-5 py-4 bg-gray-50/60">
-            <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal (est.)</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
-            <button disabled={selected.length === 0} onClick={() => setStep("details")} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>Continue</button>
+            {!isPerKg && selected.length > 0 && <div className="flex justify-between text-xs text-gray-500 mb-1"><span>{selected.reduce((s, it) => s + (qty[it.garmentId] || 0), 0)} item(s) selected</span></div>}
+            <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
+            <button disabled={!canContinue} onClick={() => setStep("details")} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>Continue to Checkout</button>
           </div>
         </>)}
 

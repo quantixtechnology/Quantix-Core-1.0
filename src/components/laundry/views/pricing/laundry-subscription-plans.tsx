@@ -87,7 +87,7 @@ export function LaundrySubscriptionPlans({ businessId }: { businessId: string })
                 <div className="flex items-center gap-2 text-slate-600"><Package className="h-3.5 w-3.5 text-slate-400" /> {p.maxOrdersPerCycle == null ? "Unlimited orders" : `Max ${p.maxOrdersPerCycle} orders / cycle`}</div>
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs text-slate-400">{p._count?.subscriptions ?? 0} subscriber(s)</span>
+                <span className="text-xs text-slate-400">{p._count?.subscriptions ?? 0} Customer Subscription{(p._count?.subscriptions ?? 0) === 1 ? "" : "s"}</span>
                 <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => openEdit(p)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
               </div>
             </CardContent></Card>

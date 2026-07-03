@@ -153,8 +153,8 @@ export function LaundryPricingEngine() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2"><IndianRupee className="h-5 w-5 text-blue-600" /> Pricing Engine</h2>
-          <p className="text-sm text-muted-foreground">Configure every pricing rule. The Billing Resolver applies the most specific, highest-priority active rule.</p>
+          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2"><IndianRupee className="h-5 w-5 text-blue-600" /> Services &amp; Pricing</h2>
+          <p className="text-sm text-muted-foreground">Manage your laundry services, garments, prices and subscription plans.</p>
         </div>
       </div>
 

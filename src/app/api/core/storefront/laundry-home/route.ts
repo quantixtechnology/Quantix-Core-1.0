@@ -49,36 +49,39 @@ export async function GET(request: Request) {
     // are shown as "Price unavailable" on the customer listing. (The Billing
     // Resolver itself is unchanged — order totals still honour generic rules.)
     const serviceCards = services.map((svc) => {
+      // Weight-based service? A service-scoped PER_KG rule (no garment) defines it.
+      const perKgRule = rules.find((r) => r.serviceId === svc.id && r.garmentId == null && r.categoryId == null && r.storeId == null && r.customerType == null && r.pricingType === "PER_KG" && r.isActive)
+
       const lineInputs = garments.map((g) => ({ serviceId: svc.id, garmentId: g.id, categoryId: g.categoryId, quantity: 1 }))
       const quote = computeQuote(rulesTyped, lineInputs, { storeId: storeId || null, customerType: null })
+      // CUSTOMER CATALOG: only garments with an ACTIVE configured price for THIS
+      // service (the winning rule must target the garment or its category). The
+      // full Garment Master is admin-only — never shown to customers. Garments
+      // with no service pricing are omitted entirely (no "Price unavailable" rows).
       const items = quote.lines.map((l, i) => {
         const g = garments[i]
         const rule = l.matchedRuleId ? ruleById.get(l.matchedRuleId) : null
-        const targetsGarment = !!rule && (rule.garmentId === g.id || (rule.categoryId != null && rule.categoryId === g.categoryId))
-        const available = l.matchedRuleId != null && targetsGarment
+        const targetsGarment = !!rule && rule.pricingType !== "PER_KG" && (rule.garmentId === g.id || (rule.categoryId != null && rule.categoryId === g.categoryId))
+        if (!(l.matchedRuleId != null && targetsGarment)) return null
         return {
-          garmentId: g.id,
-          garmentName: g.name,
-          categoryName: g.category?.name || null,
-          available,
-          unitPrice: available ? l.unitPrice : null,
-          pricingType: available ? l.pricingType : null,
-          unit: available ? unitFor(l.pricingType) : null,
-          gstPercent: available ? l.gstPercent : null,
+          garmentId: g.id, garmentName: g.name, categoryName: g.category?.name || null,
+          available: true, unitPrice: l.unitPrice, pricingType: l.pricingType,
+          unit: unitFor(l.pricingType), gstPercent: l.gstPercent,
         }
-      })
-      // All garments are returned (the Select-Service sheet shows unpriced ones
-      // as "Price unavailable" with disabled controls). Priced garments drive
-      // the service card + "From" price only.
-      const priced = items.filter((it) => it.available)
-      const prices = priced.map((it) => it.unitPrice!).filter((p) => p > 0)
+      }).filter((it): it is NonNullable<typeof it> => it != null)
+
+      const prices = items.map((it) => it.unitPrice).filter((p) => p > 0)
+      const pricingMode = perKgRule ? "PER_KG" : "PER_GARMENT"
+      const fromPrice = perKgRule ? perKgRule.price : (prices.length ? Math.min(...prices) : null)
       return {
         id: svc.id, name: svc.name, description: svc.description, icon: svc.icon,
         imageUrl: svc.image ? resolveImageUrl(svc.image) : null,
-        items,
-        pricedCount: priced.length,
-        fromPrice: prices.length ? Math.min(...prices) : null,
-        fromUnit: priced[0]?.unit || "piece",
+        pricingMode,
+        items, // only configured, orderable garments (PER_GARMENT services)
+        perKg: perKgRule ? { price: perKgRule.price, minWeightKg: perKgRule.minWeightKg, gstPercent: perKgRule.gstPercent } : null,
+        pricedCount: perKgRule ? 1 : items.length,
+        fromPrice,
+        fromUnit: perKgRule ? "kg" : (items[0]?.unit || "piece"),
       }
     })
 
