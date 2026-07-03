@@ -39,8 +39,15 @@ export function StorefrontLayout({
   currentStore,
   onOpenStorePicker,
 }: StorefrontLayoutProps) {
-  const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance, currentBusinessType } = useAdminStore()
   const { items, totalItems, subtotal, updateQuantity, removeItem } = useCartStore()
+
+  // Customer-facing terminology for LAUNDRY workspaces (internal cart store is
+  // reused unchanged; only visible labels differ). Ecommerce is unaffected.
+  const isLaundry = currentBusinessType === "LAUNDRY"
+  const searchPlaceholder = isLaundry ? "Search services or garments…" : "Search products…"
+  const bagTitle = isLaundry ? "Laundry Bag" : "Your Cart"
+  const bagEmpty = isLaundry ? "Your laundry bag is empty" : "Your cart is empty"
   const { isAuthenticated, user } = useAuthStore()
   const isPwa = usePwaMode()
 
@@ -107,7 +114,7 @@ export function StorefrontLayout({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <ShoppingCart className="w-5 h-5" style={{ color: brandColor }} />
-            <h2 className="font-bold text-gray-900 text-[15px]">Your Cart</h2>
+            <h2 className="font-bold text-gray-900 text-[15px]">{bagTitle}</h2>
             {cartCount > 0 && (
               <span className="text-sm text-gray-400">
                 ({cartCount} {cartCount === 1 ? "item" : "items"})
@@ -130,7 +137,7 @@ export function StorefrontLayout({
             >
               <ShoppingCart className="w-9 h-9" style={{ color: brandColor }} />
             </div>
-            <p className="text-sm font-semibold text-gray-700">Your cart is empty</p>
+            <p className="text-sm font-semibold text-gray-700">{bagEmpty}</p>
             <p className="text-xs text-gray-400">Add items to get started</p>
             <button
               onClick={() => { setCartOpen(false); nav.go("category") }}
@@ -485,7 +492,7 @@ export function StorefrontLayout({
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search products…"
+                  placeholder={searchPlaceholder}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={handleSearch}
@@ -542,7 +549,7 @@ export function StorefrontLayout({
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search products…"
+                placeholder={searchPlaceholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearch}

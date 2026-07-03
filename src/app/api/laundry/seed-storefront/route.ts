@@ -33,12 +33,12 @@ export async function POST(request: Request) {
     const created: string[] = []
     const existing: string[] = []
 
-    // 1) Category — "Men" (existing-master convention for Shirt/Pant)
+    // 1) Category — "Men" (existing-master convention for Shirt/Pant/Blazer)
     let men = await prisma.laundryCategory.findFirst({ where: { businessId: lbId, name: "Men" } })
     if (!men) { men = await prisma.laundryCategory.create({ data: { businessId: lbId, name: "Men", displayOrder: 1 } }); created.push("category:Men") }
     else existing.push("category:Men")
 
-    // 2) Garments — Shirt, Pant under Men
+    // 2) Garments — Shirt, Pant, Blazer under Men
     const ensureGarment = async (name: string) => {
       let g = await prisma.laundryGarment.findFirst({ where: { businessId: lbId, name } })
       if (!g) { g = await prisma.laundryGarment.create({ data: { businessId: lbId, name, categoryId: men!.id, defaultUnit: "PIECE" } }); created.push(`garment:${name}`) }
@@ -50,30 +50,47 @@ export async function POST(request: Request) {
     }
     const shirt = await ensureGarment("Shirt")
     const pant = await ensureGarment("Pant")
+    const blazer = await ensureGarment("Blazer")
 
-    // 3) Service — Wash & Iron
-    let svc = await prisma.laundryService.findFirst({ where: { businessId: lbId, name: "Wash & Iron" } })
-    if (!svc) { svc = await prisma.laundryService.create({ data: { businessId: lbId, name: "Wash & Iron", description: "Fresh wash and professional ironing.", defaultPricingType: "PER_PIECE", defaultGstPercent: 0 } }); created.push("service:Wash & Iron") }
-    else existing.push("service:Wash & Iron")
+    // 3) Services — Wash & Iron, Wash, Iron Only, Dry Clean (multiple, to exercise
+    //    cross-service scoping on the storefront)
+    const ensureService = async (name: string, description: string) => {
+      let s = await prisma.laundryService.findFirst({ where: { businessId: lbId, name } })
+      if (!s) { s = await prisma.laundryService.create({ data: { businessId: lbId, name, description, defaultPricingType: "PER_PIECE", defaultGstPercent: 0 } }); created.push(`service:${name}`) }
+      else existing.push(`service:${name}`)
+      return s
+    }
+    const washIron = await ensureService("Wash & Iron", "Fresh wash and professional ironing.")
+    await ensureService("Wash", "Machine wash and dry.")
+    await ensureService("Iron Only", "Professional pressing.")
+    const dryClean = await ensureService("Dry Clean", "Solvent-based dry cleaning.")
 
-    // 4) Pricing rules — Wash & Iron × {Shirt,Pant} @ ₹40/pc, All Customers / All Stores
-    const ensureRule = async (name: string, garmentId: string) => {
+    // 4) Pricing rules — each obeys its real scope (garment/category targeted so
+    //    it can never leak onto unrelated garments). All Customers / All Stores.
+    //    Prices follow the active Pricing Engine (Pant is ₹50 under Wash & Iron).
+    const ensureRule = async (
+      name: string,
+      opts: { serviceId: string | null; garmentId: string | null; categoryId: string | null; price: number },
+    ) => {
       const rule = await prisma.laundryPricingRule.findFirst({
-        where: { businessId: lbId, serviceId: svc!.id, garmentId, customerType: null, storeId: null },
+        where: { businessId: lbId, serviceId: opts.serviceId, garmentId: opts.garmentId, categoryId: opts.categoryId, customerType: null, storeId: null },
       })
       if (!rule) {
         await prisma.laundryPricingRule.create({
-          data: { businessId: lbId, name, serviceId: svc!.id, garmentId, categoryId: null, storeId: null, customerType: null, pricingType: "PER_PIECE", price: 40, gstPercent: 0, priority: 0, status: "ACTIVE", isActive: true },
+          data: { businessId: lbId, name, serviceId: opts.serviceId, garmentId: opts.garmentId, categoryId: opts.categoryId, storeId: null, customerType: null, pricingType: "PER_PIECE", price: opts.price, gstPercent: 0, priority: 0, status: "ACTIVE", isActive: true },
         })
         created.push(`rule:${name}`)
       } else {
-        // Keep the demo rule at the documented ₹40 without disturbing scope.
-        if (rule.price !== 40 || !rule.isActive) await prisma.laundryPricingRule.update({ where: { id: rule.id }, data: { price: 40, isActive: true, status: "ACTIVE" } })
+        if (rule.price !== opts.price || !rule.isActive) await prisma.laundryPricingRule.update({ where: { id: rule.id }, data: { price: opts.price, isActive: true, status: "ACTIVE" } })
         existing.push(`rule:${name}`)
       }
     }
-    await ensureRule("Wash & Iron — Shirt", shirt.id)
-    await ensureRule("Wash & Iron — Pant", pant.id)
+    // Rule A — Shirt across ALL services @ ₹40 (garment-scoped, service-generic)
+    await ensureRule("Shirt", { serviceId: null, garmentId: shirt.id, categoryId: null, price: 40 })
+    // Rule B — Wash & Iron + Pant @ ₹50 (service + garment)
+    await ensureRule("Wash & Iron — Pant", { serviceId: washIron.id, garmentId: pant.id, categoryId: null, price: 50 })
+    // Rule C — Dry Clean + Men + Blazer @ ₹100 (service + category + garment)
+    await ensureRule("Blazer", { serviceId: dryClean.id, garmentId: blazer.id, categoryId: men.id, price: 100 })
 
     // 5) Subscription plan — Monthly 70 Clothes Plan (platform Business scope)
     const slug = "monthly-70-clothes"
@@ -108,7 +125,7 @@ export async function POST(request: Request) {
       data: {
         platformBusinessId: platformId, laundryBusinessId: lbId,
         created, existing,
-        ids: { categoryMen: men.id, shirt: shirt.id, pant: pant.id, service: svc.id, plan: plan.id },
+        ids: { categoryMen: men.id, shirt: shirt.id, pant: pant.id, blazer: blazer.id, washIron: washIron.id, dryClean: dryClean.id, plan: plan.id },
         demoPlanPrice: DEMO_PLAN_PRICE,
       },
     })

@@ -39,12 +39,22 @@ export async function GET(request: Request) {
 
     // Resolve every (service × garment) unit price through the Billing Resolver.
     const rulesTyped = rules as unknown as PricingRule[]
+    const ruleById = new Map(rulesTyped.map((r) => [r.id, r]))
+    // A garment row is only "priced" when the winning rule actually TARGETS that
+    // garment — either its garmentId, or its categoryId (category pricing). A
+    // rule that matches only via service/store/customer scope (garmentId AND
+    // categoryId both null) is garment-agnostic: it must NOT populate every
+    // garment row at one price (that is the pricing-leakage bug). Such garments
+    // are shown as "Price unavailable" on the customer listing. (The Billing
+    // Resolver itself is unchanged — order totals still honour generic rules.)
     const serviceCards = services.map((svc) => {
       const lineInputs = garments.map((g) => ({ serviceId: svc.id, garmentId: g.id, categoryId: g.categoryId, quantity: 1 }))
       const quote = computeQuote(rulesTyped, lineInputs, { storeId: storeId || null, customerType: null })
       const items = quote.lines.map((l, i) => {
         const g = garments[i]
-        const available = l.matchedRuleId != null
+        const rule = l.matchedRuleId ? ruleById.get(l.matchedRuleId) : null
+        const targetsGarment = !!rule && (rule.garmentId === g.id || (rule.categoryId != null && rule.categoryId === g.categoryId))
+        const available = l.matchedRuleId != null && targetsGarment
         return {
           garmentId: g.id,
           garmentName: g.name,
@@ -55,13 +65,18 @@ export async function GET(request: Request) {
           unit: available ? unitFor(l.pricingType) : null,
           gstPercent: available ? l.gstPercent : null,
         }
-      }).filter((it) => it.available) // only priced garments appear on a service
-      const prices = items.map((it) => it.unitPrice!).filter((p) => p > 0)
+      })
+      // All garments are returned (the Select-Service sheet shows unpriced ones
+      // as "Price unavailable" with disabled controls). Priced garments drive
+      // the service card + "From" price only.
+      const priced = items.filter((it) => it.available)
+      const prices = priced.map((it) => it.unitPrice!).filter((p) => p > 0)
       return {
         id: svc.id, name: svc.name, description: svc.description, icon: svc.icon,
         items,
+        pricedCount: priced.length,
         fromPrice: prices.length ? Math.min(...prices) : null,
-        fromUnit: items[0]?.unit || "piece",
+        fromUnit: priced[0]?.unit || "piece",
       }
     })
 
@@ -82,7 +97,7 @@ export async function GET(request: Request) {
       data: {
         business: { name: business?.name || "Laundry", businessType: business?.businessType || "LAUNDRY", isOnline: business?.isOnline ?? false },
         services: serviceCards,
-        popularServices: serviceCards.filter((s) => s.items.length > 0),
+        popularServices: serviceCards.filter((s) => s.pricedCount > 0),
         plans: planCards,
       },
     })
