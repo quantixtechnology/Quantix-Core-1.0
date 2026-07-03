@@ -160,6 +160,34 @@ log "── Super admin ──────────────────�
 node scripts/ensure-super-admin.js 2>&1 | tee -a "$LOG_FILE" || true
 log "✅ Super admin verified"
 
+# ─── Upload root ────────────────────────────────────────────────────────────────
+# The image upload endpoint (/api/core/upload) writes to UPLOAD_ROOT
+# (ecosystem.config.js → /var/www/uploads). If that directory does not exist or
+# is not writable by the app/PM2 user, EVERY image upload fails with EACCES —
+# regardless of file size. No prior step provisioned it, so we ensure it here.
+# Non-fatal: a warning is logged with the exact one-time fix if we lack rights.
+CURRENT_STEP="uploads"
+status "uploads" "Ensuring upload root is writable"
+log ""
+log "── Upload root ──────────────────────────────────────────────"
+UPLOAD_ROOT_DIR="${UPLOAD_ROOT:-/var/www/uploads}"
+APP_USER="$(whoami)"
+log "Upload root: $UPLOAD_ROOT_DIR (app user: $APP_USER)"
+if mkdir -p "$UPLOAD_ROOT_DIR" 2>/dev/null && [ -w "$UPLOAD_ROOT_DIR" ]; then
+  log "✅ Upload root exists and is writable"
+elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+  if sudo mkdir -p "$UPLOAD_ROOT_DIR" && sudo chown -R "$APP_USER":"$APP_USER" "$UPLOAD_ROOT_DIR" && sudo chmod -R u+rwX "$UPLOAD_ROOT_DIR"; then
+    log "✅ Upload root created and owned by $APP_USER (via sudo)"
+  else
+    log "⚠️  Could not provision upload root. Image uploads will FAIL until you run once:"
+    log "⚠️    sudo mkdir -p $UPLOAD_ROOT_DIR && sudo chown -R $APP_USER:$APP_USER $UPLOAD_ROOT_DIR"
+  fi
+else
+  log "⚠️  $UPLOAD_ROOT_DIR is not writable by $APP_USER and passwordless sudo is unavailable."
+  log "⚠️  Image uploads will FAIL with EACCES until you run once:"
+  log "⚠️    sudo mkdir -p $UPLOAD_ROOT_DIR && sudo chown -R $APP_USER:$APP_USER $UPLOAD_ROOT_DIR"
+fi
+
 # ─── Build ─────────────────────────────────────────────────────────────────────
 # If this step fails, the script exits here. PM2 is still running the PREVIOUS
 # .next/standalone — the old version stays live. Production is not disrupted.
