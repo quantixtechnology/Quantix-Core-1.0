@@ -33,6 +33,7 @@ import {
   Save, KeyRound, ShieldCheck, ExternalLink, Globe, Smartphone, Apple, Lock, HardDrive, Activity,
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/admin-fetch'
+import { LaundryImageUpload } from '@/components/laundry/views/pricing/laundry-image-upload'
 import { useAdminStore } from '@/stores/admin-store'
 import { getWorkspaceEntryRoute } from '@/lib/workspace-routes'
 import { ProductSelectionStep } from '@/components/onboarding/steps/product-selection-step'
@@ -355,8 +356,20 @@ export function BusinessManagementWizard({ businessId }: Props) {
               <Card className="p-6 space-y-4">
                 <h3 className="font-semibold text-sm">Branding (Quantix-managed)</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><Lbl>Logo URL</Lbl><Input value={form.logo ?? ''} onChange={(e) => set('logo', e.target.value)} /></div>
-                  <div><Lbl>Favicon URL</Lbl><Input value={form.favicon ?? ''} onChange={(e) => set('favicon', e.target.value)} /></div>
+                  <div><Lbl>Business Logo</Lbl>
+                    <LaundryImageUpload value={form.logo || null} businessId={bizId || 'shared'} folder="logos" objectFit="contain"
+                      allowed={['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']}
+                      helper="PNG, JPEG or WebP. Transparent PNG recommended."
+                      formatMsg="Unsupported format. Use PNG, JPEG, WebP or SVG."
+                      onChange={(url) => set('logo', url || '')} />
+                  </div>
+                  <div><Lbl>Favicon</Lbl>
+                    <LaundryImageUpload value={form.favicon || null} businessId={bizId || 'shared'} folder="favicons" objectFit="contain" aspect="aspect-square"
+                      allowed={['image/png', 'image/webp', 'image/x-icon', 'image/vnd.microsoft.icon']}
+                      helper="PNG, WebP or ICO. Square image recommended."
+                      formatMsg="Unsupported format. Use PNG, WebP or ICO."
+                      onChange={(url) => set('favicon', url || '')} />
+                  </div>
                   <div><Lbl>Primary Color</Lbl><div className="flex gap-2"><Input type="color" className="w-14 p-1 h-9" value={form.primaryColor ?? '#10B981'} onChange={(e) => set('primaryColor', e.target.value)} /><Input value={form.primaryColor ?? ''} onChange={(e) => set('primaryColor', e.target.value)} /></div></div>
                   <div><Lbl>Secondary Color</Lbl><div className="flex gap-2"><Input type="color" className="w-14 p-1 h-9" value={form.secondaryColor ?? '#000000'} onChange={(e) => set('secondaryColor', e.target.value)} /><Input value={form.secondaryColor ?? ''} onChange={(e) => set('secondaryColor', e.target.value)} /></div></div>
                 </div>

@@ -109,8 +109,10 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
             {filteredServices.length === 0 ? (
               <p className="text-sm text-gray-400 py-8 text-center">No laundry services configured yet.</p>
             ) : (
-              /* Compact catalog: 2-up mobile → 3 tablet → 4 desktop; fixed 16:9 image */
-              <div className="mt-3 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
+              /* Compact catalog: 2-up mobile (approved, unchanged) → 3 tablet →
+                 4 desktop → 5 wide; fixed 16:9 image so cards stay compact and
+                 never stretch a few cards across the full width. */
+              <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3">
                 {filteredServices.map((s) => (
                   <div key={s.id} className="rounded-2xl border border-gray-100 bg-white shadow-sm flex flex-col overflow-hidden">
                     <CardImage src={s.imageUrl} brandColor={brandColor} />
