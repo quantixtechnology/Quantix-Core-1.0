@@ -11,7 +11,7 @@ import { Loader2, Palette, Save, RefreshCw, Smartphone } from "lucide-react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { PageHeader } from "@/components/admin/shared/page-header"
-import { resolveImageUrl } from "@/lib/image-url"
+import { LaundryImageUpload } from "@/components/laundry/views/pricing/laundry-image-upload"
 import { type PwaAppearance, PWA_APPEARANCE_DEFAULTS } from "@/lib/pwa-appearance"
 
 interface BrandingData {
@@ -189,20 +189,42 @@ export function BrandingView() {
           </CardContent>
         </Card>
 
-        {/* Assets */}
+        {/* Assets — upload controls (admins never type a storage URL) */}
         <Card className="shadow-none">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Brand Assets</CardTitle>
-            <CardDescription className="text-xs">Image URLs for logos and icons</CardDescription>
+            <CardDescription className="text-xs">Upload your logo, favicon and icons — shown across your website and app.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {field("Logo URL", "logo", "url", "https://...")}
-            {field("Favicon URL", "favicon", "url", "https://...")}
-            {field("Cover Image URL", "coverImage", "url", "https://...")}
-            {field("App Icon URL", "appIcon", "url", "https://...")}
-            <div className="flex items-center gap-3 pt-1">
-              {data.logo && <img src={resolveImageUrl(data.logo)} alt="logo" className="h-10 w-10 object-contain rounded border" />}
-              {data.appIcon && <img src={resolveImageUrl(data.appIcon)} alt="icon" className="h-10 w-10 object-contain rounded border" />}
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Business Logo</Label>
+              <LaundryImageUpload value={data.logo} businessId={businessId} folder="logos" objectFit="contain"
+                allowed={["image/png", "image/jpeg", "image/webp", "image/svg+xml"]}
+                helper="PNG, JPEG or WebP. Transparent PNG recommended."
+                formatMsg="Unsupported format. Use PNG, JPEG, WebP or SVG."
+                onChange={url => setData(d => ({ ...d, logo: url ?? "" }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Favicon</Label>
+              <LaundryImageUpload value={data.favicon} businessId={businessId} folder="favicons" objectFit="contain" aspect="aspect-square"
+                allowed={["image/png", "image/webp", "image/x-icon", "image/vnd.microsoft.icon"]}
+                helper="PNG, ICO or WebP. Square image recommended."
+                formatMsg="Unsupported format. Use PNG, ICO or WebP."
+                onChange={url => setData(d => ({ ...d, favicon: url ?? "" }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">App Icon</Label>
+              <LaundryImageUpload value={data.appIcon} businessId={businessId} folder="app-icons" objectFit="contain" aspect="aspect-square"
+                allowed={["image/png", "image/webp"]}
+                helper="PNG or WebP. Square, 512×512 recommended."
+                formatMsg="Unsupported format. Use PNG or WebP."
+                onChange={url => setData(d => ({ ...d, appIcon: url ?? "" }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Cover Image</Label>
+              <LaundryImageUpload value={data.coverImage} businessId={businessId} folder="covers"
+                helper="JPEG, PNG or WebP. Wide 16:9 banner."
+                onChange={url => setData(d => ({ ...d, coverImage: url ?? "" }))} />
             </div>
           </CardContent>
         </Card>

@@ -102,7 +102,12 @@ export async function GET(request: Request) {
       success: true,
       data: {
         business: { name: business?.name || "Laundry", businessType: business?.businessType || "LAUNDRY", isOnline: business?.isOnline ?? false },
-        services: serviceCards,
+        // Customer catalog: only services with at least one active orderable price
+        // (per-garment) OR an active PER_KG price. Services with no configured
+        // customer price (e.g. Wash, Iron Only) are omitted from the public
+        // catalog — the admin Services screen still shows them. Filtered
+        // server-side; the Billing Resolver remains authoritative.
+        services: serviceCards.filter((s) => s.pricedCount > 0),
         popularServices: serviceCards.filter((s) => s.pricedCount > 0),
         plans: planCards,
       },
