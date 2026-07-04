@@ -15,6 +15,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
+import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
 import { generateOrderNumber, generateCustomerCode } from "@/lib/laundry-codes"
 import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/laundry-subscription"
 
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
       businessId?: string
       items?: OrderItemInput[]
       customer?: { name?: string; phone?: string; email?: string; id?: string }
-      pickup?: { address?: string; date?: string; timeSlot?: string; instructions?: string }
+      pickup?: { address?: string; addressId?: string; structured?: StructuredAddress; date?: string; timeSlot?: string; instructions?: string }
       useSubscription?: boolean
       forceNormal?: boolean
     }
@@ -47,16 +48,27 @@ export async function POST(request: Request) {
     const store = await prisma.laundryStore.findFirst({ where: { laundryBusinessId: lbId, isActive: true }, select: { id: true, storeCode: true } })
     if (!store) return NextResponse.json({ success: false, error: "No active store configured" }, { status: 400 })
 
-    // Customer — reuse an existing one by phone, else create a guest.
+    // Customer — reuse an existing one (by id or phone), else create. A NEW
+    // customer must supply an email (they become a normal tenant customer).
     let customerRow = customer.id
       ? await prisma.customer.findFirst({ where: { id: customer.id, businessId: platformId } })
       : await prisma.customer.findFirst({ where: { businessId: platformId, phone: customer.phone } })
     if (!customerRow) {
+      if (!customer.email?.trim()) return NextResponse.json({ success: false, error: "Email is required to create your account" }, { status: 400 })
       const code = await generateCustomerCode(lb?.businessCode || `LND-${lbId}`)
       customerRow = await prisma.customer.create({
-        data: { businessId: platformId, name: customer.name, phone: customer.phone, email: customer.email || null, customerCode: code, source: "STOREFRONT", isGuest: true },
+        data: { businessId: platformId, name: customer.name, phone: customer.phone, email: customer.email.trim().toLowerCase(), customerCode: code, source: "STOREFRONT", isGuest: true },
       })
     }
+
+    // Pickup address — shared Address (ownership + tenant validated) snapshotted
+    // onto the order for historical integrity.
+    const addr = await resolvePickupAddress({
+      addressId: pickup?.addressId, structured: pickup?.structured, legacyString: pickup?.address,
+      customerId: customerRow.id, customerName: customerRow.name, customerPhone: customerRow.phone,
+    })
+    if (!addr.ok) return NextResponse.json({ success: false, error: addr.error }, { status: addr.status || 400 })
+    const pickupSnapshot = addr.snapshot || null
 
     // ── Subscription context (optional) ──────────────────────────────────────
     let sub: { id: string; totalCredits: number; planName: string; maxOrders: number | null } | null = null
@@ -83,7 +95,7 @@ export async function POST(request: Request) {
     }
 
     // ── Price snapshot via the Billing Resolver (authoritative, server-side) ──
-    const isPickup = !!pickup?.address
+    const isPickup = !!pickupSnapshot
     const customerType = sub ? "SUBSCRIPTION" : (isPickup ? "PICKUP" : "WALK_IN")
     const { lines: resolved } = await resolveOrderBilling(lbId, { storeId: store.id, customerType: sub ? null : customerType, pickup: isPickup, delivery: isPickup }, items)
 
@@ -125,7 +137,7 @@ export async function POST(request: Request) {
         paymentPreference: sub ? "SUBSCRIPTION_BILLING" : "COD",
         pickupDate: pickup?.date ? new Date(pickup.date) : null,
         pickupTimeSlot: pickup?.timeSlot || null,
-        pickupAddress: pickup?.address || null,
+        pickupAddress: pickupSnapshot,
         pickupInstructions: pickup?.instructions || null,
         subtotal, gstTotal, pickupCharge: 0, deliveryCharge: 0, expressCharge: 0, discount: 0,
         grandTotal, amountPaid: 0, balanceDue: grandTotal,

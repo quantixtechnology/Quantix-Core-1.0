@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { generateOrderNumber, generateCustomerCode } from "@/lib/laundry-codes"
+import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
 import { createSubscriptionPurchase } from "@/lib/laundry-subscription-purchase"
 
 export const runtime = "nodejs"
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
     const { businessId, items, subscriptionPlanId, customer, pickup, paymentMethod } = body as {
       businessId?: string; items?: Item[]; subscriptionPlanId?: string
       customer?: { name?: string; phone?: string; email?: string }
-      pickup?: { address?: string; date?: string; timeSlot?: string }
+      pickup?: { address?: string; addressId?: string; structured?: StructuredAddress; date?: string; timeSlot?: string }
       paymentMethod?: "COD" | "ONLINE"
     }
     if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
@@ -49,16 +50,22 @@ export async function POST(request: Request) {
     // Customer (reuse by phone, else guest).
     let customerRow = await prisma.customer.findFirst({ where: { businessId: platformId, phone: customer.phone } })
     if (!customerRow) {
+      if (!customer.email?.trim()) return NextResponse.json({ success: false, error: "Email is required to create your account" }, { status: 400 })
       const code = await generateCustomerCode(lb?.businessCode || `LND-${lbId}`)
-      customerRow = await prisma.customer.create({ data: { businessId: platformId, name: customer.name, phone: customer.phone, email: customer.email || null, customerCode: code, source: "STOREFRONT", isGuest: true } })
+      customerRow = await prisma.customer.create({ data: { businessId: platformId, name: customer.name, phone: customer.phone, email: customer.email.trim().toLowerCase(), customerCode: code, source: "STOREFRONT", isGuest: true } })
     }
+
+    // Pickup address snapshot (shared Address, ownership + tenant validated).
+    const addr = await resolvePickupAddress({ addressId: pickup?.addressId, structured: pickup?.structured, legacyString: pickup?.address, customerId: customerRow.id, customerName: customerRow.name, customerPhone: customerRow.phone })
+    if (hasItems && !addr.ok) return NextResponse.json({ success: false, error: addr.error }, { status: addr.status || 400 })
+    const pickupSnapshot = addr.ok ? (addr.snapshot || null) : null
 
     // ── Garment LaundryOrder (normal prices) ─────────────────────────────────
     let order: { id: string; orderNumber: string; grandTotal: number } | null = null
     if (hasItems) {
       const store = await prisma.laundryStore.findFirst({ where: { laundryBusinessId: lbId, isActive: true }, select: { id: true, storeCode: true } })
       if (!store) return NextResponse.json({ success: false, error: "No active store configured" }, { status: 400 })
-      const isPickup = !!pickup?.address
+      const isPickup = !!pickupSnapshot
       const { lines } = await resolveOrderBilling(lbId, { storeId: store.id, customerType: isPickup ? "PICKUP" : "WALK_IN", pickup: isPickup, delivery: isPickup }, items)
       const subtotal = lines.reduce((s, l) => s + l.lineAmount, 0)
       const gstTotal = lines.reduce((s, l) => s + l.gstAmount, 0)
@@ -70,7 +77,7 @@ export async function POST(request: Request) {
           orderNumber, businessId: lbId, storeId: store.id, customerId: customerRow.id,
           orderType: isPickup ? "HOME_PICKUP" : "STORE_DROP", source: "CUSTOMER_STOREFRONT", status: "PENDING_STORE_AUDIT",
           paymentPreference: paymentMethod === "ONLINE" ? "FULL_ADVANCE" : "COD",
-          pickupDate: pickup?.date ? new Date(pickup.date) : null, pickupTimeSlot: pickup?.timeSlot || null, pickupAddress: pickup?.address || null,
+          pickupDate: pickup?.date ? new Date(pickup.date) : null, pickupTimeSlot: pickup?.timeSlot || null, pickupAddress: pickupSnapshot,
           subtotal, gstTotal, pickupCharge: 0, deliveryCharge: 0, expressCharge: 0, discount: 0,
           grandTotal, amountPaid: 0, balanceDue: grandTotal, paymentStatus: "UNPAID", customerType: isPickup ? "PICKUP" : "WALK_IN", billedAt: new Date(),
           services: { create: serviceLines },

@@ -235,10 +235,12 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
 // ── Order flow: Select garments → Details/Pickup → Confirm → Success ─────────
 interface SubStatus { active: boolean; subscriptionId?: string; planName?: string; allowance?: number; used?: number; remaining?: number; ordersUsed?: number; maxOrders?: number | null }
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
+interface Addr { id: string; label?: string | null; addressLine1: string; addressLine2?: string | null; area?: string | null; landmark?: string | null; city: string; state?: string | null; pincode: string; country?: string | null; isDefault?: boolean }
+const fmtAddr = (a: Addr) => [a.addressLine1, a.area, a.landmark, [a.city, a.state].filter(Boolean).join(", ") + (a.pincode ? ` - ${a.pincode}` : "")].filter((x) => x && String(x).trim()).join(", ")
 function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, clearSubscription, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; clearSubscription: () => void; onClose: () => void }) {
   const [step, setStep] = useState<"select" | "details" | "success">("select")
   const [qty, setQty] = useState<Record<string, number>>({})
-  const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || ""); const [address, setAddress] = useState("")
+  const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || "")
   const [date, setDate] = useState(""); const [slot, setSlot] = useState("Morning (9AM–12PM)")
   const [useSub, setUseSub] = useState(false); const [forceNormal, setForceNormal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -252,6 +254,49 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [gSearch, setGSearch] = useState("")
   const [weightKg, setWeightKg] = useState("")
   const isPerKg = service.pricingMode === "PER_KG"
+
+  // ── Customer identity + structured address (reuse shared /profile + /addresses) ──
+  const [email, setEmail] = useState(authCustomer?.email || "")
+  const [custId, setCustId] = useState<string | null>(null)
+  const [addresses, setAddresses] = useState<Addr[]>([])
+  const [selAddr, setSelAddr] = useState<string | null>(null)
+  const [showAddAddr, setShowAddAddr] = useState(false)
+  const [addrForm, setAddrForm] = useState({ label: "Home", addressLine1: "", area: "", landmark: "", city: "", state: "", pincode: "", isDefault: false })
+  const [savingAddr, setSavingAddr] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const authHeaders = useMemo(() => ({ "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}`, "x-business-id": businessId } : {}) }), [token, businessId])
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) return
+    fetch("/api/core/storefront/profile", { headers: authHeaders }).then((r) => r.json()).then((j) => {
+      if (j.success && j.data) { setCustId(j.data.id || null); if (j.data.name) setName(j.data.name); setPhone(j.data.phone || ""); setEmail(j.data.email || "") }
+    }).catch(() => {})
+    fetch("/api/core/storefront/addresses", { headers: authHeaders }).then((r) => r.json()).then((j) => {
+      if (j.success) { const list: Addr[] = j.data || []; setAddresses(list); const def = list.find((a) => a.isDefault) || list[0]; if (def) setSelAddr(def.id) }
+    }).catch(() => {})
+  }, [isAuthenticated, token, authHeaders])
+
+  const missingPhone = !phone.trim()
+  const missingEmail = !email.trim()
+  const profileIncomplete = isAuthenticated && (missingPhone || missingEmail)
+
+  const saveProfile = async () => {
+    setSavingProfile(true)
+    try {
+      const res = await fetch("/api/core/storefront/profile", { method: "PUT", headers: authHeaders, body: JSON.stringify({ phone, email }) })
+      const j = await res.json(); if (!res.ok || !j.success) throw new Error(j.error || "Could not save profile")
+      toast.success("Profile updated")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSavingProfile(false) }
+  }
+  const saveAddress = async () => {
+    if (!addrForm.addressLine1.trim() || !addrForm.city.trim() || !addrForm.pincode.trim()) { toast.error("Address line, city and PIN code are required"); return }
+    setSavingAddr(true)
+    try {
+      const res = await fetch("/api/core/storefront/addresses", { method: "POST", headers: authHeaders, body: JSON.stringify(addrForm) })
+      const j = await res.json(); if (!res.ok || !j.success) throw new Error(j.error || "Could not save address")
+      const a: Addr = j.data; setAddresses((p) => [a, ...p]); setSelAddr(a.id); setShowAddAddr(false); toast.success("Address saved")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSavingAddr(false) }
+  }
 
   const gq = gSearch.trim().toLowerCase()
   const visibleItems = gq ? service.items.filter((it) => it.garmentName.toLowerCase().includes(gq)) : service.items
@@ -285,7 +330,14 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   }
 
   const submit = async (force = false) => {
-    if (!name.trim() || !phone.trim()) { toast.error("Name and phone are required"); return }
+    // Validation follows the visible form order: identity → email → address → date.
+    if (!name.trim() || !phone.trim()) { toast.error("Name and mobile number are required"); return }
+    if (!email.trim()) { toast.error("Email address is required"); return }
+    if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
+    if (!date) { toast.error("Select a pickup date"); return }
+    const customerPayload = { id: custId || undefined, name, phone, email }
+    const structured = { fullName: name, phone, label: addrForm.label, addressLine1: addrForm.addressLine1, addressLine2: null as string | null, area: addrForm.area, landmark: addrForm.landmark, city: addrForm.city, state: addrForm.state, pincode: addrForm.pincode }
+    const pickupPayload = { addressId: selAddr || undefined, structured: (!selAddr && addrForm.addressLine1.trim()) ? structured : undefined, date: date || null, timeSlot: slot }
     setSubmitting(true); setLimitNotice(null)
     try {
       // Buying a subscription plan in this cart → combined checkout: garments make
@@ -294,7 +346,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       if (subscriptionInCart) {
         const res = await fetch("/api/core/storefront/laundry-checkout", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ businessId, items: orderItems(), subscriptionPlanId: subscriptionInCart.id, customer: { name, phone, email: "" }, pickup: { address, date: date || null, timeSlot: slot }, paymentMethod: "COD" }),
+          body: JSON.stringify({ businessId, items: orderItems(), subscriptionPlanId: subscriptionInCart.id, customer: customerPayload, pickup: pickupPayload, paymentMethod: "COD" }),
         })
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Checkout failed")
@@ -307,8 +359,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         body: JSON.stringify({
           businessId,
           items: orderItems(),
-          customer: { name, phone, email: "" },
-          pickup: { address, date: date || null, timeSlot: slot },
+          customer: customerPayload,
+          pickup: pickupPayload,
           useSubscription: useSub, forceNormal: force || forceNormal,
         }),
       })
@@ -407,17 +459,65 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                 <div className="flex justify-between text-sm pt-1 border-t border-gray-100 mt-1"><span className="font-semibold text-gray-700">Total Due</span><span className="font-bold" style={{ color: brandColor }}>{inr(clientSubtotal + (subscriptionInCart?.price || 0))}</span></div>
               </div>
             </div>
-            {authCustomer ? (
+            {/* Customer identity (shared account) — complete profile inline if needed */}
+            {isAuthenticated ? (
               <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-sm">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Ordering As</p>
-                <p className="font-semibold text-gray-800">{authCustomer.name}</p>
-                <p className="text-xs text-gray-500">{authCustomer.email && maskEmail(authCustomer.email)}{authCustomer.email && authCustomer.phone ? " · " : ""}{maskPhone(authCustomer.phone)}</p>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{profileIncomplete ? "Complete Your Profile" : "Ordering As"}</p>
+                <p className="font-semibold text-gray-800">{name || authCustomer?.name}</p>
+                {!profileIncomplete && <p className="text-xs text-gray-500">{email && maskEmail(email)}{email && phone ? " · " : ""}{maskPhone(phone)}</p>}
+                {profileIncomplete && (
+                  <div className="mt-2 space-y-2">
+                    {missingPhone && <Field label="Mobile Number *"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>}
+                    {missingEmail && <Field label="Email Address *"><input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="you@email.com" /></Field>}
+                    <button onClick={saveProfile} disabled={savingProfile} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center gap-1" style={accentBg}>{savingProfile && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save &amp; Continue</button>
+                  </div>
+                )}
               </div>
-            ) : (<>
-              <Field label="Full Name"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your name" /></Field>
-              <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
-            </>)}
-            <Field label="Pickup Address"><textarea value={address} onChange={(e) => setAddress(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none min-h-[56px]" placeholder="Flat, building, area…" /></Field>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Your Details</p>
+                <Field label="Full Name *"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your full name" /></Field>
+                <Field label="Mobile Number *"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
+                <Field label="Email Address *"><input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="you@email.com" /></Field>
+              </div>
+            )}
+
+            {/* Structured pickup address (shared Address model) */}
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">Pickup Address <span className="normal-case font-normal text-gray-400">· we return your order here</span></p>
+              {isAuthenticated && addresses.length > 0 && !showAddAddr ? (
+                <div className="space-y-2">
+                  {addresses.map((a) => (
+                    <button key={a.id} onClick={() => setSelAddr(a.id)} className={`w-full text-left rounded-lg border p-2.5 text-sm ${selAddr === a.id ? "border-2" : "border-gray-200"}`} style={selAddr === a.id ? { borderColor: brandColor } : {}}>
+                      <span className="text-[10px] font-bold uppercase text-gray-400">{a.label || "Home"}{a.isDefault ? " · Default" : ""}{selAddr === a.id ? " · Selected" : ""}</span>
+                      <p className="text-gray-700">{fmtAddr(a)}</p>
+                    </button>
+                  ))}
+                  <button onClick={() => setShowAddAddr(true)} className="text-xs font-semibold" style={{ color: brandColor }}>+ Add New Address</button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-1.5">{["Home", "Work", "Other"].map((t) => <button key={t} onClick={() => setAddrForm((f) => ({ ...f, label: t }))} className={`rounded-lg px-2.5 py-1 text-xs border ${addrForm.label === t ? "text-white border-transparent" : "border-gray-200 text-gray-600"}`} style={addrForm.label === t ? accentBg : {}}>{t}</button>)}</div>
+                  <input value={addrForm.addressLine1} onChange={(e) => setAddrForm((f) => ({ ...f, addressLine1: e.target.value }))} placeholder="Flat / House / Building *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                  <input value={addrForm.area} onChange={(e) => setAddrForm((f) => ({ ...f, area: e.target.value }))} placeholder="Street / Area / Locality" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                  <input value={addrForm.landmark} onChange={(e) => setAddrForm((f) => ({ ...f, landmark: e.target.value }))} placeholder="Landmark (optional)" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={addrForm.pincode} onChange={(e) => setAddrForm((f) => ({ ...f, pincode: e.target.value }))} placeholder="PIN Code *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                    <input value={addrForm.city} onChange={(e) => setAddrForm((f) => ({ ...f, city: e.target.value }))} placeholder="City *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                  </div>
+                  <input value={addrForm.state} onChange={(e) => setAddrForm((f) => ({ ...f, state: e.target.value }))} placeholder="State" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                  {isAuthenticated && (
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={addrForm.isDefault} onChange={(e) => setAddrForm((f) => ({ ...f, isDefault: e.target.checked }))} /> Make default</label>
+                      <div className="flex gap-2">
+                        {addresses.length > 0 && <button onClick={() => setShowAddAddr(false)} className="text-xs text-gray-500 px-2">Cancel</button>}
+                        <button onClick={saveAddress} disabled={savingAddr} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center gap-1" style={accentBg}>{savingAddr && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Address</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Pickup Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" /></Field>
               <Field label="Time Slot">
