@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
+import { INDIAN_STATES } from "@/lib/constants"
 import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
 import { toast } from "sonner"
 import type { WebNav } from "./storefront-website"
@@ -505,7 +506,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                     <input value={addrForm.pincode} onChange={(e) => setAddrForm((f) => ({ ...f, pincode: e.target.value }))} placeholder="PIN Code *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                     <input value={addrForm.city} onChange={(e) => setAddrForm((f) => ({ ...f, city: e.target.value }))} placeholder="City *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                   </div>
-                  <input value={addrForm.state} onChange={(e) => setAddrForm((f) => ({ ...f, state: e.target.value }))} placeholder="State" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                  <select value={addrForm.state} onChange={(e) => setAddrForm((f) => ({ ...f, state: e.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white text-gray-700">
+                    <option value="">Select State</option>
+                    {INDIAN_STATES.map((st) => <option key={st} value={st}>{st}</option>)}
+                  </select>
                   {isAuthenticated && (
                     <div className="flex items-center justify-between">
                       <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={addrForm.isDefault} onChange={(e) => setAddrForm((f) => ({ ...f, isDefault: e.target.checked }))} /> Make default</label>

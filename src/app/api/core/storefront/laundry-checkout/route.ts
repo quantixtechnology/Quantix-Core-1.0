@@ -19,7 +19,8 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
-import { generateOrderNumber, generateCustomerCode } from "@/lib/laundry-codes"
+import { generateOrderNumber } from "@/lib/laundry-codes"
+import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
 import { createSubscriptionPurchase } from "@/lib/laundry-subscription-purchase"
 
@@ -47,13 +48,14 @@ export async function POST(request: Request) {
     const platformId = biz.platformBusinessId || businessId
     const lb = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { businessCode: true } })
 
-    // Customer (reuse by phone, else guest).
-    let customerRow = await prisma.customer.findFirst({ where: { businessId: platformId, phone: customer.phone } })
-    if (!customerRow) {
-      if (!customer.email?.trim()) return NextResponse.json({ success: false, error: "Email is required to create your account" }, { status: 400 })
-      const code = await generateCustomerCode(lb?.businessCode || `LND-${lbId}`)
-      customerRow = await prisma.customer.create({ data: { businessId: platformId, name: customer.name, phone: customer.phone, email: customer.email.trim().toLowerCase(), customerCode: code, source: "STOREFRONT", isGuest: true } })
-    }
+    // Canonical customer — shared resolver (no duplicate on phone format / channel).
+    const resolved = await resolveOrCreateLaundryCustomer({
+      platformBusinessId: platformId, businessCodeForCode: lb?.businessCode || `LND-${lbId}`,
+      name: customer.name, phone: customer.phone, email: customer.email, customerId: (customer as { id?: string }).id,
+      source: "STOREFRONT", emailRequiredForNew: true,
+    })
+    if (!resolved.customer) return NextResponse.json({ success: false, error: resolved.error || "Could not resolve customer" }, { status: 400 })
+    const customerRow = resolved.customer
 
     // Pickup address snapshot (shared Address, ownership + tenant validated).
     const addr = await resolvePickupAddress({ addressId: pickup?.addressId, structured: pickup?.structured, legacyString: pickup?.address, customerId: customerRow.id, customerName: customerRow.name, customerPhone: customerRow.phone })

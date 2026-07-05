@@ -16,7 +16,8 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
-import { generateOrderNumber, generateCustomerCode } from "@/lib/laundry-codes"
+import { generateOrderNumber } from "@/lib/laundry-codes"
+import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/laundry-subscription"
 
 export const runtime = "nodejs"
@@ -48,18 +49,16 @@ export async function POST(request: Request) {
     const store = await prisma.laundryStore.findFirst({ where: { laundryBusinessId: lbId, isActive: true }, select: { id: true, storeCode: true } })
     if (!store) return NextResponse.json({ success: false, error: "No active store configured" }, { status: 400 })
 
-    // Customer — reuse an existing one (by id or phone), else create. A NEW
-    // customer must supply an email (they become a normal tenant customer).
-    let customerRow = customer.id
-      ? await prisma.customer.findFirst({ where: { id: customer.id, businessId: platformId } })
-      : await prisma.customer.findFirst({ where: { businessId: platformId, phone: customer.phone } })
-    if (!customerRow) {
-      if (!customer.email?.trim()) return NextResponse.json({ success: false, error: "Email is required to create your account" }, { status: 400 })
-      const code = await generateCustomerCode(lb?.businessCode || `LND-${lbId}`)
-      customerRow = await prisma.customer.create({
-        data: { businessId: platformId, name: customer.name, phone: customer.phone, email: customer.email.trim().toLowerCase(), customerCode: code, source: "STOREFRONT", isGuest: true },
-      })
-    }
+    // Canonical customer — ONE shared resolver (normalized email/phone + id +
+    // auth linkage) so no duplicate is created due to phone format / missing
+    // email / channel. A genuinely new customer must provide an email.
+    const custResolved = await resolveOrCreateLaundryCustomer({
+      platformBusinessId: platformId, businessCodeForCode: lb?.businessCode || `LND-${lbId}`,
+      name: customer.name, phone: customer.phone, email: customer.email, customerId: customer.id,
+      source: "STOREFRONT", emailRequiredForNew: true,
+    })
+    if (!custResolved.customer) return NextResponse.json({ success: false, error: custResolved.error || "Could not resolve customer" }, { status: 400 })
+    const customerRow = custResolved.customer
 
     // Pickup address — shared Address (ownership + tenant validated) snapshotted
     // onto the order for historical integrity.
