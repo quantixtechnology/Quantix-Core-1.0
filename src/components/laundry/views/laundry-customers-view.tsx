@@ -16,9 +16,10 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail, MapPin, Save } from "lucide-react"
+import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail, MapPin, Save, Trash2, AlertTriangle } from "lucide-react"
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
+import { getAuthHeaders } from "@/lib/admin-fetch"
 
 interface Row {
   id: string; name: string; phone: string | null; email: string | null; customerCode: string | null
@@ -33,7 +34,8 @@ const tierStyle = (t: string) => ({ GOLD: "border-amber-300 text-amber-700 bg-am
 const initials = (n: string) => n.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 
 export function LaundryCustomersView() {
-  const { currentBusinessId } = useAuthStore()
+  const { currentBusinessId, user } = useAuthStore()
+  const isSuperAdmin = user?.role === "QUANTIX_SUPER_ADMIN"
   const { setLaundryPage } = useAdminStore()
   const { toast } = useToast()
   const [rows, setRows] = useState<Row[]>([])
@@ -49,6 +51,24 @@ export function LaundryCustomersView() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [form, setForm] = useState<Record<string, string>>({})
   const [savingEdit, setSavingEdit] = useState(false)
+
+  // Super-admin permanent delete
+  const [deleteTarget, setDeleteTarget] = useState<Row | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState("")
+  const [deleting, setDeleting] = useState(false)
+
+  const doDelete = async () => {
+    if (!deleteTarget || deleteConfirm !== "DELETE") return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/core/admin/customers/${deleteTarget.id}?businessId=${currentBusinessId}`, { method: "DELETE", headers: getAuthHeaders() })
+      const json = await res.json()
+      if (!res.ok || !json.success) { toast({ title: "Delete failed", description: json.error, variant: "destructive" }); return }
+      const n = json.data?.deletedCounts || {}
+      toast({ title: "Customer deleted", description: `${deleteTarget.name} and all related data removed (${n.laundryOrders || 0} orders, ${n.addresses || 0} addresses, ${n.customerSubscriptions || 0} subscriptions).` })
+      setDeleteTarget(null); setDeleteConfirm(""); load()
+    } catch { toast({ title: "Delete failed", variant: "destructive" }) } finally { setDeleting(false) }
+  }
 
   const load = useCallback(async () => {
     if (!currentBusinessId) return
@@ -150,6 +170,7 @@ export function LaundryCustomersView() {
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="View" onClick={() => openCustomer(c.id, false)}><Eye className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="Edit" onClick={() => openCustomer(c.id, true)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="New Order" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /></Button>
+                        {isSuperAdmin && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-rose-600" title="Delete permanently (Super Admin)" onClick={() => { setDeleteTarget(c); setDeleteConfirm("") }}><Trash2 className="h-4 w-4" /></Button>}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -216,6 +237,28 @@ export function LaundryCustomersView() {
             ) : (
               <><Button variant="outline" className="gap-1" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</Button><Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /> New Order</Button></>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Super-admin permanent delete confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) { setDeleteTarget(null); setDeleteConfirm("") } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700"><AlertTriangle className="h-5 w-5" /> Delete Customer Permanently?</DialogTitle>
+            <DialogDescription className="text-slate-600">
+              This will permanently delete <span className="font-semibold text-slate-800">{deleteTarget?.name}</span> and all related orders, addresses, subscriptions, payments and operational history. <span className="font-semibold text-rose-600">This action cannot be undone.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Type <span className="font-mono font-bold">DELETE</span> to confirm</Label>
+            <Input value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} placeholder="DELETE" autoFocus />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteConfirm("") }}>Cancel</Button>
+            <Button className="gap-1 bg-rose-600 hover:bg-rose-700 text-white" disabled={deleteConfirm !== "DELETE" || deleting} onClick={doDelete}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Customer &amp; All Data
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
