@@ -71,10 +71,23 @@ export async function GET(request: Request) {
   }
 }
 
+// Charges & Rules must NOT create or override a base service/garment price —
+// those come ONLY from Services → Garment → Price (the /services/[id]/prices
+// route). This route now configures surcharges only (pickup/delivery/express/
+// weekend/minimum + schedule/store/priority). A base unit price is rejected.
+function rejectBasePrice(b: Record<string, unknown>): string | null {
+  if (b.price !== undefined && Number(b.price) > 0) {
+    return "Base service/garment prices are managed in Services → Garment → Price. Charges & Rules configure surcharges only (pickup, delivery, express, weekend, minimum charge)."
+  }
+  return null
+}
+
 export async function POST(request: Request) {
   try {
     const b = await request.json()
     if (!b.businessId) return NextResponse.json({ error: "businessId is required" }, { status: 400 })
+    const baseErr = rejectBasePrice(b)
+    if (baseErr) return NextResponse.json({ error: baseErr }, { status: 400 })
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
 

@@ -34,6 +34,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const b = await request.json()
+    // Charges & Rules cannot set/override a base unit price (managed in Services).
+    if (b.price !== undefined && Number(b.price) > 0) {
+      return NextResponse.json({ error: "Base service/garment prices are managed in Services → Garment → Price. Charges & Rules configure surcharges only." }, { status: 400 })
+    }
     const existing = await prisma.laundryPricingRule.findUnique({ where: { id }, select: { status: true } })
     if (!existing) return NextResponse.json({ error: "Pricing rule not found" }, { status: 404 })
 

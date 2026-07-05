@@ -108,14 +108,14 @@ export function PricingSimulator({ businessId, masters }: { businessId: string; 
                 </div>
               </div>
               <div className="space-y-1 text-sm">
-                <Row label="Unit Price" value={inr(result.line.unitPrice)} />
-                <Row label="Subtotal" value={inr(result.quote.subtotal)} />
+                <Row label="Base Service Amount" value={inr(result.quote.subtotal)} />
+                <Row label="Subscription Adjustment" value="— (per customer at checkout)" />
                 <Row label={`GST (${result.line.gstPercent}%)`} value={inr(result.quote.gstTotal)} />
-                {result.quote.expressCharge > 0 && <Row label="Express" value={inr(result.quote.expressCharge)} />}
-                {result.quote.pickupCharge > 0 && <Row label="Pickup" value={inr(result.quote.pickupCharge)} />}
-                {result.quote.deliveryCharge > 0 && <Row label="Delivery" value={inr(result.quote.deliveryCharge)} />}
+                <Row label="Pickup Charge" value={inr(result.quote.pickupCharge)} />
+                <Row label="Delivery Charge" value={inr(result.quote.deliveryCharge)} />
+                <Row label="Express Charge" value={inr(result.quote.expressCharge)} />
                 <Separator />
-                <div className="flex justify-between font-semibold text-base"><span>Grand Total</span><span>{inr(result.quote.grandTotal)}</span></div>
+                <div className="flex justify-between font-semibold text-base"><span>Final Amount</span><span>{inr(result.quote.grandTotal)}</span></div>
               </div>
 
               {/* Resolution Visualizer */}

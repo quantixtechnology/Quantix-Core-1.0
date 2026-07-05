@@ -163,7 +163,7 @@ export function LaundryPricingEngine() {
           <TabsTrigger value="services" className="gap-1.5"><WashingMachine className="h-3.5 w-3.5" /> Services</TabsTrigger>
           <TabsTrigger value="garments" className="gap-1.5"><Shirt className="h-3.5 w-3.5" /> Garments</TabsTrigger>
           <TabsTrigger value="plans" className="gap-1.5"><Repeat className="h-3.5 w-3.5" /> Subscription Plans</TabsTrigger>
-          <TabsTrigger value="rules" className="gap-1.5"><IndianRupee className="h-3.5 w-3.5" /> Advanced Pricing</TabsTrigger>
+          <TabsTrigger value="rules" className="gap-1.5"><IndianRupee className="h-3.5 w-3.5" /> Charges &amp; Rules</TabsTrigger>
           <TabsTrigger value="simulator" className="gap-1.5"><Calculator className="h-3.5 w-3.5" /> Pricing Simulator</TabsTrigger>
         </TabsList>
 
@@ -177,9 +177,12 @@ export function LaundryPricingEngine() {
           {currentBusinessId && <LaundryGarmentsMaster />}
         </TabsContent>
 
-        {/* ── Advanced Pricing tab (existing rule engine) ── */}
+        {/* ── Charges & Rules tab (surcharges only — NOT base prices) ── */}
         <TabsContent value="rules" className="space-y-3">
-          <p className="text-xs text-muted-foreground -mt-1">Optional advanced pricing rules for special pricing scenarios. Most laundries only need the Services tab.</p>
+          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900 -mt-1">
+            <b>Charges &amp; Rules configure surcharges only</b> — minimum charge, pickup, delivery, express, weekend, plus schedule / store scope / priority.
+            Base prices come from <b>Services → Garment → Price</b>; subscription pricing &amp; allowance from <b>Subscription Plans</b>. A rule here cannot set or override a base garment/service price.
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
