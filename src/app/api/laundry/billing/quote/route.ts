@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { computeQuote, type PricingRule } from "@/lib/laundry-billing"
+import { applyChargesConfig } from "@/lib/laundry-billing-server"
 
 export const runtime = "nodejs"
 
@@ -25,11 +26,8 @@ export async function POST(request: Request) {
       where: { businessId: biz.id, isActive: true },
     })
 
-    const quote = computeQuote(
-      rules as unknown as PricingRule[],
-      items,
-      { storeId: storeId || null, customerType: customerType || null, weekend: !!weekend, express: !!express, pickup: !!pickup, delivery: !!delivery },
-    )
+    const ctx = await applyChargesConfig(biz.id, { storeId: storeId || null, customerType: customerType || null, weekend: !!weekend, express: !!express, pickup: !!pickup, delivery: !!delivery })
+    const quote = computeQuote(rules as unknown as PricingRule[], items, ctx)
 
     return NextResponse.json({ success: true, data: quote })
   } catch (e) {

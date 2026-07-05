@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
-import { ChargeRuleWizard } from "./pricing/charge-rule-wizard"
+import { LaundryChargesRules } from "./pricing/laundry-charges-rules"
 import { PricingSimulator } from "./pricing/pricing-simulator"
 import { LaundrySubscriptionPlans } from "./pricing/laundry-subscription-plans"
 import { LaundryServicesPricing } from "./pricing/laundry-services-pricing"
@@ -178,100 +178,9 @@ export function LaundryPricingEngine() {
         </TabsContent>
 
         {/* ── Charges & Rules tab (surcharges only — NOT base prices) ── */}
-        <TabsContent value="rules" className="space-y-3">
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900 -mt-1">
-            <b>Charges &amp; Rules configure surcharges only</b> — minimum charge, pickup, delivery, express, weekend, plus schedule / store scope / priority.
-            Base prices come from <b>Services → Garment → Price</b>; subscription pricing &amp; allowance from <b>Subscription Plans</b>. A rule here cannot set or override a base garment/service price.
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search rules, service, garment, category…" className="pl-9 h-9" value={qInput} onChange={(e) => setQInput(e.target.value)} />
-            </div>
-            <FilterSelect value={status} onChange={(v) => { setPage(1); setStatus(v) }} all="All Status" options={STATUSES.map((s) => ({ value: s, label: typeLabel(s) }))} />
-            <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white h-9" onClick={() => setWizard({ mode: "create", rule: null })}>
-              <Plus className="h-3.5 w-3.5" /> New Charge Rule
-            </Button>
-          </div>
-
-          <Card><CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-16 text-muted-foreground gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
-            ) : rules.length === 0 ? (
-              <div className="text-center py-16">
-                <IndianRupee className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-                <p className="text-sm font-medium">{q || status !== "ALL" || customerType !== "ALL" || pricingType !== "ALL" ? "No rules match your filters" : "No pricing rules yet"}</p>
-                <p className="text-xs text-muted-foreground mt-1">{q || status !== "ALL" ? "Try clearing filters." : "Create your first rule to start billing orders."}</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <SortHead col="name">Rule</SortHead>
-                      <TableHead>Scope</TableHead>
-                      <SortHead col="pricingType">Type</SortHead>
-                      <SortHead col="price">Base Price</SortHead>
-                      <SortHead col="gstPercent">GST</SortHead>
-                      <SortHead col="priority">Priority</SortHead>
-                      <TableHead className="whitespace-nowrap">Effective</TableHead>
-                      <SortHead col="status">Status</SortHead>
-                      <SortHead col="updatedAt">Last Modified</SortHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rules.map((r) => (
-                      <TableRow key={r.id} className={r.status === "ARCHIVED" ? "opacity-60" : ""}>
-                        <TableCell className="font-medium max-w-[180px] truncate">{r.name || <span className="text-muted-foreground italic">Unnamed</span>}</TableCell>
-                        <TableCell className="text-xs max-w-[220px] truncate">{scopeSummary(r)}</TableCell>
-                        <TableCell><Badge variant="outline">{typeLabel(r.pricingType)}</Badge></TableCell>
-                        <TableCell className="font-medium tabular-nums">{inr(r.price)}</TableCell>
-                        <TableCell className="tabular-nums">{r.gstPercent}%</TableCell>
-                        <TableCell className="tabular-nums">{r.priority}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{fmtDate(r.effectiveFrom)} → {fmtDate(r.effectiveTo)}</TableCell>
-                        <TableCell><Badge variant="outline" className={statusBadgeClass(r.status)}>{typeLabel(r.status)}</Badge></TableCell>
-                        <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{fmtDate(r.updatedAt)}{r.modifiedByName ? ` · ${r.modifiedByName}` : ""}</TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
-                              <DropdownMenuItem onClick={() => openView(r)}><Eye className="h-4 w-4 mr-2" /> View &amp; History</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setWizard({ mode: "edit", rule: r })}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setWizard({ mode: "duplicate", rule: r })}><Copy className="h-4 w-4 mr-2" /> Duplicate</DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {r.status !== "ARCHIVED" && (
-                                r.status === "ACTIVE"
-                                  ? <DropdownMenuItem onClick={() => patchStatus(r, "INACTIVE")}><Power className="h-4 w-4 mr-2" /> Deactivate</DropdownMenuItem>
-                                  : <DropdownMenuItem onClick={() => patchStatus(r, "ACTIVE")}><Power className="h-4 w-4 mr-2" /> Activate</DropdownMenuItem>
-                              )}
-                              {r.status === "ARCHIVED"
-                                ? <DropdownMenuItem onClick={() => patchStatus(r, "INACTIVE")}><ArchiveRestore className="h-4 w-4 mr-2" /> Restore</DropdownMenuItem>
-                                : <DropdownMenuItem onClick={() => patchStatus(r, "ARCHIVED")}><Archive className="h-4 w-4 mr-2" /> Archive</DropdownMenuItem>}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => setDeleteRule(r)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent></Card>
-
-          {/* Pagination */}
-          {total > PAGE_SIZE && (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-                <span className="px-2">Page {page} / {totalPages}</span>
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
-              </div>
-            </div>
-          )}
+        {/* ── Charges & Rules tab ── two config cards only (no wizard) ── */}
+        <TabsContent value="rules">
+          {currentBusinessId && <LaundryChargesRules businessId={currentBusinessId} />}
         </TabsContent>
 
         {/* ── Subscription Plans tab ── */}
@@ -285,83 +194,6 @@ export function LaundryPricingEngine() {
         </TabsContent>
       </Tabs>
 
-      {/* Wizard */}
-      {wizard && currentBusinessId && (
-        <ChargeRuleWizard
-          open
-          mode={wizard.mode}
-          rule={wizard.rule}
-          businessId={currentBusinessId}
-          masters={masters}
-          actor={actor}
-          onClose={() => setWizard(null)}
-          onSaved={loadRules}
-        />
-      )}
-
-      {/* View + Audit History */}
-      <Dialog open={!!viewRule} onOpenChange={(o) => !o && setViewRule(null)}>
-        <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{viewRule?.name || "Pricing Rule"}</DialogTitle>
-            <DialogDescription>{viewRule && scopeSummary(viewRule)}</DialogDescription>
-          </DialogHeader>
-          {viewRule && (
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Type" value={typeLabel(viewRule.pricingType)} />
-                <Field label="Status" value={typeLabel(viewRule.status)} />
-                <Field label="Base Price" value={inr(viewRule.price)} />
-                <Field label="GST" value={`${viewRule.gstPercent}%`} />
-                <Field label="Priority" value={String(viewRule.priority)} />
-                <Field label="Version" value={`v${viewRule.version}`} />
-                {viewRule.minCharge != null && <Field label="Min Charge" value={inr(viewRule.minCharge)} />}
-                {viewRule.maxWeightKg != null && <Field label="Max / Included KG" value={`${viewRule.maxWeightKg} kg`} />}
-                {viewRule.extraWeightCharge != null && <Field label="Extra / Excess" value={inr(viewRule.extraWeightCharge)} />}
-                {viewRule.expressCharge != null && <Field label="Express" value={inr(viewRule.expressCharge)} />}
-                {viewRule.pickupCharge != null && <Field label="Pickup" value={inr(viewRule.pickupCharge)} />}
-                {viewRule.deliveryCharge != null && <Field label="Delivery" value={inr(viewRule.deliveryCharge)} />}
-                <Field label="Effective" value={`${fmtDate(viewRule.effectiveFrom)} → ${fmtDate(viewRule.effectiveTo)}`} />
-                <Field label="Created By" value={viewRule.createdByName || "—"} />
-              </div>
-              {viewRule.notes && <p className="text-xs text-muted-foreground border-t pt-2">{viewRule.notes}</p>}
-              <div className="border-t pt-3">
-                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1"><History className="h-3.5 w-3.5" /> Audit History</p>
-                {history === null ? (
-                  <div className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</div>
-                ) : history.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No history recorded.</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {history.map((h) => (
-                      <li key={h.id} className="flex items-center justify-between text-xs rounded bg-muted/40 px-2 py-1">
-                        <span><Badge variant="outline" className="mr-2 text-[10px]">{typeLabel(h.action)}</Badge>v{h.version} {h.actorName ? `· ${h.actorName}` : ""}</span>
-                        <span className="text-muted-foreground">{new Date(h.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete confirm */}
-      <AlertDialog open={!!deleteRule} onOpenChange={(o) => !o && setDeleteRule(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete pricing rule?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently removes “{deleteRule?.name || typeLabel(deleteRule?.pricingType)}”. Rules already used by orders cannot be deleted — archive them instead to preserve invoice history.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={doDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

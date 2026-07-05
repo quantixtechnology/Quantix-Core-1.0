@@ -4065,6 +4065,15 @@ model LaundryOperationalConfig {
   barcodeEnabled       Boolean  @default(true)
   homeDeliveryEnabled  Boolean  @default(true)
   ironingEnabled       Boolean  @default(true)
+  // Charges & Rules — two simple business rules (minimums are MINIMUM BILL
+  // VALUES per order type, not additional charges; 0 = no minimum).
+  walkInMinOrder         Float   @default(0)
+  pickupMinOrder         Float   @default(0)
+  deliveryMinOrder       Float   @default(0)
+  expressEnabled         Boolean @default(false)
+  expressTurnaroundHours Int?
+  expressChargeType      String  @default("FIXED") // FIXED | PERCENT
+  expressChargeValue     Float   @default(0)
   updatedAt            DateTime @updatedAt
   createdAt            DateTime @default(now())
 

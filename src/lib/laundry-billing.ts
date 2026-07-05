@@ -55,6 +55,11 @@ export interface BillingContext {
   pickup?: boolean
   delivery?: boolean
   urgent?: boolean
+  // Config-driven Charges & Rules (resolved by the caller from
+  // LaundryOperationalConfig + order type). See resolveMinOrderValue().
+  minOrderValue?: number
+  expressChargeType?: "FIXED" | "PERCENT"
+  expressChargeValue?: number
 }
 
 export interface BillingLineResult extends BillingLineInput {
@@ -232,41 +237,26 @@ export function evaluateLine(rules: PricingRule[], line: BillingLineInput, ctx: 
 }
 
 export function computeQuote(rules: PricingRule[], items: BillingLineInput[], ctx: BillingContext, now = new Date()): BillingQuote {
-  const matchedRules: PricingRule[] = []
-  const lines = items.map((line) => {
-    const rule = resolveLineRule(rules, line, ctx, now)
-    if (rule) matchedRules.push(rule)
-    return computeLine(rule, line, ctx)
-  })
+  const lines = items.map((line) => computeLine(resolveLineRule(rules, line, ctx, now), line, ctx))
 
   const subtotal = r2(lines.reduce((s, l) => s + l.baseAmount, 0))
   const gstTotal = r2(lines.reduce((s, l) => s + l.gstAmount, 0))
 
-  // Order-level charges come from Charges & Rules — dedicated charge rules that
-  // are NOT garment-specific (Services owns base prices). Gather every active,
-  // in-effect, store-applicable rule (line winners + standalone charge rules)
-  // and take the max of each charge field. This is what makes a store-scoped
-  // "Pickup Charge ₹30" apply even though it never wins a garment line.
-  const orderRules = rules.filter((r) =>
-    r.isActive && inEffect(r, now) && (r.storeId == null || r.storeId === (ctx.storeId ?? null)))
-  const chargeRules = Array.from(new Set([...matchedRules, ...orderRules]))
-  const maxOf = (pick: (r: PricingRule) => number | null) =>
-    chargeRules.reduce((m, r) => Math.max(m, pick(r) ?? 0), 0)
+  // Order-level charges are now driven by the two Charges & Rules config cards,
+  // NOT by generic pricing rules. The caller resolves the applicable minimum
+  // (by order type) and the express charge into ctx. This keeps the single
+  // Billing Resolver authoritative while removing per-rule charge stacking.
 
-  const expressCharge = ctx.express ? r2(maxOf((r) => r.expressCharge)) : 0
-  const pickupCharge = ctx.pickup ? r2(maxOf((r) => r.pickupCharge)) : 0
-  const urgentCharge = ctx.urgent ? r2(maxOf((r) => (r as PricingRule & { urgentDeliveryCharge?: number | null }).urgentDeliveryCharge ?? null)) : 0
-  // Free-delivery threshold waives delivery once the order subtotal reaches it.
-  const freeDeliveryThreshold = maxOf((r) => (r as PricingRule & { freeDeliveryThreshold?: number | null }).freeDeliveryThreshold ?? null)
-  const deliveryBase = ctx.delivery ? r2(maxOf((r) => r.deliveryCharge)) : 0
-  const deliveryCharge = freeDeliveryThreshold > 0 && subtotal >= freeDeliveryThreshold ? 0 : deliveryBase
+  // Minimum Order Adjustment: a MINIMUM BILL VALUE for the order type — if the
+  // base subtotal is below it, top up once (never folded into a unit price).
+  const minOrderValue = ctx.minOrderValue ?? 0
+  const minOrderAdjustment = subtotal > 0 && minOrderValue > subtotal ? r2(minOrderValue - subtotal) : 0
 
-  // Minimum ORDER charge: if the base subtotal is below the highest applicable
-  // minimum, top it up once as a visible order-level adjustment (never folded
-  // into a line's unit price).
-  const minOrderCharge = r2(maxOf((r) => r.minCharge))
-  const minOrderAdjustment = subtotal > 0 && minOrderCharge > subtotal ? r2(minOrderCharge - subtotal) : 0
+  // Express charge: fixed amount or a percentage of the base subtotal.
+  const expressCharge = ctx.express && (ctx.expressChargeValue ?? 0) > 0
+    ? r2(ctx.expressChargeType === "PERCENT" ? subtotal * (ctx.expressChargeValue as number) / 100 : (ctx.expressChargeValue as number))
+    : 0
 
-  const grandTotal = r2(subtotal + gstTotal + minOrderAdjustment + expressCharge + pickupCharge + deliveryCharge + urgentCharge)
-  return { lines, subtotal, gstTotal, minOrderAdjustment, pickupCharge, deliveryCharge, expressCharge, urgentCharge, grandTotal }
+  const grandTotal = r2(subtotal + minOrderAdjustment + expressCharge + gstTotal)
+  return { lines, subtotal, gstTotal, minOrderAdjustment, pickupCharge: 0, deliveryCharge: 0, expressCharge, urgentCharge: 0, grandTotal }
 }

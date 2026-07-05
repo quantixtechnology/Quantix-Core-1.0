@@ -93,6 +93,8 @@ export default function LaundryNewOrder() {
   const [newCustPincode, setNewCustPincode] = useState("")
 
   const [orderType, setOrderType] = useState("WALK_IN")
+  const [express, setExpress] = useState(false)
+  const [expressCfg, setExpressCfg] = useState<{ enabled: boolean; hours: number | null }>({ enabled: false, hours: null })
   const [services, setServices] = useState<ServiceMaster[]>([])
   const [garments, setGarments] = useState<GarmentMaster[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([])
@@ -176,8 +178,15 @@ export default function LaundryNewOrder() {
   const customerType = useMemo(() => (orderType === "CORPORATE" ? "CORPORATE" : orderType === "SUBSCRIPTION" ? "SUBSCRIPTION" : orderType === "HOME_PICKUP" ? "PICKUP" : "WALK_IN"), [orderType])
   const totalPieces = useMemo(() => lineItems.reduce((s, l) => s + l.quantity, 0), [lineItems])
 
+  // Express Delivery config (Charges & Rules). Hidden entirely if disabled.
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/charges-config?businessId=${currentBusinessId}`).then((r) => r.json())
+      .then((j) => { if (j.success) { setExpressCfg({ enabled: !!j.data.expressEnabled, hours: j.data.expressTurnaroundHours ?? null }); if (!j.data.expressEnabled) setExpress(false) } }).catch(() => {})
+  }, [currentBusinessId])
+
   // ── Live billing for the whole order (Pricing Engine; never hardcoded) ──
-  const quoteKey = JSON.stringify({ items: lineItems.map((l) => [l.serviceId, l.garmentId, l.quantity]), storeId: selectedStoreId, customerType })
+  const quoteKey = JSON.stringify({ items: lineItems.map((l) => [l.serviceId, l.garmentId, l.quantity]), storeId: selectedStoreId, customerType, express })
   const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!currentBusinessId || lineItems.length === 0) { setQuote(null); return }
@@ -185,7 +194,7 @@ export default function LaundryNewOrder() {
     quoteTimer.current = setTimeout(async () => {
       try {
         const items = lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, categoryId: grmById(l.garmentId)?.categoryId || null, quantity: l.quantity }))
-        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items }) })
+        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, express, items }) })
         const json = await res.json(); setQuote(json.success ? json.data : null)
       } catch { setQuote(null) }
     }, 250)
@@ -322,7 +331,7 @@ export default function LaundryNewOrder() {
         businessId: currentBusinessId, storeId: selectedStoreId, customerId: selectedCustomer.id, orderType,
         services: selectedServices.map((s) => ({ serviceId: s.id, serviceName: s.name, turnaroundHours: s.defaultTurnaroundHours })),
         items: lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity })),
-        isExpress: quickNotes.includes("Express Delivery"),
+        isExpress: express || quickNotes.includes("Express Delivery"),
         expectedDeliveryDate: expectedDelivery ? expectedDelivery.toISOString().split("T")[0] : null,
         deliveryOverride: overrideDelivery, overrideReason: overrideDelivery ? overrideReason : null,
         paymentPreference,
@@ -477,6 +486,16 @@ export default function LaundryNewOrder() {
                     <div key={ot.value} className="flex items-center space-x-2"><RadioGroupItem value={ot.value} id={`ot-${ot.value}`} className="text-blue-600" /><Label htmlFor={`ot-${ot.value}`} className="text-sm cursor-pointer">{ot.label}</Label></div>
                   ))}
                 </RadioGroup>
+                {/* Delivery speed — only when Express is enabled in Charges & Rules */}
+                {expressCfg.enabled && (
+                  <div className="mt-4 pt-3 border-t border-slate-100">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Delivery Speed</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setExpress(false)} className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium ${!express ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>Normal</button>
+                      <button type="button" onClick={() => setExpress(true)} className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium ${express ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600"}`}>Express{expressCfg.hours ? ` · ${expressCfg.hours}h` : ""}</button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

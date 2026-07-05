@@ -44,6 +44,36 @@ export function orderTypeToCustomerType(orderType: string): string {
   }
 }
 
+// Minimum-order value for THIS order, by order type:
+//   pickup → pickupMinOrder, delivery → deliveryMinOrder, else walk-in.
+//   Pickup AND delivery → the HIGHER of the two (never summed).
+export function resolveMinOrderValue(
+  cfg: { walkInMinOrder: number; pickupMinOrder: number; deliveryMinOrder: number },
+  ctx: BillingContext,
+): number {
+  const pickup = !!ctx.pickup || ctx.customerType === "PICKUP"
+  const delivery = !!ctx.delivery
+  if (pickup && delivery) return Math.max(cfg.pickupMinOrder, cfg.deliveryMinOrder)
+  if (pickup) return cfg.pickupMinOrder
+  if (delivery) return cfg.deliveryMinOrder
+  return cfg.walkInMinOrder
+}
+
+// Inject the two Charges & Rules config cards into the billing ctx so the single
+// resolver applies minimum-order + express consistently for the quote endpoint
+// AND order creation. `businessId` is the LaundryBusiness id.
+export async function applyChargesConfig(businessId: string, ctx: BillingContext): Promise<BillingContext> {
+  const cfg = await prisma.laundryOperationalConfig.findUnique({ where: { businessId } })
+  if (!cfg) return ctx
+  return {
+    ...ctx,
+    minOrderValue: resolveMinOrderValue(cfg, ctx),
+    express: !!ctx.express && cfg.expressEnabled,
+    expressChargeType: cfg.expressChargeType === "PERCENT" ? "PERCENT" : "FIXED",
+    expressChargeValue: cfg.expressChargeValue,
+  }
+}
+
 export async function resolveOrderBilling(
   businessId: string,
   ctx: BillingContext,
@@ -54,6 +84,7 @@ export async function resolveOrderBilling(
     prisma.laundryService.findMany({ where: { businessId }, select: { id: true, name: true } }),
     prisma.laundryGarment.findMany({ where: { businessId }, select: { id: true, name: true, categoryId: true } }),
   ])
+  ctx = await applyChargesConfig(businessId, ctx) // config-driven min + express
   const svcMap = new Map(services.map((s) => [s.id, s]))
   const grmMap = new Map(garments.map((g) => [g.id, g]))
 
