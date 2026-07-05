@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const where: Record<string, unknown> = { businessId: biz.platformBusinessId }
     if (q) where.OR = [{ name: { contains: q } }, { phone: { contains: q } }, { customerCode: { contains: q } }, { email: { contains: q } }]
 
-    const [rows, total, stats] = await Promise.all([
+    const [rows, total, totalCustomers, activeCustomers, activeMemberships] = await Promise.all([
       prisma.customer.findMany({
         where: where as never,
         select: {
@@ -34,9 +34,13 @@ export async function GET(request: Request) {
         take: limit, skip: offset,
       }),
       prisma.customer.count({ where: where as never }),
-      prisma.customer.aggregate({ where: { businessId: biz.platformBusinessId }, _count: true, _sum: { totalOrders: true } }),
+      prisma.customer.count({ where: { businessId: biz.platformBusinessId } }),
+      prisma.customer.count({ where: { businessId: biz.platformBusinessId, isActive: true } }),
+      // Real count of customers with an ACTIVE subscription — not a page count,
+      // not fabricated. Read-only; does not touch subscription logic.
+      prisma.customerSubscription.count({ where: { businessId: biz.platformBusinessId, status: "ACTIVE" } }),
     ])
-    return NextResponse.json({ success: true, data: rows, total, limit, offset, summary: { totalCustomers: stats._count, totalOrders: stats._sum.totalOrders || 0 } })
+    return NextResponse.json({ success: true, data: rows, total, limit, offset, summary: { totalCustomers, activeCustomers, activeMemberships } })
   } catch (e) {
     console.error("[laundry-customers] GET list", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

@@ -38,7 +38,7 @@ export function LaundryCustomersView() {
   const { toast } = useToast()
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
-  const [summary, setSummary] = useState({ totalCustomers: 0, totalOrders: 0 })
+  const [summary, setSummary] = useState({ totalCustomers: 0, activeCustomers: 0, activeMemberships: 0 })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
@@ -89,13 +89,13 @@ export function LaundryCustomersView() {
   }
 
   const pages = Math.max(1, Math.ceil(total / PAGE))
-  const activeCount = rows.filter((r) => r.isActive).length
 
+  // Business-wide counts from the API (not page-scoped) — pagination belongs in
+  // the pagination controls below, not the summary cards.
   const KPIS = [
     { label: "Total Customers", value: summary.totalCustomers, icon: Users, color: "text-blue-600 bg-blue-50" },
-    { label: "On This Page", value: rows.length, icon: UserCheck, color: "text-emerald-600 bg-emerald-50" },
-    { label: "Active (page)", value: activeCount, icon: UserCheck, color: "text-green-600 bg-green-50" },
-    { label: "Total Orders", value: summary.totalOrders, icon: Repeat, color: "text-violet-600 bg-violet-50" },
+    { label: "Active Customers", value: summary.activeCustomers, icon: UserCheck, color: "text-green-600 bg-green-50" },
+    { label: "Customer Memberships", value: summary.activeMemberships, icon: Repeat, color: "text-violet-600 bg-violet-50" },
   ]
 
   return (
@@ -108,7 +108,7 @@ export function LaundryCustomersView() {
         <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-3.5 w-3.5" /> New Order</Button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {KPIS.map((k) => (
           <Card key={k.label} className="rounded-xl border-slate-200 shadow-sm"><CardContent className="p-4 flex items-center gap-3">
             <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${k.color}`}><k.icon className="h-5 w-5" /></div>
@@ -132,8 +132,8 @@ export function LaundryCustomersView() {
           ) : (
             <Table>
               <TableHeader><TableRow className="text-[11px] uppercase tracking-wide">
-                <TableHead>Customer</TableHead><TableHead>Contact</TableHead><TableHead>Membership</TableHead>
-                <TableHead className="text-right">Wallet</TableHead><TableHead className="text-center">Orders</TableHead>
+                <TableHead className="w-[26%]">Customer</TableHead><TableHead className="w-[22%]">Contact</TableHead><TableHead>Membership</TableHead>
+                <TableHead className="text-right">Wallet</TableHead>
                 <TableHead className="text-right">Lifetime Value</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
@@ -143,7 +143,6 @@ export function LaundryCustomersView() {
                     <TableCell><p className="text-sm text-slate-600">{c.phone || "—"}</p><p className="text-[11px] text-slate-400">{c.email || ""}</p></TableCell>
                     <TableCell><Badge variant="outline" className={`text-[11px] ${tierStyle(c.loyaltyTier)}`}>{c.loyaltyTier || "Bronze"}</Badge></TableCell>
                     <TableCell className="text-right tabular-nums">{inr(c.walletBalance)}</TableCell>
-                    <TableCell className="text-center tabular-nums">{c.totalOrders}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{inr(c.totalSpent)}</TableCell>
                     <TableCell><Badge variant="outline" className={c.isActive ? "border-green-300 text-green-700 bg-green-50" : "border-slate-300 text-slate-500 bg-slate-50"}>{c.isActive ? "Active" : "Inactive"}</Badge></TableCell>
                     <TableCell className="text-right">
