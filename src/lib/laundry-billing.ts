@@ -31,6 +31,8 @@ export interface PricingRule {
   expressCharge: number | null
   pickupCharge: number | null
   deliveryCharge: number | null
+  freeDeliveryThreshold?: number | null
+  urgentDeliveryCharge?: number | null
   effectiveFrom: string | Date | null
   effectiveTo: string | Date | null
   priority: number
@@ -52,6 +54,7 @@ export interface BillingContext {
   express?: boolean
   pickup?: boolean
   delivery?: boolean
+  urgent?: boolean
 }
 
 export interface BillingLineResult extends BillingLineInput {
@@ -69,9 +72,11 @@ export interface BillingQuote {
   lines: BillingLineResult[]
   subtotal: number
   gstTotal: number
+  minOrderAdjustment: number
   pickupCharge: number
   deliveryCharge: number
   expressCharge: number
+  urgentCharge: number
   grandTotal: number
 }
 
@@ -150,7 +155,10 @@ export function computeLine(rule: PricingRule | null, line: BillingLineInput, ct
       break
   }
 
-  if (rule.minCharge != null && base < rule.minCharge) base = rule.minCharge
+  // NOTE: minCharge is a MINIMUM ORDER charge, applied once at the order level
+  // (see computeQuote) — NOT a per-line unit-price replacement. Applying it here
+  // would make a garment's displayed price jump to the minimum (the ₹200 Blanket
+  // bug). The line keeps its real Service+Garment base price.
   base = r2(base)
   const gstAmount = r2(base * (rule.gstPercent || 0) / 100)
   return {
@@ -234,14 +242,31 @@ export function computeQuote(rules: PricingRule[], items: BillingLineInput[], ct
   const subtotal = r2(lines.reduce((s, l) => s + l.baseAmount, 0))
   const gstTotal = r2(lines.reduce((s, l) => s + l.gstAmount, 0))
 
-  // Order-level charges: taken (once) as the max charge across matched rules,
-  // applied only when the context requests them.
+  // Order-level charges come from Charges & Rules — dedicated charge rules that
+  // are NOT garment-specific (Services owns base prices). Gather every active,
+  // in-effect, store-applicable rule (line winners + standalone charge rules)
+  // and take the max of each charge field. This is what makes a store-scoped
+  // "Pickup Charge ₹30" apply even though it never wins a garment line.
+  const orderRules = rules.filter((r) =>
+    r.isActive && inEffect(r, now) && (r.storeId == null || r.storeId === (ctx.storeId ?? null)))
+  const chargeRules = Array.from(new Set([...matchedRules, ...orderRules]))
   const maxOf = (pick: (r: PricingRule) => number | null) =>
-    matchedRules.reduce((m, r) => Math.max(m, pick(r) ?? 0), 0)
+    chargeRules.reduce((m, r) => Math.max(m, pick(r) ?? 0), 0)
+
   const expressCharge = ctx.express ? r2(maxOf((r) => r.expressCharge)) : 0
   const pickupCharge = ctx.pickup ? r2(maxOf((r) => r.pickupCharge)) : 0
-  const deliveryCharge = ctx.delivery ? r2(maxOf((r) => r.deliveryCharge)) : 0
+  const urgentCharge = ctx.urgent ? r2(maxOf((r) => (r as PricingRule & { urgentDeliveryCharge?: number | null }).urgentDeliveryCharge ?? null)) : 0
+  // Free-delivery threshold waives delivery once the order subtotal reaches it.
+  const freeDeliveryThreshold = maxOf((r) => (r as PricingRule & { freeDeliveryThreshold?: number | null }).freeDeliveryThreshold ?? null)
+  const deliveryBase = ctx.delivery ? r2(maxOf((r) => r.deliveryCharge)) : 0
+  const deliveryCharge = freeDeliveryThreshold > 0 && subtotal >= freeDeliveryThreshold ? 0 : deliveryBase
 
-  const grandTotal = r2(subtotal + gstTotal + expressCharge + pickupCharge + deliveryCharge)
-  return { lines, subtotal, gstTotal, pickupCharge, deliveryCharge, expressCharge, grandTotal }
+  // Minimum ORDER charge: if the base subtotal is below the highest applicable
+  // minimum, top it up once as a visible order-level adjustment (never folded
+  // into a line's unit price).
+  const minOrderCharge = r2(maxOf((r) => r.minCharge))
+  const minOrderAdjustment = subtotal > 0 && minOrderCharge > subtotal ? r2(minOrderCharge - subtotal) : 0
+
+  const grandTotal = r2(subtotal + gstTotal + minOrderAdjustment + expressCharge + pickupCharge + deliveryCharge + urgentCharge)
+  return { lines, subtotal, gstTotal, minOrderAdjustment, pickupCharge, deliveryCharge, expressCharge, urgentCharge, grandTotal }
 }

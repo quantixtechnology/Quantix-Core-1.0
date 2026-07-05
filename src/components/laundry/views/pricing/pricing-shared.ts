@@ -58,6 +58,8 @@ export interface Rule {
   expressCharge: number | null
   pickupCharge: number | null
   deliveryCharge: number | null
+  freeDeliveryThreshold?: number | null
+  urgentDeliveryCharge?: number | null
   hsnCode: string | null
   effectiveFrom: string | null
   effectiveTo: string | null

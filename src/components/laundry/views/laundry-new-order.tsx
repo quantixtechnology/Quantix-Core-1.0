@@ -203,7 +203,9 @@ export default function LaundryNewOrder() {
     const t = setTimeout(async () => {
       try {
         const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items: [{ serviceId: mService, garmentId: mGarment, categoryId: grmById(mGarment)?.categoryId || null, quantity: mQty || 1 }] }) })
-        const json = await res.json(); setMPrice(json.success ? json.data.grandTotal : null)
+        // Show ONLY the Service+Garment base line price — order-level charges
+        // (minimum, pickup, delivery, express) belong in the Order Summary.
+        const json = await res.json(); setMPrice(json.success ? (json.data.lines?.[0]?.lineTotal ?? null) : null)
       } catch { setMPrice(null) } finally { setMPricing(false) }
     }, 200)
     return () => clearTimeout(t)

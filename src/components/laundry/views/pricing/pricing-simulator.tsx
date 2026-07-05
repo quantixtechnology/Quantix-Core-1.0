@@ -17,7 +17,7 @@ interface Masters { services: Ref[]; garments: Ref[]; cats: Ref[]; stores: Ref[]
 interface SimResult {
   matchedRule: { id: string; name: string | null; pricingType: string; priority: number; unitPrice: number } | null
   line: { unitPrice: number; baseAmount: number; gstPercent: number; gstAmount: number; lineTotal: number }
-  quote: { subtotal: number; gstTotal: number; pickupCharge: number; deliveryCharge: number; expressCharge: number; grandTotal: number }
+  quote: { subtotal: number; gstTotal: number; minOrderAdjustment?: number; pickupCharge: number; deliveryCharge: number; expressCharge: number; grandTotal: number }
   trace: { winnerId: string | null; evaluations: { ruleId: string; ruleName: string | null; applies: boolean; score: number; priority: number; isWinner: boolean; reasons: string[] }[] }
 }
 
@@ -110,6 +110,7 @@ export function PricingSimulator({ businessId, masters }: { businessId: string; 
               <div className="space-y-1 text-sm">
                 <Row label="Base Service Amount" value={inr(result.quote.subtotal)} />
                 <Row label="Subscription Adjustment" value="— (per customer at checkout)" />
+                <Row label="Minimum Order Adjustment" value={inr(result.quote.minOrderAdjustment || 0)} />
                 <Row label={`GST (${result.line.gstPercent}%)`} value={inr(result.quote.gstTotal)} />
                 <Row label="Pickup Charge" value={inr(result.quote.pickupCharge)} />
                 <Row label="Delivery Charge" value={inr(result.quote.deliveryCharge)} />

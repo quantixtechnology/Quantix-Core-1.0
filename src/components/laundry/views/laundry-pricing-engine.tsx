@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
-import { PricingRuleWizard } from "./pricing/pricing-rule-wizard"
+import { ChargeRuleWizard } from "./pricing/charge-rule-wizard"
 import { PricingSimulator } from "./pricing/pricing-simulator"
 import { LaundrySubscriptionPlans } from "./pricing/laundry-subscription-plans"
 import { LaundryServicesPricing } from "./pricing/laundry-services-pricing"
@@ -189,9 +189,8 @@ export function LaundryPricingEngine() {
               <Input placeholder="Search rules, service, garment, category…" className="pl-9 h-9" value={qInput} onChange={(e) => setQInput(e.target.value)} />
             </div>
             <FilterSelect value={status} onChange={(v) => { setPage(1); setStatus(v) }} all="All Status" options={STATUSES.map((s) => ({ value: s, label: typeLabel(s) }))} />
-            <FilterSelect value={pricingType} onChange={(v) => { setPage(1); setPricingType(v) }} all="All Types" options={PRICING_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))} />
             <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white h-9" onClick={() => setWizard({ mode: "create", rule: null })}>
-              <Plus className="h-3.5 w-3.5" /> New Rule
+              <Plus className="h-3.5 w-3.5" /> New Charge Rule
             </Button>
           </div>
 
@@ -288,7 +287,7 @@ export function LaundryPricingEngine() {
 
       {/* Wizard */}
       {wizard && currentBusinessId && (
-        <PricingRuleWizard
+        <ChargeRuleWizard
           open
           mode={wizard.mode}
           rule={wizard.rule}

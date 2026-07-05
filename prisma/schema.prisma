@@ -4391,6 +4391,8 @@ model LaundryPricingRule {
   expressCharge     Float?
   pickupCharge      Float?
   deliveryCharge    Float?
+  freeDeliveryThreshold Float?                       // waive delivery when order subtotal ≥ this
+  urgentDeliveryCharge  Float?                       // charge for urgent / same-day delivery
   hsnCode           String?                          // future-ready GST HSN
   effectiveFrom     DateTime?
   effectiveTo       DateTime?

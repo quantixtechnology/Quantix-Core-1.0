@@ -42,6 +42,8 @@ export function buildRuleData(b: Record<string, unknown>): Omit<Prisma.LaundryPr
   if (has("expressCharge")) d.expressCharge = NUM(b.expressCharge)
   if (has("pickupCharge")) d.pickupCharge = NUM(b.pickupCharge)
   if (has("deliveryCharge")) d.deliveryCharge = NUM(b.deliveryCharge)
+  if (has("freeDeliveryThreshold")) d.freeDeliveryThreshold = NUM(b.freeDeliveryThreshold)
+  if (has("urgentDeliveryCharge")) d.urgentDeliveryCharge = NUM(b.urgentDeliveryCharge)
   if (has("hsnCode")) d.hsnCode = STR(b.hsnCode)
   if (has("effectiveFrom")) d.effectiveFrom = b.effectiveFrom ? new Date(b.effectiveFrom as string) : null
   if (has("effectiveTo")) d.effectiveTo = b.effectiveTo ? new Date(b.effectiveTo as string) : null
