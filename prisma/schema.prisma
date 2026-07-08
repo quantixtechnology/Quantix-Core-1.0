@@ -19,7 +19,7 @@ model PlatformConfig {
 // Singleton settings record for the entire platform.
 // Use getPlatformSettings() to read — never query this model directly.
 model PlatformSettings {
-  id             String  @id @default("singleton")
+  id String @id @default("singleton")
 
   // Company identity
   companyName    String?
@@ -30,16 +30,16 @@ model PlatformSettings {
   companyGst     String?
 
   // Branding assets (stored as /uploads/platform/shared/<filename> URLs)
-  logoUrl             String?
-  darkLogoUrl         String?
-  faviconUrl          String?
-  emailLogoUrl        String?
-  loginScreenLogoUrl  String?  // login page logo; falls back to logoUrl when null
+  logoUrl            String?
+  darkLogoUrl        String?
+  faviconUrl         String?
+  emailLogoUrl       String?
+  loginScreenLogoUrl String? // login page logo; falls back to logoUrl when null
 
   // Zone 1 — Core Platform: additional assets
   tagline        String?
-  compactLogoUrl String?  // collapsed sidebar / app icon
-  watermarkUrl   String?  // platform watermark
+  compactLogoUrl String? // collapsed sidebar / app icon
+  watermarkUrl   String? // platform watermark
 
   // Zone 1 — Core Platform: brand colors
   primaryColor   String?
@@ -54,8 +54,8 @@ model PlatformSettings {
   salesWatermarkUrl String?
 
   // Zone 2 — Sales Documents: config
-  salesAccentColor  String?
-  salesFooterText   String?
+  salesAccentColor String?
+  salesFooterText  String?
 
   // Zone 3 — HRMS: assets
   hrmsLogoUrl      String?
@@ -65,72 +65,72 @@ model PlatformSettings {
   hrmsAccentColor      String?
   signatoryName        String?
   signatoryDesignation String?
-  signatorySignUrl     String?  // digital signature image
-  signatoryStampUrl    String?  // signature + stamp image
+  signatorySignUrl     String? // digital signature image
+  signatoryStampUrl    String? // signature + stamp image
 
   // Zone 4 — Sidebar Theme
-  sidebarBg           String?  // e.g. #04132E
-  sidebarActiveColor  String?  // e.g. #2563EB
-  sidebarTextColor    String?  // e.g. #FFFFFF
-  sidebarHeadingColor String?  // e.g. #38BDF8
-  sidebarLogoUrl      String?  // dedicated sidebar logo; falls back to logoUrl when null
+  sidebarBg           String? // e.g. #04132E
+  sidebarActiveColor  String? // e.g. #2563EB
+  sidebarTextColor    String? // e.g. #FFFFFF
+  sidebarHeadingColor String? // e.g. #38BDF8
+  sidebarLogoUrl      String? // dedicated sidebar logo; falls back to logoUrl when null
 
   // Billing / invoice configuration
-  invoicePrefix  String? @default("QTX")
-  sacCode        String? @default("998314")
+  invoicePrefix String? @default("QTX")
+  sacCode       String? @default("998314")
 
   // GST rates (percentages, e.g. 18 / 9 / 9)
-  gstRate        Float?  @default(18)
-  cgstRate       Float?  @default(9)
-  sgstRate       Float?  @default(9)
+  gstRate  Float? @default(18)
+  cgstRate Float? @default(9)
+  sgstRate Float? @default(9)
 
   // Zone 5 — Invoice Settings
-  invoiceLogoUrl         String?  // dedicated invoice / billing logo
+  invoiceLogoUrl String? // dedicated invoice / billing logo
 
   // Invoice company identity (may differ from platform companyName)
-  invoiceLegalName       String?  // Legal company name
-  invoiceBusinessName    String?  // Trade / business name
-  invoiceAddress         String?  // Full address line
-  invoiceCity            String?
-  invoiceState           String?
-  invoicePincode         String?
-  invoiceCountry         String?  @default("India")
-  invoicePhone           String?
-  invoiceEmail           String?
-  invoiceWebsite         String?
+  invoiceLegalName    String? // Legal company name
+  invoiceBusinessName String? // Trade / business name
+  invoiceAddress      String? // Full address line
+  invoiceCity         String?
+  invoiceState        String?
+  invoicePincode      String?
+  invoiceCountry      String? @default("India")
+  invoicePhone        String?
+  invoiceEmail        String?
+  invoiceWebsite      String?
 
   // Tax & registration numbers (all optional; blank = hidden on invoices)
-  companyPan             String?  // PAN
-  companyMsme            String?  // MSME / Udyam registration
-  companyShopEst         String?  // Shop & Establishment number
-  companyIec             String?  // IEC number
-  companyCin             String?  // CIN number
+  companyPan     String? // PAN
+  companyMsme    String? // MSME / Udyam registration
+  companyShopEst String? // Shop & Establishment number
+  companyIec     String? // IEC number
+  companyCin     String? // CIN number
 
   // Banking details (displayed on unpaid invoices only)
-  bankAccountName        String?
-  bankName               String?
-  bankAccountNumber      String?
-  bankIfsc               String?
-  bankUpiId              String?
+  bankAccountName   String?
+  bankName          String?
+  bankAccountNumber String?
+  bankIfsc          String?
+  bankUpiId         String?
 
   // Invoice footer / notes
-  invoiceFooterNotes     String?  // SAC/HSN notes shown in footer
-  invoiceLegalDisclaimer String?  // Legal disclaimer text
-  invoiceDefaultNotes    String?  // Default notes on every invoice
+  invoiceFooterNotes     String? // SAC/HSN notes shown in footer
+  invoiceLegalDisclaimer String? // Legal disclaimer text
+  invoiceDefaultNotes    String? // Default notes on every invoice
 
   // Zone 6 — Quote / Proposal Settings (independent of Invoice Settings)
-  quoteLogoUrl         String?   // overrides salesLogoUrl for quote PDFs
-  quoteAccentColor     String?   // overrides salesAccentColor for quote PDFs
-  quoteFooterText      String?   // overrides salesFooterText for quote PDFs
-  quoteFooterColor     String?   // hex colour for quote footer text/line
-  quoteShowPageNumber  Boolean?  // show "Page N of N"; null = true
+  quoteLogoUrl         String? // overrides salesLogoUrl for quote PDFs
+  quoteAccentColor     String? // overrides salesAccentColor for quote PDFs
+  quoteFooterText      String? // overrides salesFooterText for quote PDFs
+  quoteFooterColor     String? // hex colour for quote footer text/line
+  quoteShowPageNumber  Boolean? // show "Page N of N"; null = true
   // Header visibility toggles (null = default shown/hidden per field)
-  quoteShowLogo        Boolean?  // show logo in header; null = true
-  quoteShowCompanyName Boolean?  // show company name; null = true
-  quoteShowAddress     Boolean?  // show registered address; null = false
-  quoteShowPhone       Boolean?  // show phone; null = false
-  quoteShowEmail       Boolean?  // show email; null = false
-  quoteShowWebsite     Boolean?  // show website; null = true
+  quoteShowLogo        Boolean? // show logo in header; null = true
+  quoteShowCompanyName Boolean? // show company name; null = true
+  quoteShowAddress     Boolean? // show registered address; null = false
+  quoteShowPhone       Boolean? // show phone; null = false
+  quoteShowEmail       Boolean? // show email; null = false
+  quoteShowWebsite     Boolean? // show website; null = true
   // Last page legal info visibility (null = true — show if value exists)
   quoteShowGST         Boolean?
   quoteShowPAN         Boolean?
@@ -139,8 +139,8 @@ model PlatformSettings {
   quoteShowCIN         Boolean?
   quoteShowIEC         Boolean?
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ============================================================================
@@ -149,52 +149,52 @@ model PlatformSettings {
 // ============================================================================
 
 model PlatformProduct {
-  id                     String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Product identification
-  code                   String   @unique  // e.g., "COMMERCE", "LAUNDRY", "CARWASH"
-  name                   String            // e.g., "Commerce OS"
-  slug                   String   @unique  // e.g., "commerce-os"
-  description            String?           // Product description
-  productType            String   @default("OS")  // e.g., "OS", "SERVICE", "MODULE"
+  code        String  @unique // e.g., "COMMERCE", "LAUNDRY", "CARWASH"
+  name        String // e.g., "Commerce OS"
+  slug        String  @unique // e.g., "commerce-os"
+  description String? // Product description
+  productType String  @default("OS") // e.g., "OS", "SERVICE", "MODULE"
 
   // Deployment information
-  workspaceUrl           String            // Base workspace URL (e.g., commerce.quantixtechnology.in)
-  currentVersion         String   @default("1.0.0")
-  supportedCoreVersion   String?           // Minimum Quantix Core version required
+  workspaceUrl         String // Base workspace URL (e.g., commerce.quantixtechnology.in)
+  currentVersion       String  @default("1.0.0")
+  supportedCoreVersion String? // Minimum Quantix Core version required
 
   // Runtime Information (v1.4.0)
-  apiBaseUrl             String?           // Product API endpoint (e.g., https://commerce.../api)
-  healthCheckUrl         String?           // Product health endpoint
-  provisionerName        String?           // Provisioner identifier for registry lookup
-  deploymentMode         String   @default("LOCAL_MODULE")  // LOCAL_MODULE, SUBDOMAIN, REMOTE_SERVICE, CONTAINER
-  deploymentStatus       String   @default("READY")         // READY, DEPLOYING, FAILED, MAINTENANCE
-  supportedApiVersion    String   @default("v1")            // API version product supports
-  buildNumber            String?           // Build/release number
-  lastDeploymentAt       DateTime?         // When product was last deployed
-  lastHealthCheckAt      DateTime?         // When product was last health checked
-  lastHealthCheckStatus  String?           // Last health check result (HEALTHY, WARNING, OFFLINE)
+  apiBaseUrl            String? // Product API endpoint (e.g., https://commerce.../api)
+  healthCheckUrl        String? // Product health endpoint
+  provisionerName       String? // Provisioner identifier for registry lookup
+  deploymentMode        String    @default("LOCAL_MODULE") // LOCAL_MODULE, SUBDOMAIN, REMOTE_SERVICE, CONTAINER
+  deploymentStatus      String    @default("READY") // READY, DEPLOYING, FAILED, MAINTENANCE
+  supportedApiVersion   String    @default("v1") // API version product supports
+  buildNumber           String? // Build/release number
+  lastDeploymentAt      DateTime? // When product was last deployed
+  lastHealthCheckAt     DateTime? // When product was last health checked
+  lastHealthCheckStatus String? // Last health check result (HEALTHY, WARNING, OFFLINE)
 
   // Product status & visibility
-  status                 String   @default("ACTIVE")  // ACTIVE, PLANNED, DEPRECATED, DISABLED
-  isEnabled              Boolean  @default(true)      // Admin can disable product
+  status    String  @default("ACTIVE") // ACTIVE, PLANNED, DEPRECATED, DISABLED
+  isEnabled Boolean @default(true) // Admin can disable product
 
   // Storage & quotas
-  defaultStorageQuotaMB  Int      @default(1048576)   // 1GB default
+  defaultStorageQuotaMB Int @default(1048576) // 1GB default
 
   // Branding
-  brandingTemplate       String?           // Reference to default branding template
-  defaultBrandColor      String   @default("#10B981") // Default primary color
+  brandingTemplate  String? // Reference to default branding template
+  defaultBrandColor String  @default("#10B981") // Default primary color
 
   // Configuration
-  defaultPlanId          String?           // Default plan for new businesses
-  metadata               String   @default("{}")     // JSON config (roles, features, etc.)
+  defaultPlanId String? // Default plan for new businesses
+  metadata      String  @default("{}") // JSON config (roles, features, etc.)
 
   // Audit
-  createdBy              String?
-  createdAt              DateTime @default(now())
-  updatedBy              String?
-  updatedAt              DateTime @updatedAt
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([code])
@@ -208,66 +208,66 @@ model PlatformProduct {
 // ============================================================================
 
 model PlatformWorkspace {
-  id                     String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Business & Product association
-  businessId             String            // Which business this workspace belongs to
-  productCode            String            // Which product (e.g., COMMERCE, LAUNDRY)
+  businessId  String // Which business this workspace belongs to
+  productCode String // Which product (e.g., COMMERCE, LAUNDRY)
 
   // Workspace identification
-  workspaceUrl           String   @unique  // The actual deployed URL (e.g., commerce.quantix.../tenantId)
+  workspaceUrl String @unique // The actual deployed URL (e.g., commerce.quantix.../tenantId)
 
   // Versioning - simple tracking
-  currentVersion         String   @default("1.0.0")  // Current deployed product version
+  currentVersion String @default("1.0.0") // Current deployed product version
 
   // Status - only what Super Admin needs to know
-  status                 String   @default("PROVISIONING")  // PROVISIONING, READY, Running, Maintenance, Suspended, Archived, Failed
+  status String @default("PROVISIONING") // PROVISIONING, READY, Running, Maintenance, Suspended, Archived, Failed
 
   // Provisioning tracking (v1.3.0)
-  provisioningStatus     String   @default("PENDING")  // PENDING, IN_PROGRESS, COMPLETED, FAILED
-  provisioningStartedAt  DateTime?
+  provisioningStatus      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  provisioningStartedAt   DateTime?
   provisioningCompletedAt DateTime?
-  provisioningError      String?
+  provisioningError       String?
 
   // Storage - simple tracking
-  storageAllocatedMB     Int      @default(1048576)  // Allocated quota in MB (default 1GB)
-  storageUsedMB          Int      @default(0)        // Current usage in MB
+  storageAllocatedMB Int @default(1048576) // Allocated quota in MB (default 1GB)
+  storageUsedMB      Int @default(0) // Current usage in MB
 
   // Subscription info
-  subscriptionPlan       String?           // e.g., "Starter", "Professional", "Enterprise"
+  subscriptionPlan String? // e.g., "Starter", "Professional", "Enterprise"
 
   // Configuration (v1.3.0)
-  websiteConfig          String   @default("{}")  // JSON website configuration
-  workspaceConfig        String   @default("{}")  // JSON workspace configuration
+  websiteConfig   String @default("{}") // JSON website configuration
+  workspaceConfig String @default("{}") // JSON workspace configuration
 
   // Website status - informational only
-  websiteStatus          String   @default("INACTIVE")  // Active, Inactive, Pending
-  websiteDomain          String?           // The domain if website is active
+  websiteStatus String  @default("INACTIVE") // Active, Inactive, Pending
+  websiteDomain String? // The domain if website is active
 
   // Feature count
-  featuresEnabled        Int      @default(0)        // Number of enabled features (informational)
+  featuresEnabled Int @default(0) // Number of enabled features (informational)
 
   // Health - simple indicator
-  healthStatus           String   @default("HEALTHY")  // Healthy, Warning, Offline
+  healthStatus String @default("HEALTHY") // Healthy, Warning, Offline
 
   // Notes
-  notes                  String?           // Optional admin notes
+  notes String? // Optional admin notes
 
   // Sync tracking
-  lastSyncTime           DateTime?         // Last time workspace status was synced
+  lastSyncTime DateTime? // Last time workspace status was synced
 
   // Audit
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  provisioningAudits     ProvisioningAuditLog[]
+  provisioningAudits ProvisioningAuditLog[]
 
+  @@unique([businessId, productCode]) // One workspace per business per product
   @@index([businessId])
   @@index([productCode])
   @@index([status])
   @@index([provisioningStatus])
-  @@unique([businessId, productCode])  // One workspace per business per product
 }
 
 // ============================================================================
@@ -276,30 +276,30 @@ model PlatformWorkspace {
 // ============================================================================
 
 model ProvisioningAuditLog {
-  id                String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Workspace reference
-  workspaceId       String
-  workspace         PlatformWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   PlatformWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   // Business reference for easier querying
-  businessId        String
+  businessId String
 
   // Provisioning step information
-  step              String   // e.g., "validate_product", "assign_features", "apply_defaults", etc.
-  status            String   // STARTED, COMPLETED, FAILED
-  error             String?  // Error message if failed
+  step   String // e.g., "validate_product", "assign_features", "apply_defaults", etc.
+  status String // STARTED, COMPLETED, FAILED
+  error  String? // Error message if failed
 
   // Details (JSON for flexibility)
-  details           String   @default("{}")  // Step-specific details
+  details String @default("{}") // Step-specific details
 
   // Timing
-  startedAt         DateTime @default(now())
-  completedAt       DateTime?
-  duration          Int?     // Duration in milliseconds
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  duration    Int? // Duration in milliseconds
 
   // Audit
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([workspaceId])
   @@index([businessId])
@@ -314,28 +314,28 @@ model ProvisioningAuditLog {
 // certbot failures without server access. Does not affect provisioning behaviour.
 // ============================================================================
 model ProductHostProvisioningLog {
-  id                String    @id @default(cuid())
+  id String @id @default(cuid())
 
-  productCode       String
-  hostname          String
-  requestedBy       String?   // Super Admin who triggered it (user id / email)
+  productCode String
+  hostname    String
+  requestedBy String? // Super Admin who triggered it (user id / email)
 
   // Lifecycle: PENDING -> RUNNING -> SUCCESS | FAILED
-  status            String    @default("RUNNING")
+  status String @default("RUNNING")
 
   // Per-step status (mirror of the provisioner result; null until reached)
-  nginxStatus       String?   // created | existing | failed | not_reached
-  certbotStatus     String?   // issued | existing | failed | not_reached
-  nginxReloadStatus String?   // reloaded | failed | not_reached
+  nginxStatus       String? // created | existing | failed | not_reached
+  certbotStatus     String? // issued | existing | failed | not_reached
+  nginxReloadStatus String? // reloaded | failed | not_reached
 
-  httpsReachable    Boolean   @default(false)
-  success           Boolean   @default(false)
-  errorMessage      String?   // complete error message on failure
+  httpsReachable Boolean @default(false)
+  success        Boolean @default(false)
+  errorMessage   String? // complete error message on failure
 
-  durationMs        Int?      // execution duration
-  startedAt         DateTime  @default(now())
-  completedAt       DateTime?
-  createdAt         DateTime  @default(now())
+  durationMs  Int? // execution duration
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([productCode])
   @@index([status])
@@ -348,34 +348,34 @@ model ProductHostProvisioningLog {
 // ============================================================================
 
 model ProductPlan {
-  id                     String   @id @default(cuid())
-  productCode            String   // FK to PlatformProduct.code
+  id          String @id @default(cuid())
+  productCode String // FK to PlatformProduct.code
 
   // Plan identification
-  code                   String   // e.g., "STARTER", "PROFESSIONAL", "ENTERPRISE"
-  name                   String   // Display name
-  description            String?
+  code        String // e.g., "STARTER", "PROFESSIONAL", "ENTERPRISE"
+  name        String // Display name
+  description String?
 
   // Features included
-  includedFeatures       String   @default("[]")  // JSON array of feature codes
+  includedFeatures String @default("[]") // JSON array of feature codes
 
   // Storage allocation
-  storageQuotaMB         Int      @default(52428800)  // 50GB default
+  storageQuotaMB Int @default(52428800) // 50GB default
 
   // Business limits
-  userLimit              Int      @default(10)    // Max users
-  branchLimit            Int      @default(1)     // Max stores/branches
+  userLimit   Int @default(10) // Max users
+  branchLimit Int @default(1) // Max stores/branches
 
   // Pricing (stored as JSON for flexibility)
-  pricing                String   @default("{}")  // JSON: { currency, amount, interval }
+  pricing String @default("{}") // JSON: { currency, amount, interval }
 
   // Status
-  status                 String   @default("ACTIVE")  // ACTIVE, RETIRED, BETA
-  isDefault              Boolean  @default(false)
+  status    String  @default("ACTIVE") // ACTIVE, RETIRED, BETA
+  isDefault Boolean @default(false)
 
   // Audit
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([productCode, code])
   @@index([productCode])
@@ -383,89 +383,89 @@ model ProductPlan {
 }
 
 model ProductWebsiteTemplate {
-  id                     String   @id @default(cuid())
-  productCode            String   @unique  // FK to PlatformProduct.code
+  id          String @id @default(cuid())
+  productCode String @unique // FK to PlatformProduct.code
 
   // Template identification
-  name                   String   // e.g., "Store Website", "Laundry Website", "Booking Website"
-  description            String?
+  name        String // e.g., "Store Website", "Laundry Website", "Booking Website"
+  description String?
 
   // Theme configuration (JSON)
-  defaultTheme           String   @default("{}")  // JSON: { colors, fonts, layout }
+  defaultTheme String @default("{}") // JSON: { colors, fonts, layout }
 
   // Page templates included
-  includedPages          String   @default("[]")  // JSON array of page types
+  includedPages String @default("[]") // JSON array of page types
 
   // Content structure (JSON)
-  contentStructure       String   @default("{}")  // JSON: typical content sections
+  contentStructure String @default("{}") // JSON: typical content sections
 
   // Status
-  status                 String   @default("ACTIVE")
+  status String @default("ACTIVE")
 
   // Audit
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model ProductMobileApp {
-  id                     String   @id @default(cuid())
-  productCode            String   // FK to PlatformProduct.code
+  id          String @id @default(cuid())
+  productCode String // FK to PlatformProduct.code
 
   // App identification
-  appType                String   // CUSTOMER, DELIVERY, ADMIN
-  name                   String   // Display name
-  description            String?
+  appType     String // CUSTOMER, DELIVERY, ADMIN
+  name        String // Display name
+  description String?
 
   // Version tracking
-  currentVersion         String   @default("1.0.0")
+  currentVersion String @default("1.0.0")
 
   // Build status
-  buildStatus            String   @default("READY")  // READY, BUILDING, FAILED
+  buildStatus String @default("READY") // READY, BUILDING, FAILED
 
   // Store availability
-  playStoreStatus        String   @default("AVAILABLE")  // AVAILABLE, BUILDING, REJECTED, NOT_PUBLISHED
-  appStoreStatus         String   @default("AVAILABLE")  // AVAILABLE, BUILDING, REJECTED, NOT_PUBLISHED
+  playStoreStatus String @default("AVAILABLE") // AVAILABLE, BUILDING, REJECTED, NOT_PUBLISHED
+  appStoreStatus  String @default("AVAILABLE") // AVAILABLE, BUILDING, REJECTED, NOT_PUBLISHED
 
   // Store links
-  playStoreUrl           String?
-  appStoreUrl            String?
+  playStoreUrl String?
+  appStoreUrl  String?
 
   // Status
-  status                 String   @default("ACTIVE")
+  status String @default("ACTIVE")
 
   // Audit
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([productCode, appType])
   @@index([productCode])
 }
 
 model ProductDefaultSettings {
-  id                     String   @id @default(cuid())
-  productCode            String   @unique  // FK to PlatformProduct.code
+  id          String @id @default(cuid())
+  productCode String @unique // FK to PlatformProduct.code
 
   // Localization defaults
-  defaultCurrency        String   @default("INR")    // ISO 4217
-  defaultTimezone        String   @default("Asia/Kolkata")
-  defaultLanguage        String   @default("en")
+  defaultCurrency String @default("INR") // ISO 4217
+  defaultTimezone String @default("Asia/Kolkata")
+  defaultLanguage String @default("en")
 
   // Business defaults
-  orderPrefix            String   @default("ORD")    // Order number prefix
-  invoicePrefix          String   @default("INV")    // Invoice number prefix
+  orderPrefix   String @default("ORD") // Order number prefix
+  invoicePrefix String @default("INV") // Invoice number prefix
 
   // Notification defaults (JSON)
-  notificationDefaults   String   @default("{}")  // Email, SMS, WhatsApp settings
+  notificationDefaults String @default("{}") // Email, SMS, WhatsApp settings
 
   // Branding defaults (JSON)
-  brandingDefaults       String   @default("{}")  // Colors, logos, fonts
+  brandingDefaults String @default("{}") // Colors, logos, fonts
 
   // Feature defaults (JSON)
-  featureDefaults        String   @default("{}")  // Feature-specific default settings
+  featureDefaults String @default("{}") // Feature-specific default settings
 
   // Audit
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Lead {
@@ -617,106 +617,106 @@ model DemoTenant {
 }
 
 model Business {
-  id                    String                  @id @default(cuid())
-  name                  String
-  slug                  String                  @unique
-  businessType          BusinessType
-  status                BusinessStatus          @default(ONBOARDING)
+  id                     String                  @id @default(cuid())
+  name                   String
+  slug                   String                  @unique
+  businessType           BusinessType
+  status                 BusinessStatus          @default(ONBOARDING)
   // Product Assignment (v1.2.0)
-  productCode           String?                 // FK to PlatformProduct.code (e.g., "COMMERCE", "LAUNDRY")
-  productVersion        String?                 // Product version when business was created
-  subscriptionPlanCode  String?                 // Selected subscription plan (e.g., "STARTER", "PROFESSIONAL")
-  enabledFeatures       String                  @default("[]")  // JSON array of enabled feature codes
-  leadId                String?
-  logo                  String?
-  favicon               String?
-  primaryColor          String                  @default("#10B981")
-  secondaryColor        String?
-  darkMode              Boolean                 @default(false)
-  tagline               String?
-  description           String?
-  gstNumber             String?
-  panNumber             String?
-  cinNumber             String?
-  fssaiLicense          String?
-  address               String?
-  city                  String?
-  state                 String?
-  pincode               String?
-  country               String                  @default("India")
-  latitude              Float?
-  longitude             Float?
-  contactEmail          String?
-  contactPhone          String?
-  supportEmail          String?
-  supportPhone          String?
-  defaultCurrency       String                  @default("INR")
-  defaultLocale         String                  @default("en-IN")
-  timezone              String                  @default("Asia/Kolkata")
-  isOnline              Boolean                 @default(false)
-  activationChecklist   String                  @default("{}")
-  activationProgress    Int                     @default(0)
-  activationCompleted   Boolean                 @default(false)
-  settings              String                  @default("{}")
-  features              String                  @default("{}")
-  notificationConfig    String                  @default("{}")
-  onboardedAt           DateTime?
-  activatedAt           DateTime?
-  suspendedAt           DateTime?
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
-  salesRepId            String?
-  businessCode          String?                 @unique
-  activityLogs          ActivityLog[]
-  salesRep              SalesTeamMember?        @relation("SalesRepClients", fields: [salesRepId], references: [id])
-  gatewayAccess         BusinessGatewayAccess[]
-  modules               BusinessModule[]
-  businessSubscription  BusinessSubscription?
-  businessUsers         BusinessUser[]
-  businessRoles         BusinessRole[]
-  auditLogs             BusinessAuditLog[]
-  categories            Category[]
-  convertedLeads        Lead[]                  @relation("LeadConversion")
-  customers             Customer[]
-  customerSubscriptions CustomerSubscription[]
-  deliveryPartners      DeliveryPartner[]
-  deliveryZones         DeliveryZone[]
-  deployments           Deployment[]
-  domain                DomainMapping?
-  featureFlags          FeatureFlag[]
-  invoices              Invoice[]
-  notifications         Notification[]
-  onboardingSteps       OnboardingStep[]
-  orders                Order[]
-  posSessions           POSSession[]
-  payments              Payment[]
-  paymentGateways       PaymentGateway[]
-  storePaymentGateways  StorePaymentGateway[]
-  products              Product[]
-  promoCodes            PromoCode[]
-  reviews               Review[]
-  stores                Store[]
-  subscriptionPlans     SubscriptionPlan[]
-  addons                Addon[]
-  taxConfigs            TaxConfig[]
-  workflowRules         WorkflowRule[]
-  branding              BusinessBranding?
-  appConfig             AppConfig?
-  cartItems             CartItem[]
-  favorites             Favorite[]
-  supportTickets        SupportTicket[]
-  workforceSettings     WorkforceSettings?
-  partnerAuditLogs      PartnerAudit[]
-  notificationSounds    NotificationSound[]
-  notificationDevices   NotificationDevice[]
-  banners               Banner[]
-  refunds               Refund[]
-  billingDocuments      BillingDocument[]
+  productCode            String? // FK to PlatformProduct.code (e.g., "COMMERCE", "LAUNDRY")
+  productVersion         String? // Product version when business was created
+  subscriptionPlanCode   String? // Selected subscription plan (e.g., "STARTER", "PROFESSIONAL")
+  enabledFeatures        String                  @default("[]") // JSON array of enabled feature codes
+  leadId                 String?
+  logo                   String?
+  favicon                String?
+  primaryColor           String                  @default("#10B981")
+  secondaryColor         String?
+  darkMode               Boolean                 @default(false)
+  tagline                String?
+  description            String?
+  gstNumber              String?
+  panNumber              String?
+  cinNumber              String?
+  fssaiLicense           String?
+  address                String?
+  city                   String?
+  state                  String?
+  pincode                String?
+  country                String                  @default("India")
+  latitude               Float?
+  longitude              Float?
+  contactEmail           String?
+  contactPhone           String?
+  supportEmail           String?
+  supportPhone           String?
+  defaultCurrency        String                  @default("INR")
+  defaultLocale          String                  @default("en-IN")
+  timezone               String                  @default("Asia/Kolkata")
+  isOnline               Boolean                 @default(false)
+  activationChecklist    String                  @default("{}")
+  activationProgress     Int                     @default(0)
+  activationCompleted    Boolean                 @default(false)
+  settings               String                  @default("{}")
+  features               String                  @default("{}")
+  notificationConfig     String                  @default("{}")
+  onboardedAt            DateTime?
+  activatedAt            DateTime?
+  suspendedAt            DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  salesRepId             String?
+  businessCode           String?                 @unique
+  activityLogs           ActivityLog[]
+  salesRep               SalesTeamMember?        @relation("SalesRepClients", fields: [salesRepId], references: [id])
+  gatewayAccess          BusinessGatewayAccess[]
+  modules                BusinessModule[]
+  businessSubscription   BusinessSubscription?
+  businessUsers          BusinessUser[]
+  businessRoles          BusinessRole[]
+  auditLogs              BusinessAuditLog[]
+  categories             Category[]
+  convertedLeads         Lead[]                  @relation("LeadConversion")
+  customers              Customer[]
+  customerSubscriptions  CustomerSubscription[]
+  deliveryPartners       DeliveryPartner[]
+  deliveryZones          DeliveryZone[]
+  deployments            Deployment[]
+  domain                 DomainMapping?
+  featureFlags           FeatureFlag[]
+  invoices               Invoice[]
+  notifications          Notification[]
+  onboardingSteps        OnboardingStep[]
+  orders                 Order[]
+  posSessions            POSSession[]
+  payments               Payment[]
+  paymentGateways        PaymentGateway[]
+  storePaymentGateways   StorePaymentGateway[]
+  products               Product[]
+  promoCodes             PromoCode[]
+  reviews                Review[]
+  stores                 Store[]
+  subscriptionPlans      SubscriptionPlan[]
+  addons                 Addon[]
+  taxConfigs             TaxConfig[]
+  workflowRules          WorkflowRule[]
+  branding               BusinessBranding?
+  appConfig              AppConfig?
+  cartItems              CartItem[]
+  favorites              Favorite[]
+  supportTickets         SupportTicket[]
+  workforceSettings      WorkforceSettings?
+  partnerAuditLogs       PartnerAudit[]
+  notificationSounds     NotificationSound[]
+  notificationDevices    NotificationDevice[]
+  banners                Banner[]
+  refunds                Refund[]
+  billingDocuments       BillingDocument[]
   recurringDateOverrides RecurringDateOverride[]
-  charges               Charge[]
-  billingAccount        BillingAccount?
-  fileUploads           FileUpload[]
-  razorpayPayments      RazorpayPayment[]
+  charges                Charge[]
+  billingAccount         BillingAccount?
+  fileUploads            FileUpload[]
+  razorpayPayments       RazorpayPayment[]
 
   @@index([businessType])
   @@index([status])
@@ -763,53 +763,53 @@ model BusinessModule {
 }
 
 model Store {
-  id                  String         @id @default(cuid())
-  businessId          String
-  name                String
-  slug                String
-  code                String?
-  address             String?
-  city                String?
-  state               String?
-  pincode             String?
-  country             String         @default("India")
-  latitude            Float?
-  longitude           Float?
-  phone               String?
-  email               String?
-  status              StoreStatus    @default(ACTIVE)
-  isMainStore         Boolean        @default(false)
-  deliveryRadius      Float          @default(5.0)
-  minOrderAmount      Float          @default(0)
-  deliveryFee         Float          @default(0)
-  freeDeliveryAbove   Float?
-  maxDeliveryDistance Float?         @default(10.0)
-  preparationTime     Int            @default(30)
-  operatingHours      String         @default("{}")
-  posEnabled          Boolean        @default(true)
-  printerConfig       String         @default("{}")
-  printerType         String?
-  paperSize           String         @default("80mm")
-  gstNumber           String?
-  settings            String         @default("{}")
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-  storeCode           String?
-  staff               BusinessUser[]
-  categories          Category[]
-  deliveryZones       DeliveryZone[]
-  inventory           Inventory[]
-  orders              Order[]
-  posSessions         POSSession[]
-  products            Product[]
-  taxConfigs          TaxConfig[]
-  workflowRules       WorkflowRule[]
-  userAssignments     UserStoreAssignment[]
+  id                   String                @id @default(cuid())
+  businessId           String
+  name                 String
+  slug                 String
+  code                 String?
+  address              String?
+  city                 String?
+  state                String?
+  pincode              String?
+  country              String                @default("India")
+  latitude             Float?
+  longitude            Float?
+  phone                String?
+  email                String?
+  status               StoreStatus           @default(ACTIVE)
+  isMainStore          Boolean               @default(false)
+  deliveryRadius       Float                 @default(5.0)
+  minOrderAmount       Float                 @default(0)
+  deliveryFee          Float                 @default(0)
+  freeDeliveryAbove    Float?
+  maxDeliveryDistance  Float?                @default(10.0)
+  preparationTime      Int                   @default(30)
+  operatingHours       String                @default("{}")
+  posEnabled           Boolean               @default(true)
+  printerConfig        String                @default("{}")
+  printerType          String?
+  paperSize            String                @default("80mm")
+  gstNumber            String?
+  settings             String                @default("{}")
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  storeCode            String?
+  staff                BusinessUser[]
+  categories           Category[]
+  deliveryZones        DeliveryZone[]
+  inventory            Inventory[]
+  orders               Order[]
+  posSessions          POSSession[]
+  products             Product[]
+  taxConfigs           TaxConfig[]
+  workflowRules        WorkflowRule[]
+  userAssignments      UserStoreAssignment[]
   storePaymentGateways StorePaymentGateway[]
-  deliveryPartners    DeliveryPartner[]
-  business            Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  storeTimings        StoreTiming[]
-  banners             Banner[]
+  deliveryPartners     DeliveryPartner[]
+  business             Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  storeTimings         StoreTiming[]
+  banners              Banner[]
 
   @@unique([businessId, slug])
   @@unique([businessId, storeCode])
@@ -833,28 +833,28 @@ model StoreTiming {
 }
 
 model User {
-  id                  String            @id @default(cuid())
-  email               String            @unique
-  loginId             String?           @unique
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  loginId             String?              @unique
   phone               String?
   name                String
   avatar              String?
   passwordHash        String?
-  hasPassword         Boolean           @default(false)
-  mustChangePassword  Boolean           @default(false)
-  authProvider        AuthProvider      @default(EMAIL_OTP)
-  emailVerified       Boolean           @default(false)
-  phoneVerified       Boolean           @default(false)
-  isActive            Boolean           @default(true)
+  hasPassword         Boolean              @default(false)
+  mustChangePassword  Boolean              @default(false)
+  authProvider        AuthProvider         @default(EMAIL_OTP)
+  emailVerified       Boolean              @default(false)
+  phoneVerified       Boolean              @default(false)
+  isActive            Boolean              @default(true)
   fcmToken            String?
   lastLoginAt         DateTime?
   passwordChangedAt   DateTime?
-  failedLoginAttempts Int               @default(0)
+  failedLoginAttempts Int                  @default(0)
   lockedUntil         DateTime?
   createdBy           String?
-  metadata            String            @default("{}")
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  metadata            String               @default("{}")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
   platformRole        Role?
   platformPermissions String?
   activityLogs        ActivityLog[]
@@ -865,7 +865,7 @@ model User {
   notifications       Notification[]
   notificationDevices NotificationDevice[]
   otpCodes            OTPCode[]
-  posSessions         POSSession[]      @relation("POSOperator")
+  posSessions         POSSession[]         @relation("POSOperator")
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   salesProfile        SalesTeamMember?
@@ -917,23 +917,23 @@ model PasswordResetToken {
 }
 
 model BusinessUser {
-  id              String                @id @default(cuid())
-  userId          String
-  businessId      String
-  role            Role
-  storeId         String?
-  businessRoleId  String?
-  createdBy       String?
-  permissions     String                @default("[]")
-  isActive        Boolean               @default(true)
-  invitedAt       DateTime?
-  acceptedAt      DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  store           Store?                @relation(fields: [storeId], references: [id])
-  businessRole    BusinessRole?         @relation(fields: [businessRoleId], references: [id])
-  business        Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String                @id @default(cuid())
+  userId           String
+  businessId       String
+  role             Role
+  storeId          String?
+  businessRoleId   String?
+  createdBy        String?
+  permissions      String                @default("[]")
+  isActive         Boolean               @default(true)
+  invitedAt        DateTime?
+  acceptedAt       DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  store            Store?                @relation(fields: [storeId], references: [id])
+  businessRole     BusinessRole?         @relation(fields: [businessRoleId], references: [id])
+  business         Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   storeAssignments UserStoreAssignment[]
 
   @@unique([userId, businessId])
@@ -993,14 +993,14 @@ model BusinessAuditLog {
 }
 
 model Order {
-  id                   String                @id @default(cuid())
+  id                   String                   @id @default(cuid())
   businessId           String
   storeId              String
   orderNumber          String
   orderType            OrderType
-  orderSource          String                @default("online")
-  status               OrderStatus           @default(PENDING)
-  paymentStatus        PaymentStatus         @default(PENDING)
+  orderSource          String                   @default("online")
+  status               OrderStatus              @default(PENDING)
+  paymentStatus        PaymentStatus            @default(PENDING)
   paymentMethod        PaymentMethodType?
   customerId           String?
   customerName         String?
@@ -1015,19 +1015,19 @@ model Order {
   pickupAddress        String?
   pickupScheduledAt    DateTime?
   pickupCompletedAt    DateTime?
-  subtotal             Float                 @default(0)
-  totalDiscount        Float                 @default(0)
-  totalTax             Float                 @default(0)
-  deliveryFee          Float                 @default(0)
-  packagingFee         Float                 @default(0)
-  convenienceFee       Float                 @default(0)
-  tip                  Float                 @default(0)
-  roundOff             Float                 @default(0)
-  totalAmount          Float                 @default(0)
-  cgstAmount           Float                 @default(0)
-  sgstAmount           Float                 @default(0)
-  igstAmount           Float                 @default(0)
-  cessAmount           Float                 @default(0)
+  subtotal             Float                    @default(0)
+  totalDiscount        Float                    @default(0)
+  totalTax             Float                    @default(0)
+  deliveryFee          Float                    @default(0)
+  packagingFee         Float                    @default(0)
+  convenienceFee       Float                    @default(0)
+  tip                  Float                    @default(0)
+  roundOff             Float                    @default(0)
+  totalAmount          Float                    @default(0)
+  cgstAmount           Float                    @default(0)
+  sgstAmount           Float                    @default(0)
+  igstAmount           Float                    @default(0)
+  cessAmount           Float                    @default(0)
   posSessionId         String?
   posOperatorId        String?
   tableNumber          String?
@@ -1039,23 +1039,23 @@ model Order {
   pickupOtp            String?
   notes                String?
   cancelReason         String?
-  metadata             String                @default("{}")
+  metadata             String                   @default("{}")
   confirmedAt          DateTime?
   preparedAt           DateTime?
   deliveredAt          DateTime?
   cancelledAt          DateTime?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
   delivery             Delivery?
   invoice              Invoice?
-  promoCode            PromoCode?            @relation(fields: [promoCodeId], references: [id])
-  customerSubscription CustomerSubscription? @relation(fields: [subscriptionId], references: [id])
-  posSession           POSSession?           @relation(fields: [posSessionId], references: [id])
-  customer             Customer?             @relation(fields: [customerId], references: [id])
-  store                Store                 @relation(fields: [storeId], references: [id])
-  business             Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  deliveryPartner      DeliveryPartner?      @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id])
-  pickupPartner        DeliveryPartner?      @relation("OrderPickupPartner", fields: [pickupPartnerId], references: [id])
+  promoCode            PromoCode?               @relation(fields: [promoCodeId], references: [id])
+  customerSubscription CustomerSubscription?    @relation(fields: [subscriptionId], references: [id])
+  posSession           POSSession?              @relation(fields: [posSessionId], references: [id])
+  customer             Customer?                @relation(fields: [customerId], references: [id])
+  store                Store                    @relation(fields: [storeId], references: [id])
+  business             Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  deliveryPartner      DeliveryPartner?         @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id])
+  pickupPartner        DeliveryPartner?         @relation("OrderPickupPartner", fields: [pickupPartnerId], references: [id])
   items                OrderItem[]
   statusHistory        OrderStatusHistory[]
   payments             Payment[]
@@ -1178,43 +1178,43 @@ model DeliveryZone {
 }
 
 model DeliveryPartner {
-  id              String              @id @default(cuid())
-  businessId      String
-  userId          String?
-  storeId         String?
-  name            String
-  phone           String
-  email           String?
-  avatar          String?
-  vehicleType     String?
-  vehicleNumber   String?
-  licenseNumber   String?
-  isOnline        Boolean             @default(false)
-  isActive        Boolean             @default(true)
-  currentLat      Float?
-  currentLng      Float?
-  rating          Float               @default(0)
-  totalDeliveries Int                 @default(0)
-  totalEarnings   Float               @default(0)
-  fcmToken        String?
-  bankAccount     String?
-  partnerCode     String?
-  partnerType     PartnerType         @default(INTERNAL)
-  availability    PartnerAvailability @default(OFFLINE)
-  appEnabled      Boolean             @default(false)
-  notes           String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  deliveries      Delivery[]          @relation("DeliveryAssignedPartner")
-  pickupDeliveries Delivery[]         @relation("DeliveryPickupPartner")
-  deliveryOrders      Order[]               @relation("OrderDeliveryPartner")
-  pickupOrders        Order[]               @relation("OrderPickupPartner")
-  auditLogs           PartnerAudit[]
-  locationHistory     PartnerLocationHistory[]
+  id                   String                   @id @default(cuid())
+  businessId           String
+  userId               String?
+  storeId              String?
+  name                 String
+  phone                String
+  email                String?
+  avatar               String?
+  vehicleType          String?
+  vehicleNumber        String?
+  licenseNumber        String?
+  isOnline             Boolean                  @default(false)
+  isActive             Boolean                  @default(true)
+  currentLat           Float?
+  currentLng           Float?
+  rating               Float                    @default(0)
+  totalDeliveries      Int                      @default(0)
+  totalEarnings        Float                    @default(0)
+  fcmToken             String?
+  bankAccount          String?
+  partnerCode          String?
+  partnerType          PartnerType              @default(INTERNAL)
+  availability         PartnerAvailability      @default(OFFLINE)
+  appEnabled           Boolean                  @default(false)
+  notes                String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  deliveries           Delivery[]               @relation("DeliveryAssignedPartner")
+  pickupDeliveries     Delivery[]               @relation("DeliveryPickupPartner")
+  deliveryOrders       Order[]                  @relation("OrderDeliveryPartner")
+  pickupOrders         Order[]                  @relation("OrderPickupPartner")
+  auditLogs            PartnerAudit[]
+  locationHistory      PartnerLocationHistory[]
   liveTrackingSessions LiveTrackingSession[]
-  user            User?               @relation(fields: [userId], references: [id])
-  store           Store?              @relation(fields: [storeId], references: [id])
-  business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user                 User?                    @relation(fields: [userId], references: [id])
+  store                Store?                   @relation(fields: [storeId], references: [id])
+  business             Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, phone])
   @@unique([businessId, partnerCode])
@@ -1272,19 +1272,19 @@ model NotificationSound {
 }
 
 model NotificationDevice {
-  id          String         @id @default(cuid())
-  userId      String
-  businessId  String
-  fcmToken    String
-  platform    DevicePlatform
-  deviceId    String?
-  appVersion  String?
-  isActive    Boolean        @default(true)
-  lastActive  DateTime       @default(now())
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String         @id @default(cuid())
+  userId     String
+  businessId String
+  fcmToken   String
+  platform   DevicePlatform
+  deviceId   String?
+  appVersion String?
+  isActive   Boolean        @default(true)
+  lastActive DateTime       @default(now())
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([userId, deviceId])
   @@index([userId])
@@ -1293,17 +1293,17 @@ model NotificationDevice {
 }
 
 model PartnerLocationHistory {
-  id          String   @id @default(cuid())
-  partnerId   String
-  orderId     String?
-  lat         Float
-  lng         Float
-  accuracy    Float?
-  heading     Float?
-  speed       Float?
-  capturedAt  DateTime @default(now())
-  partner     DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  order       Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  id         String          @id @default(cuid())
+  partnerId  String
+  orderId    String?
+  lat        Float
+  lng        Float
+  accuracy   Float?
+  heading    Float?
+  speed      Float?
+  capturedAt DateTime        @default(now())
+  partner    DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  order      Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([partnerId])
   @@index([orderId])
@@ -1352,11 +1352,11 @@ model Refund {
 }
 
 model LiveTrackingSession {
-  id          String    @id @default(cuid())
-  orderId     String    @unique
+  id          String          @id @default(cuid())
+  orderId     String          @unique
   partnerId   String
-  isActive    Boolean   @default(true)
-  startedAt   DateTime  @default(now())
+  isActive    Boolean         @default(true)
+  startedAt   DateTime        @default(now())
   endedAt     DateTime?
   lastLat     Float?
   lastLng     Float?
@@ -1369,17 +1369,17 @@ model LiveTrackingSession {
 }
 
 model AppVersion {
-  id            String   @id @default(cuid())
-  platform      String
-  version       String
-  minVersion    String
-  forceUpdate   Boolean  @default(false)
-  changelogUrl  String?
-  releaseNotes  String?
-  isActive      Boolean  @default(true)
-  publishedAt   DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  platform     String
+  version      String
+  minVersion   String
+  forceUpdate  Boolean  @default(false)
+  changelogUrl String?
+  releaseNotes String?
+  isActive     Boolean  @default(true)
+  publishedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@unique([platform, version])
   @@index([platform])
@@ -1473,21 +1473,21 @@ model PlatformPaymentPlugin {
 }
 
 model BusinessGatewayAccess {
-  id                String                @id @default(cuid())
-  businessId        String
-  pluginId          String
-  isAssigned        Boolean               @default(false)
-  canConfigure      Boolean               @default(false)
-  isActive          Boolean               @default(false)
-  config            String                @default("{}")
-  assignedStoreIds  String                @default("[]")
-  notes             String?
-  assignedAt        DateTime?
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  plugin            PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
-  business          Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  storeConfigs      StorePaymentGateway[]
+  id               String                @id @default(cuid())
+  businessId       String
+  pluginId         String
+  isAssigned       Boolean               @default(false)
+  canConfigure     Boolean               @default(false)
+  isActive         Boolean               @default(false)
+  config           String                @default("{}")
+  assignedStoreIds String                @default("[]")
+  notes            String?
+  assignedAt       DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  plugin           PlatformPaymentPlugin @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+  business         Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  storeConfigs     StorePaymentGateway[]
 
   @@unique([businessId, pluginId])
   @@index([businessId])
@@ -1657,20 +1657,20 @@ model BillingRecord {
 }
 
 model Addon {
-  id          String          @id @default(cuid())
+  id          String           @id @default(cuid())
   businessId  String
   name        String
   description String?
   amount      Float
   billingType AddonBillingType
   cycle       AddonCycle?
-  status      AddonStatus     @default(ACTIVE)
-  startDate   DateTime        @default(now())
+  status      AddonStatus      @default(ACTIVE)
+  startDate   DateTime         @default(now())
   endDate     DateTime?
   invoicedAt  DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  business    Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([status])
@@ -1720,12 +1720,12 @@ model SubscriptionPlan {
   setupFee           Float                    @default(0)
   totalCredits       Int                      @default(0)
   creditLabel        String?
-  image              String?                  // tenant marketing image (upload URL)
+  image              String? // tenant marketing image (upload URL)
   // Laundry cloth-allowance plans: how the allowance is consumed and how many
   // orders/pickups it may be spread across per billing cycle. Nullable/additive
   // — legacy plans keep prior behaviour (null maxOrders = unlimited orders).
-  allowanceType      String?                  // e.g. CLOTH_ALLOWANCE | KG_ALLOWANCE
-  maxOrdersPerCycle  Int?                     // max orders the allowance covers per cycle
+  allowanceType      String? // e.g. CLOTH_ALLOWANCE | KG_ALLOWANCE
+  maxOrdersPerCycle  Int? // max orders the allowance covers per cycle
   features           String                   @default("[]")
   isFeatured         Boolean                  @default(false)
   maxSubscribers     Int?
@@ -1827,13 +1827,13 @@ model SubscriptionPurchase {
   paymentStatus          String    @default("PENDING")
   paymentMethod          String?
   gateway                String?
-  paymentReference       String?   // gateway order id / provider reference
-  paymentTransactionId   String?   // gateway payment id after verification
+  paymentReference       String? // gateway order id / provider reference
+  paymentTransactionId   String? // gateway payment id after verification
   // A subscription can be purchased in the SAME cart as a laundry order and its
   // due collected together at Payment Collection. This links the pending
   // purchase to that order (nullable — a standalone online purchase has none).
   laundryOrderId         String?
-  customerSubscriptionId String?   // set once activated (only after PAID)
+  customerSubscriptionId String? // set once activated (only after PAID)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   paidAt                 DateTime?
@@ -1845,65 +1845,65 @@ model SubscriptionPurchase {
 }
 
 model Customer {
-  id            String                 @id @default(cuid())
-  businessId    String
-  userId        String?
-  name          String
-  email         String?
-  phone         String?
-  avatar        String?
-  gstNumber     String?
-  dateOfBirth   DateTime?
-  gender        String?
-  loyaltyTier   String                 @default("BRONZE")
-  notes         String                 @default("")
-  loyaltyPoints Int                    @default(0)
-  totalOrders   Int                    @default(0)
-  totalSpent    Float                  @default(0)
-  avgOrderValue Float                  @default(0)
-  lastOrderAt   DateTime?
-  tags          String                 @default("[]")
-  metadata         String                 @default("{}")
-  isActive         Boolean                @default(true)
-  status           String                 @default("ACTIVE")
-  source           String                 @default("MANUAL")
-  isGuest          Boolean                @default(false)
-  verified         Boolean                @default(false)
-  customerCode     String?
-  createdStoreId   String?
-  preferredStoreId String?
-  emailVerified    Boolean                @default(false)
-  phoneVerified    Boolean                @default(false)
-  walletBalance    Float                  @default(0)
-  accountType      String                 @default("RETAIL")
-  creditLimit      Float                  @default(0)
-  outstandingBalance Float                @default(0)
-  lastLoginAt      DateTime?
+  id                       String                 @id @default(cuid())
+  businessId               String
+  userId                   String?
+  name                     String
+  email                    String?
+  phone                    String?
+  avatar                   String?
+  gstNumber                String?
+  dateOfBirth              DateTime?
+  gender                   String?
+  loyaltyTier              String                 @default("BRONZE")
+  notes                    String                 @default("")
+  loyaltyPoints            Int                    @default(0)
+  totalOrders              Int                    @default(0)
+  totalSpent               Float                  @default(0)
+  avgOrderValue            Float                  @default(0)
+  lastOrderAt              DateTime?
+  tags                     String                 @default("[]")
+  metadata                 String                 @default("{}")
+  isActive                 Boolean                @default(true)
+  status                   String                 @default("ACTIVE")
+  source                   String                 @default("MANUAL")
+  isGuest                  Boolean                @default(false)
+  verified                 Boolean                @default(false)
+  customerCode             String?
+  createdStoreId           String?
+  preferredStoreId         String?
+  emailVerified            Boolean                @default(false)
+  phoneVerified            Boolean                @default(false)
+  walletBalance            Float                  @default(0)
+  accountType              String                 @default("RETAIL")
+  creditLimit              Float                  @default(0)
+  outstandingBalance       Float                  @default(0)
+  lastLoginAt              DateTime?
   // ── Customer-owned credentials (isolated from BusinessUser/Staff system) ──
-  passwordHash           String?
-  isPasswordSet          Boolean   @default(false)
-  passwordCreatedAt      DateTime?
-  passwordUpdatedAt      DateTime?
-  passwordResetToken     String?   @unique
+  passwordHash             String?
+  isPasswordSet            Boolean                @default(false)
+  passwordCreatedAt        DateTime?
+  passwordUpdatedAt        DateTime?
+  passwordResetToken       String?                @unique
   passwordResetTokenExpiry DateTime?
-  lastPasswordResetAt    DateTime?
-  mustChangePassword     Boolean   @default(false)
-  failedLoginAttempts    Int       @default(0)
-  accountLockedUntil     DateTime?
-  isLoginDisabled        Boolean   @default(false)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  addresses     Address[]
-  user          User?                  @relation(fields: [userId], references: [id])
-  business      Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customerNotes CustomerNote[]
-  subscriptions CustomerSubscription[]
-  invoices      Invoice[]
-  orders          Order[]
-  cartItems       CartItem[]
-  favorites       Favorite[]
-  reviews         Review[]
-  supportTickets  SupportTicket[]
+  lastPasswordResetAt      DateTime?
+  mustChangePassword       Boolean                @default(false)
+  failedLoginAttempts      Int                    @default(0)
+  accountLockedUntil       DateTime?
+  isLoginDisabled          Boolean                @default(false)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  addresses                Address[]
+  user                     User?                  @relation(fields: [userId], references: [id])
+  business                 Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerNotes            CustomerNote[]
+  subscriptions            CustomerSubscription[]
+  invoices                 Invoice[]
+  orders                   Order[]
+  cartItems                CartItem[]
+  favorites                Favorite[]
+  reviews                  Review[]
+  supportTickets           SupportTicket[]
 
   @@unique([businessId, phone])
   @@unique([businessId, customerCode])
@@ -2122,42 +2122,42 @@ model SalesTeamMember {
 }
 
 model DomainMapping {
-  id              String       @id @default(cuid())
-  businessId      String       @unique
-  domain          String       @unique
-  subdomain       String?
-  isPrimary       Boolean      @default(true)
-  sslStatus       String       @default("pending")
-  sslExpiryDate   DateTime?
-  sslError        String?
+  id               String       @id @default(cuid())
+  businessId       String       @unique
+  domain           String       @unique
+  subdomain        String?
+  isPrimary        Boolean      @default(true)
+  sslStatus        String       @default("pending")
+  sslExpiryDate    DateTime?
+  sslError         String?
   sslLastCheckedAt DateTime?
-  dnsProvider     String?
-  dnsConfig       String       @default("{}")
-  status          DomainStatus @default(PENDING_DNS)
-  configuredBy    String?
-  configuredAt    DateTime?
-  deployedAt      DateTime?
-  notes           String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  business        Business     @relation(fields: [businessId], references: [id])
-  sslJobs         SslJob[]
+  dnsProvider      String?
+  dnsConfig        String       @default("{}")
+  status           DomainStatus @default(PENDING_DNS)
+  configuredBy     String?
+  configuredAt     DateTime?
+  deployedAt       DateTime?
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  business         Business     @relation(fields: [businessId], references: [id])
+  sslJobs          SslJob[]
 
   @@index([status])
 }
 
 model SslJob {
-  id            String    @id @default(cuid())
+  id            String        @id @default(cuid())
   businessId    String
   domain        String
-  status        SslJobStatus @default(PENDING)
-  attempt       Int       @default(0)
-  maxAttempts   Int       @default(5)
+  status        SslJobStatus  @default(PENDING)
+  attempt       Int           @default(0)
+  maxAttempts   Int           @default(5)
   lastError     String?
   startedAt     DateTime?
   completedAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   domainMapping DomainMapping @relation(fields: [businessId], references: [businessId])
 
   @@index([status])
@@ -2486,7 +2486,7 @@ model Favorite {
 }
 
 model SupportTicket {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   businessId String
   customerId String?
   name       String
@@ -2494,10 +2494,10 @@ model SupportTicket {
   subject    String
   category   String
   message    String
-  status     String   @default("OPEN")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  status     String    @default("OPEN")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([businessId])
@@ -2507,30 +2507,30 @@ model SupportTicket {
 // Internal commission tracking for Quantix sales team.
 // One record per saved calculation session.
 model CommissionCalculation {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   salesPersonId   String
   salesPersonName String
-  month           Int      // 1–12
+  month           Int // 1–12
   year            Int
 
   // JSON: Array<{ type, qty, totalValue, commPct, perSaleCommission, totalCommission }>
-  lineItems       String
+  lineItems String
 
   totalQty        Int
   totalValue      Float
-  qualifiedSlab   Float    // 25 | 35 | 45
+  qualifiedSlab   Float // 25 | 35 | 45
   totalCommission Float
 
-  notes             String?
+  notes String?
 
   // "signup" | "renewal" — separates the two calculator types in history
-  calcType          String   @default("signup")
+  calcType          String  @default("signup")
   // "RELEASE" | "HOLD" — renewal eligibility at save time (null for signup records)
   eligibilityStatus String?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([salesPersonId])
   @@index([year, month])
@@ -2998,22 +2998,22 @@ model OfferLetterSequence {
 
 // Quantix Employee Master
 model Employee {
-  id               String         @id @default(cuid())
-  employeeCode     String         @unique
+  id               String             @id @default(cuid())
+  employeeCode     String             @unique
   internalSequence Int?
   name             String
-  email            String         @unique
+  email            String             @unique
   mobile           String?
   designation      String
   department       String?
   joiningDate      DateTime
-  employmentType   EmploymentType @default(PERMANENT)
+  employmentType   EmploymentType     @default(PERMANENT)
   payrollType      PayrollType?
   reportingManager String?
-  status           EmployeeStatus @default(PROSPECT)
+  status           EmployeeStatus     @default(PROSPECT)
   deletedAt        DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
   commissionSlips  CommissionSlip[]
   offerLetters     OfferLetter[]
   timeline         EmployeeTimeline[]
@@ -3255,20 +3255,20 @@ model OfferLetter {
 // Annexure — independently stored, linked to an Offer Letter
 // Numbered: QT/HR/2026/00001-A, QT/HR/2026/00001-B, etc.
 model Annexure {
-  id            String               @id @default(cuid())
+  id            String    @id @default(cuid())
   offerLetterId String
-  label         String               // "A", "B", "C" — auto-assigned at creation
-  annexureRef   String?              // "QT/HR/2026/00001-A"
-  title         String               // "Commission & Incentive Policy"
-  content       String               @default("")
+  label         String // "A", "B", "C" — auto-assigned at creation
+  annexureRef   String? // "QT/HR/2026/00001-A"
+  title         String // "Commission & Incentive Policy"
+  content       String    @default("")
   templateId    String?
   deletedAt     DateTime?
   createdBy     String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  offerLetter   OfferLetter          @relation(fields: [offerLetterId], references: [id])
-  template      OfferLetterTemplate? @relation(fields: [templateId], references: [id])
+  offerLetter OfferLetter          @relation(fields: [offerLetterId], references: [id])
+  template    OfferLetterTemplate? @relation(fields: [templateId], references: [id])
 
   @@index([offerLetterId])
 }
@@ -3285,15 +3285,15 @@ model PlatformAuditLog {
   userName        String?
   email           String?
   role            String?
-  module          String              // AUTHENTICATION | PROPOSALS | LEADS | etc.
-  action          String              // LOGIN | CREATE | UPDATE | DELETE | etc.
-  page            String?             // URL path that was accessed
-  resourceType    String?             // Entity type: Proposal, Lead, User, etc.
-  resourceId      String?             // Primary key of affected record
-  description     String              // Human-readable one-liner
-  oldValues       String?             // JSON — state before the change
-  newValues       String?             // JSON — state after the change
-  severity        String   @default("INFO")  // INFO | WARNING | CRITICAL
+  module          String // AUTHENTICATION | PROPOSALS | LEADS | etc.
+  action          String // LOGIN | CREATE | UPDATE | DELETE | etc.
+  page            String? // URL path that was accessed
+  resourceType    String? // Entity type: Proposal, Lead, User, etc.
+  resourceId      String? // Primary key of affected record
+  description     String // Human-readable one-liner
+  oldValues       String? // JSON — state before the change
+  newValues       String? // JSON — state after the change
+  severity        String   @default("INFO") // INFO | WARNING | CRITICAL
   ipAddress       String?
   browser         String?
   operatingSystem String?
@@ -3317,14 +3317,14 @@ model PlatformAuditLog {
 
 model WebsitePricingPlan {
   id                String               @id @default(cuid())
-  planKey           String               @unique  // starter | business | yearly | custom | additional-store
+  planKey           String               @unique // starter | business | yearly | custom | additional-store
   planName          String
-  billingType       String               // monthly | yearly | one_time | custom
-  price             Float?               // null = "Contact Us" pricing
-  priceDisplay      String?              // override display string e.g. "Contact Us"
+  billingType       String // monthly | yearly | one_time | custom
+  price             Float? // null = "Contact Us" pricing
+  priceDisplay      String? // override display string e.g. "Contact Us"
   implementationFee Float?
   description       String?
-  discountMessage   String?              // e.g. "Get 2 Months Free"
+  discountMessage   String? // e.g. "Get 2 Months Free"
   displayOrder      Int                  @default(0)
   isActive          Boolean              @default(true)
   features          WebsitePlanFeature[]
@@ -3349,7 +3349,7 @@ model WebsitePlanFeature {
 
 // Singleton — always upserted on id = "singleton"
 model WebsiteCompanyInfo {
-  id             String  @id @default("singleton")
+  id             String   @id @default("singleton")
   companyName    String?
   address        String?
   contactNumber  String?
@@ -3365,51 +3365,51 @@ model WebsiteCompanyInfo {
 
 // ── Website Management: General Settings (Singleton) ────────────────
 model WebsiteGeneral {
-  id                String   @id @default("singleton")
-  websiteName       String?  @default("Quantix")
-  websiteUrl        String?
-  defaultLanguage   String?  @default("en-IN")
-  timezone          String?  @default("Asia/Kolkata")
-  companyEmail      String?
-  supportEmail      String?
-  salesPhone        String?
-  supportPhone      String?
-  copyright         String?
-  websiteStatus     String?  @default("ACTIVE") // ACTIVE | MAINTENANCE
-  maintenanceMode   Boolean  @default(false)
+  id                 String   @id @default("singleton")
+  websiteName        String?  @default("Quantix")
+  websiteUrl         String?
+  defaultLanguage    String?  @default("en-IN")
+  timezone           String?  @default("Asia/Kolkata")
+  companyEmail       String?
+  supportEmail       String?
+  salesPhone         String?
+  supportPhone       String?
+  copyright          String?
+  websiteStatus      String?  @default("ACTIVE") // ACTIVE | MAINTENANCE
+  maintenanceMode    Boolean  @default(false)
   maintenanceMessage String?
-  updatedAt         DateTime @updatedAt
+  updatedAt          DateTime @updatedAt
 }
 
 // ── Website Management: Homepage (Singleton) ───────────────────────
 model WebsiteHomepage {
-  id              String   @id @default("singleton")
-  heroTitle       String?
-  heroSubtitle    String?
-  heroDescription String?
-  primaryBtnText  String?
-  primaryBtnUrl   String?
+  id               String   @id @default("singleton")
+  heroTitle        String?
+  heroSubtitle     String?
+  heroDescription  String?
+  primaryBtnText   String?
+  primaryBtnUrl    String?
   secondaryBtnText String?
-  secondaryBtnUrl String?
-  heroImage       String?
+  secondaryBtnUrl  String?
+  heroImage        String?
   heroIllustration String?
-  showStatistics  Boolean  @default(true)
-  showTrustedBy   Boolean  @default(true)
-  displayOrder    Int      @default(1)
-  updatedAt       DateTime @updatedAt
+  showStatistics   Boolean  @default(true)
+  showTrustedBy    Boolean  @default(true)
+  displayOrder     Int      @default(1)
+  updatedAt        DateTime @updatedAt
 }
 
 // ── Website Management: Features ───────────────────────────────────
 model WebsiteFeature {
-  id          String   @id @default(cuid())
-  title       String
-  subtitle    String?
-  description String?
-  icon        String?  // icon name or URL
+  id           String   @id @default(cuid())
+  title        String
+  subtitle     String?
+  description  String?
+  icon         String? // icon name or URL
   displayOrder Int      @default(0)
-  isVisible   Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isVisible    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([displayOrder])
   @@index([isVisible])
@@ -3417,17 +3417,17 @@ model WebsiteFeature {
 
 // ── Website Management: Testimonials ───────────────────────────────
 model WebsiteTestimonial {
-  id          String   @id @default(cuid())
+  id           String   @id @default(cuid())
   customerName String
-  business    String?
-  designation String?
-  review      String
-  rating      Int      @default(5) // 1-5
-  image       String?
+  business     String?
+  designation  String?
+  review       String
+  rating       Int      @default(5) // 1-5
+  image        String?
   displayOrder Int      @default(0)
-  isVisible   Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isVisible    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([displayOrder])
   @@index([isVisible])
@@ -3435,14 +3435,14 @@ model WebsiteTestimonial {
 
 // ── Website Management: FAQ ────────────────────────────────────────
 model WebsiteFAQ {
-  id          String   @id @default(cuid())
-  question    String
-  answer      String
-  category    String?
-  sortOrder   Int      @default(0)
-  isVisible   Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String?
+  sortOrder Int      @default(0)
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([category])
   @@index([sortOrder])
@@ -3451,84 +3451,84 @@ model WebsiteFAQ {
 
 // ── Website Management: Communication Center (Singleton) ────────────
 model WebsiteCommunication {
-  id                  String   @id @default("singleton")
+  id                     String   @id @default("singleton")
   // WhatsApp
-  whatsappNumber      String?
-  whatsappMessage     String?  @default("Hello! How can we help?")
-  whatsappFloatingBtn Boolean  @default(true)
-  whatsappBtnPosition String?  @default("bottom-right") // bottom-left | bottom-right
-  whatsappDesktop     Boolean  @default(true)
-  whatsappMobile      Boolean  @default(true)
+  whatsappNumber         String?
+  whatsappMessage        String?  @default("Hello! How can we help?")
+  whatsappFloatingBtn    Boolean  @default(true)
+  whatsappBtnPosition    String?  @default("bottom-right") // bottom-left | bottom-right
+  whatsappDesktop        Boolean  @default(true)
+  whatsappMobile         Boolean  @default(true)
   // Phone
-  salesPhone          String?
-  supportPhone        String?
-  enableClickToCall   Boolean  @default(true)
+  salesPhone             String?
+  supportPhone           String?
+  enableClickToCall      Boolean  @default(true)
   // Email
-  salesEmail          String?
-  supportEmail        String?
-  contactFormRecipient String?
+  salesEmail             String?
+  supportEmail           String?
+  contactFormRecipient   String?
   // Contact Form
-  contactFormEnabled  Boolean  @default(true)
-  contactFormSuccessMsg String?
-  contactFormFailureMsg String?
+  contactFormEnabled     Boolean  @default(true)
+  contactFormSuccessMsg  String?
+  contactFormFailureMsg  String?
   contactFormRedirectUrl String?
   // Social Links (stored as JSON)
-  socialLinks         String   @default("{}") // { facebook, instagram, linkedin, youtube, twitter, threads, telegram }
-  updatedAt           DateTime @updatedAt
+  socialLinks            String   @default("{}") // { facebook, instagram, linkedin, youtube, twitter, threads, telegram }
+  updatedAt              DateTime @updatedAt
 }
 
 // ── Website Management: SEO (Singleton) ────────────────────────────
 model WebsiteSEO {
-  id                  String   @id @default("singleton")
-  homepageMetaTitle   String?
-  homepageMetaDesc    String?
-  homepageKeywords    String?
-  openGraphImage      String?
-  twitterImage        String?
-  canonicalUrl        String?
-  robotsTxt           String?  @default("index, follow")
-  googleAnalyticsId   String?
-  googleTagManagerId  String?
-  facebookPixelId     String?
-  updatedAt           DateTime @updatedAt
+  id                 String   @id @default("singleton")
+  homepageMetaTitle  String?
+  homepageMetaDesc   String?
+  homepageKeywords   String?
+  openGraphImage     String?
+  twitterImage       String?
+  canonicalUrl       String?
+  robotsTxt          String?  @default("index, follow")
+  googleAnalyticsId  String?
+  googleTagManagerId String?
+  facebookPixelId    String?
+  updatedAt          DateTime @updatedAt
 }
 
 // ── Website Management: Theme (Singleton) ──────────────────────────
 model WebsiteTheme {
-  id              String   @id @default("singleton")
-  primaryColor    String?  @default("#10B981")
-  secondaryColor  String?  @default("#6B7280")
-  accentColor     String?  @default("#2563EB")
-  logo            String?
-  darkLogo        String?
-  favicon         String?
-  loader          String?
-  fontFamily      String?  @default("Inter, sans-serif")
-  buttonStyle     String?  @default("rounded") // rounded | sharp | pill
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default("singleton")
+  primaryColor   String?  @default("#10B981")
+  secondaryColor String?  @default("#6B7280")
+  accentColor    String?  @default("#2563EB")
+  logo           String?
+  darkLogo       String?
+  favicon        String?
+  loader         String?
+  fontFamily     String?  @default("Inter, sans-serif")
+  buttonStyle    String?  @default("rounded") // rounded | sharp | pill
+  updatedAt      DateTime @updatedAt
 }
 
 // ── Website Management: Footer (Singleton) ─────────────────────────
 model WebsiteFooter {
-  id              String   @id @default("singleton")
-  description     String?
-  footerLogo      String?
-  quickLinks      String   @default("[]") // JSON Array<{title, url}>
-  socialLinks     String   @default("{}") // JSON {facebook, instagram, ...}
-  copyright       String?
-  updatedAt       DateTime @updatedAt
+  id          String   @id @default("singleton")
+  description String?
+  footerLogo  String?
+  quickLinks  String   @default("[]") // JSON Array<{title, url}>
+  socialLinks String   @default("{}") // JSON {facebook, instagram, ...}
+  copyright   String?
+  updatedAt   DateTime @updatedAt
 }
 
 // ── Website Management: Navigation Menu ────────────────────────────
 model WebsiteNavigation {
-  id          String   @id @default(cuid())
-  menuName    String
-  url         String
+  id           String   @id @default(cuid())
+  menuName     String
+  url          String
   displayOrder Int      @default(0)
   openInNewTab Boolean  @default(false)
-  isVisible   Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isVisible    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([displayOrder])
   @@index([isVisible])
@@ -3536,15 +3536,15 @@ model WebsiteNavigation {
 
 // ── Website Management: Announcement Bar (Singleton) ────────────────
 model WebsiteAnnouncement {
-  id              String   @id @default("singleton")
-  isEnabled       Boolean  @default(false)
+  id              String    @id @default("singleton")
+  isEnabled       Boolean   @default(false)
   message         String?
-  backgroundColor String?  @default("#FCD34D")
-  textColor       String?  @default("#000000")
+  backgroundColor String?   @default("#FCD34D")
+  textColor       String?   @default("#000000")
   buttonText      String?
   buttonUrl       String?
   expiryDate      DateTime?
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime  @updatedAt
 }
 
 // ── Website Management: Lead Form Configuration (Singleton) ────────
@@ -3566,8 +3566,8 @@ model WebsiteMedia {
   fileName    String
   fileUrl     String
   category    String   @default("general") // logos | images | pricing-images | icons | hero | videos | documents | general
-  fileType    String   // image | video | document
-  fileSize    Int      // in bytes
+  fileType    String // image | video | document
+  fileSize    Int // in bytes
   altText     String?
   description String?
   uploadedAt  DateTime @default(now())
@@ -3579,12 +3579,12 @@ model WebsiteMedia {
 
 // ── Website Management: Publish State ──────────────────────────────
 model WebsitePublishState {
-  id              String   @id @default(cuid())
-  sectionKey      String   @unique // general | homepage | pricing | features | testimonials | faq | communication | seo | theme | footer | navigation | announcement | lead-form
-  status          String   @default("DRAFT") // DRAFT | PUBLISHED
-  publishedAt     DateTime?
-  publishedBy     String?
-  updatedAt       DateTime @updatedAt
+  id          String    @id @default(cuid())
+  sectionKey  String    @unique // general | homepage | pricing | features | testimonials | faq | communication | seo | theme | footer | navigation | announcement | lead-form
+  status      String    @default("DRAFT") // DRAFT | PUBLISHED
+  publishedAt DateTime?
+  publishedBy String?
+  updatedAt   DateTime  @updatedAt
 
   @@index([sectionKey])
   @@index([status])
@@ -3596,26 +3596,26 @@ model WebsitePublishState {
 // DEBIT_NOTE, PAYMENT_RECEIPT, ADJUSTMENT_NOTE. Future types added
 // as new documentType string values without schema changes.
 model BillingDocument {
-  id              String   @id @default(cuid())
-  documentNumber  String   @unique
-  documentType    String   // PROFORMA | TAX_INVOICE | CREDIT_NOTE |
-                           // DEBIT_NOTE | PAYMENT_RECEIPT | ADJUSTMENT_NOTE
+  id              String    @id @default(cuid())
+  documentNumber  String    @unique
+  documentType    String // PROFORMA | TAX_INVOICE | CREDIT_NOTE |
+  // DEBIT_NOTE | PAYMENT_RECEIPT | ADJUSTMENT_NOTE
   businessId      String
-  chargeId        String?  // source charge that generated this document
-  billingRecordId String?  // linked to BillingRecord when payment triggers a doc
-  linkedDocId     String?  // e.g. TAX_INVOICE linked back to its PROFORMA
-  status          String   @default("Draft")
-                           // Draft | Sent | Viewed | Accepted | Payment Submitted |
-                           // Under Verification | Paid | Converted To Invoice |
-                           // Cancelled | Expired
+  chargeId        String? // source charge that generated this document
+  billingRecordId String? // linked to BillingRecord when payment triggers a doc
+  linkedDocId     String? // e.g. TAX_INVOICE linked back to its PROFORMA
+  status          String    @default("Draft")
+  // Draft | Sent | Viewed | Accepted | Payment Submitted |
+  // Under Verification | Paid | Converted To Invoice |
+  // Cancelled | Expired
   amount          Float
-  currency        String   @default("INR")
+  currency        String    @default("INR")
   gstRate         Float?
   cgstAmount      Float?
   sgstAmount      Float?
   igstAmount      Float?
   totalWithGst    Float?
-  lineItems       String   @default("[]") // JSON LineItem[]
+  lineItems       String    @default("[]") // JSON LineItem[]
   notes           String?
   validUntil      DateTime?
   issuedDate      DateTime?
@@ -3624,11 +3624,11 @@ model BillingDocument {
   acceptedAt      DateTime?
   createdById     String?
   createdByName   String?
-  metadata        String   @default("{}")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  charge          Charge?  @relation(fields: [chargeId], references: [id])
+  metadata        String    @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  charge          Charge?   @relation(fields: [chargeId], references: [id])
 
   @@index([businessId])
   @@index([documentType])
@@ -3656,10 +3656,10 @@ model ServiceCatalog {
   id            String   @id @default(cuid())
   name          String
   description   String?
-  serviceType   String   // Platform Plan | Add-On | Mobile App | Implementation |
-                         // Training | Support | Integration | Credits |
-                         // Custom Development | Other
-  billingType   String   // Recurring | One-Time | Usage Based | Credit | Discount | Refund
+  serviceType   String // Platform Plan | Add-On | Mobile App | Implementation |
+  // Training | Support | Integration | Credits |
+  // Custom Development | Other
+  billingType   String // Recurring | One-Time | Usage Based | Credit | Discount | Refund
   defaultAmount Float?
   currency      String   @default("INR")
   isActive      Boolean  @default(true)
@@ -3684,7 +3684,7 @@ model RecurringDateOverride {
   overrideDueDate        DateTime
   overrideReason         String
   overrideUntil          String    @default("NEXT_BILLING_ONLY")
-                                   // NEXT_BILLING_ONLY | PERMANENT
+  // NEXT_BILLING_ONLY | PERMANENT
   createdById            String?
   createdByName          String?
   appliedAt              DateTime?
@@ -3702,28 +3702,28 @@ model RecurringDateOverride {
 // Primary entry point for the charge-based billing workflow:
 //   Service → Charge → Proforma → Payment → Verification → Tax Invoice → Receipt
 model Charge {
-  id              String    @id @default(cuid())
-  businessId      String
-  serviceId       String?   // null for manual / one-off charges
-  serviceName     String
-  description     String?
-  amount          Float
-  currency        String    @default("INR")
-  chargeType      String    @default("ONE_TIME")
-                            // ONE_TIME | RECURRING | IMPLEMENTATION | CREDIT | ADJUSTMENT
-  status          String    @default("PENDING")
-                            // PENDING | INVOICED | PAID | CANCELLED | WAIVED
-  dueDate         DateTime?
-  periodStart     DateTime? // billing period start (RECURRING charges)
-  periodEnd       DateTime? // billing period end  (RECURRING charges)
-  notes           String?
-  createdById     String?
-  createdByName   String?
-  metadata        String    @default("{}")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  documents       BillingDocument[]
+  id            String            @id @default(cuid())
+  businessId    String
+  serviceId     String? // null for manual / one-off charges
+  serviceName   String
+  description   String?
+  amount        Float
+  currency      String            @default("INR")
+  chargeType    String            @default("ONE_TIME")
+  // ONE_TIME | RECURRING | IMPLEMENTATION | CREDIT | ADJUSTMENT
+  status        String            @default("PENDING")
+  // PENDING | INVOICED | PAID | CANCELLED | WAIVED
+  dueDate       DateTime?
+  periodStart   DateTime? // billing period start (RECURRING charges)
+  periodEnd     DateTime? // billing period end  (RECURRING charges)
+  notes         String?
+  createdById   String?
+  createdByName String?
+  metadata      String            @default("{}")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  business      Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  documents     BillingDocument[]
 
   @@index([businessId])
   @@index([status])
@@ -3741,16 +3741,16 @@ model Charge {
 
 // One billing account per Business. Auto-created on first access.
 model BillingAccount {
-  id             String   @id @default(cuid())
-  businessId     String   @unique
-  currency       String   @default("INR")
+  id             String           @id @default(cuid())
+  businessId     String           @unique
+  currency       String           @default("INR")
   notes          String?
   billingEmail   String?
   billingPhone   String?
   billingAddress String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   services       BillingService[]
   invoices       BillingInvoice[]
   payments       BillingPayment[]
@@ -3763,29 +3763,29 @@ model BillingAccount {
 // Every billable item is a Service.
 // Examples: "Quantix Standard", "Additional Store", "iOS App", "Implementation Fee"
 model BillingService {
-  id              String   @id @default(cuid())
+  id              String               @id @default(cuid())
   accountId       String
   businessId      String
   name            String
   description     String?
-  category        String   @default("PLATFORM")
-                           // PLATFORM | MOBILE_APP | IMPLEMENTATION | SUPPORT | CUSTOM
-  billingType     String   @default("RECURRING")
-                           // RECURRING | ONE_TIME
+  category        String               @default("PLATFORM")
+  // PLATFORM | MOBILE_APP | IMPLEMENTATION | SUPPORT | CUSTOM
+  billingType     String               @default("RECURRING")
+  // RECURRING | ONE_TIME
   billingCycle    String?
-                           // MONTHLY | QUARTERLY | HALF_YEARLY | YEARLY
+  // MONTHLY | QUARTERLY | HALF_YEARLY | YEARLY
   unitPrice       Float
-  quantity        Int      @default(1)
-  status          String   @default("ACTIVE")
-                           // ACTIVE | PAUSED | CANCELLED
+  quantity        Int                  @default(1)
+  status          String               @default("ACTIVE")
+  // ACTIVE | PAUSED | CANCELLED
   startDate       DateTime
   endDate         DateTime?
   nextBillingDate DateTime?
   createdById     String?
   createdByName   String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  account         BillingAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   invoiceItems    BillingInvoiceItem[]
 
   @@index([accountId])
@@ -3796,37 +3796,37 @@ model BillingService {
 // One invoice per billing cycle per account.
 // lineItems is a JSON array so any service composition works without schema changes.
 model BillingInvoice {
-  id            String   @id @default(cuid())
-  invoiceNumber String   @unique  // INV/2026-27/0001
+  id            String               @id @default(cuid())
+  invoiceNumber String               @unique // INV/2026-27/0001
   accountId     String
   businessId    String
-  status        String   @default("DRAFT")
-                         // DRAFT | SENT | PAID | PARTIALLY_PAID | OVERDUE | CANCELLED
-  billingPeriod String?  // human label: "June 2026"
+  status        String               @default("DRAFT")
+  // DRAFT | SENT | PAID | PARTIALLY_PAID | OVERDUE | CANCELLED
+  billingPeriod String? // human label: "June 2026"
   periodStart   DateTime?
   periodEnd     DateTime?
-  lineItems     String   @default("[]")  // JSON: [{serviceId,name,qty,unitPrice,amount}]
-  subtotal      Float    @default(0)
-  taxRate       Float    @default(18)
-  cgstRate      Float    @default(9)
-  sgstRate      Float    @default(9)
-  igstRate      Float    @default(0)
-  cgstAmount    Float    @default(0)
-  sgstAmount    Float    @default(0)
-  igstAmount    Float    @default(0)
-  taxAmount     Float    @default(0)
-  totalAmount   Float    @default(0)
-  paidAmount    Float    @default(0)
-  currency      String   @default("INR")
+  lineItems     String               @default("[]") // JSON: [{serviceId,name,qty,unitPrice,amount}]
+  subtotal      Float                @default(0)
+  taxRate       Float                @default(18)
+  cgstRate      Float                @default(9)
+  sgstRate      Float                @default(9)
+  igstRate      Float                @default(0)
+  cgstAmount    Float                @default(0)
+  sgstAmount    Float                @default(0)
+  igstAmount    Float                @default(0)
+  taxAmount     Float                @default(0)
+  totalAmount   Float                @default(0)
+  paidAmount    Float                @default(0)
+  currency      String               @default("INR")
   issuedDate    DateTime?
   dueDate       DateTime?
   sentAt        DateTime?
   notes         String?
   createdById   String?
   createdByName String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  account       BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  account       BillingAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   payments      BillingPayment[]
   items         BillingInvoiceItem[]
 
@@ -3839,12 +3839,12 @@ model BillingInvoice {
 
 // Normalised line-items for reporting (invoice body also stored in lineItems JSON).
 model BillingInvoiceItem {
-  id          String   @id @default(cuid())
+  id          String          @id @default(cuid())
   invoiceId   String
   serviceId   String?
   name        String
   description String?
-  quantity    Int      @default(1)
+  quantity    Int             @default(1)
   unitPrice   Float
   amount      Float
   invoice     BillingInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -3856,34 +3856,34 @@ model BillingInvoiceItem {
 
 // Per-financial-year invoice number sequence.
 model BillingInvoiceSeq {
-  financialYear String   @id  // "2026-27"
+  financialYear String   @id // "2026-27"
   nextVal       Int      @default(1)
   updatedAt     DateTime @updatedAt
 }
 
 // Payment recorded against a specific invoice.
 model BillingPayment {
-  id              String   @id @default(cuid())
+  id              String         @id @default(cuid())
   accountId       String
   businessId      String
   invoiceId       String
   amount          Float
-  currency        String   @default("INR")
+  currency        String         @default("INR")
   paymentMode     String?
-                           // CASH | BANK_TRANSFER | UPI | CHEQUE | CARD | ONLINE
+  // CASH | BANK_TRANSFER | UPI | CHEQUE | CARD | ONLINE
   transactionId   String?
   referenceNumber String?
   bankName        String?
-  status          String   @default("COMPLETED")
-                           // COMPLETED | PENDING_VERIFICATION | FAILED | REFUNDED
+  status          String         @default("COMPLETED")
+  // COMPLETED | PENDING_VERIFICATION | FAILED | REFUNDED
   notes           String?
   proofUrl        String?
   proofFileType   String?
   paidAt          DateTime
   recordedById    String?
   recordedByName  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
   account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   invoice         BillingInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
@@ -3895,20 +3895,20 @@ model BillingPayment {
 
 // Chronological ledger with pre-computed running balance.
 model BillingLedger {
-  id              String   @id @default(cuid())
+  id              String         @id @default(cuid())
   accountId       String
   businessId      String
   entryType       String
-                           // INVOICE_RAISED | PAYMENT_RECEIVED | CREDIT | ADJUSTMENT
+  // INVOICE_RAISED | PAYMENT_RECEIVED | CREDIT | ADJUSTMENT
   description     String
-  debit           Float    @default(0)
-  credit          Float    @default(0)
-  balance         Float    @default(0)
-  referenceType   String?  // INVOICE | PAYMENT
+  debit           Float          @default(0)
+  credit          Float          @default(0)
+  balance         Float          @default(0)
+  referenceType   String? // INVOICE | PAYMENT
   referenceId     String?
   referenceNumber String?
   date            DateTime
-  createdAt       DateTime @default(now())
+  createdAt       DateTime       @default(now())
   account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
@@ -3918,22 +3918,22 @@ model BillingLedger {
 
 // Full audit trail for every billing action.
 model BillingAudit {
-  id              String   @id @default(cuid())
+  id              String         @id @default(cuid())
   accountId       String
   businessId      String
   action          String
-                           // SERVICE_CREATED | SERVICE_UPDATED | SERVICE_CANCELLED
-                           // INVOICE_CREATED | INVOICE_SENT | INVOICE_PAID | INVOICE_CANCELLED
-                           // PAYMENT_RECORDED | PAYMENT_VERIFIED | PAYMENT_REFUNDED
-  entityType      String?  // SERVICE | INVOICE | PAYMENT
+  // SERVICE_CREATED | SERVICE_UPDATED | SERVICE_CANCELLED
+  // INVOICE_CREATED | INVOICE_SENT | INVOICE_PAID | INVOICE_CANCELLED
+  // PAYMENT_RECORDED | PAYMENT_VERIFIED | PAYMENT_REFUNDED
+  entityType      String? // SERVICE | INVOICE | PAYMENT
   entityId        String?
   description     String
   oldValue        String?
   newValue        String?
-  metadata        String   @default("{}")
+  metadata        String         @default("{}")
   performedById   String?
   performedByName String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime       @default(now())
   account         BillingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
@@ -3947,46 +3947,46 @@ model BillingAudit {
 // ============================================================================
 
 model LaundryBusiness {
-  id                      String   @id @default(cuid())
-  businessCode            String   @unique
-  businessName            String
-  legalName               String?
-  ownerName               String
-  mobile                  String
-  email                   String?
-  gstNumber               String?
-  logo                    String?
-  favicon                 String?
-  address                 String?
-  plan                    String   @default("STANDARD")
-  status                  String   @default("ONBOARDING")
+  id                           String    @id @default(cuid())
+  businessCode                 String    @unique
+  businessName                 String
+  legalName                    String?
+  ownerName                    String
+  mobile                       String
+  email                        String?
+  gstNumber                    String?
+  logo                         String?
+  favicon                      String?
+  address                      String?
+  plan                         String    @default("STANDARD")
+  status                       String    @default("ONBOARDING")
   // Payment policy: ADVANCE_REQUIRED | BEFORE_DELIVERY | SUBSCRIPTION | CUSTOM.
   // Only ADVANCE_REQUIRED blocks processing before payment; the default lets
   // garments process and requires payment before delivery.
-  paymentPolicy String @default("BEFORE_DELIVERY")
-  allowProcessingBeforePayment Boolean @default(false) // deprecated (kept for compat)
-  defaultServiceRadius       Float?
-  defaultDailyCapacity       Float?
-  platformBusinessId        String?  @unique
-  setupCompletedAt          DateTime?  // Guided Initial Setup finished → dashboard is operational
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  paymentPolicy                String    @default("BEFORE_DELIVERY")
+  allowProcessingBeforePayment Boolean   @default(false) // deprecated (kept for compat)
+  defaultServiceRadius         Float?
+  defaultDailyCapacity         Float?
+  platformBusinessId           String?   @unique
+  setupCompletedAt             DateTime? // Guided Initial Setup finished → dashboard is operational
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
-  stores         LaundryStore[]
-  features       LaundryBusinessFeature[]
-  configurations     LaundryWorkflowConfiguration[]
-  departments        LaundryDepartment[]
-  processingCenters  LaundryProcessingCenter[]
-  assignments        LaundryUserAssignment[]
-  subscription       LaundrySubscription?
-  scalingLimit       LaundryScalingLimit?
-  provisioning       LaundryProvisioningItem[]
-  operationalConfig  LaundryOperationalConfig?
+  stores               LaundryStore[]
+  features             LaundryBusinessFeature[]
+  configurations       LaundryWorkflowConfiguration[]
+  departments          LaundryDepartment[]
+  processingCenters    LaundryProcessingCenter[]
+  assignments          LaundryUserAssignment[]
+  subscription         LaundrySubscription?
+  scalingLimit         LaundryScalingLimit?
+  provisioning         LaundryProvisioningItem[]
+  operationalConfig    LaundryOperationalConfig?
   platformProvisioning LaundryPlatformProvisioning?
-  brandingConfig     LaundryBrandingConfig?
-  workflowQuality    LaundryWorkflowQualityConfig?
-  auditLogs          LaundryAuditLog[]
-  orders             LaundryOrder[]
+  brandingConfig       LaundryBrandingConfig?
+  workflowQuality      LaundryWorkflowQualityConfig?
+  auditLogs            LaundryAuditLog[]
+  orders               LaundryOrder[]
 
   @@index([businessCode])
   @@index([status])
@@ -3998,22 +3998,22 @@ model LaundryBusiness {
 // ============================================================================
 
 model LaundrySubscription {
-  id               String   @id @default(cuid())
-  businessId       String   @unique
+  id               String          @id @default(cuid())
+  businessId       String          @unique
   business         LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  plan             String   @default("STARTER")    // STARTER | PROFESSIONAL | ENTERPRISE | CUSTOM
-  templatePreset   String   @default("STARTER")
-  billingCycle     String   @default("MONTHLY")    // MONTHLY | QUARTERLY | YEARLY
-  status           String   @default("ACTIVE")     // ACTIVE | PAST_DUE | CANCELLED | EXPIRED
-  startDate        DateTime @default(now())
+  plan             String          @default("STARTER") // STARTER | PROFESSIONAL | ENTERPRISE | CUSTOM
+  templatePreset   String          @default("STARTER")
+  billingCycle     String          @default("MONTHLY") // MONTHLY | QUARTERLY | YEARLY
+  status           String          @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELLED | EXPIRED
+  startDate        DateTime        @default(now())
   renewalDate      DateTime
   trialExpiry      DateTime?
   lastPaymentDate  DateTime?
   nextInvoiceDate  DateTime?
-  workspaceType    String   @default("LAUNDRY_OS")
-  businessCategory String   @default("LAUNDRY")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  workspaceType    String          @default("LAUNDRY_OS")
+  businessCategory String          @default("LAUNDRY")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([businessId])
   @@index([plan])
@@ -4023,14 +4023,14 @@ model LaundrySubscription {
 // ── 2. Platform Provisioning ──────────────────────────────────────────────
 // Individual provisioning items with status tracking.
 model LaundryProvisioningItem {
-  id         String   @id @default(cuid())
+  id         String          @id @default(cuid())
   businessId String
   business   LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  item       String                                          // workspace | domain | ssl | pwa | customerApp | deliveryApp | adminApp | apkBuild | playStore | monitoring | backup
-  status     String   @default("PENDING")                   // PENDING | IN_PROGRESS | COMPLETED | FAILED
+  item       String // workspace | domain | ssl | pwa | customerApp | deliveryApp | adminApp | apkBuild | playStore | monitoring | backup
+  status     String          @default("PENDING") // PENDING | IN_PROGRESS | COMPLETED | FAILED
   notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   @@unique([businessId, item])
   @@index([businessId])
@@ -4039,56 +4039,57 @@ model LaundryProvisioningItem {
 // ── 2. Platform Provisioning (Quantix-Controlled) ─────────────────────────
 // Which platform features Quantix has enabled for this business.
 model LaundryPlatformProvisioning {
-  id                 String   @id @default(cuid())
-  businessId         String   @unique
+  id                 String          @id @default(cuid())
+  businessId         String          @unique
   business           LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customerWebsite    Boolean  @default(false)
-  customerPWA        Boolean  @default(true)
-  androidCustomerApp Boolean  @default(false)
-  deliveryApp        Boolean  @default(false)
-  adminApp           Boolean  @default(true)
-  ssl                Boolean  @default(true)
-  cloudStorage       Boolean  @default(true)
-  automatedBackups   Boolean  @default(true)
-  pushNotifications  Boolean  @default(true)
-  updatedAt          DateTime @updatedAt
-  createdAt          DateTime @default(now())
+  customerWebsite    Boolean         @default(false)
+  customerPWA        Boolean         @default(true)
+  androidCustomerApp Boolean         @default(false)
+  deliveryApp        Boolean         @default(false)
+  adminApp           Boolean         @default(true)
+  ssl                Boolean         @default(true)
+  cloudStorage       Boolean         @default(true)
+  automatedBackups   Boolean         @default(true)
+  pushNotifications  Boolean         @default(true)
+  updatedAt          DateTime        @updatedAt
+  createdAt          DateTime        @default(now())
 
   @@index([businessId])
-}// ── 3. Operational Configuration ──────────────────────────────────────────
+}
+// ── 3. Operational Configuration ──────────────────────────────────────────
 // Only these 4 toggles. They directly determine workflow stage generation.
 model LaundryOperationalConfig {
-  id                   String   @id @default(cuid())
-  businessId           String   @unique
-  business             LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  transportEnabled     Boolean  @default(true)
-  barcodeEnabled       Boolean  @default(true)
-  homeDeliveryEnabled  Boolean  @default(true)
-  ironingEnabled       Boolean  @default(true)
+  id                     String          @id @default(cuid())
+  businessId             String          @unique
+  business               LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  transportEnabled       Boolean         @default(true)
+  barcodeEnabled         Boolean         @default(true)
+  homeDeliveryEnabled    Boolean         @default(true)
+  ironingEnabled         Boolean         @default(true)
   // Charges & Rules — two simple business rules (minimums are MINIMUM BILL
   // VALUES per order type, not additional charges; 0 = no minimum).
-  walkInMinOrder         Float   @default(0)
-  pickupMinOrder         Float   @default(0)
-  deliveryMinOrder       Float   @default(0)
-  expressEnabled         Boolean @default(false)
+  walkInMinOrder         Float           @default(0)
+  pickupMinOrder         Float           @default(0)
+  deliveryMinOrder       Float           @default(0)
+  expressEnabled         Boolean         @default(false)
   expressTurnaroundHours Int?
-  expressChargeType      String  @default("FIXED") // FIXED | PERCENT
-  expressChargeValue     Float   @default(0)
-  updatedAt            DateTime @updatedAt
-  createdAt            DateTime @default(now())
+  expressChargeType      String          @default("FIXED") // FIXED | PERCENT
+  expressChargeValue     Float           @default(0)
+  updatedAt              DateTime        @updatedAt
+  createdAt              DateTime        @default(now())
 
   @@index([businessId])
 }
 
 // ── 4. Workflow & Quality Controls ────────────────────────────────────────
 model LaundryWorkflowQualityConfig {
-  id              String   @id @default(cuid())
-  businessId      String   @unique
-  business        LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  photoAudit      Boolean  @default(true)
-  auditModule     Boolean  @default(true)
-  updatedAt       DateTime @updatedAt
-  createdAt       DateTime @default(now())
+  id          String          @id @default(cuid())
+  businessId  String          @unique
+  business    LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  photoAudit  Boolean         @default(true)
+  auditModule Boolean         @default(true)
+  updatedAt   DateTime        @updatedAt
+  createdAt   DateTime        @default(now())
 
   @@index([businessId])
 }
@@ -4096,38 +4097,38 @@ model LaundryWorkflowQualityConfig {
 // ── 6. Branding & White Label ─────────────────────────────────────────────
 // Quantix-controlled. Business owner can request changes; only Quantix applies.
 model LaundryBrandingConfig {
-  id                   String   @id @default(cuid())
-  businessId           String   @unique
-  business             LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  logoUploaded         Boolean  @default(false)
-  faviconUploaded      Boolean  @default(false)
-  brandColorsConfigured Boolean @default(false)
-  dedicatedApk         Boolean  @default(false)
-  customPackageName    Boolean  @default(false)
-  customSplashScreen   Boolean  @default(false)
-  customAppIcon        Boolean  @default(false)
-  playStorePublished   Boolean  @default(false)
-  customDomain         Boolean  @default(false)
-  status               String   @default("PENDING")  // PENDING | IN_PROGRESS | APPROVED | PUBLISHED
-  updatedAt            DateTime @updatedAt
-  createdAt            DateTime @default(now())
+  id                    String          @id @default(cuid())
+  businessId            String          @unique
+  business              LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  logoUploaded          Boolean         @default(false)
+  faviconUploaded       Boolean         @default(false)
+  brandColorsConfigured Boolean         @default(false)
+  dedicatedApk          Boolean         @default(false)
+  customPackageName     Boolean         @default(false)
+  customSplashScreen    Boolean         @default(false)
+  customAppIcon         Boolean         @default(false)
+  playStorePublished    Boolean         @default(false)
+  customDomain          Boolean         @default(false)
+  status                String          @default("PENDING") // PENDING | IN_PROGRESS | APPROVED | PUBLISHED
+  updatedAt             DateTime        @updatedAt
+  createdAt             DateTime        @default(now())
 
   @@index([businessId])
 }
 
 // ── 8. Audit Log ──────────────────────────────────────────────────────────
 model LaundryAuditLog {
-  id          String   @id @default(cuid())
-  businessId  String
-  business    LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  actorId     String?
-  actorName   String?
-  section     String
-  field       String
-  oldValue    String?
-  newValue    String?
-  ipAddress   String?
-  createdAt   DateTime @default(now())
+  id         String          @id @default(cuid())
+  businessId String
+  business   LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  actorId    String?
+  actorName  String?
+  section    String
+  field      String
+  oldValue   String?
+  newValue   String?
+  ipAddress  String?
+  createdAt  DateTime        @default(now())
 
   @@index([businessId])
   @@index([createdAt])
@@ -4135,54 +4136,54 @@ model LaundryAuditLog {
 
 // ── 6. Capacity Controls ──────────────────────────────────────────────────
 model LaundryScalingLimit {
-  id                        String   @id @default(cuid())
-  businessId                String   @unique
-  business                  LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  storesAllowed             Int      @default(1)
-  storesUsed                Int      @default(0)
-  processingCentersAllowed  Int      @default(1)
-  processingCentersUsed     Int      @default(0)
-  storeCapacityKg           Int      @default(500)
-  processingCapacityKg      Int      @default(1000)
-  employeesAllowed          Int      @default(5)
-  employeesUsed             Int      @default(0)
-  deliveryStaffAllowed      Int      @default(2)
-  deliveryStaffUsed         Int      @default(0)
-  ordersPerDay              Int      @default(50)
-  ordersPerMonthLimit       Int      @default(500)
-  storageLimitMB            Int      @default(500)
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  id                       String          @id @default(cuid())
+  businessId               String          @unique
+  business                 LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  storesAllowed            Int             @default(1)
+  storesUsed               Int             @default(0)
+  processingCentersAllowed Int             @default(1)
+  processingCentersUsed    Int             @default(0)
+  storeCapacityKg          Int             @default(500)
+  processingCapacityKg     Int             @default(1000)
+  employeesAllowed         Int             @default(5)
+  employeesUsed            Int             @default(0)
+  deliveryStaffAllowed     Int             @default(2)
+  deliveryStaffUsed        Int             @default(0)
+  ordersPerDay             Int             @default(50)
+  ordersPerMonthLimit      Int             @default(500)
+  storageLimitMB           Int             @default(500)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
 
   @@index([businessId])
 }
 
 model LaundryStore {
-  id                  String   @id @default(cuid())
-  storeCode           String   @unique
-  laundryBusinessId   String
-  storeName           String
-  storeType           String   @default("RETAIL_STORE")
-  managerName         String?
-  mobile              String?
-  email               String?
-  address             String?
-  city                String?
-  state               String?
-  pincode             String?
-  latitude            Float?
-  longitude           Float?
-  serviceRadiusKm     Float?
-  dailyCapacityKg     Float?
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                String   @id @default(cuid())
+  storeCode         String   @unique
+  laundryBusinessId String
+  storeName         String
+  storeType         String   @default("RETAIL_STORE")
+  managerName       String?
+  mobile            String?
+  email             String?
+  address           String?
+  city              String?
+  state             String?
+  pincode           String?
+  latitude          Float?
+  longitude         Float?
+  serviceRadiusKm   Float?
+  dailyCapacityKg   Float?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  laundryBusiness     LaundryBusiness @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
-  departments         LaundryDepartment[]
-  assignments         LaundryUserAssignment[]
-  orders              LaundryOrder[]
-  pricingRules        LaundryPricingRule[]
+  laundryBusiness LaundryBusiness         @relation(fields: [laundryBusinessId], references: [id], onDelete: Cascade)
+  departments     LaundryDepartment[]
+  assignments     LaundryUserAssignment[]
+  orders          LaundryOrder[]
+  pricingRules    LaundryPricingRule[]
 
   @@index([laundryBusinessId])
   @@index([storeCode])
@@ -4190,17 +4191,17 @@ model LaundryStore {
 }
 
 model LaundryBusinessFeature {
-  id             String   @id @default(cuid())
-  businessId     String
-  featureKey     String
-  enabled        Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id         String   @id @default(cuid())
+  businessId String
+  featureKey String
+  enabled    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  business       LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-   @@unique([businessId, featureKey])
-   @@index([businessId])
+  @@unique([businessId, featureKey])
+  @@index([businessId])
 }
 
 // ============================================================================
@@ -4227,10 +4228,10 @@ model LaundryOrder {
   businessId           String
   storeId              String
   customerId           String?
-  orderType            String             @default("WALK_IN")     // WALK_IN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION
+  orderType            String             @default("WALK_IN") // WALK_IN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION
   source               String             @default("MANUAL")
   status               LaundryOrderStatus @default(DRAFT)
-  paymentPreference    String             @default("COD")         // FULL_ADVANCE | PARTIAL_ADVANCE | COD | SUBSCRIPTION_BILLING
+  paymentPreference    String             @default("COD") // FULL_ADVANCE | PARTIAL_ADVANCE | COD | SUBSCRIPTION_BILLING
   expectedDeliveryDate DateTime?
   deliveryOverride     Boolean            @default(false)
   overrideReason       String?
@@ -4249,29 +4250,29 @@ model LaundryOrder {
   // immutable financial record of the order — invoices, payments and reports
   // read these values and must NEVER recalculate from the Pricing Engine, so
   // later price changes never alter historical orders.
-  subtotal       Float    @default(0)
-  gstTotal       Float    @default(0)
-  pickupCharge   Float    @default(0)
-  deliveryCharge Float    @default(0)
-  expressCharge  Float    @default(0)
-  discount       Float    @default(0)
-  grandTotal     Float    @default(0)
-  amountPaid     Float    @default(0)
-  balanceDue     Float    @default(0)
-  paymentStatus  String   @default("UNPAID") // UNPAID | PARTIAL | PAID | SUBSCRIPTION
-  isExpress      Boolean  @default(false)
-  customerType   String?                     // resolved customer type used for pricing
-  billedAt       DateTime?                    // when the financial snapshot was persisted
+  subtotal       Float     @default(0)
+  gstTotal       Float     @default(0)
+  pickupCharge   Float     @default(0)
+  deliveryCharge Float     @default(0)
+  expressCharge  Float     @default(0)
+  discount       Float     @default(0)
+  grandTotal     Float     @default(0)
+  amountPaid     Float     @default(0)
+  balanceDue     Float     @default(0)
+  paymentStatus  String    @default("UNPAID") // UNPAID | PARTIAL | PAID | SUBSCRIPTION
+  isExpress      Boolean   @default(false)
+  customerType   String? // resolved customer type used for pricing
+  billedAt       DateTime? // when the financial snapshot was persisted
 
   // ── Store Audit (Stage 2) — inspection captured against the garments the
   //    order already carries; the audit does not re-enter garments. ──
-  auditNotes     String?
-  auditPhotos    String?                      // JSON array of uploaded photo URLs
-  auditedBy      String?
-  auditedAt      DateTime?
+  auditNotes  String?
+  auditPhotos String? // JSON array of uploaded photo URLs
+  auditedBy   String?
+  auditedAt   DateTime?
 
-  business   LaundryBusiness     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store      LaundryStore        @relation(fields: [storeId],    references: [id])
+  business   LaundryBusiness         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store      LaundryStore            @relation(fields: [storeId], references: [id])
   services   LaundryOrderService[]
   items      LaundryOrderItem[]
   payments   LaundryPayment[]
@@ -4295,10 +4296,10 @@ model LaundryCategory {
   name              String
   code              String?
   description       String?
-  color             String?              // hex swatch
-  icon              String?              // icon name / emoji
-  image             String?              // image URL
-  defaultGstPercent Float?               // GST default for garments/services in this category
+  color             String? // hex swatch
+  icon              String? // icon name / emoji
+  image             String? // image URL
+  defaultGstPercent Float? // GST default for garments/services in this category
   displayOnWebsite  Boolean  @default(true)
   displayInPOS      Boolean  @default(true)
   displayInApp      Boolean  @default(true)
@@ -4323,18 +4324,18 @@ model LaundryGarment {
   categoryId       String?
   defaultService   String?
   defaultUnit      String   @default("PIECE") // PIECE | KG
-  image            String?              // image URL
-  material         String?              // Cotton, Silk, Wool, …
+  image            String? // image URL
+  material         String? // Cotton, Silk, Wool, …
   careInstructions String?
   barcodePrefix    String?
-  weightFactor     Float?               // multiplier for weight-based pricing
-  averageWeight    Float?               // avg weight (kg) for estimates
+  weightFactor     Float? // multiplier for weight-based pricing
+  averageWeight    Float? // avg weight (kg) for estimates
   displayOrder     Int      @default(0)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  category     LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category     LaundryCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   pricingRules LaundryPricingRule[]
 
   @@index([businessId])
@@ -4350,12 +4351,12 @@ model LaundryService {
   categoryId             String?
   description            String?
   icon                   String?
-  image                  String?              // tenant marketing image (upload URL)
+  image                  String? // tenant marketing image (upload URL)
   color                  String?
   defaultPricingType     String   @default("PER_PIECE") // PER_PIECE | PER_KG | FIXED | SUBSCRIPTION | CORPORATE
   defaultGstPercent      Float?
   defaultTurnaroundHours Int      @default(24)
-  processingSequence     Int      @default(0)            // order in the processing line
+  processingSequence     Int      @default(0) // order in the processing line
   expressAvailable       Boolean  @default(false)
   displayOnWebsite       Boolean  @default(true)
   availableInStore       Boolean  @default(true)
@@ -4366,7 +4367,7 @@ model LaundryService {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  category     LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category     LaundryCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   pricingRules LaundryPricingRule[]
 
   @@index([businessId])
@@ -4376,54 +4377,54 @@ model LaundryService {
 // Pricing Engine — every billable rule. Connected to Service / Garment /
 // Category / Store; customerType + pricingType drive bill calculation.
 model LaundryPricingRule {
-  id                String   @id @default(cuid())
-  businessId        String
-  name              String?                          // human label for the rule
-  description       String?
-  notes             String?
-  serviceId         String?
-  garmentId         String?
-  categoryId        String?
-  storeId           String?
-  customerType      String?  // WALK_IN|PICKUP|CORPORATE|HOTEL|HOSPITAL|SUBSCRIPTION|VIP
-  pricingType       String   @default("PER_PIECE") // PER_PIECE|PER_KG|FIXED|SUBSCRIPTION|CORPORATE
-  price             Float    @default(0)
-  gstPercent        Float    @default(0)
-  minCharge         Float?
-  maxCharge         Float?                           // optional cap
-  minWeightKg       Float?                           // Per-KG minimum billable weight
-  maxWeightKg       Float?                           // Per-KG / Subscription included cap
-  extraWeightCharge Float?                           // excess rate beyond cap
-  includedPieces    Int?                             // Subscription included pieces (future consumption)
-  discountPercent   Float?                           // Corporate discount %
-  weekendPrice      Float?
-  expressCharge     Float?
-  pickupCharge      Float?
-  deliveryCharge    Float?
-  freeDeliveryThreshold Float?                       // waive delivery when order subtotal ≥ this
-  urgentDeliveryCharge  Float?                       // charge for urgent / same-day delivery
-  hsnCode           String?                          // future-ready GST HSN
-  effectiveFrom     DateTime?
-  effectiveTo       DateTime?
-  priority          Int      @default(0)
+  id                    String    @id @default(cuid())
+  businessId            String
+  name                  String? // human label for the rule
+  description           String?
+  notes                 String?
+  serviceId             String?
+  garmentId             String?
+  categoryId            String?
+  storeId               String?
+  customerType          String? // WALK_IN|PICKUP|CORPORATE|HOTEL|HOSPITAL|SUBSCRIPTION|VIP
+  pricingType           String    @default("PER_PIECE") // PER_PIECE|PER_KG|FIXED|SUBSCRIPTION|CORPORATE
+  price                 Float     @default(0)
+  gstPercent            Float     @default(0)
+  minCharge             Float?
+  maxCharge             Float? // optional cap
+  minWeightKg           Float? // Per-KG minimum billable weight
+  maxWeightKg           Float? // Per-KG / Subscription included cap
+  extraWeightCharge     Float? // excess rate beyond cap
+  includedPieces        Int? // Subscription included pieces (future consumption)
+  discountPercent       Float? // Corporate discount %
+  weekendPrice          Float?
+  expressCharge         Float?
+  pickupCharge          Float?
+  deliveryCharge        Float?
+  freeDeliveryThreshold Float? // waive delivery when order subtotal ≥ this
+  urgentDeliveryCharge  Float? // charge for urgent / same-day delivery
+  hsnCode               String? // future-ready GST HSN
+  effectiveFrom         DateTime?
+  effectiveTo           DateTime?
+  priority              Int       @default(0)
   // Lifecycle: DRAFT | ACTIVE | INACTIVE | ARCHIVED. isActive stays in sync
   // (ACTIVE => true, else false) so the Billing Resolver — which filters on
   // isActive — is never matched against draft/inactive/archived rules.
-  status            String   @default("ACTIVE")
-  isActive          Boolean  @default(true)
+  status                String    @default("ACTIVE")
+  isActive              Boolean   @default(true)
   // Audit / versioning — history is never overwritten.
-  createdById       String?
-  createdByName     String?
-  modifiedById      String?
-  modifiedByName    String?
-  version           Int      @default(1)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdById           String?
+  createdByName         String?
+  modifiedById          String?
+  modifiedByName        String?
+  version               Int       @default(1)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  service  LaundryService?  @relation(fields: [serviceId],  references: [id], onDelete: SetNull)
-  garment  LaundryGarment?  @relation(fields: [garmentId],  references: [id], onDelete: SetNull)
+  service  LaundryService?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  garment  LaundryGarment?  @relation(fields: [garmentId], references: [id], onDelete: SetNull)
   category LaundryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  store    LaundryStore?    @relation(fields: [storeId],    references: [id], onDelete: SetNull)
+  store    LaundryStore?    @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   @@index([businessId])
   @@index([serviceId])
@@ -4440,10 +4441,10 @@ model LaundryPricingRuleAudit {
   ruleId     String
   businessId String
   version    Int
-  action     String   // CREATE | UPDATE | ARCHIVE | RESTORE | DUPLICATE
+  action     String // CREATE | UPDATE | ARCHIVE | RESTORE | DUPLICATE
   actorId    String?
   actorName  String?
-  snapshot   String   // JSON of the rule at this version
+  snapshot   String // JSON of the rule at this version
   createdAt  DateTime @default(now())
 
   @@index([ruleId])
@@ -4458,7 +4459,7 @@ model LaundryOrderEvent {
   businessId String
   fromStatus String?
   toStatus   String
-  action     String   // e.g. STORE_AUDIT, COLLECT_PAYMENT, DISPATCH_TO_PROCESSING
+  action     String // e.g. STORE_AUDIT, COLLECT_PAYMENT, DISPATCH_TO_PROCESSING
   actorId    String?
   actorName  String?
   note       String?
@@ -4472,12 +4473,12 @@ model LaundryOrderEvent {
 }
 
 model LaundryOrderService {
-  id               String   @id @default(cuid())
-  orderId          String
-  serviceId        String?
-  serviceName      String
-  turnaroundHours  Int      @default(24)
-  createdAt        DateTime @default(now())
+  id              String   @id @default(cuid())
+  orderId         String
+  serviceId       String?
+  serviceName     String
+  turnaroundHours Int      @default(24)
+  createdAt       DateTime @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -4489,40 +4490,40 @@ model LaundryOrderService {
 // figure so invoices/reports never recalculate. Distinct from
 // LaundryOrderService, which records the workflow service lines.
 model LaundryOrderItem {
-  id            String   @id @default(cuid())
-  orderId       String
-  itemNumber       String?  // permanent garment ID: ITM-{orderNumber}-NNNN
-  barcode          String?  @unique // barcode value = itemNumber (per-garment)
-  barcodeGenerated Boolean  @default(false) // label generated at Processing Center
+  id               String    @id @default(cuid())
+  orderId          String
+  itemNumber       String? // permanent garment ID: ITM-{orderNumber}-NNNN
+  barcode          String?   @unique // barcode value = itemNumber (per-garment)
+  barcodeGenerated Boolean   @default(false) // label generated at Processing Center
   barcodePrintedAt DateTime?
-  printCount       Int      @default(0)
+  printCount       Int       @default(0)
   lastPrintedBy    String?
   // ── Processing Center per-garment stage tracking ──
-  processingStage   String?  // RECEIVED|SORTING|WASH|DRYCLEAN|DRY|STEAM|IRON|FOLD|QC|PACKED|DISPATCHED
-  processingStatus  String?  // WAITING|IN_PROGRESS|DONE|REJECTED
-  processingDept    String?  // department that owns the current stage
-  receivedAt        DateTime?
-  serviceId     String?
-  serviceName   String
-  garmentId     String?
-  garmentName   String
-  categoryId    String?
-  pricingRuleId String?                       // which rule resolved this line
-  pricingType   String   @default("PER_PIECE")
-  quantity      Float    @default(0)
-  weightKg      Float    @default(0)
-  unitPrice     Float    @default(0)
-  lineAmount    Float    @default(0)          // base, pre-GST, post-discount
-  gstPercent    Float    @default(0)
-  gstAmount     Float    @default(0)
-  discount      Float    @default(0)
-  total         Float    @default(0)          // lineAmount + gstAmount
+  processingStage  String? // RECEIVED|SORTING|WASH|DRYCLEAN|DRY|STEAM|IRON|FOLD|QC|PACKED|DISPATCHED
+  processingStatus String? // WAITING|IN_PROGRESS|DONE|REJECTED
+  processingDept   String? // department that owns the current stage
+  receivedAt       DateTime?
+  serviceId        String?
+  serviceName      String
+  garmentId        String?
+  garmentName      String
+  categoryId       String?
+  pricingRuleId    String? // which rule resolved this line
+  pricingType      String    @default("PER_PIECE")
+  quantity         Float     @default(0)
+  weightKg         Float     @default(0)
+  unitPrice        Float     @default(0)
+  lineAmount       Float     @default(0) // base, pre-GST, post-discount
+  gstPercent       Float     @default(0)
+  gstAmount        Float     @default(0)
+  discount         Float     @default(0)
+  total            Float     @default(0) // lineAmount + gstAmount
   // Store Audit inspection (captured at Stage 2, never re-entering garments).
-  condition       String?                     // GOOD | DAMAGED
-  defects         String?                     // CSV of defect codes
-  inspectionNotes String?
-  inspectedAt     DateTime?
-  createdAt     DateTime @default(now())
+  condition        String? // GOOD | DAMAGED
+  defects          String? // CSV of defect codes
+  inspectionNotes  String?
+  inspectedAt      DateTime?
+  createdAt        DateTime  @default(now())
 
   order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -4533,20 +4534,20 @@ model LaundryOrderItem {
 
 // Per-garment timeline — every scan/action on an item (Processing Center).
 model LaundryItemEvent {
-  id          String   @id @default(cuid())
-  itemId      String
-  orderId     String
-  businessId  String
-  stage       String?  // stage the event relates to (WASH, IRON, QC, …)
-  action      String   // RECEIVED|START|COMPLETE|REJECT|QC_PASS|QC_FAIL|PACKED|SCAN|NOTE
-  fromStage   String?
-  toStage     String?
-  department  String?
-  actorId     String?
-  actorName   String?
-  note        String?
-  photos      String?  // JSON array of URLs
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  itemId     String
+  orderId    String
+  businessId String
+  stage      String? // stage the event relates to (WASH, IRON, QC, …)
+  action     String // RECEIVED|START|COMPLETE|REJECT|QC_PASS|QC_FAIL|PACKED|SCAN|NOTE
+  fromStage  String?
+  toStage    String?
+  department String?
+  actorId    String?
+  actorName  String?
+  note       String?
+  photos     String? // JSON array of URLs
+  createdAt  DateTime @default(now())
 
   @@index([itemId])
   @@index([orderId])
@@ -4560,7 +4561,7 @@ model LaundryPayment {
   id         String   @id @default(cuid())
   orderId    String
   businessId String
-  method     String   // CASH | UPI | CARD | WALLET | CREDIT | SUBSCRIPTION | PARTIAL
+  method     String // CASH | UPI | CARD | WALLET | CREDIT | SUBSCRIPTION | PARTIAL
   amount     Float
   reference  String?
   note       String?
@@ -4600,23 +4601,23 @@ model LaundryWorkflowStage {
 }
 
 model LaundryWorkflowConfiguration {
-  id                   String   @id @default(cuid())
-  businessId           String
-  stageId              String
-  enabled              Boolean  @default(true)
-  sequence             Int?
-  responsibleRoleId    String?
+  id                      String   @id @default(cuid())
+  businessId              String
+  stageId                 String
+  enabled                 Boolean  @default(true)
+  sequence                Int?
+  responsibleRoleId       String?
   responsibleDepartmentId String?
-  canView              Boolean  @default(true)
-  canUpdate            Boolean  @default(false)
-  canApprove           Boolean  @default(false)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  canView                 Boolean  @default(true)
+  canUpdate               Boolean  @default(false)
+  canApprove              Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  stage       LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  business    LaundryBusiness      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  responsibleRole    LaundryRole?        @relation(fields: [responsibleRoleId], references: [id], onDelete: SetNull)
-  responsibleDepartment LaundryDepartment? @relation(fields: [responsibleDepartmentId], references: [id], onDelete: SetNull)
+  stage                 LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  business              LaundryBusiness      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responsibleRole       LaundryRole?         @relation(fields: [responsibleRoleId], references: [id], onDelete: SetNull)
+  responsibleDepartment LaundryDepartment?   @relation(fields: [responsibleDepartmentId], references: [id], onDelete: SetNull)
 
   @@unique([businessId, stageId])
   @@index([businessId])
@@ -4635,8 +4636,8 @@ model LaundryRole {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  permissions  LaundryStagePermission[]
-  assignments  LaundryUserAssignment[]
+  permissions     LaundryStagePermission[]
+  assignments     LaundryUserAssignment[]
   workflowConfigs LaundryWorkflowConfiguration[]
 
   @@index([code])
@@ -4650,7 +4651,7 @@ model LaundryStagePermission {
   updatedAt DateTime @updatedAt
 
   stage LaundryWorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  role  LaundryRole          @relation(fields: [roleId],  references: [id], onDelete: Cascade)
+  role  LaundryRole          @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([stageId, roleId])
   @@index([stageId])
@@ -4693,9 +4694,9 @@ model LaundryDepartment {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business       LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  store          LaundryStore?   @relation(fields: [storeId],   references: [id], onDelete: SetNull)
-  assignments    LaundryUserAssignment[]
+  business        LaundryBusiness                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store           LaundryStore?                  @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  assignments     LaundryUserAssignment[]
   workflowConfigs LaundryWorkflowConfiguration[]
 
   @@unique([businessId, code])
@@ -4704,11 +4705,11 @@ model LaundryDepartment {
 }
 
 model LaundryProcessingCenter {
-  id              String    @id @default(cuid())
-  centerCode      String    @unique
+  id              String   @id @default(cuid())
+  centerCode      String   @unique
   businessId      String
   centerName      String
-  centerType      String    @default("PROCESSING_HUB")
+  centerType      String   @default("PROCESSING_HUB")
   managerName     String?
   mobile          String?
   email           String?
@@ -4719,9 +4720,9 @@ model LaundryProcessingCenter {
   latitude        Float?
   longitude       Float?
   dailyCapacityKg Float?
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -4732,18 +4733,18 @@ model LaundryProcessingCenter {
 
 // File uploads (logos, product images, documents)
 model FileUpload {
-  id            String   @id @default(cuid())
-  businessId    String
-  originalName  String
-  filename      String
-  size          Int
-  mimeType      String
-  uploadPath    String
-  category      String?  // customers|garments|audit|invoice|documents|branding|orders|processing|delivery|temp
-  status        String   @default("COMPLETED") // COMPLETED, PROCESSING, FAILED
-  error         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  businessId   String
+  originalName String
+  filename     String
+  size         Int
+  mimeType     String
+  uploadPath   String
+  category     String? // customers|garments|audit|invoice|documents|branding|orders|processing|delivery|temp
+  status       String   @default("COMPLETED") // COMPLETED, PROCESSING, FAILED
+  error        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -4755,19 +4756,19 @@ model FileUpload {
 
 // Payment records from Razorpay webhooks
 model RazorpayPayment {
-  id               String   @id @default(cuid())
-  businessId       String
-  subscriptionId   String
-  paymentId        String   @unique // Razorpay payment ID
-  amount           Float
-  status           String   @default("COMPLETED") // COMPLETED, FAILED, REFUNDED
-  method           String   @default("RAZORPAY")
-  lastPaymentAt    DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id             String    @id @default(cuid())
+  businessId     String
+  subscriptionId String
+  paymentId      String    @unique // Razorpay payment ID
+  amount         Float
+  status         String    @default("COMPLETED") // COMPLETED, FAILED, REFUNDED
+  method         String    @default("RAZORPAY")
+  lastPaymentAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  business       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  subscription   BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([subscriptionId])
@@ -4787,13 +4788,299 @@ model LaundryUserAssignment {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  business   LaundryBusiness   @relation(fields: [businessId],   references: [id], onDelete: Cascade)
-  store      LaundryStore?     @relation(fields: [storeId],      references: [id], onDelete: SetNull)
+  business   LaundryBusiness    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store      LaundryStore?      @relation(fields: [storeId], references: [id], onDelete: SetNull)
   department LaundryDepartment? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  role       LaundryRole       @relation(fields: [roleId],       references: [id], onDelete: Cascade)
+  role       LaundryRole        @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([storeId])
   @@index([departmentId])
   @@index([roleId])
+}
+
+// ============================================================================
+// LAUNDRY OS — Optional CRM Module (feature-gated per tenant via
+// LaundryBusinessFeature featureKey "CRM"). Lead → Opportunity → configurable
+// Sales Stages → Won/Lost. No Contact/Company entities by design.
+// All businessId columns reference LaundryBusiness.id (tenant isolation).
+// SQLite: JSON payloads stored as String (existing convention).
+// ============================================================================
+
+// Dynamic Lead field definition (metadata-driven Lead form).
+model LaundryCrmLeadField {
+  id           String   @id @default(cuid())
+  businessId   String
+  fieldKey     String // stable internal key, e.g. "first_name"
+  label        String
+  type         String   @default("TEXT") // TEXT | TEXTAREA | PHONE | EMAIL | NUMBER | DECIMAL | CURRENCY | DATE | DATETIME | SELECT | MULTISELECT | RADIO | CHECKBOX | TOGGLE | URL | ADDRESS
+  description  String?
+  placeholder  String?
+  defaultValue String?
+  options      String? // JSON [{value,label,order,active}] for SELECT/MULTISELECT/RADIO
+  validation   String? // JSON validation rules (min,max,pattern…)
+  required     Boolean  @default(false)
+  active       Boolean  @default(true)
+  isSystem     Boolean  @default(false) // protected — cannot be deleted/deactivated
+  displayOrder Int      @default(0)
+  searchable   Boolean  @default(false)
+  filterable   Boolean  @default(false)
+  showInList   Boolean  @default(false)
+  showInCreate Boolean  @default(true)
+  showInEdit   Boolean  @default(true)
+  showInDetail Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([businessId, fieldKey])
+  @@index([businessId])
+}
+
+model LaundryCrmLeadStatus {
+  id              String           @id @default(cuid())
+  businessId      String
+  name            String
+  color           String           @default("#64748B")
+  displayOrder    Int              @default(0)
+  active          Boolean          @default(true)
+  isDefault       Boolean          @default(false)
+  kind            String           @default("OPEN") // OPEN | CLOSED | CONVERTED | LOST — behaviour key (never match on name)
+  allowConversion Boolean          @default(true)
+  isSystem        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  laundryCrmLeads LaundryCrmLead[]
+
+  @@index([businessId])
+}
+
+model LaundryCrmLeadSource {
+  id              String           @id @default(cuid())
+  businessId      String
+  name            String
+  color           String           @default("#64748B")
+  displayOrder    Int              @default(0)
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  laundryCrmLeads LaundryCrmLead[]
+
+  @@index([businessId])
+}
+
+model LaundryCrmSalesStage {
+  id                      String                  @id @default(cuid())
+  businessId              String
+  name                    String
+  color                   String                  @default("#2563EB")
+  displayOrder            Int                     @default(0)
+  active                  Boolean                 @default(true)
+  probability             Int                     @default(0) // 0-100
+  stageType               String                  @default("OPEN") // OPEN | WON | LOST — behaviour key (never match on name)
+  isInitial               Boolean                 @default(false)
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  laundryCrmOpportunities LaundryCrmOpportunity[]
+
+  @@index([businessId])
+}
+
+model LaundryCrmLostReason {
+  id                      String                  @id @default(cuid())
+  businessId              String
+  name                    String
+  displayOrder            Int                     @default(0)
+  active                  Boolean                 @default(true)
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  laundryCrmOpportunities LaundryCrmOpportunity[]
+
+  @@index([businessId])
+}
+
+model LaundryCrmActivityType {
+  id           String   @id @default(cuid())
+  businessId   String
+  name         String
+  displayOrder Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([businessId])
+}
+
+model LaundryCrmLead {
+  id             String    @id @default(cuid())
+  leadCode       String    @unique // LED-CRM-YYYYMM-NNNNNN
+  businessId     String
+  statusId       String?
+  sourceId       String?
+  // Promoted system-field values (indexed search); full values live in fieldValues.
+  displayName    String    @default("")
+  phone          String?
+  email          String?
+  fieldValues    String    @default("{}") // JSON { fieldKey: value }
+  assignedToId   String?
+  assignedToName String?
+  converted      Boolean   @default(false)
+  convertedAt    DateTime?
+  archived       Boolean   @default(false)
+  createdById    String?
+  createdByName  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  status      LaundryCrmLeadStatus?  @relation(fields: [statusId], references: [id], onDelete: SetNull)
+  source      LaundryCrmLeadSource?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  opportunity LaundryCrmOpportunity?
+  activities  LaundryCrmActivity[]
+  tasks       LaundryCrmTask[]
+  events      LaundryCrmEvent[]
+
+  @@index([businessId])
+  @@index([businessId, statusId])
+  @@index([businessId, sourceId])
+  @@index([businessId, assignedToId])
+  @@index([businessId, createdAt])
+  @@index([businessId, archived])
+}
+
+model LaundryCrmOpportunity {
+  id                String    @id @default(cuid())
+  oppCode           String    @unique // OPP-CRM-YYYYMM-NNNNNN
+  businessId        String
+  leadId            String    @unique // one primary opportunity per lead
+  name              String
+  stageId           String?
+  value             Float     @default(0)
+  probability       Int?
+  expectedCloseDate DateTime?
+  state             String    @default("OPEN") // OPEN | WON | LOST — derived from stageType on move
+  stageEnteredAt    DateTime  @default(now())
+  wonAt             DateTime?
+  wonValue          Float?
+  lostAt            DateTime?
+  lostReasonId      String?
+  lostNotes         String?
+  notes             String?
+  assignedToId      String?
+  assignedToName    String?
+  createdById       String?
+  createdByName     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  lead         LaundryCrmLead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  stage        LaundryCrmSalesStage?    @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  lostReason   LaundryCrmLostReason?    @relation(fields: [lostReasonId], references: [id], onDelete: SetNull)
+  stageHistory LaundryCrmStageHistory[]
+  activities   LaundryCrmActivity[]
+  tasks        LaundryCrmTask[]
+  events       LaundryCrmEvent[]
+
+  @@index([businessId])
+  @@index([businessId, stageId])
+  @@index([businessId, state])
+  @@index([businessId, assignedToId])
+  @@index([businessId, expectedCloseDate])
+  @@index([businessId, createdAt])
+}
+
+model LaundryCrmStageHistory {
+  id            String   @id @default(cuid())
+  businessId    String
+  opportunityId String
+  fromStageId   String?
+  fromStageName String?
+  toStageId     String
+  toStageName   String
+  durationMs    Float? // time spent in the previous stage
+  changedById   String?
+  changedByName String?
+  createdAt     DateTime @default(now())
+
+  opportunity LaundryCrmOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([opportunityId])
+  @@index([createdAt])
+}
+
+model LaundryCrmActivity {
+  id             String   @id @default(cuid())
+  actCode        String   @unique // ACT-CRM-YYYYMM-NNNNNN
+  businessId     String
+  leadId         String?
+  opportunityId  String?
+  type           String   @default("GENERAL") // matches LaundryCrmActivityType.name at creation time
+  subject        String
+  description    String?
+  outcome        String?
+  activityAt     DateTime @default(now())
+  assignedToId   String?
+  assignedToName String?
+  createdById    String?
+  createdByName  String?
+  createdAt      DateTime @default(now())
+
+  lead        LaundryCrmLead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunity LaundryCrmOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([leadId])
+  @@index([opportunityId])
+  @@index([businessId, activityAt])
+}
+
+model LaundryCrmTask {
+  id             String    @id @default(cuid())
+  taskCode       String    @unique // TSK-CRM-YYYYMM-NNNNNN
+  businessId     String
+  leadId         String?
+  opportunityId  String?
+  title          String
+  description    String?
+  priority       String    @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  status         String    @default("OPEN") // OPEN | COMPLETED | CANCELLED
+  dueAt          DateTime?
+  assignedToId   String?
+  assignedToName String?
+  createdById    String?
+  createdByName  String?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lead        LaundryCrmLead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunity LaundryCrmOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([businessId, status])
+  @@index([businessId, dueAt])
+  @@index([leadId])
+  @@index([opportunityId])
+}
+
+// System timeline events (created/updated/status-changed/assigned/converted/…).
+// Mirrors the LaundryOrderEvent pattern.
+model LaundryCrmEvent {
+  id            String   @id @default(cuid())
+  businessId    String
+  leadId        String?
+  opportunityId String?
+  kind          String // LEAD_CREATED | LEAD_UPDATED | STATUS_CHANGED | ASSIGNED | CONVERTED | STAGE_CHANGED | WON | LOST | NOTE | TASK_CREATED | TASK_COMPLETED | …
+  label         String
+  meta          String? // JSON details
+  actorId       String?
+  actorName     String?
+  createdAt     DateTime @default(now())
+
+  lead        LaundryCrmLead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunity LaundryCrmOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([leadId])
+  @@index([opportunityId])
+  @@index([createdAt])
 }

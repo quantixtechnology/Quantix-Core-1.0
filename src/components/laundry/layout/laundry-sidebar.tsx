@@ -22,7 +22,9 @@ import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
   UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck, Barcode, Repeat,
+  Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
 } from "lucide-react"
+import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 
 type NavCfg = {
   key: string
@@ -46,6 +48,21 @@ function rankOf(role: string | null): number {
   if (MANAGER_ROLES.has(role)) return 2
   if (OPERATOR_ROLES.has(role)) return 1
   return 3
+}
+
+// Optional CRM module — rendered ABOVE the Laundry OS sections, only when the
+// tenant's CRM feature is enabled (Super Admin controlled; APIs enforce too).
+const CRM_GROUP: { label: string | null; items: NavCfg[] } = {
+  label: "CRM",
+  items: [
+    { key: "crm-dashboard", label: "Dashboard", icon: Gauge, page: "crm-dashboard", minRank: 2 },
+    { key: "crm-leads", label: "Leads", icon: UsersRound, page: "crm-leads", minRank: 2 },
+    { key: "crm-opportunities", label: "Opportunities", icon: Target, page: "crm-opportunities", minRank: 2 },
+    { key: "crm-activities", label: "Activities", icon: ClipboardList, page: "crm-activities", minRank: 2 },
+    { key: "crm-tasks", label: "Tasks", icon: CheckSquare, page: "crm-tasks", minRank: 2 },
+    { key: "crm-reports", label: "CRM Reports", icon: PieChart, page: "crm-reports", minRank: 3 },
+    { key: "crm-settings", label: "CRM Settings", icon: SlidersHorizontal, page: "crm-settings", minRank: 3 },
+  ],
 }
 
 const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
@@ -131,18 +148,32 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   const rank = rankOf(currentRole)
   const brand = user?.businessName || "Laundry OS"
   const brandInitials = brand.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+  const crmState = useCrmEnabled() // null while loading
+  const crmEnabled = crmState === true
 
-  const groups = (isProcessing ? PROCESSING_GROUPS : NAV_GROUPS)
+  // CRM section first, then the Laundry OS sections (first laundry group gets
+  // the "Laundry OS" header so the two products read as separate sections).
+  // When CRM is disabled nothing changes — no empty headings or spacing.
+  const baseGroups = isProcessing
+    ? PROCESSING_GROUPS
+    : crmEnabled
+      ? [CRM_GROUP, ...NAV_GROUPS.map((g, i) => (i === 0 ? { ...g, label: "Laundry OS" } : g))]
+      : NAV_GROUPS
+
+  const groups = baseGroups
     .map((g) => ({ label: g.label, items: g.items.filter((i) => rank >= i.minRank) }))
     .filter((g) => g.items.length > 0)
 
   const validPages = new Set(groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page))
 
   // Redirect to dashboard if the current page isn't visible for this role.
+  // Waits for the CRM entitlement to resolve so a refresh on a CRM page
+  // doesn't bounce to the dashboard while the check is in flight.
   useEffect(() => {
+    if (crmState === null) return
     if (!validPages.has(laundryPage)) setLaundryPage("dashboard")
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [laundryPage, currentRole])
+  }, [laundryPage, currentRole, crmState])
 
   const navigate = (page?: LaundryBusinessPage) => {
     if (!page) return

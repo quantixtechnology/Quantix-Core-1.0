@@ -205,6 +205,15 @@ const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laun
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
 const ProcessingDashboard = dynamic(() => import("@/components/laundry/views/processing-dashboard").then(m => ({ default: m.ProcessingDashboard })), { loading: () => <PageLoader /> })
+// Optional CRM module (feature-gated per tenant; CrmGate + server enforce entitlement)
+const CrmGate = dynamic(() => import("@/components/laundry/views/crm/crm-gate").then(m => ({ default: m.CrmGate })), { loading: () => <PageLoader /> })
+const CrmDashboard = dynamic(() => import("@/components/laundry/views/crm/crm-dashboard").then(m => ({ default: m.CrmDashboard })), { loading: () => <PageLoader /> })
+const CrmLeads = dynamic(() => import("@/components/laundry/views/crm/crm-leads").then(m => ({ default: m.CrmLeads })), { loading: () => <PageLoader /> })
+const CrmOpportunities = dynamic(() => import("@/components/laundry/views/crm/crm-opportunities").then(m => ({ default: m.CrmOpportunities })), { loading: () => <PageLoader /> })
+const CrmActivities = dynamic(() => import("@/components/laundry/views/crm/crm-activities").then(m => ({ default: m.CrmActivities })), { loading: () => <PageLoader /> })
+const CrmTasks = dynamic(() => import("@/components/laundry/views/crm/crm-tasks").then(m => ({ default: m.CrmTasks })), { loading: () => <PageLoader /> })
+const CrmReports = dynamic(() => import("@/components/laundry/views/crm/crm-reports").then(m => ({ default: m.CrmReports })), { loading: () => <PageLoader /> })
+const CrmSettings = dynamic(() => import("@/components/laundry/views/crm/crm-settings").then(m => ({ default: m.CrmSettings })), { loading: () => <PageLoader /> })
 
 // ── HRMS pages (lazy) ─────────────────────────────────────────────────────
 const HrmsSettingsView = dynamic(() => import("@/components/admin/hrms/hrms-settings").then(m => ({ default: m.HrmsSettingsView })), { loading: () => <PageLoader /> })
@@ -630,6 +639,14 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       }
     }
     switch (laundryPage) {
+      // Optional CRM module — separate screens from Laundry OS operations
+      case "crm-dashboard": return <CrmGate><CrmDashboard businessId={wsBusinessId} /></CrmGate>
+      case "crm-leads": return <CrmGate><CrmLeads businessId={wsBusinessId} /></CrmGate>
+      case "crm-opportunities": return <CrmGate><CrmOpportunities businessId={wsBusinessId} /></CrmGate>
+      case "crm-activities": return <CrmGate><CrmActivities businessId={wsBusinessId} /></CrmGate>
+      case "crm-tasks": return <CrmGate><CrmTasks businessId={wsBusinessId} /></CrmGate>
+      case "crm-reports": return <CrmGate><CrmReports businessId={wsBusinessId} /></CrmGate>
+      case "crm-settings": return <CrmGate><CrmSettings businessId={wsBusinessId} /></CrmGate>
       case "dashboard": return <LaundryDashboard />
       case "inbox": return <LaundryInboxView />
       case "orders": return <LaundryOrdersView />

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { ensureCrmDefaults, CRM_FEATURE_KEY } from "@/lib/laundry-crm"
 
 export const runtime = "nodejs"
 
@@ -35,6 +36,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         })
       )
     )
+
+    // Feature toggles are Quantix-controlled — record them in the business audit log.
+    await prisma.laundryAuditLog.createMany({
+      data: features.map((f) => ({
+        businessId: id, section: "features", field: f.featureKey,
+        oldValue: null, newValue: f.enabled ? "ENABLED" : "DISABLED",
+        actorId: body.actorId || null, actorName: body.actorName || null,
+      })),
+    }).catch(() => {})
+
+    // Enabling CRM initializes the tenant's default CRM configuration
+    // (statuses, sources, stages, lost reasons, activity types, lead fields).
+    const crmOn = features.find((f) => f.featureKey === CRM_FEATURE_KEY && f.enabled)
+    if (crmOn) await ensureCrmDefaults(id).catch((e) => console.error("[features] CRM defaults init failed", e))
 
     return NextResponse.json(result)
   } catch (error) {

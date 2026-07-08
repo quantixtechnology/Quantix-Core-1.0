@@ -90,6 +90,13 @@ export type AdminPage =
   | "workspaces"
 
 export type LaundryBusinessPage =
+  | "crm-dashboard"
+  | "crm-leads"
+  | "crm-opportunities"
+  | "crm-activities"
+  | "crm-tasks"
+  | "crm-reports"
+  | "crm-settings"
   | "dashboard"
   | "inbox"
   | "orders"
