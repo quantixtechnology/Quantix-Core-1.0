@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { ensureCrmDefaults, CRM_FEATURE_KEY } from "@/lib/laundry-crm"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
+    const { id: rawId } = await params
+    // Accept the LaundryBusiness id OR the linked platform Business id — the
+    // Super Admin wizard works with platform ids. 404 for non-laundry
+    // businesses lets callers (e.g. the wizard feature card) self-hide.
+    const biz = await resolveLaundryBusiness(rawId)
+    if (!biz) return NextResponse.json({ error: "Not a laundry business" }, { status: 404 })
     const features = await prisma.laundryBusinessFeature.findMany({
-      where: { businessId: id },
+      where: { businessId: biz.id },
     })
     return NextResponse.json(features)
   } catch (error) {
@@ -19,7 +25,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
+    const { id: rawId } = await params
+    const biz = await resolveLaundryBusiness(rawId)
+    if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+    const id = biz.id
     const body = await request.json()
     const { features } = body as { features: { featureKey: string; enabled: boolean }[] }
 

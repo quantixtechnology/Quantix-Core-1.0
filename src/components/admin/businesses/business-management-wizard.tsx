@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/admin-fetch'
 import { LaundryImageUpload } from '@/components/laundry/views/pricing/laundry-image-upload'
+import { LaundryProductFeaturesCard } from '@/components/admin/laundry/laundry-product-features-card'
 import { useAdminStore } from '@/stores/admin-store'
 import { getWorkspaceEntryRoute } from '@/lib/workspace-routes'
 import { ProductSelectionStep } from '@/components/onboarding/steps/product-selection-step'
@@ -445,6 +446,9 @@ export function BusinessManagementWizard({ businessId }: Props) {
                   </div>
                 )}
               </Card>
+              {/* Optional Laundry OS features (e.g. CRM) — per-tenant entitlements.
+                  The card self-hides for businesses without a Laundry workspace. */}
+              <LaundryProductFeaturesCard businessId={bizId} />
               <Card className="p-6">
                 <h3 className="font-semibold text-sm mb-1">Payment Gateway Availability</h3>
                 <p className="text-xs text-muted-foreground mb-3">Quantix decides which gateways the tenant may use; the Business Owner configures keys for enabled ones (not here).</p>

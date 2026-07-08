@@ -307,7 +307,7 @@ function TerminalStageDialog({ businessId, opp, stage, onClose, onConfirm }: {
           ) : (
             <div className="space-y-1.5">
               <Label className="text-xs">Lost Reason *</Label>
-              <Select value={lostReasonId || undefined} onValueChange={setLostReasonId}>
+              <Select value={lostReasonId} onValueChange={setLostReasonId}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Select reason…" /></SelectTrigger>
                 <SelectContent>{lostReasons.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
               </Select>

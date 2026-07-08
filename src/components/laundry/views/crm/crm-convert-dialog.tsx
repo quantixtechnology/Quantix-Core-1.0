@@ -79,7 +79,7 @@ export function ConvertLeadDialog({ businessId, lead, onClose, onConverted }: {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Initial Sales Stage</Label>
-              <Select value={stageId || undefined} onValueChange={setStageId}>
+              <Select value={stageId} onValueChange={setStageId}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Default (initial stage)" /></SelectTrigger>
                 <SelectContent>{openStages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.probability}%)</SelectItem>)}</SelectContent>
               </Select>

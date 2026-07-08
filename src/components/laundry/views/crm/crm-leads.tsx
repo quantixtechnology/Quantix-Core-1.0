@@ -384,7 +384,7 @@ export function LeadFormDialog({ businessId, fields, sources, lead, onClose, onS
           {/* Lead Source + assignment are core selectors, not dynamic fields */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-slate-600">Lead Source</label>
-            <Select value={sourceId || undefined} onValueChange={setSourceId}>
+            <Select value={sourceId} onValueChange={setSourceId}>
               <SelectTrigger className="h-9"><SelectValue placeholder="Select source…" /></SelectTrigger>
               <SelectContent>{sources.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
             </Select>

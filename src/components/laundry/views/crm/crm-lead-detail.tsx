@@ -107,7 +107,7 @@ export function CrmLeadDetail({ businessId, leadId, onBack }: { businessId: stri
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Select value={lead.statusId || undefined} onValueChange={changeStatus}>
+          <Select value={lead.statusId || ""} onValueChange={changeStatus}>
             <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Status…" /></SelectTrigger>
             <SelectContent>{meta.statuses.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
           </Select>

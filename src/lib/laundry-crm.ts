@@ -93,7 +93,20 @@ const DEFAULT_STATUSES = [
   { name: "Lost", color: "#EF4444", kind: "LOST", allowConversion: false },
 ]
 
-const DEFAULT_SOURCES = ["Walk-in", "Website", "Phone Call", "WhatsApp", "Referral", "Facebook", "Instagram", "Google", "Campaign", "Other"]
+// Distinct colors so source distributions (donut/legend) are readable out of
+// the box — tenant-editable in CRM Settings.
+const DEFAULT_SOURCES: { name: string; color: string }[] = [
+  { name: "Walk-in", color: "#2563EB" },
+  { name: "Website", color: "#0EA5E9" },
+  { name: "Phone Call", color: "#10B981" },
+  { name: "WhatsApp", color: "#22C55E" },
+  { name: "Referral", color: "#8B5CF6" },
+  { name: "Facebook", color: "#3B5998" },
+  { name: "Instagram", color: "#E1306C" },
+  { name: "Google", color: "#F59E0B" },
+  { name: "Campaign", color: "#F97316" },
+  { name: "Other", color: "#64748B" },
+]
 
 const DEFAULT_STAGES = [
   { name: "Qualification", probability: 10, stageType: "OPEN", isInitial: true, color: "#64748B" },
@@ -159,7 +172,7 @@ export async function ensureCrmDefaults(businessId: string): Promise<void> {
     data: DEFAULT_STATUSES.map((s, i) => ({ businessId, displayOrder: i, ...s })),
   }))
   if (sourceCount === 0) work.push(prisma.laundryCrmLeadSource.createMany({
-    data: DEFAULT_SOURCES.map((name, i) => ({ businessId, name, displayOrder: i })),
+    data: DEFAULT_SOURCES.map((s, i) => ({ businessId, name: s.name, color: s.color, displayOrder: i })),
   }))
   if (stageCount === 0) work.push(prisma.laundryCrmSalesStage.createMany({
     data: DEFAULT_STAGES.map((s, i) => ({ businessId, displayOrder: i, ...s })),

@@ -16,6 +16,12 @@ import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { type CrmActivityType, useCrmActor } from "./crm-shared"
 
+// datetime-local expects LOCAL wall-clock time — toISOString() would shift to UTC.
+const localDatetimeValue = () => {
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+}
+
 export function LogActivityDialog({ businessId, leadId, opportunityId, activityTypes, onClose, onSaved }: {
   businessId: string
   leadId?: string
@@ -29,7 +35,7 @@ export function LogActivityDialog({ businessId, leadId, opportunityId, activityT
   const [subject, setSubject] = useState("")
   const [description, setDescription] = useState("")
   const [outcome, setOutcome] = useState("")
-  const [activityAt, setActivityAt] = useState(() => new Date().toISOString().slice(0, 16))
+  const [activityAt, setActivityAt] = useState(localDatetimeValue)
   const [saving, setSaving] = useState(false)
 
   const save = async () => {

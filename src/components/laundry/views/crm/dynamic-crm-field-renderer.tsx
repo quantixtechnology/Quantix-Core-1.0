@@ -49,7 +49,7 @@ export function DynamicCrmFieldRenderer({ field, value, onChange }: Props) {
         return <Input type="url" value={str} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder || "https://…"} className="h-9" />
       case "SELECT":
         return (
-          <Select value={str || undefined} onValueChange={(v) => onChange(v)}>
+          <Select value={str} onValueChange={(v) => onChange(v)}>
             <SelectTrigger className="h-9"><SelectValue placeholder={field.placeholder || "Select…"} /></SelectTrigger>
             <SelectContent>
               {opts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
