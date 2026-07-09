@@ -160,6 +160,14 @@ log "── Super admin ──────────────────�
 node scripts/ensure-super-admin.js 2>&1 | tee -a "$LOG_FILE" || true
 log "✅ Super admin verified"
 
+# Commerce storefront baseline templates (Phase 2). Idempotent — creates the
+# Neutral/Grocery/Meat-Delivery master templates + category defaults only if
+# absent; never overwrites customised templates. Non-fatal.
+log ""
+log "── Commerce baseline templates ──────────────────────────────"
+node scripts/seed-commerce-templates.js 2>&1 | tee -a "$LOG_FILE" || log "⚠️  commerce template seed skipped (non-fatal)"
+log "✅ Commerce baseline templates verified"
+
 # ─── Upload root ────────────────────────────────────────────────────────────────
 # The image upload endpoint (/api/core/upload) writes to UPLOAD_ROOT
 # (ecosystem.config.js → /var/www/uploads). If that directory does not exist or

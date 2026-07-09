@@ -5175,24 +5175,33 @@ model LaundryServiceGarmentCategory {
 // (Business.businessType, e.g. GROCERY | ECOMMERCE | MEAT_DELIVERY). Never
 // tenant-editable.
 model CommerceTemplate {
-  id               String   @id @default(cuid())
-  code             String   @unique // stable key, e.g. "grocery-fresh"
-  name             String
-  description      String?
-  workspaceType    String   @default("COMMERCE") // PlatformProduct.code
-  businessCategory String // Business.businessType this template targets
-  templateType     String   @default("STOREFRONT")
-  thumbnailUrl     String?
-  previewUrl       String?
-  status           String   @default("DRAFT") // DRAFT | ACTIVE | INACTIVE | ARCHIVED
-  isDefault        Boolean  @default(false) // category default template
-  version          Int      @default(1)
-  createdBy        String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                      String    @id @default(cuid())
+  code                    String    @unique // stable key, e.g. "grocery-fresh"
+  name                    String
+  description             String?
+  workspaceType           String    @default("COMMERCE") // PlatformProduct.code
+  businessCategory        String // Business.businessType this template targets
+  templateType            String    @default("STOREFRONT")
+  thumbnailUrl            String?
+  previewUrl              String?
+  status                  String    @default("DRAFT") // DRAFT | ACTIVE | INACTIVE | ARCHIVED
+  isDefault               Boolean   @default(false) // convenience flag; authoritative default is CommerceCategoryDefault
+  version                 Int       @default(1) // draft content version (increments on publish-worthy edits)
+  // ── Master content publish lifecycle (separate from operational `status`) ──
+  // Pages/sections are the editable DRAFT working content; publishing snapshots
+  // them into publishedConfig with previousPublishedConfig kept for rollback.
+  publishedVersion        Int       @default(0)
+  publishedAt             DateTime?
+  publishedConfig         String? // JSON snapshot of published pages/sections tree
+  previousPublishedConfig String? // prior published snapshot (rollback safety)
+  createdBy               String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  pages       CommerceTemplatePage[]
-  assignments CommerceTemplateAssignment[]
+  pages            CommerceTemplatePage[]
+  assignments      CommerceTemplateAssignment[]
+  categories       CommerceTemplateCategory[]
+  categoryDefaults CommerceCategoryDefault[]
 
   @@index([workspaceType, businessCategory])
   @@index([status])
@@ -5280,4 +5289,36 @@ model CommerceTenantTemplate {
   @@unique([businessId, storeId])
   @@index([businessId])
   @@index([sourceTemplateId])
+}
+
+// Template ↔ business-category compatibility (many-to-many). A template may be
+// compatible with more than one Commerce category. `businessCategory` values
+// are Business.businessType (the authoritative category vocabulary).
+model CommerceTemplateCategory {
+  id               String   @id @default(cuid())
+  templateId       String
+  businessCategory String
+  createdAt        DateTime @default(now())
+
+  template CommerceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, businessCategory])
+  @@index([businessCategory])
+}
+
+// Authoritative category default template (one per workspaceType+category).
+// Changing this never touches explicit business assignments or tenant instances.
+model CommerceCategoryDefault {
+  id               String   @id @default(cuid())
+  workspaceType    String   @default("COMMERCE")
+  businessCategory String
+  templateId       String
+  updatedBy        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  template CommerceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceType, businessCategory])
+  @@index([templateId])
 }

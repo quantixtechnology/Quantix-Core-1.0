@@ -35,6 +35,7 @@ import {
 import { getAuthHeaders } from '@/lib/admin-fetch'
 import { LaundryImageUpload } from '@/components/laundry/views/pricing/laundry-image-upload'
 import { LaundryProductFeaturesCard } from '@/components/admin/laundry/laundry-product-features-card'
+import { CommerceTemplateAssignCard, CommerceTemplateReviewField } from '@/components/admin/commerce/commerce-template-assign-card'
 import { useAdminStore } from '@/stores/admin-store'
 import { getWorkspaceEntryRoute } from '@/lib/workspace-routes'
 import { ProductSelectionStep } from '@/components/onboarding/steps/product-selection-step'
@@ -449,6 +450,9 @@ export function BusinessManagementWizard({ businessId }: Props) {
               {/* Optional Laundry OS features (e.g. CRM) — per-tenant entitlements.
                   The card self-hides for businesses without a Laundry workspace. */}
               <LaundryProductFeaturesCard businessId={bizId} />
+              {/* Commerce storefront template — self-hides unless product=COMMERCE.
+                  Resolves the category default and allows a compatible override. */}
+              <CommerceTemplateAssignCard businessId={bizId} productCode={biz?.productCode} />
               <Card className="p-6">
                 <h3 className="font-semibold text-sm mb-1">Payment Gateway Availability</h3>
                 <p className="text-xs text-muted-foreground mb-3">Quantix decides which gateways the tenant may use; the Business Owner configures keys for enabled ones (not here).</p>
@@ -477,6 +481,7 @@ export function BusinessManagementWizard({ businessId }: Props) {
                 <Field label="GST / PAN" value={`${biz?.gstNumber ?? '—'} / ${biz?.panNumber ?? '—'}`} />
                 <Field label="Modules enabled" value={`${enabledModules.length}${enabledModules.length ? ` (${enabledModules.map((m) => m.moduleName).join(', ')})` : ''}`} />
                 <Field label="Current Status" value={biz?.status} />
+                <CommerceTemplateReviewField businessId={bizId} productCode={biz?.productCode} />
               </div>
             </Card>
           )}

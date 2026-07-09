@@ -28,10 +28,10 @@ export const NEUTRAL_COMMERCE_FALLBACK = {
 }
 
 export type TemplateSource =
-  | "STORE_ASSIGNMENT"
+  | "STORE_OVERRIDE"
   | "BUSINESS_ASSIGNMENT"
   | "CATEGORY_DEFAULT"
-  | "FALLBACK"
+  | "NEUTRAL_FALLBACK"
 
 export interface ResolveInput {
   businessId: string
@@ -64,21 +64,22 @@ export async function resolveTemplateForBusiness(input: ResolveInput): Promise<R
   const usable = assignments.filter((a) => a.template && a.template.status === "ACTIVE")
   if (storeId) {
     const storeHit = usable.find((a) => a.storeId === storeId)
-    if (storeHit?.template) return tpl(storeHit.template, "STORE_ASSIGNMENT")
+    if (storeHit?.template) return tpl(storeHit.template, "STORE_OVERRIDE")
   }
   const bizHit = usable.find((a) => a.storeId === null)
   if (bizHit?.template) return tpl(bizHit.template, "BUSINESS_ASSIGNMENT")
 
-  // 3: category default template.
-  const def = await db.commerceTemplate.findFirst({
-    where: { workspaceType, businessCategory, isDefault: true, status: "ACTIVE" },
-    select: { id: true, code: true, name: true, businessCategory: true },
-    orderBy: { updatedAt: "desc" },
+  // 3: category default template (authoritative CommerceCategoryDefault mapping).
+  const mapping = await db.commerceCategoryDefault.findUnique({
+    where: { workspaceType_businessCategory: { workspaceType, businessCategory } },
+    include: { template: { select: { id: true, code: true, name: true, status: true, businessCategory: true } } },
   }).catch(() => null)
-  if (def) return { templateId: def.id, code: def.code, name: def.name, source: "CATEGORY_DEFAULT", businessCategory: def.businessCategory }
+  if (mapping?.template && mapping.template.status === "ACTIVE") {
+    return { templateId: mapping.template.id, code: mapping.template.code, name: mapping.template.name, source: "CATEGORY_DEFAULT", businessCategory }
+  }
 
   // 4: neutral Commerce fallback — never Grocery.
-  return { templateId: null, code: NEUTRAL_COMMERCE_FALLBACK.code, name: NEUTRAL_COMMERCE_FALLBACK.name, source: "FALLBACK", businessCategory }
+  return { templateId: null, code: NEUTRAL_COMMERCE_FALLBACK.code, name: NEUTRAL_COMMERCE_FALLBACK.name, source: "NEUTRAL_FALLBACK", businessCategory }
 }
 
 function tpl(t: { id: string; code: string; name: string; businessCategory: string }, source: TemplateSource): ResolvedTemplate {
@@ -124,4 +125,23 @@ export async function resolveCommerceStorefront(input: ResolveInput): Promise<Re
 
 function safeParse(s: string): unknown {
   try { return JSON.parse(s) } catch { return null }
+}
+
+// ── Compatibility helpers (server-enforced; used by CRUD/assignment APIs) ────
+
+// All categories a template is compatible with (join ∪ its primary category).
+export async function getTemplateCategories(templateId: string): Promise<string[]> {
+  const [rows, tpl] = await Promise.all([
+    db.commerceTemplateCategory.findMany({ where: { templateId }, select: { businessCategory: true } }),
+    db.commerceTemplate.findUnique({ where: { id: templateId }, select: { businessCategory: true } }),
+  ])
+  const set = new Set(rows.map((r) => r.businessCategory))
+  if (tpl?.businessCategory) set.add(tpl.businessCategory)
+  return [...set]
+}
+
+// Is this template compatible with a business category? (server-side guard)
+export async function isTemplateCompatible(templateId: string, businessCategory: string): Promise<boolean> {
+  const cats = await getTemplateCategories(templateId)
+  return cats.includes(businessCategory)
 }
