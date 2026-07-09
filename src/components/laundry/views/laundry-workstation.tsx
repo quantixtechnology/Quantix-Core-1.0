@@ -15,9 +15,12 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ScanLine, Loader2, Play, Pause, Check, ShieldCheck, ShieldX, Clock, User, ShoppingBag, ArrowRight, Factory } from "lucide-react"
-import { stageLabel, departmentFor } from "@/lib/laundry-processing"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { stageLabel, departmentFor, parseFlow, getFlow, reworkStagesOf } from "@/lib/laundry-processing"
 
-interface Item { id: string; itemNumber: string | null; barcode: string | null; garmentName: string; serviceName: string; quantity: number; orderNumber: string; customer: string | null; processingStatus: string | null }
+interface Item { id: string; itemNumber: string | null; barcode: string | null; garmentName: string; serviceName: string; quantity: number; orderNumber: string; customer: string | null; processingStatus: string | null; processFlow?: string | null }
 interface ScanData { item: { id: string; garmentName: string; serviceName: string; processingStage: string | null; processingStatus: string | null; stageLabel: string; barcode: string | null }; customer?: { name: string } | null; order: { orderNumber: string }; currentDepartment: string; timeline: { id: string; action: string; fromStage: string | null; toStage: string | null; actorName: string | null; createdAt: string }[] }
 
 const fmt = (s: string) => new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
@@ -31,6 +34,11 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [scanning, setScanning] = useState(false)
   const [scan, setScan] = useState<ScanData | null>(null)
   const [busy, setBusy] = useState(false)
+  // QC failure dialog: requires a reason + a rework destination from the
+  // garment's own processing route.
+  const [qcFail, setQcFail] = useState<{ itemId: string; garment: string; flow: string | null; serviceName: string; fromScan: boolean } | null>(null)
+  const [qcReason, setQcReason] = useState("")
+  const [qcStage, setQcStage] = useState("")
   const isQC = stage === "QC"
 
   const load = useCallback(async () => {
@@ -43,10 +51,10 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   }, [currentBusinessId, stage])
   useEffect(() => { load() }, [load])
 
-  const act = async (itemId: string, action: string, closeScan = false) => {
+  const act = async (itemId: string, action: string, closeScan = false, extra: Record<string, unknown> = {}) => {
     setBusy(true)
     try {
-      const res = await fetch(`/api/laundry/items/${itemId}/process`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, actorName: user?.name || "operator" }) })
+      const res = await fetch(`/api/laundry/items/${itemId}/process`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, actorName: user?.name || "operator", ...extra }) })
       const j = await res.json()
       if (!res.ok || !j.success) { toast({ title: "Action failed", description: j.error, variant: "destructive" }); return }
       toast({ title: action.replace("_", " "), description: `${stageLabel(j.data.processingStage)} · ${j.data.processingStatus}` })
@@ -85,7 +93,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
         {it.processingStatus === "IN_PROGRESS" && <>
           <Button size="sm" variant="outline" className="h-8 gap-1" disabled={busy} onClick={() => act(it.id, "PAUSE")}><Pause className="h-3.5 w-3.5" /></Button>
           {isQC
-            ? <><Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "QC_PASS")}><ShieldCheck className="h-3.5 w-3.5" /> Pass</Button><Button size="sm" variant="outline" className="h-8 gap-1 text-rose-600 border-rose-200" disabled={busy} onClick={() => act(it.id, "QC_FAIL")}><ShieldX className="h-3.5 w-3.5" /> Fail</Button></>
+            ? <><Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "QC_PASS")}><ShieldCheck className="h-3.5 w-3.5" /> Pass</Button><Button size="sm" variant="outline" className="h-8 gap-1 text-rose-600 border-rose-200" disabled={busy} onClick={() => setQcFail({ itemId: it.id, garment: it.garmentName, flow: it.processFlow || null, serviceName: it.serviceName, fromScan: false })}><ShieldX className="h-3.5 w-3.5" /> Fail</Button></>
             : <Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "COMPLETE")}><Check className="h-3.5 w-3.5" /> Complete</Button>}
         </>}
         {it.processingStatus === "PAUSED" && <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "RESUME")}><Play className="h-3.5 w-3.5" /> Resume</Button>}
@@ -137,7 +145,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
             <div className="flex flex-wrap gap-2">
               {scan.item.processingStatus === "WAITING" && <Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={busy} onClick={() => act(scan.item.id, "START", true)}><Play className="h-4 w-4" /> Start</Button>}
               {scan.item.processingStatus === "IN_PROGRESS" && !isQC && <Button className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={busy} onClick={() => act(scan.item.id, "COMPLETE", true)}><Check className="h-4 w-4" /> Complete</Button>}
-              {scan.item.processingStatus === "IN_PROGRESS" && isQC && <><Button className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={busy} onClick={() => act(scan.item.id, "QC_PASS", true)}><ShieldCheck className="h-4 w-4" /> QC Pass</Button><Button variant="outline" className="gap-1 text-rose-600 border-rose-200" disabled={busy} onClick={() => act(scan.item.id, "QC_FAIL", true)}><ShieldX className="h-4 w-4" /> QC Fail</Button></>}
+              {scan.item.processingStatus === "IN_PROGRESS" && isQC && <><Button className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={busy} onClick={() => act(scan.item.id, "QC_PASS", true)}><ShieldCheck className="h-4 w-4" /> QC Pass</Button><Button variant="outline" className="gap-1 text-rose-600 border-rose-200" disabled={busy} onClick={() => setQcFail({ itemId: scan.item.id, garment: scan.item.garmentName, flow: (scan.item as { processFlow?: string | null }).processFlow || null, serviceName: scan.item.serviceName, fromScan: true })}><ShieldX className="h-4 w-4" /> QC Fail</Button></>}
               {scan.item.processingStatus === "PAUSED" && <Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={busy} onClick={() => act(scan.item.id, "RESUME", true)}><Play className="h-4 w-4" /> Resume</Button>}
               {scan.item.processingStatus === "IN_PROGRESS" && <Button variant="outline" className="gap-1" disabled={busy} onClick={() => act(scan.item.id, "PAUSE", true)}><Pause className="h-4 w-4" /> Pause</Button>}
             </div>
@@ -150,6 +158,46 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
               </div>
             </div>
           </>)}
+        </DialogContent>
+      </Dialog>
+
+      {/* QC failure — reason + rework destination from the garment's route */}
+      <Dialog open={!!qcFail} onOpenChange={(o) => { if (!o) { setQcFail(null); setQcReason(""); setQcStage("") } }}>
+        <DialogContent className="max-w-md">
+          {qcFail && (() => {
+            const flow = parseFlow(qcFail.flow) ?? getFlow(qcFail.serviceName)
+            const stages = reworkStagesOf(flow)
+            return (<>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2"><ShieldX className="h-5 w-5 text-rose-500" /> QC Fail — {qcFail.garment}</DialogTitle>
+                <DialogDescription className="text-xs">The garment returns to a processing step from its own route. History is preserved.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Failure Reason *</Label>
+                  <Textarea value={qcReason} onChange={(e) => setQcReason(e.target.value)} rows={2} placeholder="e.g. Stain remains on collar" className="text-sm" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Rework At</Label>
+                  <Select value={qcStage || stages[0]} onValueChange={setQcStage}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>{stages.map((st) => <SelectItem key={st} value={st}>{stageLabel(st)}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-slate-400">Route: {flow.map((f) => stageLabel(f)).join(" → ")}</p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => { setQcFail(null); setQcReason(""); setQcStage("") }}>Cancel</Button>
+                <Button className="gap-1 bg-rose-600 hover:bg-rose-700 text-white" disabled={busy || !qcReason.trim()}
+                  onClick={async () => {
+                    await act(qcFail.itemId, "QC_FAIL", qcFail.fromScan, { note: qcReason.trim(), reworkStage: qcStage || stages[0] })
+                    setQcFail(null); setQcReason(""); setQcStage("")
+                  }}>
+                  <ShieldX className="h-4 w-4" /> Confirm Fail & Rework
+                </Button>
+              </div>
+            </>)
+          })()}
         </DialogContent>
       </Dialog>
     </div>

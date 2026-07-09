@@ -19,6 +19,7 @@ import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-addr
 import { generateOrderNumber } from "@/lib/laundry-codes"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/laundry-subscription"
+import { explodePieces } from "@/lib/laundry-order-items"
 
 export const runtime = "nodejs"
 
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
         paymentStatus: sub && grandTotal === 0 ? "SUBSCRIPTION" : "UNPAID",
         customerType, billedAt: new Date(),
         services: { create: serviceLines },
-        items: { create: orderLines.map((l, i) => ({ itemNumber: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, barcode: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, serviceId: l.serviceId, serviceName: l.serviceName, garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId, pricingRuleId: l.pricingRuleId, pricingType: l.pricingType, quantity: l.quantity, weightKg: 0, unitPrice: l.unitPrice, lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount, discount: 0, total: l.total })) },
+        items: { create: explodePieces(orderLines).map((l, i) => ({ itemNumber: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, barcode: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, serviceId: l.serviceId, serviceName: l.serviceName, garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId, pricingRuleId: l.pricingRuleId, pricingType: l.pricingType, quantity: l.quantity, weightKg: 0, unitPrice: l.unitPrice, lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount, discount: 0, total: l.total })) },
       },
       include: { items: true, store: { select: { storeName: true, storeCode: true } } },
     })

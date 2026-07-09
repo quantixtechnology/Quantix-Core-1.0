@@ -15,19 +15,33 @@ export async function GET(request: Request) {
     const stage = sp.get("stage")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
-    if (!biz) return NextResponse.json({ success: true, incoming: [], stageCounts: {}, items: [] })
+    if (!biz) return NextResponse.json({ success: true, incoming: [], awaitingBarcode: [], readyToReturn: [], stageCounts: {}, items: [] })
 
-    // Incoming = dispatched orders (READY_FOR_PROCESSING / PROCESSING) with any
-    // garment not yet received.
+    // Incoming = DISPATCHED packets only (order IN_TRANSIT_TO_PROCESSING).
+    // An undispatched order is NOT receivable — work-queue integrity.
     const incomingOrders = await prisma.laundryOrder.findMany({
-      where: { businessId: biz.id, status: { in: ["READY_FOR_PROCESSING", "PROCESSING"] }, items: { some: { receivedAt: null } } },
-      select: { id: true, orderNumber: true, status: true, storeId: true, customerId: true, createdAt: true, _count: { select: { items: true } } },
+      where: { businessId: biz.id, status: "IN_TRANSIT_TO_PROCESSING" },
+      select: { id: true, orderNumber: true, status: true, storeId: true, customerId: true, createdAt: true, _count: { select: { items: true } }, packet: { select: { packetNumber: true, dispatchedAt: true, dispatchedBy: true } }, store: { select: { storeName: true } } },
       orderBy: { createdAt: "desc" }, take: 50,
     })
     const custIds = [...new Set(incomingOrders.map((o) => o.customerId).filter(Boolean) as string[])]
     const custs = custIds.length ? await prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true } }) : []
     const cmap = new Map(custs.map((c) => [c.id, c.name]))
-    const incoming = incomingOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, items: o._count.items, customer: o.customerId ? cmap.get(o.customerId) || null : null, createdAt: o.createdAt }))
+    const incoming = incomingOrders.map((o) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, items: o._count.items, customer: o.customerId ? cmap.get(o.customerId) || null : null, createdAt: o.createdAt, packetNumber: o.packet?.packetNumber || null, dispatchedAt: o.packet?.dispatchedAt || null, fromStore: o.store?.storeName || null }))
+
+    // Ready to Return = every garment finished its route (PACKED/DONE) but the
+    // order is still at the Processing Center.
+    const processingOrders = await prisma.laundryOrder.findMany({
+      where: { businessId: biz.id, status: "PROCESSING" },
+      select: { id: true, orderNumber: true, customerId: true, store: { select: { storeName: true } }, packet: { select: { packetNumber: true } }, items: { select: { processingStage: true, processingStatus: true } } },
+      orderBy: { createdAt: "asc" }, take: 100,
+    })
+    const rtCustIds = [...new Set(processingOrders.map((o) => o.customerId).filter(Boolean) as string[])]
+    const rtCusts = rtCustIds.length ? await prisma.customer.findMany({ where: { id: { in: rtCustIds } }, select: { id: true, name: true } }) : []
+    const rtMap = new Map(rtCusts.map((c) => [c.id, c.name]))
+    const readyToReturn = processingOrders
+      .filter((o) => o.items.length > 0 && o.items.every((i) => i.processingStage === "PACKED" && i.processingStatus === "DONE"))
+      .map((o) => ({ id: o.id, orderNumber: o.orderNumber, customer: o.customerId ? rtMap.get(o.customerId) || null : null, items: o.items.length, toStore: o.store?.storeName || null, packetNumber: o.packet?.packetNumber || null }))
 
     // Awaiting Audit & Barcode Generation — received, not yet moved to processing.
     const abOrders = await prisma.laundryOrder.findMany({
@@ -65,12 +79,12 @@ export async function GET(request: Request) {
         id: r.id, itemNumber: r.itemNumber, barcode: r.barcode, garmentName: r.garmentName,
         serviceName: r.serviceName, quantity: r.quantity, orderNumber: r.order.orderNumber,
         customer: r.order.customerId ? cm.get(r.order.customerId) || null : null,
-        processingStage: r.processingStage, processingStatus: r.processingStatus,
+        processingStage: r.processingStage, processingStatus: r.processingStatus, processFlow: r.processFlow,
         stageLabel: stageLabel(r.processingStage), department: departmentFor(r.processingStage),
       }))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, stageCounts, items })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

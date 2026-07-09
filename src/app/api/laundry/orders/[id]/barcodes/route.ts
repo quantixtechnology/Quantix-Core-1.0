@@ -6,7 +6,7 @@
 //   garment into its first department queue (Wash/Dry Clean/Iron/…).
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { firstStage, departmentFor, stageLabel } from "@/lib/laundry-processing"
+import { resolveFlow, departmentFor, stageLabel } from "@/lib/laundry-processing"
 
 export const runtime = "nodejs"
 
@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params
     const b = await request.json().catch(() => ({}))
     const action = String(b.action || "").toUpperCase()
-    const order = await prisma.laundryOrder.findUnique({ where: { id }, select: { id: true, businessId: true, paymentStatus: true, items: { select: { id: true, serviceName: true, barcodeGenerated: true, processingStage: true } } } })
+    const order = await prisma.laundryOrder.findUnique({ where: { id }, select: { id: true, businessId: true, paymentStatus: true, items: { select: { id: true, serviceId: true, serviceName: true, barcodeGenerated: true, processingStage: true, processFlow: true } } } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
 
     if (action === "GENERATE_ALL") {
@@ -61,12 +61,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           return NextResponse.json({ error: "This workspace requires advance payment before processing.", code: "PAYMENT_PENDING" }, { status: 402 })
         }
       }
+      // Resolve each garment's route from the tenant's SERVICE CONFIGURATION
+      // (fallback: legacy name heuristic) and SNAPSHOT it onto the garment so
+      // later config changes never rewrite an in-progress garment's history.
+      const serviceIds = [...new Set(order.items.map((i) => i.serviceId).filter(Boolean) as string[])]
+      const services = serviceIds.length
+        ? await prisma.laundryService.findMany({ where: { id: { in: serviceIds } }, select: { id: true, processFlow: true } })
+        : []
+      const cfgMap = new Map(services.map((s) => [s.id, s.processFlow]))
+
+      let moved = 0
       for (const it of order.items) {
-        const stage = firstStage(it.serviceName)
-        await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { processingStage: stage, processingStatus: "WAITING", processingDept: departmentFor(stage) } })
-        await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "MOVED_TO_PROCESSING", fromStage: "RECEIVED", toStage: stage, department: departmentFor(stage), actorName: b.actorName || null } })
+        if (it.processingStage !== "RECEIVED") continue // idempotent — already routed
+        const flow = resolveFlow(it, it.serviceId ? cfgMap.get(it.serviceId) : null)
+        const stage = flow[0]
+        await prisma.laundryOrderItem.update({
+          where: { id: it.id },
+          data: { processFlow: JSON.stringify(flow), processingStage: stage, processingStatus: "WAITING", processingDept: departmentFor(stage) },
+        })
+        await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "MOVED_TO_PROCESSING", fromStage: "RECEIVED", toStage: stage, department: departmentFor(stage), actorName: b.actorName || null, note: `Route: ${flow.join(" → ")}` } })
+        moved++
       }
-      return NextResponse.json({ success: true, data: { moved: order.items.length } })
+      return NextResponse.json({ success: true, data: { moved } })
     }
 
     return NextResponse.json({ error: `Unknown action "${action}"` }, { status: 400 })

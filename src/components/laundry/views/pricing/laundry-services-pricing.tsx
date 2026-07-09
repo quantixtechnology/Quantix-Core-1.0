@@ -18,7 +18,18 @@ import { toast } from "sonner"
 import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
 
-interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean }
+interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; processFlow: string | null }
+
+// Stage codes a route can be composed from (QC → Packed are always appended).
+const ROUTE_OPTIONS: { code: string; label: string }[] = [
+  { code: "WASH", label: "Wash" }, { code: "DRYCLEAN", label: "Dry Clean" },
+  { code: "DRY", label: "Dry" }, { code: "STEAM", label: "Steam" },
+  { code: "IRON", label: "Iron" }, { code: "FOLD", label: "Folding" }, { code: "CLEAN", label: "Cleaning" },
+]
+function parseRoute(raw: string | null): string[] {
+  if (!raw) return []
+  try { return (JSON.parse(raw) as string[]).filter((s) => ROUTE_OPTIONS.some((o) => o.code === s)) } catch { return [] }
+}
 interface Garment { id: string; name: string; category?: { name: string | null } | null }
 interface PriceRow { garmentId: string; garmentName: string; category: string | null; price: number }
 
@@ -50,6 +61,7 @@ function ServicesList({ services, businessId, loading, onChanged, onManage }: { 
   const [edit, setEdit] = useState<Service | null>(null)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ ...SVC_EMPTY })
+  const [route, setRoute] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [stats, setStats] = useState<Record<string, { count: number; from: number | null }>>({})
   const set = (k: string, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }))
@@ -62,13 +74,15 @@ function ServicesList({ services, businessId, loading, onChanged, onManage }: { 
     return () => { cancel = true }
   }, [services, businessId])
 
-  const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setOpen(true) }
-  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite }); setOpen(true) }
+  const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setOpen(true) }
+  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite }); setRoute(parseRoute(s.processFlow)); setOpen(true) }
+  const toggleStage = (code: string) => setRoute((r) => r.includes(code) ? r.filter((c) => c !== code) : [...r, code])
+  const moveStage = (i: number, dir: -1 | 1) => setRoute((r) => { const j = i + dir; if (j < 0 || j >= r.length) return r; const c = [...r]; [c[i], c[j]] = [c[j], c[i]]; return c })
   const save = async () => {
     if (!form.name.trim()) { toast.error("Service name is required"); return }
     setSaving(true)
     try {
-      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite }
+      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite, processFlow: route.length ? route : null }
       const res = await fetch(edit ? `/api/laundry/services/${edit.id}` : `/api/laundry/services`, { method: edit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || j.error) throw new Error(j.error || "Save failed")
@@ -118,6 +132,35 @@ function ServicesList({ services, businessId, loading, onChanged, onManage }: { 
               <div className="space-y-1.5"><Label className="text-xs">Website</Label><div className="flex items-center gap-2 h-9"><Switch checked={form.displayOnWebsite} onCheckedChange={(v) => set("displayOnWebsite", v)} /><span className="text-sm text-slate-600">{form.displayOnWebsite ? "Visible" : "Hidden"}</span></div></div>
             </div>
             <div className="flex items-center gap-2"><Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} className="data-[state=checked]:bg-emerald-600" /><span className="text-sm font-medium">{form.isActive ? "Active" : "Inactive"}</span></div>
+
+            {/* Processing route — the department sequence garments follow.
+                Quality Check → Packed are always appended automatically. */}
+            <div className="space-y-1.5 border-t pt-3">
+              <Label className="text-xs">Processing Route</Label>
+              <p className="text-[10px] text-slate-400 -mt-1">Which departments a garment goes through, in order. Leave empty to auto-detect from the service name. QC → Packed are added automatically.</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ROUTE_OPTIONS.map((o) => (
+                  <button key={o.code} type="button" onClick={() => toggleStage(o.code)}
+                    className={`rounded-lg border px-2.5 h-8 text-xs font-medium transition-colors ${route.includes(o.code) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              {route.length > 0 && (
+                <div className="rounded-lg border bg-slate-50 p-2 space-y-1">
+                  {route.map((code, i) => (
+                    <div key={code} className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-400 w-4">{i + 1}.</span>
+                      <span className="font-medium text-slate-700 flex-1">{ROUTE_OPTIONS.find((o) => o.code === code)?.label || code}</span>
+                      <button type="button" onClick={() => moveStage(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1">↑</button>
+                      <button type="button" onClick={() => moveStage(i, 1)} disabled={i === route.length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1">↓</button>
+                      <button type="button" onClick={() => toggleStage(code)} className="text-slate-400 hover:text-rose-600 px-1">✕</button>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-slate-400 pt-1">Route: {route.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")} → Quality Check → Packed</p>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={saving} onClick={save} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Service</Button></div>
         </DialogContent>

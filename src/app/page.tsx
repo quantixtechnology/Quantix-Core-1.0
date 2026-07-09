@@ -191,6 +191,13 @@ const LaundryInboxView = dynamic(() => import("@/components/laundry/views/laundr
 const LaundryOrdersView = dynamic(() => import("@/components/laundry/views/laundry-orders-view").then(m => ({ default: m.LaundryOrdersView })), { loading: () => <PageLoader /> })
 const LaundryNewOrder = dynamic(() => import("@/components/laundry/views/laundry-new-order").then(m => ({ default: m.default })), { loading: () => <PageLoader /> })
 const LaundryCounterQueue = dynamic(() => import("@/components/laundry/views/laundry-counter-queue").then(m => ({ default: m.LaundryCounterQueue })), { loading: () => <PageLoader /> })
+// Operational store-counter stages (real business actions, not status dropdowns)
+const LaundryPaymentCollection = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryPaymentCollection })), { loading: () => <PageLoader /> })
+const LaundryPacking = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryPacking })), { loading: () => <PageLoader /> })
+const LaundryDispatch = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryDispatch })), { loading: () => <PageLoader /> })
+const LaundryStoreReceive = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryStoreReceive })), { loading: () => <PageLoader /> })
+const LaundryReadyForDelivery = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryReadyForDelivery })), { loading: () => <PageLoader /> })
+const LaundryOrderDetail = dynamic(() => import("@/components/laundry/views/laundry-order-detail").then(m => ({ default: m.LaundryOrderDetail })), { loading: () => <PageLoader /> })
 const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views/laundry-categories-master").then(m => ({ default: m.LaundryCategoriesMaster })), { loading: () => <PageLoader /> })
 const LaundryGarmentsMaster = dynamic(() => import("@/components/laundry/views/laundry-garments-master").then(m => ({ default: m.LaundryGarmentsMaster })), { loading: () => <PageLoader /> })
 const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/laundry-services-master").then(m => ({ default: m.LaundryServicesMaster })), { loading: () => <PageLoader /> })
@@ -652,8 +659,12 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "orders": return <LaundryOrdersView />
       case "new-order": return <LaundryNewOrder />
       case "audit-queue": return <LaundryStoreAudit />
-      case "payment-queue": return <LaundryCounterQueue status="PAYMENT_PENDING" title="Payment Collection" />
-      case "dispatch-queue": return <LaundryCounterQueue status="READY_FOR_PROCESSING" title="Dispatch to Processing" />
+      case "payment-queue": return <LaundryPaymentCollection />
+      case "packing-queue": return <LaundryPacking />
+      case "dispatch-queue": return <LaundryDispatch />
+      case "store-receive-queue": return <LaundryStoreReceive />
+      case "ready-delivery-queue": return <LaundryReadyForDelivery />
+      case "order-detail": return <LaundryOrderDetail />
       case "customers": return <LaundryCustomersView />
       case "stores": return <LaundryStoresWorkspace businessId={wsBusinessId} />
       case "processing-centers": return <LaundryProcessingConsole />

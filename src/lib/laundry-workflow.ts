@@ -2,22 +2,26 @@
 // Laundry Order Workflow Engine — single source of truth for the operational
 // lifecycle. Drives stage transitions across departments. The transition API
 // (POST /api/laundry/orders/[id]/transition) validates against this state
-// machine, updates the order status, and writes a LaundryOrderEvent (audit
-// trail / timeline). Department screens read the queues + allowed actions here.
+// machine; transitions marked `internal` carry side effects (payments, packet
+// creation, transit legs, delivery capture) and are ONLY executable through
+// their dedicated endpoints — the generic transition API rejects them.
 //
-// LaundryOrderStatus enum: DRAFT, PENDING_STORE_AUDIT, UNDER_AUDIT,
-// PAYMENT_PENDING, READY_FOR_PROCESSING, PROCESSING, QC_PENDING,
-// READY_FOR_DELIVERY, DELIVERED, CANCELLED.
+// Operational flow:
+//   ORDER CREATED → STORE AUDIT → PAYMENT → PACKING & QR → TRANSIT TO
+//   PROCESSING → RECEIVED AT PC → GARMENT AUDIT & BARCODE → PROCESSING
+//   (item-level) → QC → RETURN TRANSIT → STORE RECEIVE → READY FOR DELIVERY
+//   → DELIVERED.
 // ============================================================================
 
 export type LaundryOrderStatus =
   | "DRAFT" | "PENDING_STORE_AUDIT" | "UNDER_AUDIT" | "PAYMENT_PENDING"
-  | "READY_FOR_PROCESSING" | "PROCESSING" | "QC_PENDING"
+  | "READY_FOR_PROCESSING" | "PACKED" | "IN_TRANSIT_TO_PROCESSING"
+  | "PROCESSING" | "QC_PENDING" | "RETURN_IN_TRANSIT"
   | "READY_FOR_DELIVERY" | "DELIVERED" | "CANCELLED"
 
 // Department that owns a status (where the order is currently sitting).
 export type LaundryDepartmentKey =
-  | "STORE_COUNTER" | "PROCESSING_CENTER" | "QC" | "DELIVERY" | "DONE"
+  | "STORE_COUNTER" | "TRANSIT" | "PROCESSING_CENTER" | "QC" | "DELIVERY" | "DONE"
 
 export interface StatusMeta {
   label: string
@@ -26,16 +30,19 @@ export interface StatusMeta {
 }
 
 export const STATUS_META: Record<LaundryOrderStatus, StatusMeta> = {
-  DRAFT:                { label: "Draft",                department: "STORE_COUNTER" },
-  PENDING_STORE_AUDIT:  { label: "Pending Store Audit",  department: "STORE_COUNTER" },
-  UNDER_AUDIT:          { label: "Under Audit",          department: "STORE_COUNTER" },
-  PAYMENT_PENDING:      { label: "Payment Pending",      department: "STORE_COUNTER" },
-  READY_FOR_PROCESSING: { label: "Ready for Processing", department: "STORE_COUNTER" },
-  PROCESSING:           { label: "In Processing",        department: "PROCESSING_CENTER" },
-  QC_PENDING:           { label: "QC Pending",           department: "QC" },
-  READY_FOR_DELIVERY:   { label: "Ready for Delivery",   department: "DELIVERY" },
-  DELIVERED:            { label: "Delivered",            department: "DONE", terminal: true },
-  CANCELLED:            { label: "Cancelled",            department: "DONE", terminal: true },
+  DRAFT:                    { label: "Draft",                 department: "STORE_COUNTER" },
+  PENDING_STORE_AUDIT:      { label: "Pending Store Audit",   department: "STORE_COUNTER" },
+  UNDER_AUDIT:              { label: "Under Audit",           department: "STORE_COUNTER" },
+  PAYMENT_PENDING:          { label: "Payment Pending",       department: "STORE_COUNTER" },
+  READY_FOR_PROCESSING:     { label: "Ready for Packing",     department: "STORE_COUNTER" },
+  PACKED:                   { label: "Packed",                department: "STORE_COUNTER" },
+  IN_TRANSIT_TO_PROCESSING: { label: "In Transit to Processing", department: "TRANSIT" },
+  PROCESSING:               { label: "In Processing",         department: "PROCESSING_CENTER" },
+  QC_PENDING:               { label: "QC Pending",            department: "QC" }, // legacy status (pre-transit orders)
+  RETURN_IN_TRANSIT:        { label: "Return in Transit",     department: "TRANSIT" },
+  READY_FOR_DELIVERY:       { label: "Ready for Delivery",    department: "DELIVERY" },
+  DELIVERED:                { label: "Delivered",             department: "DONE", terminal: true },
+  CANCELLED:                { label: "Cancelled",             department: "DONE", terminal: true },
 }
 
 export interface TransitionDef {
@@ -43,6 +50,9 @@ export interface TransitionDef {
   action: string   // machine code, stored on the event
   label: string    // button label
   primary?: boolean
+  // Side-effect transitions: only their dedicated endpoint may perform them
+  // (payment record, packet creation, transit legs, delivery capture).
+  internal?: boolean
 }
 
 // Allowed forward (and corrective) transitions per status.
@@ -62,21 +72,33 @@ export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   PAYMENT_PENDING: [
-    { to: "READY_FOR_PROCESSING", action: "COLLECT_PAYMENT", label: "Collect Payment", primary: true },
+    // Advancing out of payment requires the payment endpoint (records money or
+    // an explicit pay-later decision per business payment policy).
+    { to: "READY_FOR_PROCESSING", action: "COLLECT_PAYMENT", label: "Collect Payment", primary: true, internal: true },
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   READY_FOR_PROCESSING: [
-    { to: "PROCESSING", action: "DISPATCH_TO_PROCESSING", label: "Dispatch to Processing", primary: true },
+    { to: "PACKED", action: "PACK_ORDER", label: "Pack & Generate QR", primary: true, internal: true },
+  ],
+  PACKED: [
+    { to: "IN_TRANSIT_TO_PROCESSING", action: "DISPATCH_TO_PROCESSING", label: "Dispatch to Processing", primary: true, internal: true },
+  ],
+  IN_TRANSIT_TO_PROCESSING: [
+    { to: "PROCESSING", action: "RECEIVE_AT_PROCESSING", label: "Receive at Processing Center", primary: true, internal: true },
   ],
   PROCESSING: [
-    { to: "QC_PENDING", action: "SEND_TO_QC", label: "Send to QC", primary: true },
+    { to: "RETURN_IN_TRANSIT", action: "DISPATCH_TO_STORE", label: "Dispatch to Store", primary: true, internal: true },
   ],
+  // Legacy status kept for orders created before the transit stages existed.
   QC_PENDING: [
     { to: "READY_FOR_DELIVERY", action: "QC_PASS", label: "QC Pass", primary: true },
     { to: "PROCESSING", action: "QC_REWORK", label: "Send for Rework" },
   ],
+  RETURN_IN_TRANSIT: [
+    { to: "READY_FOR_DELIVERY", action: "RECEIVE_AT_STORE", label: "Receive at Store", primary: true, internal: true },
+  ],
   READY_FOR_DELIVERY: [
-    { to: "DELIVERED", action: "MARK_DELIVERED", label: "Mark Delivered", primary: true },
+    { to: "DELIVERED", action: "MARK_DELIVERED", label: "Mark Delivered", primary: true, internal: true },
   ],
   DELIVERED: [],
   CANCELLED: [],
@@ -98,10 +120,35 @@ export function statusLabel(status: string): string {
   return STATUS_META[status as LaundryOrderStatus]?.label ?? status
 }
 
-// The Store Counter operational queues (Slice 1) — each is a status the counter
-// staff act on, in workflow order.
+// Human-readable event labels for the order timeline.
+export const ACTION_LABELS: Record<string, string> = {
+  SUBMIT_ORDER: "Order Submitted for Audit",
+  APPROVE_AUDIT: "Store Audit Completed",
+  HOLD_FOR_AUDIT: "Held for Audit",
+  COMPLETE_AUDIT: "Store Audit Completed",
+  REOPEN_AUDIT: "Audit Reopened",
+  COLLECT_PAYMENT: "Payment Collected",
+  PAY_LATER: "Approved to Proceed — Pay at Delivery",
+  PACK_ORDER: "Packed & QR Generated",
+  DISPATCH_TO_PROCESSING: "Dispatched to Processing Center",
+  RECEIVE_AT_PROCESSING: "Received at Processing Center",
+  ALL_ITEMS_COMPLETE: "All Garments Completed Processing & QC",
+  DISPATCH_TO_STORE: "Dispatched back to Store",
+  RECEIVE_AT_STORE: "Received at Store",
+  MARK_DELIVERED: "Delivered",
+  CANCEL: "Cancelled",
+  QC_PASS: "QC Passed",
+  QC_REWORK: "Sent for Rework",
+}
+export const actionLabel = (a: string) => ACTION_LABELS[a] || a.replace(/_/g, " ")
+
+// The Store Counter operational queues — each is a status the counter staff
+// act on, in workflow order.
 export const STORE_COUNTER_QUEUES: { status: LaundryOrderStatus; title: string }[] = [
   { status: "PENDING_STORE_AUDIT", title: "Store Audit" },
   { status: "PAYMENT_PENDING",     title: "Payment Collection" },
-  { status: "READY_FOR_PROCESSING", title: "Dispatch to Processing" },
+  { status: "READY_FOR_PROCESSING", title: "Packing & QR" },
+  { status: "PACKED",              title: "Transit to Processing" },
+  { status: "RETURN_IN_TRANSIT",   title: "Store Receive" },
+  { status: "READY_FOR_DELIVERY",  title: "Ready for Delivery" },
 ]

@@ -28,8 +28,11 @@ const STATUS_STYLE: Record<string, string> = {
   UNDER_AUDIT: "border-orange-300 text-orange-700 bg-orange-50",
   PAYMENT_PENDING: "border-rose-300 text-rose-700 bg-rose-50",
   READY_FOR_PROCESSING: "border-violet-300 text-violet-700 bg-violet-50",
+  PACKED: "border-indigo-300 text-indigo-700 bg-indigo-50",
+  IN_TRANSIT_TO_PROCESSING: "border-sky-300 text-sky-700 bg-sky-50",
   PROCESSING: "border-blue-300 text-blue-700 bg-blue-50",
   QC_PENDING: "border-fuchsia-300 text-fuchsia-700 bg-fuchsia-50",
+  RETURN_IN_TRANSIT: "border-teal-300 text-teal-700 bg-teal-50",
   READY_FOR_DELIVERY: "border-emerald-300 text-emerald-700 bg-emerald-50",
   DELIVERED: "border-green-300 text-green-700 bg-green-50",
   CANCELLED: "border-slate-300 text-slate-500 bg-slate-50",
@@ -40,24 +43,29 @@ const PAY_STYLE: Record<string, string> = {
   PARTIAL: "border-amber-300 text-amber-700 bg-amber-50",
   UNPAID: "border-rose-300 text-rose-700 bg-rose-50",
 }
-const FILTERS = ["ALL", "PENDING_STORE_AUDIT", "PAYMENT_PENDING", "READY_FOR_PROCESSING", "PROCESSING", "QC_PENDING", "READY_FOR_DELIVERY", "DELIVERED"]
+const FILTERS = ["ALL", "PENDING_STORE_AUDIT", "PAYMENT_PENDING", "READY_FOR_PROCESSING", "PACKED", "IN_TRANSIT_TO_PROCESSING", "PROCESSING", "RETURN_IN_TRANSIT", "READY_FOR_DELIVERY", "DELIVERED"]
 const PAGE = 10
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
 const fmtDay = (s: string | null) => (s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")
 
 // Which stage screen an order's action jumps to.
-const STAGE_ACTION: Record<string, { label: string; page: "audit-queue" | "payment-queue" | "dispatch-queue" | "processing-centers"; icon: typeof ClipboardCheck }> = {
+type LP = "audit-queue" | "payment-queue" | "packing-queue" | "dispatch-queue" | "store-receive-queue" | "ready-delivery-queue" | "processing-centers"
+const STAGE_ACTION: Record<string, { label: string; page: LP; icon: typeof ClipboardCheck }> = {
   PENDING_STORE_AUDIT: { label: "Store Audit", page: "audit-queue", icon: ClipboardCheck },
   UNDER_AUDIT: { label: "Store Audit", page: "audit-queue", icon: ClipboardCheck },
   PAYMENT_PENDING: { label: "Payment", page: "payment-queue", icon: CreditCard },
-  READY_FOR_PROCESSING: { label: "Dispatch", page: "dispatch-queue", icon: Truck },
+  READY_FOR_PROCESSING: { label: "Pack & QR", page: "packing-queue", icon: ClipboardCheck },
+  PACKED: { label: "Dispatch", page: "dispatch-queue", icon: Truck },
+  IN_TRANSIT_TO_PROCESSING: { label: "Processing", page: "processing-centers", icon: Truck },
   PROCESSING: { label: "Processing", page: "processing-centers", icon: Truck },
+  RETURN_IN_TRANSIT: { label: "Store Receive", page: "store-receive-queue", icon: Truck },
+  READY_FOR_DELIVERY: { label: "Deliver", page: "ready-delivery-queue", icon: Truck },
 }
 
 export function LaundryOrdersView() {
   const { currentBusinessId } = useAuthStore()
-  const { setLaundryPage } = useAdminStore()
+  const { setLaundryPage, setSelectedOrderId } = useAdminStore()
   const [rows, setRows] = useState<OrderRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -134,9 +142,12 @@ export function LaundryOrdersView() {
                       <TableCell className="text-xs text-slate-500">{fmt(o.createdAt)}</TableCell>
                       <TableCell className="text-xs text-slate-500">{fmtDay(o.expectedDeliveryDate)}</TableCell>
                       <TableCell className="text-right">
-                        {act ? (
-                          <Button size="sm" variant="outline" className="gap-1 h-8" onClick={() => setLaundryPage(act.page)}><act.icon className="h-3.5 w-3.5" /> {act.label} <ArrowRight className="h-3 w-3" /></Button>
-                        ) : <span className="text-xs text-slate-400">—</span>}
+                        <div className="flex items-center justify-end gap-1">
+                          <Button size="sm" variant="ghost" className="gap-1 h-8 text-slate-500" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>View</Button>
+                          {act && (
+                            <Button size="sm" variant="outline" className="gap-1 h-8" onClick={() => setLaundryPage(act.page)}><act.icon className="h-3.5 w-3.5" /> {act.label} <ArrowRight className="h-3 w-3" /></Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )

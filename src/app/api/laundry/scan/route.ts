@@ -34,6 +34,7 @@ export async function GET(request: Request) {
           id: item.id, itemNumber: item.itemNumber, barcode: item.barcode,
           garmentName: item.garmentName, serviceName: item.serviceName, quantity: item.quantity,
           processingStage: item.processingStage, processingStatus: item.processingStatus,
+          processFlow: item.processFlow, qcFailCount: item.qcFailCount,
           department: item.processingDept, stageLabel: stageLabel(item.processingStage),
           condition: item.condition, defects: item.defects,
         },

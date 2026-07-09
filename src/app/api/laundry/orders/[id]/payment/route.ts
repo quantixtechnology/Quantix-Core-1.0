@@ -49,6 +49,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
+// Advance PAYMENT_PENDING → READY_FOR_PROCESSING with an audit event. Fires
+// when payment completes (or an explicit policy-allowed pay-later decision).
+async function advanceAfterPayment(orderId: string, businessId: string, action: "COLLECT_PAYMENT" | "PAY_LATER", actor?: string | null, note?: string | null) {
+  const advanced = await prisma.laundryOrder.updateMany({
+    where: { id: orderId, status: "PAYMENT_PENDING" },
+    data: { status: "READY_FOR_PROCESSING" },
+  })
+  if (advanced.count > 0) {
+    await prisma.laundryOrderEvent.create({
+      data: { orderId, businessId, fromStatus: "PAYMENT_PENDING", toStatus: "READY_FOR_PROCESSING", action, actorName: actor || null, note: note || null },
+    }).catch(() => null)
+  }
+  return advanced.count > 0
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -56,6 +71,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { businessId, method, amount, reference, note, createdBy } = body
 
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+
+    // ── Explicit pay-later decision (COD / pay-at-delivery) ──────────────────
+    // Only valid when the business payment policy does not require advance
+    // payment. Advances the workflow WITHOUT posting money.
+    if (body.action === "PAY_LATER") {
+      const bizPL = await resolveLaundryBusiness(businessId)
+      if (!bizPL) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+      const orderPL = await prisma.laundryOrder.findFirst({ where: { id, businessId: bizPL.id }, select: { id: true, status: true, balanceDue: true } })
+      if (!orderPL) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+      if (orderPL.status !== "PAYMENT_PENDING") return NextResponse.json({ error: `Order is not awaiting payment (current: ${orderPL.status})` }, { status: 409 })
+      // Nothing due (e.g. subscription-covered) → advance without policy check.
+      if (orderPL.balanceDue <= 0) {
+        const okZero = await advanceAfterPayment(orderPL.id, bizPL.id, "COLLECT_PAYMENT", createdBy, "No balance due")
+        if (!okZero) return NextResponse.json({ error: "Order already advanced" }, { status: 409 })
+        return NextResponse.json({ success: true, data: { advanced: true, payLater: false } })
+      }
+      const bizRow = await prisma.laundryBusiness.findUnique({ where: { id: bizPL.id }, select: { paymentPolicy: true } })
+      if (bizRow?.paymentPolicy === "ADVANCE_REQUIRED") {
+        return NextResponse.json({ error: "This workspace requires advance payment — pay-later is not allowed." }, { status: 403 })
+      }
+      const ok = await advanceAfterPayment(orderPL.id, bizPL.id, "PAY_LATER", createdBy, `Balance ₹${orderPL.balanceDue.toFixed(2)} to collect at delivery`)
+      if (!ok) return NextResponse.json({ error: "Order already advanced" }, { status: 409 })
+      return NextResponse.json({ success: true, data: { advanced: true, payLater: true } })
+    }
     if (!method || !METHODS.has(method)) return NextResponse.json({ error: "Invalid payment method" }, { status: 400 })
     const amt = Number(amount)
     if (!Number.isFinite(amt) || amt <= 0) return NextResponse.json({ error: "Amount must be greater than zero" }, { status: 400 })
@@ -78,6 +117,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       prisma.laundryPayment.create({ data: { orderId: d.order.id, businessId: biz.id, method, amount: amt, reference: reference || null, note: note || `Allocated ₹${toOrder} order + ₹${toSubscription} subscription`, createdBy: createdBy || null } }),
       prisma.laundryOrder.update({ where: { id: d.order.id }, data: { amountPaid: newPaid, balanceDue, paymentStatus }, include: { payments: { orderBy: { createdAt: "desc" } } } }),
     ])
+
+    // When the order charges are fully settled while the order sits at
+    // Payment Collection, advance it into the packing queue automatically.
+    if (paymentStatus === "PAID") {
+      await advanceAfterPayment(d.order.id, biz.id, "COLLECT_PAYMENT", createdBy, `₹${toOrder.toFixed(2)} via ${method}${reference ? ` (${reference})` : ""}`)
+    }
 
     // Apply the subscription portion (activates the allowance only when fully paid).
     let subscriptionResult: Record<string, unknown> | null = null

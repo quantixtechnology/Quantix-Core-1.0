@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } from "@/lib/laundry-billing-server"
 import { generateOrderNumber } from "@/lib/laundry-codes"
+import { explodePieces } from "@/lib/laundry-order-items"
 
 export const runtime = "nodejs"
 
@@ -122,8 +123,11 @@ export async function POST(request: Request) {
         customerType,
         billedAt: hasItems ? new Date() : null,
         services: { create: serviceLines },
+        // One row per INDIVIDUAL garment: PER_PIECE billing lines with qty > 1
+        // are exploded so every physical piece carries its own ITM code,
+        // barcode and processing history (amounts still sum exactly).
         items: billing
-          ? { create: billing.lines.map((l, i) => {
+          ? { create: explodePieces(billing.lines).map((l, i) => {
               // Permanent per-garment ID + barcode: ITM-{orderNumber}-NNNN.
               const itemNumber = `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`
               return {

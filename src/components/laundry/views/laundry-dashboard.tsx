@@ -13,15 +13,16 @@ import { useAdminStore } from "@/stores/admin-store"
 
 // Store Counter operational workload — each card is the live count of orders
 // currently sitting in that workflow stage (real data from /orders/stats).
-const WORKLOAD: { key: string; label: string; icon: typeof ShoppingBag; color: string }[] = [
-  { key: "PENDING_STORE_AUDIT", label: "Pending Store Audit", icon: ClipboardCheck, color: "text-amber-600 bg-amber-100" },
-  { key: "UNDER_AUDIT",         label: "Under Audit",         icon: ClipboardCheck, color: "text-orange-600 bg-orange-100" },
-  { key: "PAYMENT_PENDING",     label: "Payment Pending",     icon: CreditCard,     color: "text-rose-600 bg-rose-100" },
-  { key: "READY_FOR_PROCESSING",label: "Ready for Processing",icon: Package,        color: "text-violet-600 bg-violet-100" },
-  { key: "PROCESSING",          label: "In Processing",       icon: Cog,            color: "text-blue-600 bg-blue-100" },
-  { key: "QC_PENDING",          label: "QC Pending",          icon: ClipboardCheck, color: "text-fuchsia-600 bg-fuchsia-100" },
-  { key: "READY_FOR_DELIVERY",  label: "Ready for Delivery",  icon: Truck,          color: "text-emerald-600 bg-emerald-100" },
-  { key: "DELIVERED",           label: "Delivered",           icon: CheckCircle,    color: "text-green-600 bg-green-100" },
+const WORKLOAD: { key: string; label: string; icon: typeof ShoppingBag; color: string; page?: string }[] = [
+  { key: "PENDING_STORE_AUDIT", label: "Pending Store Audit", icon: ClipboardCheck, color: "text-amber-600 bg-amber-100", page: "audit-queue" },
+  { key: "PAYMENT_PENDING",     label: "Payment Pending",     icon: CreditCard,     color: "text-rose-600 bg-rose-100", page: "payment-queue" },
+  { key: "READY_FOR_PROCESSING",label: "Packing & QR",        icon: Package,        color: "text-violet-600 bg-violet-100", page: "packing-queue" },
+  { key: "PACKED",              label: "Ready to Dispatch",   icon: Truck,          color: "text-indigo-600 bg-indigo-100", page: "dispatch-queue" },
+  { key: "IN_TRANSIT_TO_PROCESSING", label: "In Transit to PC", icon: Truck,        color: "text-sky-600 bg-sky-100", page: "processing-centers" },
+  { key: "PROCESSING",          label: "In Processing",       icon: Cog,            color: "text-blue-600 bg-blue-100", page: "processing-centers" },
+  { key: "RETURN_IN_TRANSIT",   label: "Return in Transit",   icon: Truck,          color: "text-teal-600 bg-teal-100", page: "store-receive-queue" },
+  { key: "READY_FOR_DELIVERY",  label: "Ready for Delivery",  icon: Truck,          color: "text-emerald-600 bg-emerald-100", page: "ready-delivery-queue" },
+  { key: "DELIVERED",           label: "Delivered",           icon: CheckCircle,    color: "text-green-600 bg-green-100", page: "orders" },
 ]
 
 interface OrderStats { byStatus: Record<string, number>; today: number; total: number }
@@ -100,7 +101,7 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
         <h3 className="text-sm font-medium text-muted-foreground mb-3">Workload by Stage</h3>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {WORKLOAD.map(w => (
-            <Card key={w.key}>
+            <Card key={w.key} className={w.page ? "cursor-pointer hover:bg-accent/40 transition-colors" : ""} onClick={() => w.page && setLaundryPage(w.page as never)}>
               <CardContent className="p-4">
                 {loading ? <KpiSkeleton /> : (
                   <div className="flex items-center gap-3">

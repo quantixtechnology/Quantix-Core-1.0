@@ -41,6 +41,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { status: 409 },
       )
     }
+    // Side-effect transitions (payment, packet, transit legs, delivery) must go
+    // through their dedicated endpoints — the generic transition API cannot
+    // skip the operational action.
+    if (transition.internal) {
+      return NextResponse.json(
+        { error: `"${transition.label}" must be performed from its workflow screen — it records operational data, not just a status.` },
+        { status: 403 },
+      )
+    }
 
     // Advance the status (must succeed) ...
     const updated = await prisma.laundryOrder.update({

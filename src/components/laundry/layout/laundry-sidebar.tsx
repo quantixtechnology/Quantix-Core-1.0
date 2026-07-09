@@ -23,6 +23,7 @@ import {
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
   UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck, Barcode, Repeat,
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
+  PackageCheck, CheckCheck,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 
@@ -73,7 +74,10 @@ const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
       { key: "new-order", label: "New Order", icon: Plus, page: "new-order", minRank: 1 },
       { key: "audit-queue", label: "Store Audit", icon: ClipboardCheck, page: "audit-queue", minRank: 1 },
       { key: "payment-queue", label: "Payment Collection", icon: CreditCard, page: "payment-queue", minRank: 2 },
-      { key: "dispatch-queue", label: "Dispatch", icon: Truck, page: "dispatch-queue", minRank: 2 },
+      { key: "packing-queue", label: "Packing & QR", icon: Barcode, page: "packing-queue", minRank: 1 },
+      { key: "dispatch-queue", label: "Transit to Processing", icon: Truck, page: "dispatch-queue", minRank: 2 },
+      { key: "store-receive-queue", label: "Store Receive", icon: PackageCheck, page: "store-receive-queue", minRank: 2 },
+      { key: "ready-delivery-queue", label: "Ready for Delivery", icon: CheckCheck, page: "ready-delivery-queue", minRank: 2 },
       { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2 },
       { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2 },
       { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3 },
@@ -164,7 +168,13 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     .map((g) => ({ label: g.label, items: g.items.filter((i) => rank >= i.minRank) }))
     .filter((g) => g.items.length > 0)
 
-  const validPages = new Set(groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page))
+  // Pages reached programmatically (drill-downs), not from a nav item — these
+  // must not be bounced back to the dashboard by the guard below.
+  const PROGRAMMATIC_PAGES = new Set<LaundryBusinessPage>(["order-detail", "audit-barcode"])
+  const validPages = new Set([
+    ...groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page),
+    ...PROGRAMMATIC_PAGES,
+  ])
 
   // Redirect to dashboard if the current page isn't visible for this role.
   // Waits for the CRM entitlement to resolve so a refresh on a CRM page

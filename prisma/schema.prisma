@@ -4056,6 +4056,7 @@ model LaundryPlatformProvisioning {
 
   @@index([businessId])
 }
+
 // ── 3. Operational Configuration ──────────────────────────────────────────
 // Only these 4 toggles. They directly determine workflow stage generation.
 model LaundryOperationalConfig {
@@ -4215,8 +4216,11 @@ enum LaundryOrderStatus {
   UNDER_AUDIT
   PAYMENT_PENDING
   READY_FOR_PROCESSING
+  PACKED
+  IN_TRANSIT_TO_PROCESSING
   PROCESSING
   QC_PENDING
+  RETURN_IN_TRANSIT
   READY_FOR_DELIVERY
   DELIVERED
   CANCELLED
@@ -4271,8 +4275,14 @@ model LaundryOrder {
   auditedBy   String?
   auditedAt   DateTime?
 
+  // ── Delivery completion (final operational action) ──
+  deliveredAt   DateTime?
+  deliveredBy   String?
+  recipientName String?
+
   business   LaundryBusiness         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   store      LaundryStore            @relation(fields: [storeId], references: [id])
+  packet     LaundryPacket?
   services   LaundryOrderService[]
   items      LaundryOrderItem[]
   payments   LaundryPayment[]
@@ -4344,6 +4354,10 @@ model LaundryGarment {
 
 // Service master — what is done to a garment (Wash, Dry Clean, …).
 model LaundryService {
+  // Configurable processing route (JSON array of stage codes). When null the
+  // engine falls back to the legacy name-based heuristic. Managed from
+  // Services & Pricing; snapshotted onto garments when processing starts.
+  processFlow            String?
   id                     String   @id @default(cuid())
   businessId             String
   name                   String
@@ -4518,6 +4532,10 @@ model LaundryOrderItem {
   gstAmount        Float     @default(0)
   discount         Float     @default(0)
   total            Float     @default(0) // lineAmount + gstAmount
+  // Processing route SNAPSHOT — frozen when the garment moves to processing so
+  // later service-route config changes never rewrite in-progress history.
+  processFlow      String? // JSON array of stage codes, e.g. ["WASH","DRY","IRON","QC","PACKED"]
+  qcFailCount      Int       @default(0) // QC attempts tracking (rework cycles)
   // Store Audit inspection (captured at Stage 2, never re-entering garments).
   condition        String? // GOOD | DAMAGED
   defects          String? // CSV of defect codes
@@ -5083,4 +5101,39 @@ model LaundryCrmEvent {
   @@index([leadId])
   @@index([opportunityId])
   @@index([createdAt])
+}
+
+// ── Package / Packet — persistent identity for store ⇄ processing transport ──
+// ONE packet per order (enforced by the unique orderId): the store packs the
+// audited order into a single package whose QR resolves to packetNumber.
+// Covers both legs: store → processing center and the return to store.
+model LaundryPacket {
+  id                 String    @id @default(cuid())
+  packetNumber       String    @unique // PKT-{orderNumber}
+  businessId         String
+  storeId            String
+  orderId            String    @unique
+  status             String    @default("PACKED") // PACKED | IN_TRANSIT_TO_PC | AT_PROCESSING_CENTER | RETURN_IN_TRANSIT | RETURNED_TO_STORE
+  qrValue            String // stable QR payload = packetNumber
+  itemCount          Int       @default(0)
+  packedBy           String?
+  packedAt           DateTime  @default(now())
+  dispatchedBy       String?
+  dispatchedAt       DateTime?
+  dispatchNote       String?
+  receivedBy         String?
+  receivedAt         DateTime?
+  receiveNote        String?
+  returnDispatchedBy String?
+  returnDispatchedAt DateTime?
+  returnReceivedBy   String?
+  returnReceivedAt   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([status])
+  @@index([packetNumber])
 }
