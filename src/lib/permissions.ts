@@ -864,6 +864,7 @@ export const ADMIN_NAV_PERMISSIONS: Record<string, Permission> = {
   // Payment Configuration
   "payment-config":         "payment_config:view",
   // System
+  "commerce-templates":     "products:view",
   "roles-permissions":      "roles_permissions:view",
   "backup-monitoring":      "backup:view",
   "security-access":        "platform:security",

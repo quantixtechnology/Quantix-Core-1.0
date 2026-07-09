@@ -623,11 +623,90 @@ const HOME_SERVICES_CONFIG: BusinessTypeConfig = {
   },
 }
 
-// ── Default fallback ────────────────────────────────────────────────────────
+// ── Neutral Commerce config ─────────────────────────────────────────────────
+// Generic online-store presentation for ECOMMERCE (and the fallback). This is
+// deliberately NOT Grocery: no organic/net-weight/expiry meta, no grocery
+// labels or category icons. Category-specific Commerce experiences (Fashion,
+// Electronics, Bakery, Meat, …) are delivered by the Commerce Template Engine
+// (see lib/commerce/template-resolver); this config is only the safe baseline
+// so a Commerce storefront never inherits the Grocery experience by accident.
+const ECOMMERCE_CONFIG: BusinessTypeConfig = {
+  type: "ECOMMERCE",
+  displayName: "Online Store",
+  emoji: "🛍️",
 
+  productFilters: [
+    { id: "availability", label: "In Stock", type: "toggle" },
+    { id: "brand",        label: "Brand",    type: "checkbox", options: [] },
+    { id: "price",        label: "Price",    type: "range", min: 0, max: 50000, step: 100, unit: "₹" },
+  ],
+
+  productMeta: [
+    { key: "brand", label: "Brand", type: "tags", showOnCard: false, showOnDetail: true },
+  ],
+
+  homeBlocks: [
+    { id: "hero",           order: 1, enabled: true  },
+    { id: "categories",     order: 2, enabled: true  },
+    { id: "featured",       order: 3, enabled: true  },
+    { id: "offers",         order: 4, enabled: true  },
+    { id: "best_sellers",   order: 5, enabled: true  },
+    { id: "recently_added", order: 6, enabled: true  },
+    { id: "footer",         order: 7, enabled: true  },
+  ],
+
+  checkoutOptions: {
+    showCutType: false,
+    showCleaning: false,
+    showMarinade: false,
+    showPrescription: false,
+    showServiceDateTime: false,
+    showPieces: false,
+    showWeight: false,
+    deliverySlotRequired: false,
+    expressAvailable: false,
+  },
+
+  deliveryConfig: {
+    promiseHeadline: "Fast, reliable delivery",
+    promiseSubtext: "Quality products delivered to your door",
+    hasTracking: true,
+    hasLiveLocation: false,
+    scheduledDelivery: false,
+    slotsPerDay: 0,
+  },
+
+  labels: {
+    addToCart: "Add to Cart",
+    buyNow: "Buy Now",
+    emptyCart: "Your cart is empty",
+    noProducts: "No products found",
+    searchPlaceholder: "Search products…",
+    categoryHeading: "Shop by Category",
+    featuredHeading: "Featured Products",
+    bestSellersHeading: "Best Sellers",
+    recentHeading: "New Arrivals",
+    unitLabel: "qty",
+  },
+
+  defaultCategoryIcons: {
+    fashion: "👕",
+    electronics: "📱",
+    home: "🏠",
+    beauty: "💄",
+    sports: "⚽",
+    toys: "🧸",
+    books: "📚",
+    accessories: "🕶️",
+  },
+}
+
+// ── Default fallback ────────────────────────────────────────────────────────
+// Neutral Commerce — NEVER Grocery. Any unmapped Commerce category resolves to
+// this until a category template is assigned by the Template Engine.
 const DEFAULT_CONFIG: BusinessTypeConfig = {
-  ...GROCERY_CONFIG,
-  type: "GROCERY",
+  ...ECOMMERCE_CONFIG,
+  type: "ECOMMERCE",
   displayName: "Store",
   emoji: "🏪",
 }
@@ -643,6 +722,11 @@ const CONFIG_MAP: Record<string, BusinessTypeConfig> = {
   PHARMACY:       PHARMACY_CONFIG,
   LAUNDRY:        LAUNDRY_CONFIG,
   HOME_SERVICES:  HOME_SERVICES_CONFIG,
+  // Commerce workspace types resolve to the neutral Commerce baseline — never
+  // Grocery. (Fashion/Electronics/Bakery specialisation comes from templates.)
+  ECOMMERCE:      ECOMMERCE_CONFIG,
+  COSMETICS:      ECOMMERCE_CONFIG,
+  FURNITURE:      ECOMMERCE_CONFIG,
 }
 
 export function getBusinessTypeConfig(businessType?: string | null): BusinessTypeConfig {

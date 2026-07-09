@@ -63,7 +63,8 @@ function CustomerApp() {
 export function StorefrontShell() {
   const { currentBusinessName, currentBusinessType } = useAdminStore()
   const businessName = currentBusinessName || "My Store"
-  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["GROCERY"]
+  // Neutral Commerce fallback for unknown types — never Grocery.
+  const typeUI = BUSINESS_TYPE_UI[currentBusinessType] || BUSINESS_TYPE_UI["ECOMMERCE"]
 
   return (
     <div className="animate-in fade-in duration-300">

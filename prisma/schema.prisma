@@ -5161,3 +5161,123 @@ model LaundryServiceGarmentCategory {
   @@index([serviceId])
   @@index([categoryId])
 }
+
+// ============================================================================
+// COMMERCE TEMPLATE ENGINE (Phase 1 foundation)
+// Platform-owned storefront template domain. Master templates belong to Quantix
+// Core; tenants edit an isolated CommerceTenantTemplate instance. Catalogue data
+// is NEVER copied into template config — sections carry only presentation +
+// dataSource config and the storefront resolves live catalogue per tenant.
+// SQLite: JSON payloads stored as String (existing convention).
+// ============================================================================
+
+// Master template (Quantix Core owned). Scoped to a Commerce business category
+// (Business.businessType, e.g. GROCERY | ECOMMERCE | MEAT_DELIVERY). Never
+// tenant-editable.
+model CommerceTemplate {
+  id               String   @id @default(cuid())
+  code             String   @unique // stable key, e.g. "grocery-fresh"
+  name             String
+  description      String?
+  workspaceType    String   @default("COMMERCE") // PlatformProduct.code
+  businessCategory String // Business.businessType this template targets
+  templateType     String   @default("STOREFRONT")
+  thumbnailUrl     String?
+  previewUrl       String?
+  status           String   @default("DRAFT") // DRAFT | ACTIVE | INACTIVE | ARCHIVED
+  isDefault        Boolean  @default(false) // category default template
+  version          Int      @default(1)
+  createdBy        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pages       CommerceTemplatePage[]
+  assignments CommerceTemplateAssignment[]
+
+  @@index([workspaceType, businessCategory])
+  @@index([status])
+  @@index([businessCategory, isDefault])
+}
+
+model CommerceTemplatePage {
+  id         String   @id @default(cuid())
+  templateId String
+  name       String
+  slug       String // unique within a template
+  pageType   String   @default("CUSTOM") // HOME | CATEGORIES | PRODUCTS | PRODUCT_DETAIL | OFFERS | ABOUT | CONTACT | CUSTOM
+  route      String? // storefront route
+  sortOrder  Int      @default(0)
+  isHomePage Boolean  @default(false)
+  status     String   @default("DRAFT") // DRAFT | ACTIVE
+  seoConfig  String? // JSON { title, description, ogImage, … }
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template CommerceTemplate          @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sections CommerceTemplateSection[]
+
+  @@unique([templateId, slug])
+  @@index([templateId])
+}
+
+model CommerceTemplateSection {
+  id               String   @id @default(cuid())
+  pageId           String
+  sectionType      String // registry key: HEADER | HERO | CATEGORY_GRID | PRODUCT_GRID | IMAGE_BANNER | TEXT_BLOCK | CTA | FOOTER | …
+  sectionKey       String? // stable instance key for overrides
+  sortOrder        Int      @default(0)
+  layoutConfig     String? // JSON: width, columns, alignment, spacing, responsive
+  styleConfig      String? // JSON: colors, typography, background (brand tokens)
+  visibilityConfig String? // JSON: desktop/tablet/mobile visibility
+  dataSourceConfig String? // JSON: catalogue data source (mode + ids) — NEVER copied data
+  contentConfig    String? // JSON: text, images, CTA, section-specific content
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  page CommerceTemplatePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+}
+
+// Template → business/store assignment (platform-controlled). Resolution
+// priority: store override → business assignment → category default → neutral
+// Commerce fallback (see lib/commerce/template-resolver).
+model CommerceTemplateAssignment {
+  id         String   @id @default(cuid())
+  templateId String
+  businessId String
+  storeId    String? // optional store-specific override
+  assignedBy String?
+  status     String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template CommerceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, storeId])
+  @@index([businessId])
+  @@index([templateId])
+}
+
+// Tenant-owned editable instance of an assigned template. Tenant edits are
+// isolated here and NEVER mutate the master CommerceTemplate. The live
+// storefront renders publishedConfig only.
+model CommerceTenantTemplate {
+  id                    String    @id @default(cuid())
+  businessId            String
+  storeId               String?
+  sourceTemplateId      String // the master template this was instantiated from
+  sourceTemplateVersion Int       @default(1)
+  status                String    @default("DRAFT") // DRAFT | PUBLISHED
+  publishedVersion      Int       @default(0)
+  draftConfig           String? // JSON: full page/section tree (tenant working copy)
+  publishedConfig       String? // JSON: last published tree — the live storefront source
+  previousPublished     String? // JSON: prior published tree (rollback safety)
+  publishedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([businessId, storeId])
+  @@index([businessId])
+  @@index([sourceTemplateId])
+}
