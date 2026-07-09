@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { normalizeFlow, ROUTE_STAGES } from "@/lib/laundry-processing"
+import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
 
@@ -41,6 +42,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         }),
       },
     })
+
+    // ── Compatible garment categories (catalogue selection rule) ──────────────
+    // Replace the set. Validated tenant-scoped: the service and every category
+    // must belong to the resolved Laundry Business (no cross-tenant links).
+    // Never touches pricing rows, orders, or processing routes.
+    if (Array.isArray(b.compatibleCategoryIds) && b.businessId) {
+      const biz = await resolveLaundryBusiness(b.businessId)
+      if (biz && data.businessId === biz.id) {
+        const wanted = [...new Set(b.compatibleCategoryIds.map(String))] as string[]
+        const validCats = wanted.length
+          ? await prisma.laundryCategory.findMany({ where: { id: { in: wanted }, businessId: biz.id }, select: { id: true } })
+          : []
+        const validIds = new Set(validCats.map((c) => c.id))
+        await prisma.$transaction([
+          prisma.laundryServiceGarmentCategory.deleteMany({ where: { serviceId: id } }),
+          ...(validIds.size
+            ? [prisma.laundryServiceGarmentCategory.createMany({ data: [...validIds].map((categoryId) => ({ businessId: biz.id, serviceId: id, categoryId })) })]
+            : []),
+        ])
+      }
+    }
     return NextResponse.json({ success: true, data })
   } catch (e) {
     console.error("[laundry-services] PUT", e)

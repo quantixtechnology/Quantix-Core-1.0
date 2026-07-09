@@ -4318,9 +4318,10 @@ model LaundryCategory {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  garments     LaundryGarment[]
-  services     LaundryService[]
-  pricingRules LaundryPricingRule[]
+  garments             LaundryGarment[]
+  services             LaundryService[]
+  pricingRules         LaundryPricingRule[]
+  serviceCompatibility LaundryServiceGarmentCategory[]
 
   @@index([businessId])
 }
@@ -4381,8 +4382,9 @@ model LaundryService {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  category     LaundryCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  pricingRules LaundryPricingRule[]
+  category             LaundryCategory?                @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  pricingRules         LaundryPricingRule[]
+  compatibleCategories LaundryServiceGarmentCategory[]
 
   @@index([businessId])
   @@index([categoryId])
@@ -5136,4 +5138,26 @@ model LaundryPacket {
   @@index([businessId])
   @@index([status])
   @@index([packetNumber])
+}
+
+// ── Service ↔ garment-Category compatibility (catalogue selection rule) ──────
+// Which garment categories are "compatible" with a service, so the Add Garments
+// dialog defaults to relevant garments (e.g. Blanket Cleaning → Bedding /
+// Household). This is a SELECTION rule only — it never affects the actual
+// Service↔Garment pricing (LaundryPricingRule), orders, or processing routes.
+// A service with NO rows falls back to "show all garments" (backward-compat).
+model LaundryServiceGarmentCategory {
+  id         String   @id @default(cuid())
+  businessId String
+  serviceId  String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  service  LaundryService  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  category LaundryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, categoryId])
+  @@index([businessId])
+  @@index([serviceId])
+  @@index([categoryId])
 }

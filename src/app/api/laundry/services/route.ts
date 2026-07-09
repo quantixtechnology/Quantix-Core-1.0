@@ -14,10 +14,16 @@ export async function GET(request: Request) {
     if (!biz) return NextResponse.json({ success: true, data: [] })
     const data = await prisma.laundryService.findMany({
       where: { businessId: biz.id },
-      include: { category: { select: { id: true, name: true } } },
+      include: {
+        category: { select: { id: true, name: true } },
+        // Compatible garment-category ids drive the Add Garments default scope.
+        compatibleCategories: { select: { categoryId: true } },
+      },
       orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
     })
-    return NextResponse.json({ success: true, data })
+    // Flatten compatibility to a simple id array for the client.
+    const shaped = data.map((s) => ({ ...s, compatibleCategoryIds: s.compatibleCategories.map((c) => c.categoryId) }))
+    return NextResponse.json({ success: true, data: shaped })
   } catch (e) {
     console.error("[laundry-services] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

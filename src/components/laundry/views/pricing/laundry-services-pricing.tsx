@@ -18,7 +18,8 @@ import { toast } from "sonner"
 import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
 
-interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; processFlow: string | null }
+interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; processFlow: string | null; compatibleCategoryIds?: string[] }
+interface Category { id: string; name: string }
 
 // Stage codes a route can be composed from (QC → Packed are always appended).
 const ROUTE_OPTIONS: { code: string; label: string }[] = [
@@ -30,7 +31,7 @@ function parseRoute(raw: string | null): string[] {
   if (!raw) return []
   try { return (JSON.parse(raw) as string[]).filter((s) => ROUTE_OPTIONS.some((o) => o.code === s)) } catch { return [] }
 }
-interface Garment { id: string; name: string; category?: { name: string | null } | null }
+interface Garment { id: string; name: string; category?: { id: string; name: string | null } | null }
 interface PriceRow { garmentId: string; garmentName: string; category: string | null; price: number }
 
 const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true }
@@ -38,6 +39,7 @@ const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isA
 export function LaundryServicesPricing({ businessId }: { businessId: string }) {
   const [services, setServices] = useState<Service[]>([])
   const [garments, setGarments] = useState<Garment[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [managing, setManaging] = useState<Service | null>(null)
 
@@ -47,21 +49,27 @@ export function LaundryServicesPricing({ businessId }: { businessId: string }) {
     Promise.all([
       fetch(`/api/laundry/services?businessId=${businessId}`).then((r) => r.json()),
       fetch(`/api/laundry/garments?businessId=${businessId}`).then((r) => r.json()),
-    ]).then(([s, g]) => { if (s.success) setServices(s.data || []); if (g.success) setGarments(g.data || []) })
+      fetch(`/api/laundry/categories?businessId=${businessId}`).then((r) => r.json()),
+    ]).then(([s, g, c]) => { if (s.success) setServices(s.data || []); if (g.success) setGarments(g.data || []); if (c.success) setCategories((c.data || []).map((x: Category) => ({ id: x.id, name: x.name }))) })
       .catch(() => {}).finally(() => setLoading(false))
   }, [businessId])
   useEffect(() => { load() }, [load])
 
-  if (managing) return <ManagePrices service={managing} garments={garments} businessId={businessId} onBack={() => { setManaging(null); load() }} onGarmentsChanged={load} />
+  // Keep the managed service in sync after a compatibility save (so Add Garments
+  // uses the latest compatible categories without leaving the pricing screen).
+  const managedService = managing ? services.find((s) => s.id === managing.id) || managing : null
 
-  return <ServicesList services={services} garments={garments} businessId={businessId} loading={loading} onChanged={load} onManage={setManaging} />
+  if (managedService) return <ManagePrices service={managedService} garments={garments} categories={categories} businessId={businessId} onBack={() => { setManaging(null); load() }} onGarmentsChanged={load} />
+
+  return <ServicesList services={services} garments={garments} categories={categories} businessId={businessId} loading={loading} onChanged={load} onManage={setManaging} />
 }
 
-function ServicesList({ services, businessId, loading, onChanged, onManage }: { services: Service[]; garments: Garment[]; businessId: string; loading: boolean; onChanged: () => void; onManage: (s: Service) => void }) {
+function ServicesList({ services, categories, businessId, loading, onChanged, onManage }: { services: Service[]; garments: Garment[]; categories: Category[]; businessId: string; loading: boolean; onChanged: () => void; onManage: (s: Service) => void }) {
   const [edit, setEdit] = useState<Service | null>(null)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ ...SVC_EMPTY })
   const [route, setRoute] = useState<string[]>([])
+  const [compatCats, setCompatCats] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [stats, setStats] = useState<Record<string, { count: number; from: number | null }>>({})
   const set = (k: string, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }))
@@ -74,15 +82,16 @@ function ServicesList({ services, businessId, loading, onChanged, onManage }: { 
     return () => { cancel = true }
   }, [services, businessId])
 
-  const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setOpen(true) }
-  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite }); setRoute(parseRoute(s.processFlow)); setOpen(true) }
+  const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setCompatCats([]); setOpen(true) }
+  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
   const toggleStage = (code: string) => setRoute((r) => r.includes(code) ? r.filter((c) => c !== code) : [...r, code])
   const moveStage = (i: number, dir: -1 | 1) => setRoute((r) => { const j = i + dir; if (j < 0 || j >= r.length) return r; const c = [...r]; [c[i], c[j]] = [c[j], c[i]]; return c })
+  const toggleCat = (id: string) => setCompatCats((c) => c.includes(id) ? c.filter((x) => x !== id) : [...c, id])
   const save = async () => {
     if (!form.name.trim()) { toast.error("Service name is required"); return }
     setSaving(true)
     try {
-      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite, processFlow: route.length ? route : null }
+      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite, processFlow: route.length ? route : null, ...(edit ? { compatibleCategoryIds: compatCats } : {}) }
       const res = await fetch(edit ? `/api/laundry/services/${edit.id}` : `/api/laundry/services`, { method: edit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || j.error) throw new Error(j.error || "Save failed")
@@ -161,6 +170,28 @@ function ServicesList({ services, businessId, loading, onChanged, onManage }: { 
                 </div>
               )}
             </div>
+
+            {/* Compatible garment categories — controls which garments appear
+                by default in Add Garments. Selection rule only; never affects
+                existing pricing. (Saved when editing an existing service.) */}
+            {edit && (
+              <div className="space-y-1.5 border-t pt-3">
+                <Label className="text-xs">Compatible Garment Categories</Label>
+                <p className="text-[10px] text-slate-400 -mt-1">Garments in these categories appear by default when adding garments to this service. Leave empty to show all garments. Existing prices are never affected.</p>
+                {categories.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">No categories configured for this business.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories.map((c) => (
+                      <button key={c.id} type="button" onClick={() => toggleCat(c.id)}
+                        className={`rounded-lg border px-2.5 h-8 text-xs font-medium transition-colors ${compatCats.includes(c.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={saving} onClick={save} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Service</Button></div>
         </DialogContent>
@@ -169,7 +200,7 @@ function ServicesList({ services, businessId, loading, onChanged, onManage }: { 
   )
 }
 
-function ManagePrices({ service, garments, businessId, onBack, onGarmentsChanged }: { service: Service; garments: Garment[]; businessId: string; onBack: () => void; onGarmentsChanged: () => void }) {
+function ManagePrices({ service, garments, categories, businessId, onBack, onGarmentsChanged }: { service: Service; garments: Garment[]; categories: Category[]; businessId: string; onBack: () => void; onGarmentsChanged: () => void }) {
   const [mode, setMode] = useState<"PER_GARMENT" | "PER_KG">("PER_GARMENT")
   const [rows, setRows] = useState<{ garmentId: string; garmentName: string; price: string }[]>([])
   const [perKg, setPerKg] = useState({ price: "", minWeightKg: "" })
@@ -242,23 +273,78 @@ function ManagePrices({ service, garments, businessId, onBack, onGarmentsChanged
 
       <div className="flex justify-end"><Button disabled={saving} onClick={save} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Prices</Button></div>
 
-      {addOpen && <AddGarmentsDialog garments={garments.filter((g) => !existingIds.has(g.id))} onAdd={(ids) => { addGarments(ids); setAddOpen(false) }} onClose={() => setAddOpen(false)} />}
+      {addOpen && <AddGarmentsDialog garments={garments.filter((g) => !existingIds.has(g.id))} categories={categories} compatibleCategoryIds={service.compatibleCategoryIds || []} onAdd={(ids) => { addGarments(ids); setAddOpen(false) }} onClose={() => setAddOpen(false)} />}
       {createOpen && <CreateGarmentDialog businessId={businessId} onCreated={(g) => { onGarmentsChanged(); addGarments([g.id]); setCreateOpen(false) }} onClose={() => setCreateOpen(false)} />}
     </div>
   )
 }
 
-function AddGarmentsDialog({ garments, onAdd, onClose }: { garments: Garment[]; onAdd: (ids: string[]) => void; onClose: () => void }) {
-  const [q, setQ] = useState(""); const [sel, setSel] = useState<Set<string>>(new Set())
-  const filtered = useMemo(() => { const s = q.trim().toLowerCase(); return s ? garments.filter((g) => g.name.toLowerCase().includes(s)) : garments }, [garments, q])
+function AddGarmentsDialog({ garments, categories, compatibleCategoryIds, onAdd, onClose }: { garments: Garment[]; categories: Category[]; compatibleCategoryIds: string[]; onAdd: (ids: string[]) => void; onClose: () => void }) {
+  const [q, setQ] = useState("")
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  // Backward-compatible: a service with no compatible categories has no scope
+  // to narrow to, so it always shows all garments.
+  const hasCompat = compatibleCategoryIds.length > 0
+  const [showAll, setShowAll] = useState(!hasCompat)
+  const compatSet = useMemo(() => new Set(compatibleCategoryIds), [compatibleCategoryIds])
+  const isCompatible = (g: Garment) => !!g.category?.id && compatSet.has(g.category.id)
+
+  // Scope = compatible garments (default) or all garments (Show all ON).
+  const scoped = useMemo(() => (showAll ? garments : garments.filter(isCompatible)), [garments, showAll, compatSet])
+  // Search within the current scope by garment name OR category name.
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    if (!s) return scoped
+    return scoped.filter((g) => g.name.toLowerCase().includes(s) || (g.category?.name || "").toLowerCase().includes(s))
+  }, [scoped, q])
+
+  // Group the visible garments by category for a readable list.
+  const grouped = useMemo(() => {
+    const map = new Map<string, { name: string; items: Garment[] }>()
+    for (const g of filtered) {
+      const key = g.category?.id || "_none"
+      const name = g.category?.name || "Uncategorised"
+      if (!map.has(key)) map.set(key, { name, items: [] })
+      map.get(key)!.items.push(g)
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [filtered])
+
   const toggle = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const compatNames = categories.filter((c) => compatSet.has(c.id)).map((c) => c.name).join(", ")
+
   return (
-    <Dialog open onOpenChange={onClose}><DialogContent className="sm:max-w-[420px]">
+    <Dialog open onOpenChange={onClose}><DialogContent className="sm:max-w-[440px]">
       <DialogHeader><DialogTitle>Add Garments</DialogTitle></DialogHeader>
-      <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search garments…" className="pl-9" /></div>
-      <div className="max-h-[300px] overflow-y-auto -mx-1 px-1 space-y-1">
-        {filtered.length === 0 ? <p className="text-sm text-slate-400 py-4 text-center">No garments</p> : filtered.map((g) => (
-          <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer"><input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} /><span className="text-sm">{g.name}</span>{g.category?.name && <span className="text-[10px] text-slate-400">· {g.category.name}</span>}</label>
+      <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search garments or category…" className="pl-9" /></div>
+
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">{showAll ? "All garments" : hasCompat ? `Compatible garments${compatNames ? ` · ${compatNames}` : ""}` : "All garments"}</p>
+        {hasCompat && (
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+            Show all garments <Switch checked={showAll} onCheckedChange={setShowAll} className="scale-90 data-[state=checked]:bg-blue-600" />
+          </label>
+        )}
+      </div>
+      {!hasCompat && <p className="text-[10px] text-slate-400 -mt-1">No garment compatibility configured — showing all garments. Set compatible categories in the service to narrow this list.</p>}
+
+      <div className="max-h-[320px] overflow-y-auto -mx-1 px-1 space-y-2">
+        {filtered.length === 0 ? (
+          <p className="text-sm text-slate-400 py-4 text-center">{showAll ? "No garments" : "No compatible garments — enable “Show all garments” to add others."}</p>
+        ) : grouped.map((grp) => (
+          <div key={grp.name}>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 px-2 mt-1">{grp.name}</p>
+            {grp.items.map((g) => {
+              const outside = showAll && hasCompat && !isCompatible(g)
+              return (
+                <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} />
+                  <span className="text-sm">{g.name}</span>
+                  {outside && <span className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1">outside compatible categories</span>}
+                </label>
+              )
+            })}
+          </div>
         ))}
       </div>
       <div className="flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={sel.size === 0} onClick={() => onAdd([...sel])} className="bg-blue-600 hover:bg-blue-700 text-white">Add Selected ({sel.size})</Button></div>
