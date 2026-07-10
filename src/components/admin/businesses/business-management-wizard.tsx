@@ -36,6 +36,8 @@ import { getAuthHeaders } from '@/lib/admin-fetch'
 import { LaundryImageUpload } from '@/components/laundry/views/pricing/laundry-image-upload'
 import { LaundryProductFeaturesCard } from '@/components/admin/laundry/laundry-product-features-card'
 import { CommerceTemplateAssignCard, CommerceTemplateReviewField } from '@/components/admin/commerce/commerce-template-assign-card'
+import { CommerceCategoryField } from '@/components/admin/businesses/commerce-category-field'
+import { commerceCategoryLabel } from '@/lib/commerce/commerce-categories'
 import { useAdminStore } from '@/stores/admin-store'
 import { getWorkspaceEntryRoute } from '@/lib/workspace-routes'
 import { ProductSelectionStep } from '@/components/onboarding/steps/product-selection-step'
@@ -174,8 +176,11 @@ export function BusinessManagementWizard({ businessId }: Props) {
         toast.success('Business created')
         return true
       }
+      // NOTE: businessType is intentionally NOT sent here. It is the authoritative
+      // Commerce category and is changed only through the controlled, platform-only
+      // /api/core/commerce/business-category flow (CommerceCategoryField).
       const body: Record<string, unknown> = {
-        name: form.name, businessType: form.businessType, slug: form.slug,
+        name: form.name, slug: form.slug,
         tagline: form.tagline ?? null, description: form.description ?? null,
         logo: form.logo ?? null, favicon: form.favicon ?? null,
         primaryColor: form.primaryColor, secondaryColor: form.secondaryColor ?? null,
@@ -351,7 +356,7 @@ export function BusinessManagementWizard({ businessId }: Props) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><Lbl>Business Name</Lbl><Input value={form.name ?? ''} onChange={(e) => set('name', e.target.value)} /></div>
                   <div><Lbl>Slug</Lbl><Input value={form.slug ?? ''} onChange={(e) => set('slug', e.target.value)} /></div>
-                  <div><Lbl>Business Type</Lbl><Input value={form.businessType ?? ''} onChange={(e) => set('businessType', e.target.value)} placeholder="e.g. GROCERY" /></div>
+                  <div><Lbl>Business Category</Lbl><CommerceCategoryField businessId={bizId ?? null} productCode={biz?.productCode} value={form.businessType ?? ''} onChange={(v) => set('businessType', v)} onChanged={() => bizId && load(bizId)} /></div>
                   <div><Lbl>Tagline</Lbl><Input value={form.tagline ?? ''} onChange={(e) => set('tagline', e.target.value)} /></div>
                 </div>
               </Card>
@@ -473,7 +478,7 @@ export function BusinessManagementWizard({ businessId }: Props) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Business" value={biz?.name} />
                 <Field label="Slug" value={biz?.slug} mono />
-                <Field label="Business Type" value={biz?.businessType} />
+                <Field label="Business Category" value={biz?.businessType ? commerceCategoryLabel(biz.businessType) : '—'} />
                 <Field label="Owner" value={`${biz?.ownerName ?? '—'} (${biz?.ownerEmail ?? '—'})`} />
                 <Field label="Product" value={biz?.productCode} />
                 <Field label="Plan" value={biz?.subscriptionPlanCode} />

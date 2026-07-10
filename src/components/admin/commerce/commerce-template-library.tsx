@@ -19,8 +19,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { LayoutTemplate, Loader2, Plus, Search, Copy, Archive, Power, Rocket, Layers, ChevronLeft, FileStack, PackageSearch, Star } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { COMMERCE_CATEGORY_VALUES } from "@/lib/commerce/commerce-categories"
 
-const COMMERCE_CATEGORIES = ["GROCERY", "ECOMMERCE", "MEAT_DELIVERY", "COSMETICS", "FURNITURE"]
+// Single source of truth for the supported Commerce category vocabulary.
+const COMMERCE_CATEGORIES = COMMERCE_CATEGORY_VALUES
 const STATUS_STYLE: Record<string, string> = { ACTIVE: "bg-green-100 text-green-700", DRAFT: "bg-amber-100 text-amber-700", INACTIVE: "bg-slate-100 text-slate-500", ARCHIVED: "bg-slate-100 text-slate-400" }
 
 interface TemplateRow {

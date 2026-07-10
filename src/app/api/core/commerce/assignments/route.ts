@@ -33,13 +33,27 @@ export const GET = withMiddleware(PLATFORM)(async (request) => {
     include: { template: { select: { id: true, code: true, name: true } } },
   })
 
-  // Compatible ACTIVE templates for this business category.
+  // Compatible ACTIVE templates for this business category — enriched for the
+  // Licensed Features template gallery (cards).
   const candidates = await db.commerceTemplate.findMany({
     where: { workspaceType, status: "ACTIVE" },
-    select: { id: true, code: true, name: true, businessCategory: true, categories: { select: { businessCategory: true } } },
+    select: {
+      id: true, code: true, name: true, description: true, thumbnailUrl: true, publishedVersion: true,
+      businessCategory: true, categories: { select: { businessCategory: true } },
+      _count: { select: { pages: true } },
+    },
   })
-  const compatible = candidates.filter((t) => [t.businessCategory, ...t.categories.map((c) => c.businessCategory)].includes(business.businessType))
-    .map((t) => ({ id: t.id, code: t.code, name: t.name }))
+  const categoryDefault = await db.commerceCategoryDefault
+    .findUnique({ where: { workspaceType_businessCategory: { workspaceType, businessCategory: business.businessType } }, select: { templateId: true } })
+    .catch(() => null)
+  const compatible = candidates
+    .filter((t) => [t.businessCategory, ...t.categories.map((c) => c.businessCategory)].includes(business.businessType))
+    .map((t) => ({
+      id: t.id, code: t.code, name: t.name, description: t.description, thumbnailUrl: t.thumbnailUrl,
+      publishedVersion: t.publishedVersion, pageCount: t._count.pages,
+      compatibleCategories: [...new Set([t.businessCategory, ...t.categories.map((c) => c.businessCategory)])],
+      isCategoryDefault: categoryDefault?.templateId === t.id,
+    }))
 
   const rendererMode = await getCommerceRendererMode(businessId)
 
