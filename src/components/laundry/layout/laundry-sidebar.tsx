@@ -23,7 +23,7 @@ import {
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
   UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck, Barcode, Repeat,
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
-  PackageCheck, CheckCheck,
+  PackageCheck, CheckCheck, Sparkles, Package,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 
@@ -35,6 +35,11 @@ type NavCfg = {
   comingSoon?: boolean
   minRank: number // 1=operator+, 2=manager+, 3=admin/owner
 }
+
+// A nav group. `sectionHeader` renders a top-level separator (e.g. "Processing
+// Center") ABOVE the group's own `label` sub-heading (e.g. "Inbound"), giving the
+// two-tier hierarchy without changing the sidebar design system.
+type NavGroup = { label: string | null; sectionHeader?: string; items: NavCfg[] }
 
 const PROCESSING_ROLES = new Set(["PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE"])
 const ADMIN_ROLES = new Set(["LAUNDRY_OWNER", "QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"])
@@ -66,40 +71,41 @@ const CRM_GROUP: { label: string | null; items: NavCfg[] } = {
   ],
 }
 
-const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
+// Sidebar organised to follow the real Laundry Operations Engine flow. This is
+// navigation ORDER only — it does not change garment routing. Garments follow
+// their own service/processFlow route (see lib/laundry-processing.ts); the
+// Processing section is not a mandatory linear sequence.
+const NAV_GROUPS: NavGroup[] = [
   {
-    label: null,
+    label: "Laundry OS",
     items: [
       { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
       { key: "new-order", label: "New Order", icon: Plus, page: "new-order", minRank: 1 },
+    ],
+  },
+  {
+    label: "Store Operations",
+    items: [
       { key: "audit-queue", label: "Store Audit", icon: ClipboardCheck, page: "audit-queue", minRank: 1 },
       { key: "payment-queue", label: "Payment Collection", icon: CreditCard, page: "payment-queue", minRank: 2 },
       { key: "packing-queue", label: "Packing & QR", icon: Barcode, page: "packing-queue", minRank: 1 },
       { key: "dispatch-queue", label: "Transit to Processing", icon: Truck, page: "dispatch-queue", minRank: 2 },
       { key: "store-receive-queue", label: "Store Receive", icon: PackageCheck, page: "store-receive-queue", minRank: 2 },
       { key: "ready-delivery-queue", label: "Ready for Delivery", icon: CheckCheck, page: "ready-delivery-queue", minRank: 2 },
+    ],
+  },
+  {
+    label: "Orders & Customers",
+    items: [
       { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2 },
       { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2 },
+    ],
+  },
+  {
+    label: "Business Management",
+    items: [
       { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3 },
       { key: "staff", label: "Staff", icon: UsersRound, comingSoon: true, minRank: 3 },
-    ],
-  },
-  {
-    label: "Processing Center",
-    items: [
-      { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3 },
-      { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 3 },
-      { key: "ws-wash", label: "Wash", icon: Droplets, page: "ws-wash", minRank: 3 },
-      { key: "ws-dryclean", label: "Dry Clean", icon: Wind, page: "ws-dryclean", minRank: 3 },
-      { key: "ws-steam", label: "Steam", icon: Flame, page: "ws-steam", minRank: 3 },
-      { key: "ws-iron", label: "Iron", icon: Shirt, page: "ws-iron", minRank: 3 },
-      { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 3 },
-      { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3 },
-    ],
-  },
-  {
-    label: "Management",
-    items: [
       { key: "pricing", label: "Services & Pricing", icon: IndianRupee, page: "pricing", minRank: 3 },
       { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3 },
       { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3 },
@@ -108,22 +114,55 @@ const NAV_GROUPS: { label: string | null; items: NavCfg[] }[] = [
       { key: "settings", label: "Settings", icon: Settings, page: "settings", minRank: 3 },
     ],
   },
+  {
+    sectionHeader: "Processing Center",
+    label: "Inbound",
+    items: [
+      { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3 },
+      { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 3 },
+    ],
+  },
+  {
+    label: "Processing",
+    items: [
+      { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 3 },
+      { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 3 },
+      { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 3 },
+      { key: "ws-steam", label: "Steam Press", icon: Flame, page: "ws-steam", minRank: 3 },
+      { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 3 },
+      { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 3 },
+    ],
+  },
+  {
+    label: "Outbound",
+    items: [
+      { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3 },
+      { key: "ws-pack", label: "Pack & Dispatch", icon: Package, page: "ws-pack", minRank: 3 },
+    ],
+  },
 ]
 
-// Processing-center roles get a focused view.
-const PROCESSING_GROUPS: { label: string | null; items: NavCfg[] }[] = [
+// Processing-center roles get a focused view — same Inbound/Processing/Outbound
+// grouping, all items at operator tier.
+const PROCESSING_GROUPS: NavGroup[] = [
   { label: null, items: [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
+  ] },
+  { sectionHeader: "Processing Center", label: "Inbound", items: [
     { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 1 },
     { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 1 },
   ] },
-  { label: "Departments", items: [
-    { key: "ws-wash", label: "Wash", icon: Droplets, page: "ws-wash", minRank: 1 },
-    { key: "ws-dryclean", label: "Dry Clean", icon: Wind, page: "ws-dryclean", minRank: 1 },
-    { key: "ws-steam", label: "Steam", icon: Flame, page: "ws-steam", minRank: 1 },
-    { key: "ws-iron", label: "Iron", icon: Shirt, page: "ws-iron", minRank: 1 },
+  { label: "Processing", items: [
+    { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 1 },
+    { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 1 },
+    { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 1 },
+    { key: "ws-steam", label: "Steam Press", icon: Flame, page: "ws-steam", minRank: 1 },
+    { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 1 },
     { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 1 },
+  ] },
+  { label: "Outbound", items: [
     { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 1 },
+    { key: "ws-pack", label: "Pack & Dispatch", icon: Package, page: "ws-pack", minRank: 1 },
   ] },
 ]
 
@@ -158,14 +197,14 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   // CRM section first, then the Laundry OS sections (first laundry group gets
   // the "Laundry OS" header so the two products read as separate sections).
   // When CRM is disabled nothing changes — no empty headings or spacing.
-  const baseGroups = isProcessing
+  const baseGroups: NavGroup[] = isProcessing
     ? PROCESSING_GROUPS
     : crmEnabled
-      ? [CRM_GROUP, ...NAV_GROUPS.map((g, i) => (i === 0 ? { ...g, label: "Laundry OS" } : g))]
+      ? [CRM_GROUP, ...NAV_GROUPS]
       : NAV_GROUPS
 
   const groups = baseGroups
-    .map((g) => ({ label: g.label, items: g.items.filter((i) => rank >= i.minRank) }))
+    .map((g) => ({ label: g.label, sectionHeader: g.sectionHeader, items: g.items.filter((i) => rank >= i.minRank) }))
     .filter((g) => g.items.length > 0)
 
   // Pages reached programmatically (drill-downs), not from a nav item — these
@@ -206,7 +245,13 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   const NavList = ({ collapsedTooltips = true }: { collapsedTooltips?: boolean }) => (
     <>
       {groups.map((section, gi) => (
-        <SidebarGroup key={section.label || `g${gi}`} className="px-2 py-0">
+        <div key={`${section.sectionHeader ?? ""}-${section.label ?? ""}-${gi}`}>
+          {section.sectionHeader && (
+            <div className="px-3 pt-2.5 pb-0.5 mt-2 border-t border-slate-100">
+              <p className="text-[10px] font-extrabold tracking-widest uppercase text-slate-500">{section.sectionHeader}</p>
+            </div>
+          )}
+          <SidebarGroup className="px-2 py-0">
           {section.label && (
             <SidebarGroupLabel className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 mt-2 h-auto py-1 text-slate-400">
               {section.label}
@@ -242,6 +287,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        </div>
       ))}
     </>
   )

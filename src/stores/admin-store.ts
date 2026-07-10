@@ -120,11 +120,13 @@ export type LaundryBusinessPage =
   | "pricing"
   | "subscriptions"
   | "ws-wash"
+  | "ws-dry"
   | "ws-dryclean"
   | "ws-steam"
   | "ws-iron"
   | "ws-fold"
   | "ws-qc"
+  | "ws-pack"
   | "audit-barcode"
 
 export type BusinessPage =

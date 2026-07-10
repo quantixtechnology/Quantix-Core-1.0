@@ -637,11 +637,13 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
         case "processing-centers": return <LaundryProcessingConsole />
         case "audit-barcode": return <LaundryAuditBarcodePage />
         case "ws-wash": return <LaundryWorkstation stage="WASH" />
+        case "ws-dry": return <LaundryWorkstation stage="DRY" />
         case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
         case "ws-steam": return <LaundryWorkstation stage="STEAM" />
         case "ws-iron": return <LaundryWorkstation stage="IRON" />
         case "ws-fold": return <LaundryWorkstation stage="FOLD" />
         case "ws-qc": return <LaundryWorkstation stage="QC" />
+        case "ws-pack": return <LaundryWorkstation stage="PACKED" />
         case "orders": return <LaundryOrdersView />
         case "reports": return <LaundryReportsView />
         default: return <ProcessingDashboard />
@@ -672,11 +674,13 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "processing-centers": return <LaundryProcessingConsole />
       case "audit-barcode": return <LaundryAuditBarcodePage />
       case "ws-wash": return <LaundryWorkstation stage="WASH" />
+      case "ws-dry": return <LaundryWorkstation stage="DRY" />
       case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
       case "ws-steam": return <LaundryWorkstation stage="STEAM" />
       case "ws-iron": return <LaundryWorkstation stage="IRON" />
       case "ws-fold": return <LaundryWorkstation stage="FOLD" />
       case "ws-qc": return <LaundryWorkstation stage="QC" />
+      case "ws-pack": return <LaundryWorkstation stage="PACKED" />
       case "reports": return <LaundryReportsView />
       case "settings": return <LaundryWorkspaceSettings businessId={wsBusinessId} />
       case "categories": return <LaundryCategoriesMaster />
