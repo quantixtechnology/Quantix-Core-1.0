@@ -9,6 +9,7 @@ import { withMiddleware } from "@/lib/middleware"
 import { db } from "@/lib/db"
 import { getBusinessTypeConfig } from "@/lib/business-type-config"
 import { resolveTemplateForBusiness } from "@/lib/commerce/template-resolver"
+import { resolveLiveStorefront } from "@/lib/commerce/live-storefront"
 
 export const runtime = "nodejs"
 
@@ -39,6 +40,10 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["QUANTIX_
       businessId, storeId, businessCategory: business.businessType, workspaceType: business.productCode || "COMMERCE",
     })
 
+    // Phase 3 — full LIVE render directive: renderer mode, effective renderer,
+    // resolved page + sections, and any fallback reason. Published content only.
+    const live = await resolveLiveStorefront({ businessId, storeId, pageSlug: sp.get("page") })
+
     return NextResponse.json({
       success: true,
       diagnostic: {
@@ -63,8 +68,22 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["QUANTIX_
           isGroceryCoupled: cfg.type === "GROCERY" && business.businessType !== "GROCERY",
         },
         template: {
-          templateId: template.templateId, code: template.code, source: template.source,
-          note: "Template engine Phase 1 — no master templates seeded yet; FALLBACK is the neutral Commerce baseline (never Grocery).",
+          templateId: template.templateId, code: template.code, name: template.name, source: template.source,
+        },
+        // Phase 3 live-render directive (what the storefront will actually do).
+        render: {
+          rendererMode: live.rendererMode,
+          effective: live.effective,
+          resolutionSource: live.source,
+          configSource: live.configSource,
+          resolvedTemplateCode: live.template.code,
+          resolvedTemplateName: live.template.name,
+          publishedVersion: live.template.publishedVersion,
+          resolvedPage: live.page ? { slug: live.page.slug, name: live.page.name, route: live.page.route, isHomePage: live.page.isHomePage } : null,
+          sectionCount: live.page ? live.page.sections.length : 0,
+          sectionTypes: live.page ? live.page.sections.map((s) => s.type) : [],
+          availablePages: live.availablePages,
+          fallbackReason: live.fallbackReason,
         },
       },
     })

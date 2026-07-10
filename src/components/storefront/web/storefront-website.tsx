@@ -16,9 +16,13 @@ import { StorefrontAddresses } from "./storefront-addresses"
 import { StorefrontPassword } from "./storefront-password"
 import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
 import { PwaMetaUpdater } from "@/components/storefront/pwa-meta-updater"
+import { useLiveTemplate } from "@/components/storefront/commerce/use-live-template"
+import { CommercePageRenderer } from "@/components/storefront/commerce/commerce-page-renderer"
+import type { RenderContext } from "@/components/storefront/commerce/commerce-sections"
 
 export type WebPage =
   | "home"
+  | "template"      // template-driven custom page (Phase 3 multi-page)
   | "category"
   | "product"
   | "auth"
@@ -35,6 +39,7 @@ type NavSnapshot = {
   categoryName: string
   productId: string | null
   orderId: string | null
+  templateSlug: string | null
 }
 
 export interface WebNav {
@@ -43,6 +48,7 @@ export interface WebNav {
     categoryName?: string
     productId?: string
     orderId?: string
+    templateSlug?: string
   }) => void
   goBack: (defaultPage?: WebPage) => void
   canGoBack: boolean
@@ -51,6 +57,7 @@ export interface WebNav {
   categoryName: string
   productId: string | null
   orderId: string | null
+  templateSlug: string | null
   prevPage: WebPage | null
 }
 
@@ -125,7 +132,7 @@ async function fetchStoreStatus(businessId: string, storeId: string | null): Pro
 }
 
 export function StorefrontWebsite() {
-  const { currentBusinessId, currentBusinessPrimaryColor } = useAdminStore()
+  const { currentBusinessId, currentBusinessName, currentBusinessType, currentBusinessPrimaryColor } = useAdminStore()
   const { switchStore, restoreStore, storeId: cartStoreId } = useCartStore()
   const brandColor = currentBusinessPrimaryColor || "#C62828"
 
@@ -135,11 +142,12 @@ export function StorefrontWebsite() {
   const [categoryName, setCategoryName] = useState("")
   const [productId, setProductId] = useState<string | null>(null)
   const [orderId, setOrderId] = useState<string | null>(null)
+  const [templateSlug, setTemplateSlug] = useState<string | null>(null)
 
   // Ref keeps current nav state accessible inside stable callbacks without
   // listing every field as a useCallback dependency.
-  const snapRef = useRef<NavSnapshot>({ page: "home", categoryId: null, categoryName: "", productId: null, orderId: null })
-  snapRef.current = { page, categoryId, categoryName, productId, orderId }
+  const snapRef = useRef<NavSnapshot>({ page: "home", categoryId: null, categoryName: "", productId: null, orderId: null, templateSlug: null })
+  snapRef.current = { page, categoryId, categoryName, productId, orderId, templateSlug }
 
   // Ref mirrors navStack so the popstate handler can read current length
   // synchronously without re-subscribing on every stack change.
@@ -210,11 +218,13 @@ export function StorefrontWebsite() {
 
   const go = useCallback((
     p: WebPage,
-    opts?: { categoryId?: string; categoryName?: string; productId?: string; orderId?: string },
+    opts?: { categoryId?: string; categoryName?: string; productId?: string; orderId?: string; templateSlug?: string },
   ) => {
     const curr = snapRef.current
-    // Push current state onto the stack only when navigating to a different page.
-    if (p !== curr.page) {
+    // Push current state onto the stack only when navigating to a different page
+    // (or a different template page under the same "template" route).
+    const changed = p !== curr.page || (p === "template" && (opts?.templateSlug ?? null) !== curr.templateSlug)
+    if (changed) {
       setNavStack(prev => {
         const next = [...prev, { ...curr }]
         navStackRef.current = next
@@ -228,6 +238,7 @@ export function StorefrontWebsite() {
     if (opts?.categoryName !== undefined) setCategoryName(opts.categoryName ?? "")
     if (opts?.productId !== undefined) setProductId(opts.productId ?? null)
     if (opts?.orderId !== undefined) setOrderId(opts.orderId ?? null)
+    if (opts?.templateSlug !== undefined) setTemplateSlug(opts.templateSlug ?? null)
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
   }, []) // stable — reads state via ref
 
@@ -240,6 +251,7 @@ export function StorefrontWebsite() {
         setCategoryName("")
         setProductId(null)
         setOrderId(null)
+        setTemplateSlug(null)
         if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
         return prev
       }
@@ -251,6 +263,7 @@ export function StorefrontWebsite() {
       setCategoryName(last.categoryName)
       setProductId(last.productId)
       setOrderId(last.orderId)
+      setTemplateSlug(last.templateSlug)
       if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
       return next
     })
@@ -273,9 +286,28 @@ export function StorefrontWebsite() {
   const prevPage: WebPage | null = navStack.length > 0 ? navStack[navStack.length - 1].page : null
   const canGoBack = navStack.length > 0
 
-  const nav: WebNav = { go, goBack, canGoBack, current: page, categoryId, categoryName, productId, orderId, prevPage }
+  const nav: WebNav = { go, goBack, canGoBack, current: page, categoryId, categoryName, productId, orderId, templateSlug, prevPage }
 
   const storeClosed = !storeStatus.isOpen
+
+  // Phase 3 — live template render directive for the current template-driven
+  // page (home, or a custom template page). Resolver logic is entirely
+  // server-side; this only consumes the decision. Legacy pages ignore it.
+  const activeTemplateSlug = page === "template" ? (templateSlug || "home") : "home"
+  const templateState = useLiveTemplate(currentBusinessId || null, currentStore?.id ?? null, activeTemplateSlug)
+  const directive = templateState.status === "ready" ? templateState.directive : null
+  const renderCtx: RenderContext = {
+    businessId: currentBusinessId || "",
+    storeId: currentStore?.id ?? null,
+    businessName: currentBusinessName || "",
+    businessType: currentBusinessType || "",
+    brandColor,
+    nav,
+    storeClosed,
+  }
+  // Home renders via the template renderer only when the server says so AND a
+  // published page with sections resolved; otherwise the legacy home renders.
+  const homeIsTemplate = directive?.effective === "template" && !!directive.page && directive.page.sections.length > 0
 
   return (
     <>
@@ -297,7 +329,24 @@ export function StorefrontWebsite() {
           </div>
         )}
 
-        {page === "home"           && <StorefrontHome          brandColor={brandColor} nav={nav} storeClosed={storeClosed} />}
+        {page === "home" && (
+          homeIsTemplate
+            ? <CommercePageRenderer sections={directive!.page!.sections} ctx={renderCtx} />
+            : <StorefrontHome brandColor={brandColor} nav={nav} storeClosed={storeClosed} />
+        )}
+        {page === "template" && (
+          templateState.status === "loading"
+            ? null
+            : directive?.effective === "template" && directive.page && directive.page.sections.length > 0
+              ? <CommercePageRenderer sections={directive.page.sections} ctx={renderCtx} />
+              : (
+                  <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+                    <div className="text-6xl font-black text-gray-100 select-none mb-4">404</div>
+                    <h1 className="text-lg font-bold text-gray-900">Page not found</h1>
+                    <button onClick={() => nav.go("home")} className="mt-4 text-sm font-semibold" style={{ color: brandColor }}>Back to home</button>
+                  </div>
+                )
+        )}
         {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} storeClosed={storeClosed} />}
         {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
         {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}

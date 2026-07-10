@@ -321,7 +321,7 @@ function CategoryMapping({ templates, onChanged }: { templates: TemplateRow[]; o
 // ─── Assignment panel ────────────────────────────────────────────────────────
 function AssignmentPanel() {
   const [businessId, setBusinessId] = useState("")
-  const [data, setData] = useState<{ business: { name: string; businessType: string; workspaceType: string; isCommerce: boolean }; resolved: { code: string; source: string }; explicitAssignments: { storeId: string | null; template: { id: string; name: string } | null }[]; compatibleTemplates: { id: string; name: string }[] } | null>(null)
+  const [data, setData] = useState<{ business: { name: string; businessType: string; workspaceType: string; isCommerce: boolean }; resolved: { code: string; source: string }; rendererMode: string; explicitAssignments: { storeId: string | null; template: { id: string; name: string } | null }[]; compatibleTemplates: { id: string; name: string }[] } | null>(null)
   const [loading, setLoading] = useState(false)
   const [pick, setPick] = useState("")
 
@@ -343,6 +343,11 @@ function AssignmentPanel() {
     if (!ok) return toast.error(json.error || "Failed")
     toast.success("Assignment removed — back to category default"); inspect()
   }
+  const setMode = async (mode: string) => {
+    const { ok, json } = await api("/api/core/commerce/renderer-mode", { method: "POST", body: JSON.stringify({ businessId: businessId.trim(), mode }) })
+    if (!ok) return toast.error(json.error || "Failed")
+    toast.success(`Renderer mode → ${mode}`); inspect()
+  }
 
   return (
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Business Template Assignment</CardTitle><p className="text-xs text-muted-foreground">Inspect a Commerce business's resolved template + assign a compatible one. Server enforces category compatibility and COMMERCE-only.</p></CardHeader>
@@ -358,6 +363,16 @@ function AssignmentPanel() {
               {!data.business.isCommerce && <Badge className="bg-amber-100 text-amber-700 text-[10px]">Not a Commerce business</Badge>}
             </div>
             <div className="text-xs text-slate-600">Resolved template: <b>{data.resolved.code}</b> <Badge variant="outline" className="text-[9px] ml-1">{data.resolved.source}</Badge></div>
+            {data.business.isCommerce && (
+              <div className="flex items-center gap-2 pb-1 border-b">
+                <span className="text-xs text-slate-500">Live renderer:</span>
+                <Select value={data.rendererMode} onValueChange={setMode}>
+                  <SelectTrigger className="h-8 w-[130px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>{["LEGACY", "TEMPLATE", "AUTO"].map((m) => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}</SelectContent>
+                </Select>
+                <span className="text-[10px] text-slate-400">LEGACY = existing homepage · TEMPLATE/AUTO = template renderer</span>
+              </div>
+            )}
             {data.business.isCommerce && (
               <div className="flex items-center gap-2">
                 <Select value={pick} onValueChange={setPick}><SelectTrigger className="h-9 flex-1 max-w-sm"><SelectValue placeholder="Assign a compatible template…" /></SelectTrigger><SelectContent>{data.compatibleTemplates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent></Select>

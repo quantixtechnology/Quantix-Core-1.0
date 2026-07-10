@@ -9,6 +9,7 @@ import { NextResponse } from "next/server"
 import { withMiddleware } from "@/lib/middleware"
 import { db } from "@/lib/db"
 import { resolveTemplateForBusiness, isTemplateCompatible, getTemplateCategories } from "@/lib/commerce/template-resolver"
+import { getCommerceRendererMode } from "@/lib/commerce/renderer-mode"
 
 export const runtime = "nodejs"
 const PLATFORM: Parameters<typeof withMiddleware>[0] = { requireAuth: true, requiredRoles: ["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"] }
@@ -40,11 +41,14 @@ export const GET = withMiddleware(PLATFORM)(async (request) => {
   const compatible = candidates.filter((t) => [t.businessCategory, ...t.categories.map((c) => c.businessCategory)].includes(business.businessType))
     .map((t) => ({ id: t.id, code: t.code, name: t.name }))
 
+  const rendererMode = await getCommerceRendererMode(businessId)
+
   return NextResponse.json({
     success: true,
     data: {
       business: { id: business.id, name: business.name, businessType: business.businessType, workspaceType, isCommerce: workspaceType === "COMMERCE" },
       resolved,
+      rendererMode,
       explicitAssignments: explicit.map((a) => ({ storeId: a.storeId, template: a.template })),
       compatibleTemplates: compatible,
     },

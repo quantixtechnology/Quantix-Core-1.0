@@ -106,21 +106,32 @@ export async function resolveCommerceStorefront(input: ResolveInput): Promise<Re
     select: { publishedConfig: true },
   }).catch(() => null)
   if (tenant?.publishedConfig) {
-    return { template, config: safeParse(tenant.publishedConfig), configSource: "TENANT_PUBLISHED" }
+    return { template, config: pagesFromPublished(tenant.publishedConfig), configSource: "TENANT_PUBLISHED" }
   }
 
-  // Master template published pages/sections (data-source config only — no
-  // copied catalogue data).
+  // Master template PUBLISHED snapshot only — never the live (draft) page rows.
+  // publishedConfig is written by publishTemplate()/seed and holds the full
+  // section config (presentation + data-source descriptors, no catalogue data).
   if (template.templateId) {
-    const pages = await db.commerceTemplatePage.findMany({
-      where: { templateId: template.templateId, status: "ACTIVE" },
-      include: { sections: { orderBy: { sortOrder: "asc" } } },
-      orderBy: { sortOrder: "asc" },
-    }).catch(() => [])
-    if (pages.length) return { template, config: pages, configSource: "MASTER_PUBLISHED" }
+    const t = await db.commerceTemplate
+      .findUnique({ where: { id: template.templateId }, select: { publishedConfig: true } })
+      .catch(() => null)
+    const pages = t?.publishedConfig ? pagesFromPublished(t.publishedConfig) : null
+    if (Array.isArray(pages) && pages.length) return { template, config: pages, configSource: "MASTER_PUBLISHED" }
   }
 
   return { template, config: null, configSource: "NONE" }
+}
+
+// Normalise a publishedConfig payload to a pages array. Accepts either a raw
+// pages array or an object with a `pages` field. Never returns draft rows.
+function pagesFromPublished(raw: string): unknown[] | null {
+  const parsed = safeParse(raw)
+  if (Array.isArray(parsed)) return parsed
+  if (parsed && typeof parsed === "object" && Array.isArray((parsed as { pages?: unknown[] }).pages)) {
+    return (parsed as { pages: unknown[] }).pages
+  }
+  return null
 }
 
 function safeParse(s: string): unknown {

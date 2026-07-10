@@ -9,6 +9,7 @@ import { NextResponse } from "next/server"
 import { withMiddleware } from "@/lib/middleware"
 import { db } from "@/lib/db"
 import { getSectionDef } from "@/lib/commerce/section-registry"
+import { isReservedRoute } from "@/lib/commerce/reserved-routes"
 
 export const runtime = "nodejs"
 const PLATFORM: Parameters<typeof withMiddleware>[0] = { requireAuth: true, requiredRoles: ["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN"] }
@@ -36,6 +37,14 @@ export const POST = withMiddleware(PLATFORM)(async (request, ctx) => {
   const name = String(b.name || "").trim()
   if (!name) return NextResponse.json({ success: false, error: "Page name is required" }, { status: 400 })
   const slug = String(b.slug || name).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "page"
+
+  // Custom pages must not shadow reserved functional storefront routes. The
+  // template's own HOME page is exempt (it is the storefront root, not a
+  // catalogue/system route).
+  const isHomePage = !!b.isHomePage
+  if (!isHomePage && isReservedRoute(slug)) {
+    return NextResponse.json({ success: false, error: `Slug "${slug}" is a reserved storefront route and cannot be used for a custom page` }, { status: 409 })
+  }
 
   const clash = await db.commerceTemplatePage.findUnique({ where: { templateId_slug: { templateId: id, slug } }, select: { id: true } })
   if (clash) return NextResponse.json({ success: false, error: `Page slug "${slug}" already exists in this template` }, { status: 409 })
