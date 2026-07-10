@@ -33,9 +33,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const garments = await prisma.laundryGarment.findMany({ where: { businessId: lbId, id: { in: garmentRules.map((r) => r.garmentId!) } }, select: { id: true, name: true, category: { select: { name: true } } } })
     const gMap = new Map(garments.map((g) => [g.id, g]))
 
-    const rows = garmentRules.map((r) => ({ garmentId: r.garmentId!, garmentName: gMap.get(r.garmentId!)?.name || "Garment", category: gMap.get(r.garmentId!)?.category?.name || null, price: r.price, pricingType: r.pricingType }))
+    // Each garment row carries its OWN billing type (PER_KG | PER_PIECE) + price.
+    const rows = garmentRules.map((r) => ({
+      garmentId: r.garmentId!, garmentName: gMap.get(r.garmentId!)?.name || "Garment",
+      category: gMap.get(r.garmentId!)?.category?.name || null,
+      price: r.price, pricingType: r.pricingType, minWeightKg: r.minWeightKg,
+    }))
     return NextResponse.json({ success: true, data: {
       service: { id: service.id, name: service.name },
+      // `mode` retained for backward compatibility only; row-level pricingType is
+      // authoritative. A legacy service-level PER_KG rule (garment null) surfaces
+      // here so it can be migrated to per-garment rows on next save.
       mode: perKgRule ? "PER_KG" : "PER_GARMENT",
       rows,
       perKg: perKgRule ? { price: perKgRule.price, minWeightKg: perKgRule.minWeightKg } : null,
@@ -50,9 +58,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { id: serviceId } = await params
     const body = await request.json()
-    const { businessId, mode, rows, perKg } = body as {
-      businessId?: string; mode?: "PER_GARMENT" | "PER_KG"
-      rows?: { garmentId: string; price: number | string }[]
+    const { businessId, rows, mode, perKg } = body as {
+      businessId?: string
+      // New authoritative format: per-garment rows, each with its OWN billing type.
+      rows?: { garmentId: string; price: number | string; pricingType?: string; minWeightKg?: number | string | null }[]
+      // Legacy format (kept for backward compatibility): global service mode.
+      mode?: "PER_GARMENT" | "PER_KG"
       perKg?: { price: number | string; minWeightKg?: number | string | null }
     }
     const biz = await resolveLaundryBusiness(businessId)
@@ -61,36 +72,51 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const service = await prisma.laundryService.findFirst({ where: { id: serviceId, businessId: lbId }, select: { id: true, name: true } })
     if (!service) return NextResponse.json({ success: false, error: "Service not found" }, { status: 404 })
 
-    // Existing simple rules for this service (garment-scoped + service-level KG).
+    const norm = (t?: string) => (String(t || "").toUpperCase() === "PER_KG" ? "PER_KG" : "PER_PIECE")
+
+    // Existing simple rules for this service (garment-scoped + any service-level KG).
     const existing = await prisma.laundryPricingRule.findMany({ where: { businessId: lbId, serviceId, storeId: null, customerType: null, categoryId: null } })
 
-    let upserted = 0
-    if (mode === "PER_KG") {
-      // Deactivate garment rows; keep/one service-level PER_KG rule.
+    // ── Legacy global-mode body (no per-row rows) — preserve prior behaviour ────
+    const hasRows = Array.isArray(rows)
+    if (!hasRows && mode === "PER_KG") {
       await prisma.laundryPricingRule.updateMany({ where: { businessId: lbId, serviceId, storeId: null, customerType: null, garmentId: { not: null } }, data: { isActive: false, status: "INACTIVE" } })
       const price = Number(perKg?.price) || 0
       const minW = perKg?.minWeightKg == null || perKg?.minWeightKg === "" ? null : Number(perKg.minWeightKg)
       const kgRule = existing.find((r) => r.garmentId == null && r.pricingType === "PER_KG")
       if (kgRule) await prisma.laundryPricingRule.update({ where: { id: kgRule.id }, data: { price, minWeightKg: minW, isActive: true, status: "ACTIVE" } })
       else await prisma.laundryPricingRule.create({ data: { businessId: lbId, name: `${service.name} · Per KG`, serviceId, garmentId: null, categoryId: null, storeId: null, customerType: null, pricingType: "PER_KG", price, minWeightKg: minW, gstPercent: 0, priority: 0, status: "ACTIVE", isActive: true } })
-      upserted = 1
-    } else {
-      const wanted = new Map((rows || []).map((r) => [r.garmentId, Number(r.price) || 0]))
-      const garments = await prisma.laundryGarment.findMany({ where: { businessId: lbId, id: { in: [...wanted.keys()] } }, select: { id: true, name: true } })
-      const gName = new Map(garments.map((g) => [g.id, g.name]))
-      const existByGarment = new Map(existing.filter((r) => r.garmentId).map((r) => [r.garmentId!, r]))
-      for (const [garmentId, price] of wanted) {
-        const cur = existByGarment.get(garmentId)
-        if (cur) await prisma.laundryPricingRule.update({ where: { id: cur.id }, data: { price, pricingType: "PER_PIECE", isActive: true, status: "ACTIVE" } })
-        else await prisma.laundryPricingRule.create({ data: { businessId: lbId, name: `${service.name} · ${gName.get(garmentId) || "Garment"}`, serviceId, garmentId, categoryId: null, storeId: null, customerType: null, pricingType: "PER_PIECE", price, gstPercent: 0, priority: 0, status: "ACTIVE", isActive: true } })
-        upserted++
-      }
-      // Soft-remove garment rules that are no longer in the menu.
-      for (const [garmentId, rule] of existByGarment) if (!wanted.has(garmentId)) await prisma.laundryPricingRule.update({ where: { id: rule.id }, data: { isActive: false, status: "INACTIVE" } })
-      // Deactivate any stray PER_KG service rule when switching to per-garment.
-      const kgRule = existing.find((r) => r.garmentId == null && r.pricingType === "PER_KG")
-      if (kgRule) await prisma.laundryPricingRule.update({ where: { id: kgRule.id }, data: { isActive: false, status: "INACTIVE" } })
+      return NextResponse.json({ success: true, data: { upserted: 1 } })
     }
+
+    // ── Authoritative per-garment rows (each with its own billing type) ─────────
+    const wanted = new Map((rows || []).map((r) => [r.garmentId, r]))
+    const garments = await prisma.laundryGarment.findMany({ where: { businessId: lbId, id: { in: [...wanted.keys()] } }, select: { id: true, name: true } })
+    const gName = new Map(garments.map((g) => [g.id, g.name]))
+    // Group ALL existing garment rules by garment so duplicates can be collapsed
+    // to exactly one ACTIVE rule per (service, garment).
+    const byGarment = new Map<string, typeof existing>()
+    for (const r of existing) if (r.garmentId) { const a = byGarment.get(r.garmentId) || []; a.push(r); byGarment.set(r.garmentId, a) }
+
+    let upserted = 0
+    for (const [garmentId, row] of wanted) {
+      const pricingType = norm(row.pricingType)
+      const price = Number(row.price) || 0
+      const minW = row.minWeightKg == null || row.minWeightKg === "" ? null : Number(row.minWeightKg)
+      const dupes = byGarment.get(garmentId) || []
+      if (dupes.length > 0) {
+        // Keep the first, update it; deactivate the rest (dedupe).
+        await prisma.laundryPricingRule.update({ where: { id: dupes[0].id }, data: { price, pricingType, minWeightKg: pricingType === "PER_KG" ? minW : null, isActive: true, status: "ACTIVE" } })
+        for (const extra of dupes.slice(1)) await prisma.laundryPricingRule.update({ where: { id: extra.id }, data: { isActive: false, status: "INACTIVE" } })
+      } else {
+        await prisma.laundryPricingRule.create({ data: { businessId: lbId, name: `${service.name} · ${gName.get(garmentId) || "Garment"}`, serviceId, garmentId, categoryId: null, storeId: null, customerType: null, pricingType, price, minWeightKg: pricingType === "PER_KG" ? minW : null, gstPercent: 0, priority: 0, status: "ACTIVE", isActive: true } })
+      }
+      upserted++
+    }
+    // Soft-remove garment rules no longer in the menu.
+    for (const [garmentId, dupes] of byGarment) if (!wanted.has(garmentId)) for (const r of dupes) await prisma.laundryPricingRule.update({ where: { id: r.id }, data: { isActive: false, status: "INACTIVE" } })
+    // Deactivate any stray service-level PER_KG rule (migrated to per-garment rows).
+    for (const r of existing) if (r.garmentId == null && r.pricingType === "PER_KG" && r.isActive) await prisma.laundryPricingRule.update({ where: { id: r.id }, data: { isActive: false, status: "INACTIVE" } })
 
     return NextResponse.json({ success: true, data: { upserted } })
   } catch (e) {

@@ -200,10 +200,12 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
   )
 }
 
+// A garment price row now carries its OWN billing type (Per KG | Per Piece) —
+// a single service may mix both. There is no service-global pricing mode.
+type EditRow = { garmentId: string; garmentName: string; price: string; pricingType: "PER_KG" | "PER_PIECE"; minWeightKg: string }
+
 function ManagePrices({ service, garments, categories, businessId, onBack, onGarmentsChanged }: { service: Service; garments: Garment[]; categories: Category[]; businessId: string; onBack: () => void; onGarmentsChanged: () => void }) {
-  const [mode, setMode] = useState<"PER_GARMENT" | "PER_KG">("PER_GARMENT")
-  const [rows, setRows] = useState<{ garmentId: string; garmentName: string; price: string }[]>([])
-  const [perKg, setPerKg] = useState({ price: "", minWeightKg: "" })
+  const [rows, setRows] = useState<EditRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
@@ -212,20 +214,27 @@ function ManagePrices({ service, garments, categories, businessId, onBack, onGar
   const load = useCallback(() => {
     setLoading(true)
     fetch(`/api/laundry/services/${service.id}/prices?businessId=${businessId}`).then((r) => r.json()).then((j) => {
-      if (j.success) { setMode(j.data.mode); setRows((j.data.rows as PriceRow[]).map((r) => ({ garmentId: r.garmentId, garmentName: r.garmentName, price: String(r.price) }))); if (j.data.perKg) setPerKg({ price: String(j.data.perKg.price), minWeightKg: j.data.perKg.minWeightKg == null ? "" : String(j.data.perKg.minWeightKg) }) }
+      if (j.success) setRows((j.data.rows as (PriceRow & { pricingType?: string; minWeightKg?: number | null })[]).map((r) => ({
+        garmentId: r.garmentId, garmentName: r.garmentName, price: String(r.price),
+        pricingType: String(r.pricingType || "").toUpperCase() === "PER_KG" ? "PER_KG" : "PER_PIECE",
+        minWeightKg: r.minWeightKg == null ? "" : String(r.minWeightKg),
+      })))
     }).catch(() => {}).finally(() => setLoading(false))
   }, [service.id, businessId])
   useEffect(() => { load() }, [load])
 
   const existingIds = new Set(rows.map((r) => r.garmentId))
   const setPrice = (id: string, v: string) => setRows((p) => p.map((r) => r.garmentId === id ? { ...r, price: v } : r))
+  const setBilling = (id: string, v: "PER_KG" | "PER_PIECE") => setRows((p) => p.map((r) => r.garmentId === id ? { ...r, pricingType: v } : r))
+  const setMinW = (id: string, v: string) => setRows((p) => p.map((r) => r.garmentId === id ? { ...r, minWeightKg: v } : r))
   const removeRow = (id: string) => setRows((p) => p.filter((r) => r.garmentId !== id))
-  const addGarments = (ids: string[]) => setRows((p) => [...p, ...ids.filter((id) => !existingIds.has(id)).map((id) => ({ garmentId: id, garmentName: garments.find((g) => g.id === id)?.name || "Garment", price: "0" }))])
+  // New rows default to Per Piece; the operator sets the billing type inline.
+  const addGarments = (ids: string[]) => setRows((p) => [...p, ...ids.filter((id) => !existingIds.has(id)).map((id) => ({ garmentId: id, garmentName: garments.find((g) => g.id === id)?.name || "Garment", price: "0", pricingType: "PER_PIECE" as const, minWeightKg: "" }))])
 
   const save = async () => {
     setSaving(true)
     try {
-      const body = mode === "PER_KG" ? { businessId, mode, perKg } : { businessId, mode, rows: rows.map((r) => ({ garmentId: r.garmentId, price: Number(r.price) || 0 })) }
+      const body = { businessId, rows: rows.map((r) => ({ garmentId: r.garmentId, price: Number(r.price) || 0, pricingType: r.pricingType, minWeightKg: r.pricingType === "PER_KG" && r.minWeightKg !== "" ? Number(r.minWeightKg) : null })) }
       const res = await fetch(`/api/laundry/services/${service.id}/prices`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
@@ -238,28 +247,24 @@ function ManagePrices({ service, garments, categories, businessId, onBack, onGar
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" className="gap-1 h-8" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Services</Button>
       </div>
-      <div><h3 className="text-base font-semibold text-slate-800">{service.name} Pricing</h3><p className="text-sm text-muted-foreground">Set garment prices for this service.</p></div>
+      <div><h3 className="text-base font-semibold text-slate-800">{service.name} Pricing</h3><p className="text-sm text-muted-foreground">Set each garment&apos;s billing type and price. A service may mix Per KG and Per Piece garments.</p></div>
 
-      <div className="flex items-center gap-4 text-sm">
-        <span className="text-slate-500">Pricing mode:</span>
-        <label className="flex items-center gap-1.5"><input type="radio" checked={mode === "PER_GARMENT"} onChange={() => setMode("PER_GARMENT")} /> Per Garment</label>
-        <label className="flex items-center gap-1.5"><input type="radio" checked={mode === "PER_KG"} onChange={() => setMode("PER_KG")} /> Per KG</label>
-      </div>
-
-      {loading ? <div className="flex items-center gap-2 py-10 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div> : mode === "PER_KG" ? (
-        <Card><CardContent className="p-4 grid grid-cols-2 gap-3 max-w-md">
-          <div className="space-y-1.5"><Label className="text-xs">Price Per KG (₹)</Label><Input type="number" value={perKg.price} onChange={(e) => setPerKg((p) => ({ ...p, price: e.target.value }))} placeholder="80" /></div>
-          <div className="space-y-1.5"><Label className="text-xs">Minimum Weight (KG)</Label><Input type="number" value={perKg.minWeightKg} onChange={(e) => setPerKg((p) => ({ ...p, minWeightKg: e.target.value }))} placeholder="1" /></div>
-        </CardContent></Card>
-      ) : (
+      {loading ? <div className="flex items-center gap-2 py-10 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div> : (
         <Card><CardContent className="p-0">
           <div className="divide-y divide-slate-100">
-            <div className="grid grid-cols-[1fr_140px_40px] gap-2 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400"><span>Garment</span><span>Price (₹) · Per Piece</span><span /></div>
+            <div className="grid grid-cols-[1fr_130px_170px_40px] gap-2 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400"><span>Garment</span><span>Billing Type</span><span>Price</span><span /></div>
             {rows.length === 0 && <p className="px-4 py-6 text-sm text-slate-400 text-center">No garments yet — add garments to set their prices.</p>}
             {rows.map((r) => (
-              <div key={r.garmentId} className="grid grid-cols-[1fr_140px_40px] gap-2 px-4 py-2 items-center">
+              <div key={r.garmentId} className="grid grid-cols-[1fr_130px_170px_40px] gap-2 px-4 py-2 items-center">
                 <span className="text-sm text-slate-700">{r.garmentName}</span>
-                <Input type="number" value={r.price} onChange={(e) => setPrice(r.garmentId, e.target.value)} className="h-9" />
+                <select value={r.pricingType} onChange={(e) => setBilling(r.garmentId, e.target.value as "PER_KG" | "PER_PIECE")} className="h-9 rounded-md border border-slate-200 bg-white text-sm px-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <option value="PER_PIECE">Per Piece</option>
+                  <option value="PER_KG">Per KG</option>
+                </select>
+                <div className="flex items-center gap-1.5">
+                  <Input type="number" value={r.price} onChange={(e) => setPrice(r.garmentId, e.target.value)} className="h-9" />
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap">{r.pricingType === "PER_KG" ? "₹ / KG" : "₹ / Piece"}</span>
+                </div>
                 <button onClick={() => removeRow(r.garmentId)} className="text-rose-500 hover:text-rose-700 flex justify-center"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}

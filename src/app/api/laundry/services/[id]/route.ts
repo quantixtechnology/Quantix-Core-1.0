@@ -73,8 +73,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    // A service referenced by order history must NEVER be destroyed — deactivate
+    // it so it disappears from new-order selection while old orders still resolve
+    // it (order items carry a serviceName snapshot). Only a service that has
+    // never been ordered may be hard-deleted (its pricing config goes with it).
+    const orderUses = await prisma.laundryOrderItem.count({ where: { serviceId: id } })
+    if (orderUses > 0) {
+      const svc = await prisma.laundryService.update({ where: { id }, data: { isActive: false } })
+      return NextResponse.json({ success: true, deactivated: true, reason: "referenced-by-orders", service: { id: svc.id, isActive: svc.isActive } })
+    }
+    // Unused → safe hard delete. Remove its (config-only) pricing rules first.
+    await prisma.laundryPricingRule.deleteMany({ where: { serviceId: id } })
     await prisma.laundryService.delete({ where: { id } })
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, deleted: true })
   } catch (e) {
     console.error("[laundry-services] DELETE", e)
     return NextResponse.json({ error: "Failed to delete service" }, { status: 500 })

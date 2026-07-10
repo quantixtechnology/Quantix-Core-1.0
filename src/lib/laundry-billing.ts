@@ -70,6 +70,10 @@ export interface BillingLineResult extends BillingLineInput {
   gstPercent: number
   gstAmount: number
   lineTotal: number
+  // True when this line is priced PER_KG but no measured weight (> 0) is present.
+  // Such a line cannot be finalised (it would bill ₹0) — the pricing/audit gate
+  // must collect a measured weight first (WEIGHT_REQUIRED).
+  weightRequired?: boolean
   note?: string
 }
 
@@ -166,6 +170,9 @@ export function computeLine(rule: PricingRule | null, line: BillingLineInput, ct
   // bug). The line keeps its real Service+Garment base price.
   base = r2(base)
   const gstAmount = r2(base * (rule.gstPercent || 0) / 100)
+  // A PER_KG line with no measured weight cannot be priced — flag it so the
+  // pricing/audit gate blocks finalisation instead of silently billing ₹0.
+  const weightRequired = rule.pricingType === "PER_KG" && weight <= 0
   return {
     ...line,
     matchedRuleId: rule.id,
@@ -175,7 +182,14 @@ export function computeLine(rule: PricingRule | null, line: BillingLineInput, ct
     gstPercent: rule.gstPercent || 0,
     gstAmount,
     lineTotal: r2(base + gstAmount),
+    weightRequired,
   }
+}
+
+// Order-level guard: which lines are PER_KG with no measured weight. Backend
+// gates (payment / processing start) use this to enforce WEIGHT_REQUIRED.
+export function linesNeedingWeight(quote: BillingQuote): BillingLineResult[] {
+  return quote.lines.filter((l) => l.weightRequired)
 }
 
 // ── Evaluation trace (for the Pricing Simulator / Resolution Visualizer) ─────

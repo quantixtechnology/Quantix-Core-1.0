@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params
     const b = await request.json().catch(() => ({}))
     const action = String(b.action || "").toUpperCase()
-    const order = await prisma.laundryOrder.findUnique({ where: { id }, select: { id: true, businessId: true, paymentStatus: true, items: { select: { id: true, serviceId: true, serviceName: true, barcodeGenerated: true, processingStage: true, processFlow: true } } } })
+    const order = await prisma.laundryOrder.findUnique({ where: { id }, select: { id: true, businessId: true, paymentStatus: true, items: { select: { id: true, serviceId: true, serviceName: true, garmentName: true, pricingType: true, weightKg: true, barcodeGenerated: true, processingStage: true, processFlow: true } } } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
 
     if (action === "GENERATE_ALL") {
@@ -50,6 +50,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const notBarcoded = order.items.filter((i) => !i.barcodeGenerated)
       if (order.items.length === 0 || notBarcoded.length > 0) {
         return NextResponse.json({ error: `All garments must have a barcode before processing (${notBarcoded.length} pending).`, code: "BARCODES_PENDING" }, { status: 409 })
+      }
+      // WEIGHT_REQUIRED gate: a PER_KG garment cannot advance without a measured
+      // weight (> 0) — otherwise it would bill ₹0. Backend enforcement; the UI
+      // shows "Weight Pending" but the server is authoritative.
+      const missingWeight = order.items.filter((i) => String(i.pricingType || "").toUpperCase() === "PER_KG" && !(i.weightKg != null && i.weightKg > 0))
+      if (missingWeight.length > 0) {
+        const first = missingWeight[0]
+        return NextResponse.json({
+          error: `Measured weight is required for ${first.garmentName || "garment"} — ${first.serviceName || "service"} before pricing can be finalized.`,
+          code: "WEIGHT_REQUIRED",
+          items: missingWeight.map((i) => ({ id: i.id, garment: i.garmentName, service: i.serviceName })),
+        }, { status: 422 })
       }
       // Payment policy: only ADVANCE_REQUIRED blocks processing before payment.
       // BEFORE_DELIVERY / SUBSCRIPTION / CUSTOM allow processing (payment is
