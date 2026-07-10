@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { validateProcessFlow } from "@/lib/laundry-processing"
 
 export const runtime = "nodejs"
 
@@ -36,6 +37,11 @@ export async function POST(request: Request) {
     if (!b.businessId || !b.name?.trim()) return NextResponse.json({ error: "businessId and name are required" }, { status: 400 })
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
+    // Canonical processing-route validation (same validator as update). The
+    // configured route is stored verbatim (QC → PACKED appended); an invalid
+    // route is rejected, never silently normalized.
+    const flow = validateProcessFlow(b.processFlow)
+    if (!flow.ok) return NextResponse.json({ error: flow.error, code: flow.code }, { status: 422 })
     const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
     const data = await prisma.laundryService.create({
       data: {
@@ -58,6 +64,7 @@ export async function POST(request: Request) {
         subscriptionEligible: b.subscriptionEligible ?? false,
         displayOrder: typeof b.displayOrder === "number" ? b.displayOrder : 0,
         isActive: b.isActive ?? true,
+        processFlow: flow.flow ? JSON.stringify(flow.flow) : null,
       },
     })
     return NextResponse.json({ success: true, data })

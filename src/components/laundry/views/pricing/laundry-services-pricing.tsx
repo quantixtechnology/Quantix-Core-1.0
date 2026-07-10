@@ -21,10 +21,12 @@ import { LaundryImageUpload } from "./laundry-image-upload"
 interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; processFlow: string | null; compatibleCategoryIds?: string[] }
 interface Category { id: string; name: string }
 
-// Stage codes a route can be composed from (QC → Packed are always appended).
+// Configurable working stages a route can be composed from. Quality Check →
+// Packing are mandatory terminals appended by the backend (shown locked below).
+// Steam is retired and intentionally NOT offered.
 const ROUTE_OPTIONS: { code: string; label: string }[] = [
   { code: "WASH", label: "Wash" }, { code: "DRYCLEAN", label: "Dry Clean" },
-  { code: "DRY", label: "Dry" }, { code: "STEAM", label: "Steam" },
+  { code: "DRY", label: "Dry" },
   { code: "IRON", label: "Iron" }, { code: "FOLD", label: "Folding" }, { code: "CLEAN", label: "Cleaning" },
 ]
 function parseRoute(raw: string | null): string[] {
@@ -166,7 +168,17 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
                       <button type="button" onClick={() => toggleStage(code)} className="text-slate-400 hover:text-rose-600 px-1">✕</button>
                     </div>
                   ))}
-                  <p className="text-[10px] text-slate-400 pt-1">Route: {route.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")} → Quality Check → Packed</p>
+                  <div className="flex items-center gap-2 text-xs pt-1 border-t mt-1">
+                    <span className="text-slate-400 w-4">{route.length + 1}.</span>
+                    <span className="font-medium text-slate-500 flex-1">Quality Check</span>
+                    <span className="text-[9px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-slate-400 w-4">{route.length + 2}.</span>
+                    <span className="font-medium text-slate-500 flex-1">Packing</span>
+                    <span className="text-[9px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 pt-1">Route: {route.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")} → Quality Check → Packing</p>
                 </div>
               )}
             </div>

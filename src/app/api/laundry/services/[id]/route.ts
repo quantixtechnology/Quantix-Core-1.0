@@ -1,7 +1,7 @@
 // PUT / DELETE /api/laundry/services/[id]
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { normalizeFlow, ROUTE_STAGES } from "@/lib/laundry-processing"
+import { validateProcessFlow } from "@/lib/laundry-processing"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
@@ -11,6 +11,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params
     const b = await request.json()
     const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
+    // Canonical processing-route validation (shared with create). An invalid
+    // route is rejected with INVALID_PROCESS_FLOW — never silently rewritten.
+    let flowUpdate: { processFlow: string | null } | undefined
+    if (b.processFlow !== undefined) {
+      const flow = validateProcessFlow(b.processFlow)
+      if (!flow.ok) return NextResponse.json({ error: flow.error, code: flow.code }, { status: 422 })
+      flowUpdate = { processFlow: flow.flow ? JSON.stringify(flow.flow) : null }
+    }
     const data = await prisma.laundryService.update({
       where: { id },
       data: {
@@ -32,14 +40,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(b.subscriptionEligible !== undefined && { subscriptionEligible: !!b.subscriptionEligible }),
         ...(b.displayOrder !== undefined && { displayOrder: b.displayOrder }),
         ...(b.isActive !== undefined && { isActive: !!b.isActive }),
-        // Configurable processing route: array of stage codes (validated
-        // against stable stage keys); QC → PACKED terminals are enforced.
-        // null clears the config (engine falls back to the name heuristic).
-        ...(b.processFlow !== undefined && {
-          processFlow: Array.isArray(b.processFlow) && b.processFlow.length
-            ? JSON.stringify(normalizeFlow(b.processFlow.map(String).filter((s: string) => (ROUTE_STAGES as readonly string[]).includes(s))))
-            : null,
-        }),
+        // Configurable processing route — validated by validateProcessFlow
+        // (QC → PACKED appended; STEAM/duplicates/malformed terminals rejected
+        // above). null clears the config (engine falls back to the heuristic).
+        ...(flowUpdate ?? {}),
       },
     })
 
