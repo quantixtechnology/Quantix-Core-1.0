@@ -132,7 +132,7 @@ export function CommerceTemplateReviewField({ businessId, productCode }: { busin
   if ((productCode || "").toUpperCase() !== "COMMERCE" || !data?.business.isCommerce) return null
   return (
     <div className="space-y-1">
-      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Storefront Template</p>
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Website Template</p>
       <p className="text-sm font-medium">{data.resolved.name} <span className="text-xs font-normal text-muted-foreground">· {SOURCE_LABEL[data.resolved.source] || data.resolved.source}</span></p>
     </div>
   )

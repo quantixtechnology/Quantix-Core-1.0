@@ -52,6 +52,7 @@ function LibraryHome({ onOpen }: { onOpen: (id: string) => void }) {
   const [catFilter, setCatFilter] = useState("ALL")
   const [statusFilter, setStatusFilter] = useState("ALL")
   const [creating, setCreating] = useState(false)
+  const [productScope, setProductScope] = useState<"COMMERCE" | "LAUNDRY">("COMMERCE")
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -71,14 +72,30 @@ function LibraryHome({ onOpen }: { onOpen: (id: string) => void }) {
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2"><LayoutTemplate className="h-5 w-5 text-indigo-600" /> Storefront Templates</h1>
-          <p className="text-sm text-muted-foreground">Quantix Core Commerce master templates, category defaults and assignments. Commerce is never Grocery-coupled.</p>
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2"><LayoutTemplate className="h-5 w-5 text-indigo-600" /> Website Templates</h1>
+          <p className="text-sm text-muted-foreground">Quantix Core master website templates, category defaults and assignments — organised by Product then Business Category.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[11px]">Phase 2</Badge>
           <Button onClick={() => setCreating(true)} className="gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"><Plus className="h-4 w-4" /> New Template</Button>
         </div>
       </div>
+
+      {/* Product scope — honest renderer status per product. The library manages
+          COMMERCE templates today; LAUNDRY templates + renderer are Phase 4. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => setProductScope("COMMERCE")} className={`rounded-lg border px-3 h-9 text-xs font-medium flex items-center gap-1.5 ${productScope === "COMMERCE" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+          Commerce <Badge className="bg-emerald-100 text-emerald-700 text-[9px]">Renderer Active</Badge>
+        </button>
+        <button onClick={() => setProductScope("LAUNDRY")} className={`rounded-lg border px-3 h-9 text-xs font-medium flex items-center gap-1.5 ${productScope === "LAUNDRY" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+          Laundry <Badge className="bg-slate-100 text-slate-500 text-[9px]">Renderer Planned</Badge>
+        </button>
+      </div>
+
+      {productScope === "LAUNDRY" ? (
+        <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+          Laundry website templates and renderer are <b>planned</b> (Phase 4). No Laundry templates exist yet — none are fabricated here.
+        </div>
+      ) : (
 
       <Tabs defaultValue="library">
         <TabsList>
@@ -127,6 +144,7 @@ function LibraryHome({ onOpen }: { onOpen: (id: string) => void }) {
         <TabsContent value="mapping"><CategoryMapping templates={rows} onChanged={load} /></TabsContent>
         <TabsContent value="assign"><AssignmentPanel /></TabsContent>
       </Tabs>
+      )}
 
       {creating && <CreateTemplateDialog onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); load(); onOpen(id) }} />}
     </div>

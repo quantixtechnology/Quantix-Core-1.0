@@ -19,6 +19,7 @@ import { Loader2, ArrowRight, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import { getAuthHeaders } from "@/lib/admin-fetch"
 import { COMMERCE_BUSINESS_CATEGORIES, commerceCategoryLabel } from "@/lib/commerce/commerce-categories"
+import { getProductCategories } from "@/lib/products/product-categories"
 
 interface Consequence {
   current: { category: string; label: string }
@@ -62,13 +63,21 @@ export function CommerceCategoryField({
     )
   }
 
-  // New business: plain controlled Select bound to the form value.
+  // New business: category is unavailable until a Product is chosen, and the
+  // vocabulary is scoped to that product (never a Commerce default).
   if (!isExisting) {
+    if (!productCode) {
+      return <p className="text-[11px] text-muted-foreground italic py-2">Select a Product first to view available business categories.</p>
+    }
+    const cats = getProductCategories(productCode)
+    if (cats.length === 0) {
+      return <p className="text-[11px] text-amber-600 py-2">No business categories are defined for {productCode} yet.</p>
+    }
     return (
       <Select value={value || undefined} onValueChange={onChange}>
         <SelectTrigger className="h-9"><SelectValue placeholder="Select a business category…" /></SelectTrigger>
         <SelectContent>
-          {COMMERCE_BUSINESS_CATEGORIES.map((c) => (
+          {cats.map((c) => (
             <SelectItem key={c.value} value={c.value}>{c.label} <span className="text-muted-foreground text-xs">· {c.description}</span></SelectItem>
           ))}
         </SelectContent>

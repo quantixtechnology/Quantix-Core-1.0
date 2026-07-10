@@ -37,7 +37,9 @@ import { LaundryImageUpload } from '@/components/laundry/views/pricing/laundry-i
 import { LaundryProductFeaturesCard } from '@/components/admin/laundry/laundry-product-features-card'
 import { CommerceTemplateAssignCard, CommerceTemplateReviewField } from '@/components/admin/commerce/commerce-template-assign-card'
 import { CommerceCategoryField } from '@/components/admin/businesses/commerce-category-field'
+import { ProductSelector } from '@/components/admin/businesses/product-selector'
 import { commerceCategoryLabel } from '@/lib/commerce/commerce-categories'
+import { isCategoryValidForProduct } from '@/lib/products/product-categories'
 import { useAdminStore } from '@/stores/admin-store'
 import { getWorkspaceEntryRoute } from '@/lib/workspace-routes'
 import { ProductSelectionStep } from '@/components/onboarding/steps/product-selection-step'
@@ -356,7 +358,19 @@ export function BusinessManagementWizard({ businessId }: Props) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><Lbl>Business Name</Lbl><Input value={form.name ?? ''} onChange={(e) => set('name', e.target.value)} /></div>
                   <div><Lbl>Slug</Lbl><Input value={form.slug ?? ''} onChange={(e) => set('slug', e.target.value)} /></div>
-                  <div><Lbl>Business Category</Lbl><CommerceCategoryField businessId={bizId ?? null} productCode={biz?.productCode} value={form.businessType ?? ''} onChange={(v) => set('businessType', v)} onChanged={() => bizId && load(bizId)} /></div>
+                  {/* Product FIRST — the authoritative platform classification. Locked
+                      once the business is provisioned (productCode assigned / ACTIVE). */}
+                  <div><Lbl>Product</Lbl><ProductSelector
+                    value={(biz?.productCode || form.productCode) ?? ''}
+                    locked={!!biz?.productCode || biz?.status === 'ACTIVE'}
+                    onChange={(code) => {
+                      set('productCode', code)
+                      // Changing product re-evaluates category: clear an incompatible one.
+                      if (form.businessType && !isCategoryValidForProduct(code, form.businessType)) set('businessType', '')
+                    }}
+                  /></div>
+                  {/* Business Category — product-scoped; unavailable until Product chosen. */}
+                  <div><Lbl>Business Category</Lbl><CommerceCategoryField businessId={bizId ?? null} productCode={(biz?.productCode || form.productCode) ?? null} value={form.businessType ?? ''} onChange={(v) => set('businessType', v)} onChanged={() => bizId && load(bizId)} /></div>
                   <div><Lbl>Tagline</Lbl><Input value={form.tagline ?? ''} onChange={(e) => set('tagline', e.target.value)} /></div>
                 </div>
               </Card>
@@ -458,6 +472,15 @@ export function BusinessManagementWizard({ businessId }: Props) {
               {/* Commerce storefront template — self-hides unless product=COMMERCE.
                   Resolves the category default and allows a compatible override. */}
               <CommerceTemplateAssignCard businessId={bizId} productCode={biz?.productCode} />
+              {/* Laundry website template — honest platform state. The Laundry
+                  template renderer is not implemented yet (Commerce renderer first).
+                  Never show Commerce templates to a Laundry business. */}
+              {biz?.productCode === 'LAUNDRY' && (
+                <Card className="p-6 space-y-1">
+                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Website Template</h3>
+                  <p className="text-xs text-muted-foreground">Laundry website templates are <b>planned</b> — the template renderer is not yet enabled for the Laundry product. No Commerce template is applied.</p>
+                </Card>
+              )}
               <Card className="p-6">
                 <h3 className="font-semibold text-sm mb-1">Payment Gateway Availability</h3>
                 <p className="text-xs text-muted-foreground mb-3">Quantix decides which gateways the tenant may use; the Business Owner configures keys for enabled ones (not here).</p>
