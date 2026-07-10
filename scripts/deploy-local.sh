@@ -1,411 +1,249 @@
 #!/bin/bash
 # =============================================================================
-# QUANTIX CORE — Local Deploy Script
-# Invoked by the /api/deploy webhook. Runs entirely on the VPS.
+# QUANTIX CORE — Release-Isolated Deploy Script (build-in-release)
+# Invoked by the /api/deploy webhook (or manually). Runs entirely on the VPS.
 #
-# Hardening:
-#   - set -euo pipefail on line 1
-#   - ERR trap writes "failed" status for any unexpected exit
-#   - EXIT trap cleans up the lock file unconditionally
-#   - Build failure leaves the previous PM2 process untouched
-#   - PM2 restart errors fail the deploy loudly (no || true)
-#   - Health check gates the "success" status — unhealthy = failed
-#   - Duration tracked via epoch seconds
-#   - Status file and log cleaned up 10 min after success
-#   - No sensitive env vars written to the log file
+# WHY THIS EXISTS — the previous deployer ran `rm -rf .next` inside the LIVE
+# project dir before `next build` finished, and npm install/prisma generate
+# mutated the shared runtime the live process used: a restart mid-build left no
+# server.js (502); a restored older build referenced a Prisma client hash the
+# mutated runtime no longer had (DB APIs 500 while shell/health stayed 200).
+#
+# SAFETY MODEL:
+#   • The live PM2 process runs from /home/ubuntu/quantix-current — a symlink to
+#     an immutable release under /home/ubuntu/quantix-releases/<commit>-<ts>.
+#   • Each release is a COMPLETE, self-contained build directory that is CLONED
+#     and BUILT AT ITS OWN PATH (npm ci + prisma generate + next build run inside
+#     it). This matters because the Next.js/Turbopack build bakes the build-time
+#     ABSOLUTE PATH and a hashed Prisma external into the compiled output — the
+#     output is NOT relocatable, so a build must run from the exact path it was
+#     built at. Building in-place guarantees build + Prisma runtime are one unit
+#     whose baked paths match its own location. Rollback restores a matching unit.
+#   • The candidate is health-checked on a TEMP PORT (incl. a Prisma-backed
+#     readiness probe) BEFORE the symlink is switched.
+#   • The switch is an atomic `ln -sfn`. A failed build/prisma/readiness NEVER
+#     touches the live symlink. A failed post-switch readiness rolls the symlink
+#     back to the previous release (status ROLLED_BACK). The previous release is
+#     kept until the new one is proven healthy.
+#   • Deploy status is /tmp/quantix-deploy-status.json — served by nginx
+#     independently of quantix-core, so it stays readable even if the app is down.
 # =============================================================================
 
 set -euo pipefail
 
 # ─── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO="$(cd "$SCRIPT_DIR/.." && pwd)"                 # git source + deploy script
+RELEASES_DIR="/home/ubuntu/quantix-releases"          # immutable, built-in-place
+CURRENT_LINK="/home/ubuntu/quantix-current"           # symlink → active release
+PM2_APP="quantix-core"
+APP_PORT=3000
+CAND_PORT=3011                                         # candidate temp port
+KEEP_RELEASES=3
 
 DB_FILE="/home/ubuntu/data/custom.db"
 LOG_FILE="/tmp/quantix-deploy.log"
 STATUS_FILE="/tmp/quantix-deploy-status.json"
-LOCK_FILE="/tmp/quantix-deploy.lock"
+# Script-level mutual exclusion via an atomic mkdir at a DISTINCT path. The
+# /api/deploy webhook route separately creates a FILE lock at
+# /tmp/quantix-deploy.lock (openSync 'wx') before spawning this script and
+# expects this script to remove that file when done — so we clean both on exit.
+LOCK_DIR="/tmp/quantix-deploy-run.lock"
+ROUTE_LOCK_FILE="/tmp/quantix-deploy.lock"
 
-# ─── Time tracking ─────────────────────────────────────────────────────────────
 START_EPOCH=$(date +%s)
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURRENT_STEP="init"
 COMMIT=""
+PREV_RELEASE=""
+NEW_RELEASE=""
+CAND_PID=""
 
-# ─── Helpers ───────────────────────────────────────────────────────────────────
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
-# Write status JSON. Never includes env var values — only step names/messages.
-# Atomic: write to a tmp file then rename so readers never see a partial file.
 status() {
-  local step="$1" msg="$2" state="${3:-running}"
-  local now duration_sec=0
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  duration_sec=$(( $(date +%s) - START_EPOCH ))
+  local step="$1" msg="$2" state="${3:-running}" now duration_sec
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; duration_sec=$(( $(date +%s) - START_EPOCH ))
   printf '{"status":"%s","step":"%s","message":"%s","startedAt":"%s","updatedAt":"%s","commit":"%s","durationSeconds":%d}\n' \
     "$state" "$step" "$msg" "$STARTED_AT" "$now" "$COMMIT" "$duration_sec" \
     > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
+  chmod 644 "$STATUS_FILE" 2>/dev/null || true
 }
-
-fail() {
-  local msg="${1:-Unexpected error}"
-  log "❌ $msg"
-  local now duration_sec=0
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  duration_sec=$(( $(date +%s) - START_EPOCH ))
-  printf '{"status":"failed","step":"%s","message":"%s","startedAt":"%s","updatedAt":"%s","commit":"%s","durationSeconds":%d}\n' \
-    "$CURRENT_STEP" "$msg" "$STARTED_AT" "$now" "$COMMIT" "$duration_sec" \
-    > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || true
-  exit 1
+fail() { log "❌ ${1:-error}"; status "$CURRENT_STEP" "${1:-error}" "failed"; exit 1; }
+cleanup_candidate() {
+  if [ -n "${CAND_PID}" ] && kill -0 "$CAND_PID" 2>/dev/null; then
+    kill "$CAND_PID" 2>/dev/null || true; sleep 1; kill -9 "$CAND_PID" 2>/dev/null || true
+  fi
 }
+LOCK_ACQUIRED=""
+trap 'code=$?; cleanup_candidate; if [ "$code" != "0" ]; then status "$CURRENT_STEP" "Unexpected error (exit $code)" "failed"; fi' ERR
+# Only remove the lock if THIS process actually acquired it — an aborting
+# concurrent invocation must never delete the running deploy's lock.
+trap 'cleanup_candidate; [ -n "$LOCK_ACQUIRED" ] && rmdir "$LOCK_DIR" 2>/dev/null; rm -f "$ROUTE_LOCK_FILE" 2>/dev/null; true' EXIT
 
-# ─── ERR trap ──────────────────────────────────────────────────────────────────
-# Catches any command that exits non-zero and wasn't explicitly handled.
-# Without this, set -e exits silently, leaving the status file stuck on
-# the last step's "running" value and the CI polling forever.
-trap 'fail "Unexpected error at step: $CURRENT_STEP (exit $?)"' ERR
-
-# ─── EXIT trap ─────────────────────────────────────────────────────────────────
-# Removes the lock file regardless of how the script exits.
-# Runs AFTER the ERR trap so fail() writes the status before the lock is freed.
-trap 'rm -f "$LOCK_FILE"' EXIT
-
-# ─── Rotate log ────────────────────────────────────────────────────────────────
-if [ -f "$LOG_FILE" ]; then
-  tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
-fi
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then log "⚠️  Another deploy is in progress. Aborting."; exit 0; fi
+LOCK_ACQUIRED=1
+[ -f "$LOG_FILE" ] && { tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"; } || true
 
 log "============================================================"
-log " QUANTIX DEPLOY — $(date)"
+log " QUANTIX RELEASE DEPLOY — $(date)"
+log " Repo=$REPO  Current -> $(readlink "$CURRENT_LINK" 2>/dev/null || echo none)"
+log " Node/NPM=$(node -v 2>/dev/null)/$(npm -v 2>/dev/null)  Disk free=$(df -h / | tail -1 | awk '{print $4}')"
 log "============================================================"
-log "Project  : $PROJECT"
-log "User     : $(whoami)"
-log "Node     : $(node --version 2>/dev/null || echo NOT FOUND)"
-log "NPM      : $(npm --version  2>/dev/null || echo NOT FOUND)"
-log "PM2      : $(pm2 --version  2>/dev/null || echo NOT FOUND)"
-log "Disk     : $(df -h / | tail -1 | awk '{print $4" free of "$2}')"
-# DB path logged without its contents — no sensitive data exposed
-log "DB       : $DB_FILE (exists: $([ -f "$DB_FILE" ] && echo yes || echo no))"
+[ -d "$REPO" ] || fail "Repo not found: $REPO"
+mkdir -p "$RELEASES_DIR"
 
-[ -d "$PROJECT" ] || fail "Project directory not found: $PROJECT"
-cd "$PROJECT"
-
-# ─── DB backup ─────────────────────────────────────────────────────────────────
-CURRENT_STEP="backup"
-status "backup" "Backing up database"
-log ""
-log "── DB backup ────────────────────────────────────────────────"
-BACKUP_DIR="/home/ubuntu/db-backups"
-mkdir -p "$BACKUP_DIR"
-log "[DB] Path: $DB_FILE"
+# ─── 1. DB backup (prove it exists) ──────────────────────────────────────────────
+CURRENT_STEP="backup"; status "backup" "Backing up database"
+BACKUP_DIR="/home/ubuntu/db-backups"; mkdir -p "$BACKUP_DIR"
 if [ -f "$DB_FILE" ]; then
-  log "[DB] Exists: yes"
   BACKUP="$BACKUP_DIR/custom.db.$(date +%Y%m%d-%H%M%S).bak"
-  log "[DB] Backup destination: $BACKUP"
-  cp "$DB_FILE" "$BACKUP" || { log "⚠️ DB backup failed, continuing anyway"; true; }
-  log "✅ DB backed up → $BACKUP"
-  ls -t "$BACKUP_DIR"/custom.db.*.bak 2>/dev/null | tail -n +11 | xargs rm -f || true
+  cp "$DB_FILE" "$BACKUP" && log "✅ DB backed up → $BACKUP ($(stat -c%s "$BACKUP" 2>/dev/null || echo '?')b)" || log "⚠️  backup failed, continuing"
+  ls -t "$BACKUP_DIR"/custom.db.*.bak 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
 else
-  log "[DB] Exists: no"
-  log "⚠️ Database missing at $DB_FILE. Skipping backup and continuing deployment."
+  log "⚠️  DB missing at $DB_FILE — continuing"
 fi
 
-# ─── Git ───────────────────────────────────────────────────────────────────────
-CURRENT_STEP="git"
-status "git" "Pulling latest code"
-log ""
-log "── Git ──────────────────────────────────────────────────────"
-git fetch --quiet origin main || fail "git fetch failed"
-mkdir -p "$(dirname "$DB_FILE")"
-git reset --hard origin/main || fail "git reset failed"
-COMMIT="$(git rev-parse --short HEAD)"
-log "Commit: $COMMIT — $(git log -1 --pretty='%s')"
+# ─── 2. Resolve target commit from origin/main (in REPO) ──────────────────────────
+CURRENT_STEP="git"; status "git" "Resolving target commit"
+git -C "$REPO" fetch origin --quiet
+TARGET_SHA="$(git -C "$REPO" rev-parse origin/main)"
+COMMIT="$(git -C "$REPO" rev-parse --short origin/main)"
+log "✅ Target: $COMMIT ($TARGET_SHA)"
 
-# ─── .env patch ────────────────────────────────────────────────────────────────
-# Only DATABASE_URL is injected — no other env vars are read or logged here
-CURRENT_STEP="env"
-log ""
-log "── .env patch ───────────────────────────────────────────────"
-touch "$PROJECT/.env"
-grep -v "^DATABASE_URL=" "$PROJECT/.env" > /tmp/env_tmp || true
-{ echo "DATABASE_URL=file:$DB_FILE"; cat /tmp/env_tmp; } > "$PROJECT/.env"
-log "✅ DATABASE_URL written"
-export DATABASE_URL="file:$DB_FILE"
+# ─── 3. Create a NEW release directory (clone the repo, checkout target) ──────────
+CURRENT_STEP="release"; status "release" "Creating release $COMMIT"
+NEW_RELEASE="$RELEASES_DIR/${COMMIT}-$(date +%s)"
+git clone --local --quiet "$REPO" "$NEW_RELEASE" || fail "release clone failed"
+git -C "$NEW_RELEASE" checkout --quiet "$TARGET_SHA" || fail "release checkout failed"
+[ -f "$REPO/.env" ] && cp "$REPO/.env" "$NEW_RELEASE/.env"   # secrets are not in git
+log "✅ Release dir $NEW_RELEASE @ $COMMIT"
 
-# ─── npm install ───────────────────────────────────────────────────────────────
-CURRENT_STEP="install"
-status "install" "Installing dependencies"
-log ""
-log "── npm install ──────────────────────────────────────────────"
-npm install --legacy-peer-deps 2>&1 | tee -a "$LOG_FILE" | tail -5 \
-  || fail "npm install failed — check log for errors"
-log "✅ Dependencies ready"
-
-# ─── Prisma ────────────────────────────────────────────────────────────────────
-CURRENT_STEP="prisma"
-status "prisma" "Syncing database schema"
-log ""
-log "── Prisma ───────────────────────────────────────────────────"
-npx prisma generate 2>&1 | tee -a "$LOG_FILE" | tail -2 \
-  || fail "prisma generate failed"
-npx prisma db push --accept-data-loss 2>&1 | tee -a "$LOG_FILE" | tail -2 \
-  || fail "prisma db push failed"
-log "✅ Schema synced"
-
-# ─── Super admin ───────────────────────────────────────────────────────────────
-CURRENT_STEP="seed"
-status "seed" "Verifying super admin"
-log ""
-log "── Super admin ──────────────────────────────────────────────"
-node scripts/ensure-super-admin.js 2>&1 | tee -a "$LOG_FILE" || true
-log "✅ Super admin verified"
-
-# Commerce storefront baseline templates (Phase 2). Idempotent — creates the
-# Neutral/Grocery/Meat-Delivery master templates + category defaults only if
-# absent; never overwrites customised templates. Non-fatal.
-log ""
-log "── Commerce baseline templates ──────────────────────────────"
-node scripts/seed-commerce-templates.js 2>&1 | tee -a "$LOG_FILE" || log "⚠️  commerce template seed skipped (non-fatal)"
-log "✅ Commerce baseline templates verified"
-
-# ─── Upload root ────────────────────────────────────────────────────────────────
-# The image upload endpoint (/api/core/upload) writes to UPLOAD_ROOT
-# (ecosystem.config.js → /var/www/uploads). If that directory does not exist or
-# is not writable by the app/PM2 user, EVERY image upload fails with EACCES —
-# regardless of file size. No prior step provisioned it, so we ensure it here.
-# Non-fatal: a warning is logged with the exact one-time fix if we lack rights.
-CURRENT_STEP="uploads"
-status "uploads" "Ensuring upload root is writable"
-log ""
-log "── Upload root ──────────────────────────────────────────────"
-UPLOAD_ROOT_DIR="${UPLOAD_ROOT:-/var/www/uploads}"
-APP_USER="$(whoami)"
-log "Upload root: $UPLOAD_ROOT_DIR (app user: $APP_USER)"
-if mkdir -p "$UPLOAD_ROOT_DIR" 2>/dev/null && [ -w "$UPLOAD_ROOT_DIR" ]; then
-  log "✅ Upload root exists and is writable"
-elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-  if sudo mkdir -p "$UPLOAD_ROOT_DIR" && sudo chown -R "$APP_USER":"$APP_USER" "$UPLOAD_ROOT_DIR" && sudo chmod -R u+rwX "$UPLOAD_ROOT_DIR"; then
-    log "✅ Upload root created and owned by $APP_USER (via sudo)"
-  else
-    log "⚠️  Could not provision upload root. Image uploads will FAIL until you run once:"
-    log "⚠️    sudo mkdir -p $UPLOAD_ROOT_DIR && sudo chown -R $APP_USER:$APP_USER $UPLOAD_ROOT_DIR"
-  fi
+# ─── 4. Build INSIDE the release (bakes this release's own absolute path) ─────────
+cd "$NEW_RELEASE"
+CURRENT_STEP="install"; status "install" "Preparing dependencies"
+export PUPPETEER_SKIP_DOWNLOAD=true PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+# Copy the repo's already-installed, known-good node_modules into the release
+# (an independent COPY, not hard-linked, so prisma generate below mutates only
+# the release). This avoids a fresh `npm install`, which on this VPS re-runs
+# puppeteer's Chrome download (fails on a stale cache) and is memory-heavy.
+# If the target commit changed dependencies, refresh only the delta afterwards.
+cp -a "$REPO/node_modules" "$NEW_RELEASE/node_modules"
+if ! cmp -s "$REPO/package-lock.json" "$NEW_RELEASE/package-lock.json" 2>/dev/null; then
+  log "package-lock differs — refreshing dependency delta (scripts skipped)"
+  npm install --no-audit --no-fund --ignore-scripts 2>&1 | tail -3 | tee -a "$LOG_FILE" || log "⚠️  dependency refresh warning (continuing)"
+  npx prisma generate 2>&1 | tail -2 | tee -a "$LOG_FILE" || true
 else
-  log "⚠️  $UPLOAD_ROOT_DIR is not writable by $APP_USER and passwordless sudo is unavailable."
-  log "⚠️  Image uploads will FAIL with EACCES until you run once:"
-  log "⚠️    sudo mkdir -p $UPLOAD_ROOT_DIR && sudo chown -R $APP_USER:$APP_USER $UPLOAD_ROOT_DIR"
+  log "✅ dependencies unchanged — using repo node_modules copy"
 fi
 
-# ─── Build ─────────────────────────────────────────────────────────────────────
-# If this step fails, the script exits here. PM2 is still running the PREVIOUS
-# .next/standalone — the old version stays live. Production is not disrupted.
-CURRENT_STEP="build"
-status "build" "Running next build (~3-5 min)"
-log ""
-log "── next build ───────────────────────────────────────────────"
-# ── Backup running standalone ────────────────────────────────────────────────
-# If this build fails, the restore block below puts this copy back so PM2
-# keeps serving the previous version.
-if [ -d ".next/standalone" ]; then
-  rm -rf /tmp/quantix-standalone-prev
-  cp -r .next/standalone /tmp/quantix-standalone-prev
-  log "Standalone backed up to /tmp/quantix-standalone-prev"
-fi
+CURRENT_STEP="prisma"; status "prisma" "Prisma generate + schema sync"
+npx prisma generate 2>&1 | tail -2 | tee -a "$LOG_FILE"
+# Existing policy: additive schema sync (backup taken above; no-op when unchanged).
+npx prisma db push --accept-data-loss 2>&1 | tail -2 | tee -a "$LOG_FILE"
 
-# ── Wipe .next entirely before building ──────────────────────────────────────
-# WHY: Next.js file-tracing (outputFileTracingRoot = project root) includes
-# every file under the root that isn't explicitly excluded.  A previous
-# .next/standalone/ build is itself a full project-tree copy.  If .next/
-# is still present when 'next build' runs, the tracer absorbs the old
-# standalone into the new one, producing recursive nesting such as:
-#   .next/standalone/Quantix-Core-1.0/.next/standalone/Quantix-Core-1.0/…
-# That shifts the server.js depth on every deploy, breaks the PM2 args path,
-# and causes 'pm2 startOrRestart' to hang because it can't find server.js.
-#
-# The standalone was backed up above; if the build fails it is restored.
-# outputFileTracingExcludes: { '*': ['.next/**', …] } in next.config.js is
-# belt-and-braces for direct 'next build' runs that bypass this script.
-rm -rf .next
-log "Removed previous .next for clean build (standalone backed up)"
+CURRENT_STEP="seed"; status "seed" "Verifying baseline data (idempotent)"
+node scripts/ensure-super-admin.js 2>&1 | tail -2 | tee -a "$LOG_FILE" || log "⚠️  super-admin seed skipped"
+node scripts/seed-commerce-templates.js 2>&1 | tail -2 | tee -a "$LOG_FILE" || log "⚠️  commerce seed skipped"
 
-# Log the build environment for diagnostics
-log "Node $(node --version) | NPM $(npm --version) | ulimit nofile=$(ulimit -n)"
-
-# Run the build inside a completely clean environment.
-#
-# ROOT CAUSE: Next.js 16 uses Turbopack as the default production bundler.
-# Turbopack spawns a build worker (turbopack-build/index.js) that inherits
-# the full process.env via worker.js:81 `...process.env`. PM2 injects
-# HOSTNAME=0.0.0.0 into the entire process tree. Turbopack's native Rust
-# binding uses HOSTNAME for worker-to-main IPC: it binds its server to
-# 0.0.0.0 (valid) but then hands that address to sub-workers as the connect
-# target (invalid — 0.0.0.0 cannot be used as a connection destination).
-# Workers fail to initialise, the native `generate()` callback is never
-# registered, and the build throws "TypeError: generate is not a function"
-# before any route compilation begins.
-#
-# THREE-LAYER DEFENCE:
-#  1. env -i  — strips HOSTNAME=0.0.0.0 (and all other PM2 vars) so the
-#               Turbopack worker never sees the bad address.
-#  2. NEXT_TURBOPACK_USE_WORKER=0 — forces Turbopack to run in-process
-#               (no worker spawn), bypassing IPC entirely as belt-and-braces.
-#  3. next.config.js (CJS) instead of next.config.ts — eliminates the
-#               SWC transpilation step at config-load time, removing a second
-#               native-binary dependency before Turbopack even starts.
-#
-# Manual builds succeed because a developer shell never has HOSTNAME=0.0.0.0.
-( env -i \
-    HOME="/root" \
-    USER="root" \
-    PATH="$PATH" \
-    LANG="en_US.UTF-8" \
-    NODE_ENV="production" \
-    DATABASE_URL="file:$DB_FILE" \
-    NEXT_TELEMETRY_DISABLED="1" \
-    NODE_OPTIONS="--max-old-space-size=1536" \
+CURRENT_STEP="build"; status "build" "Building candidate (~3-6 min)"
+log "── next build (inside release; live release untouched) ──────"
+# Clean env avoids the PM2 HOSTNAME=0.0.0.0 Turbopack worker bug.
+( env -i HOME="$HOME" USER="$(whoami)" PATH="$PATH" LANG="en_US.UTF-8" \
+    NODE_ENV="production" DATABASE_URL="file:$DB_FILE" \
+    NEXT_TELEMETRY_DISABLED="1" NODE_OPTIONS="--max-old-space-size=1536" \
     NEXT_TURBOPACK_USE_WORKER="0" \
-    npm run build 2>&1 | tee -a "$LOG_FILE" ) || {
-  # Restore the previous standalone so PM2 keeps serving the old version
-  if [ -d "/tmp/quantix-standalone-prev" ]; then
-    rm -rf .next/standalone
-    cp -r /tmp/quantix-standalone-prev .next/standalone
-    log "⚠️  Build failed — previous standalone restored, PM2 continues on old version"
-  fi
-  fail "next build failed — previous version restored and still running"
-}
-rm -rf /tmp/quantix-standalone-prev
-log "✅ Build complete"
+    npm run build 2>&1 | tail -6 | tee -a "$LOG_FILE" ) \
+  || { rm -rf "$NEW_RELEASE"; fail "next build failed — release discarded, live untouched"; }
 
-# ─── Standalone assets ─────────────────────────────────────────────────────────
-# outputFileTracingRoot is set to __dirname (project root) in next.config.js,
-# so server.js lands at .next/standalone/server.js with no subdirectory nesting.
-# The find is kept dynamic so the deploy survives any future path change.
-CURRENT_STEP="assets"
-status "assets" "Copying standalone assets"
-log ""
-log "── Standalone assets ────────────────────────────────────────"
-SERVER_JS=$(find "$PROJECT/.next/standalone" -maxdepth 2 -name "server.js" \
-  -not -path "*/node_modules/*" 2>/dev/null | head -1)
-[ -n "$SERVER_JS" ] || fail "Standalone server.js not found — build may have failed"
-STANDALONE="$(dirname "$SERVER_JS")"
-log "Standalone dir: $STANDALONE"
-# Static assets at the standalone root (where Next.js expects them)
-cp -r "$PROJECT/.next/static" "$PROJECT/.next/standalone/.next/" 2>/dev/null || true
-cp -r "$PROJECT/public"       "$PROJECT/.next/standalone/"        2>/dev/null || true
-# .env written next to server.js so the runtime picks it up regardless of cwd
+CURRENT_STEP="assemble"; status "assemble" "Finalising release"
+[ -f "$NEW_RELEASE/.next/standalone/server.js" ] || { rm -rf "$NEW_RELEASE"; fail "standalone missing — release discarded"; }
 {
-  echo "DATABASE_URL=file:$DB_FILE"
-  echo "PORT=3000"
-  echo "HOSTNAME=0.0.0.0"
-  grep -v "^DATABASE_URL\|^PORT\|^HOSTNAME" "$PROJECT/.env" 2>/dev/null || true
-} > "$STANDALONE/.env"
-log "✅ Assets + .env written to standalone"
+  echo "DATABASE_URL=file:$DB_FILE"; echo "PORT=$APP_PORT"; echo "HOSTNAME=0.0.0.0"
+  grep -v -E '^(DATABASE_URL|PORT|HOSTNAME)=' "$NEW_RELEASE/.env" 2>/dev/null || true
+} > "$NEW_RELEASE/.next/standalone/.env"
 
-# ─── PM2 restart ───────────────────────────────────────────────────────────────
-# Use startOrRestart so ecosystem.config.js is always the source of truth for
-# the script path. plain `pm2 restart` keeps the old path; `startOrRestart`
-# re-reads the config file, which is what we want after a path change.
-CURRENT_STEP="restart"
-status "restart" "Restarting app via PM2"
-log ""
-log "── PM2 ──────────────────────────────────────────────────────"
-pm2 startOrRestart "$PROJECT/ecosystem.config.js" --update-env 2>&1 | tee -a "$LOG_FILE" \
-  || fail "pm2 restart failed — check: pm2 logs quantix"
-pm2 save 2>/dev/null || true
-# || true: pm2 list failure must not abort the deploy — the restart already succeeded.
-pm2 list 2>&1 | tee -a "$LOG_FILE" || true
-
-# ─── Post-restart diagnostics ──────────────────────────────────────────────────
-log ""
-log "── Post-restart diagnostics ────────────────────────────────"
-log "Checking PM2 process state..."
-PM2_PID=$(pm2 list 2>/dev/null | grep quantix-core | awk '{print $NF}' | head -1 || echo "unknown")
-log "PM2 quantix-core PID: $PM2_PID"
-
-log "Checking if port 3000 is listening..."
-if netstat -tlnp 2>/dev/null | grep -q ":3000 "; then
-  log "✅ Port 3000 is listening"
-elif ss -tlnp 2>/dev/null | grep -q ":3000 "; then
-  log "✅ Port 3000 is listening (via ss)"
-else
-  log "⚠️  Port 3000 not yet listening (may still be starting)"
-fi
-
-log "Testing localhost:3000 connectivity..."
-CURL_HTTP=$(curl -s -o /tmp/curl_test.txt -w "%{http_code}" --max-time 5 http://localhost:3000 2>/dev/null || echo "000")
-CURL_HEAD=$(head -c 200 /tmp/curl_test.txt 2>/dev/null || echo "")
-log "HTTP response: $CURL_HTTP"
-if [ -n "$CURL_HEAD" ]; then
-  log "Response preview: $CURL_HEAD"
-fi
-rm -f /tmp/curl_test.txt
-
-log "Testing /api/deploy/status endpoint..."
-STATUS_HTTP=$(curl -s -o /tmp/status_test.txt -w "%{http_code}" --max-time 5 http://localhost:3000/api/deploy/status 2>/dev/null || echo "000")
-STATUS_BODY=$(cat /tmp/status_test.txt 2>/dev/null || echo "")
-log "HTTP response: $STATUS_HTTP"
-if [ -n "$STATUS_BODY" ]; then
-  log "Response: $STATUS_BODY"
-fi
-rm -f /tmp/status_test.txt
-
-log "Testing /api/build-info endpoint..."
-BUILD_HTTP=$(curl -s -o /tmp/build_test.txt -w "%{http_code}" --max-time 5 http://localhost:3000/api/build-info 2>/dev/null || echo "000")
-BUILD_BODY=$(cat /tmp/build_test.txt 2>/dev/null || echo "")
-log "HTTP response: $BUILD_HTTP"
-if [ -n "$BUILD_BODY" ]; then
-  log "Response: $BUILD_BODY"
-fi
-rm -f /tmp/build_test.txt
-
-# ─── Health check ──────────────────────────────────────────────────────────────
-# Retry up to 8 times with 5 s gaps (40 s total window).
-# WHY retry: pm2 startOrRestart returns as soon as the process is "online" at
-# the PM2 level, but the Next.js standalone may still be binding its port and
-# loading modules. A single 15 s sleep was sometimes not enough on a loaded VPS.
-# A non-2xx on every attempt fails the deploy. The old standalone is gone at
-# this point so we must fail loudly — autorestart will keep trying to serve,
-# but CI must know it failed.
-CURRENT_STEP="health"
-status "health" "Checking app health"
-log ""
-log "── Health check ─────────────────────────────────────────────"
-HTTP="000"
-for attempt in 1 2 3 4 5 6 7 8; do
-  sleep 5
-  HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
-    http://localhost:3000 2>/dev/null || echo "000")
-  if echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
-    log "✅ App healthy (HTTP $HTTP, attempt $attempt)"
-    break
+# ─── 5. Candidate health check on a TEMP PORT (runs exactly as prod will) ─────────
+CURRENT_STEP="candidate-health"; status "candidate-health" "Validating candidate on :$CAND_PORT"
+# Free the candidate port in case a previous aborted run left a listener.
+fuser -k "${CAND_PORT}/tcp" 2>/dev/null || true; sleep 1
+( cd "$NEW_RELEASE" && PORT="$CAND_PORT" HOSTNAME="127.0.0.1" NODE_ENV="production" \
+    DATABASE_URL="file:$DB_FILE" node .next/standalone/server.js >/tmp/quantix-candidate.log 2>&1 ) &
+CAND_PID=$!
+CAND_OK=""
+for attempt in $(seq 1 20); do
+  sleep 2
+  kill -0 "$CAND_PID" 2>/dev/null || { log "❌ candidate exited early"; break; }
+  RHTTP=$(curl -s -o /tmp/quantix-cand-ready.txt -w "%{http_code}" --max-time 8 "http://127.0.0.1:$CAND_PORT/api/health/readiness" 2>/dev/null || echo 000)
+  if [ "$RHTTP" = "200" ] && grep -q '"database":true' /tmp/quantix-cand-ready.txt 2>/dev/null; then
+    log "✅ Candidate ready (readiness=200 db=true) attempt $attempt"; CAND_OK=1; break
   fi
-  log "⏳ Attempt $attempt/8 — HTTP $HTTP, retrying…"
-  HTTP="000"
+  log "⏳ candidate readiness attempt $attempt: HTTP $RHTTP"
+done
+cleanup_candidate; CAND_PID=""
+if [ -z "$CAND_OK" ]; then
+  tail -20 /tmp/quantix-candidate.log 2>/dev/null | tee -a "$LOG_FILE" || true
+  rm -rf "$NEW_RELEASE"
+  fail "Candidate failed readiness — release discarded, live release untouched"
+fi
+
+# ─── 6. Atomic switch ────────────────────────────────────────────────────────────
+CURRENT_STEP="switch"; status "switch" "Switching active release"
+PREV_RELEASE="$(readlink "$CURRENT_LINK" 2>/dev/null || echo '')"
+ln -sfn "$NEW_RELEASE" "$CURRENT_LINK"
+log "🔀 $CURRENT_LINK -> $NEW_RELEASE (prev: ${PREV_RELEASE:-none})"
+switch_pm2() {
+  local cur_cwd; cur_cwd="$(pm2 describe "$PM2_APP" 2>/dev/null | grep -i 'exec cwd' | grep -oE '/home[^ │]*' | head -1)"
+  if [ "$cur_cwd" = "$CURRENT_LINK" ]; then
+    pm2 restart "$PM2_APP" --update-env 2>&1 | tail -3 | tee -a "$LOG_FILE"
+  else
+    log "Adopting release symlink (pm2 delete+start)"
+    pm2 delete "$PM2_APP" 2>/dev/null || true
+    pm2 start "$REPO/ecosystem.config.js" --only "$PM2_APP" --update-env 2>&1 | tail -3 | tee -a "$LOG_FILE"
+  fi
+}
+switch_pm2 || fail "pm2 switch failed"
+pm2 save 2>/dev/null || true
+
+# ─── 7. Post-switch production readiness (Prisma-backed) ──────────────────────────
+CURRENT_STEP="verify"; status "verify" "Validating production"
+LIVE_OK=""
+for attempt in $(seq 1 12); do
+  sleep 3
+  RHTTP=$(curl -s -o /tmp/quantix-live-ready.txt -w "%{http_code}" --max-time 10 "http://localhost:$APP_PORT/api/health/readiness" 2>/dev/null || echo 000)
+  if [ "$RHTTP" = "200" ] && grep -q '"database":true' /tmp/quantix-live-ready.txt 2>/dev/null; then
+    log "✅ Production ready (readiness=200 db=true) attempt $attempt"; LIVE_OK=1; break
+  fi
+  log "⏳ production readiness attempt $attempt: HTTP $RHTTP"
 done
 
-if [ "$HTTP" = "000" ] || ! echo "$HTTP" | grep -qE "^(200|301|302|307|308)$"; then
-  log "❌ Health check failed after 8 attempts (last HTTP $HTTP) — PM2 logs:"
-  pm2 logs quantix --lines 30 --nostream 2>/dev/null | tee -a "$LOG_FILE" || true
-  fail "App unhealthy after restart (HTTP $HTTP) — check pm2 logs"
+# ─── 8. Rollback on failure (previous release intact) ─────────────────────────────
+if [ -z "$LIVE_OK" ]; then
+  log "❌ Production readiness FAILED — rolling back"
+  if [ -n "$PREV_RELEASE" ] && [ -d "$PREV_RELEASE" ]; then
+    ln -sfn "$PREV_RELEASE" "$CURRENT_LINK"; switch_pm2 || true
+    for a in $(seq 1 10); do sleep 3; H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://localhost:$APP_PORT/" 2>/dev/null || echo 000); echo "$H" | grep -qE '^(200|30[1278])$' && { log "↩️  rolled back (HTTP $H)"; break; }; done
+    status "rollback" "Deploy failed; rolled back to previous release" "rolled_back"; exit 1
+  fi
+  fail "Readiness failed and no previous release to roll back to"
 fi
 
-# ─── Success ───────────────────────────────────────────────────────────────────
+# ─── 9. Retention (keep newest $KEEP_RELEASES; never current/previous) ────────────
+CURRENT_STEP="retention"
+KEEP_CUR="$(readlink "$CURRENT_LINK" 2>/dev/null || echo '')"
+ls -1dt "$RELEASES_DIR"/*/ 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)) | while read -r old; do
+  old="${old%/}"
+  [ "$old" = "$KEEP_CUR" ] && continue
+  [ "$old" = "$PREV_RELEASE" ] && continue
+  log "🧹 removing old release $(basename "$old")"; rm -rf "$old"
+done
+
 DURATION_SEC=$(( $(date +%s) - START_EPOCH ))
-log ""
 log "============================================================"
-log " DEPLOY COMPLETE — $(date) — ${DURATION_SEC}s"
+log " DEPLOY COMPLETE — $COMMIT — ${DURATION_SEC}s"
 log "============================================================"
-
-printf '{"status":"success","step":"done","message":"Deploy complete","startedAt":"%s","updatedAt":"%s","commit":"%s","http":"%s","durationSeconds":%d}\n' \
-  "$STARTED_AT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$COMMIT" "$HTTP" "$DURATION_SEC" \
+printf '{"status":"success","step":"done","message":"Deploy complete","startedAt":"%s","updatedAt":"%s","commit":"%s","release":"%s","durationSeconds":%d}\n' \
+  "$STARTED_AT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$COMMIT" "$(basename "$NEW_RELEASE")" "$DURATION_SEC" \
   > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
-
-# ─── Deferred cleanup ──────────────────────────────────────────────────────────
-# Give the CI poller 10 minutes to read the success status and logs, then
-# clean up /tmp files. Runs as a detached background job so it doesn't block.
-# The lock file itself is removed by the EXIT trap above.
-(
-  sleep 600
-  rm -f "$STATUS_FILE" "$LOG_FILE"
-) &
-disown
+chmod 644 "$STATUS_FILE" 2>/dev/null || true
+( sleep 900; rm -f "$LOG_FILE"; ) & disown

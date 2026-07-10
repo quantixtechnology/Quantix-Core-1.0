@@ -8,13 +8,19 @@ module.exports = {
     {
       name: 'quantix-core',
       script: 'node',
-      // server.js sits at the root of .next/standalone/ because next.config.js
-      // sets outputFileTracingRoot: __dirname (the project directory itself).
-      // When the tracing root equals the project root, Next.js places all files
-      // directly under standalone/ with no extra subdirectory nesting.
-      // Path: .next/standalone/server.js
+      // The live process runs from an IMMUTABLE release via the quantix-current
+      // symlink. A release is a COMPLETE build directory (.next + node_modules +
+      // public) — NOT a bare standalone: Next.js's standalone trace does not
+      // fully bundle Prisma's hashed external client, so the full node_modules
+      // (hard-linked into the release) is required to resolve it. Running the
+      // standalone entry with the release as cwd resolves Prisma from the
+      // release's own node_modules → build + Prisma runtime are one unit.
+      // deploy-local.sh builds in the repo, materialises a new release, health-
+      // checks it on a temp port, then atomically re-points this symlink and
+      // restarts. The build never mutates the running release. Rollback re-points
+      // the symlink to the previous complete release. See scripts/deploy-local.sh.
       args: '.next/standalone/server.js',
-      cwd: '/home/ubuntu/Quantix-Core-1.0',
+      cwd: '/home/ubuntu/quantix-current',
       instances: 1,
       autorestart: true,
       watch: false,

@@ -200,7 +200,10 @@ jobs:
             fi
           fi
 
-          echo "Polling ${APP_URL}/api/deploy/status …"
+          # Poll the nginx-served static status file, NOT an app route: it stays
+          # readable even while quantix-core is down/reloading, so a 502 HTML page
+          # can never be mistaken for deploy status.
+          echo "Polling ${APP_URL}/deploy-status.json (nginx static, app-independent) …"
 
           while [ "$POLL" -lt "$MAX_POLLS" ]; do
             sleep 30
@@ -217,8 +220,8 @@ jobs:
               -D /tmp/poll.headers \
               -o /tmp/poll.body \
               $RESOLVE_FLAG \
-              -H "x-deploy-secret: ${SECRET}" \
-              "${APP_URL}/api/deploy/status" 2>/tmp/poll.stderr)
+              -H "Cache-Control: no-cache" \
+              "${APP_URL}/deploy-status.json" 2>/tmp/poll.stderr)
 
             CURL_EXIT=$?
 
@@ -287,8 +290,16 @@ jobs:
               echo ""
               echo "❌ Deploy failed at step: ${STEP}"
               echo "   ${MSG}"
-              echo "─── Deploy log (last 30 lines) ───────────────────────────"
+              echo "   (live release preserved — a failed build never switches the active release)"
               echo "$RESPONSE" | jq -r '.tail[-30:][]? // empty' 2>/dev/null || true
+              exit 1
+            fi
+
+            if [ "$STATUS" = "rolled_back" ]; then
+              echo ""
+              echo "↩️  Deploy rolled back at step: ${STEP}"
+              echo "   ${MSG}"
+              echo "   (production restored to the previous healthy release)"
               exit 1
             fi
           done
