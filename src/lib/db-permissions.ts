@@ -43,6 +43,11 @@ export async function resolveUserPermissions(
   platformPermissions: string | null
 ): Promise<string[]> {
   const rolePerms = await getDbPermissionsForRole(role);
+  // ABSOLUTE super-admin bypass: QUANTIX_SUPER_ADMIN always gets the full static
+  // permission set and can never be reduced by a user-level override. A stale
+  // legacy override array (predating newly-added permissions, e.g. products:view)
+  // must not hide platform navigation such as System → Website Templates.
+  if (SUPER_ADMIN_BYPASS_ROLES.has(role)) return rolePerms;
   if (!platformPermissions) return rolePerms;
   try {
     const stored: unknown = JSON.parse(platformPermissions);
