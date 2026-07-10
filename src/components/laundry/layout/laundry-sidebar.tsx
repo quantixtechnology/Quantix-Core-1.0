@@ -21,7 +21,7 @@ import { useResponsive } from "@/hooks/use-responsive"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
-  UsersRound, Shirt, Droplets, Wind, Flame, Layers, ShieldCheck, Barcode, Repeat,
+  UsersRound, Shirt, Droplets, Wind, Layers, ShieldCheck, Barcode, Repeat,
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
   PackageCheck, CheckCheck, Sparkles, Package,
 } from "lucide-react"
@@ -128,7 +128,6 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 3 },
       { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 3 },
       { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 3 },
-      { key: "ws-steam", label: "Steam Press", icon: Flame, page: "ws-steam", minRank: 3 },
       { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 3 },
       { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 3 },
     ],
@@ -137,7 +136,9 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Outbound",
     items: [
       { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3 },
-      { key: "ws-pack", label: "Pack & Dispatch", icon: Package, page: "ws-pack", minRank: 3 },
+      // Garment-level packing completion. Packet/order-level transit back to the
+      // store is a separate action in Processing Center → Dispatch to Store.
+      { key: "ws-pack", label: "Packing", icon: Package, page: "ws-pack", minRank: 3 },
     ],
   },
 ]
@@ -156,13 +157,12 @@ const PROCESSING_GROUPS: NavGroup[] = [
     { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 1 },
     { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 1 },
     { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 1 },
-    { key: "ws-steam", label: "Steam Press", icon: Flame, page: "ws-steam", minRank: 1 },
     { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 1 },
     { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 1 },
   ] },
   { label: "Outbound", items: [
     { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 1 },
-    { key: "ws-pack", label: "Pack & Dispatch", icon: Package, page: "ws-pack", minRank: 1 },
+    { key: "ws-pack", label: "Packing", icon: Package, page: "ws-pack", minRank: 1 },
   ] },
 ]
 

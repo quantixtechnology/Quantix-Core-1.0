@@ -639,7 +639,6 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
         case "ws-wash": return <LaundryWorkstation stage="WASH" />
         case "ws-dry": return <LaundryWorkstation stage="DRY" />
         case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
-        case "ws-steam": return <LaundryWorkstation stage="STEAM" />
         case "ws-iron": return <LaundryWorkstation stage="IRON" />
         case "ws-fold": return <LaundryWorkstation stage="FOLD" />
         case "ws-qc": return <LaundryWorkstation stage="QC" />
@@ -676,7 +675,6 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "ws-wash": return <LaundryWorkstation stage="WASH" />
       case "ws-dry": return <LaundryWorkstation stage="DRY" />
       case "ws-dryclean": return <LaundryWorkstation stage="DRYCLEAN" />
-      case "ws-steam": return <LaundryWorkstation stage="STEAM" />
       case "ws-iron": return <LaundryWorkstation stage="IRON" />
       case "ws-fold": return <LaundryWorkstation stage="FOLD" />
       case "ws-qc": return <LaundryWorkstation stage="QC" />

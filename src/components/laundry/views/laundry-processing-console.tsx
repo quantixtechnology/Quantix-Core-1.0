@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Flame, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2 } from "lucide-react"
+import { Loader2, PackageCheck, Factory, ArrowRight, Barcode as BarcodeIcon, Droplets, Wind, Sparkles, Shirt, Layers, ShieldCheck, Package, RefreshCw, ScanLine, Truck, Undo2 } from "lucide-react"
 import { stageLabel } from "@/lib/laundry-processing"
 
 // Department tiles MUST cover every WORKSTATIONS stage — DRY (Drying) is a
@@ -25,7 +25,6 @@ const DEPT_TILES: { stage: string; icon: typeof Droplets; color: string; label?:
   { stage: "WASH", icon: Droplets, color: "text-blue-600 bg-blue-50" },
   { stage: "DRY", icon: Wind, color: "text-sky-600 bg-sky-50", label: "Drying" },
   { stage: "DRYCLEAN", icon: Sparkles, color: "text-cyan-600 bg-cyan-50" },
-  { stage: "STEAM", icon: Flame, color: "text-orange-600 bg-orange-50" },
   { stage: "IRON", icon: Shirt, color: "text-violet-600 bg-violet-50" },
   { stage: "FOLD", icon: Layers, color: "text-teal-600 bg-teal-50" },
   { stage: "QC", icon: ShieldCheck, color: "text-fuchsia-600 bg-fuchsia-50" },

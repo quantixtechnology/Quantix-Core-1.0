@@ -122,7 +122,6 @@ export type LaundryBusinessPage =
   | "ws-wash"
   | "ws-dry"
   | "ws-dryclean"
-  | "ws-steam"
   | "ws-iron"
   | "ws-fold"
   | "ws-qc"
