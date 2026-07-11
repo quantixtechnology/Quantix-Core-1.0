@@ -205,6 +205,35 @@ export default function LaundryNewOrder() {
   const lineAmount = (uid: string) => { const idx = lineItems.findIndex((l) => l.uid === uid); return idx >= 0 && quote ? quote.lines[idx]?.lineTotal ?? null : null }
   const grandTotal = quote?.grandTotal ?? 0
 
+  // ── Subscription integration (automatic; never a manual step) ──────────────
+  // Detect the selected customer's ACTIVE / GRACE subscription, and live-preview
+  // how much of the current order it covers (nothing is consumed until Save).
+  const [subInfo, setSubInfo] = useState<{ planName: string; status: string; remainingKg: number; remainingPieces: number; expiry: string; eligibleServices: string[] } | null>(null)
+  const [subPreview, setSubPreview] = useState<{ coveredAmount: number; extraAmount: number } | null>(null)
+  useEffect(() => {
+    if (!currentBusinessId || !selectedCustomer) { setSubInfo(null); return }
+    let cancel = false
+    fetch(`/api/laundry/subscriptions/active?businessId=${currentBusinessId}&customerId=${selectedCustomer.id}`).then((r) => r.json())
+      .then((j) => { if (!cancel) setSubInfo(j.success && j.data.length ? j.data[0] : null) }).catch(() => { if (!cancel) setSubInfo(null) })
+    return () => { cancel = true }
+  }, [currentBusinessId, selectedCustomer])
+  const subPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!currentBusinessId || !selectedCustomer || !subInfo || lineItems.length === 0) { setSubPreview(null); return }
+    if (subPreviewTimer.current) clearTimeout(subPreviewTimer.current)
+    subPreviewTimer.current = setTimeout(async () => {
+      try {
+        const items = lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity }))
+        const res = await fetch("/api/laundry/subscriptions/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, customerId: selectedCustomer.id, storeId: selectedStoreId || null, orderType, express, items }) })
+        const j = await res.json(); setSubPreview(j.success ? { coveredAmount: j.data.coveredAmount, extraAmount: j.data.extraAmount } : null)
+      } catch { setSubPreview(null) }
+    }, 300)
+    return () => { if (subPreviewTimer.current) clearTimeout(subPreviewTimer.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, currentBusinessId, selectedCustomer, subInfo])
+  const covered = subPreview?.coveredAmount ?? 0
+  const customerPays = Math.max(0, grandTotal - covered)
+
   // ── Add-Garment modal: live single-line price ──
   useEffect(() => {
     if (!addOpen || !mGarment || !mService || !currentBusinessId) { setMPrice(null); return }
@@ -342,7 +371,9 @@ export default function LaundryNewOrder() {
       const res = await fetch("/api/laundry/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const json = await res.json()
       if (!json.success) { toast({ title: "Error", description: json.error || "Failed to create order", variant: "destructive" }); return }
-      toast({ title: "Order Created", description: `Order ${json.data.orderNumber} is now Pending Store Audit` })
+      // Subscription was applied automatically server-side (no manual step).
+      const cov = json.subscription?.coveredAmount || 0
+      toast({ title: "Order Created", description: cov > 0 ? `Order ${json.data.orderNumber} · ${inr(cov)} covered by subscription, ${inr(json.data.balanceDue ?? 0)} to collect` : `Order ${json.data.orderNumber} is now Pending Store Audit` })
       setLaundryPage(action === "audit" ? "audit-queue" : "orders")
     } catch { toast({ title: "Error", description: "Failed to create order", variant: "destructive" }) } finally { setSubmitting(false) }
   }
@@ -429,10 +460,25 @@ export default function LaundryNewOrder() {
                           <div className="space-y-2 text-sm">
                             {selectedCustomer.addresses?.[0] && formatAddressLines(selectedCustomer.addresses[0]).length > 0 && (<div><p className="text-slate-500 text-xs">Address</p><p className="text-slate-700 leading-snug whitespace-pre-line">{formatAddressLines(selectedCustomer.addresses[0]).join("\n")}</p></div>)}
                             <div><p className="text-slate-500 text-xs">Membership Status</p><Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-emerald-300 text-emerald-700 bg-emerald-50"><Crown className="h-3 w-3" />{selectedCustomer.loyaltyTier || "Bronze"} Member</Badge></div>
-                            <div><p className="text-slate-500 text-xs">Subscription Status</p><Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-blue-300 text-blue-700 bg-blue-50"><BadgeCheck className="h-3 w-3" />Active</Badge></div>
+                            <div><p className="text-slate-500 text-xs">Subscription Status</p>{subInfo ? <Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-blue-300 text-blue-700 bg-blue-50"><BadgeCheck className="h-3 w-3" />{subInfo.status === "GRACE" ? "In Grace" : "Active"}</Badge> : <Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-slate-200 text-slate-400">None</Badge>}</div>
                             <div><p className="text-slate-500 text-xs">Wallet Balance</p><p className="font-semibold text-emerald-600">₹{selectedCustomer.walletBalance.toFixed(2)}</p></div>
                           </div>
                         </div>
+                        {/* Automatic subscription detection banner (Part 1) */}
+                        {subInfo && (
+                          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><BadgeCheck className="h-4 w-4" /> {subInfo.planName}</p>
+                              <span className="text-[11px] text-blue-600">Expires {new Date(subInfo.expiry).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                              {subInfo.remainingKg > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{subInfo.remainingKg} KG left</span>}
+                              {subInfo.remainingPieces > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{subInfo.remainingPieces} pieces left</span>}
+                            </div>
+                            {subInfo.eligibleServices.length > 0 && <p className="mt-2 text-[11px] text-slate-500">Eligible: {subInfo.eligibleServices.join(", ")}</p>}
+                            <p className="mt-1 text-[11px] text-slate-400">Coverage is applied automatically when you save — no manual step.</p>
+                          </div>
+                        )}
                       </div>
                       <Button onClick={() => handleSubmit("create")} disabled={submitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white">Create Order</Button>
                     </div>
@@ -632,6 +678,11 @@ export default function LaundryNewOrder() {
                 <div className="mt-3 space-y-2 text-sm border-t border-slate-100 pt-3">
                   <div className="flex justify-between"><span className="font-medium text-slate-600">Total Items</span><span className="font-medium text-slate-800">{totalPieces}</span></div>
                   <div className="flex justify-between"><span className="font-medium text-slate-600">Estimated Amount</span><span className="text-blue-700 font-bold">{inr(grandTotal)}</span></div>
+                  {/* Automatic subscription split (Part 4) */}
+                  {subInfo && covered > 0 && <>
+                    <div className="flex justify-between"><span className="font-medium text-emerald-600">Covered by Subscription</span><span className="font-semibold text-emerald-700">− {inr(covered)}</span></div>
+                    <div className="flex justify-between border-t border-slate-100 pt-2"><span className="font-semibold text-slate-700">Customer Pays</span><span className="font-bold text-slate-900">{inr(customerPays)}</span></div>
+                  </>}
                 </div>
               </CardContent>
             </Card>

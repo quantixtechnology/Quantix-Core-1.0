@@ -31,7 +31,7 @@ interface OrderEvent { id: string; fromStatus: string | null; toStatus: string; 
 interface ItemEvent { id: string; itemId: string; action: string; fromStage: string | null; toStage: string | null; actorName: string | null; note: string | null; createdAt: string }
 interface Detail {
   id: string; orderNumber: string; status: string; orderType: string; paymentStatus: string
-  grandTotal: number; amountPaid: number; balanceDue: number; createdAt: string
+  grandTotal: number; amountPaid: number; balanceDue: number; subscriptionCoveredAmount?: number; createdAt: string
   deliveredAt: string | null; deliveredBy: string | null; recipientName: string | null
   expectedDeliveryDate: string | null
   store?: { storeName: string | null; storeCode: string | null } | null
@@ -113,7 +113,7 @@ export function LaundryOrderDetail() {
           </div>
         </div>
         <div className="flex gap-2">
-          {[{ l: "Total", v: inr(order.grandTotal) }, { l: "Paid", v: inr(order.amountPaid), c: "text-emerald-600" }, { l: "Balance", v: order.paymentStatus === "SUBSCRIPTION" ? "Covered" : inr(order.balanceDue), c: order.balanceDue > 0 ? "text-rose-600" : "text-emerald-600" }].map((s) => (
+          {[{ l: "Total", v: inr(order.grandTotal) }, ...(order.subscriptionCoveredAmount && order.subscriptionCoveredAmount > 0 ? [{ l: "Subscription", v: inr(order.subscriptionCoveredAmount), c: "text-blue-600" }] : []), { l: "Paid", v: inr(order.amountPaid), c: "text-emerald-600" }, { l: "Balance", v: order.paymentStatus === "SUBSCRIPTION" ? "Covered" : inr(order.balanceDue), c: order.balanceDue > 0 ? "text-rose-600" : "text-emerald-600" }].map((s) => (
             <div key={s.l} className="rounded-lg border px-3 py-2 text-right"><p className="text-[10px] uppercase text-slate-400">{s.l}</p><p className={`text-sm font-bold ${s.c || "text-slate-800"}`}>{s.v}</p></div>
           ))}
         </div>

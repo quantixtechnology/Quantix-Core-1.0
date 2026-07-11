@@ -4,6 +4,7 @@ import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } from "@/lib/laundry-billing-server"
 import { generateOrderNumber } from "@/lib/laundry-codes"
 import { explodePieces } from "@/lib/laundry-order-items"
+import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
 
 export const runtime = "nodejs"
 
@@ -170,7 +171,24 @@ export async function POST(request: Request) {
       }).catch((e) => console.error("[laundry-orders] customer history update failed:", e))
     }
 
-    return NextResponse.json({ success: true, data: order }, { status: 201 })
+    // ── Automatic subscription consumption (integration) ──────────────────────
+    // The operator never applies a subscription manually. If the customer has an
+    // ACTIVE/GRACE subscription, coverage is applied here. Guarded + non-fatal:
+    // a walk-in or a customer with no subscription is a no-op, and any failure
+    // leaves the order at full regular price rather than blocking creation.
+    let subscription: { coveredAmount: number; extraAmount: number; lines: unknown[] } | null = null
+    if (customerId) {
+      try {
+        const applied = await applySubscriptionToOrder(order.id, { actorName: createdBy || null })
+        if (applied.ok && applied.coveredAmount > 0) {
+          subscription = { coveredAmount: applied.coveredAmount, extraAmount: applied.extraAmount, lines: applied.lines }
+          const refreshed = await prisma.laundryOrder.findUnique({ where: { id: order.id }, select: { balanceDue: true, paymentStatus: true, amountPaid: true, subscriptionCoveredAmount: true } })
+          if (refreshed) Object.assign(order, refreshed)
+        }
+      } catch (e) { console.error("[laundry-orders] auto subscription apply failed:", e) }
+    }
+
+    return NextResponse.json({ success: true, data: order, subscription }, { status: 201 })
   } catch (error) {
     console.error("[laundry-orders] POST Error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

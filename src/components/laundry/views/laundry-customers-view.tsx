@@ -49,6 +49,7 @@ export function LaundryCustomersView() {
   const [editing, setEditing] = useState(false)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [custSub, setCustSub] = useState<{ planName: string; status: string; remainingKg: number; remainingPieces: number; allowanceKg: number | null; allowancePieces: number | null; expiry: string; renewalDate: string; autoRenew: boolean } | null>(null)
   const [form, setForm] = useState<Record<string, string>>({})
   const [savingEdit, setSavingEdit] = useState(false)
 
@@ -84,7 +85,10 @@ export function LaundryCustomersView() {
   useEffect(() => { load() }, [load])
 
   const openCustomer = async (id: string, edit: boolean) => {
-    setOpenId(id); setEditing(edit); setDetail(null); setLoadingDetail(true)
+    setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setLoadingDetail(true)
+    // Active/GRACE subscription (Part 8) — detected, never assumed.
+    fetch(`/api/laundry/subscriptions/active?businessId=${currentBusinessId}&customerId=${id}`).then((r) => r.json())
+      .then((j) => setCustSub(j.success && j.data.length ? j.data[0] : null)).catch(() => setCustSub(null))
     try {
       const json = await fetch(`/api/laundry/customers/${id}?businessId=${currentBusinessId}`).then((r) => r.json())
       if (json.success) {
@@ -229,6 +233,20 @@ export function LaundryCustomersView() {
                 <div><p className="text-xs text-slate-400 flex items-center gap-1"><Repeat className="h-3 w-3" /> Orders</p><p className="text-slate-700">{detail.totalOrders} · LTV {inr(detail.totalSpent)}</p></div>
               </div>
               {detail.addresses?.[0] && <div><p className="text-xs text-slate-400 flex items-center gap-1"><MapPin className="h-3 w-3" /> Address</p><p className="text-slate-700 whitespace-pre-line leading-snug">{formatAddressLines(detail.addresses[0]).join("\n")}</p></div>}
+              {/* Current subscription (Part 8) */}
+              {custSub && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><Repeat className="h-4 w-4" /> {custSub.planName}</p>
+                    <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700 bg-blue-50">{custSub.status === "GRACE" ? "In Grace" : "Active"}</Badge>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    {(custSub.allowanceKg ?? 0) > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{custSub.remainingKg} / {custSub.allowanceKg} KG left</span>}
+                    {(custSub.allowancePieces ?? 0) > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{custSub.remainingPieces} / {custSub.allowancePieces} pieces left</span>}
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-500">Expires {new Date(custSub.expiry).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · {custSub.autoRenew ? "Auto-renews" : "Manual renewal"}</p>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>

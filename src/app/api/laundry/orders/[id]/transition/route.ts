@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getTransition, statusLabel } from "@/lib/laundry-workflow"
+import { releaseSubscriptionFromOrder } from "@/lib/laundry-subscription-server"
 
 export const runtime = "nodejs"
 
@@ -56,6 +57,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       where: { id },
       data: { status: toStatus as never },
     })
+
+    // Subscription integration: cancelling an order before processing restores
+    // its consumed allowance (reversal ledger entries; history preserved).
+    // Guarded + non-fatal — a no-op for orders without subscription coverage.
+    if (toStatus === "CANCELLED") {
+      try { await releaseSubscriptionFromOrder(id, { actorName: body.actorName ?? null, reason: "Order cancelled — allowance restored" }) }
+      catch (e) { console.error("[laundry-order-transition] subscription release failed:", e) }
+    }
 
     // ... then record the audit event (best-effort: never block the workflow if
     // the LaundryOrderEvent table hasn't been migrated on this environment yet).

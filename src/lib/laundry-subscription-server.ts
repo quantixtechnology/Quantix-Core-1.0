@@ -66,10 +66,16 @@ export async function applySubscriptionToOrder(orderId: string, opts: { actorNam
   const fullExtra = { ok: true as const, coveredAmount: 0, extraAmount: r2(order.grandTotal), lines: [] }
   if (!order.customerId) return fullExtra // walk-in / no customer → nothing to cover
 
-  // Idempotency guard.
-  const already = await prisma.subscriptionLedgerEntry.count({ where: { orderId, entryType: "CONSUMPTION" } })
-  if (already > 0 && !opts.force) {
-    return { ok: true, alreadyApplied: true, coveredAmount: r2(order.subscriptionCoveredAmount), extraAmount: r2(order.grandTotal - order.subscriptionCoveredAmount), lines: [], order: undefined }
+  // Idempotency: coverage already applied → no-op, unless force (edit) which
+  // first RELEASES the current consumption so we never double-consume.
+  if (order.subscriptionCoveredAmount > 0) {
+    if (!opts.force) {
+      return { ok: true, alreadyApplied: true, coveredAmount: r2(order.subscriptionCoveredAmount), extraAmount: r2(order.grandTotal - order.subscriptionCoveredAmount), lines: [], order: undefined }
+    }
+    await releaseSubscriptionFromOrder(orderId, { actorName: opts.actorName, reason: "Re-applied on order edit" })
+    const fresh = await prisma.laundryOrder.findUnique({ where: { id: orderId }, select: { amountPaid: true, subscriptionCoveredAmount: true } })
+    order.amountPaid = fresh?.amountPaid ?? 0
+    order.subscriptionCoveredAmount = fresh?.subscriptionCoveredAmount ?? 0
   }
 
   // The order carries the LaundryBusiness id; subscriptions are keyed by the
@@ -142,6 +148,53 @@ export async function applySubscriptionToOrder(orderId: string, opts: { actorNam
     ok: true, coveredAmount: covered, extraAmount: r2(order.grandTotal - newCovered),
     lines: result.lines, order: { balanceDue, paymentStatus, subscriptionCoveredAmount: newCovered },
   }
+}
+
+// Restore a subscription's allowance for an order (Parts 5/6): reverses the
+// order's CURRENTLY-consumed allowance, writes reversal ADJUSTMENT ledger
+// entries (never deletes history), removes the SUBSCRIPTION payment, and
+// restores the order's payable. Net-aware — safe across repeated edit cycles
+// (an order already reversed nets to zero → no-op). Used on order edit + cancel.
+export async function releaseSubscriptionFromOrder(orderId: string, opts: { actorName?: string | null; reason?: string } = {}) {
+  const order = await prisma.laundryOrder.findUnique({ where: { id: orderId }, select: { id: true, grandTotal: true, amountPaid: true, subscriptionCoveredAmount: true } })
+  if (!order) return { ok: false as const, error: "Order not found" }
+  if (order.subscriptionCoveredAmount <= 0) return { ok: true as const, released: 0 } // nothing active to release
+
+  // Net movement per (subscription, unit) for this order across CONSUMPTION and
+  // any prior reversal ADJUSTMENTs. A negative net = still-consumed amount.
+  const entries = await prisma.subscriptionLedgerEntry.findMany({ where: { orderId, entryType: { in: ["CONSUMPTION", "ADJUSTMENT"] } } })
+  const net = new Map<string, { kg: number; pieces: number; businessId: string }>()
+  for (const e of entries) {
+    const cur = net.get(e.subscriptionId) || { kg: 0, pieces: 0, businessId: e.businessId }
+    if (e.unit === "KG") cur.kg = r2(cur.kg + e.delta); else cur.pieces = cur.pieces + e.delta
+    net.set(e.subscriptionId, cur)
+  }
+
+  let released = 0
+  await prisma.$transaction(async (tx) => {
+    for (const [subId, n] of net) {
+      const restoreKg = n.kg < 0 ? r2(-n.kg) : 0
+      const restorePieces = n.pieces < 0 ? -n.pieces : 0
+      if (restoreKg === 0 && restorePieces === 0) continue
+      const sub = await tx.customerSubscription.findUnique({ where: { id: subId }, select: { remainingKg: true, usedKg: true, remainingPieces: true, usedPieces: true } })
+      if (!sub) continue
+      let rk = sub.remainingKg, rp = sub.remainingPieces
+      if (restoreKg > 0) { rk = r2(sub.remainingKg + restoreKg); await writeLedger(tx, { subscriptionId: subId, businessId: n.businessId, entryType: "ADJUSTMENT", unit: "KG", delta: restoreKg, balanceAfter: rk, orderId, note: opts.reason || "Allowance restored (order edit/cancel)", actorName: opts.actorName }) }
+      if (restorePieces > 0) { rp = sub.remainingPieces + restorePieces; await writeLedger(tx, { subscriptionId: subId, businessId: n.businessId, entryType: "ADJUSTMENT", unit: "PIECE", delta: restorePieces, balanceAfter: rp, orderId, note: opts.reason || "Allowance restored (order edit/cancel)", actorName: opts.actorName }) }
+      await tx.customerSubscription.update({ where: { id: subId }, data: { remainingKg: rk, usedKg: r2(Math.max(0, sub.usedKg - restoreKg)), remainingPieces: rp, usedPieces: Math.max(0, sub.usedPieces - restorePieces) } })
+      released++
+    }
+    // Remove usage rows + the SUBSCRIPTION payment; restore the order's payable.
+    await tx.subscriptionUsage.deleteMany({ where: { orderId } })
+    const subPay = await tx.laundryPayment.findMany({ where: { orderId, method: "SUBSCRIPTION" }, select: { amount: true } })
+    const paidBack = r2(subPay.reduce((s, p) => s + p.amount, 0))
+    await tx.laundryPayment.deleteMany({ where: { orderId, method: "SUBSCRIPTION" } })
+    const newAmountPaid = r2(Math.max(0, order.amountPaid - paidBack))
+    const balanceDue = r2(Math.max(0, order.grandTotal - newAmountPaid))
+    const paymentStatus = balanceDue <= 0 ? (newAmountPaid > 0 ? "PAID" : "UNPAID") : (newAmountPaid > 0 ? "PARTIAL" : "UNPAID")
+    await tx.laundryOrder.update({ where: { id: orderId }, data: { subscriptionCoveredAmount: 0, amountPaid: newAmountPaid, balanceDue, paymentStatus } })
+  })
+  return { ok: true as const, released }
 }
 
 // Read a subscription's ledger + current balances (Part 8/12).
