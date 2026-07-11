@@ -132,6 +132,15 @@ export function LaundryCustomersView() {
     if (q.trim().length < 2) { setMergeResults([]); return }
     try { const j = await fetch(`/api/laundry/customers?businessId=${currentBusinessId}&q=${encodeURIComponent(q)}`).then((r) => r.json()); setMergeResults((j.data || []).filter((c: Row) => c.id !== detail?.id)) } catch { setMergeResults([]) }
   }
+  const sendInvite = async () => {
+    if (!detail?.email) { toast({ title: "Email required", description: "Add an email address before sending an app invitation.", variant: "destructive" }); return }
+    try {
+      const res = await fetch(`/api/laundry/app/invite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, email: detail.email, name: detail.name, customerId: detail.id, source: "WALK_IN", actorName: user?.name || "staff" }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed to send")
+      toast({ title: "Invitation sent", description: j.data?.sent ? `App invite emailed to ${detail.email}` : `Invite prepared for ${detail.email} (email delivery pending SMTP config)` })
+    } catch (e) { toast({ title: "Invite failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) }
+  }
   const doMerge = async (duplicateId: string) => {
     if (!detail) return
     setMerging(true)
@@ -318,6 +327,8 @@ export function LaundryCustomersView() {
                 </div>
                 {/* Communication preferences (Part 5) */}
                 <div><p className="text-xs text-slate-400">Communication</p><div className="flex flex-wrap gap-1 mt-0.5">{["sms", "whatsapp", "email", "push", "marketing"].map((k) => <Badge key={k} variant="outline" className={`text-[10px] capitalize ${detail.comm?.[k] ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{k}</Badge>)}</div></div>
+                {/* Walk-in: invite the customer to the Customer App (email OTP) */}
+                <Button size="sm" variant="outline" className="w-full gap-1.5 border-blue-200 text-blue-700" disabled={!detail.email} onClick={sendInvite}><Mail className="h-3.5 w-3.5" /> Send App Registration Invitation</Button>
                 {/* Current subscription (Part 8) */}
                 {custSub && (
                   <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">

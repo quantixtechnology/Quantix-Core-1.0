@@ -41,7 +41,7 @@ export function LaundryCustomerApp() {
   useEffect(() => { if (token) loadMe() }, [token, loadMe])
 
   const onLogin = (t: string) => { localStorage.setItem("laundryAppToken", t); setToken(t); setView("home") }
-  const logout = async () => { await api("/auth/sessions", { method: "DELETE" }); localStorage.removeItem("laundryAppToken"); setToken(null); setMe(null) }
+  const logout = async () => { await api("/auth/logout", { method: "POST" }); localStorage.removeItem("laundryAppToken"); setToken(null); setMe(null) }
 
   if (booting) return <Center><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></Center>
   if (!token) return <LoginScreen businessId={businessId} tenantName={tenantName} onLogin={onLogin} />
@@ -75,24 +75,46 @@ export function LaundryCustomerApp() {
 function Center({ children }: { children: React.ReactNode }) { return <div className="min-h-screen flex items-center justify-center bg-slate-50">{children}</div> }
 
 function LoginScreen({ businessId, tenantName, onLogin }: { businessId: string | null; tenantName: string; onLogin: (t: string) => void }) {
-  const [mobile, setMobile] = useState("")
+  // Email prefill from an invitation link (?email=…).
+  const prefill = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("email") || "" : ""
+  const [email, setEmail] = useState(prefill)
   const [code, setCode] = useState("")
-  const [step, setStep] = useState<"mobile" | "otp">("mobile")
-  const [devCode, setDevCode] = useState<string | null>(null)
+  // email → (existing: otp) | (new: register → otp)
+  const [step, setStep] = useState<"email" | "otp" | "register">("email")
+  const [reg, setReg] = useState({ name: "", mobile: "", company: "" })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
-  const send = async () => {
-    if (mobile.replace(/\D/g, "").length !== 10) { setErr("Enter a 10-digit mobile number"); return }
+  const app = (path: string, body: unknown) => fetch(`/api/laundry/app/auth/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, ...(body as object) }) }).then((r) => r.json())
+
+  // Step 1: email → check existence → send OTP (existing) or ask to register.
+  const onContinue = async () => {
+    if (!emailOk) { setErr("Enter a valid email address"); return }
     setBusy(true); setErr("")
-    const j = await fetch("/api/laundry/app/auth/send-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, mobile }) }).then((r) => r.json())
+    const chk = await app("check", { email })
+    if (chk.error) { setBusy(false); setErr(chk.error); return }
+    if (!chk.data.exists) { setBusy(false); setStep("register"); return }
+    const otp = await app("send-otp", { email })
     setBusy(false)
-    if (j.error) { setErr(j.error); return }
-    setDevCode(j.data?.devCode || null); setStep("otp")
+    if (otp.error) { setErr(otp.error); return }
+    setStep("otp")
   }
+  // Registration: collect details, then send the SAME email OTP once.
+  const onRegister = async () => {
+    if (reg.name.trim().length < 2) { setErr("Enter your full name"); return }
+    if (reg.mobile.replace(/\D/g, "").length !== 10) { setErr("Enter a 10-digit mobile number"); return }
+    setBusy(true); setErr("")
+    const otp = await app("send-otp", { email })
+    setBusy(false)
+    if (otp.error) { setErr(otp.error); return }
+    setStep("otp")
+  }
+  // Verify OTP — register (with details) or login.
   const verify = async () => {
     setBusy(true); setErr("")
-    const j = await fetch("/api/laundry/app/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, mobile, code, device: navigator.userAgent.slice(0, 60) }) }).then((r) => r.json())
+    const registering = reg.name.trim().length >= 2
+    const j = await app("verify", { email, code, purpose: registering ? "register" : "login", name: reg.name, mobile: reg.mobile, company: reg.company })
     setBusy(false)
     if (j.error) { setErr(j.error); return }
     onLogin(j.data.token)
@@ -100,18 +122,33 @@ function LoginScreen({ businessId, tenantName, onLogin }: { businessId: string |
 
   return (
     <div className="min-h-screen bg-slate-50 max-w-md mx-auto flex flex-col justify-center px-6">
-      <div className="text-center mb-8"><div className="h-14 w-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-3"><ShoppingBag className="h-7 w-7" /></div><h1 className="text-xl font-bold text-slate-800">{tenantName}</h1><p className="text-sm text-slate-400">Sign in with your mobile number</p></div>
-      {step === "mobile" ? (
+      <div className="text-center mb-8"><div className="h-14 w-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-3"><ShoppingBag className="h-7 w-7" /></div><h1 className="text-xl font-bold text-slate-800">{tenantName}</h1><p className="text-sm text-slate-400">Sign in with your email</p></div>
+
+      {step === "email" && (
         <div className="space-y-3">
-          <input value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))} inputMode="numeric" placeholder="Mobile number" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-lg tracking-wide" />
-          <button onClick={send} disabled={busy || !businessId} className="w-full h-12 rounded-xl bg-blue-600 text-white font-medium flex items-center justify-center gap-2">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Send OTP</button>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" inputMode="email" placeholder="Email address" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-base" />
+          <button onClick={onContinue} disabled={busy || !businessId} className="w-full h-12 rounded-xl bg-blue-600 text-white font-medium flex items-center justify-center gap-2">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Continue</button>
         </div>
-      ) : (
+      )}
+
+      {step === "register" && (
         <div className="space-y-3">
-          <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="6-digit OTP" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-lg tracking-[0.3em] text-center" />
-          {devCode && <p className="text-center text-xs text-amber-600">Dev OTP: <span className="font-mono font-bold">{devCode}</span> (SMS not configured)</p>}
+          <p className="text-center text-sm text-slate-500">No account found. Create your account:</p>
+          <input value={email} disabled className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500" />
+          <input value={reg.name} onChange={(e) => setReg((r) => ({ ...r, name: e.target.value }))} placeholder="Full name" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm" />
+          <input value={reg.mobile} onChange={(e) => setReg((r) => ({ ...r, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} inputMode="numeric" placeholder="Mobile number" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm" />
+          <input value={reg.company} onChange={(e) => setReg((r) => ({ ...r, company: e.target.value }))} placeholder="Company (optional)" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm" />
+          <button onClick={onRegister} disabled={busy} className="w-full h-12 rounded-xl bg-blue-600 text-white font-medium flex items-center justify-center gap-2">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Create Account &amp; Send Code</button>
+          <button onClick={() => { setStep("email"); setReg({ name: "", mobile: "", company: "" }) }} className="w-full text-sm text-slate-400">Back</button>
+        </div>
+      )}
+
+      {step === "otp" && (
+        <div className="space-y-3">
+          <p className="text-center text-xs text-slate-400">Code sent to <span className="font-medium text-slate-600">{email}</span></p>
+          <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="6-digit code" className="w-full h-12 rounded-xl border border-slate-200 px-4 text-lg tracking-[0.3em] text-center" />
           <button onClick={verify} disabled={busy || code.length !== 6} className="w-full h-12 rounded-xl bg-blue-600 text-white font-medium flex items-center justify-center gap-2">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Verify &amp; Continue</button>
-          <button onClick={() => { setStep("mobile"); setCode("") }} className="w-full text-sm text-slate-400">Change number</button>
+          <button onClick={() => { setStep("email"); setCode("") }} className="w-full text-sm text-slate-400">Change email</button>
         </div>
       )}
       {err && <p className="text-center text-sm text-rose-600 mt-3">{err}</p>}

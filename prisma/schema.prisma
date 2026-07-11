@@ -2028,36 +2028,6 @@ model CustomerActivity {
   @@index([type])
 }
 
-// Laundry Customer App — mobile OTP challenge (transient). Self-contained app
-// auth; does not touch the platform storefront/website auth. Additive.
-model LaundryAppOtp {
-  id         String   @id @default(cuid())
-  businessId String // platform Business id (tenant scope)
-  phone      String
-  codeHash   String
-  attempts   Int      @default(0)
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-
-  @@index([businessId, phone])
-}
-
-// Laundry Customer App session (device). One row per logged-in device; the
-// opaque bearer token authenticates every /api/laundry/app request.
-model LaundryAppSession {
-  id         String   @id @default(cuid())
-  businessId String
-  customerId String
-  token      String   @unique
-  device     String?
-  lastSeenAt DateTime @default(now())
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-
-  @@index([customerId])
-  @@index([businessId])
-}
-
 // Optional customer documents (ID proof, GST, business docs). Additive.
 model CustomerDocument {
   id         String   @id @default(cuid())

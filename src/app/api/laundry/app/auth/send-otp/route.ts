@@ -1,20 +1,16 @@
-// POST /api/laundry/app/auth/send-otp — Customer App mobile OTP (Phase 1).
-// Body: { businessId, mobile }
+// POST /api/laundry/app/auth/send-otp — send an EMAIL OTP (Phase 1).
+// Reuses the platform storefront email-OTP service (no separate OTP logic, no
+// SMS). Body: { businessId, email }
 import { NextResponse } from "next/server"
-import { requestOtp } from "@/lib/laundry-app-auth"
+import { POST as storefrontSendOtp } from "@/app/api/core/storefront/auth/send-otp/route"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
-  try {
-    const b = await request.json().catch(() => ({}))
-    if (!b.businessId || !b.mobile) return NextResponse.json({ error: "businessId and mobile are required" }, { status: 400 })
-    const res = await requestOtp(b.businessId, b.mobile)
-    if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
-    // devCode is only present when no SMS gateway is configured (dev/testing).
-    return NextResponse.json({ success: true, data: { phone: res.phone, expiresInSec: res.expiresInSec, ...(res.devCode ? { devCode: res.devCode } : {}) } })
-  } catch (e) {
-    console.error("[app-auth-send-otp] POST", e)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
+  const b = await request.json().catch(() => ({}))
+  if (!b.businessId || !b.email) return NextResponse.json({ error: "businessId and email are required" }, { status: 400 })
+  const res = await storefrontSendOtp(new Request("http://internal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: b.email, businessId: b.businessId }) }))
+  const j = await res.json()
+  if (!j.success) return NextResponse.json({ error: j.error || "Failed to send code" }, { status: res.status })
+  return NextResponse.json({ success: true, data: { sent: j.sent } })
 }
