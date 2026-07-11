@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { isValidPincode } from "@/lib/india"
 import { generateCustomerCode } from "@/lib/laundry-codes"
+import { mergeMeta, type CommPrefs } from "@/lib/laundry-customer"
 
 export const runtime = "nodejs"
 
@@ -21,6 +22,12 @@ export async function GET(request: Request) {
 
     const where: Record<string, unknown> = { businessId: biz.platformBusinessId }
     if (q) where.OR = [{ name: { contains: q } }, { phone: { contains: q } }, { customerCode: { contains: q } }, { email: { contains: q } }]
+    // Part 9: fast filter to subscribers only.
+    const subscription = sp.get("subscription")
+    if (subscription === "active") {
+      const subCustomers = await prisma.customerSubscription.findMany({ where: { businessId: biz.platformBusinessId, status: { in: ["ACTIVE", "GRACE"] } }, select: { customerId: true } })
+      where.id = { in: [...new Set(subCustomers.map((s) => s.customerId))] }
+    }
 
     const [rows, total, totalCustomers, activeCustomers, activeMemberships] = await Promise.all([
       prisma.customer.findMany({
@@ -88,16 +95,31 @@ export async function POST(request: Request) {
     const lb = await prisma.laundryBusiness.findUnique({ where: { id: laundryBusiness.id }, select: { businessCode: true } })
     const customerCode = await generateCustomerCode(lb?.businessCode || `LND-${laundryBusiness.id}`)
 
+    // Full profile extras live in metadata (JSON); tags in the tags JSON.
+    const metadata = mergeMeta("{}", {
+      alternateMobile: alternateMobile || undefined,
+      anniversary: body.anniversary || undefined,
+      company: body.company || undefined,
+      reference: body.reference || undefined,
+      comm: (body.comm && typeof body.comm === "object" ? body.comm : undefined) as CommPrefs | undefined,
+    })
     const customer = await prisma.customer.create({
       data: {
         businessId: laundryBusiness.platformBusinessId,
         name,
         phone: mobile,
         email: email || null,
+        gender: body.gender || null,
+        dateOfBirth: body.dateOfBirth ? new Date(body.dateOfBirth) : null,
+        avatar: body.avatar || null,
+        gstNumber: body.gstNumber || null,
+        ...(body.accountType && { accountType: body.accountType }),
         customerCode,
         source: "LAUNDRY_OS",
         isGuest: false,
-        notes: alternateMobile ? `Alternate Mobile: ${alternateMobile}` : "",
+        tags: JSON.stringify(Array.isArray(body.tags) ? [...new Set(body.tags.map(String))] : []),
+        metadata,
+        notes: body.notes || "",
       },
     })
 

@@ -1958,6 +1958,8 @@ model Customer {
   user                     User?                  @relation(fields: [userId], references: [id])
   business                 Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
   customerNotes            CustomerNote[]
+  activities               CustomerActivity[]
+  documents                CustomerDocument[]
   subscriptions            CustomerSubscription[]
   invoices                 Invoice[]
   orders                   Order[]
@@ -1980,6 +1982,11 @@ model Address {
   id           String   @id @default(cuid())
   customerId   String
   label        String?
+  // Additive customer-management fields: address kind + pickup/delivery
+  // defaults. Legacy rows default to HOME and false (backward compatible).
+  addressType  String   @default("HOME") // HOME | OFFICE | OTHER
+  isPickupDefault   Boolean @default(false)
+  isDeliveryDefault Boolean @default(false)
   area         String?
   addressLine1 String
   addressLine2 String?
@@ -1998,6 +2005,44 @@ model Address {
   customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
+}
+
+// Customer timeline entries created by Laundry OS admin (notes, internal
+// communication log, manual adjustments, tag changes, merges). Laundry-scoped
+// (actorName string, no BusinessUser/User FK) so it never couples to the
+// platform auth system. Part of the Customer Management module.
+model CustomerActivity {
+  id         String   @id @default(cuid())
+  businessId String // platform Business id (customer scope)
+  customerId String
+  type       String // NOTE | COMMUNICATION | ADJUSTMENT | TAG | MERGE | SYSTEM
+  title      String
+  body       String?
+  meta       String   @default("{}") // JSON detail
+  actorName  String?
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([businessId])
+  @@index([type])
+}
+
+// Optional customer documents (ID proof, GST, business docs). Additive.
+model CustomerDocument {
+  id         String   @id @default(cuid())
+  businessId String
+  customerId String
+  docType    String // ID_PROOF | GST | BUSINESS | OTHER
+  name       String
+  url        String
+  note       String?
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([businessId])
 }
 
 model CustomerNote {

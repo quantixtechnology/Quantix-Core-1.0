@@ -26,7 +26,15 @@ interface Row {
   loyaltyTier: string; walletBalance: number; totalOrders: number; totalSpent: number
   status: string; isActive: boolean; lastOrderAt: string | null
 }
-interface Detail extends Row { addresses: { id: string; addressLine1: string; addressLine2: string | null; area: string | null; landmark: string | null; city: string; state: string; pincode: string; country: string }[]; fullAddress?: string }
+interface Addr { id: string; addressType?: string; label?: string | null; addressLine1: string; addressLine2: string | null; area: string | null; landmark: string | null; city: string; state: string; pincode: string; country: string; isDefault?: boolean; isPickupDefault?: boolean; isDeliveryDefault?: boolean }
+interface CustStats { totalOrders: number; completed: number; cancelled: number; grossValue: number; collected: number; outstanding: number; avgOrderValue: number; lastOrderAt: string | null }
+interface Detail extends Row {
+  addresses: Addr[]; fullAddress?: string; tags?: string[]; comm?: Record<string, boolean>
+  alternateMobile?: string | null; company?: string | null; reference?: string | null; anniversary?: string | null
+  gender?: string | null; dateOfBirth?: string | null; gstNumber?: string | null; notes?: string; stats?: CustStats
+}
+interface TL { at: string; type: string; title: string; detail?: string | null; amount?: number | null }
+interface Note { id: string; type: string; title: string; body: string | null; actorName: string | null; createdAt: string }
 
 const PAGE = 10
 const inr = (n: number) => `₹${(n || 0).toLocaleString("en-IN")}`
@@ -52,6 +60,15 @@ export function LaundryCustomersView() {
   const [custSub, setCustSub] = useState<{ planName: string; status: string; remainingKg: number; remainingPieces: number; allowanceKg: number | null; allowancePieces: number | null; expiry: string; renewalDate: string; autoRenew: boolean } | null>(null)
   const [form, setForm] = useState<Record<string, string>>({})
   const [savingEdit, setSavingEdit] = useState(false)
+  const [timeline, setTimeline] = useState<TL[]>([])
+  const [notes, setNotes] = useState<Note[]>([])
+  const [newNote, setNewNote] = useState("")
+  const [tab, setTab] = useState<"overview" | "addresses" | "timeline" | "notes">("overview")
+  // Merge duplicate
+  const [mergeOpen, setMergeOpen] = useState(false)
+  const [mergeQuery, setMergeQuery] = useState("")
+  const [mergeResults, setMergeResults] = useState<Row[]>([])
+  const [merging, setMerging] = useState(false)
 
   // Super-admin permanent delete
   const [deleteTarget, setDeleteTarget] = useState<Row | null>(null)
@@ -85,27 +102,55 @@ export function LaundryCustomersView() {
   useEffect(() => { load() }, [load])
 
   const openCustomer = async (id: string, edit: boolean) => {
-    setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setLoadingDetail(true)
+    setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setTimeline([]); setNotes([]); setTab("overview"); setLoadingDetail(true)
     // Active/GRACE subscription (Part 8) — detected, never assumed.
     fetch(`/api/laundry/subscriptions/active?businessId=${currentBusinessId}&customerId=${id}`).then((r) => r.json())
       .then((j) => setCustSub(j.success && j.data.length ? j.data[0] : null)).catch(() => setCustSub(null))
+    fetch(`/api/laundry/customers/${id}/timeline?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setTimeline(j.success ? j.data : [])).catch(() => {})
+    fetch(`/api/laundry/customers/${id}/notes?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setNotes(j.success ? j.data : [])).catch(() => {})
     try {
       const json = await fetch(`/api/laundry/customers/${id}?businessId=${currentBusinessId}`).then((r) => r.json())
       if (json.success) {
         const d = json.data as Detail; setDetail(d)
         const a = d.addresses?.[0]
-        setForm({ name: d.name, mobile: d.phone || "", email: d.email || "", addressLine1: a?.addressLine1 || "", addressLine2: a?.addressLine2 || "", area: a?.area || "", landmark: a?.landmark || "", city: a?.city || "", state: a?.state || "", pincode: a?.pincode || "" })
+        setForm({ name: d.name, mobile: d.phone || "", email: d.email || "", alternateMobile: d.alternateMobile || "", company: d.company || "", gstNumber: d.gstNumber || "", gender: d.gender || "", reference: d.reference || "", tags: (d.tags || []).join(", "), status: d.status || "ACTIVE", addressLine1: a?.addressLine1 || "", addressLine2: a?.addressLine2 || "", area: a?.area || "", landmark: a?.landmark || "", city: a?.city || "", state: a?.state || "", pincode: a?.pincode || "" })
       }
     } catch { /* noop */ } finally { setLoadingDetail(false) }
   }
   const closeDialog = () => { setOpenId(null); setDetail(null); setEditing(false) }
+
+  const addNote = async () => {
+    if (!newNote.trim() || !detail) return
+    try {
+      const res = await fetch(`/api/laundry/customers/${detail.id}/notes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, content: newNote.trim(), type: "NOTE", actorName: user?.name || "staff" }) })
+      const j = await res.json()
+      if (j.success) { setNotes((n) => [j.data, ...n]); setTimeline((t) => [{ at: j.data.createdAt, type: "NOTE", title: j.data.title, detail: j.data.body }, ...t]); setNewNote("") }
+    } catch { toast({ title: "Failed to add note", variant: "destructive" }) }
+  }
+  const searchMerge = async (q: string) => {
+    setMergeQuery(q)
+    if (q.trim().length < 2) { setMergeResults([]); return }
+    try { const j = await fetch(`/api/laundry/customers?businessId=${currentBusinessId}&q=${encodeURIComponent(q)}`).then((r) => r.json()); setMergeResults((j.data || []).filter((c: Row) => c.id !== detail?.id)) } catch { setMergeResults([]) }
+  }
+  const doMerge = async (duplicateId: string) => {
+    if (!detail) return
+    setMerging(true)
+    try {
+      const res = await fetch(`/api/laundry/customers/merge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, primaryId: detail.id, duplicateId, actorName: user?.name || "admin" }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Merge failed")
+      toast({ title: "Customers merged", description: "Orders, subscriptions, addresses and history moved to this profile." })
+      setMergeOpen(false); setMergeQuery(""); setMergeResults([]); load(); openCustomer(detail.id, false)
+    } catch (e) { toast({ title: "Merge failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setMerging(false) }
+  }
 
   const saveEdit = async () => {
     if (!detail) return
     if (form.pincode && !isValidPincode(form.pincode)) { toast({ title: "Invalid PIN Code", variant: "destructive" }); return }
     setSavingEdit(true)
     try {
-      const res = await fetch(`/api/laundry/customers/${detail.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, ...form }) })
+      const tags = (form.tags || "").split(",").map((t) => t.trim()).filter(Boolean)
+      const res = await fetch(`/api/laundry/customers/${detail.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, ...form, tags }) })
       const json = await res.json()
       if (!res.ok || !json.success) { toast({ title: "Update failed", description: json.error, variant: "destructive" }); return }
       toast({ title: "Customer updated" }); closeDialog(); load()
@@ -210,8 +255,17 @@ export function LaundryCustomersView() {
               <div className="space-y-1"><Label className="text-xs">Name *</Label><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1"><Label className="text-xs">Mobile *</Label><Input value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} /></div>
+                <div className="space-y-1"><Label className="text-xs">Alternate Mobile</Label><Input value={form.alternateMobile || ""} onChange={(e) => setForm((f) => ({ ...f, alternateMobile: e.target.value }))} /></div>
                 <div className="space-y-1"><Label className="text-xs">Email</Label><Input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></div>
+                <div className="space-y-1"><Label className="text-xs">Company</Label><Input value={form.company || ""} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} /></div>
+                <div className="space-y-1"><Label className="text-xs">GST</Label><Input value={form.gstNumber || ""} onChange={(e) => setForm((f) => ({ ...f, gstNumber: e.target.value }))} /></div>
+                <div className="space-y-1"><Label className="text-xs">Status</Label>
+                  <select value={form.status || "ACTIVE"} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} className="w-full h-9 rounded-md border border-input px-3 text-sm bg-background">
+                    {["ACTIVE", "INACTIVE", "BLOCKED"].map((s) => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
+                  </select>
+                </div>
               </div>
+              <div className="space-y-1"><Label className="text-xs">Tags (comma separated)</Label><Input value={form.tags || ""} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="VIP, Corporate, Premium" /></div>
               <div className="space-y-1"><Label className="text-xs">Address Line 1</Label><Input value={form.addressLine1} onChange={(e) => setForm((f) => ({ ...f, addressLine1: e.target.value }))} /></div>
               <div className="space-y-1"><Label className="text-xs">Address Line 2</Label><Input value={form.addressLine2} onChange={(e) => setForm((f) => ({ ...f, addressLine2: e.target.value }))} /></div>
               <div className="grid grid-cols-2 gap-3">
@@ -225,37 +279,122 @@ export function LaundryCustomersView() {
             </div>
           ) : (
             <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-3"><Avatar className="h-12 w-12"><AvatarFallback className="bg-blue-100 text-blue-700 font-semibold">{initials(detail.name)}</AvatarFallback></Avatar><div><p className="font-semibold text-slate-800">{detail.name}</p><Badge variant="outline" className={`text-[11px] mt-0.5 ${tierStyle(detail.loyaltyTier)}`}>{detail.loyaltyTier || "Bronze"}</Badge></div></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><p className="text-xs text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3" /> Mobile</p><p className="text-slate-700">{detail.phone || "—"}</p></div>
-                <div><p className="text-xs text-slate-400 flex items-center gap-1"><Mail className="h-3 w-3" /> Email</p><p className="text-slate-700">{detail.email || "—"}</p></div>
-                <div><p className="text-xs text-slate-400 flex items-center gap-1"><Wallet className="h-3 w-3" /> Wallet</p><p className="text-slate-700">{inr(detail.walletBalance)}</p></div>
-                <div><p className="text-xs text-slate-400 flex items-center gap-1"><Repeat className="h-3 w-3" /> Orders</p><p className="text-slate-700">{detail.totalOrders} · LTV {inr(detail.totalSpent)}</p></div>
+              <div className="flex items-center gap-3">
+                <Avatar className="h-12 w-12"><AvatarFallback className="bg-blue-100 text-blue-700 font-semibold">{initials(detail.name)}</AvatarFallback></Avatar>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-800">{detail.name}</p>
+                  <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                    <Badge variant="outline" className={`text-[11px] ${tierStyle(detail.loyaltyTier)}`}>{detail.loyaltyTier || "Bronze"}</Badge>
+                    {detail.status === "MERGED" && <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-500">Merged</Badge>}
+                    {(detail.tags || []).map((t) => <Badge key={t} variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50">{t}</Badge>)}
+                  </div>
+                </div>
               </div>
-              {detail.addresses?.[0] && <div><p className="text-xs text-slate-400 flex items-center gap-1"><MapPin className="h-3 w-3" /> Address</p><p className="text-slate-700 whitespace-pre-line leading-snug">{formatAddressLines(detail.addresses[0]).join("\n")}</p></div>}
-              {/* Current subscription (Part 8) */}
-              {custSub && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><Repeat className="h-4 w-4" /> {custSub.planName}</p>
-                    <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700 bg-blue-50">{custSub.status === "GRACE" ? "In Grace" : "Active"}</Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    {(custSub.allowanceKg ?? 0) > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{custSub.remainingKg} / {custSub.allowanceKg} KG left</span>}
-                    {(custSub.allowancePieces ?? 0) > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{custSub.remainingPieces} / {custSub.allowancePieces} pieces left</span>}
-                  </div>
-                  <p className="mt-2 text-[11px] text-slate-500">Expires {new Date(custSub.expiry).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · {custSub.autoRenew ? "Auto-renews" : "Manual renewal"}</p>
+
+              {/* Statistics (Part 8) */}
+              {detail.stats && (
+                <div className="grid grid-cols-3 gap-2">
+                  {[{ l: "Orders", v: detail.stats.totalOrders }, { l: "Completed", v: detail.stats.completed }, { l: "Cancelled", v: detail.stats.cancelled }, { l: "Revenue", v: inr(detail.stats.grossValue) }, { l: "Outstanding", v: inr(detail.stats.outstanding), c: detail.stats.outstanding > 0 ? "text-rose-600" : "" }, { l: "Avg Order", v: inr(detail.stats.avgOrderValue) }].map((s) => (
+                    <div key={s.l} className="rounded-lg border border-slate-200 px-2 py-1.5"><p className="text-[10px] uppercase text-slate-400">{s.l}</p><p className={`text-sm font-bold ${s.c || "text-slate-800"}`}>{s.v}</p></div>
+                  ))}
                 </div>
               )}
+
+              {/* Tabs */}
+              <div className="flex gap-1 border-b border-slate-100">
+                {(["overview", "addresses", "timeline", "notes"] as const).map((t) => (
+                  <button key={t} onClick={() => setTab(t)} className={`px-2.5 h-8 text-xs font-medium capitalize border-b-2 -mb-px ${tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}>{t}</button>
+                ))}
+              </div>
+
+              {tab === "overview" && <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><p className="text-xs text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3" /> Mobile</p><p className="text-slate-700">{detail.phone || "—"}{detail.alternateMobile ? ` · ${detail.alternateMobile}` : ""}</p></div>
+                  <div><p className="text-xs text-slate-400 flex items-center gap-1"><Mail className="h-3 w-3" /> Email</p><p className="text-slate-700">{detail.email || "—"}</p></div>
+                  <div><p className="text-xs text-slate-400">Company</p><p className="text-slate-700">{detail.company || "—"}</p></div>
+                  <div><p className="text-xs text-slate-400">GST</p><p className="text-slate-700">{detail.gstNumber || "—"}</p></div>
+                  <div><p className="text-xs text-slate-400 flex items-center gap-1"><Wallet className="h-3 w-3" /> Wallet</p><p className="text-slate-700">{inr(detail.walletBalance)}</p></div>
+                  <div><p className="text-xs text-slate-400">Reference</p><p className="text-slate-700">{detail.reference || "—"}</p></div>
+                </div>
+                {/* Communication preferences (Part 5) */}
+                <div><p className="text-xs text-slate-400">Communication</p><div className="flex flex-wrap gap-1 mt-0.5">{["sms", "whatsapp", "email", "push", "marketing"].map((k) => <Badge key={k} variant="outline" className={`text-[10px] capitalize ${detail.comm?.[k] ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{k}</Badge>)}</div></div>
+                {/* Current subscription (Part 8) */}
+                {custSub && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                    <div className="flex items-center justify-between"><p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><Repeat className="h-4 w-4" /> {custSub.planName}</p><Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700 bg-blue-50">{custSub.status === "GRACE" ? "In Grace" : "Active"}</Badge></div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      {(custSub.allowanceKg ?? 0) > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{custSub.remainingKg} / {custSub.allowanceKg} KG left</span>}
+                      {(custSub.allowancePieces ?? 0) > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{custSub.remainingPieces} / {custSub.allowancePieces} pieces left</span>}
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-500">Expires {new Date(custSub.expiry).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · {custSub.autoRenew ? "Auto-renews" : "Manual renewal"}</p>
+                  </div>
+                )}
+                {detail.notes && <div><p className="text-xs text-slate-400">Profile note</p><p className="text-slate-600 text-xs">{detail.notes}</p></div>}
+              </div>}
+
+              {tab === "addresses" && <div className="space-y-2">
+                {detail.addresses.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No addresses.</p> : detail.addresses.map((a) => (
+                  <div key={a.id} className="rounded-lg border border-slate-200 p-2.5">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="text-xs font-medium text-slate-700">{a.addressType || "HOME"}</span>
+                      {a.isDefault && <Badge variant="outline" className="text-[9px] border-emerald-300 text-emerald-700 bg-emerald-50">Default</Badge>}
+                      {a.isPickupDefault && <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-700 bg-blue-50">Pickup</Badge>}
+                      {a.isDeliveryDefault && <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-700 bg-violet-50">Delivery</Badge>}
+                    </div>
+                    <p className="text-slate-600 text-xs whitespace-pre-line leading-snug">{formatAddressLines(a).join("\n")}</p>
+                  </div>
+                ))}
+              </div>}
+
+              {tab === "timeline" && <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {timeline.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No activity yet.</p> : timeline.map((t, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs border-l-2 border-slate-200 pl-2 py-0.5">
+                    <Badge variant="outline" className="text-[9px] shrink-0 border-slate-200 text-slate-500 capitalize">{t.type.toLowerCase()}</Badge>
+                    <div className="min-w-0 flex-1"><p className="text-slate-700 truncate">{t.title}{t.detail ? ` · ${t.detail}` : ""}</p><p className="text-[10px] text-slate-400">{new Date(t.at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p></div>
+                    {t.amount != null && <span className="text-slate-500 shrink-0">{inr(t.amount)}</span>}
+                  </div>
+                ))}
+              </div>}
+
+              {tab === "notes" && <div className="space-y-2">
+                <div className="flex gap-2"><Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Add an internal note…" className="text-xs h-8" /><Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700 text-white" onClick={addNote} disabled={!newNote.trim()}>Add</Button></div>
+                <p className="text-[10px] text-slate-400">Internal only — never shown to customers.</p>
+                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                  {notes.length === 0 ? <p className="text-slate-400 text-xs py-2 text-center">No notes.</p> : notes.map((n) => (
+                    <div key={n.id} className="rounded border border-slate-100 bg-slate-50 p-2"><div className="flex items-center justify-between"><Badge variant="outline" className="text-[9px] capitalize border-slate-200 text-slate-500">{n.type.toLowerCase()}</Badge><span className="text-[10px] text-slate-400">{n.actorName || "staff"} · {new Date(n.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-slate-600 mt-1">{n.body}</p></div>
+                  ))}
+                </div>
+              </div>}
             </div>
           )}
           <DialogFooter>
             {editing ? (
               <><Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button><Button onClick={saveEdit} disabled={savingEdit} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save</Button></>
             ) : (
-              <><Button variant="outline" className="gap-1" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</Button><Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /> New Order</Button></>
+              <><Button variant="outline" className="gap-1" onClick={() => { setMergeOpen(true); setMergeQuery(""); setMergeResults([]) }}><Users className="h-4 w-4" /> Merge</Button><Button variant="outline" className="gap-1" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit</Button><Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /> New Order</Button></>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge duplicate customers (Part 10) */}
+      <Dialog open={mergeOpen} onOpenChange={(o) => { if (!o) { setMergeOpen(false); setMergeQuery(""); setMergeResults([]) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-blue-600" /> Merge Duplicate Into {detail?.name}</DialogTitle>
+            <DialogDescription>Search the duplicate customer. Its orders, subscriptions, payments, addresses and history move to <span className="font-medium text-slate-700">{detail?.name}</span>; the duplicate is retired. This cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <Input value={mergeQuery} onChange={(e) => searchMerge(e.target.value)} placeholder="Search by name, mobile or code…" autoFocus />
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {mergeResults.map((c) => (
+              <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-2">
+                <div className="min-w-0"><p className="text-sm font-medium text-slate-800 truncate">{c.name}</p><p className="text-[11px] text-slate-400">{c.phone} {c.customerCode ? `· ${c.customerCode}` : ""} · {c.totalOrders} orders</p></div>
+                <Button size="sm" variant="outline" className="h-8 shrink-0" disabled={merging} onClick={() => doMerge(c.id)}>{merging ? <Loader2 className="h-4 w-4 animate-spin" /> : "Merge in"}</Button>
+              </div>
+            ))}
+            {mergeQuery.trim().length >= 2 && mergeResults.length === 0 && <p className="text-xs text-slate-400 text-center py-3">No other customers found.</p>}
+          </div>
         </DialogContent>
       </Dialog>
 
