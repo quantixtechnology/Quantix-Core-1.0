@@ -39,6 +39,10 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
   const [qcFail, setQcFail] = useState<{ itemId: string; garment: string; flow: string | null; serviceName: string; fromScan: boolean } | null>(null)
   const [qcReason, setQcReason] = useState("")
   const [qcStage, setQcStage] = useState("")
+  // Scan-first: acting on a garment from the queue (without scanning) is a
+  // deliberate fallback — it goes through a confirm. Scanning stays the
+  // frictionless primary path (the scan popup acts immediately).
+  const [manual, setManual] = useState<{ itemId: string; garment: string; action: string; label: string } | null>(null)
   const isQC = stage === "QC"
 
   const load = useCallback(async () => {
@@ -89,12 +93,12 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
       </div>
       <p className="text-[10px] font-mono text-slate-400 mt-1 truncate">{it.barcode}</p>
       <div className="flex gap-1.5 mt-2">
-        {it.processingStatus === "WAITING" && <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "START")}><Play className="h-3.5 w-3.5" /> Start</Button>}
+        {it.processingStatus === "WAITING" && <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={busy} onClick={() => setManual({ itemId: it.id, garment: it.garmentName, action: "START", label: "Start" })}><Play className="h-3.5 w-3.5" /> Start</Button>}
         {it.processingStatus === "IN_PROGRESS" && <>
           <Button size="sm" variant="outline" className="h-8 gap-1" disabled={busy} onClick={() => act(it.id, "PAUSE")}><Pause className="h-3.5 w-3.5" /></Button>
           {isQC
-            ? <><Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "QC_PASS")}><ShieldCheck className="h-3.5 w-3.5" /> Pass</Button><Button size="sm" variant="outline" className="h-8 gap-1 text-rose-600 border-rose-200" disabled={busy} onClick={() => setQcFail({ itemId: it.id, garment: it.garmentName, flow: it.processFlow || null, serviceName: it.serviceName, fromScan: false })}><ShieldX className="h-3.5 w-3.5" /> Fail</Button></>
-            : <Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "COMPLETE")}><Check className="h-3.5 w-3.5" /> Complete</Button>}
+            ? <><Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white flex-1" disabled={busy} onClick={() => setManual({ itemId: it.id, garment: it.garmentName, action: "QC_PASS", label: "QC Pass" })}><ShieldCheck className="h-3.5 w-3.5" /> Pass</Button><Button size="sm" variant="outline" className="h-8 gap-1 text-rose-600 border-rose-200" disabled={busy} onClick={() => setQcFail({ itemId: it.id, garment: it.garmentName, flow: it.processFlow || null, serviceName: it.serviceName, fromScan: false })}><ShieldX className="h-3.5 w-3.5" /> Fail</Button></>
+            : <Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white flex-1" disabled={busy} onClick={() => setManual({ itemId: it.id, garment: it.garmentName, action: "COMPLETE", label: "Complete" })}><Check className="h-3.5 w-3.5" /> Complete</Button>}
         </>}
         {it.processingStatus === "PAUSED" && <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={busy} onClick={() => act(it.id, "RESUME")}><Play className="h-3.5 w-3.5" /> Resume</Button>}
       </div>
@@ -156,6 +160,23 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
                   <div key={e.id} className="flex items-center gap-2 text-xs"><Clock className="h-3 w-3 text-slate-300 shrink-0" /><span className="font-medium text-slate-700">{e.action.replace(/_/g, " ")}</span>{e.fromStage && e.toStage && e.fromStage !== e.toStage && <span className="text-slate-400 flex items-center gap-0.5">{stageLabel(e.fromStage)} <ArrowRight className="h-3 w-3" /> {stageLabel(e.toStage)}</span>}<span className="text-slate-400 ml-auto">{e.actorName || ""} · {fmt(e.createdAt)}</span></div>
                 ))}
               </div>
+            </div>
+          </>)}
+        </DialogContent>
+      </Dialog>
+
+      {/* Scan-first fallback confirm — advancing a garment from the queue
+          without scanning its barcode is deliberate, not the default path. */}
+      <Dialog open={!!manual} onOpenChange={(o) => !o && setManual(null)}>
+        <DialogContent className="max-w-sm">
+          {manual && (<>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><ScanLine className="h-5 w-5 text-blue-600" /> Process without scanning?</DialogTitle>
+              <DialogDescription className="text-xs">Scanning the barcode is the preferred way to act on <span className="font-medium text-slate-700">{manual.garment}</span>. Continue manually only if the scanner is unavailable.</DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setManual(null)}>Scan instead</Button>
+              <Button className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={busy} onClick={async () => { const m = manual; setManual(null); await act(m.itemId, m.action) }}>{manual.label} manually</Button>
             </div>
           </>)}
         </DialogContent>
