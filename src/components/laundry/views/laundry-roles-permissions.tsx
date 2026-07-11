@@ -1,0 +1,207 @@
+"use client"
+
+// Roles & Permissions (Business Management → Roles & Permissions). The Business
+// Owner manages roles and a module→screen→action permission matrix. Owner role
+// is full-access and protected. All data comes from /api/laundry/rbac/*.
+
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useAuthStore } from "@/stores/auth-store"
+import { useToast } from "@/hooks/use-toast"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Loader2, Shield, Plus, Copy, Trash2, ChevronDown, ChevronRight, Search, Save, Lock, Users } from "lucide-react"
+
+interface ScreenDef { key: string; label: string; actions: string[] }
+interface ModuleDef { key: string; label: string; screens: ScreenDef[] }
+interface Role { id: string; code: string; name: string; description: string | null; isSystem: boolean; isOwner: boolean; isActive: boolean; _count?: { permissions: number; assignments: number } }
+
+const actionLabel = (a: string) => a.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+
+export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: string }) {
+  const { currentBusinessId } = useAuthStore()
+  const businessId = bizProp || currentBusinessId
+  const { toast } = useToast()
+  const [catalog, setCatalog] = useState<ModuleDef[]>([])
+  const [roles, setRoles] = useState<Role[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [perms, setPerms] = useState<Set<string>>(new Set())
+  const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  const selected = roles.find((r) => r.id === selectedId) || null
+  const allKeys = useMemo(() => catalog.flatMap((m) => m.screens.flatMap((s) => s.actions.map((a) => `${m.key}.${s.key}.${a}`))), [catalog])
+
+  const load = useCallback(async () => {
+    if (!businessId) return
+    setLoading(true)
+    try {
+      const [c, r] = await Promise.all([
+        fetch(`/api/laundry/rbac/catalog`).then((x) => x.json()),
+        fetch(`/api/laundry/rbac/roles?businessId=${businessId}`).then((x) => x.json()),
+      ])
+      if (c.success) { setCatalog(c.data); setExpanded(new Set(c.data.map((m: ModuleDef) => m.key))) }
+      if (r.success) setRoles(r.data)
+    } catch { /* noop */ } finally { setLoading(false) }
+  }, [businessId])
+  useEffect(() => { load() }, [load])
+
+  const selectRole = async (r: Role) => {
+    setSelectedId(r.id); setName(r.name); setDescription(r.description || ""); setDirty(false)
+    if (r.isOwner) { setPerms(new Set(allKeys)); return }
+    const j = await fetch(`/api/laundry/rbac/roles/${r.id}/permissions?businessId=${businessId}`).then((x) => x.json())
+    setPerms(new Set(j.success ? j.data.permissions : []))
+  }
+  const mutate = (fn: (s: Set<string>) => void) => { if (selected?.isOwner) return; setPerms((prev) => { const n = new Set(prev); fn(n); return n }); setDirty(true) }
+  const togglePerm = (k: string) => mutate((s) => (s.has(k) ? s.delete(k) : s.add(k)))
+  const screenKeys = (m: ModuleDef, s: ScreenDef) => s.actions.map((a) => `${m.key}.${s.key}.${a}`)
+  const moduleKeysOf = (m: ModuleDef) => m.screens.flatMap((s) => screenKeys(m, s))
+  const setMany = (keys: string[], on: boolean) => mutate((s) => keys.forEach((k) => (on ? s.add(k) : s.delete(k))))
+
+  const save = async () => {
+    if (!selected || selected.isOwner) return
+    setSaving(true)
+    try {
+      await fetch(`/api/laundry/rbac/roles/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name, description }) })
+      const res = await fetch(`/api/laundry/rbac/roles/${selected.id}/permissions`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, permissions: [...perms] }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Save failed")
+      toast({ title: "Role saved", description: `${name} · ${perms.size} permissions` }); setDirty(false); load()
+    } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setSaving(false) }
+  }
+  const newRole = async () => {
+    const nm = prompt("New role name (e.g. Reception Supervisor)")?.trim(); if (!nm) return
+    const j = await fetch(`/api/laundry/rbac/roles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: nm, permissions: [] }) }).then((x) => x.json())
+    if (j.success) { await load(); selectRole(j.data) } else toast({ title: "Create failed", description: j.error, variant: "destructive" })
+  }
+  const clone = async (r: Role) => {
+    const j = await fetch(`/api/laundry/rbac/roles/${r.id}/clone`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) }).then((x) => x.json())
+    if (j.success) { toast({ title: "Role cloned", description: j.data.name }); await load(); selectRole(j.data) } else toast({ title: "Clone failed", description: j.error, variant: "destructive" })
+  }
+  const del = async (r: Role) => {
+    if (r.isOwner) return
+    if (!confirm(`Delete role "${r.name}"? Employees on this role lose it.`)) return
+    const res = await fetch(`/api/laundry/rbac/roles/${r.id}?businessId=${businessId}`, { method: "DELETE" })
+    const j = await res.json()
+    if (!res.ok || !j.success) { toast({ title: "Delete failed", description: j.error, variant: "destructive" }); return }
+    toast({ title: "Role deleted" }); setSelectedId(null); load()
+  }
+  const seed = async () => {
+    const j = await fetch(`/api/laundry/rbac/seed`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) }).then((x) => x.json())
+    if (j.success) { toast({ title: "Default roles created", description: `${j.data.seeded.length} system roles` }); load() } else toast({ title: "Failed", description: j.error, variant: "destructive" })
+  }
+
+  const q = search.trim().toLowerCase()
+  const matchScreen = (m: ModuleDef, s: ScreenDef) => !q || m.label.toLowerCase().includes(q) || s.label.toLowerCase().includes(q) || s.actions.some((a) => a.includes(q))
+
+  if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground gap-2"><Loader2 className="h-5 w-5 animate-spin" /> Loading…</div>
+
+  return (
+    <div className="px-4 lg:px-6 py-6">
+      <div className="flex items-center justify-between mb-4">
+        <div><h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Shield className="h-5 w-5 text-blue-600" /> Roles &amp; Permissions</h1><p className="text-sm text-slate-500">Control what every employee can see and do, per module, screen and action.</p></div>
+        <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={newRole}><Plus className="h-4 w-4" /> New Role</Button>
+      </div>
+
+      {roles.length === 0 ? (
+        <Card><CardContent className="text-center py-16">
+          <Shield className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+          <p className="text-sm font-medium">No roles yet</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-3">Create the 10 default system roles to get started.</p>
+          <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={seed}>Create Default Roles</Button>
+        </CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 items-start">
+          {/* Role list */}
+          <Card><CardContent className="p-2 space-y-1">
+            {roles.map((r) => (
+              <button key={r.id} onClick={() => selectRole(r)} className={`w-full text-left rounded-lg px-3 py-2 border ${selectedId === r.id ? "border-blue-300 bg-blue-50" : "border-transparent hover:bg-slate-50"} ${r.isActive ? "" : "opacity-50"}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-800 flex items-center gap-1.5">{r.isOwner && <Lock className="h-3 w-3 text-amber-500" />}{r.name}</span>
+                  <Badge variant="outline" className={`text-[9px] ${r.isSystem ? "border-slate-300 text-slate-500" : "border-blue-200 text-blue-600"}`}>{r.isOwner ? "Owner" : r.isSystem ? "System" : "Custom"}</Badge>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-0.5">{r.isOwner ? "Full access" : `${r._count?.permissions ?? 0} permissions`} · {r._count?.assignments ?? 0} staff</p>
+              </button>
+            ))}
+          </CardContent></Card>
+
+          {/* Role editor + matrix */}
+          {selected ? (
+            <Card><CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px] space-y-1.5">
+                  <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true) }} disabled={selected.isOwner} className="font-semibold" />
+                  <Input value={description} onChange={(e) => { setDescription(e.target.value); setDirty(true) }} disabled={selected.isOwner} placeholder="Description" className="text-xs h-8" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => clone(selected)}><Copy className="h-3.5 w-3.5" /> Clone</Button>
+                  {!selected.isOwner && <Button size="sm" variant="outline" className="h-8 gap-1 text-rose-600 border-rose-200" onClick={() => del(selected)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>}
+                  <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={saving || !dirty || selected.isOwner} onClick={save}>{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save</Button>
+                </div>
+              </div>
+
+              {selected.isOwner ? (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700 flex items-center gap-2"><Lock className="h-4 w-4" /> The Business Owner always has full, unremovable access. This role cannot be edited or deleted.</div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search permissions…" className="pl-8 h-8 text-sm" /></div>
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => setMany(allKeys, true)}>Select All</Button>
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => setMany(allKeys, false)}>Clear All</Button>
+                    <span className="text-xs text-slate-400">{perms.size} selected</span>
+                  </div>
+
+                  <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                    {catalog.map((m) => {
+                      const mKeys = moduleKeysOf(m)
+                      const mAll = mKeys.every((k) => perms.has(k))
+                      const open = expanded.has(m.key)
+                      const visScreens = m.screens.filter((s) => matchScreen(m, s))
+                      if (q && visScreens.length === 0) return null
+                      return (
+                        <div key={m.key} className="rounded-lg border border-slate-200">
+                          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-t-lg">
+                            <button className="flex items-center gap-1.5 text-sm font-semibold text-slate-700" onClick={() => setExpanded((e) => { const n = new Set(e); n.has(m.key) ? n.delete(m.key) : n.add(m.key); return n })}>
+                              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />} {m.label}
+                            </button>
+                            <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer"><input type="checkbox" checked={mAll} onChange={(e) => setMany(mKeys, e.target.checked)} /> Module</label>
+                          </div>
+                          {open && (
+                            <div className="p-2 space-y-1.5">
+                              {visScreens.map((s) => {
+                                const sKeys = screenKeys(m, s)
+                                const sAll = sKeys.every((k) => perms.has(k))
+                                return (
+                                  <div key={s.key} className="grid grid-cols-[140px_1fr] gap-2 items-start px-1.5 py-1 border-b border-slate-50 last:border-0">
+                                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer pt-0.5"><input type="checkbox" checked={sAll} onChange={(e) => setMany(sKeys, e.target.checked)} /> {s.label}</label>
+                                    <div className="flex flex-wrap gap-1">
+                                      {s.actions.map((a) => { const k = `${m.key}.${s.key}.${a}`; const on = perms.has(k); return (
+                                        <button key={a} onClick={() => togglePerm(k)} className={`rounded px-2 h-6 text-[11px] border ${on ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-400 hover:bg-slate-50"}`}>{actionLabel(a)}</button>
+                                      ) })}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </CardContent></Card>
+          ) : (
+            <Card><CardContent className="py-16 text-center text-sm text-slate-400"><Users className="h-6 w-6 mx-auto mb-2 text-slate-300" />Select a role to view or edit its permissions.</CardContent></Card>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

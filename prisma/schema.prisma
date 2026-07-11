@@ -2028,6 +2028,73 @@ model CustomerActivity {
   @@index([type])
 }
 
+// ── Laundry OS RBAC (module→screen→action). Self-contained, per-business.
+// Independent of the platform auth roles; the frozen stage-permission
+// LaundryRole/LaundryStagePermission models are untouched. All additive.
+model LaundryAccessRole {
+  id          String   @id @default(cuid())
+  businessId  String // platform Business id (tenant scope)
+  code        String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) // seeded default role
+  isOwner     Boolean  @default(false) // full-access owner role (protected)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions LaundryAccessPermission[]
+  assignments LaundryAccessAssignment[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+}
+
+// Normalized permission matrix: one row per (role, permission key). effect
+// ALLOW | DENY (DENY overrides ALLOW during resolution). Absent = no access.
+model LaundryAccessPermission {
+  id      String            @id @default(cuid())
+  roleId  String
+  permKey String
+  effect  String            @default("ALLOW") // ALLOW | DENY
+  role    LaundryAccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permKey])
+  @@index([roleId])
+}
+
+// Employee → role. One active role per user today (future: multiple).
+model LaundryAccessAssignment {
+  id         String            @id @default(cuid())
+  businessId String
+  userId     String // platform User id
+  roleId     String
+  active     Boolean           @default(true)
+  assignedBy String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  role       LaundryAccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([businessId])
+  @@index([roleId])
+}
+
+// Append-only RBAC audit trail (role/permission/assignment changes).
+model LaundryAccessAudit {
+  id           String   @id @default(cuid())
+  businessId   String
+  action       String // ROLE_CREATED | ROLE_EDITED | ROLE_DELETED | ROLE_CLONED | PERMISSIONS_CHANGED | ROLE_ASSIGNED | ROLE_REMOVED
+  roleId       String?
+  targetUserId String?
+  actorName    String?
+  detail       String   @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([businessId])
+  @@index([roleId])
+}
+
 // Optional customer documents (ID proof, GST, business docs). Additive.
 model CustomerDocument {
   id         String   @id @default(cuid())

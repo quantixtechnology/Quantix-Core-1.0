@@ -14,7 +14,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
@@ -23,7 +23,7 @@ import {
   Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
   UsersRound, Shirt, Droplets, Wind, Layers, ShieldCheck, Barcode, Repeat,
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
-  PackageCheck, CheckCheck, Sparkles, Package,
+  PackageCheck, CheckCheck, Sparkles, Package, Shield,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 
@@ -34,6 +34,7 @@ type NavCfg = {
   page?: LaundryBusinessPage
   comingSoon?: boolean
   minRank: number // 1=operator+, 2=manager+, 3=admin/owner
+  perm?: string // RBAC permission key required to see this item (owner sees all)
 }
 
 // A nav group. `sectionHeader` renders a top-level separator (e.g. "Processing
@@ -61,13 +62,13 @@ function rankOf(role: string | null): number {
 const CRM_GROUP: { label: string | null; items: NavCfg[] } = {
   label: "CRM",
   items: [
-    { key: "crm-dashboard", label: "Dashboard", icon: Gauge, page: "crm-dashboard", minRank: 2 },
-    { key: "crm-leads", label: "Leads", icon: UsersRound, page: "crm-leads", minRank: 2 },
-    { key: "crm-opportunities", label: "Opportunities", icon: Target, page: "crm-opportunities", minRank: 2 },
-    { key: "crm-activities", label: "Activities", icon: ClipboardList, page: "crm-activities", minRank: 2 },
-    { key: "crm-tasks", label: "Tasks", icon: CheckSquare, page: "crm-tasks", minRank: 2 },
-    { key: "crm-reports", label: "CRM Reports", icon: PieChart, page: "crm-reports", minRank: 3 },
-    { key: "crm-settings", label: "CRM Settings", icon: SlidersHorizontal, page: "crm-settings", minRank: 3 },
+    { key: "crm-dashboard", label: "Dashboard", icon: Gauge, page: "crm-dashboard", minRank: 2, perm: "crm.dashboard.view" },
+    { key: "crm-leads", label: "Leads", icon: UsersRound, page: "crm-leads", minRank: 2, perm: "crm.leads.view" },
+    { key: "crm-opportunities", label: "Opportunities", icon: Target, page: "crm-opportunities", minRank: 2, perm: "crm.opportunity.view" },
+    { key: "crm-activities", label: "Activities", icon: ClipboardList, page: "crm-activities", minRank: 2, perm: "crm.activities.view" },
+    { key: "crm-tasks", label: "Tasks", icon: CheckSquare, page: "crm-tasks", minRank: 2, perm: "crm.activities.view" },
+    { key: "crm-reports", label: "CRM Reports", icon: PieChart, page: "crm-reports", minRank: 3, perm: "crm.reports.view" },
+    { key: "crm-settings", label: "CRM Settings", icon: SlidersHorizontal, page: "crm-settings", minRank: 3, perm: "crm.settings.view" },
   ],
 }
 
@@ -80,65 +81,66 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Laundry OS",
     items: [
       { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
-      { key: "new-order", label: "New Order", icon: Plus, page: "new-order", minRank: 1 },
+      { key: "new-order", label: "New Order", icon: Plus, page: "new-order", minRank: 1, perm: "laundry.orders.create" },
     ],
   },
   {
     label: "Store Operations",
     items: [
-      { key: "audit-queue", label: "Store Audit", icon: ClipboardCheck, page: "audit-queue", minRank: 1 },
-      { key: "payment-queue", label: "Payment Collection", icon: CreditCard, page: "payment-queue", minRank: 2 },
-      { key: "packing-queue", label: "Packing & QR", icon: Barcode, page: "packing-queue", minRank: 1 },
-      { key: "dispatch-queue", label: "Transit to Processing", icon: Truck, page: "dispatch-queue", minRank: 2 },
-      { key: "store-receive-queue", label: "Store Receive", icon: PackageCheck, page: "store-receive-queue", minRank: 2 },
-      { key: "ready-delivery-queue", label: "Ready for Delivery", icon: CheckCheck, page: "ready-delivery-queue", minRank: 2 },
+      { key: "audit-queue", label: "Store Audit", icon: ClipboardCheck, page: "audit-queue", minRank: 1, perm: "store_ops.store_audit.view" },
+      { key: "payment-queue", label: "Payment Collection", icon: CreditCard, page: "payment-queue", minRank: 2, perm: "store_ops.payment_collection.view" },
+      { key: "packing-queue", label: "Packing & QR", icon: Barcode, page: "packing-queue", minRank: 1, perm: "store_ops.packing_qr.view" },
+      { key: "dispatch-queue", label: "Transit to Processing", icon: Truck, page: "dispatch-queue", minRank: 2, perm: "store_ops.transit.view" },
+      { key: "store-receive-queue", label: "Store Receive", icon: PackageCheck, page: "store-receive-queue", minRank: 2, perm: "store_ops.store_receive.view" },
+      { key: "ready-delivery-queue", label: "Ready for Delivery", icon: CheckCheck, page: "ready-delivery-queue", minRank: 2, perm: "store_ops.ready_for_delivery.view" },
     ],
   },
   {
     label: "Orders & Customers",
     items: [
-      { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2 },
-      { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2 },
+      { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2, perm: "laundry.orders.view" },
+      { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2, perm: "laundry.customers.view" },
     ],
   },
   {
     label: "Business Management",
     items: [
-      { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3 },
-      { key: "staff", label: "Staff", icon: UsersRound, comingSoon: true, minRank: 3 },
-      { key: "pricing", label: "Services & Pricing", icon: IndianRupee, page: "pricing", minRank: 3 },
-      { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3 },
-      { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3 },
+      { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3, perm: "laundry.stores.view" },
+      { key: "staff", label: "Staff", icon: UsersRound, comingSoon: true, minRank: 3, perm: "laundry.staff.view" },
+      { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", minRank: 3, perm: "laundry.staff.assign_role" },
+      { key: "pricing", label: "Services & Pricing", icon: IndianRupee, page: "pricing", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3, perm: "laundry.subscriptions.view" },
+      { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3, perm: "laundry.reports.view" },
       { key: "payments", label: "Payments", icon: Wallet, comingSoon: true, minRank: 3 },
       { key: "invoices", label: "Invoices", icon: Receipt, comingSoon: true, minRank: 3 },
-      { key: "settings", label: "Settings", icon: Settings, page: "settings", minRank: 3 },
+      { key: "settings", label: "Settings", icon: Settings, page: "settings", minRank: 3, perm: "laundry.settings.view" },
     ],
   },
   {
     sectionHeader: "Processing Center",
     label: "Inbound",
     items: [
-      { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3 },
-      { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 3 },
+      { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3, perm: "processing.console_receive.view" },
+      { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 3, perm: "processing.audit_barcode.view" },
     ],
   },
   {
     label: "Processing",
     items: [
-      { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 3 },
-      { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 3 },
-      { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 3 },
-      { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 3 },
-      { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 3 },
+      { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 3, perm: "processing.washing.view" },
+      { key: "ws-dry", label: "Drying", icon: Wind, page: "ws-dry", minRank: 3, perm: "processing.drying.view" },
+      { key: "ws-dryclean", label: "Dry Cleaning", icon: Sparkles, page: "ws-dryclean", minRank: 3, perm: "processing.dry_cleaning.view" },
+      { key: "ws-iron", label: "Ironing", icon: Shirt, page: "ws-iron", minRank: 3, perm: "processing.ironing.view" },
+      { key: "ws-fold", label: "Folding", icon: Layers, page: "ws-fold", minRank: 3, perm: "processing.folding.view" },
     ],
   },
   {
     label: "Outbound",
     items: [
-      { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3 },
+      { key: "ws-qc", label: "Quality Check", icon: ShieldCheck, page: "ws-qc", minRank: 3, perm: "processing.quality_check.view" },
       // Garment-level packing completion. Packet/order-level transit back to the
       // store is a separate action in Processing Center → Dispatch to Store.
-      { key: "ws-pack", label: "Packing", icon: Package, page: "ws-pack", minRank: 3 },
+      { key: "ws-pack", label: "Packing", icon: Package, page: "ws-pack", minRank: 3, perm: "processing.packing.view" },
     ],
   },
 ]
@@ -184,8 +186,22 @@ interface LaundrySidebarProps {
 
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
   const { laundryPage, setLaundryPage } = useAdminStore()
-  const { user, currentRole } = useAuthStore()
+  const { user, currentRole, currentBusinessId } = useAuthStore()
   const { isMobile } = useResponsive()
+
+  // RBAC: the user's effective permissions drive left-menu security. While it
+  // loads (null) only rank-based visibility applies; once resolved, items whose
+  // `perm` the user lacks are hidden (owner sees everything).
+  const [rbac, setRbac] = useState<{ isOwner: boolean; perms: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!currentBusinessId) return
+    let cancel = false
+    fetch(`/api/laundry/rbac/me?businessId=${currentBusinessId}`).then((r) => r.json())
+      .then((j) => { if (!cancel && j.success) setRbac({ isOwner: !!j.data.isOwner, perms: new Set<string>(j.data.permissions) }) })
+      .catch(() => {})
+    return () => { cancel = true }
+  }, [currentBusinessId])
+  const permAllows = (i: NavCfg) => rbac === null || rbac.isOwner || !i.perm || rbac.perms.has(i.perm)
 
   const isProcessing = currentRole ? PROCESSING_ROLES.has(currentRole) : false
   const rank = rankOf(currentRole)
@@ -204,8 +220,8 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
       : NAV_GROUPS
 
   const groups = baseGroups
-    .map((g) => ({ label: g.label, sectionHeader: g.sectionHeader, items: g.items.filter((i) => rank >= i.minRank) }))
-    .filter((g) => g.items.length > 0)
+    .map((g) => ({ label: g.label, sectionHeader: g.sectionHeader, items: g.items.filter((i) => rank >= i.minRank && permAllows(i)) }))
+    .filter((g) => g.items.length > 0) // no empty menu groups
 
   // Pages reached programmatically (drill-downs), not from a nav item — these
   // must not be bounced back to the dashboard by the guard below.

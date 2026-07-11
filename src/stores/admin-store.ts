@@ -119,6 +119,7 @@ export type LaundryBusinessPage =
   | "services"
   | "pricing"
   | "subscriptions"
+  | "roles"
   | "ws-wash"
   | "ws-dry"
   | "ws-dryclean"
