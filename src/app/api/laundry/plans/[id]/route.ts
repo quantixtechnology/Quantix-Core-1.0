@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { planMasterFields, syncPlanCoverage } from "@/lib/laundry-subscription-plan"
 
 export const runtime = "nodejs"
 
@@ -26,10 +27,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.features !== undefined) d.features = JSON.stringify(Array.isArray(body.features) ? body.features : [])
     if (body.image !== undefined) d.image = body.image || null
     if (body.isActive !== undefined) d.isActive = !!body.isActive
+    Object.assign(d, planMasterFields(body)) // KG/Piece allowance, auto-renew, grace, validity
 
     const plan = await prisma.subscriptionPlan.update({ where: { id }, data: d })
-    let features: string[] = []; try { features = JSON.parse(plan.features || "[]") } catch {}
-    return NextResponse.json({ success: true, data: { ...plan, features } })
+    // Replace eligibility rows when provided (Parts 3/4/5).
+    if (body.coverageRules !== undefined) await syncPlanCoverage(id, body.coverageRules)
+    const withCoverage = await prisma.subscriptionPlan.findUnique({ where: { id }, include: { coverageRules: { select: { serviceId: true, garmentId: true, allowanceMode: true } } } })
+    let features: string[] = []; try { features = JSON.parse((withCoverage || plan).features || "[]") } catch {}
+    return NextResponse.json({ success: true, data: { ...(withCoverage || plan), features } })
   } catch (e) {
     console.error("[laundry-plans] PUT", e)
     return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Update failed" }, { status: 500 })

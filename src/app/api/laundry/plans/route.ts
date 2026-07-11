@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { planMasterFields, syncPlanCoverage } from "@/lib/laundry-subscription-plan"
 
 export const runtime = "nodejs"
 
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
     const plans = await prisma.subscriptionPlan.findMany({
       where: { businessId: platformId, serviceType: "LAUNDRY" },
       orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { createdAt: "desc" }],
-      include: { _count: { select: { subscriptions: true } } },
+      include: { _count: { select: { subscriptions: true } }, coverageRules: { select: { serviceId: true, garmentId: true, allowanceMode: true } } },
     })
     return NextResponse.json({ success: true, data: plans.map(serialize) })
   } catch (e) {
@@ -62,9 +63,13 @@ export async function POST(request: Request) {
         maxOrdersPerCycle: maxOrdersPerCycle == null || maxOrdersPerCycle === "" ? null : Math.max(1, Math.floor(Number(maxOrdersPerCycle))),
         features: JSON.stringify(Array.isArray(features) ? features : []),
         isActive: isActive !== false,
+        ...planMasterFields(body), // KG/Piece allowance, auto-renew, grace, validity
       },
     })
-    return NextResponse.json({ success: true, data: serialize(plan) }, { status: 201 })
+    // Service + garment eligibility rows (Parts 3/4/5).
+    await syncPlanCoverage(plan.id, body.coverageRules)
+    const withCoverage = await prisma.subscriptionPlan.findUnique({ where: { id: plan.id }, include: { coverageRules: { select: { serviceId: true, garmentId: true, allowanceMode: true } } } })
+    return NextResponse.json({ success: true, data: serialize((withCoverage || plan) as Record<string, unknown>) }, { status: 201 })
   } catch (e) {
     console.error("[laundry-plans] POST", e)
     return NextResponse.json({ success: false, error: e instanceof Error ? e.message : "Create failed" }, { status: 500 })

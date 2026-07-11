@@ -1726,6 +1726,14 @@ model SubscriptionPlan {
   // — legacy plans keep prior behaviour (null maxOrders = unlimited orders).
   allowanceType      String? // e.g. CLOTH_ALLOWANCE | KG_ALLOWANCE
   maxOrdersPerCycle  Int? // max orders the allowance covers per cycle
+  // ── Laundry KG/Piece allowance plan (additive; null on legacy credit plans) ──
+  // A plan may grant a weight allowance, a piece allowance, or BOTH at once.
+  allowanceKg        Float? // KG covered per billing cycle (null = none)
+  allowancePieces    Int? // pieces covered per billing cycle (null = none)
+  autoRenew          Boolean                  @default(false) // auto-renew at cycle end
+  graceDays          Int                      @default(0) // grace window after expiry
+  validityDays       Int? // explicit validity (null = derived from billingCycle)
+  coverageRules      SubscriptionPlanCoverage[]
   features           String                   @default("[]")
   isFeatured         Boolean                  @default(false)
   maxSubscribers     Int?
@@ -1772,6 +1780,15 @@ model CustomerSubscription {
   totalCredits       Int                        @default(0)
   usedCredits        Int                        @default(0)
   remainingCredits   Int                        @default(0)
+  // ── Laundry KG/Piece allowance balances (additive; ledger is authoritative) ──
+  allowanceKg        Float                      @default(0) // KG granted this cycle
+  usedKg             Float                      @default(0)
+  remainingKg        Float                      @default(0)
+  allowancePieces    Int                        @default(0) // pieces granted this cycle
+  usedPieces         Int                        @default(0)
+  remainingPieces    Int                        @default(0)
+  graceEndsAt        DateTime? // end of grace window (set when a cycle lapses)
+  ledger             SubscriptionLedgerEntry[]
   autoRenew          Boolean                    @default(true)
   cancelledAt        DateTime?
   cancelAtPeriodEnd  Boolean                    @default(false)
@@ -1805,6 +1822,50 @@ model SubscriptionUsage {
 
   @@index([subscriptionId])
   @@index([createdAt])
+}
+
+// Per-plan eligibility + allowance rule (Parts 3/4/5). A row makes a SERVICE
+// eligible; garmentId=null covers every garment in that service, a specific
+// garmentId scopes the rule to one garment. allowanceMode says whether that
+// garment consumes the KG allowance or the PIECE allowance. Additive — plans
+// with no coverage rows behave like legacy credit plans.
+model SubscriptionPlanCoverage {
+  id            String           @id @default(cuid())
+  planId        String
+  serviceId     String
+  garmentId     String? // null = all garments in the service
+  allowanceMode String           @default("PER_PIECE") // PER_KG | PER_PIECE
+  createdAt     DateTime         @default(now())
+  plan          SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, serviceId, garmentId])
+  @@index([planId])
+  @@index([serviceId])
+}
+
+// Append-only allowance ledger (Part 8). Every movement of a subscription's
+// KG/Piece balance is a row; nothing is ever overwritten. balanceAfter is the
+// remaining balance in that unit immediately after the entry. entryType:
+// OPENING | CONSUMPTION | ADJUSTMENT | RENEWAL | EXPIRY | MANUAL_ADJUSTMENT | CLOSING.
+model SubscriptionLedgerEntry {
+  id             String               @id @default(cuid())
+  subscriptionId String
+  businessId     String
+  entryType      String
+  unit           String // KG | PIECE
+  delta          Float // signed movement (+grant / -consume)
+  balanceAfter   Float // remaining balance in this unit after the entry
+  orderId        String?
+  orderItemId    String?
+  note           String?
+  actorName      String?
+  createdAt      DateTime             @default(now())
+  subscription   CustomerSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([businessId])
+  @@index([orderId])
+  @@index([entryType])
 }
 
 // A customer's PURCHASE of a SubscriptionPlan — the paid commercial transaction
@@ -2789,6 +2850,8 @@ enum CustomerSubscriptionStatus {
   PAUSED
   CANCELLED
   EXPIRED
+  GRACE
+  SUSPENDED
 }
 
 enum NotificationType {
@@ -4264,6 +4327,12 @@ model LaundryOrder {
   amountPaid     Float     @default(0)
   balanceDue     Float     @default(0)
   paymentStatus  String    @default("UNPAID") // UNPAID | PARTIAL | PAID | SUBSCRIPTION
+  // Portion of this order's charges met by an active customer subscription
+  // allowance (KG/Piece). Additive: 0 for every walk-in/regular order — the
+  // frozen billing snapshot above is untouched; this only records how much of
+  // it was covered so the invoice can separate "Covered by Subscription" from
+  // "Extra Charges". The uncovered remainder stays in balanceDue.
+  subscriptionCoveredAmount Float @default(0)
   isExpress      Boolean   @default(false)
   customerType   String? // resolved customer type used for pricing
   billedAt       DateTime? // when the financial snapshot was persisted

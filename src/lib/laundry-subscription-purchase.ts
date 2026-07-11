@@ -14,6 +14,7 @@
 // ============================================================================
 import { prisma } from "@/lib/prisma"
 import { createHmac } from "crypto"
+import { grantAllowance } from "@/lib/laundry-subscription-server"
 
 export function cycleEnd(cycle: string, from: Date): Date {
   const d = new Date(from)
@@ -111,6 +112,7 @@ export async function confirmSubscriptionPurchase({ purchaseId, customerId, paym
           lastPaymentAmount: purchase.amount, lastPaymentAt: start,
         },
       })
+      await grantAllowance(tx, { id: sub.id, businessId: purchase.businessId }, { allowanceKg: plan.allowanceKg, allowancePieces: plan.allowancePieces }, { entryType: "OPENING", note: "Subscription activated" })
       await tx.subscriptionPlan.update({ where: { id: plan.id }, data: { currentSubscribers: { increment: 1 } } }).catch(() => {})
     }
     const updated = await tx.subscriptionPurchase.update({
@@ -156,6 +158,7 @@ export async function applyPaymentToPurchase(purchaseId: string, amount: number)
           totalCredits: plan.totalCredits, usedCredits: 0, remainingCredits: plan.totalCredits,
           lastPaymentAmount: purchase.amount, lastPaymentAt: start },
       })
+      await grantAllowance(tx, { id: s.id, businessId: purchase.businessId }, { allowanceKg: plan.allowanceKg, allowancePieces: plan.allowancePieces }, { entryType: "OPENING", note: "Subscription activated" })
       await tx.subscriptionPlan.update({ where: { id: plan.id }, data: { currentSubscribers: { increment: 1 } } }).catch(() => {})
     }
     await tx.subscriptionPurchase.update({ where: { id: purchase.id }, data: { amountPaid: newPaid, status: "ACTIVATED", paymentStatus: "COMPLETED", paidAt: start, customerSubscriptionId: s.id } })
