@@ -27,10 +27,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const service = await prisma.laundryService.findFirst({ where: { id: serviceId, businessId: lbId }, select: { id: true, name: true, defaultPricingType: true } })
     if (!service) return NextResponse.json({ success: false, error: "Service not found" }, { status: 404 })
 
-    const rules = await prisma.laundryPricingRule.findMany({
+    let rules = await prisma.laundryPricingRule.findMany({
       where: { businessId: lbId, serviceId, storeId: null, customerType: null, isActive: true },
       orderBy: { updatedAt: "desc" },
     })
+    // ── Self-heal legacy duplicates (root cause of Per-KG → Per-Piece) ──────────
+    // A garment+category rule is redundant (a garment implies its category) and,
+    // being MORE specific, out-ranks the garment's saved price in the resolver —
+    // so a Per-KG garment reads back as the old Per-Piece rule. When a clean
+    // garment-only rule exists for the same garment, deactivate the redundant
+    // category-scoped one. Idempotent; never removes a garment's only price.
+    const garmentOnly = new Set(rules.filter((r) => r.garmentId && r.categoryId == null).map((r) => r.garmentId!))
+    const redundant = rules.filter((r) => r.garmentId && r.categoryId != null && garmentOnly.has(r.garmentId!))
+    if (redundant.length) {
+      await prisma.laundryPricingRule.updateMany({ where: { id: { in: redundant.map((r) => r.id) } }, data: { isActive: false, status: "INACTIVE" } })
+      const dead = new Set(redundant.map((r) => r.id))
+      rules = rules.filter((r) => !dead.has(r.id))
+    }
     // Per-KG service-level rule (garment null)
     const perKgRule = rules.find((r) => r.garmentId == null && r.pricingType === "PER_KG")
     // Exactly ONE row per garment — most recently updated wins. Defends against any
@@ -89,8 +102,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const norm = (t?: string) => (String(t || "").toUpperCase() === "PER_KG" ? "PER_KG" : "PER_PIECE")
 
-    // Existing simple rules for this service (garment-scoped + any service-level KG).
-    const existing = await prisma.laundryPricingRule.findMany({ where: { businessId: lbId, serviceId, storeId: null, customerType: null, categoryId: null } })
+    // Existing base-scope rules for this service (storeId/customerType null),
+    // INCLUDING any that also carry a categoryId. A garment already implies its
+    // category, so a garment+category rule is redundant — and, being MORE specific,
+    // it shadows the garment's saved price in the resolver (root cause of Per-KG
+    // reverting to Per-Piece). We must fold these into the one garment rule.
+    const existing = await prisma.laundryPricingRule.findMany({ where: { businessId: lbId, serviceId, storeId: null, customerType: null } })
 
     // ── Legacy global-mode body (no per-row rows) — preserve prior behaviour ────
     const hasRows = Array.isArray(rows)
@@ -120,8 +137,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const minW = row.minWeightKg == null || row.minWeightKg === "" ? null : Number(row.minWeightKg)
       const dupes = byGarment.get(garmentId) || []
       if (dupes.length > 0) {
-        // Keep the first, update it; deactivate the rest (dedupe).
-        await prisma.laundryPricingRule.update({ where: { id: dupes[0].id }, data: { price, pricingType, minWeightKg: pricingType === "PER_KG" ? minW : null, isActive: true, status: "ACTIVE" } })
+        // Keep the first, update it; deactivate the rest (dedupe). Normalise the
+        // kept rule to a clean garment-only base rule (categoryId: null) so a
+        // previously category-scoped row can no longer out-rank it.
+        await prisma.laundryPricingRule.update({ where: { id: dupes[0].id }, data: { price, pricingType, categoryId: null, minWeightKg: pricingType === "PER_KG" ? minW : null, isActive: true, status: "ACTIVE" } })
         for (const extra of dupes.slice(1)) await prisma.laundryPricingRule.update({ where: { id: extra.id }, data: { isActive: false, status: "INACTIVE" } })
       } else {
         await prisma.laundryPricingRule.create({ data: { businessId: lbId, name: `${service.name} · ${gName.get(garmentId) || "Garment"}`, serviceId, garmentId, categoryId: null, storeId: null, customerType: null, pricingType, price, minWeightKg: pricingType === "PER_KG" ? minW : null, gstPercent: 0, priority: 0, status: "ACTIVE", isActive: true } })
