@@ -40,10 +40,10 @@ export async function POST(request: Request) {
     // Same resolver the order billing uses — only active rules are matched.
     const activeRules = rules.filter((r) => r.isActive)
     const quote = computeQuote(activeRules, [line], ctx)
-    const winner = resolveLineRule(activeRules, line, ctx)
+    const winner = resolveLineRule(activeRules, line)
     const computed = computeLine(winner, line, ctx)
     // Trace evaluates ALL rules (incl. inactive) so the owner sees what was skipped.
-    const trace = evaluateLine(rules, line, ctx)
+    const trace = evaluateLine(rules, line)
 
     return NextResponse.json({
       success: true,

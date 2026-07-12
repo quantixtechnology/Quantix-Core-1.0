@@ -7,11 +7,11 @@
 // the bill. No price is ever hardcoded in New Order / POS / Website / Invoice —
 // they all call this engine (directly or via /api/laundry/billing/quote).
 //
-// Rule matching: a rule applies to a line if EVERY non-null scope on the rule
-// (service, garment, category, store, customerType) equals the line/context
-// value (null = "any"). The best rule = most specific (most matching scopes),
-// then highest priority, then most recently effective. Effective-date window
-// is respected.
+// Rule matching (Laundry OS model): pricing exists only between Service +
+// Garment. Each Service + Garment has exactly ONE pricing record, and the
+// billing type (PER_PIECE | PER_KG) is a field on it. Resolution loads that one
+// record — nothing more. Categories only organise garments; they never price.
+// There is no scope scoring, no priority, no tie-breaking.
 // ============================================================================
 
 export interface PricingRule {
@@ -91,43 +91,18 @@ export interface BillingQuote {
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
-function inEffect(rule: PricingRule, now: Date): boolean {
-  if (rule.effectiveFrom && new Date(rule.effectiveFrom) > now) return false
-  if (rule.effectiveTo && new Date(rule.effectiveTo) < now) return false
-  return true
-}
-
-// -1 = does not apply; otherwise the specificity score (number of matching scopes).
-function matchScore(rule: PricingRule, line: BillingLineInput, ctx: BillingContext): number {
-  let score = 0
-  const checks: [string | null | undefined, string | null | undefined][] = [
-    [rule.serviceId, line.serviceId],
-    [rule.garmentId, line.garmentId],
-    [rule.categoryId, line.categoryId],
-    [rule.storeId, ctx.storeId],
-    [rule.customerType, ctx.customerType],
-  ]
-  for (const [ruleVal, lineVal] of checks) {
-    if (ruleVal == null) continue // "any" — applies, no specificity added
-    if (ruleVal !== lineVal) return -1 // required scope mismatch → rule does not apply
-    score += 1
-  }
-  return score
-}
-
-export function resolveLineRule(rules: PricingRule[], line: BillingLineInput, ctx: BillingContext, now = new Date()): PricingRule | null {
-  let best: PricingRule | null = null
-  let bestScore = -1
-  for (const rule of rules) {
-    if (!rule.isActive || !inEffect(rule, now)) continue
-    const score = matchScore(rule, line, ctx)
-    if (score < 0) continue
-    if (score > bestScore || (score === bestScore && best != null && rule.priority > best.priority)) {
-      best = rule
-      bestScore = score
-    }
-  }
-  return best
+// Laundry OS prices garments per service: there is exactly ONE pricing record
+// per Service + Garment. Load that record — nothing else. The billing type
+// (PER_PIECE | PER_KG) is a field on it (see computeLine): PER_KG bills
+// Weight × Rate, PER_PIECE bills Quantity × Rate.
+//
+// This is deliberately simple and deterministic. Categories only organise
+// garments; they never price. There is NO category/store/customer scoping, NO
+// match scoring, NO priority, and NO tie-breaking — that machinery did not fit
+// the laundry business model and made pricing non-deterministic.
+export function resolveLineRule(rules: PricingRule[], line: BillingLineInput): PricingRule | null {
+  if (line.garmentId == null) return null
+  return rules.find((r) => r.isActive && r.serviceId === line.serviceId && r.garmentId === line.garmentId) ?? null
 }
 
 export function computeLine(rule: PricingRule | null, line: BillingLineInput, ctx: BillingContext): BillingLineResult {
@@ -211,47 +186,28 @@ export interface LineEvaluation {
   evaluations: RuleEvaluation[]
 }
 
-export function evaluateLine(rules: PricingRule[], line: BillingLineInput, ctx: BillingContext, now = new Date()): LineEvaluation {
-  const winner = resolveLineRule(rules, line, ctx, now)
+export function evaluateLine(rules: PricingRule[], line: BillingLineInput): LineEvaluation {
+  // Simple, deterministic: a rule applies to a line only when it is active and
+  // its Service + Garment match. That single rule is the winner.
+  const winner = resolveLineRule(rules, line)
   const evals: RuleEvaluation[] = rules.map((rule) => {
-    const reasons: string[] = []
-    let applies = true
-    if (!rule.isActive) { applies = false; reasons.push("Inactive / archived — excluded") }
-    if (!inEffect(rule, now)) { applies = false; reasons.push("Outside effective dates — excluded") }
-    const score = matchScore(rule, line, ctx)
-    if (score < 0) {
-      applies = false
-      reasons.push("Scope mismatch (a required Store/Customer/Category/Garment/Service does not match)")
-    } else {
-      const matched: string[] = []
-      if (rule.serviceId != null) matched.push("Service")
-      if (rule.garmentId != null) matched.push("Garment")
-      if (rule.categoryId != null) matched.push("Category")
-      if (rule.storeId != null) matched.push("Store")
-      if (rule.customerType != null) matched.push("Customer Type")
-      reasons.push(matched.length ? `Matches on ${matched.join(", ")} (specificity ${score})` : "Applies to all (generic rule)")
-    }
+    const applies = !!rule.isActive && rule.serviceId === line.serviceId && rule.garmentId != null && rule.garmentId === line.garmentId
     return {
       ruleId: rule.id,
       ruleName: (rule as PricingRule & { name?: string | null }).name ?? null,
-      applies: applies && score >= 0,
-      score: Math.max(score, 0),
+      applies,
+      score: applies ? 1 : 0,
       priority: rule.priority,
       isWinner: winner?.id === rule.id,
-    reasons,
+      reasons: [!rule.isActive ? "Inactive — excluded" : applies ? "Matches this Service + Garment" : "Different Service / Garment"],
     }
   })
-  // Rank: applicable first, then specificity desc, then priority desc.
-  evals.sort((a, b) => {
-    if (a.applies !== b.applies) return a.applies ? -1 : 1
-    if (b.score !== a.score) return b.score - a.score
-    return b.priority - a.priority
-  })
+  evals.sort((a, b) => (a.applies === b.applies ? 0 : a.applies ? -1 : 1))
   return { winnerId: winner?.id ?? null, evaluations: evals }
 }
 
 export function computeQuote(rules: PricingRule[], items: BillingLineInput[], ctx: BillingContext, now = new Date()): BillingQuote {
-  const lines = items.map((line) => computeLine(resolveLineRule(rules, line, ctx, now), line, ctx))
+  const lines = items.map((line) => computeLine(resolveLineRule(rules, line), line, ctx))
 
   const subtotal = r2(lines.reduce((s, l) => s + l.baseAmount, 0))
   const gstTotal = r2(lines.reduce((s, l) => s + l.gstAmount, 0))
