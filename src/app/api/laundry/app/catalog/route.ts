@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   const [services, garments, rules] = await Promise.all([
     prisma.laundryService.findMany({ where: { businessId: biz.id, isActive: true }, orderBy: [{ displayOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, description: true, image: true } }),
-    prisma.laundryGarment.findMany({ where: { businessId: biz.id }, select: { id: true, name: true, image: true } }),
+    prisma.laundryGarment.findMany({ where: { businessId: biz.id, isActive: true }, select: { id: true, name: true, image: true } }),
     prisma.laundryPricingRule.findMany({ where: { service: { businessId: biz.id }, garmentId: { not: null }, isActive: true }, select: { serviceId: true, garmentId: true, price: true, pricingType: true, minWeightKg: true } }),
   ])
   const gName = new Map(garments.map((g) => [g.id, g]))

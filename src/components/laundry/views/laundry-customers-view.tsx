@@ -20,6 +20,7 @@ import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, U
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 import { getAuthHeaders } from "@/lib/admin-fetch"
+import { useLaundryPermissions } from "@/hooks/use-laundry-permissions"
 
 interface Row {
   id: string; name: string; phone: string | null; email: string | null; customerCode: string | null
@@ -44,6 +45,8 @@ const initials = (n: string) => n.split(" ").map((w) => w[0]).join("").slice(0, 
 export function LaundryCustomersView() {
   const { currentBusinessId, user } = useAuthStore()
   const isSuperAdmin = user?.role === "QUANTIX_SUPER_ADMIN"
+  const { can } = useLaundryPermissions()
+  const canArchive = can("laundry.customers.delete") || isSuperAdmin
   const { setLaundryPage } = useAdminStore()
   const { toast } = useToast()
   const [rows, setRows] = useState<Row[]>([])
@@ -70,22 +73,22 @@ export function LaundryCustomersView() {
   const [mergeResults, setMergeResults] = useState<Row[]>([])
   const [merging, setMerging] = useState(false)
 
-  // Super-admin permanent delete
+  // Archive (soft delete). Orders, invoices, payments, subscription ledger and
+  // audit are NEVER deleted — the customer is marked archived and hidden from
+  // search / New Order / Customer App; history stays intact.
   const [deleteTarget, setDeleteTarget] = useState<Row | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState("")
   const [deleting, setDeleting] = useState(false)
 
   const doDelete = async () => {
-    if (!deleteTarget || deleteConfirm !== "DELETE") return
+    if (!deleteTarget) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/core/admin/customers/${deleteTarget.id}?businessId=${currentBusinessId}`, { method: "DELETE", headers: getAuthHeaders() })
+      const res = await fetch(`/api/laundry/customers/${deleteTarget.id}?businessId=${currentBusinessId}`, { method: "DELETE", headers: getAuthHeaders() })
       const json = await res.json()
-      if (!res.ok || !json.success) { toast({ title: "Delete failed", description: json.error, variant: "destructive" }); return }
-      const n = json.data?.deletedCounts || {}
-      toast({ title: "Customer deleted", description: `${deleteTarget.name} and all related data removed (${n.laundryOrders || 0} orders, ${n.addresses || 0} addresses, ${n.customerSubscriptions || 0} subscriptions).` })
-      setDeleteTarget(null); setDeleteConfirm(""); load()
-    } catch { toast({ title: "Delete failed", variant: "destructive" }) } finally { setDeleting(false) }
+      if (!res.ok || !json.success) { toast({ title: "Archive failed", description: json.error, variant: "destructive" }); return }
+      toast({ title: "Customer archived", description: `${deleteTarget.name} is archived. Their orders and history are kept.` })
+      setDeleteTarget(null); load()
+    } catch { toast({ title: "Archive failed", variant: "destructive" }) } finally { setDeleting(false) }
   }
 
   const load = useCallback(async () => {
@@ -228,7 +231,7 @@ export function LaundryCustomersView() {
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="View" onClick={() => openCustomer(c.id, false)}><Eye className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="Edit" onClick={() => openCustomer(c.id, true)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="New Order" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /></Button>
-                        {isSuperAdmin && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-rose-600" title="Delete permanently (Super Admin)" onClick={() => { setDeleteTarget(c); setDeleteConfirm("") }}><Trash2 className="h-4 w-4" /></Button>}
+                        {canArchive && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-amber-600" title="Archive customer (keeps order history)" onClick={() => setDeleteTarget(c)}><Trash2 className="h-4 w-4" /></Button>}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -409,23 +412,19 @@ export function LaundryCustomersView() {
         </DialogContent>
       </Dialog>
 
-      {/* Super-admin permanent delete confirmation */}
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) { setDeleteTarget(null); setDeleteConfirm("") } }}>
+      {/* Archive (soft delete) confirmation — orders & history are preserved */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-rose-700"><AlertTriangle className="h-5 w-5" /> Delete Customer Permanently?</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-amber-700"><AlertTriangle className="h-5 w-5" /> Archive Customer?</DialogTitle>
             <DialogDescription className="text-slate-600">
-              This will permanently delete <span className="font-semibold text-slate-800">{deleteTarget?.name}</span> and all related orders, addresses, subscriptions, payments and operational history. <span className="font-semibold text-rose-600">This action cannot be undone.</span>
+              <span className="font-semibold text-slate-800">{deleteTarget?.name}</span> will be archived and hidden from search, New Order and the Customer App. <span className="font-semibold text-slate-700">Their orders, invoices, payments, subscription history and audit are kept.</span>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Type <span className="font-mono font-bold">DELETE</span> to confirm</Label>
-            <Input value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} placeholder="DELETE" autoFocus />
-          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteConfirm("") }}>Cancel</Button>
-            <Button className="gap-1 bg-rose-600 hover:bg-rose-700 text-white" disabled={deleteConfirm !== "DELETE" || deleting} onClick={doDelete}>
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Customer &amp; All Data
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" disabled={deleting} onClick={doDelete}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Archive Customer
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -10,12 +10,16 @@ export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
-    const businessId = new URL(request.url).searchParams.get("businessId")
+    const sp = new URL(request.url).searchParams
+    const businessId = sp.get("businessId")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, data: [] })
+    // Active-only by default so deactivated ("deleted") services never surface in
+    // New Order or the Customer App. Management screens pass includeInactive=1.
+    const includeInactive = sp.get("includeInactive") === "1"
     const data = await prisma.laundryService.findMany({
-      where: { businessId: biz.id },
+      where: { businessId: biz.id, ...(includeInactive ? {} : { isActive: true }) },
       include: {
         category: { select: { id: true, name: true } },
         // Compatible garment-category ids drive the Add Garments default scope.

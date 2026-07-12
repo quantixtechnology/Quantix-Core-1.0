@@ -30,6 +30,9 @@ export async function GET(request: Request) {
     const customers = await prisma.customer.findMany({
       where: {
         businessId: laundryBusiness.platformBusinessId,
+        // Archived ("deleted") customers must never surface in New Order lookup.
+        isActive: true,
+        status: { not: "ARCHIVED" },
         OR: [
           { name: { contains: query } },
           { phone: { contains: query } },

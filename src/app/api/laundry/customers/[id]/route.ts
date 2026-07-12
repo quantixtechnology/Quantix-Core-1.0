@@ -104,3 +104,25 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+
+// DELETE /api/laundry/customers/[id] — ARCHIVE (soft). Customers are financial/
+// operational anchors: deleting one must NEVER erase orders, invoices, payments,
+// subscription ledger or audit. We mark the customer archived + inactive so they
+// vanish from search / New Order lookup / Customer App, while every historical
+// record stays intact and still resolves the (now archived) customer.
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    const businessId = new URL(request.url).searchParams.get("businessId")
+    if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.customers.delete")
+    if (!guard.ok) return guard.res
+    const customer = await scopedCustomer(businessId, id)
+    if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
+    await prisma.customer.update({ where: { id }, data: { status: "ARCHIVED", isActive: false } })
+    return NextResponse.json({ success: true, archived: true })
+  } catch (e) {
+    console.error("[laundry-customers] DELETE[id]", e)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}

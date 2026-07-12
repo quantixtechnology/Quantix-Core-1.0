@@ -53,7 +53,7 @@ export function LaundryGarmentsMaster() {
     setLoading(true)
     try {
       const [g, c] = await Promise.all([
-        fetch(`/api/laundry/garments?businessId=${encodeURIComponent(currentBusinessId)}`).then(r => r.json()),
+        fetch(`/api/laundry/garments?businessId=${encodeURIComponent(currentBusinessId)}&includeInactive=1`).then(r => r.json()),
         fetch(`/api/laundry/categories?businessId=${encodeURIComponent(currentBusinessId)}`).then(r => r.json()),
       ])
       setItems(g.success ? g.data : [])

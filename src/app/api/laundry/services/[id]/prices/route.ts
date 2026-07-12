@@ -29,17 +29,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const rules = await prisma.laundryPricingRule.findMany({
       where: { businessId: lbId, serviceId, storeId: null, customerType: null, isActive: true },
+      orderBy: { updatedAt: "desc" },
     })
     // Per-KG service-level rule (garment null)
     const perKgRule = rules.find((r) => r.garmentId == null && r.pricingType === "PER_KG")
-    const garmentRules = rules.filter((r) => r.garmentId != null)
-    const garments = await prisma.laundryGarment.findMany({ where: { businessId: lbId, id: { in: garmentRules.map((r) => r.garmentId!) } }, select: { id: true, name: true, category: { select: { name: true } } } })
+    // Exactly ONE row per garment — most recently updated wins. Defends against any
+    // stale duplicate rule (e.g. from a past hard-delete) that could otherwise
+    // shadow the saved billing type and make a Per-KG garment read back as Per Piece.
+    const seen = new Set<string>()
+    const garmentRules = rules.filter((r) => {
+      if (r.garmentId == null || seen.has(r.garmentId)) return false
+      seen.add(r.garmentId); return true
+    })
+    // Only ACTIVE garments — a deactivated ("deleted") garment must not appear in
+    // the pricing menu even if a stale price rule still references it.
+    const garments = await prisma.laundryGarment.findMany({ where: { businessId: lbId, isActive: true, id: { in: garmentRules.map((r) => r.garmentId!) } }, select: { id: true, name: true, category: { select: { name: true } } } })
     const gMap = new Map(garments.map((g) => [g.id, g]))
 
     // Each garment row carries its OWN billing type (PER_KG | PER_PIECE) + price.
-    const rows = garmentRules.map((r) => ({
-      garmentId: r.garmentId!, garmentName: gMap.get(r.garmentId!)?.name || "Garment",
-      category: gMap.get(r.garmentId!)?.category?.name || null,
+    const rows = garmentRules.filter((r) => gMap.has(r.garmentId!)).map((r) => ({
+      garmentId: r.garmentId!, garmentName: gMap.get(r.garmentId!)!.name,
+      category: gMap.get(r.garmentId!)!.category?.name || null,
       price: r.price, pricingType: r.pricingType, minWeightKg: r.minWeightKg,
     }))
     return NextResponse.json({ success: true, data: {
