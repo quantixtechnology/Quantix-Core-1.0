@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCrmBusiness, crmEvent } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -10,6 +11,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await request.json()
+    const guard = await requireLaundryPermission(request, body.businessId, "crm.activities.edit")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(body.businessId)
     const task = await prisma.laundryCrmTask.findFirst({ where: { id, businessId: biz.id } })
     if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 })

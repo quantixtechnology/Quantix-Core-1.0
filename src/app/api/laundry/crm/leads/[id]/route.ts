@@ -7,12 +7,15 @@ import {
   requireCrmBusiness, crmEvent, buildLeadValues, promoteSystemFields, CrmValidationError,
 } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const guard = await requireLaundryPermission(request, new URL(request.url).searchParams.get("businessId"), "crm.leads.view")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(new URL(request.url).searchParams.get("businessId"))
     const lead = await prisma.laundryCrmLead.findFirst({
       where: { id, businessId: biz.id },
@@ -33,6 +36,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await request.json()
+    const guard = await requireLaundryPermission(request, body.businessId, "crm.leads.edit")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(body.businessId)
     const lead = await prisma.laundryCrmLead.findFirst({ where: { id, businessId: biz.id } })
     if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 })
@@ -98,6 +103,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const { id } = await params
     const sp = new URL(request.url).searchParams
+    const guard = await requireLaundryPermission(request, sp.get("businessId"), "crm.leads.delete")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(sp.get("businessId"))
     const lead = await prisma.laundryCrmLead.findFirst({ where: { id, businessId: biz.id } })
     if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 })

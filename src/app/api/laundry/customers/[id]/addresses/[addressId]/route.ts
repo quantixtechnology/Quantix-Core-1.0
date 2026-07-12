@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode } from "@/lib/india"
 
 export const runtime = "nodejs"
@@ -21,6 +22,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id, addressId } = await params
     const b = await request.json()
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.edit")
+    if (!guard.ok) return guard.res
     const addr = await scoped(b.businessId, id, addressId)
     if (!addr) return NextResponse.json({ error: "Address not found" }, { status: 404 })
     if (b.pincode && !isValidPincode(b.pincode)) return NextResponse.json({ error: "PIN Code must be a valid 6-digit Indian pincode" }, { status: 400 })
@@ -60,6 +63,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const { id, addressId } = await params
     const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.customers.edit")
+    if (!guard.ok) return guard.res
     const addr = await scoped(businessId, id, addressId)
     if (!addr) return NextResponse.json({ error: "Address not found" }, { status: 404 })
     await prisma.address.delete({ where: { id: addressId } })

@@ -2,12 +2,15 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateStoreCode } from "@/lib/laundry-codes"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const guard = await requireLaundryPermission(request, id, "laundry.stores.view")
+    if (!guard.ok) return guard.res
     // Accept either LaundryBusiness.id or the platform Business.id.
     const resolved = await resolveLaundryBusiness(id)
     const stores = resolved ? await prisma.laundryStore.findMany({
@@ -24,6 +27,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const guard = await requireLaundryPermission(request, id, "laundry.stores.create")
+    if (!guard.ok) return guard.res
     const body = await request.json()
     const { storeName, storeType, managerName, mobile, email, address, city, state, pincode, latitude, longitude, serviceRadiusKm, dailyCapacityKg, isActive } = body
 

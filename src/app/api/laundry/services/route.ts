@@ -2,6 +2,7 @@
 // POST /api/laundry/services               — create service
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { validateProcessFlow } from "@/lib/laundry-processing"
 
@@ -35,6 +36,8 @@ export async function POST(request: Request) {
   try {
     const b = await request.json()
     if (!b.businessId || !b.name?.trim()) return NextResponse.json({ error: "businessId and name are required" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     // Canonical processing-route validation (same validator as update). The

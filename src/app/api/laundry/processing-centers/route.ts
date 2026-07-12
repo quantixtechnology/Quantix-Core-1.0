@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateProcessingCenterCode } from "@/lib/laundry-codes"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -28,6 +29,8 @@ export async function POST(request: Request) {
     if (!businessId || !centerName) {
       return NextResponse.json({ error: "Business ID and center name are required" }, { status: 400 })
     }
+    const guard = await requireLaundryPermission(request, businessId, "laundry.settings.edit")
+    if (!guard.ok) return guard.res
 
     // Resolve tenant (self-healing) — same as Stores/Services.
     const resolved = await resolveLaundryBusiness(businessId)

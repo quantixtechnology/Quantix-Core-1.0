@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -28,6 +29,8 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { businessId, name, code, description, color, icon, image, defaultGstPercent, displayOnWebsite, displayInPOS, displayInApp, displayOrder, isActive } = body
     if (!businessId || !name?.trim()) return NextResponse.json({ error: "businessId and name are required" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))

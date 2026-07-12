@@ -10,7 +10,7 @@ const slug = (s: string) => s.toUpperCase().trim().replace(/[^A-Z0-9]+/g, "_").r
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryPermission(b.businessId, "laundry.staff.assign_role")
+  const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff.assign_role")
   if (!guard.ok) return guard.res
   const businessId = guard.platformBusinessId
   const src = await prisma.laundryAccessRole.findFirst({ where: { id, businessId }, include: { permissions: true } })

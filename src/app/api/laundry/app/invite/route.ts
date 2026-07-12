@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { sendTransactionalEmail } from "@/lib/email-service"
 
 export const runtime = "nodejs"
@@ -19,6 +20,8 @@ export async function POST(request: Request) {
     const b = await request.json().catch(() => ({}))
     const email = String(b.email || "").trim().toLowerCase()
     if (!b.businessId || !isEmail(email)) return NextResponse.json({ error: "businessId and a valid email are required" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.invite")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
 

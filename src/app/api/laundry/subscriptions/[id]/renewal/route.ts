@@ -3,6 +3,8 @@
 // Body: { action, unit?, delta?, note?, actorName? }
 //   action ∈ renew | expire | suspend | resume | cancel | adjust
 import { NextResponse } from "next/server"
+import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { renewSubscription, processExpiry, suspendSubscription, resumeSubscription, cancelSubscription, manualAdjust } from "@/lib/laundry-subscription-renewal"
 
 export const runtime = "nodejs"
@@ -13,6 +15,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const b = await request.json().catch(() => ({}))
     const action = String(b.action || "").toLowerCase()
     const actorName = b.actorName || null
+    const sub = await prisma.customerSubscription.findUnique({ where: { id }, select: { businessId: true } })
+    if (!sub) return NextResponse.json({ error: "Subscription not found" }, { status: 404 })
+    const permKey = action === "renew" ? "laundry.subscriptions.renew" : action === "cancel" ? "laundry.subscriptions.cancel" : action === "adjust" ? "laundry.subscriptions.adjust" : "laundry.subscriptions.edit"
+    const guard = await requireLaundryPermission(request, sub.businessId, permKey)
+    if (!guard.ok) return guard.res
 
     let res
     switch (action) {

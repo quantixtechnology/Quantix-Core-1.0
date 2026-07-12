@@ -6,6 +6,7 @@
 // Body: { businessId, primaryId, duplicateId, actorName? }
 import { NextResponse } from "next/server"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { mergeCustomers } from "@/lib/laundry-customer"
 
 export const runtime = "nodejs"
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
   try {
     const b = await request.json()
     if (!b.businessId || !b.primaryId || !b.duplicateId) return NextResponse.json({ error: "businessId, primaryId and duplicateId are required" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.merge")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     const res = await mergeCustomers(biz.platformBusinessId, b.primaryId, b.duplicateId, b.actorName || null)

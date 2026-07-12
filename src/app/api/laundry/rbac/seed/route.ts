@@ -7,7 +7,7 @@ export const runtime = "nodejs"
 
 export async function POST(request: Request) {
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryPermission(b.businessId, "laundry.staff.assign_role")
+  const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff.assign_role")
   if (!guard.ok) return guard.res
   const created = await seedSystemRoles(guard.platformBusinessId)
   if (created.length) await rbacAudit(guard.platformBusinessId, "ROLE_CREATED", { actorName: guard.ctx.userName, detail: { seeded: created } })

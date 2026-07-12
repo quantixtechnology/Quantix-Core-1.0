@@ -4,6 +4,7 @@
 // / SubscriptionUsage / SubscriptionPurchase) — nothing hardcoded.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
@@ -12,6 +13,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 export async function GET(request: Request) {
   try {
     const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.subscriptions.view")
+    if (!guard.ok) return guard.res
     if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })

@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { customerStats } from "@/lib/laundry-customer"
 
 export const runtime = "nodejs"
@@ -13,6 +14,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params
     const businessId = new URL(request.url).searchParams.get("businessId")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.customers.view")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz?.platformBusinessId) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const cust = await prisma.customer.findFirst({ where: { id, businessId: biz.platformBusinessId }, select: { id: true } })

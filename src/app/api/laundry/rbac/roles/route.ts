@@ -10,7 +10,7 @@ const slug = (s: string) => s.toUpperCase().trim().replace(/[^A-Z0-9]+/g, "_").r
 
 export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
-  const guard = await requireLaundryPermission(businessId, "laundry.staff.view")
+  const guard = await requireLaundryPermission(request, businessId, "laundry.staff.view")
   if (!guard.ok) return guard.res
   const roles = await prisma.laundryAccessRole.findMany({
     where: { businessId: guard.platformBusinessId },
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryPermission(b.businessId, "laundry.staff.assign_role")
+  const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff.assign_role")
   if (!guard.ok) return guard.res
   if (!b.name?.trim()) return NextResponse.json({ error: "Role name is required" }, { status: 400 })
   const businessId = guard.platformBusinessId

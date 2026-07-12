@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { generatePacketNumber } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
@@ -16,6 +17,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { id } = await params
     const b = await request.json().catch(() => ({}))
+    const guard = await requireLaundryPermission(request, b.businessId, "store_ops.packing_qr.operate")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
 

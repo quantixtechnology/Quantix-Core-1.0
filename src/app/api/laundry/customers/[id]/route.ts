@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode, formatFullAddress } from "@/lib/india"
 import { parseMeta, parseTags, mergeMeta, customerStats, type CommPrefs } from "@/lib/laundry-customer"
 
@@ -36,6 +37,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params
     const businessId = new URL(request.url).searchParams.get("businessId")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.customers.view")
+    if (!guard.ok) return guard.res
     const customer = await scopedCustomer(businessId, id)
     if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const stats = await customerStats(id)
@@ -51,6 +54,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params
     const b = await request.json()
     if (!b.businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.edit")
+    if (!guard.ok) return guard.res
     const customer = await scopedCustomer(b.businessId, id)
     if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     if (b.pincode && !isValidPincode(b.pincode)) return NextResponse.json({ error: "PIN Code must be a valid 6-digit Indian pincode" }, { status: 400 })

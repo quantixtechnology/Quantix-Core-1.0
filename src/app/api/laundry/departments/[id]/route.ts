@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -16,6 +17,8 @@ export async function PUT(
     if (!existing) {
       return NextResponse.json({ error: "Department not found" }, { status: 404 })
     }
+    const guard = await requireLaundryPermission(request, existing.businessId, "laundry.settings.edit")
+    if (!guard.ok) return guard.res
 
     const department = await prisma.laundryDepartment.update({
       where: { id },
@@ -36,7 +39,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -45,6 +48,8 @@ export async function DELETE(
     if (!existing) {
       return NextResponse.json({ error: "Department not found" }, { status: 404 })
     }
+    const guard = await requireLaundryPermission(request, existing.businessId, "laundry.settings.edit")
+    if (!guard.ok) return guard.res
 
     await prisma.laundryDepartment.delete({ where: { id } })
     return NextResponse.json({ success: true })

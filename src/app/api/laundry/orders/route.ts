@@ -5,6 +5,7 @@ import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } 
 import { generateOrderNumber } from "@/lib/laundry-codes"
 import { explodePieces } from "@/lib/laundry-order-items"
 import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
     if (!businessIdInput || !storeId) {
       return NextResponse.json({ error: "Missing required fields: businessId, storeId" }, { status: 400 })
     }
+    const guard = await requireLaundryPermission(request, businessIdInput, "laundry.orders.create")
+    if (!guard.ok) return guard.res
 
     // Billing line items drive the financial snapshot. `services` is the legacy
     // workflow service list — still accepted, and derived from items if omitted.
@@ -211,6 +214,8 @@ export async function GET(request: Request) {
     if (!businessId) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
+    const guard = await requireLaundryPermission(request, businessId, "laundry.orders.view")
+    if (!guard.ok) return guard.res
 
     const resolved = await resolveLaundryBusiness(businessId)
     if (!resolved) {

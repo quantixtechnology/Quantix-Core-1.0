@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const existing = await prisma.laundryStore.findUnique({ where: { id }, select: { laundryBusinessId: true } })
+    if (!existing) return NextResponse.json({ error: "Store not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, existing.laundryBusinessId, "laundry.stores.edit")
+    if (!guard.ok) return guard.res
     const body = await request.json()
     const { storeName, storeType, managerName, mobile, email, address, city, state, pincode, latitude, longitude, serviceRadiusKm, dailyCapacityKg, isActive } = body
 
@@ -39,6 +44,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const existing = await prisma.laundryStore.findUnique({ where: { id }, select: { laundryBusinessId: true } })
+    if (!existing) return NextResponse.json({ error: "Store not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, existing.laundryBusinessId, "laundry.stores.delete")
+    if (!guard.ok) return guard.res
     await prisma.laundryStore.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (error) {

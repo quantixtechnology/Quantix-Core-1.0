@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { applyPaymentToPurchase } from "@/lib/laundry-subscription-purchase"
 
 export const runtime = "nodejs"
@@ -71,6 +72,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { businessId, method, amount, reference, note, createdBy } = body
 
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "store_ops.payment_collection.operate")
+    if (!guard.ok) return guard.res
 
     // ── Explicit pay-later decision (COD / pay-at-delivery) ──────────────────
     // Only valid when the business payment policy does not require advance

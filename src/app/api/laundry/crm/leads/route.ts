@@ -8,12 +8,15 @@ import {
   buildLeadValues, promoteSystemFields, CrmValidationError,
 } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
     const sp = new URL(request.url).searchParams
+    const guard = await requireLaundryPermission(request, sp.get("businessId"), "crm.leads.view")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(sp.get("businessId"))
     await ensureCrmDefaults(biz.id)
 
@@ -75,6 +78,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    const guard = await requireLaundryPermission(request, body.businessId, "crm.leads.create")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(body.businessId)
     await ensureCrmDefaults(biz.id)
 

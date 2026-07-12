@@ -11,6 +11,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getTransition, statusLabel } from "@/lib/laundry-workflow"
 import { releaseSubscriptionFromOrder } from "@/lib/laundry-subscription-server"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -33,6 +34,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 })
     }
+    const guard = await requireLaundryPermission(request, order.businessId, toStatus === "CANCELLED" ? "laundry.orders.cancel" : "laundry.orders.edit")
+    if (!guard.ok) return guard.res
 
     const fromStatus = order.status as string
     const transition = getTransition(fromStatus, toStatus)

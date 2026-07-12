@@ -9,7 +9,7 @@ export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
-  const guard = await requireLaundryPermission(businessId, "laundry.staff.view")
+  const guard = await requireLaundryPermission(request, businessId, "laundry.staff.view")
   if (!guard.ok) return guard.res
   const rows = await prisma.laundryAccessAssignment.findMany({ where: { businessId: guard.platformBusinessId }, include: { role: { select: { code: true, name: true } } }, orderBy: { createdAt: "desc" } })
   return NextResponse.json({ success: true, data: rows })
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const b = await request.json().catch(() => ({}))
-  const guard = await requireLaundryPermission(b.businessId, "laundry.staff.assign_role")
+  const guard = await requireLaundryPermission(request, b.businessId, "laundry.staff.assign_role")
   if (!guard.ok) return guard.res
   if (!b.userId || !b.roleId) return NextResponse.json({ error: "userId and roleId are required" }, { status: 400 })
   const businessId = guard.platformBusinessId
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   const sp = new URL(request.url).searchParams
-  const guard = await requireLaundryPermission(sp.get("businessId"), "laundry.staff.assign_role")
+  const guard = await requireLaundryPermission(request, sp.get("businessId"), "laundry.staff.assign_role")
   if (!guard.ok) return guard.res
   const userId = sp.get("userId")
   if (!userId) return NextResponse.json({ error: "userId is required" }, { status: 400 })

@@ -6,7 +6,9 @@
 //
 // Body: { actorName?, force? }
 import { NextResponse } from "next/server"
+import { prisma } from "@/lib/prisma"
 import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -14,6 +16,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { id } = await params
     const b = await request.json().catch(() => ({}))
+    const ord = await prisma.laundryOrder.findUnique({ where: { id }, select: { businessId: true } })
+    if (!ord) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, ord.businessId, "laundry.subscriptions.adjust")
+    if (!guard.ok) return guard.res
     const res = await applySubscriptionToOrder(id, { actorName: b.actorName || null, force: !!b.force })
     if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
     return NextResponse.json({ success: true, data: res })

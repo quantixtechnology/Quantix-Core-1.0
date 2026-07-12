@@ -8,6 +8,7 @@
 // Body: { businessId?, actorId?, actorName?, note? }
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -20,6 +21,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       select: { id: true, orderNumber: true, businessId: true, status: true, packet: { select: { id: true, packetNumber: true, status: true } }, items: { select: { id: true, receivedAt: true } } },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, order.businessId, "processing.console_receive.operate")
+    if (!guard.ok) return guard.res
 
     if (order.status !== "IN_TRANSIT_TO_PROCESSING") {
       const msg = order.status === "PROCESSING"

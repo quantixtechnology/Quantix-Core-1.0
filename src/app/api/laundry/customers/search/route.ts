@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -14,6 +15,8 @@ export async function GET(request: Request) {
     if (!businessId) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
+    const permGuard = await requireLaundryPermission(request, businessId, "laundry.customers.view")
+    if (!permGuard.ok) return permGuard.res
 
     const laundryBusiness = await resolveLaundryBusiness(businessId)
     const tag = `[cust-search ${Date.now().toString(36)}]`

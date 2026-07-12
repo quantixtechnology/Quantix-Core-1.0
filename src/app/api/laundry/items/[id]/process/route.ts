@@ -10,6 +10,13 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor } from "@/lib/laundry-processing"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
+
+// Map a processing stage code → its RBAC workstation screen key.
+const STAGE_SCREEN: Record<string, string> = {
+  WASH: "washing", DRY: "drying", DRYCLEAN: "dry_cleaning", IRON: "ironing",
+  FOLD: "folding", QC: "quality_check", PACKED: "packing",
+}
 
 export const runtime = "nodejs"
 
@@ -23,6 +30,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       select: { id: true, orderId: true, serviceName: true, processingStage: true, processingStatus: true, processFlow: true, qcFailCount: true, order: { select: { businessId: true } } },
     })
     if (!item) return NextResponse.json({ error: "Garment not found" }, { status: 404 })
+    // Enforce the workstation permission for the garment's current stage.
+    // QC_FAIL / REJECT are override operations; the rest are process.
+    const screen = STAGE_SCREEN[item.processingStage || ""] || "washing"
+    const permAction = action === "QC_FAIL" || action === "REJECT" ? "override" : "process"
+    const guard = await requireLaundryPermission(request, item.order.businessId, `processing.${screen}.${permAction}`)
+    if (!guard.ok) return guard.res
 
     const flow = resolveFlow(item)
     const cur = item.processingStage

@@ -1,6 +1,7 @@
 // PUT / DELETE /api/laundry/services/[id]
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { validateProcessFlow } from "@/lib/laundry-processing"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
@@ -10,6 +11,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const b = await request.json()
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
     // Canonical processing-route validation (shared with create). An invalid
     // route is rejected with INVALID_PROCESS_FLOW — never silently rewritten.
@@ -77,6 +80,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const svc0 = await prisma.laundryService.findUnique({ where: { id }, select: { businessId: true } })
+    if (!svc0) return NextResponse.json({ error: "Service not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, svc0.businessId, "laundry.pricing.delete_rules")
+    if (!guard.ok) return guard.res
     // A service referenced by order history must NEVER be destroyed — deactivate
     // it so it disappears from new-order selection while old orders still resolve
     // it (order items carry a serviceName snapshot). Only a service that has

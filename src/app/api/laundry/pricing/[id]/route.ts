@@ -3,6 +3,7 @@
 // DELETE /api/laundry/pricing/[id]            — delete (blocked if used by orders)
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { buildRuleData, writeRuleAudit } from "@/lib/laundry-pricing-rule"
 
 export const runtime = "nodejs"

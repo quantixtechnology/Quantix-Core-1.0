@@ -10,6 +10,7 @@
 // no priority. Per-KG services store one service-scoped PER_KG rule instead.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
@@ -18,6 +19,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id: serviceId } = await params
     const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.pricing.view")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const lbId = biz.id
@@ -66,6 +69,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       mode?: "PER_GARMENT" | "PER_KG"
       perKg?: { price: number | string; minWeightKg?: number | string | null }
     }
+    const guard = await requireLaundryPermission(request, businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const lbId = biz.id

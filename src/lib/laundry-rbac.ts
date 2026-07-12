@@ -11,11 +11,27 @@
 // reads/enforces the Laundry RBAC matrix.
 // ============================================================================
 import { NextResponse } from "next/server"
+import { randomBytes } from "crypto"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { isPlatformRole } from "@/lib/permissions"
 import { allPermissionKeys, SYSTEM_ROLES } from "@/lib/laundry-rbac-catalog"
+
+// Internal trusted-call bypass. In-process callers that have ALREADY performed
+// their own authorization — the customer-app order delegation, server tasks and
+// the test harness — set this header so they skip the staff-session RBAC check
+// (they are not staff sessions). The token is process-only (random per boot,
+// never sent to any client), so an external HTTP client cannot forge it.
+export const INTERNAL_HEADER = "x-laundry-internal"
+export const INTERNAL_TOKEN = process.env.LAUNDRY_INTERNAL_TOKEN || randomBytes(24).toString("hex")
+export function isInternalCall(request: Request): boolean {
+  // Trusted in-process caller (customer-app delegation, server tasks) — OR the
+  // test harness, but ONLY outside production (NODE_ENV=production can never
+  // trigger the test bypass, so deployed prod always enforces).
+  if (request.headers.get(INTERNAL_HEADER) === INTERNAL_TOKEN) return true
+  return process.env.NODE_ENV !== "production" && process.env.LAUNDRY_RBAC_TEST_BYPASS === "1"
+}
 
 // Legacy BusinessUser.role → default system role code (used when a user has no
 // explicit Laundry RBAC assignment yet).
@@ -65,12 +81,21 @@ export function hasPerm(perms: Set<string>, key: string): boolean { return perms
 
 // API guard. Resolves the caller, then enforces `key`. On failure returns a
 // ready-to-send Response (401/403/404); on success returns the context.
-export interface GuardOk { ok: true; ctx: NonNullable<Awaited<ReturnType<typeof getLaundryAuthContext>>>; resolved: ResolvedPermissions; platformBusinessId: string }
+type Ctx = NonNullable<Awaited<ReturnType<typeof getLaundryAuthContext>>>
+export interface GuardOk { ok: true; internal?: boolean; ctx: Ctx; resolved: ResolvedPermissions; platformBusinessId: string }
 export interface GuardFail { ok: false; res: NextResponse }
-export async function requireLaundryPermission(businessIdInput: string | null | undefined, key: string): Promise<GuardOk | GuardFail> {
+
+// Enforce `key` for the caller. Returns a ready-to-send 400/401/403/404 on
+// failure, or the resolved context on success. Trusted internal calls (see
+// isInternalCall) bypass the staff-session check with full access.
+export async function requireLaundryPermission(request: Request, businessIdInput: string | null | undefined, key: string): Promise<GuardOk | GuardFail> {
   if (!businessIdInput) return { ok: false, res: NextResponse.json({ error: "Missing businessId" }, { status: 400 }) }
   const biz = await resolveLaundryBusiness(businessIdInput)
   if (!biz?.platformBusinessId) return { ok: false, res: NextResponse.json({ error: "Laundry business not found" }, { status: 404 }) }
+  if (isInternalCall(request)) {
+    const ctx = { userId: "system", userName: "system", userEmail: "", laundryBusinessId: biz.id, platformBusinessId: biz.platformBusinessId, role: "LAUNDRY_OWNER", isSupportMode: false } as Ctx
+    return { ok: true, internal: true, ctx, resolved: { isOwner: true, permissions: new Set(allPermissionKeys()), roleCode: "INTERNAL", roleName: "Internal", source: "owner" }, platformBusinessId: biz.platformBusinessId }
+  }
   const ctx = await getLaundryAuthContext(biz.id)
   if (!ctx) return { ok: false, res: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) }
   const resolved = await resolveUserPermissions(biz.platformBusinessId, ctx.userId, ctx.role)

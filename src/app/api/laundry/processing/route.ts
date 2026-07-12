@@ -5,8 +5,11 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { WORKSTATIONS, stageLabel, departmentFor } from "@/lib/laundry-processing"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
+
+const STAGE_SCREEN: Record<string, string> = { WASH: "washing", DRY: "drying", DRYCLEAN: "dry_cleaning", IRON: "ironing", FOLD: "folding", QC: "quality_check", PACKED: "packing" }
 
 export async function GET(request: Request) {
   try {
@@ -14,6 +17,8 @@ export async function GET(request: Request) {
     const businessId = sp.get("businessId")
     const stage = sp.get("stage")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, stage ? `processing.${STAGE_SCREEN[stage] || "washing"}.view` : "processing.console_receive.view")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, incoming: [], awaitingBarcode: [], readyToReturn: [], stageCounts: {}, items: [] })
 

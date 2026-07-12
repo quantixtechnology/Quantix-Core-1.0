@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -13,6 +14,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!existing) {
       return NextResponse.json({ error: "Processing center not found" }, { status: 404 })
     }
+    const guard = await requireLaundryPermission(request, existing.businessId, "laundry.settings.edit")
+    if (!guard.ok) return guard.res
 
     const center = await prisma.laundryProcessingCenter.update({
       where: { id },
@@ -40,13 +43,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const existing = await prisma.laundryProcessingCenter.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: "Processing center not found" }, { status: 404 })
     }
+    const guard = await requireLaundryPermission(request, existing.businessId, "laundry.settings.edit")
+    if (!guard.ok) return guard.res
 
     await prisma.laundryProcessingCenter.delete({ where: { id } })
     return NextResponse.json({ success: true })

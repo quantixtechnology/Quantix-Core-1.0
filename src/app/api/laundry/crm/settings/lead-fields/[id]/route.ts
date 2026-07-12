@@ -6,6 +6,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCrmBusiness } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -13,6 +14,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await request.json()
+    const guard = await requireLaundryPermission(request, body.businessId, "crm.settings.edit")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(body.businessId)
     const row = await prisma.laundryCrmLeadField.findFirst({ where: { id, businessId: biz.id } })
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 })
@@ -46,6 +49,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const { id } = await params
     const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "crm.settings.edit")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(businessId)
     const row = await prisma.laundryCrmLeadField.findFirst({ where: { id, businessId: biz.id } })
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 })

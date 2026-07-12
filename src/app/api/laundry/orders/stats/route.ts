@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -19,6 +20,8 @@ export async function GET(request: Request) {
     if (!businessId) {
       return NextResponse.json({ error: "Missing businessId parameter" }, { status: 400 })
     }
+    const guard = await requireLaundryPermission(request, businessId, "laundry.orders.view")
+    if (!guard.ok) return guard.res
 
     const resolved = await resolveLaundryBusiness(businessId)
     if (!resolved) {

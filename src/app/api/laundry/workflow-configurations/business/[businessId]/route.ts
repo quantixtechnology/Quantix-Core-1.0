@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ businessId: string }> }
 ) {
   try {
     const { businessId } = await params
+    const guard = await requireLaundryPermission(request, businessId, "laundry.settings.view")
+    if (!guard.ok) return guard.res
 
     const configs = await prisma.laundryWorkflowConfiguration.findMany({
       where: { businessId },
@@ -48,6 +51,8 @@ export async function POST(
 ) {
   try {
     const { businessId } = await params
+    const guard = await requireLaundryPermission(request, businessId, "laundry.settings.edit")
+    if (!guard.ok) return guard.res
     const body = await request.json()
     const { stageId, enabled, sequence, responsibleRoleId, responsibleDepartmentId, canView, canUpdate, canApprove } = body
 

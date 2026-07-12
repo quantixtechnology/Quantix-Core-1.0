@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveSession, bearerToken } from "@/lib/laundry-app-auth"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { POST as createOrder } from "@/app/api/laundry/orders/route"
+import { INTERNAL_HEADER, INTERNAL_TOKEN } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -47,7 +48,10 @@ export async function POST(request: Request) {
     pickupDate: b.pickupDate || null, pickupTimeSlot: b.pickupTimeSlot || null, pickupAddress: b.pickupAddress || null, pickupInstructions: b.pickupInstructions || null,
     specialInstructions: b.specialInstructions || null, createdBy: "customer-app",
   }
-  const res = await createOrder(new Request("http://internal/api/laundry/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }))
+  // The customer is already authenticated (app session) — delegate to the
+  // frozen order handler as a trusted internal call so its staff RBAC guard is
+  // bypassed for this customer-initiated order.
+  const res = await createOrder(new Request("http://internal/api/laundry/orders", { method: "POST", headers: { "Content-Type": "application/json", [INTERNAL_HEADER]: INTERNAL_TOKEN }, body: JSON.stringify(payload) }))
   const j = await res.json()
   if (!res.ok || !j.success) return NextResponse.json({ error: j.error || "Failed to place order" }, { status: res.status })
   return NextResponse.json({ success: true, data: { id: j.data.id, orderNumber: j.data.orderNumber, status: j.data.status, grandTotal: j.data.grandTotal, balanceDue: j.data.balanceDue, subscriptionCoveredAmount: j.data.subscriptionCoveredAmount }, subscription: j.subscription || null }, { status: 201 })

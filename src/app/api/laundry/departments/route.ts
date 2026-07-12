@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -8,6 +9,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const businessId = searchParams.get("businessId")
     const storeId = searchParams.get("storeId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.settings.view")
+    if (!guard.ok) return guard.res
 
     const where: Record<string, unknown> = {}
     if (businessId) where.businessId = businessId
@@ -33,6 +36,8 @@ export async function POST(request: Request) {
     if (!businessId || !code || !name) {
       return NextResponse.json({ error: "Business ID, code, and name are required" }, { status: 400 })
     }
+    const guard = await requireLaundryPermission(request, businessId, "laundry.settings.edit")
+    if (!guard.ok) return guard.res
 
     const department = await prisma.laundryDepartment.create({
       data: {

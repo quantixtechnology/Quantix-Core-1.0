@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 const TYPES = new Set(["NOTE", "COMMUNICATION", "ADJUSTMENT"])
@@ -20,6 +21,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const sp = new URL(request.url).searchParams
+    const guard = await requireLaundryPermission(request, sp.get("businessId"), "laundry.customers.view")
+    if (!guard.ok) return guard.res
     if (!(await scope(sp.get("businessId"), id))) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const type = sp.get("type")
     const rows = await prisma.customerActivity.findMany({ where: { customerId: id, ...(type ? { type } : {}) }, orderBy: { createdAt: "desc" }, take: 200 })
@@ -34,6 +37,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { id } = await params
     const b = await request.json()
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.edit")
+    if (!guard.ok) return guard.res
     const platformId = await scope(b.businessId, id)
     if (!platformId) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const content = String(b.content || b.body || "").trim()

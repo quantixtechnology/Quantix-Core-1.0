@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { getTemplate, type TemplateCategory, type TemplateService, type TemplateGarment } from "@/lib/laundry-templates"
 
 export const runtime = "nodejs"
@@ -19,6 +20,8 @@ export async function POST(request: Request) {
   try {
     const b = await request.json()
     if (!b.businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     const businessId = biz.id

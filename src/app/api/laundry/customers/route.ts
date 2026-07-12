@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode } from "@/lib/india"
 import { generateCustomerCode } from "@/lib/laundry-codes"
 import { mergeMeta, type CommPrefs } from "@/lib/laundry-customer"
@@ -17,6 +18,8 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(sp.get("limit") || "10"), 100)
     const offset = parseInt(sp.get("offset") || "0")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.customers.view")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz?.platformBusinessId) return NextResponse.json({ success: true, data: [], total: 0 })
 
@@ -66,6 +69,8 @@ export async function POST(request: Request) {
     if (!businessId || !name || !mobile) {
       return NextResponse.json({ error: "Missing required fields: businessId, name, mobile" }, { status: 400 })
     }
+    const guard = await requireLaundryPermission(request, businessId, "laundry.customers.create")
+    if (!guard.ok) return guard.res
     if (pincode && !isValidPincode(pincode)) {
       return NextResponse.json({ error: "PIN Code must be a valid 6-digit Indian pincode" }, { status: 400 })
     }

@@ -8,6 +8,7 @@
 // price + allowance; it is NOT a LaundryPricingRule.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { planMasterFields, syncPlanCoverage } from "@/lib/laundry-subscription-plan"
 
@@ -25,6 +26,8 @@ export async function GET(request: Request) {
   try {
     const businessId = new URL(request.url).searchParams.get("businessId")
     if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.subscriptions.view")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const platformId = biz.platformBusinessId || businessId
@@ -45,6 +48,8 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { businessId, name, description, price, billingCycle, totalCredits, maxOrdersPerCycle, features, isActive, image } = body
     if (!businessId || !name?.trim()) return NextResponse.json({ success: false, error: "businessId and name are required" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.subscriptions.create")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const platformId = biz.platformBusinessId || businessId

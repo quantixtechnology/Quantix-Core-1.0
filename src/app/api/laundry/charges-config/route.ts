@@ -3,6 +3,7 @@
 // LaundryOperationalConfig. Single source; the Billing Resolver reads these.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 
 export const runtime = "nodejs"
@@ -19,6 +20,8 @@ const shape = (c: {
 export async function GET(request: Request) {
   try {
     const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.pricing.view")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const cfg = await prisma.laundryOperationalConfig.upsert({ where: { businessId: biz.id }, update: {}, create: { businessId: biz.id } })
@@ -32,6 +35,8 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const b = await request.json()
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(b.businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const num = (v: unknown) => Math.max(0, Number(v) || 0)

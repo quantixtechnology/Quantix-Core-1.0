@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 const DOC_TYPES = new Set(["ID_PROOF", "GST", "BUSINESS", "OTHER"])
@@ -19,6 +20,8 @@ async function scope(businessId: string | null, customerId: string) {
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const guard = await requireLaundryPermission(request, new URL(request.url).searchParams.get("businessId"), "laundry.customers.view")
+    if (!guard.ok) return guard.res
     if (!(await scope(new URL(request.url).searchParams.get("businessId"), id))) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const docs = await prisma.customerDocument.findMany({ where: { customerId: id }, orderBy: { createdAt: "desc" } })
     return NextResponse.json({ success: true, data: docs })
@@ -32,6 +35,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { id } = await params
     const b = await request.json()
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.edit")
+    if (!guard.ok) return guard.res
     const platformId = await scope(b.businessId, id)
     if (!platformId) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     if (!b.url || !b.name?.trim()) return NextResponse.json({ error: "Document name and url are required" }, { status: 400 })
@@ -48,6 +53,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const { id } = await params
     const sp = new URL(request.url).searchParams
+    const guard = await requireLaundryPermission(request, sp.get("businessId"), "laundry.customers.edit")
+    if (!guard.ok) return guard.res
     if (!(await scope(sp.get("businessId"), id))) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const docId = sp.get("docId")
     if (!docId) return NextResponse.json({ error: "docId is required" }, { status: 400 })

@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveFlow, departmentFor, stageLabel } from "@/lib/laundry-processing"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -15,11 +16,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const order = await prisma.laundryOrder.findUnique({
     where: { id },
     select: {
-      id: true, orderNumber: true, status: true, storeId: true, customerId: true, grandTotal: true, expectedDeliveryDate: true,
+      id: true, orderNumber: true, status: true, storeId: true, customerId: true, businessId: true, grandTotal: true, expectedDeliveryDate: true,
       items: { orderBy: { itemNumber: "asc" }, select: { id: true, itemNumber: true, barcode: true, barcodeGenerated: true, printCount: true, lastPrintedBy: true, garmentName: true, serviceName: true, quantity: true, processingStage: true, condition: true, defects: true, inspectionNotes: true } },
     },
   })
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+  const guard = await requireLaundryPermission(request, order.businessId, "processing.audit_barcode.view")
+  if (!guard.ok) return guard.res
   const [store, customer] = await Promise.all([
     order.storeId ? prisma.laundryStore.findUnique({ where: { id: order.storeId }, select: { storeName: true, storeCode: true } }) : null,
     order.customerId ? prisma.customer.findUnique({ where: { id: order.customerId }, select: { name: true, phone: true } }) : null,
@@ -36,6 +39,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const action = String(b.action || "").toUpperCase()
     const order = await prisma.laundryOrder.findUnique({ where: { id }, select: { id: true, businessId: true, paymentStatus: true, items: { select: { id: true, serviceId: true, serviceName: true, garmentName: true, pricingType: true, weightKg: true, barcodeGenerated: true, processingStage: true, processFlow: true } } } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, order.businessId, "processing.audit_barcode.operate")
+    if (!guard.ok) return guard.res
 
     if (action === "GENERATE_ALL") {
       const pending = order.items.filter((i) => !i.barcodeGenerated)

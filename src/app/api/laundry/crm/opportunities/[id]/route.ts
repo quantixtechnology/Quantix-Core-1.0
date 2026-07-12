@@ -5,12 +5,15 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCrmBusiness, crmEvent } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const guard = await requireLaundryPermission(request, new URL(request.url).searchParams.get("businessId"), "crm.opportunity.view")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(new URL(request.url).searchParams.get("businessId"))
     const opp = await prisma.laundryCrmOpportunity.findFirst({
       where: { id, businessId: biz.id },
@@ -31,6 +34,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await request.json()
+    const guard = await requireLaundryPermission(request, body.businessId, "crm.opportunity.edit")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(body.businessId)
     const opp = await prisma.laundryCrmOpportunity.findFirst({ where: { id, businessId: biz.id } })
     if (!opp) return NextResponse.json({ error: "Opportunity not found" }, { status: 404 })

@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCrmBusiness, generateOpportunityCode, crmEvent } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -12,6 +13,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { id } = await params
     const body = await request.json()
+    const guard = await requireLaundryPermission(request, body.businessId, "crm.leads.edit")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(body.businessId)
     const actor = { id: body.actorId, name: body.actorName }
 

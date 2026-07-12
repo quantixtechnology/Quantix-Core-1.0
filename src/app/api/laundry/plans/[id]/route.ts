@@ -2,6 +2,7 @@
 // DELETE /api/laundry/plans/[id]  — deactivate (soft) a plan
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { planMasterFields, syncPlanCoverage } from "@/lib/laundry-subscription-plan"
 
@@ -11,6 +12,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await request.json()
+    const guard = await requireLaundryPermission(request, body.businessId, "laundry.subscriptions.edit")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(body.businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const platformId = biz.platformBusinessId || body.businessId
@@ -45,6 +48,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const { id } = await params
     const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.subscriptions.delete")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
     const platformId = biz.platformBusinessId || businessId || ""

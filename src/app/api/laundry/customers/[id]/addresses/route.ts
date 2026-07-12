@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { isValidPincode } from "@/lib/india"
 
 export const runtime = "nodejs"
@@ -20,6 +21,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.customers.view")
+    if (!guard.ok) return guard.res
     if (!(await scopedCustomer(businessId, id))) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const addresses = await prisma.address.findMany({ where: { customerId: id }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] })
     return NextResponse.json({ success: true, data: addresses })
@@ -33,6 +36,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { id } = await params
     const b = await request.json()
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.customers.edit")
+    if (!guard.ok) return guard.res
     if (!(await scopedCustomer(b.businessId, id))) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     if (!b.addressLine1?.trim()) return NextResponse.json({ error: "Address Line 1 is required" }, { status: 400 })
     if (b.pincode && !isValidPincode(b.pincode)) return NextResponse.json({ error: "PIN Code must be a valid 6-digit Indian pincode" }, { status: 400 })

@@ -3,12 +3,15 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireCrmBusiness, ensureCrmDefaults } from "@/lib/laundry-crm"
 import { crmError } from "@/lib/laundry-crm-settings"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {
     const sp = new URL(request.url).searchParams
+    const guard = await requireLaundryPermission(request, sp.get("businessId"), "crm.opportunity.view")
+    if (!guard.ok) return guard.res
     const biz = await requireCrmBusiness(sp.get("businessId"))
     await ensureCrmDefaults(biz.id)
 

@@ -2,12 +2,17 @@
 // DELETE /api/laundry/categories/[id]  — delete
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const existing = await prisma.laundryCategory.findUnique({ where: { id }, select: { businessId: true } })
+    if (!existing) return NextResponse.json({ error: "Category not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, existing.businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const { name, code, description, color, icon, image, defaultGstPercent, displayOnWebsite, displayInPOS, displayInApp, displayOrder, isActive } = await request.json()
     const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
     const data = await prisma.laundryCategory.update({
@@ -37,6 +42,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const existing = await prisma.laundryCategory.findUnique({ where: { id }, select: { businessId: true } })
+    if (!existing) return NextResponse.json({ error: "Category not found" }, { status: 404 })
+    const guard = await requireLaundryPermission(request, existing.businessId, "laundry.pricing.delete_rules")
+    if (!guard.ok) return guard.res
     await prisma.laundryCategory.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e) {

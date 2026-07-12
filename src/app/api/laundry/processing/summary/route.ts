@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getLaundryAuthContext } from "@/lib/laundry-auth"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 export const runtime = "nodejs"
 
@@ -21,6 +22,8 @@ export async function GET(req: NextRequest) {
 
   const auth = await getLaundryAuthContext(businessId)
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const guard = await requireLaundryPermission(req, businessId, "processing.console_receive.view")
+  if (!guard.ok) return guard.res
 
   try {
     const biz = await resolveLaundryBusiness(businessId)

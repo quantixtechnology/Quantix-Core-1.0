@@ -2,6 +2,7 @@
 // POST /api/laundry/pricing  — create a pricing rule (with audit + version)
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { buildRuleData, writeRuleAudit } from "@/lib/laundry-pricing-rule"
 
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
     const sp = url.searchParams
     const businessId = sp.get("businessId")
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, businessId, "laundry.pricing.view")
+    if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, data: [], total: 0, page: 1, pageSize: 0 })
 
@@ -86,6 +89,8 @@ export async function POST(request: Request) {
   try {
     const b = await request.json()
     if (!b.businessId) return NextResponse.json({ error: "businessId is required" }, { status: 400 })
+    const guard = await requireLaundryPermission(request, b.businessId, "laundry.pricing.edit_pricing")
+    if (!guard.ok) return guard.res
     const baseErr = rejectBasePrice(b)
     if (baseErr) return NextResponse.json({ error: baseErr }, { status: 400 })
     const biz = await resolveLaundryBusiness(b.businessId)
