@@ -2069,6 +2069,7 @@ model LaundryAccessAssignment {
   businessId String
   userId     String // platform User id
   roleId     String
+  storeId    String? // optional LaundryStore scope for this employee (no FK; resolved by query)
   active     Boolean           @default(true)
   assignedBy String?
   createdAt  DateTime          @default(now())

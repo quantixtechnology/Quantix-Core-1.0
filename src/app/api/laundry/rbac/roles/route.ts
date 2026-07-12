@@ -2,7 +2,7 @@
 // POST /api/laundry/rbac/roles               — create a custom role
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireLaundryPermission, rbacAudit } from "@/lib/laundry-rbac"
+import { requireLaundryPermission, rbacAudit, ensureSystemRolesSeeded } from "@/lib/laundry-rbac"
 import { isValidPermissionKey } from "@/lib/laundry-rbac-catalog"
 
 export const runtime = "nodejs"
@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   const businessId = new URL(request.url).searchParams.get("businessId")
   const guard = await requireLaundryPermission(request, businessId, "laundry.staff.view")
   if (!guard.ok) return guard.res
+  await ensureSystemRolesSeeded(guard.platformBusinessId)
   const roles = await prisma.laundryAccessRole.findMany({
     where: { businessId: guard.platformBusinessId },
     orderBy: [{ isOwner: "desc" }, { isSystem: "desc" }, { name: "asc" }],

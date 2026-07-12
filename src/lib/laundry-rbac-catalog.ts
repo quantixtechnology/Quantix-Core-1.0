@@ -18,6 +18,7 @@ const INBOUND = ["view", "operate", "override"]
 export const RBAC_CATALOG: ModuleDef[] = [
   {
     key: "laundry", label: "Laundry", screens: [
+      { key: "dashboard", label: "Dashboard", actions: ["view"] },
       { key: "orders", label: "Orders", actions: ["view", "create", "edit", "delete", "cancel", "print", "export", "refund"] },
       { key: "customers", label: "Customers", actions: ["view", "create", "edit", "delete", "merge", "invite"] },
       { key: "subscriptions", label: "Subscriptions", actions: ["view", "create", "edit", "delete", "renew", "cancel", "adjust"] },
@@ -96,18 +97,22 @@ const viewKeys = () => keys().filter((k) => k.endsWith(".view"))
 const moduleAll = (mod: string) => keys().filter((k) => k.startsWith(`${mod}.`))
 const screenAll = (mod: string, screen: string) => keys().filter((k) => k.startsWith(`${mod}.${screen}.`))
 const workstationOps = () => keys().filter((k) => k.startsWith("processing.") && /\.(view|process|pause|resume|complete)$/.test(k))
+// The Laundry dashboard is the home landing — every role can see it (custom
+// roles may remove it). Owner + Viewer + Store Manager already include it via
+// their broad sets; this is the shared grant for the more scoped roles.
+const DASH = "laundry.dashboard.view"
 
 export interface SystemRoleDef { code: string; name: string; description: string; isOwner?: boolean; perms: () => string[] }
 
 export const SYSTEM_ROLES: SystemRoleDef[] = [
   { code: "BUSINESS_OWNER", name: "Business Owner", description: "Full, unrestricted access. Cannot be deleted or lose access.", isOwner: true, perms: () => keys() },
   { code: "STORE_MANAGER", name: "Store Manager", description: "Operational management across store + processing.", perms: () => [...moduleAll("laundry").filter((k) => !k.startsWith("laundry.settings")), ...moduleAll("store_ops"), ...moduleAll("processing"), ...screenAll("laundry", "reports")] },
-  { code: "COUNTER_EXECUTIVE", name: "Counter Executive", description: "Order creation and customer handling.", perms: () => [...screenAll("laundry", "orders").filter((k) => /\.(view|create|edit|print)$/.test(k)), ...screenAll("laundry", "customers").filter((k) => /\.(view|create|edit|invite)$/.test(k)), ...screenAll("laundry", "subscriptions").filter((k) => k.endsWith(".view")), ...screenAll("store_ops", "store_audit"), ...screenAll("store_ops", "payment_collection"), ...screenAll("store_ops", "packing_qr")] },
-  { code: "PROCESSING_MANAGER", name: "Processing Manager", description: "Processing Center management.", perms: () => moduleAll("processing") },
-  { code: "PROCESSING_STAFF", name: "Processing Staff", description: "Workstation operations only (no override).", perms: () => workstationOps() },
-  { code: "DELIVERY_EXECUTIVE", name: "Delivery Executive", description: "Delivery operations only.", perms: () => [...screenAll("store_ops", "ready_for_delivery"), ...screenAll("store_ops", "transit").filter((k) => /\.(view|operate)$/.test(k))] },
-  { code: "CRM_MANAGER", name: "CRM Manager", description: "Full CRM access.", perms: () => moduleAll("crm") },
-  { code: "CRM_EXECUTIVE", name: "CRM Executive", description: "Leads and Opportunities only.", perms: () => [...screenAll("crm", "dashboard"), ...screenAll("crm", "leads").filter((k) => /\.(view|create|edit)$/.test(k)), ...screenAll("crm", "opportunity").filter((k) => /\.(view|create|edit)$/.test(k)), ...screenAll("crm", "activities").filter((k) => /\.(view|create|edit)$/.test(k))] },
-  { code: "ACCOUNTANT", name: "Accountant", description: "Payments, invoices, reports.", perms: () => [...screenAll("laundry", "orders").filter((k) => /\.(view|print|export|refund)$/.test(k)), ...screenAll("laundry", "subscriptions").filter((k) => k.endsWith(".view")), ...screenAll("laundry", "pricing").filter((k) => k.endsWith(".view")), ...moduleAll("laundry").filter((k) => k.startsWith("laundry.reports")), ...screenAll("store_ops", "payment_collection")] },
+  { code: "COUNTER_EXECUTIVE", name: "Counter Executive", description: "Order creation and customer handling.", perms: () => [DASH, ...screenAll("laundry", "orders").filter((k) => /\.(view|create|edit|print)$/.test(k)), ...screenAll("laundry", "customers").filter((k) => /\.(view|create|edit|invite)$/.test(k)), ...screenAll("laundry", "subscriptions").filter((k) => k.endsWith(".view")), ...screenAll("store_ops", "store_audit"), ...screenAll("store_ops", "payment_collection"), ...screenAll("store_ops", "packing_qr")] },
+  { code: "PROCESSING_MANAGER", name: "Processing Manager", description: "Processing Center management.", perms: () => [DASH, ...moduleAll("processing")] },
+  { code: "PROCESSING_STAFF", name: "Processing Staff", description: "Workstation operations only (no override).", perms: () => [DASH, ...workstationOps()] },
+  { code: "DELIVERY_EXECUTIVE", name: "Delivery Executive", description: "Delivery operations only.", perms: () => [DASH, ...screenAll("store_ops", "ready_for_delivery"), ...screenAll("store_ops", "transit").filter((k) => /\.(view|operate)$/.test(k))] },
+  { code: "CRM_MANAGER", name: "CRM Manager", description: "Full CRM access.", perms: () => [DASH, ...moduleAll("crm")] },
+  { code: "CRM_EXECUTIVE", name: "CRM Executive", description: "Leads and Opportunities only.", perms: () => [DASH, ...screenAll("crm", "dashboard"), ...screenAll("crm", "leads").filter((k) => /\.(view|create|edit)$/.test(k)), ...screenAll("crm", "opportunity").filter((k) => /\.(view|create|edit)$/.test(k)), ...screenAll("crm", "activities").filter((k) => /\.(view|create|edit)$/.test(k))] },
+  { code: "ACCOUNTANT", name: "Accountant", description: "Payments, invoices, reports.", perms: () => [DASH, ...screenAll("laundry", "orders").filter((k) => /\.(view|print|export|refund)$/.test(k)), ...screenAll("laundry", "subscriptions").filter((k) => k.endsWith(".view")), ...screenAll("laundry", "pricing").filter((k) => k.endsWith(".view")), ...moduleAll("laundry").filter((k) => k.startsWith("laundry.reports")), ...screenAll("store_ops", "payment_collection")] },
   { code: "VIEWER", name: "Viewer", description: "Read-only access.", perms: () => viewKeys() },
 ]

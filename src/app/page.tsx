@@ -207,6 +207,7 @@ const LaundrySubscriptionsView = dynamic(() => import("@/components/laundry/view
 const LaundryStoreAudit = dynamic(() => import("@/components/laundry/views/laundry-store-audit").then(m => ({ default: m.LaundryStoreAudit })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
 const LaundryRolesPermissions = dynamic(() => import("@/components/laundry/views/laundry-roles-permissions").then(m => ({ default: m.LaundryRolesPermissions })), { loading: () => <PageLoader /> })
+const LaundryStaff = dynamic(() => import("@/components/laundry/views/laundry-staff").then(m => ({ default: m.LaundryStaff })), { loading: () => <PageLoader /> })
 const LaundryProcessingConsole = dynamic(() => import("@/components/laundry/views/laundry-processing-console").then(m => ({ default: m.LaundryProcessingConsole })), { loading: () => <PageLoader /> })
 const LaundryWorkstation = dynamic(() => import("@/components/laundry/views/laundry-workstation").then(m => ({ default: m.LaundryWorkstation })), { loading: () => <PageLoader /> })
 const LaundryAuditBarcodePage = dynamic(() => import("@/components/laundry/views/laundry-audit-barcode-page").then(m => ({ default: m.LaundryAuditBarcodePage })), { loading: () => <PageLoader /> })
@@ -688,6 +689,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "pricing": return <LaundryPricingEngine />
       case "subscriptions": return <LaundrySubscriptionsView />
       case "roles": return <LaundryRolesPermissions businessId={wsBusinessId} />
+      case "staff": return <LaundryStaff businessId={wsBusinessId} />
       default: return <LaundryDashboard />
     }
   }

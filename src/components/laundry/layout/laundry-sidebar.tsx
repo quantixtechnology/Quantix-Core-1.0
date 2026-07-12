@@ -80,7 +80,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Laundry OS",
     items: [
-      { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1 },
+      { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, page: "dashboard", minRank: 1, perm: "laundry.dashboard.view" },
       { key: "new-order", label: "New Order", icon: Plus, page: "new-order", minRank: 1, perm: "laundry.orders.create" },
     ],
   },
@@ -106,7 +106,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Business Management",
     items: [
       { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3, perm: "laundry.stores.view" },
-      { key: "staff", label: "Staff", icon: UsersRound, comingSoon: true, minRank: 3, perm: "laundry.staff.view" },
+      { key: "staff", label: "Staff", icon: UsersRound, page: "staff", minRank: 3, perm: "laundry.staff.view" },
       { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", minRank: 3, perm: "laundry.staff.assign_role" },
       { key: "pricing", label: "Services & Pricing", icon: IndianRupee, page: "pricing", minRank: 3, perm: "laundry.pricing.view" },
       { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3, perm: "laundry.subscriptions.view" },

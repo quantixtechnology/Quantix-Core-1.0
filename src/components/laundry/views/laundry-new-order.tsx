@@ -106,6 +106,7 @@ export default function LaundryNewOrder() {
   const [mQty, setMQty] = useState(1)
   const [mWeight, setMWeight] = useState("")           // measured weight (KG) — Per-KG garments only
   const [mPricingType, setMPricingType] = useState<string | null>(null) // resolved billing type for the modal selection
+  const [mRate, setMRate] = useState<number | null>(null) // resolved unit rate (₹/KG or ₹/piece)
   const [mPrice, setMPrice] = useState<number | null>(null)
   const [mPricing, setMPricing] = useState(false)
   // live quote for the whole order
@@ -258,15 +259,16 @@ export default function LaundryNewOrder() {
         const json = await res.json()
         const line = json.success ? json.data.lines?.[0] : null
         setMPricingType(line?.pricingType ?? null)
+        setMRate(line?.unitPrice ?? null)
         // A Per-KG line with no weight bills ₹0 — don't show a misleading price.
         setMPrice(line ? (line.pricingType === "PER_KG" && mWeightKg <= 0 ? null : line.lineTotal ?? null) : null)
-      } catch { setMPrice(null); setMPricingType(null) } finally { setMPricing(false) }
+      } catch { setMPrice(null); setMPricingType(null); setMRate(null) } finally { setMPricing(false) }
     }, 200)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addOpen, mGarment, mService, mQty, mWeightKg, currentBusinessId, selectedStoreId, customerType])
 
-  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMWeight(""); setMPricingType(null); setMPrice(null); setAddOpen(true) }
+  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMWeight(""); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
   const confirmAddGarment = () => {
     if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
     // Per-KG garments must have a measured weight before they can be added —
@@ -636,7 +638,16 @@ export default function LaundryNewOrder() {
                   <Label className="text-xs text-slate-600">Service</Label>
                   <SearchableSelect value={mService} onChange={setMService} options={availableServices.map((s) => ({ value: s.id, label: `${s.name} · ${turnaroundLabel(s.defaultTurnaroundHours)}` }))} placeholder="Select service…" />
                 </div>
-                <div className="flex items-end justify-between">
+                {/* Billing Type is resolved from the saved pricing — read only. */}
+                {mGarment && mService && (
+                  <div className="flex items-center justify-between rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                    <span className="text-xs text-slate-500">Billing Type</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${mIsKg ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-600"}`}>
+                      {mPricing && mPricingType == null ? "…" : mIsKg ? "Per KG" : mPricingType === "PER_PIECE" ? "Per Piece" : "—"}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-end justify-between gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs text-slate-600">Quantity{mIsKg ? " (garment count)" : ""}</Label>
                     <div className="flex items-center gap-2">
@@ -650,13 +661,20 @@ export default function LaundryNewOrder() {
                     <div className="space-y-1">
                       <Label className="text-xs text-slate-600">Measured Weight (KG)</Label>
                       <input type="number" min="0" step="0.05" value={mWeight} onChange={(e) => setMWeight(e.target.value)} placeholder="0.00" autoFocus
-                        className={`h-9 w-28 rounded-md border px-2 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 ${mWeightKg <= 0 ? "border-rose-300 bg-rose-50" : "border-slate-200"}`} />
+                        className={`h-9 w-24 rounded-md border px-2 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 ${mWeightKg <= 0 ? "border-rose-300 bg-rose-50" : "border-slate-200"}`} />
+                    </div>
+                  )}
+                  {/* Rate — read only, from the saved pricing. */}
+                  {mIsKg && (
+                    <div className="space-y-1 text-right">
+                      <Label className="text-xs text-slate-600">Rate</Label>
+                      <p className="text-sm font-medium text-slate-700 tabular-nums h-9 flex items-center justify-end">{mRate != null ? `${inr(mRate)}/KG` : "—"}</p>
                     </div>
                   )}
                   <div className="text-right">
                     <p className="text-xs text-slate-500">{mIsKg ? "Amount" : "Price"}</p>
                     <p className="text-2xl font-bold text-slate-800">{mPricing ? <Loader2 className="h-5 w-5 animate-spin inline" /> : mPrice != null ? inr(mPrice) : mIsKg && mWeightKg <= 0 ? <span className="text-sm text-rose-500">Enter weight</span> : mGarment && mService ? "—" : ""}</p>
-                    {mIsKg && <p className="text-[10px] uppercase tracking-wide text-blue-600">Per KG</p>}
+                    {mIsKg && mWeightKg > 0 && mRate != null && <p className="text-[10px] text-slate-400 tabular-nums">{mWeightKg} KG × {inr(mRate)}</p>}
                     {mGarment && mService && mPrice == null && !mPricing && !mIsKg && <p className="text-[11px] text-amber-600">No price configured</p>}
                   </div>
                 </div>

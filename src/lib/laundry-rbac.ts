@@ -110,6 +110,14 @@ export async function rbacAudit(businessId: string, action: string, opts: { role
   await prisma.laundryAccessAudit.create({ data: { businessId, action, roleId: opts.roleId ?? null, targetUserId: opts.targetUserId ?? null, actorName: opts.actorName ?? null, detail: opts.detail ? JSON.stringify(opts.detail) : "{}" } }).catch(() => {})
 }
 
+// Ensure every Laundry business has its 10 default system roles without any
+// manual step. Cheap count-gate so the common (already-seeded) path is a single
+// query; seeds only when the tenant has none yet. Safe to call on every load.
+export async function ensureSystemRolesSeeded(platformBusinessId: string): Promise<void> {
+  const count = await prisma.laundryAccessRole.count({ where: { businessId: platformBusinessId } })
+  if (count === 0) await seedSystemRoles(platformBusinessId)
+}
+
 // Idempotently create the 10 default system roles (+ their permissions) for a
 // tenant. Safe to call repeatedly — existing roles are left untouched.
 export async function seedSystemRoles(platformBusinessId: string) {
