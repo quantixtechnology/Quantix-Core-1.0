@@ -96,7 +96,7 @@ export async function requireLaundryPermission(request: Request, businessIdInput
     const ctx = { userId: "system", userName: "system", userEmail: "", laundryBusinessId: biz.id, platformBusinessId: biz.platformBusinessId, role: "LAUNDRY_OWNER", isSupportMode: false } as Ctx
     return { ok: true, internal: true, ctx, resolved: { isOwner: true, permissions: new Set(allPermissionKeys()), roleCode: "INTERNAL", roleName: "Internal", source: "owner" }, platformBusinessId: biz.platformBusinessId }
   }
-  const ctx = await getLaundryAuthContext(biz.id)
+  const ctx = await getLaundryAuthContext(biz.id, request)
   if (!ctx) return { ok: false, res: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) }
   const resolved = await resolveUserPermissions(biz.platformBusinessId, ctx.userId, ctx.role)
   if (!resolved.isOwner && !resolved.permissions.has(key)) {

@@ -11,6 +11,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Loader2, Shield, Plus, Copy, Trash2, ChevronDown, ChevronRight, Search, Save, Lock, Users } from "lucide-react"
 
 interface ScreenDef { key: string; label: string; actions: string[] }
@@ -34,6 +36,13 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
   const [search, setSearch] = useState("")
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  // Proper application dialogs (never browser prompt/confirm).
+  const [newOpen, setNewOpen] = useState(false)
+  const [newName, setNewName] = useState("")
+  const [newDesc, setNewDesc] = useState("")
+  const [creating, setCreating] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Role | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const selected = roles.find((r) => r.id === selectedId) || null
   const allKeys = useMemo(() => catalog.flatMap((m) => m.screens.flatMap((s) => s.actions.map((a) => `${m.key}.${s.key}.${a}`))), [catalog])
@@ -75,22 +84,29 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
       toast({ title: "Role saved", description: `${name} · ${perms.size} permissions` }); setDirty(false); load()
     } catch (e) { toast({ title: "Save failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setSaving(false) }
   }
-  const newRole = async () => {
-    const nm = prompt("New role name (e.g. Reception Supervisor)")?.trim(); if (!nm) return
-    const j = await fetch(`/api/laundry/rbac/roles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: nm, permissions: [] }) }).then((x) => x.json())
-    if (j.success) { await load(); selectRole(j.data) } else toast({ title: "Create failed", description: j.error, variant: "destructive" })
+  const openNewRole = () => { setNewName(""); setNewDesc(""); setNewOpen(true) }
+  const createRole = async () => {
+    const nm = newName.trim(); if (!nm) { toast({ title: "Role name is required", variant: "destructive" }); return }
+    setCreating(true)
+    try {
+      const j = await fetch(`/api/laundry/rbac/roles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, name: nm, description: newDesc.trim() || null, permissions: [] }) }).then((x) => x.json())
+      if (j.success) { setNewOpen(false); await load(); selectRole(j.data) } else toast({ title: "Create failed", description: j.error, variant: "destructive" })
+    } finally { setCreating(false) }
   }
   const clone = async (r: Role) => {
     const j = await fetch(`/api/laundry/rbac/roles/${r.id}/clone`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) }).then((x) => x.json())
     if (j.success) { toast({ title: "Role cloned", description: j.data.name }); await load(); selectRole(j.data) } else toast({ title: "Clone failed", description: j.error, variant: "destructive" })
   }
-  const del = async (r: Role) => {
-    if (r.isOwner) return
-    if (!confirm(`Delete role "${r.name}"? Employees on this role lose it.`)) return
-    const res = await fetch(`/api/laundry/rbac/roles/${r.id}?businessId=${businessId}`, { method: "DELETE" })
-    const j = await res.json()
-    if (!res.ok || !j.success) { toast({ title: "Delete failed", description: j.error, variant: "destructive" }); return }
-    toast({ title: "Role deleted" }); setSelectedId(null); load()
+  const confirmDelete = async () => {
+    const r = deleteTarget
+    if (!r || r.isOwner) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/laundry/rbac/roles/${r.id}?businessId=${businessId}`, { method: "DELETE" })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast({ title: "Delete failed", description: j.error, variant: "destructive" }); return }
+      toast({ title: "Role deleted" }); setDeleteTarget(null); setSelectedId(null); load()
+    } finally { setDeleting(false) }
   }
   const seed = async () => {
     const j = await fetch(`/api/laundry/rbac/seed`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId }) }).then((x) => x.json())
@@ -106,7 +122,7 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
     <div className="px-4 lg:px-6 py-6">
       <div className="flex items-center justify-between mb-4">
         <div><h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Shield className="h-5 w-5 text-blue-600" /> Roles &amp; Permissions</h1><p className="text-sm text-slate-500">Control what every employee can see and do, per module, screen and action.</p></div>
-        <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={newRole}><Plus className="h-4 w-4" /> New Role</Button>
+        <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNewRole}><Plus className="h-4 w-4" /> New Role</Button>
       </div>
 
       {roles.length === 0 ? (
@@ -141,7 +157,7 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => clone(selected)}><Copy className="h-3.5 w-3.5" /> Clone</Button>
-                  {!selected.isOwner && <Button size="sm" variant="outline" className="h-8 gap-1 text-rose-600 border-rose-200" onClick={() => del(selected)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>}
+                  {!selected.isOwner && <Button size="sm" variant="outline" className="h-8 gap-1 text-rose-600 border-rose-200" onClick={() => setDeleteTarget(selected)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>}
                   <Button size="sm" className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={saving || !dirty || selected.isOwner} onClick={save}>{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save</Button>
                 </div>
               </div>
@@ -202,6 +218,46 @@ export function LaundryRolesPermissions({ businessId: bizProp }: { businessId?: 
           )}
         </div>
       )}
+
+      {/* New Role — proper application dialog (no browser prompt) */}
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Shield className="h-5 w-5 text-blue-600" /> New Role</DialogTitle>
+            <DialogDescription>Create a custom role. You can set its permissions right after.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-600">Role name</Label>
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Reception Supervisor" autoFocus onKeyDown={(e) => { if (e.key === "Enter") createRole() }} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-600">Description <span className="text-slate-400">(optional)</span></Label>
+              <Input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="What this role is for" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setNewOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={createRole} disabled={creating || !newName.trim()} className="bg-blue-600 hover:bg-blue-700 text-white gap-1">{creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create Role</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Role confirmation — proper application dialog (no browser confirm) */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600"><Trash2 className="h-5 w-5" /> Delete Role</DialogTitle>
+            <DialogDescription>
+              Delete role <span className="font-semibold text-slate-700">“{deleteTarget?.name}”</span>? Employees on this role lose it and fall back to their default access. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button type="button" onClick={confirmDelete} disabled={deleting} className="bg-rose-600 hover:bg-rose-700 text-white gap-1">{deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete Role</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -104,6 +104,8 @@ export default function LaundryNewOrder() {
   const [mGarment, setMGarment] = useState("")
   const [mService, setMService] = useState("")
   const [mQty, setMQty] = useState(1)
+  const [mWeight, setMWeight] = useState("")           // measured weight (KG) — Per-KG garments only
+  const [mPricingType, setMPricingType] = useState<string | null>(null) // resolved billing type for the modal selection
   const [mPrice, setMPrice] = useState<number | null>(null)
   const [mPricing, setMPricing] = useState(false)
   // live quote for the whole order
@@ -239,26 +241,38 @@ export default function LaundryNewOrder() {
   const covered = subPreview?.coveredAmount ?? 0
   const customerPays = Math.max(0, grandTotal - covered)
 
-  // ── Add-Garment modal: live single-line price ──
+  // ── Add-Garment modal: live single-line price + resolved billing type ──
+  // The quote also tells us the garment's billing type (PER_KG vs PER_PIECE) so
+  // the modal can require the Measured Weight BEFORE the item is added. For
+  // Per-KG the measured weight drives the price; Qty stays a garment count.
+  const mWeightKg = mWeight === "" ? 0 : Math.max(0, Number(mWeight) || 0)
+  const mIsKg = mPricingType === "PER_KG"
   useEffect(() => {
-    if (!addOpen || !mGarment || !mService || !currentBusinessId) { setMPrice(null); return }
+    if (!addOpen || !mGarment || !mService || !currentBusinessId) { setMPrice(null); setMPricingType(null); return }
     setMPricing(true)
     const t = setTimeout(async () => {
       try {
-        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items: [{ serviceId: mService, garmentId: mGarment, categoryId: grmById(mGarment)?.categoryId || null, quantity: mQty || 1 }] }) })
+        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items: [{ serviceId: mService, garmentId: mGarment, categoryId: grmById(mGarment)?.categoryId || null, quantity: mQty || 1, weightKg: mWeightKg }] }) })
         // Show ONLY the Service+Garment base line price — order-level charges
         // (minimum, pickup, delivery, express) belong in the Order Summary.
-        const json = await res.json(); setMPrice(json.success ? (json.data.lines?.[0]?.lineTotal ?? null) : null)
-      } catch { setMPrice(null) } finally { setMPricing(false) }
+        const json = await res.json()
+        const line = json.success ? json.data.lines?.[0] : null
+        setMPricingType(line?.pricingType ?? null)
+        // A Per-KG line with no weight bills ₹0 — don't show a misleading price.
+        setMPrice(line ? (line.pricingType === "PER_KG" && mWeightKg <= 0 ? null : line.lineTotal ?? null) : null)
+      } catch { setMPrice(null); setMPricingType(null) } finally { setMPricing(false) }
     }, 200)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addOpen, mGarment, mService, mQty, currentBusinessId, selectedStoreId, customerType])
+  }, [addOpen, mGarment, mService, mQty, mWeightKg, currentBusinessId, selectedStoreId, customerType])
 
-  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMPrice(null); setAddOpen(true) }
+  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMWeight(""); setMPricingType(null); setMPrice(null); setAddOpen(true) }
   const confirmAddGarment = () => {
     if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
-    setLineItems((p) => [...p, { uid: `L${Date.now()}${p.length}`, garmentId: mGarment, serviceId: mService, quantity: Math.max(1, mQty || 1) }])
+    // Per-KG garments must have a measured weight before they can be added —
+    // weight determines the bill (mirrors the backend WEIGHT_REQUIRED gate).
+    if (mIsKg && mWeightKg <= 0) { toast({ title: "Weight required", description: "Enter the measured weight (KG) for this Per-KG garment.", variant: "destructive" }); return }
+    setLineItems((p) => [...p, { uid: `L${Date.now()}${p.length}`, garmentId: mGarment, serviceId: mService, quantity: Math.max(1, mQty || 1), ...(mIsKg && mWeightKg > 0 ? { weightKg: mWeightKg } : {}) }])
     setAddOpen(false)
   }
   const removeLine = (uid: string) => setLineItems((p) => p.filter((l) => l.uid !== uid))
@@ -624,23 +638,32 @@ export default function LaundryNewOrder() {
                 </div>
                 <div className="flex items-end justify-between">
                   <div className="space-y-1">
-                    <Label className="text-xs text-slate-600">Quantity</Label>
+                    <Label className="text-xs text-slate-600">Quantity{mIsKg ? " (garment count)" : ""}</Label>
                     <div className="flex items-center gap-2">
                       <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => setMQty((q) => Math.max(1, q - 1))} disabled={mQty <= 1}><Minus className="h-4 w-4" /></Button>
                       <span className="w-10 text-center text-lg font-semibold tabular-nums">{mQty}</span>
                       <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => setMQty((q) => q + 1)}><Plus className="h-4 w-4" /></Button>
                     </div>
                   </div>
+                  {/* Measured Weight — ONLY for Per-KG garments; Per-Piece never shows it. */}
+                  {mIsKg && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-600">Measured Weight (KG)</Label>
+                      <input type="number" min="0" step="0.05" value={mWeight} onChange={(e) => setMWeight(e.target.value)} placeholder="0.00" autoFocus
+                        className={`h-9 w-28 rounded-md border px-2 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 ${mWeightKg <= 0 ? "border-rose-300 bg-rose-50" : "border-slate-200"}`} />
+                    </div>
+                  )}
                   <div className="text-right">
-                    <p className="text-xs text-slate-500">Price</p>
-                    <p className="text-2xl font-bold text-slate-800">{mPricing ? <Loader2 className="h-5 w-5 animate-spin inline" /> : mPrice != null ? inr(mPrice) : mGarment && mService ? "—" : ""}</p>
-                    {mGarment && mService && mPrice == null && !mPricing && <p className="text-[11px] text-amber-600">No price configured</p>}
+                    <p className="text-xs text-slate-500">{mIsKg ? "Amount" : "Price"}</p>
+                    <p className="text-2xl font-bold text-slate-800">{mPricing ? <Loader2 className="h-5 w-5 animate-spin inline" /> : mPrice != null ? inr(mPrice) : mIsKg && mWeightKg <= 0 ? <span className="text-sm text-rose-500">Enter weight</span> : mGarment && mService ? "—" : ""}</p>
+                    {mIsKg && <p className="text-[10px] uppercase tracking-wide text-blue-600">Per KG</p>}
+                    {mGarment && mService && mPrice == null && !mPricing && !mIsKg && <p className="text-[11px] text-amber-600">No price configured</p>}
                   </div>
                 </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-                <Button type="button" onClick={confirmAddGarment} disabled={!mGarment || !mService} className="bg-blue-600 hover:bg-blue-700 text-white gap-1"><Plus className="h-4 w-4" /> Add Item</Button>
+                <Button type="button" onClick={confirmAddGarment} disabled={!mGarment || !mService || (mIsKg && mWeightKg <= 0)} className="bg-blue-600 hover:bg-blue-700 text-white gap-1"><Plus className="h-4 w-4" /> Add Item</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

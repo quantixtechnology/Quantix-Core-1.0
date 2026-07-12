@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const businessId = searchParams.get("businessId")
   if (!businessId) return NextResponse.json({ error: "businessId is required" }, { status: 400 })
 
-  const auth = await getLaundryAuthContext(businessId)
+  const auth = await getLaundryAuthContext(businessId, req)
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const guard = await requireLaundryPermission(req, businessId, "processing.console_receive.view")
   if (!guard.ok) return guard.res

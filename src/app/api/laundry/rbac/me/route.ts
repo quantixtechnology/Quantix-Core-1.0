@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
   const biz = await resolveLaundryBusiness(businessId)
   if (!biz?.platformBusinessId) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
-  const ctx = await getLaundryAuthContext(biz.id)
+  const ctx = await getLaundryAuthContext(biz.id, request)
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
   const r = await resolveUserPermissions(biz.platformBusinessId, ctx.userId, ctx.role)
   return NextResponse.json({ success: true, data: { roleCode: r.roleCode, roleName: r.roleName, isOwner: r.isOwner, source: r.source, permissions: [...r.permissions] } })
