@@ -12,7 +12,8 @@ import { StorefrontCheckout } from "./storefront-checkout"
 import { StorefrontOrderTracking } from "./storefront-order-tracking"
 import { StorefrontOrders } from "./storefront-orders"
 import { StorefrontLaundryOrders } from "./storefront-laundry-orders"
-import { StorefrontProfile } from "./storefront-profile"
+import { CustomerAccountCenter } from "./account/customer-account-center"
+import { CustomerProfileEditor } from "./account/customer-profile-editor"
 import { StorefrontAddresses } from "./storefront-addresses"
 import { StorefrontPassword } from "./storefront-password"
 import { StorefrontStorePicker, type PickedStore } from "./storefront-store-picker"
@@ -31,6 +32,10 @@ export type WebPage =
   | "order-tracking"
   | "orders"
   | "profile"
+  | "my-profile"
+  | "subscriptions"
+  | "invoices"
+  | "payments"
   | "addresses"
   | "password"
 
@@ -360,7 +365,8 @@ export function StorefrontWebsite() {
         {page === "orders" && (currentBusinessType === "LAUNDRY"
           ? <StorefrontLaundryOrders brandColor={brandColor} nav={nav} />
           : <StorefrontOrders brandColor={brandColor} nav={nav} />)}
-        {page === "profile"        && <StorefrontProfile       brandColor={brandColor} nav={nav} />}
+        {page === "profile"        && <CustomerAccountCenter   brandColor={brandColor} nav={nav} />}
+        {page === "my-profile"     && <CustomerProfileEditor   brandColor={brandColor} nav={nav} />}
         {page === "addresses"      && <StorefrontAddresses     brandColor={brandColor} nav={nav} />}
         {page === "password"       && <StorefrontPassword      brandColor={brandColor} nav={nav} />}
       </StorefrontLayout>
