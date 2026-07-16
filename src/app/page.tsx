@@ -119,16 +119,18 @@ function AccessDenied() {
 }
 
 // Terminal recovery for a stale/expired session that is stuck in a workspace
-// view it can no longer authorise. Clears the auth state and resets the view so
-// AuthProvider re-renders the Login page — instead of a blank white screen.
-// A spinner shows for the one frame before logout() takes effect.
+// view it cannot authorise AND is neither a platform (Super Admin) nor a
+// business role nor an impersonator — i.e. genuinely misplaced. Resets the view
+// to the admin app so the user lands on a usable screen instead of a blank page.
+//
+// It NEVER calls the server logout: doing so would invalidate the refresh token
+// and destroy a still-valid session (a Super Admin, in particular, bypasses
+// permissions and must never be treated as unauthorised — the "Session not
+// found" regression). If the local session really is gone, AuthProvider already
+// renders the Login page; if it is valid, the admin app renders normally.
 function SessionRecovery() {
-  const { logout } = useAuthStore()
   const { setViewMode } = useAdminStore()
-  useEffect(() => {
-    setViewMode("super_admin")
-    logout()
-  }, [logout, setViewMode])
+  useEffect(() => { setViewMode("super_admin") }, [setViewMode])
   return <PageLoader />
 }
 
@@ -462,6 +464,12 @@ function AppRouter() {
 
 const BUSINESS_ROLES = new Set(["CLIENT_OWNER", "STORE_MANAGER", "BILLING_STAFF", "INVENTORY_STAFF", "SUPPORT_STAFF", "LAUNDRY_OWNER", "LAUNDRY_STORE_MANAGER", "STORE_EXECUTIVE", "AUDIT_EXECUTIVE", "PROCESSING_MANAGER", "PROCESSING_STAFF", "QC_EXECUTIVE", "DELIVERY_EXECUTIVE"])
 
+// Platform (Quantix) roles. Super Admin has UNRESTRICTED access and is NOT
+// permission-driven — it must never be gated by a permission check (e.g.
+// businesses:impersonate) nor treated as a misplaced/stale session. Business
+// users are the permission-driven ones (Business → Store → Role → Permission).
+const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM", "SUPPORT_TEAM", "FINANCE_TEAM", "DEPLOYMENT_TEAM"])
+
 function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, workspaceBusinessId }: { storefrontSlug?: string | null; deliveryEntry?: boolean; productWorkspaceCode?: string | null; workspaceBusinessId?: string | null }) {
   const { viewMode, activePage, businessPage, customerPage, deliveryPage, deliveryLoggedIn, setDeliveryPage, setViewMode, setBusinessOwnerContext, laundryPage, supportMode, resumeBusinessId, manageBusinessId } = useAdminStore()
   const { isAuthenticated, currentRole, currentBusinessId, currentBusinessName, currentBusinessType, permissions, _isHydrated, _isSynced, setActiveBusinessId } = useAuthStore()
@@ -473,6 +481,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
   const [storefrontContextLoaded, setStorefrontContextLoaded] = useState(false)
 
   const isBusinessRole = BUSINESS_ROLES.has(currentRole || "")
+  const isPlatformRole = PLATFORM_ROLES.has(currentRole || "")
   const canImpersonate = (permissions as string[]).includes("businesses:impersonate")
   // Business id the workspace operates on: the one launched on a product host
   // (Open Workspace) when present, otherwise the authenticated session business.
@@ -502,9 +511,6 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
 
     // Don't override viewMode when Laundry OS support mode is active
     if (supportMode.active) return
-
-    const PLATFORM_ROLES = new Set(["QUANTIX_SUPER_ADMIN", "PLATFORM_ADMIN", "QUANTIX_SALES_TEAM", "SUPPORT_TEAM", "FINANCE_TEAM", "DEPLOYMENT_TEAM"])
-    const isPlatformRole = PLATFORM_ROLES.has(currentRole || "")
 
     // Product workspace host (commerce.*, laundry.*): initialize the selected
     // business's PRODUCT workspace — for its owner, or for a platform admin who
@@ -550,17 +556,20 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
   useEffect(() => {
     if (supportMode.active) return
     if (productWorkspaceCode) return
-    if (viewMode === "business_owner" && _isHydrated && !isBusinessRole && !canImpersonate) {
+    if (viewMode === "business_owner" && _isHydrated && !isBusinessRole && !isPlatformRole && !canImpersonate) {
       setViewMode("super_admin")
     }
-  }, [viewMode, _isHydrated, isBusinessRole, canImpersonate, supportMode.active, setViewMode, productWorkspaceCode])
+  }, [viewMode, _isHydrated, isBusinessRole, isPlatformRole, canImpersonate, supportMode.active, setViewMode, productWorkspaceCode])
 
   const renderSuperAdminPage = () => {
     // Wait for syncPermissions() to finish before running access checks —
     // avoids showing AccessDenied for users whose localStorage cache predates
     // a new permission being added to a role.
     if (!_isSynced) return <PageLoader />
-    if (!canAccessPage(activePage, permissions as string[])) {
+    // Super Admin has UNRESTRICTED access and is not permission-driven — it
+    // bypasses the per-page permission gate entirely. Every other role (business
+    // users, other platform teams) remains authorization-driven.
+    if (currentRole !== "QUANTIX_SUPER_ADMIN" && !canAccessPage(activePage, permissions as string[])) {
       return <AccessDenied />
     }
     switch (activePage) {
@@ -877,7 +886,11 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
     // NEVER render a blank screen here: show a loader while permissions are
     // still syncing, then clear the stale session and drop to Login once we
     // know for certain the session cannot use this workspace.
-    if (_isHydrated && !isBusinessRole && !canImpersonate) {
+    // Super Admin / platform roles have unrestricted access and are NEVER gated
+    // here (they legitimately open any workspace without an impersonate
+    // permission). Business roles and impersonators also pass. Only a session
+    // that is none of these is genuinely misplaced.
+    if (_isHydrated && !isBusinessRole && !isPlatformRole && !canImpersonate) {
       if (!_isSynced) return <PageLoader />
       return <SessionRecovery />
     }
