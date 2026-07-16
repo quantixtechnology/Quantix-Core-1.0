@@ -2,8 +2,10 @@
 
 // The ONE laundry invoice template. Rendered identically for Admin and Customer
 // from the single resolveInvoiceView() payload (src/lib/laundry-invoice.ts).
-// Never create a second invoice template. Print/PDF work via the embedded
-// print CSS: window.print() shows only #laundry-invoice-print.
+// Never create a second invoice template. Prints via a dedicated window (see the
+// panel) using this exact markup — so Preview, Print and PDF are identical.
+// Shows ONLY tenant/business identity (from the Business Invoice Template) — no
+// platform (Quantix) branding.
 
 export interface InvoiceView {
   invoice: { number: string | null; status: string; issuedAt: string | null; notes: string | null } | null
@@ -17,7 +19,12 @@ export interface InvoiceView {
   payments: { id: string; method: string; amount: number; at: string }[]
   customer: { name: string; phone: string | null; email: string | null } | null
   store: { name: string; address: string | null; city: string | null; state: string | null } | null
-  settings: { currency: string; businessLogo: string | null; businessAddress: string | null; invoiceFooter: string | null; invoiceTerms: string | null; gstNumber: string | null }
+  settings: {
+    currency: string; businessLogo: string | null; businessName: string | null; businessAddress: string | null
+    businessPhone: string | null; businessEmail: string | null; businessWebsite: string | null; primaryColor: string | null
+    invoiceFooter: string | null; invoiceTerms: string | null; declaration: string | null; authorizedSignatory: string | null
+    signatureUrl: string | null; bankDetails: string | null; upiQr: string | null; gstNumber: string | null
+  }
 }
 
 const inr = (n: number | null | undefined) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -34,27 +41,28 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
   const { invoice, order, totals, gst, items, payments, customer, store, settings } = data
   const status = invoice?.status || "DRAFT"
   const charges = (totals.pickupCharge || 0) + (totals.deliveryCharge || 0) + (totals.expressCharge || 0)
+  const accent = settings.primaryColor || "#0f172a"
+  const businessName = settings.businessName || store?.name || "Laundry"
+  const contact = [settings.businessPhone, settings.businessEmail, settings.businessWebsite].filter(Boolean).join(" · ")
 
   return (
     <div id="laundry-invoice-print" className="bg-white text-slate-800 mx-auto max-w-[720px] p-6 text-sm">
-      {/* Print isolation: only the invoice prints. */}
-      <style>{`@media print { body { visibility: hidden !important; } #laundry-invoice-print, #laundry-invoice-print * { visibility: visible !important; } #laundry-invoice-print { position: absolute; left: 0; top: 0; width: 100%; padding: 24px; } .no-print { display: none !important; } }`}</style>
-
-      {/* Header */}
-      <div className="flex items-start justify-between border-b border-slate-200 pb-4">
+      {/* Header — tenant identity only (no platform branding). */}
+      <div className="flex items-start justify-between border-b-2 pb-4" style={{ borderColor: accent }}>
         <div className="flex items-center gap-3">
           {settings.businessLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={settings.businessLogo} alt="" className="h-12 w-12 rounded object-contain" />
+            <img src={settings.businessLogo} alt="" className="h-14 w-14 rounded object-contain" />
           ) : null}
           <div>
-            <p className="text-lg font-bold text-slate-900">{store?.name || "Laundry"}</p>
+            <p className="text-lg font-bold" style={{ color: accent }}>{businessName}</p>
             {settings.businessAddress && <p className="text-xs text-slate-500 whitespace-pre-line">{settings.businessAddress}</p>}
+            {contact && <p className="text-xs text-slate-500">{contact}</p>}
             {gst.enabled && (gst.gstNumber || settings.gstNumber) && <p className="text-xs text-slate-500">GSTIN: {gst.gstNumber || settings.gstNumber}</p>}
           </div>
         </div>
         <div className="text-right">
-          <p className="text-base font-bold text-slate-900">INVOICE</p>
+          <p className="text-base font-bold" style={{ color: accent }}>INVOICE</p>
           <p className="font-mono text-sm text-slate-700">{invoice?.number || "Draft"}</p>
           <span className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[status] || STATUS_STYLE.DRAFT}`}>{status}</span>
         </div>
@@ -122,11 +130,35 @@ export function LaundryInvoiceDocument({ data }: { data: InvoiceView }) {
         </div>
       )}
 
-      {/* Terms / footer */}
-      {(settings.invoiceTerms || settings.invoiceFooter) && (
-        <div className="mt-5 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-          {settings.invoiceTerms && <p className="whitespace-pre-line">{settings.invoiceTerms}</p>}
-          {settings.invoiceFooter && <p className="mt-1 text-center">{settings.invoiceFooter}</p>}
+      {/* Bank / UPI (optional) + Authorized signatory */}
+      {(settings.bankDetails || settings.upiQr || settings.authorizedSignatory || settings.signatureUrl) && (
+        <div className="mt-5 flex items-end justify-between gap-4 border-t border-slate-100 pt-3">
+          <div className="text-[11px] text-slate-600">
+            {(settings.bankDetails || settings.upiQr) && <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Payment</p>}
+            {settings.bankDetails && <p className="mt-1 whitespace-pre-line">{settings.bankDetails}</p>}
+            {settings.upiQr && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={settings.upiQr} alt="UPI" className="mt-2 h-24 w-24 object-contain" />
+            )}
+          </div>
+          {(settings.authorizedSignatory || settings.signatureUrl) && (
+            <div className="text-center text-[11px] text-slate-600">
+              {settings.signatureUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={settings.signatureUrl} alt="" className="mx-auto h-12 object-contain" />
+              )}
+              <div className="mt-1 border-t border-slate-300 pt-1">{settings.authorizedSignatory || "Authorized Signatory"}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Declaration / Terms / footer */}
+      {(settings.declaration || settings.invoiceTerms || settings.invoiceFooter) && (
+        <div className="mt-4 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+          {settings.declaration && <p className="whitespace-pre-line"><span className="font-semibold text-slate-600">Declaration: </span>{settings.declaration}</p>}
+          {settings.invoiceTerms && <p className="mt-1 whitespace-pre-line">{settings.invoiceTerms}</p>}
+          {settings.invoiceFooter && <p className="mt-2 text-center">{settings.invoiceFooter}</p>}
         </div>
       )}
     </div>

@@ -32,10 +32,19 @@ export interface FinancialSettings {
   rounding: string
   decimalPrecision: number
   businessLogo: string | null
+  businessName: string | null
   businessAddress: string | null
+  businessPhone: string | null
+  businessEmail: string | null
+  businessWebsite: string | null
+  primaryColor: string | null
   invoiceFooter: string | null
   invoiceTerms: string | null
+  declaration: string | null
+  authorizedSignatory: string | null
   signatureUrl: string | null
+  bankDetails: string | null
+  upiQr: string | null
   paymentInstructions: string | null
 }
 
@@ -51,10 +60,19 @@ const DEFAULTS: Omit<FinancialSettings, "businessId"> = {
   rounding: "NEAREST",
   decimalPrecision: 2,
   businessLogo: null,
+  businessName: null,
   businessAddress: null,
+  businessPhone: null,
+  businessEmail: null,
+  businessWebsite: null,
+  primaryColor: null,
   invoiceFooter: null,
   invoiceTerms: null,
+  declaration: null,
+  authorizedSignatory: null,
   signatureUrl: null,
+  bankDetails: null,
+  upiQr: null,
   paymentInstructions: null,
 }
 
@@ -219,10 +237,19 @@ export async function resolveInvoiceView(orderId: string, opts?: { autoGenerate?
       settings: {
         currency: settings.currency,
         businessLogo: settings.businessLogo,
+        businessName: settings.businessName,
         businessAddress: settings.businessAddress,
+        businessPhone: settings.businessPhone,
+        businessEmail: settings.businessEmail,
+        businessWebsite: settings.businessWebsite,
+        primaryColor: settings.primaryColor,
         invoiceFooter: settings.invoiceFooter,
         invoiceTerms: settings.invoiceTerms,
+        declaration: settings.declaration,
+        authorizedSignatory: settings.authorizedSignatory,
         signatureUrl: settings.signatureUrl,
+        bankDetails: settings.bankDetails,
+        upiQr: settings.upiQr,
         paymentInstructions: settings.paymentInstructions,
         gstNumber: settings.gstNumber,
       },

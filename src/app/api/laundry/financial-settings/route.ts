@@ -18,8 +18,10 @@ const EDITABLE = [
   "invoicePrefix", "invoiceNextNumber", "invoiceNumberPadding",
   "gstEnabled", "gstNumber", "taxInclusive", "homeState",
   "currency", "rounding", "decimalPrecision",
-  "businessLogo", "businessAddress", "invoiceFooter", "invoiceTerms",
-  "signatureUrl", "paymentInstructions",
+  "businessLogo", "businessName", "businessAddress", "businessPhone",
+  "businessEmail", "businessWebsite", "primaryColor",
+  "invoiceFooter", "invoiceTerms", "declaration", "authorizedSignatory",
+  "signatureUrl", "bankDetails", "upiQr", "paymentInstructions",
 ] as const
 
 export async function GET(request: Request) {

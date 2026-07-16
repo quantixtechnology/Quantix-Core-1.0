@@ -4840,10 +4840,19 @@ model LaundryFinancialSettings {
   rounding             String   @default("NEAREST") // NEAREST | UP | DOWN | NONE
   decimalPrecision     Int      @default(2)
   businessLogo         String?
+  businessName         String?
   businessAddress      String?
+  businessPhone        String?
+  businessEmail        String?
+  businessWebsite      String?
+  primaryColor         String? // invoice accent colour (tenant branding)
   invoiceFooter        String?
   invoiceTerms         String?
+  declaration          String?
+  authorizedSignatory  String? // name printed under the signature
   signatureUrl         String?
+  bankDetails          String? // free-text bank account block (optional)
+  upiQr                String? // UPI QR image URL (optional)
   paymentInstructions  String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

@@ -56,6 +56,30 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setMarking(false) }
   }
 
+  // Print / Save-as-PDF via a DEDICATED window that renders the EXACT same
+  // invoice markup (#laundry-invoice-print) with the tenant stylesheets. This
+  // fixes the blank print (the node was inside the modal's display:none wrapper)
+  // and sets the window title to the invoice number so the browser's print
+  // header shows the invoice — not the app URL (no Quantix branding).
+  const printInvoice = () => {
+    const node = document.getElementById("laundry-invoice-print")
+    if (!node) return
+    const w = window.open("", "_blank", "width=820,height=1040")
+    if (!w) { toast.error("Allow pop-ups to print or save the invoice as PDF."); return }
+    const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+      .map((l) => `<link rel="stylesheet" href="${(l as HTMLLinkElement).href}">`).join("")
+    const styles = Array.from(document.querySelectorAll("style")).map((s) => s.outerHTML).join("")
+    const title = data?.invoice?.number || "Invoice"
+    w.document.open()
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${links}${styles}<style>@page{margin:16mm} body{margin:0}</style></head><body>${node.outerHTML}</body></html>`)
+    w.document.close()
+    const go = () => { try { w.focus(); w.print() } catch { /* noop */ } }
+    if (w.document.readyState === "complete") setTimeout(go, 400)
+    else w.onload = () => setTimeout(go, 250)
+  }
+  // Ensure the invoice node is mounted (preview open) before printing.
+  const openAndPrint = () => { setPreview(true); setTimeout(printInvoice, 400) }
+
   if (loading && !data) return <div className="rounded-xl border border-slate-100 bg-white p-4 text-sm text-slate-400">Loading invoice…</div>
 
   return (
@@ -71,8 +95,8 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button onClick={() => setPreview(true)} disabled={!data} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"><Eye className="h-3.5 w-3.5" /> Preview</button>
-        <button onClick={() => { setPreview(true); setTimeout(() => window.print(), 300) }} disabled={!number} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"><Printer className="h-3.5 w-3.5" /> Print</button>
-        <button onClick={() => { setPreview(true); setTimeout(() => window.print(), 300) }} disabled={!number} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"><FileDown className="h-3.5 w-3.5" /> Download PDF</button>
+        <button onClick={openAndPrint} disabled={!number} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"><Printer className="h-3.5 w-3.5" /> Print</button>
+        <button onClick={openAndPrint} disabled={!number} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"><FileDown className="h-3.5 w-3.5" /> Download PDF</button>
         {status === "UNPAID" && (
           <button onClick={markPaid} disabled={marking} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{marking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Mark as Paid</button>
         )}
@@ -107,7 +131,7 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
             <div className="no-print flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
               <p className="text-sm font-semibold text-slate-700">Invoice Preview</p>
               <div className="flex gap-2">
-                <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"><Printer className="h-3.5 w-3.5" /> Print / Save PDF</button>
+                <button onClick={printInvoice} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"><Printer className="h-3.5 w-3.5" /> Print / Save PDF</button>
                 <button onClick={() => setPreview(false)} className="rounded-lg p-1.5 hover:bg-slate-50"><X className="h-4 w-4 text-slate-500" /></button>
               </div>
             </div>
