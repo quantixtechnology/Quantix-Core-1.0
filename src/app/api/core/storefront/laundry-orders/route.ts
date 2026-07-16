@@ -7,6 +7,7 @@ import { withMiddleware } from "@/lib/middleware"
 import { db } from "@/lib/db"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { normalizePhone } from "@/lib/customer-identity"
+import { statusLabel } from "@/lib/laundry-workflow"
 
 async function resolveCustomerId(userId: string, businessId: string): Promise<string[]> {
   const userRec = await db.user.findUnique({ where: { id: userId }, select: { phone: true } })
@@ -37,6 +38,7 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["CUSTOMER
         id: true, orderNumber: true, status: true, orderType: true, paymentStatus: true,
         grandTotal: true, amountPaid: true, balanceDue: true, pickupDate: true, pickupTimeSlot: true,
         pickupAddress: true, createdAt: true,
+        store: { select: { storeName: true } },
         items: { select: { serviceName: true, garmentName: true, quantity: true } },
       },
     })
@@ -46,9 +48,10 @@ export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["CUSTOMER
       const byService = new Map<string, number>()
       for (const it of o.items) byService.set(it.serviceName, (byService.get(it.serviceName) || 0) + (it.quantity || 0))
       return {
-        id: o.id, orderNumber: o.orderNumber, status: o.status, orderType: o.orderType,
+        id: o.id, orderNumber: o.orderNumber, status: o.status, statusLabel: statusLabel(o.status), orderType: o.orderType,
         paymentStatus: o.paymentStatus, grandTotal: o.grandTotal, amountPaid: o.amountPaid, balanceDue: o.balanceDue,
         pickupDate: o.pickupDate, pickupTimeSlot: o.pickupTimeSlot, pickupAddress: o.pickupAddress, createdAt: o.createdAt,
+        storeName: o.store?.storeName ?? null,
         services: [...byService.entries()].map(([service, garments]) => ({ service, garments })),
         totalGarments: o.items.reduce((s, it) => s + (it.quantity || 0), 0),
       }

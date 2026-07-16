@@ -11,6 +11,7 @@ import { StorefrontAuth } from "./storefront-auth"
 import { StorefrontCheckout } from "./storefront-checkout"
 import { StorefrontOrderTracking } from "./storefront-order-tracking"
 import { StorefrontOrders } from "./storefront-orders"
+import { StorefrontLaundryOrders } from "./storefront-laundry-orders"
 import { StorefrontProfile } from "./storefront-profile"
 import { StorefrontAddresses } from "./storefront-addresses"
 import { StorefrontPassword } from "./storefront-password"
@@ -351,8 +352,14 @@ export function StorefrontWebsite() {
         {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
         {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}
         {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} currentStore={currentStore} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />}
-        {page === "order-tracking" && <StorefrontOrderTracking brandColor={brandColor} nav={nav} />}
-        {page === "orders"         && <StorefrontOrders        brandColor={brandColor} nav={nav} />}
+        {/* LAUNDRY reuses the laundry Order Engine end-to-end (orders + tracking +
+            payments + invoice). Non-laundry keeps the ecommerce screens. */}
+        {page === "order-tracking" && (currentBusinessType === "LAUNDRY"
+          ? <StorefrontLaundryOrders brandColor={brandColor} nav={nav} />
+          : <StorefrontOrderTracking brandColor={brandColor} nav={nav} />)}
+        {page === "orders" && (currentBusinessType === "LAUNDRY"
+          ? <StorefrontLaundryOrders brandColor={brandColor} nav={nav} />
+          : <StorefrontOrders brandColor={brandColor} nav={nav} />)}
         {page === "profile"        && <StorefrontProfile       brandColor={brandColor} nav={nav} />}
         {page === "addresses"      && <StorefrontAddresses     brandColor={brandColor} nav={nav} />}
         {page === "password"       && <StorefrontPassword      brandColor={brandColor} nav={nav} />}
