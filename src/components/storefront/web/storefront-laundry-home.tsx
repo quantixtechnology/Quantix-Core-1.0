@@ -536,7 +536,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="flex gap-1.5">{["Home", "Work", "Other"].map((t) => <button key={t} onClick={() => setAddrForm((f) => ({ ...f, label: t }))} className={`rounded-lg px-2.5 py-1 text-xs border ${addrForm.label === t ? "text-white border-transparent" : "border-gray-200 text-gray-600"}`} style={addrForm.label === t ? accentBg : {}}>{t}</button>)}</div>
+                  <div className="flex gap-1.5">{["Home", "Office", "Other"].map((t) => <button key={t} onClick={() => setAddrForm((f) => ({ ...f, label: t }))} className={`rounded-lg px-2.5 py-1 text-xs border ${addrForm.label === t ? "text-white border-transparent" : "border-gray-200 text-gray-600"}`} style={addrForm.label === t ? accentBg : {}}>{t}</button>)}</div>
                   <input value={addrForm.addressLine1} onChange={(e) => setAddrForm((f) => ({ ...f, addressLine1: e.target.value }))} placeholder="Flat / House / Building *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                   <input value={addrForm.area} onChange={(e) => setAddrForm((f) => ({ ...f, area: e.target.value }))} placeholder="Street / Area / Locality" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
                   <input value={addrForm.landmark} onChange={(e) => setAddrForm((f) => ({ ...f, landmark: e.target.value }))} placeholder="Landmark (optional)" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />

@@ -47,6 +47,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   loginWithOtp: (phone: string, otp: string) => Promise<void>;
   logout: () => void;
+  clearSession: () => void;
   refreshAuthToken: () => Promise<void>;
   syncPermissions: () => Promise<void>;
   switchBusiness: (businessId: string) => void;
@@ -388,7 +389,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  // ─── Logout ─────────────────────────────────────────────────────────
+  // ─── Logout (USER-INITIATED only) ───────────────────────────────────
+  // Invalidates the refresh token SERVER-SIDE, then clears local state. Only
+  // ever call this from an explicit user action (menu / header / profile).
+  // Automatic auth-failure paths must use clearSession() instead so a client
+  // check can never destroy a still-valid session server-side.
   logout: () => {
     const { refreshToken } = get();
 
@@ -403,6 +408,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
     }
 
+    get().clearSession();
+  },
+
+  // ─── Clear LOCAL session only (no server call) ──────────────────────
+  // For automatic paths (token-refresh failure, cross-tab sign-out signal).
+  // Never invalidates the refresh token server-side, so it cannot destroy a
+  // session that is still valid — the app simply falls back to the Login page.
+  clearSession: () => {
     clearStorage();
     if (typeof window !== "undefined") localStorage.removeItem("quantix_store_id");
     set({
@@ -425,7 +438,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshAuthToken: async () => {
     const { refreshToken } = get();
     if (!refreshToken) {
-      get().logout();
+      // No refresh token to renew with — clear LOCALLY only (never a server
+      // logout), so a valid session is never invalidated by this automatic path.
+      get().clearSession();
       return;
     }
 
@@ -439,8 +454,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const data = await response.json();
 
       if (!data.success) {
-        // Refresh token is invalid — force logout
-        get().logout();
+        // Refresh token already invalid server-side — clear LOCALLY only (no
+        // server logout call) and fall back to the Login page.
+        get().clearSession();
         return;
       }
 

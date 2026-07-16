@@ -79,7 +79,7 @@ export function AuthProvider({
     _isHydrated,
     refreshToken,
     refreshAuthToken,
-    logout,
+    clearSession,
     user,
     currentBusinessId,
   } = useAuthStore();
@@ -206,9 +206,12 @@ export function AuthProvider({
   // ─── Handle storage events (sync across tabs) ──────────────────────
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      // If another tab logged out, this tab should also log out
+      // Another tab signed out (the Admin token was removed) → clear THIS tab's
+      // local session only. Never call the server logout here: the other tab
+      // already invalidated the refresh token, and re-invalidating from an
+      // automatic cross-tab signal must never touch a still-valid session.
       if (e.key === "quantix_auth_token" && !e.newValue && isAuthenticated) {
-        logout();
+        clearSession();
         onSessionExpired?.();
       }
 
@@ -222,7 +225,7 @@ export function AuthProvider({
     return () => {
       window.removeEventListener("storage", handleStorageChange);
     };
-  }, [isAuthenticated, logout, initialize, onSessionExpired]);
+  }, [isAuthenticated, clearSession, initialize, onSessionExpired]);
 
   // ─── Not yet hydrated — show loading ────────────────────────────────
   if (!_isHydrated) {

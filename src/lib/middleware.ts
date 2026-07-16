@@ -247,6 +247,13 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
           const user = userOrError;
           (req as AuthenticatedRequest).user = user;
 
+          // Super Admin has UNRESTRICTED access and is NOT permission-driven —
+          // it bypasses the role/permission gates entirely (business owners and
+          // staff below remain authorization-driven). This guarantees "Super
+          // Admin → Always Allow" at the engine level, independent of whether
+          // every permission happens to be listed for the role in the DB.
+          const isSuperAdmin = user.role === 'QUANTIX_SUPER_ADMIN';
+
           // Platform admin check
           if (config.requirePlatformAdmin && !user.isPlatformAdmin) {
             return createErrorResponse(`Unauthorized role: ${user.role} — platform admin required`, 403);
@@ -257,24 +264,26 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
             return createErrorResponse('Business context required', 400);
           }
 
-          // Role check
-          if (config.requiredRoles && config.requiredRoles.length > 0) {
-            if (!config.requiredRoles.includes(user.role)) {
-              return createErrorResponse(`Unauthorized role: ${user.role}`, 403);
+          if (!isSuperAdmin) {
+            // Role check
+            if (config.requiredRoles && config.requiredRoles.length > 0) {
+              if (!config.requiredRoles.includes(user.role)) {
+                return createErrorResponse(`Unauthorized role: ${user.role}`, 403);
+              }
             }
-          }
 
-          // Single permission check
-          if (config.requiredPermission) {
-            if (!user.permissions.includes(config.requiredPermission)) {
-              return createErrorResponse(`Missing permission: ${config.requiredPermission}`, 403);
+            // Single permission check
+            if (config.requiredPermission) {
+              if (!user.permissions.includes(config.requiredPermission)) {
+                return createErrorResponse(`Missing permission: ${config.requiredPermission}`, 403);
+              }
             }
-          }
 
-          // Multiple permissions check
-          if (config.requiredPermissions && config.requiredPermissions.length > 0) {
-            if (!config.requiredPermissions.some((p) => user.permissions.includes(p))) {
-              return createErrorResponse(`Missing permission: one of [${config.requiredPermissions.join(', ')}]`, 403);
+            // Multiple permissions check
+            if (config.requiredPermissions && config.requiredPermissions.length > 0) {
+              if (!config.requiredPermissions.some((p) => user.permissions.includes(p))) {
+                return createErrorResponse(`Missing permission: one of [${config.requiredPermissions.join(', ')}]`, 403);
+              }
             }
           }
 
