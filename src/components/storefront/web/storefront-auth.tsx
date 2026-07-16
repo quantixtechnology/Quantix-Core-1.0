@@ -27,7 +27,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import {
   Phone, ArrowLeft, Loader2, CheckCircle2, User, Mail,
   AlertCircle, Eye, EyeOff, RefreshCw, HelpCircle, Lock, KeyRound,
@@ -193,17 +193,12 @@ export function StorefrontAuth({ brandColor, nav }: StorefrontAuthProps) {
     const u  = session.user as Record<string, unknown>
     const at = session.accessToken as string
     const rt = session.refreshToken as string
+    // Persist into the ISOLATED customer namespace (quantix_customer_*), never
+    // the shared Admin namespace — so a customer login can never clobber an
+    // Admin session on the same origin.
     if (at) {
-      localStorage.setItem("quantix_auth_token", at)
-      if (rt) localStorage.setItem("quantix_auth_refresh_token", rt)
-      localStorage.setItem("quantix_auth_user", JSON.stringify(u))
-      localStorage.setItem("quantix_auth_role", (u?.role as string) || "CUSTOMER")
-      if (u?.businessId) localStorage.setItem("quantix_auth_business_id", u.businessId as string)
-      if (u?.businessName) localStorage.setItem("quantix_auth_business_name", u.businessName as string)
-      if (u?.businessType) localStorage.setItem("quantix_auth_business_type", u.businessType as string)
-      if (session.businesses) localStorage.setItem("quantix_auth_businesses", JSON.stringify(session.businesses))
+      useAuthStore.getState().setSession({ token: at, refreshToken: rt || null, user: u, businesses: session.businesses })
     }
-    useAuthStore.getState().initialize()
     setSuccess(true)
     setTimeout(() => nav.goBack("home"), 900)
   }

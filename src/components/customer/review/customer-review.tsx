@@ -2,7 +2,7 @@
 
 import React, { useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { ArrowLeft, Star, Loader2, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"

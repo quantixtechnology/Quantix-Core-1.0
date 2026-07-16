@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { ArrowLeft, Eye, EyeOff, CheckCircle2 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 

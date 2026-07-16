@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import {
   ShoppingCart, Search, X, User, Trash2, Plus, Minus,
   Package, MapPin, ChevronDown, Home, Menu,

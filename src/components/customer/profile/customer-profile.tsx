@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { useOrders } from "@/hooks/use-api"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"

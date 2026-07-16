@@ -1,6 +1,6 @@
 "use client"
 
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { Package, MapPin, LogOut, ArrowLeft, Phone, Lock, Download, Share2 } from "lucide-react"
 import type { WebNav } from "./storefront-website"
 import { usePwaInstall } from "@/hooks/use-pwa-install"

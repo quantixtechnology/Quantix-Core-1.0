@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { useAdminStore } from "@/stores/admin-store"
 import { ArrowLeft, Package, ChevronRight, Clock, CheckCircle2, Truck, XCircle, Loader2 } from "lucide-react"
 import { formatINR } from "@/lib/currency"

@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { INDIAN_STATES } from "@/lib/constants"
 import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
 import { toast } from "sonner"

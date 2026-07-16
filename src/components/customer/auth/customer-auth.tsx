@@ -2,7 +2,7 @@
 
 import React, { useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { showSuccess, showError } from "@/lib/toast-utils"
 import { CustomerRegister } from "./customer-register"
 import { CustomerLogin } from "./customer-login"
@@ -56,10 +56,10 @@ export function CustomerAuth() {
   const storeSessionAndLogin = (session: Record<string, unknown>, userName: string) => {
     const accessToken = session.accessToken as string | undefined
     const refreshToken = session.refreshToken as string | undefined
+    // Persist into the ISOLATED customer namespace (quantix_customer_*) shared
+    // with the Customer Website — never the Admin namespace.
     if (accessToken) {
-      localStorage.setItem("quantix_auth_token", accessToken)
-      if (refreshToken) localStorage.setItem("quantix_auth_refresh_token", refreshToken)
-      if (session.businesses) localStorage.setItem("quantix_auth_businesses", JSON.stringify(session.businesses))
+      useAuthStore.getState().setSession({ token: accessToken, refreshToken: refreshToken || null, user: (session.user as Record<string, unknown>) || { role: "CUSTOMER", name: userName }, businesses: session.businesses })
     }
     handlePostLogin(userName)
     showSuccess("Welcome!", `Hi ${userName}, you're now signed in.`)

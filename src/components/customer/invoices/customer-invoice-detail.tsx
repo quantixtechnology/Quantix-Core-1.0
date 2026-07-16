@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { formatINR } from "@/lib/currency"
 import { ChevronRight, Printer, Loader2, AlertCircle } from "lucide-react"
 

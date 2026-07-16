@@ -2,7 +2,7 @@
 
 import React, { useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import {
   ArrowLeft, Phone, MessageCircle, Mail, ChevronDown, ChevronUp,
   HelpCircle, Clock, Package, RefreshCw, Truck, CreditCard, Scale,

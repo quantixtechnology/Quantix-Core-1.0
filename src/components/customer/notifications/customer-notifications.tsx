@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { useOrders } from "@/hooks/use-api"
 import { buildLabelMap, getLabel } from "@/lib/order-stages"
 import { ArrowLeft, Package, Tag, Truck, CheckCircle2, Clock, Bell, AlertCircle } from "lucide-react"

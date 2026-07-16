@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react"
 import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { ArrowLeft, Tag, Copy, Check, Clock, Loader2 } from "lucide-react"
 import { showSuccess } from "@/lib/toast-utils"
 

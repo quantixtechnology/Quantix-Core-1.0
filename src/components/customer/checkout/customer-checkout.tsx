@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react"
 import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { useCreateOrder } from "@/hooks/use-api"
 import { useRazorpayCheckout } from "@/hooks/use-razorpay"
 import { setBusinessContext } from "@/lib/api-client"

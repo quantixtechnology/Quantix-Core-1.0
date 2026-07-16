@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react"
 import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { useCartStore } from "@/stores/cart-store"
 import { ArrowLeft, Heart, ShoppingCart, Trash2, Loader2, Leaf } from "lucide-react"
 import { Button } from "@/components/ui/button"

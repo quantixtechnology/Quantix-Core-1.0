@@ -8,6 +8,7 @@
 
 import React, { useEffect, useCallback, useRef } from "react";
 import { useAuthStore } from "@/stores/auth-store";
+import { useCustomerAuthStore } from "@/stores/customer-auth-store";
 import { useAdminStore, type ViewMode } from "@/stores/admin-store";
 import { setBusinessContext } from "@/lib/api-client";
 import { LoginPage } from "@/components/auth/login-page";
@@ -91,8 +92,17 @@ export function AuthProvider({
   const prevAuthStateRef = useRef(isAuthenticated);
   const hasSyncedRef = useRef(false);
 
-  // ─── Initialize auth store from localStorage ────────────────────────
+  // ─── Initialize auth stores from localStorage ───────────────────────
+  // Admin session (this app) + the isolated Customer session (website / app),
+  // hydrated together before any child reads either store. The customer store
+  // runs its own one-time legacy-namespace migration; Admin is unaffected.
   useEffect(() => {
+    // Customer first: it runs the one-time legacy-namespace migration (adopting a
+    // CUSTOMER session out of quantix_auth_* into quantix_customer_*) BEFORE the
+    // Admin store reads storage, so a customer session never even momentarily
+    // populates the Admin store on a storefront origin. Admin sessions (non-
+    // CUSTOMER role) are never migrated, so this is a no-op for admins.
+    useCustomerAuthStore.getState().initialize();
     initialize();
   }, [initialize]);
 

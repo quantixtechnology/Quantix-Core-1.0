@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import {
   ArrowLeft, MapPin, Plus, Loader2, CheckCircle2, CreditCard,
   User, Phone as PhoneIcon, Check, LogIn, UserX, Lock, Navigation,

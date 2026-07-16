@@ -9,7 +9,7 @@ import { formatINR } from "@/lib/currency"
 import { buildLabelMap, getLabel } from "@/lib/order-stages"
 import { resolveInvoiceStatus, invoiceStatusColors } from "@/lib/invoice-utils"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import type { WebNav } from "./storefront-website"
 
 interface InvoiceData {

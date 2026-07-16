@@ -28,7 +28,7 @@ import {
   FileText,
 } from "lucide-react"
 import { resolveInvoiceStatus, invoiceStatusColors } from "@/lib/invoice-utils"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 
 const statusSteps = [
   { key: "PENDING", label: "Order Placed", icon: Package },

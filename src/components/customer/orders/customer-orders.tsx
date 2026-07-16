@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react"
 import { formatINR } from "@/lib/currency"
 import { useAdminStore } from "@/stores/admin-store"
-import { useAuthStore } from "@/stores/auth-store"
+import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { useOrders } from "@/hooks/use-api"
 import { useCartStore } from "@/stores/cart-store"
 import { setBusinessContext } from "@/lib/api-client"
