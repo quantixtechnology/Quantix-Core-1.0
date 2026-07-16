@@ -21,21 +21,35 @@ export function mergeMeta(existing: string | null | undefined, patch: Partial<Cu
 }
 
 // ── Statistics (Part 8) — derived live from LaundryOrder + subscription. ─────
+// Additive Customer-360 fields (memberSince, activeOrders, lastOrders,
+// activeOrdersList) power the New Order lifecycle panel. Read-only; the frozen
+// order/subscription engines are never mutated.
 export async function customerStats(customerId: string) {
-  const orders = await prisma.laundryOrder.findMany({ where: { customerId }, select: { status: true, grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true, createdAt: true } })
+  const [cust, orders] = await Promise.all([
+    prisma.customer.findUnique({ where: { id: customerId }, select: { createdAt: true, loyaltyTier: true } }),
+    prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
+  ])
   const active = orders.filter((o) => o.status !== "CANCELLED")
   const totalOrders = orders.length
   const completed = orders.filter((o) => o.status === "DELIVERED").length
   const cancelled = orders.filter((o) => o.status === "CANCELLED").length
+  // Operationally "active" = in-progress: neither delivered nor cancelled.
+  const inProgress = orders.filter((o) => o.status !== "DELIVERED" && o.status !== "CANCELLED")
   const grossValue = r2(active.reduce((n, o) => n + o.grandTotal, 0))
   const collected = r2(active.reduce((n, o) => n + o.amountPaid, 0))
   const outstanding = r2(active.reduce((n, o) => n + o.balanceDue, 0))
   const subsidised = r2(active.reduce((n, o) => n + (o.subscriptionCoveredAmount || 0), 0))
-  const lastOrderAt = orders.reduce<Date | null>((m, o) => (!m || o.createdAt > m ? o.createdAt : m), null)
+  const lastOrderAt = orders.length ? orders[0].createdAt : null // orders are createdAt desc
   const avgOrderValue = active.length ? r2(grossValue / active.length) : 0
   const sub = await prisma.customerSubscription.findFirst({ where: { customerId, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true } } }, orderBy: { createdAt: "desc" } })
+  const slim = (o: (typeof orders)[number]) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, grandTotal: o.grandTotal, createdAt: o.createdAt })
   return {
-    totalOrders, completed, cancelled, grossValue, collected, outstanding, subsidised, avgOrderValue, lastOrderAt,
+    memberSince: cust?.createdAt ?? null,
+    loyaltyTier: cust?.loyaltyTier ?? null,
+    totalOrders, completed, cancelled, activeOrders: inProgress.length,
+    grossValue, collected, outstanding, subsidised, avgOrderValue, lastOrderAt,
+    lastOrders: orders.slice(0, 5).map(slim),
+    activeOrdersList: inProgress.map(slim),
     subscription: sub ? { planName: sub.plan.name, status: sub.status, remainingKg: sub.remainingKg, remainingPieces: sub.remainingPieces, expiry: sub.currentPeriodEnd } : null,
   }
 }

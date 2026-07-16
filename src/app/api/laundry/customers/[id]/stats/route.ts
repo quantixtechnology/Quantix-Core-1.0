@@ -20,7 +20,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!biz?.platformBusinessId) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     const cust = await prisma.customer.findFirst({ where: { id, businessId: biz.platformBusinessId }, select: { id: true } })
     if (!cust) return NextResponse.json({ error: "Customer not found" }, { status: 404 })
-    return NextResponse.json({ success: true, data: await customerStats(id) })
+    // Subscriptions are "enabled" for the tenant when it has ≥1 active plan.
+    // Drives whether the Customer-360 Subscription Summary is shown.
+    const [stats, planCount] = await Promise.all([
+      customerStats(id),
+      prisma.subscriptionPlan.count({ where: { businessId: biz.platformBusinessId, isActive: true } }),
+    ])
+    return NextResponse.json({ success: true, data: { ...stats, subscriptionsEnabled: planCount > 0 } })
   } catch (e) {
     console.error("[laundry-customer-stats] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

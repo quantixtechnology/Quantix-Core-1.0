@@ -470,6 +470,11 @@ interface AdminState {
   setSelectedProductId: (id: string | null) => void
   selectedOrderId: string | null
   setSelectedOrderId: (id: string | null) => void
+  // Customer-360 deep-link: New Order "View Customer/Orders" quick actions set
+  // this so the target laundry view opens focused on that customer (consumed +
+  // cleared by the Customers / Orders views).
+  laundryFocusCustomerId: string | null
+  setLaundryFocusCustomerId: (id: string | null) => void
   selectedReviewProductId: string | null
   setSelectedReviewProductId: (id: string | null) => void
   selectedLeadId: string | null
@@ -667,6 +672,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   setSelectedProductId: (id) => set({ selectedProductId: id }),
   selectedOrderId: null,
   setSelectedOrderId: (id) => set({ selectedOrderId: id }),
+  laundryFocusCustomerId: null,
+  setLaundryFocusCustomerId: (id) => set({ laundryFocusCustomerId: id }),
   selectedReviewProductId: null,
   setSelectedReviewProductId: (id) => set({ selectedReviewProductId: id }),
   selectedLeadId: null,

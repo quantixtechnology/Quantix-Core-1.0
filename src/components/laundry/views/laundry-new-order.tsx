@@ -24,11 +24,12 @@ import {
   Search, UserPlus, User, Phone, MapPin, Clock, CreditCard, Store as StoreIcon,
   FileText, Save, Send, ArrowRight, Loader2, ShoppingBag, ShoppingCart, CheckCircle2,
   Hash, Calendar, UserCircle, Trash2, Info, X, Shirt, Plus, Minus,
-  Wallet, BadgeCheck, Crown, ImagePlus, Upload, Truck, Paperclip, Building2,
+  BadgeCheck, ImagePlus, Upload, Truck, Paperclip, Building2,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "./pricing/searchable-select"
-import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
+import { INDIAN_STATES, isValidPincode } from "@/lib/india"
+import { statusLabel } from "@/lib/laundry-workflow"
 
 const ORDER_TYPES = [
   { value: "WALK_IN", label: "Walk-In" },
@@ -56,6 +57,17 @@ interface CustomerResult {
   loyaltyTier: string; walletBalance: number; customerCode: string | null
   totalOrders: number; addresses: AddressRow[]
 }
+
+// Customer 360 — read-only lifecycle summary from /api/laundry/customers/[id]/stats.
+interface LcOrder { id: string; orderNumber: string; status: string; grandTotal: number; createdAt: string }
+interface Lifecycle {
+  memberSince: string | null; loyaltyTier: string | null
+  totalOrders: number; completed: number; cancelled: number; activeOrders: number
+  grossValue: number; collected: number; outstanding: number; avgOrderValue: number
+  lastOrders: LcOrder[]; activeOrdersList: LcOrder[]
+  subscriptionsEnabled: boolean
+  subscription: { planName: string; status: string; remainingKg: number; remainingPieces: number; expiry: string } | null
+}
 interface ServiceMaster {
   id: string; name: string; defaultTurnaroundHours: number
   availableInStore: boolean; availableForPickup: boolean; isActive: boolean
@@ -71,7 +83,7 @@ const fmtDateTime = (d: Date) => `${fmtDate(d)} ${d.toLocaleTimeString("en-IN", 
 
 export default function LaundryNewOrder() {
   const { currentBusinessId, user } = useAuthStore()
-  const { setLaundryPage } = useAdminStore()
+  const { setLaundryPage, setLaundryFocusCustomerId } = useAdminStore()
   const { toast } = useToast()
   const now = useMemo(() => new Date(), [])
 
@@ -224,6 +236,20 @@ export default function LaundryNewOrder() {
       .then((j) => { if (!cancel) setSubInfo(j.success && j.data.length ? j.data[0] : null) }).catch(() => { if (!cancel) setSubInfo(null) })
     return () => { cancel = true }
   }, [currentBusinessId, selectedCustomer])
+  // Customer 360 lifecycle summary (read-only) for the selected customer.
+  const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null)
+  const [lcLoading, setLcLoading] = useState(false)
+  useEffect(() => {
+    if (!currentBusinessId || !selectedCustomer) { setLifecycle(null); return }
+    let cancel = false
+    setLcLoading(true); setLifecycle(null)
+    fetch(`/api/laundry/customers/${selectedCustomer.id}/stats?businessId=${currentBusinessId}`).then((r) => r.json())
+      .then((j) => { if (!cancel) setLifecycle(j.success ? j.data : null) })
+      .catch(() => { if (!cancel) setLifecycle(null) })
+      .finally(() => { if (!cancel) setLcLoading(false) })
+    return () => { cancel = true }
+  }, [currentBusinessId, selectedCustomer])
+
   const subPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!currentBusinessId || !selectedCustomer || !subInfo || lineItems.length === 0) { setSubPreview(null); return }
@@ -407,6 +433,11 @@ export default function LaundryNewOrder() {
       <div className="min-w-0"><p className="text-[11px] text-slate-400">{label}</p><p className="text-sm font-semibold text-slate-800 truncate">{value}</p>{sub && <p className="text-[11px] text-blue-600 truncate">{sub}</p>}</div>
     </div>
   )
+  // Compact Customer-360 metric tile.
+  const Kpi = ({ label, value, tone }: { label: string; value: string; tone?: "blue" | "emerald" | "amber" | "rose" }) => {
+    const t = tone === "blue" ? "text-blue-700" : tone === "emerald" ? "text-emerald-600" : tone === "amber" ? "text-amber-600" : tone === "rose" ? "text-rose-600" : "text-slate-800"
+    return <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-2.5 py-2"><p className="text-[10px] uppercase tracking-wide text-slate-400 truncate">{label}</p><p className={`text-sm font-bold ${t} truncate`}>{value}</p></div>
+  }
 
   return (
     <div className="min-h-full bg-[#eef2f7] px-4 lg:px-6 py-6">
@@ -461,41 +492,96 @@ export default function LaundryNewOrder() {
 
                   {selectedCustomer ? (
                     <div className="space-y-3">
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-emerald-600 text-sm font-medium"><CheckCircle2 className="h-4 w-4" /> Customer Found</div>
+                      {/* ── Customer 360 — read-only lifecycle summary (existing data only) ── */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-semibold shrink-0">{selectedCustomer.name.slice(0, 2).toUpperCase()}</div>
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5"><p className="font-semibold text-slate-800 leading-tight">{selectedCustomer.name}</p><span className="inline-flex items-center gap-0.5 text-[11px] text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Existing</span></div>
+                              <p className="text-sm text-slate-500 flex items-center gap-1"><Phone className="h-3 w-3" /> {selectedCustomer.phone || "—"}</p>
+                              <p className="text-[11px] text-slate-400">Customer since {lifecycle?.memberSince ? fmtDate(new Date(lifecycle.memberSince)) : "—"}{selectedCustomer.customerCode ? ` · ${selectedCustomer.customerCode}` : ""}</p>
+                            </div>
+                          </div>
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedCustomer(null)}><X className="h-4 w-4" /></Button>
                         </div>
-                        <div className="grid grid-cols-[auto_1fr] gap-4 mt-3">
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-slate-600 font-semibold shrink-0">{selectedCustomer.name.slice(0, 2).toUpperCase()}</div>
-                            <div className="space-y-0.5">
-                              <p className="font-semibold text-slate-800 leading-tight">{selectedCustomer.name}</p>
-                              <p className="text-sm text-slate-500">{selectedCustomer.phone || "—"}</p>
+
+                        {lcLoading && !lifecycle ? (
+                          <div className="py-6 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /> Loading customer history…</div>
+                        ) : lifecycle ? (
+                          <>
+                            {/* Lifetime KPIs */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <Kpi label="Lifetime Value" value={inr(lifecycle.grossValue)} tone="blue" />
+                              <Kpi label="Total Orders" value={String(lifecycle.totalOrders)} />
+                              <Kpi label="Completed" value={String(lifecycle.completed)} tone="emerald" />
+                              <Kpi label="Active" value={String(lifecycle.activeOrders)} tone="amber" />
+                              <Kpi label="Cancelled" value={String(lifecycle.cancelled)} tone="rose" />
+                              <Kpi label="Avg Order" value={inr(lifecycle.avgOrderValue)} />
                             </div>
-                          </div>
-                          <div className="space-y-2 text-sm">
-                            {selectedCustomer.addresses?.[0] && formatAddressLines(selectedCustomer.addresses[0]).length > 0 && (<div><p className="text-slate-500 text-xs">Address</p><p className="text-slate-700 leading-snug whitespace-pre-line">{formatAddressLines(selectedCustomer.addresses[0]).join("\n")}</p></div>)}
-                            <div><p className="text-slate-500 text-xs">Membership Status</p><Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-emerald-300 text-emerald-700 bg-emerald-50"><Crown className="h-3 w-3" />{selectedCustomer.loyaltyTier || "Bronze"} Member</Badge></div>
-                            <div><p className="text-slate-500 text-xs">Subscription Status</p>{subInfo ? <Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-blue-300 text-blue-700 bg-blue-50"><BadgeCheck className="h-3 w-3" />{subInfo.status === "GRACE" ? "In Grace" : "Active"}</Badge> : <Badge variant="outline" className="mt-0.5 text-[11px] gap-1 border-slate-200 text-slate-400">None</Badge>}</div>
-                            <div><p className="text-slate-500 text-xs">Wallet Balance</p><p className="font-semibold text-emerald-600">₹{selectedCustomer.walletBalance.toFixed(2)}</p></div>
-                          </div>
+                            {/* Financial summary */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2"><p className="text-[11px] text-slate-500">Outstanding Balance</p><p className={`text-sm font-bold ${lifecycle.outstanding > 0 ? "text-rose-600" : "text-slate-700"}`}>{inr(lifecycle.outstanding)}</p></div>
+                              <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2"><p className="text-[11px] text-slate-500">Refund Amount</p><p className="text-sm font-bold text-slate-700">₹0.00</p></div>
+                            </div>
+
+                            {/* Current Active Orders */}
+                            {lifecycle.activeOrdersList.length > 0 && (
+                              <div className="space-y-1.5">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Current Active Orders</p>
+                                <div className="rounded-lg border border-slate-100 divide-y divide-slate-50">
+                                  {lifecycle.activeOrdersList.slice(0, 5).map((o) => (
+                                    <div key={o.id} className="flex items-center justify-between px-3 py-2">
+                                      <div><p className="font-mono text-xs font-semibold text-slate-700">{o.orderNumber}</p><p className="text-[11px] text-slate-400">{statusLabel(o.status as never)}</p></div>
+                                      <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 bg-amber-50">{statusLabel(o.status as never)}</Badge>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Last 5 Orders */}
+                            {lifecycle.lastOrders.length > 0 && (
+                              <div className="space-y-1.5">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Last 5 Orders</p>
+                                <div className="rounded-lg border border-slate-100 divide-y divide-slate-50">
+                                  {lifecycle.lastOrders.map((o) => (
+                                    <div key={o.id} className="flex items-center justify-between px-3 py-2">
+                                      <div><p className="font-mono text-xs font-semibold text-slate-700">{o.orderNumber}</p><p className="text-[11px] text-slate-400">{fmtDate(new Date(o.createdAt))}</p></div>
+                                      <div className="text-right"><p className="text-xs font-semibold text-slate-700">{inr(o.grandTotal)}</p><p className="text-[11px] text-slate-400">{statusLabel(o.status as never)}</p></div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Subscription Summary — shown whenever subscriptions are enabled */}
+                            {lifecycle.subscriptionsEnabled && (
+                              <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3 space-y-1.5">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-500 flex items-center gap-1"><BadgeCheck className="h-3.5 w-3.5" /> Subscription</p>
+                                {lifecycle.subscription ? (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between"><p className="text-sm font-semibold text-blue-800">{lifecycle.subscription.planName}</p><Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700 bg-white">{lifecycle.subscription.status === "GRACE" ? "In Grace" : "Active"}</Badge></div>
+                                    <div className="flex flex-wrap gap-2 text-xs">
+                                      {lifecycle.subscription.remainingKg > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{lifecycle.subscription.remainingKg} KG left</span>}
+                                      {lifecycle.subscription.remainingPieces > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{lifecycle.subscription.remainingPieces} pieces left</span>}
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">Renews {lifecycle.subscription.expiry ? fmtDate(new Date(lifecycle.subscription.expiry)) : "—"}{subInfo ? " · coverage applies automatically on save" : ""}</p>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-slate-500">No active plan.</p>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        ) : null}
+
+                        {/* Quick Actions */}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => document.getElementById("laundry-order-garments")?.scrollIntoView({ behavior: "smooth" })}><ShoppingCart className="h-3.5 w-3.5" /> New Order</Button>
+                          <Button size="sm" variant="outline" className="gap-1" onClick={() => { setLaundryFocusCustomerId(selectedCustomer.id); setLaundryPage("customers") }}><UserCircle className="h-3.5 w-3.5" /> View Customer</Button>
+                          <Button size="sm" variant="outline" className="gap-1" onClick={() => { setLaundryFocusCustomerId(selectedCustomer.id); setLaundryPage("orders") }}><ShoppingBag className="h-3.5 w-3.5" /> View Orders</Button>
                         </div>
-                        {/* Automatic subscription detection banner (Part 1) */}
-                        {subInfo && (
-                          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/60 p-3">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><BadgeCheck className="h-4 w-4" /> {subInfo.planName}</p>
-                              <span className="text-[11px] text-blue-600">Expires {new Date(subInfo.expiry).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                              {subInfo.remainingKg > 0 && <span className="rounded bg-white border border-blue-200 text-blue-700 px-2 py-0.5">{subInfo.remainingKg} KG left</span>}
-                              {subInfo.remainingPieces > 0 && <span className="rounded bg-white border border-violet-200 text-violet-700 px-2 py-0.5">{subInfo.remainingPieces} pieces left</span>}
-                            </div>
-                            {subInfo.eligibleServices.length > 0 && <p className="mt-2 text-[11px] text-slate-500">Eligible: {subInfo.eligibleServices.join(", ")}</p>}
-                            <p className="mt-1 text-[11px] text-slate-400">Coverage is applied automatically when you save — no manual step.</p>
-                          </div>
-                        )}
                       </div>
                       <Button onClick={() => handleSubmit("create")} disabled={submitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white">Create Order</Button>
                     </div>
@@ -562,7 +648,7 @@ export default function LaundryNewOrder() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border-slate-200 shadow-sm">
+            <Card id="laundry-order-garments" className="rounded-xl border-slate-200 shadow-sm scroll-mt-24">
               <CardHead icon={Shirt} title="Garments &amp; Services" note={seeding ? "· loading demo data…" : undefined}
                 right={<Button type="button" size="sm" onClick={openAddGarment} disabled={garments.length === 0} className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-3.5 w-3.5" /> Add Garment</Button>} />
               <CardContent className="px-5 pb-5 pt-0">

@@ -47,7 +47,7 @@ export function LaundryCustomersView() {
   const isSuperAdmin = user?.role === "QUANTIX_SUPER_ADMIN"
   const { can } = useLaundryPermissions()
   const canArchive = can("laundry.customers.delete") || isSuperAdmin
-  const { setLaundryPage } = useAdminStore()
+  const { setLaundryPage, laundryFocusCustomerId, setLaundryFocusCustomerId } = useAdminStore()
   const { toast } = useToast()
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
@@ -121,6 +121,15 @@ export function LaundryCustomersView() {
     } catch { /* noop */ } finally { setLoadingDetail(false) }
   }
   const closeDialog = () => { setOpenId(null); setDetail(null); setEditing(false) }
+
+  // Deep-link from the New Order "View Customer" quick action — open the focused
+  // customer once, then clear the flag so it doesn't re-trigger.
+  useEffect(() => {
+    if (!laundryFocusCustomerId || !currentBusinessId) return
+    openCustomer(laundryFocusCustomerId, false)
+    setLaundryFocusCustomerId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [laundryFocusCustomerId, currentBusinessId])
 
   const addNote = async () => {
     if (!newNote.trim() || !detail) return

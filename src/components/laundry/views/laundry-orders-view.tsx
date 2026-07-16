@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, RefreshCw, Loader2, ShoppingBag, ClipboardCheck, CreditCard, Truck, ArrowRight, ChevronLeft, ChevronRight, X } from "lucide-react"
 import { statusLabel } from "@/lib/laundry-workflow"
 
 interface OrderRow {
@@ -65,13 +65,19 @@ const STAGE_ACTION: Record<string, { label: string; page: LP; icon: typeof Clipb
 
 export function LaundryOrdersView() {
   const { currentBusinessId } = useAuthStore()
-  const { setLaundryPage, setSelectedOrderId } = useAdminStore()
+  const { setLaundryPage, setSelectedOrderId, laundryFocusCustomerId, setLaundryFocusCustomerId } = useAdminStore()
   const [rows, setRows] = useState<OrderRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("ALL")
   const [page, setPage] = useState(0)
+  // Customer filter — seeded from the New Order "View Orders" quick action.
+  const [custFilter, setCustFilter] = useState<string | null>(null)
+  useEffect(() => {
+    if (!laundryFocusCustomerId) return
+    setCustFilter(laundryFocusCustomerId); setLaundryFocusCustomerId(null); setPage(0)
+  }, [laundryFocusCustomerId, setLaundryFocusCustomerId])
 
   const load = useCallback(async () => {
     if (!currentBusinessId) return
@@ -80,12 +86,15 @@ export function LaundryOrdersView() {
       const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(PAGE), offset: String(page * PAGE) })
       if (status !== "ALL") params.set("status", status)
       if (search.trim()) params.set("search", search.trim())
+      if (custFilter) params.set("customerId", custFilter)
       const json = await fetch(`/api/laundry/orders?${params}`).then((r) => r.json())
       setRows(json.success ? json.data : []); setTotal(json.total || 0)
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [currentBusinessId, page, status, search])
+  }, [currentBusinessId, page, status, search, custFilter])
   useEffect(() => { load() }, [load])
   useEffect(() => { setPage(0) }, [status])
+
+  const custFilterName = custFilter ? (rows.find((r) => r.customer)?.customer?.name || "selected customer") : null
 
   const pages = Math.max(1, Math.ceil(total / PAGE))
   const summary = useMemo(() => ({ shown: rows.length }), [rows])
@@ -95,7 +104,12 @@ export function LaundryOrdersView() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><ShoppingBag className="h-5 w-5 text-blue-600" /> Orders</h1>
-          <p className="text-sm text-slate-500">{total} order{total === 1 ? "" : "s"} · all workflow stages</p>
+          <p className="text-sm text-slate-500">{total} order{total === 1 ? "" : "s"} · {custFilter ? "filtered to customer" : "all workflow stages"}</p>
+          {custFilter && (
+            <button onClick={() => { setCustFilter(null); setPage(0) }} className="mt-1 inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100">
+              {custFilterName} <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
