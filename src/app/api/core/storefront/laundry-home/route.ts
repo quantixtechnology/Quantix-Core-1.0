@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const [business, rules, services, garments, plans] = await Promise.all([
       prisma.business.findUnique({ where: { id: platformId }, select: { name: true, businessType: true, isOnline: true } }),
       prisma.laundryPricingRule.findMany({ where: { businessId: lbId, isActive: true } }),
-      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true, image: true } }),
+      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true, displayOnWebsite: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true, image: true } }),
       prisma.laundryGarment.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, categoryId: true, category: { select: { name: true } } } }),
       prisma.subscriptionPlan.findMany({ where: { businessId: platformId, serviceType: "LAUNDRY", isActive: true }, orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }] }),
     ])
@@ -42,12 +42,10 @@ export async function GET(request: Request) {
     const rulesTyped = rules as unknown as PricingRule[]
     const ruleById = new Map(rulesTyped.map((r) => [r.id, r]))
     // A garment row is only "priced" when the winning rule actually TARGETS that
-    // garment — either its garmentId, or its categoryId (category pricing). A
-    // rule that matches only via service/store/customer scope (garmentId AND
-    // categoryId both null) is garment-agnostic: it must NOT populate every
-    // garment row at one price (that is the pricing-leakage bug). Such garments
-    // are shown as "Price unavailable" on the customer listing. (The Billing
-    // Resolver itself is unchanged — order totals still honour generic rules.)
+    // garment (its garmentId). Billing type (PER_PIECE or PER_KG) is just a field
+    // on that rule — a Per-KG garment is a real configured price and MUST be shown
+    // (previously Per-KG garment rules were wrongly excluded, hiding whole
+    // services once they were configured Per-KG).
     const serviceCards = services.map((svc) => {
       // Weight-based service? A service-scoped PER_KG rule (no garment) defines it.
       const perKgRule = rules.find((r) => r.serviceId === svc.id && r.garmentId == null && r.categoryId == null && r.storeId == null && r.customerType == null && r.pricingType === "PER_KG" && r.isActive)
@@ -61,7 +59,7 @@ export async function GET(request: Request) {
       const items = quote.lines.map((l, i) => {
         const g = garments[i]
         const rule = l.matchedRuleId ? ruleById.get(l.matchedRuleId) : null
-        const targetsGarment = !!rule && rule.pricingType !== "PER_KG" && (rule.garmentId === g.id || (rule.categoryId != null && rule.categoryId === g.categoryId))
+        const targetsGarment = !!rule && rule.garmentId === g.id
         if (!(l.matchedRuleId != null && targetsGarment)) return null
         return {
           garmentId: g.id, garmentName: g.name, categoryName: g.category?.name || null,

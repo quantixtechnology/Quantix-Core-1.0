@@ -131,64 +131,52 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
             )}
           </section>
 
-          {/* Section 2 — Popular Services (garment prices) */}
+          {/* Section 2 — Popular Services (garment prices) — compact */}
           {popular.length > 0 && (
-            <section className="px-4 sm:px-6 mt-8">
-              <h2 className="text-lg font-bold text-gray-900">Popular Services</h2>
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <section className="px-4 sm:px-6 mt-5">
+              <h2 className="text-base font-bold text-gray-900">Popular Services</h2>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {popular.slice(0, 4).map((s) => (
-                  <div key={s.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                    <p className="font-semibold text-gray-900">{s.name}</p>
-                    <div className="mt-2 divide-y divide-gray-50">
-                      {s.items.slice(0, 5).map((it) => (
-                        <div key={it.garmentId} className="flex items-center justify-between py-1.5 text-sm">
+                  <div key={s.id} className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
+                    <p className="text-sm font-semibold text-gray-900">{s.name}</p>
+                    <div className="mt-1 divide-y divide-gray-50">
+                      {s.items.slice(0, 3).map((it) => (
+                        <div key={it.garmentId} className="flex items-center justify-between py-1 text-sm">
                           <span className="text-gray-600">{it.garmentName}</span>
-                          <span className="font-semibold text-gray-900">{inr(it.unitPrice)} <span className="text-xs font-normal text-gray-400">/ {it.unit}</span></span>
+                          <span className="font-semibold text-gray-900">{inr(it.unitPrice)} <span className="text-xs font-normal text-gray-400">/ {it.unit === "kg" ? "Per KG" : it.unit === "fixed" ? "Fixed" : "Per Piece"}</span></span>
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => setActiveService(s)} className="mt-3 w-full rounded-lg border border-gray-200 py-2 text-xs font-semibold text-gray-700 active:bg-gray-50">Select Service</button>
+                    <button onClick={() => setActiveService(s)} className="mt-2 w-full rounded-lg border border-gray-200 py-1.5 text-xs font-semibold text-gray-700 active:bg-gray-50">Select Service</button>
                   </div>
                 ))}
               </div>
             </section>
           )}
 
-          {/* Section 3 — Subscription Plans */}
+          {/* Section 3 — Subscription Plans — compact (Name, Monthly Price, Included, Subscribe) */}
           {plans.length > 0 && (
-            <section className="px-4 sm:px-6 mt-8">
-              <h2 className="text-lg font-bold text-gray-900">Subscription Plans</h2>
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <section className="px-4 sm:px-6 mt-5">
+              <h2 className="text-base font-bold text-gray-900">Subscription Plans</h2>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {plans.map((p) => {
                   const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
                   const isPendingPlan = subSummary?.pending && subSummary.pending.planName === p.name
                   return (
-                  <div key={p.id} className="rounded-2xl border-2 bg-white shadow-sm overflow-hidden flex flex-col" style={{ borderColor: p.isFeatured ? brandColor : "#f3f4f6" }}>
-                    <CardImage src={p.imageUrl} brandColor={brandColor} />
-                    <div className="p-5 flex flex-col flex-1">
-                    <div className="flex items-center gap-2"><Repeat className="w-4 h-4" style={accent} /><p className="font-bold text-gray-900">{p.name}</p></div>
-                    <p className="mt-2 text-2xl font-extrabold text-gray-900">{inr(p.price)} <span className="text-sm font-medium text-gray-400">/ {p.billingCycle.toLowerCase()}</span></p>
-                    <ul className="mt-3 space-y-1.5 flex-1">
-                      {(p.features.length ? p.features : [`${p.totalCredits} ${p.creditLabel} included`]).map((f, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-600"><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" style={accent} /> {f}</li>
-                      ))}
-                    </ul>
+                  <div key={p.id} className="rounded-xl border-2 bg-white shadow-sm overflow-hidden flex flex-col" style={{ borderColor: p.isFeatured ? brandColor : "#f3f4f6" }}>
+                    <CardImage src={p.imageUrl} brandColor={brandColor} aspect="h-20" />
+                    <div className="p-3 flex flex-col flex-1">
+                    <div className="flex items-center gap-2"><Repeat className="w-4 h-4 shrink-0" style={accent} /><p className="font-bold text-gray-900 truncate">{p.name}</p></div>
+                    <p className="mt-1 text-xl font-extrabold text-gray-900">{inr(p.price)} <span className="text-xs font-medium text-gray-400">/ {p.billingCycle.toLowerCase()}</span></p>
+                    <p className="mt-0.5 text-sm text-gray-600">{p.totalCredits} {p.creditLabel} included</p>
                     {isActivePlan ? (
-                      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs">
-                        <p className="font-bold text-emerald-700">YOUR ACTIVE PLAN</p>
-                        <p className="text-gray-600 mt-0.5">{subSummary!.active!.remaining} / {subSummary!.active!.allowance} clothes remaining</p>
-                        <button onClick={() => nav.go("orders")} className="mt-2 w-full rounded-lg py-2 text-xs font-semibold border border-emerald-300 text-emerald-700">View Plan</button>
-                      </div>
+                      <button onClick={() => nav.go("orders")} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50">✓ Active — View Plan</button>
                     ) : isPendingPlan ? (
-                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
-                        <p className="font-bold text-amber-700">PAYMENT PENDING</p>
-                        <p className="text-gray-600 mt-0.5">{inr(subSummary!.pending!.due)} due</p>
-                        <button onClick={() => setSubOnlyCheckout(p)} className="mt-2 w-full rounded-lg py-2 text-xs font-semibold text-white" style={accentBg}>Pay Now</button>
-                      </div>
+                      <button onClick={() => setSubOnlyCheckout(p)} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold text-white" style={accentBg}>Payment Pending — Pay Now</button>
                     ) : subscriptionInCart?.id === p.id ? (
-                      <button onClick={() => setSubscriptionInCart(null)} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
+                      <button onClick={() => setSubscriptionInCart(null)} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
                     ) : (
-                      <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } setSubscriptionInCart(p); toast.success(`${p.name} added — ₹${p.price} at checkout`) }} className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Add to Cart" : "Sign in to Subscribe"}</button>
+                      <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } setSubscriptionInCart(p); toast.success(`${p.name} added — ₹${p.price} at checkout`) }} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Subscribe" : "Sign in to Subscribe"}</button>
                     )}
                     </div>
                   </div>
