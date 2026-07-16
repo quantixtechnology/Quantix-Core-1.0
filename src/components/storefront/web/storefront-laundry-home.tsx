@@ -291,8 +291,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   }, [isAuthenticated, token, authHeaders])
 
   const missingPhone = !phone.trim()
-  const missingEmail = !email.trim()
-  const profileIncomplete = isAuthenticated && (missingPhone || missingEmail)
+  // A logged-in customer is NEVER asked for email at checkout — email is optional
+  // and edited from My Profile. Profile completion only appears when the phone is
+  // genuinely missing (needed operationally for pickup contact).
+  const profileIncomplete = isAuthenticated && missingPhone
 
   const saveProfile = async () => {
     setSavingProfile(true)
@@ -352,9 +354,9 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   }
 
   const submit = async (force = false) => {
-    // Validation follows the visible form order: identity → email → address → date.
+    // Email is NEVER required (optional; edited from My Profile). Only name +
+    // mobile (identity) and a pickup address/date are needed to place an order.
     if (!name.trim() || !phone.trim()) { toast.error("Name and mobile number are required"); return }
-    if (!email.trim()) { toast.error("Email address is required"); return }
     if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
     if (!date) { toast.error("Select a pickup date"); return }
     const customerPayload = { id: custId || undefined, name, phone, email }
@@ -367,7 +369,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       // and the customer is never asked again on later orders.
       let pickupAddressId = selAddr || undefined
       if (isAuthenticated) {
-        if (profileIncomplete && (phone.trim() || email.trim())) {
+        if (profileIncomplete && phone.trim()) {
           await fetch("/api/core/storefront/profile", { method: "PUT", headers: authHeaders, body: JSON.stringify({ phone, email }) }).catch(() => null)
         }
         if (!pickupAddressId && addrForm.addressLine1.trim()) {
@@ -518,13 +520,12 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             {/* Customer identity (shared account) — complete profile inline if needed */}
             {isAuthenticated ? (
               <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-sm">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{profileIncomplete ? "Complete Your Profile" : "Ordering As"}</p>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{profileIncomplete ? "Add Mobile Number" : "Ordering As"}</p>
                 <p className="font-semibold text-gray-800">{name || authCustomer?.name}</p>
-                {!profileIncomplete && <p className="text-xs text-gray-500">{email && maskEmail(email)}{email && phone ? " · " : ""}{maskPhone(phone)}</p>}
+                {!profileIncomplete && phone && <p className="text-xs text-gray-500">{maskPhone(phone)}</p>}
                 {profileIncomplete && (
                   <div className="mt-2 space-y-2">
-                    {missingPhone && <Field label="Mobile Number *"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>}
-                    {missingEmail && <Field label="Email Address *"><input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="you@email.com" /></Field>}
+                    <Field label="Mobile Number *"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
                     <button onClick={saveProfile} disabled={savingProfile} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center gap-1" style={accentBg}>{savingProfile && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save &amp; Continue</button>
                   </div>
                 )}
@@ -534,7 +535,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                 <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Your Details</p>
                 <Field label="Full Name *"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your full name" /></Field>
                 <Field label="Mobile Number *"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
-                <Field label="Email Address *"><input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="you@email.com" /></Field>
+                <Field label="Email Address (optional)"><input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="you@email.com" /></Field>
               </div>
             )}
 
