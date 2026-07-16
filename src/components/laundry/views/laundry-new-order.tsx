@@ -61,7 +61,7 @@ interface ServiceMaster {
   availableInStore: boolean; availableForPickup: boolean; isActive: boolean
 }
 interface GarmentMaster { id: string; name: string; categoryId: string | null; defaultUnit: string; isActive: boolean }
-interface LineItem { uid: string; garmentId: string; serviceId: string; quantity: number; weightKg?: number }
+interface LineItem { uid: string; garmentId: string; serviceId: string; quantity: number }
 interface StoreInfo { id: string; storeName: string; city?: string | null }
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 
@@ -104,7 +104,6 @@ export default function LaundryNewOrder() {
   const [mGarment, setMGarment] = useState("")
   const [mService, setMService] = useState("")
   const [mQty, setMQty] = useState(1)
-  const [mWeight, setMWeight] = useState("")           // measured weight (KG) — Per-KG garments only
   const [mPricingType, setMPricingType] = useState<string | null>(null) // resolved billing type for the modal selection
   const [mRate, setMRate] = useState<number | null>(null) // resolved unit rate (₹/KG or ₹/piece)
   const [mPrice, setMPrice] = useState<number | null>(null)
@@ -189,14 +188,14 @@ export default function LaundryNewOrder() {
   }, [currentBusinessId])
 
   // ── Live billing for the whole order (Pricing Engine; never hardcoded) ──
-  const quoteKey = JSON.stringify({ items: lineItems.map((l) => [l.serviceId, l.garmentId, l.quantity, l.weightKg ?? 0]), storeId: selectedStoreId, customerType, express })
+  const quoteKey = JSON.stringify({ items: lineItems.map((l) => [l.serviceId, l.garmentId, l.quantity]), storeId: selectedStoreId, customerType, express })
   const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!currentBusinessId || lineItems.length === 0) { setQuote(null); return }
     if (quoteTimer.current) clearTimeout(quoteTimer.current)
     quoteTimer.current = setTimeout(async () => {
       try {
-        const items = lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, categoryId: grmById(l.garmentId)?.categoryId || null, quantity: l.quantity, weightKg: l.weightKg ?? 0 }))
+        const items = lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, categoryId: grmById(l.garmentId)?.categoryId || null, quantity: l.quantity }))
         const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, express, items }) })
         const json = await res.json(); setQuote(json.success ? json.data : null)
       } catch { setQuote(null) }
@@ -209,9 +208,9 @@ export default function LaundryNewOrder() {
   // Per-line billing type from the resolved quote (drives the Per-KG weight field).
   const linePricing = (uid: string) => { const idx = lineItems.findIndex((l) => l.uid === uid); return idx >= 0 && quote ? quote.lines[idx] ?? null : null }
   const grandTotal = quote?.grandTotal ?? 0
-  // A Per-KG line with no measured weight cannot be priced (bills ₹0) — block
-  // order creation until a weight is entered (mirrors the backend WEIGHT_REQUIRED gate).
-  const weightPendingLines = lineItems.filter((l) => linePricing(l.uid)?.pricingType === "PER_KG" && !(l.weightKg && l.weightKg > 0))
+  // Weight is NEVER captured at booking — Per-KG lines are estimated (₹0) here and
+  // priced at Store Audit when the garment is weighed. Booking records quantities only.
+  const hasKgLine = lineItems.some((l) => linePricing(l.uid)?.pricingType === "PER_KG")
 
   // ── Subscription integration (automatic; never a manual step) ──────────────
   // Detect the selected customer's ACTIVE / GRACE subscription, and live-preview
@@ -243,43 +242,38 @@ export default function LaundryNewOrder() {
   const customerPays = Math.max(0, grandTotal - covered)
 
   // ── Add-Garment modal: live single-line price + resolved billing type ──
-  // The quote also tells us the garment's billing type (PER_KG vs PER_PIECE) so
-  // the modal can require the Measured Weight BEFORE the item is added. For
-  // Per-KG the measured weight drives the price; Qty stays a garment count.
-  const mWeightKg = mWeight === "" ? 0 : Math.max(0, Number(mWeight) || 0)
+  // Weight is NEVER entered here. For Per-KG garments the amount is unknown until
+  // the garment is weighed at Store Audit, so we only capture the quantity and
+  // show the rate (₹/KG) for reference. Per-Piece garments price immediately.
   const mIsKg = mPricingType === "PER_KG"
   useEffect(() => {
     if (!addOpen || !mGarment || !mService || !currentBusinessId) { setMPrice(null); setMPricingType(null); return }
     setMPricing(true)
     const t = setTimeout(async () => {
       try {
-        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items: [{ serviceId: mService, garmentId: mGarment, categoryId: grmById(mGarment)?.categoryId || null, quantity: mQty || 1, weightKg: mWeightKg }] }) })
+        const res = await fetch("/api/laundry/billing/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, storeId: selectedStoreId || null, customerType, items: [{ serviceId: mService, garmentId: mGarment, categoryId: grmById(mGarment)?.categoryId || null, quantity: mQty || 1 }] }) })
         // Show ONLY the Service+Garment base line price — order-level charges
         // (minimum, pickup, delivery, express) belong in the Order Summary.
         const json = await res.json()
         const line = json.success ? json.data.lines?.[0] : null
         setMPricingType(line?.pricingType ?? null)
         setMRate(line?.unitPrice ?? null)
-        // A Per-KG line with no weight bills ₹0 — don't show a misleading price.
-        setMPrice(line ? (line.pricingType === "PER_KG" && mWeightKg <= 0 ? null : line.lineTotal ?? null) : null)
+        // Per-KG is priced at Store Audit (after weighing) — no amount at booking.
+        setMPrice(line ? (line.pricingType === "PER_KG" ? null : line.lineTotal ?? null) : null)
       } catch { setMPrice(null); setMPricingType(null); setMRate(null) } finally { setMPricing(false) }
     }, 200)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addOpen, mGarment, mService, mQty, mWeightKg, currentBusinessId, selectedStoreId, customerType])
+  }, [addOpen, mGarment, mService, mQty, currentBusinessId, selectedStoreId, customerType])
 
-  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMWeight(""); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
+  const openAddGarment = () => { setMGarment(""); setMService(availableServices[0]?.id || ""); setMQty(1); setMPricingType(null); setMRate(null); setMPrice(null); setAddOpen(true) }
   const confirmAddGarment = () => {
     if (!mGarment || !mService) { toast({ title: "Select garment & service", variant: "destructive" }); return }
-    // Per-KG garments must have a measured weight before they can be added —
-    // weight determines the bill (mirrors the backend WEIGHT_REQUIRED gate).
-    if (mIsKg && mWeightKg <= 0) { toast({ title: "Weight required", description: "Enter the measured weight (KG) for this Per-KG garment.", variant: "destructive" }); return }
-    setLineItems((p) => [...p, { uid: `L${Date.now()}${p.length}`, garmentId: mGarment, serviceId: mService, quantity: Math.max(1, mQty || 1), ...(mIsKg && mWeightKg > 0 ? { weightKg: mWeightKg } : {}) }])
+    setLineItems((p) => [...p, { uid: `L${Date.now()}${p.length}`, garmentId: mGarment, serviceId: mService, quantity: Math.max(1, mQty || 1) }])
     setAddOpen(false)
   }
   const removeLine = (uid: string) => setLineItems((p) => p.filter((l) => l.uid !== uid))
   const setLineQty = (uid: string, q: number) => setLineItems((p) => p.map((l) => (l.uid === uid ? { ...l, quantity: Math.max(1, q) } : l)))
-  const setLineWeight = (uid: string, w: string) => setLineItems((p) => p.map((l) => (l.uid === uid ? { ...l, weightKg: w === "" ? undefined : Math.max(0, Number(w) || 0) } : l)))
 
   const expectedDelivery = useMemo(() => {
     if (overrideDelivery && customDeliveryDate) return new Date(customDeliveryDate)
@@ -376,14 +370,13 @@ export default function LaundryNewOrder() {
     if (!currentBusinessId || !selectedStoreId) { toast({ title: "Error", description: "No business or store selected", variant: "destructive" }); return }
     if (!selectedCustomer) { toast({ title: "Error", description: "Select or create a customer first", variant: "destructive" }); return }
     if (lineItems.length === 0) { toast({ title: "Add a garment", description: "Add at least one garment to the order.", variant: "destructive" }); return }
-    // Per-KG garments must have a measured weight before the order is priced.
-    if (weightPendingLines.length > 0) { toast({ title: "Weight required", description: `Enter the measured weight (KG) for ${weightPendingLines.map((l) => grmById(l.garmentId)?.name || "garment").join(", ")} before creating the order.`, variant: "destructive" }); return }
+    // Weight is captured at Store Audit, never here — booking records quantities only.
     setSubmitting(true)
     try {
       const payload = {
         businessId: currentBusinessId, storeId: selectedStoreId, customerId: selectedCustomer.id, orderType,
         services: selectedServices.map((s) => ({ serviceId: s.id, serviceName: s.name, turnaroundHours: s.defaultTurnaroundHours })),
-        items: lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity, ...(l.weightKg && l.weightKg > 0 ? { weightKg: l.weightKg } : {}) })),
+        items: lineItems.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity })),
         isExpress: express || quickNotes.includes("Express Delivery"),
         expectedDeliveryDate: expectedDelivery ? expectedDelivery.toISOString().split("T")[0] : null,
         deliveryOverride: overrideDelivery, overrideReason: overrideDelivery ? overrideReason : null,
@@ -586,20 +579,12 @@ export default function LaundryNewOrder() {
                       const amt = lineAmount(l.uid)
                       const lp = linePricing(l.uid)
                       const isKg = lp?.pricingType === "PER_KG"
-                      const needsWeight = isKg && !(l.weightKg && l.weightKg > 0)
                       return (
                         <div key={l.uid} className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-center px-4 py-2.5 border-b border-slate-100 last:border-0">
                           <div className="min-w-0">
                             <span className="text-sm font-medium text-slate-700">{grmById(l.garmentId)?.name || "—"}</span>
-                            {/* Measured Weight — ONLY for Per-KG garments; Per-Piece never shows it. */}
-                            {isKg && (
-                              <div className="mt-1 flex items-center gap-1.5">
-                                <span className="text-[10px] uppercase tracking-wide text-slate-400">Weight</span>
-                                <input type="number" min="0" step="0.05" value={l.weightKg ?? ""} onChange={(e) => setLineWeight(l.uid, e.target.value)} placeholder="0.00"
-                                  className={`h-7 w-20 rounded-md border px-2 text-sm tabular-nums ${needsWeight ? "border-rose-300 bg-rose-50" : "border-slate-200"}`} />
-                                <span className="text-[10px] text-slate-400">KG</span>
-                              </div>
-                            )}
+                            {/* Per-KG garments are weighed at Store Audit — no weight at booking. */}
+                            {isKg && <p className="text-[10px] text-blue-600 mt-0.5">Weighed at Store Audit</p>}
                           </div>
                           <span className="text-sm text-slate-600">{svcById(l.serviceId)?.name || "—"}{isKg && <span className="ml-1 text-[10px] text-blue-600">Per KG</span>}</span>
                           <div className="flex items-center gap-1">
@@ -607,15 +592,16 @@ export default function LaundryNewOrder() {
                             <span className="w-7 text-center text-sm tabular-nums">{l.quantity}</span>
                             <Button type="button" variant="outline" size="icon" className="h-7 w-7" onClick={() => setLineQty(l.uid, l.quantity + 1)}><Plus className="h-3 w-3" /></Button>
                           </div>
-                          <span className="text-sm font-semibold text-slate-800 text-right w-16 tabular-nums">{needsWeight ? <span className="text-[11px] text-rose-500">Weight?</span> : amt != null ? inr(amt) : "…"}</span>
+                          <span className="text-sm font-semibold text-slate-800 text-right w-16 tabular-nums">{isKg ? <span className="text-[11px] text-slate-400">At audit</span> : amt != null ? inr(amt) : "…"}</span>
                           <button className="text-red-500 hover:text-red-600" onClick={() => removeLine(l.uid)}><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       )
                     })}
                     <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 text-sm">
                       <span className="text-slate-500">{totalPieces} piece{totalPieces === 1 ? "" : "s"} · {lineItems.length} item{lineItems.length === 1 ? "" : "s"}</span>
-                      <span className="font-bold text-slate-800">Total {inr(grandTotal)}</span>
+                      <span className="font-bold text-slate-800">{hasKgLine ? "Estimated " : "Total "}{inr(grandTotal)}</span>
                     </div>
+                    {hasKgLine && <p className="px-4 py-2 text-[11px] text-blue-600 bg-blue-50/60 border-t border-blue-100">Per-KG items are weighed at Store Audit — the final amount is confirmed after inspection.</p>}
                   </div>
                 )}
               </CardContent>
@@ -656,14 +642,6 @@ export default function LaundryNewOrder() {
                       <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => setMQty((q) => q + 1)}><Plus className="h-4 w-4" /></Button>
                     </div>
                   </div>
-                  {/* Measured Weight — ONLY for Per-KG garments; Per-Piece never shows it. */}
-                  {mIsKg && (
-                    <div className="space-y-1">
-                      <Label className="text-xs text-slate-600">Measured Weight (KG)</Label>
-                      <input type="number" min="0" step="0.05" value={mWeight} onChange={(e) => setMWeight(e.target.value)} placeholder="0.00" autoFocus
-                        className={`h-9 w-24 rounded-md border px-2 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-500 ${mWeightKg <= 0 ? "border-rose-300 bg-rose-50" : "border-slate-200"}`} />
-                    </div>
-                  )}
                   {/* Rate — read only, from the saved pricing. */}
                   {mIsKg && (
                     <div className="space-y-1 text-right">
@@ -673,15 +651,20 @@ export default function LaundryNewOrder() {
                   )}
                   <div className="text-right">
                     <p className="text-xs text-slate-500">{mIsKg ? "Amount" : "Price"}</p>
-                    <p className="text-2xl font-bold text-slate-800">{mPricing ? <Loader2 className="h-5 w-5 animate-spin inline" /> : mPrice != null ? inr(mPrice) : mIsKg && mWeightKg <= 0 ? <span className="text-sm text-rose-500">Enter weight</span> : mGarment && mService ? "—" : ""}</p>
-                    {mIsKg && mWeightKg > 0 && mRate != null && <p className="text-[10px] text-slate-400 tabular-nums">{mWeightKg} KG × {inr(mRate)}</p>}
-                    {mGarment && mService && mPrice == null && !mPricing && !mIsKg && <p className="text-[11px] text-amber-600">No price configured</p>}
+                    {mIsKg ? (
+                      <p className="text-sm font-semibold text-blue-600 leading-tight">Weighed at<br />Store Audit</p>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-bold text-slate-800">{mPricing ? <Loader2 className="h-5 w-5 animate-spin inline" /> : mPrice != null ? inr(mPrice) : mGarment && mService ? "—" : ""}</p>
+                        {mGarment && mService && mPrice == null && !mPricing && <p className="text-[11px] text-amber-600">No price configured</p>}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-                <Button type="button" onClick={confirmAddGarment} disabled={!mGarment || !mService || (mIsKg && mWeightKg <= 0)} className="bg-blue-600 hover:bg-blue-700 text-white gap-1"><Plus className="h-4 w-4" /> Add Item</Button>
+                <Button type="button" onClick={confirmAddGarment} disabled={!mGarment || !mService} className="bg-blue-600 hover:bg-blue-700 text-white gap-1"><Plus className="h-4 w-4" /> Add Item</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -734,7 +717,7 @@ export default function LaundryNewOrder() {
                   {lineItems.length === 0 ? <p className="px-3 py-4 text-slate-400 text-center">No garments added</p> : lineItems.map((l) => {
                     const amt = lineAmount(l.uid)
                     return (
-                      <div key={l.uid} className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 border-b border-slate-100 last:border-0 text-slate-700"><span>{grmById(l.garmentId)?.name} · {svcById(l.serviceId)?.name}{linePricing(l.uid)?.pricingType === "PER_KG" && l.weightKg ? <span className="text-slate-400"> · {l.weightKg} KG</span> : null}</span><span className="text-slate-400 text-center">{l.quantity}</span><span className="text-right tabular-nums">{amt != null ? inr(amt) : "…"}</span></div>
+                      <div key={l.uid} className="grid grid-cols-[1fr_auto_auto] gap-3 px-3 py-2 border-b border-slate-100 last:border-0 text-slate-700"><span>{grmById(l.garmentId)?.name} · {svcById(l.serviceId)?.name}{linePricing(l.uid)?.pricingType === "PER_KG" ? <span className="text-blue-500"> · Per KG</span> : null}</span><span className="text-slate-400 text-center">{l.quantity}</span><span className="text-right tabular-nums">{amt != null ? inr(amt) : "…"}</span></div>
                     )
                   })}
                 </div>
