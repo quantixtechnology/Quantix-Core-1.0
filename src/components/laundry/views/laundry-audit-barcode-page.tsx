@@ -2,10 +2,11 @@
 
 // Barcode Generation — dedicated operational page with Pending | History tabs.
 // Pending: packages awaiting barcode generation (write flow). History: every
-// order whose barcodes were already generated (stored barcodeGenerated data,
-// NOT order status) — opens the SAME screen READ-ONLY (view stored barcodes +
-// print again; no regeneration). Reuses /api/laundry/orders (additive barcoded
-// filter + search) and the LaundryAuditBarcode component.
+// order that COMPLETED Barcode Generation — i.e. the operator clicked "Move to
+// Processing Queue" (stored data, NOT order status) — opens the SAME screen
+// READ-ONLY (view stored barcodes + print again; no regeneration). Reuses
+// /api/laundry/orders (additive barcoded filter + search) and the
+// LaundryAuditBarcode component.
 import { useEffect, useState, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"

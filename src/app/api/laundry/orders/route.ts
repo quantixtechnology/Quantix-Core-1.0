@@ -178,7 +178,7 @@ export async function GET(request: Request) {
     const search = searchParams.get("search")
     // Stage-completion filters (used by the Barcode / Packing History tabs) —
     // based on STORED completion data, never on order status.
-    const barcoded = searchParams.get("barcoded") // "1" → has ≥1 barcoded garment
+    const barcoded = searchParams.get("barcoded") // "1" → Barcode Generation completed (Moved to Processing)
     const packed = searchParams.get("packed")     // "1" → a packet was created
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100)
     const offset = parseInt(searchParams.get("offset") || "0")
@@ -200,7 +200,11 @@ export async function GET(request: Request) {
     if (customerId) where.customerId = customerId
     // Stage-completion (stored data, NOT order status): keeps an order visible in
     // the stage where it was completed even after it moves to later stages.
-    if (barcoded === "1") where.items = { some: { barcodeGenerated: true } }
+    // Barcode Generation is "complete" the moment the operator clicks "Move to
+    // Processing Queue" — that action (and only that action) freezes each
+    // garment's route into `processFlow`. `barcodeGenerated` alone flips on
+    // "Generate All", one step earlier, so it is NOT the completion marker.
+    if (barcoded === "1") where.items = { some: { processFlow: { not: null } } }
     if (packed === "1") where.packet = { isNot: null }
     if (from || to) {
       const createdAt: Record<string, Date> = {}
