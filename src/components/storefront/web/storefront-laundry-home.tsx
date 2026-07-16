@@ -359,9 +359,26 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (!date) { toast.error("Select a pickup date"); return }
     const customerPayload = { id: custId || undefined, name, phone, email }
     const structured = { fullName: name, phone, label: addrForm.label, addressLine1: addrForm.addressLine1, addressLine2: null as string | null, area: addrForm.area, landmark: addrForm.landmark, city: addrForm.city, state: addrForm.state, pincode: addrForm.pincode }
-    const pickupPayload = { addressId: selAddr || undefined, structured: (!selAddr && addrForm.addressLine1.trim()) ? structured : undefined, date: date || null, timeSlot: slot }
     setSubmitting(true); setLimitNotice(null)
     try {
+      // ── Feature 1: persist first-order profile + address ONCE for an
+      // authenticated customer, reusing the EXISTING profile/address APIs (no new
+      // endpoints, no engine change). After this, mobile + address auto-populate
+      // and the customer is never asked again on later orders.
+      let pickupAddressId = selAddr || undefined
+      if (isAuthenticated) {
+        if (profileIncomplete && (phone.trim() || email.trim())) {
+          await fetch("/api/core/storefront/profile", { method: "PUT", headers: authHeaders, body: JSON.stringify({ phone, email }) }).catch(() => null)
+        }
+        if (!pickupAddressId && addrForm.addressLine1.trim()) {
+          try {
+            const ares = await fetch("/api/core/storefront/addresses", { method: "POST", headers: authHeaders, body: JSON.stringify(addrForm) })
+            const aj = await ares.json()
+            if (ares.ok && aj.success && aj.data?.id) { pickupAddressId = aj.data.id; setAddresses((p) => [aj.data, ...p]); setSelAddr(aj.data.id) }
+          } catch { /* fall back to the inline order snapshot below */ }
+        }
+      }
+      const pickupPayload = { addressId: pickupAddressId, structured: (!pickupAddressId && addrForm.addressLine1.trim()) ? structured : undefined, date: date || null, timeSlot: slot }
       // Buying a subscription plan in this cart → combined checkout: garments make
       // a real order (normal prices), the plan becomes a pending customer due.
       // The new plan does NOT cover this order (first-order rule).
