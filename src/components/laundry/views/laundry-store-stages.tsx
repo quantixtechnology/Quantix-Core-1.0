@@ -245,7 +245,7 @@ function QrImage({ value, size = 160 }: { value: string; size?: number }) {
   return url ? <img src={url} alt={value} width={size} height={size} className="rounded border border-slate-200" /> : <div style={{ width: size, height: size }} className="rounded bg-slate-100" />
 }
 
-function printPacketLabel(p: Packet, orderNumber: string, storeName: string | null | undefined) {
+function printPacketLabel(p: { packetNumber: string; qrValue: string; itemCount: number }, orderNumber: string, storeName: string | null | undefined) {
   QRCode.toDataURL(p.qrValue, { width: 240, margin: 1 }).then((url) => {
     const w = window.open("", "_blank", "width=420,height=520")
     if (!w) return
@@ -260,12 +260,20 @@ function printPacketLabel(p: Packet, orderNumber: string, storeName: string | nu
   })
 }
 
+interface PackHistoryRow { id: string; orderNumber: string; customer?: { name?: string | null } | null; customerName?: string | null; store?: { storeName?: string | null } | null; createdAt: string; packet?: { packetNumber: string; qrValue: string; itemCount: number; packedBy: string | null; packedAt: string } | null }
+
 export function LaundryPacking() {
   const { currentBusinessId, user } = useAuthStore()
+  const [tab, setTab] = useState<"pending" | "history">("pending")
   const queue = useQueue("READY_FOR_PROCESSING")
   const [selected, setSelected] = useState<OrderRow | null>(null)
   const [packet, setPacket] = useState<Packet | null>(null)
   const [busy, setBusy] = useState(false)
+  // History (packet completion, stored data — not order status)
+  const [hist, setHist] = useState<PackHistoryRow[]>([])
+  const [histSel, setHistSel] = useState<PackHistoryRow | null>(null)
+  const [histSearch, setHistSearch] = useState("")
+  const [histLoading, setHistLoading] = useState(false)
 
   const openOrder = (o: OrderRow | null) => { setSelected(o); setPacket(null) }
 
@@ -285,7 +293,69 @@ export function LaundryPacking() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Packing failed") } finally { setBusy(false) }
   }
 
+  const loadHist = useCallback(async () => {
+    if (!currentBusinessId) return
+    setHistLoading(true)
+    try {
+      const p = new URLSearchParams({ businessId: currentBusinessId, packed: "1", limit: "50" })
+      if (histSearch.trim()) p.set("search", histSearch.trim())
+      const j = await fetch(`/api/laundry/orders?${p}`).then((r) => r.json())
+      setHist(j.data || [])
+    } catch { /* noop */ } finally { setHistLoading(false) }
+  }, [currentBusinessId, histSearch])
+  useEffect(() => { if (tab === "history") loadHist() }, [tab, loadHist])
+
+  const Tabs = (
+    <div className="flex gap-1 rounded-lg bg-slate-100 p-1 w-fit mx-4 lg:mx-6 mt-4">
+      {([["pending", "Pending"], ["history", "History"]] as const).map(([k, lbl]) => (
+        <button key={k} onClick={() => { setTab(k); setHistSel(null) }} className={`rounded-md px-4 py-1.5 text-sm font-semibold ${tab === k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>{lbl}</button>
+      ))}
+    </div>
+  )
+
+  if (tab === "history") {
+    return (
+      <div>
+        {Tabs}
+        <div className="px-4 lg:px-6 py-4">
+          {histSel && histSel.packet ? (
+            <Card><CardContent className="p-5 space-y-3">
+              <button onClick={() => setHistSel(null)} className="text-sm text-slate-500">← Back to History</button>
+              <div className="flex items-center gap-2"><span className="font-mono text-sm font-bold text-slate-800">{histSel.orderNumber}</span><Badge variant="outline" className="border-slate-300 text-slate-600 bg-slate-50">History · Read-only</Badge></div>
+              <div className="flex flex-col items-center gap-3 py-2">
+                <QrImage value={histSel.packet.qrValue} />
+                <p className="font-mono text-sm font-bold">{histSel.packet.packetNumber}</p>
+                <p className="text-xs text-slate-400">{histSel.packet.itemCount} garment(s) · packed by {histSel.packet.packedBy || "—"} · {fmt(histSel.packet.packedAt)}</p>
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => printPacketLabel(histSel.packet!, histSel.orderNumber, histSel.store?.storeName)}><Printer className="h-3.5 w-3.5" /> Print QR Again</Button>
+              </div>
+            </CardContent></Card>
+          ) : (
+            <Card><CardContent className="p-4">
+              <div className="relative w-full max-w-sm mb-3"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" /><Input value={histSearch} onChange={(e) => setHistSearch(e.target.value)} placeholder="Order no, customer, mobile…" className="h-8 pl-8 text-sm" /></div>
+              {histLoading ? <div className="py-10 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : hist.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">No packed orders found.</p>
+              ) : (
+                <div className="divide-y divide-slate-50">
+                  {hist.filter((o) => o.packet).map((o) => (
+                    <button key={o.id} onClick={() => setHistSel(o)} className="flex w-full items-center justify-between py-2.5 text-left hover:bg-slate-50 rounded px-1">
+                      <div>
+                        <p className="font-mono text-sm font-semibold text-slate-800">{o.orderNumber} <span className="font-sans font-normal text-slate-400">· {o.customer?.name || o.customerName || "—"}</span></p>
+                        <p className="text-[11px] text-slate-400">{o.packet?.packetNumber} · {new Date(o.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}{o.store?.storeName ? ` · ${o.store.storeName}` : ""}</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600"><Printer className="h-3.5 w-3.5" /> View / Print</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent></Card>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
+    <div>{Tabs}
     <QueueShell status="READY_FOR_PROCESSING" title="Packing & QR" subtitle="Pack the audited order and generate its package QR"
       icon={QrCode} selected={selected} onSelect={openOrder} queue={queue}>
       {selected && (
@@ -312,6 +382,7 @@ export function LaundryPacking() {
         </CardContent></Card>
       )}
     </QueueShell>
+    </div>
   )
 }
 

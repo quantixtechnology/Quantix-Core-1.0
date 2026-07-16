@@ -176,6 +176,10 @@ export async function GET(request: Request) {
     const from = searchParams.get("from")
     const to = searchParams.get("to")
     const search = searchParams.get("search")
+    // Stage-completion filters (used by the Barcode / Packing History tabs) —
+    // based on STORED completion data, never on order status.
+    const barcoded = searchParams.get("barcoded") // "1" → has ≥1 barcoded garment
+    const packed = searchParams.get("packed")     // "1" → a packet was created
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100)
     const offset = parseInt(searchParams.get("offset") || "0")
 
@@ -194,6 +198,10 @@ export async function GET(request: Request) {
     if (status) where.status = status
     if (storeId) where.storeId = storeId
     if (customerId) where.customerId = customerId
+    // Stage-completion (stored data, NOT order status): keeps an order visible in
+    // the stage where it was completed even after it moves to later stages.
+    if (barcoded === "1") where.items = { some: { barcodeGenerated: true } }
+    if (packed === "1") where.packet = { isNot: null }
     if (from || to) {
       const createdAt: Record<string, Date> = {}
       if (from) createdAt.gte = new Date(from)
@@ -201,9 +209,15 @@ export async function GET(request: Request) {
       where.createdAt = createdAt
     }
     if (search) {
+      // Search by order number, or by customer name / mobile (resolve matching
+      // platform customers, then filter orders by their id).
+      const matched = await prisma.customer.findMany({
+        where: { businessId: resolved.platformBusinessId || resolved.id, OR: [{ name: { contains: search } }, { phone: { contains: search } }] },
+        select: { id: true },
+      })
       where.OR = [
         { orderNumber: { contains: search } },
-        { notes: { contains: search } },
+        ...(matched.length ? [{ customerId: { in: matched.map((c) => c.id) } }] : []),
       ]
     }
 
@@ -214,6 +228,8 @@ export async function GET(request: Request) {
           services: true,
           store: { select: { storeName: true, storeCode: true } },
           _count: { select: { items: true } },
+          // Stored packet (for the Packing History read-only view). Additive.
+          packet: { select: { packetNumber: true, qrValue: true, status: true, itemCount: true, packedBy: true, packedAt: true } },
         },
         orderBy: { createdAt: "desc" },
         take: limit,

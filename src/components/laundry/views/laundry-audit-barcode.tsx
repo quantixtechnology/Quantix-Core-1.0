@@ -26,7 +26,7 @@ interface Data { order: { id: string; orderNumber: string; status: string; grand
 
 const WIDTHS = [20, 25, 30, 40, 50], HEIGHTS = [20, 30, 40], DPIS = [203, 300, 600]
 
-export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: string; onBack: () => void; onMoved: () => void }) {
+export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false }: { orderId: string; onBack: () => void; onMoved: () => void; readOnly?: boolean }) {
   const { user } = useAuthStore()
   const { toast } = useToast()
   const [data, setData] = useState<Data | null>(null)
@@ -50,7 +50,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
       await load()
     } finally { setBusy(false) }
   }
-  const printOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, true); genOne(it, true) }
+  const printOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, true); if (!readOnly) genOne(it, true) }
   const previewOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, false) }
   const genAll = async () => {
     setBusy(true)
@@ -75,7 +75,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-5 w-5 text-blue-600" /> Barcode Generation <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">In Progress</Badge></h1>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-5 w-5 text-blue-600" /> Barcode Generation {readOnly ? <Badge variant="outline" className="border-slate-300 text-slate-600 bg-slate-50">History · Read-only</Badge> : <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">In Progress</Badge>}</h1>
           <p className="text-sm text-slate-500 font-mono">{data.order.orderNumber}</p>
         </div>
         <LaundryPaymentBanner orderId={orderId} />
@@ -92,7 +92,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
           <CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Garments</CardTitle>
-          <Button size="sm" variant="outline" onClick={genAll} disabled={busy || data.allBarcoded} className="gap-1 border-blue-200 text-blue-700 hover:bg-blue-50"><BarcodeIcon className="h-3.5 w-3.5" /> Generate All Pending</Button>
+          {!readOnly && <Button size="sm" variant="outline" onClick={genAll} disabled={busy || data.allBarcoded} className="gap-1 border-blue-200 text-blue-700 hover:bg-blue-50"><BarcodeIcon className="h-3.5 w-3.5" /> Generate All Pending</Button>}
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -108,9 +108,9 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
                   <TableCell className="text-xs text-slate-400">{it.printCount > 0 ? `${it.printCount}×${it.lastPrintedBy ? ` · ${it.lastPrintedBy}` : ""}` : "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {!it.barcodeGenerated
+                      {!readOnly && (!it.barcodeGenerated
                         ? <Button size="sm" variant="outline" className="h-8 gap-1" disabled={busy} onClick={() => genOne(it)}><BarcodeIcon className="h-3.5 w-3.5" /> Generate</Button>
-                        : <Button size="sm" variant="ghost" className="h-8 gap-1 text-slate-500" disabled={busy} onClick={() => genOne(it, true)}><RefreshCw className="h-3.5 w-3.5" /> Reprint</Button>}
+                        : <Button size="sm" variant="ghost" className="h-8 gap-1 text-slate-500" disabled={busy} onClick={() => genOne(it, true)}><RefreshCw className="h-3.5 w-3.5" /> Reprint</Button>)}
                       <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500" title="Preview" onClick={() => previewOne(it)}><Eye className="h-4 w-4" /></Button>
                       <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500" title="Print" onClick={() => printOne(it)}><Printer className="h-4 w-4" /></Button>
                     </div>
@@ -122,10 +122,12 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
         </CardContent>
       </Card>
 
-      <div className="sticky bottom-0 -mx-4 lg:-mx-6 border-t border-slate-200 bg-white/95 backdrop-blur px-4 lg:px-6 py-3 flex items-center justify-between">
-        <p className="text-sm text-slate-500">{data.allBarcoded ? "All garments barcoded — ready to move." : `Barcode every garment (${data.totalItems - data.barcoded} pending) to continue.`}</p>
-        <Button onClick={move} disabled={busy || !data.allBarcoded} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-slate-300">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Move to Processing Queue</Button>
-      </div>
+      {!readOnly && (
+        <div className="sticky bottom-0 -mx-4 lg:-mx-6 border-t border-slate-200 bg-white/95 backdrop-blur px-4 lg:px-6 py-3 flex items-center justify-between">
+          <p className="text-sm text-slate-500">{data.allBarcoded ? "All garments barcoded — ready to move." : `Barcode every garment (${data.totalItems - data.barcoded} pending) to continue.`}</p>
+          <Button onClick={move} disabled={busy || !data.allBarcoded} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-slate-300">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Move to Processing Queue</Button>
+        </div>
+      )}
 
       {/* Print settings */}
       <Dialog open={showCfg} onOpenChange={setShowCfg}>
