@@ -1,9 +1,11 @@
-// Per-piece garment identity. A billing line "2 × Shirt — Wash & Iron" must
-// become TWO individually traceable garments (Shirt 1, Shirt 2), each with its
-// own ITM code + barcode + processing route/history. PER_PIECE lines with
-// quantity > 1 are exploded into per-piece rows whose amounts sum EXACTLY to
-// the original line (last piece absorbs rounding). PER_KG lines stay whole —
-// a 4kg wash load is one operational unit.
+// Per-garment identity. A billing line "4 × Shirt — Wash" must become FOUR
+// individually traceable garments (Shirt 1..4), each with its own ITM code +
+// barcode + processing route/history. EVERY line with an integer quantity > 1
+// is exploded into per-unit rows whose amounts sum EXACTLY to the original line
+// (last unit absorbs rounding) — INCLUDING PER_KG. PER_KG still bills the whole
+// order by ONE total weight captured at Store Audit, allocated across the rows
+// by quantity, so the per-garment split never changes the total billed amount;
+// it only gives each physical garment its own barcode + lifecycle.
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
@@ -23,7 +25,10 @@ export function explodePieces<L extends SplittableLine>(lines: L[]): L[] {
   const out: L[] = []
   for (const line of lines) {
     const qty = Math.round(line.quantity)
-    const splittable = line.pricingType !== "PER_KG" && qty > 1 && Math.abs(qty - line.quantity) < 1e-9
+    // Split by piece count for garment identity regardless of billing type.
+    // PER_KG is billed once by total order weight at Store Audit (allocated
+    // across these rows by quantity), so splitting does not change the bill.
+    const splittable = qty > 1 && Math.abs(qty - line.quantity) < 1e-9
     if (!splittable) { out.push(line); continue }
 
     let restLine = r2(line.lineAmount)
