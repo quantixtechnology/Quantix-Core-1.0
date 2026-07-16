@@ -35,6 +35,27 @@ function CardImage({ src, brandColor, aspect = "aspect-[16/9]" }: { src: string 
   return <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} className={`${aspect} w-full rounded-t-2xl object-cover`} />
 }
 
+// ── The ONE product card used for BOTH Services and Subscription Plans ────────
+// Identical width, height, 16:9 image, spacing, typography and bottom-aligned
+// button — the only differences (icon, price line, meta, featured border, button)
+// are passed in as slots. There is deliberately no separate subscription layout.
+function ServiceCard({ imageUrl, brandColor, title, icon, priceLine, metaLine, featured, button }: {
+  imageUrl: string | null; brandColor: string; title: string; icon?: React.ReactNode
+  priceLine: React.ReactNode; metaLine?: React.ReactNode; featured?: boolean; button: React.ReactNode
+}) {
+  return (
+    <div className="rounded-2xl bg-white shadow-sm flex flex-col overflow-hidden" style={{ border: featured ? `2px solid ${brandColor}` : "1px solid #f3f4f6" }}>
+      <CardImage src={imageUrl} brandColor={brandColor} />
+      <div className="p-2.5 sm:p-3 flex flex-col flex-1">
+        <p className="font-semibold text-gray-900 text-sm sm:text-[15px] leading-tight line-clamp-2 flex items-start gap-1.5">{icon}<span>{title}</span></p>
+        {priceLine}
+        {metaLine}
+        <div className="mt-auto pt-2.5">{button}</div>
+      </div>
+    </div>
+  )
+}
+
 export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string; nav: WebNav; storeClosed?: boolean }) {
   const { currentBusinessId, currentStoreId } = useAdminStore()
   const { isAuthenticated, token, user } = useAuthStore()
@@ -104,43 +125,82 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
         </div>
       ) : (
         <>
-          {/* Section 1 — Our Services */}
+          {/* Section 1 — Our Services (uses the shared ServiceCard) */}
           <section id="laundry-services" className="px-4 sm:px-6 mt-6">
             <h2 className="text-lg font-bold text-gray-900">Our Services</h2>
             {filteredServices.length === 0 ? (
               <p className="text-sm text-gray-400 py-8 text-center">No laundry services configured yet.</p>
             ) : (
-              /* Compact catalog: 2-up mobile (approved, unchanged) → 3 tablet →
-                 4 desktop → 5 wide; fixed 16:9 image so cards stay compact and
-                 never stretch a few cards across the full width. */
+              /* Compact catalog: 2-up mobile → 3 tablet → 4 desktop → 5 wide;
+                 fixed 16:9 image so cards stay compact and never stretch. */
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3">
                 {filteredServices.map((s) => (
-                  <div key={s.id} className="rounded-2xl border border-gray-100 bg-white shadow-sm flex flex-col overflow-hidden">
-                    <CardImage src={s.imageUrl} brandColor={brandColor} />
-                    <div className="p-2.5 sm:p-3 flex flex-col flex-1">
-                      <p className="font-semibold text-gray-900 text-sm sm:text-[15px] leading-tight line-clamp-2">{s.name}</p>
-                      {s.fromPrice != null ? <p className="mt-0.5 text-xs text-gray-500">From {inr(s.fromPrice)} / {s.fromUnit}</p> : <p className="mt-0.5 text-xs text-gray-400">Pricing unavailable</p>}
-                      {s.description && <p className="mt-1 hidden sm:block text-xs text-gray-500 line-clamp-2">{s.description}</p>}
-                      <button onClick={() => setActiveService(s)} className="mt-2.5 rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>
-                        <span className="sm:hidden">Select</span><span className="hidden sm:inline">Select Service</span>
-                      </button>
-                    </div>
-                  </div>
+                  <ServiceCard
+                    key={s.id}
+                    imageUrl={s.imageUrl}
+                    brandColor={brandColor}
+                    title={s.name}
+                    priceLine={s.fromPrice != null
+                      ? <p className="mt-0.5 text-sm font-bold text-gray-900"><span className="text-[11px] font-medium text-gray-400">From </span>{inr(s.fromPrice)} <span className="text-xs font-medium text-gray-400">/ {s.fromUnit === "kg" ? "kg" : s.fromUnit === "fixed" ? "item" : "piece"}</span></p>
+                      : <p className="mt-0.5 text-xs text-gray-400">Pricing unavailable</p>}
+                    metaLine={s.description ? <p className="mt-1 hidden sm:block text-xs text-gray-500 line-clamp-2">{s.description}</p> : undefined}
+                    button={<button onClick={() => setActiveService(s)} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}><span className="sm:hidden">Select</span><span className="hidden sm:inline">Select Service</span></button>}
+                  />
                 ))}
               </div>
             )}
           </section>
 
-          {/* Section 2 — Popular Services (garment prices) — compact */}
+          {/* Section 2 — Subscription Plans (SAME ServiceCard as Services) */}
+          {plans.length > 0 && (
+            <section className="px-4 sm:px-6 mt-6">
+              <h2 className="text-lg font-bold text-gray-900">Subscription Plans</h2>
+              <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3">
+                {plans.map((p) => {
+                  const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
+                  const isPendingPlan = subSummary?.pending && subSummary.pending.planName === p.name
+                  const btn = isActivePlan ? (
+                    <button onClick={() => nav.go("orders")} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50">✓ Active — View Plan</button>
+                  ) : isPendingPlan ? (
+                    <button onClick={() => setSubOnlyCheckout(p)} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>Pay Now</button>
+                  ) : subscriptionInCart?.id === p.id ? (
+                    <button onClick={() => setSubscriptionInCart(null)} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
+                  ) : (
+                    <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } setSubscriptionInCart(p); toast.success(`${p.name} added — ₹${p.price} at checkout`) }} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Subscribe" : "Sign in"}</button>
+                  )
+                  return (
+                    <ServiceCard
+                      key={p.id}
+                      imageUrl={p.imageUrl}
+                      brandColor={brandColor}
+                      featured={p.isFeatured}
+                      icon={<Repeat className="w-4 h-4 shrink-0 mt-0.5" style={accent} />}
+                      title={p.name}
+                      priceLine={<p className="mt-0.5 text-sm font-bold text-gray-900">{inr(p.price)} <span className="text-xs font-medium text-gray-400">/ {p.billingCycle.toLowerCase()}</span></p>}
+                      metaLine={<p className="mt-1 text-xs text-gray-600">{p.totalCredits} {p.creditLabel} included</p>}
+                      button={btn}
+                    />
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Section 3 — Popular Services (garment prices) — compact, below Plans */}
           {popular.length > 0 && (
-            <section className="px-4 sm:px-6 mt-5">
+            <section className="px-4 sm:px-6 mt-6">
               <h2 className="text-base font-bold text-gray-900">Popular Services</h2>
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {popular.slice(0, 4).map((s) => (
                   <div key={s.id} className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
                     <p className="text-sm font-semibold text-gray-900">{s.name}</p>
                     <div className="mt-1 divide-y divide-gray-50">
-                      {s.items.slice(0, 3).map((it) => (
+                      {s.perKg ? (
+                        <div className="flex items-center justify-between py-1 text-sm">
+                          <span className="text-gray-600">By weight</span>
+                          <span className="font-semibold text-gray-900">{inr(s.perKg.price)} <span className="text-xs font-normal text-gray-400">/ Per KG</span></span>
+                        </div>
+                      ) : s.items.slice(0, 3).map((it) => (
                         <div key={it.garmentId} className="flex items-center justify-between py-1 text-sm">
                           <span className="text-gray-600">{it.garmentName}</span>
                           <span className="font-semibold text-gray-900">{inr(it.unitPrice)} <span className="text-xs font-normal text-gray-400">/ {it.unit === "kg" ? "Per KG" : it.unit === "fixed" ? "Fixed" : "Per Piece"}</span></span>
@@ -150,37 +210,6 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
                     <button onClick={() => setActiveService(s)} className="mt-2 w-full rounded-lg border border-gray-200 py-1.5 text-xs font-semibold text-gray-700 active:bg-gray-50">Select Service</button>
                   </div>
                 ))}
-              </div>
-            </section>
-          )}
-
-          {/* Section 3 — Subscription Plans — compact (Name, Monthly Price, Included, Subscribe) */}
-          {plans.length > 0 && (
-            <section className="px-4 sm:px-6 mt-5">
-              <h2 className="text-base font-bold text-gray-900">Subscription Plans</h2>
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {plans.map((p) => {
-                  const isActivePlan = subSummary?.active && subSummary.active.planName === p.name
-                  const isPendingPlan = subSummary?.pending && subSummary.pending.planName === p.name
-                  return (
-                  <div key={p.id} className="rounded-xl border-2 bg-white shadow-sm overflow-hidden flex flex-col" style={{ borderColor: p.isFeatured ? brandColor : "#f3f4f6" }}>
-                    <CardImage src={p.imageUrl} brandColor={brandColor} aspect="h-20" />
-                    <div className="p-3 flex flex-col flex-1">
-                    <div className="flex items-center gap-2"><Repeat className="w-4 h-4 shrink-0" style={accent} /><p className="font-bold text-gray-900 truncate">{p.name}</p></div>
-                    <p className="mt-1 text-xl font-extrabold text-gray-900">{inr(p.price)} <span className="text-xs font-medium text-gray-400">/ {p.billingCycle.toLowerCase()}</span></p>
-                    <p className="mt-0.5 text-sm text-gray-600">{p.totalCredits} {p.creditLabel} included</p>
-                    {isActivePlan ? (
-                      <button onClick={() => nav.go("orders")} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50">✓ Active — View Plan</button>
-                    ) : isPendingPlan ? (
-                      <button onClick={() => setSubOnlyCheckout(p)} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold text-white" style={accentBg}>Payment Pending — Pay Now</button>
-                    ) : subscriptionInCart?.id === p.id ? (
-                      <button onClick={() => setSubscriptionInCart(null)} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
-                    ) : (
-                      <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } setSubscriptionInCart(p); toast.success(`${p.name} added — ₹${p.price} at checkout`) }} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Subscribe" : "Sign in to Subscribe"}</button>
-                    )}
-                    </div>
-                  </div>
-                )})}
               </div>
             </section>
           )}
@@ -290,8 +319,16 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const gq = gSearch.trim().toLowerCase()
   const visibleItems = gq ? service.items.filter((it) => it.garmentName.toLowerCase().includes(gq)) : service.items
   const selected = service.items.filter((it) => (qty[it.garmentId] || 0) > 0)
-  const kgAmount = isPerKg && service.perKg ? service.perKg.price * (Number(weightKg) || 0) : 0
-  const clientSubtotal = isPerKg ? kgAmount : selected.reduce((s, it) => s + (it.unitPrice || 0) * (qty[it.garmentId] || 0), 0)
+  // Only PER_PIECE / FIXED garment lines have a final price at booking. PER_KG
+  // lines (unit "kg") are priced ONCE by the total order weight measured at Store
+  // Audit — they carry a quantity for inventory but no subtotal here.
+  const pieceSelected = selected.filter((it) => it.unit !== "kg")
+  const kgSelected = selected.filter((it) => it.unit === "kg")
+  // A PER_KG element is present when the whole service is weight-based OR any
+  // selected garment is priced per kg → show "measured at Store Audit", no total.
+  const hasKgPortion = isPerKg || kgSelected.length > 0
+  // Booking subtotal = per-piece lines only. It NEVER includes a PER_KG amount.
+  const clientSubtotal = pieceSelected.reduce((s, it) => s + (it.unitPrice || 0) * (qty[it.garmentId] || 0), 0)
   const canContinue = isPerKg ? (Number(weightKg) || 0) > 0 : selected.length > 0
   const bump = (id: string, d: number) => setQty((p) => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) }))
   const accentBg = { backgroundColor: brandColor }
@@ -400,7 +437,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             <div className="overflow-y-auto px-5 py-4 flex-1 space-y-3">
               <p className="text-sm text-gray-600">This service is priced by weight at <b>{inr(service.perKg?.price)} / kg</b>{service.perKg?.minWeightKg ? ` (min ${service.perKg.minWeightKg} kg)` : ""}.</p>
               <Field label="Estimated Weight (kg)"><input type="number" min={0} step="0.5" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="e.g. 3" /></Field>
-              <p className="text-[11px] text-gray-400">Final weight is confirmed at pickup; this is an estimate.</p>
+              <p className="text-[11px] text-gray-400">This is only an estimate. Final weight will be measured during Store Audit, and your invoice is generated after the audit.</p>
             </div>
           ) : (
             <div className="overflow-y-auto px-5 py-3 flex-1">
@@ -425,7 +462,15 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
           )}
           <div className="border-t border-gray-100 px-5 py-4 bg-gray-50/60">
             {!isPerKg && selected.length > 0 && <div className="flex justify-between text-xs text-gray-500 mb-1"><span>{selected.reduce((s, it) => s + (qty[it.garmentId] || 0), 0)} item(s) selected</span></div>}
-            <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
+            {hasKgPortion ? (
+              <div className="mb-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                <p className="text-xs font-semibold text-amber-800">Estimated booking</p>
+                <p className="text-[11px] text-amber-700">Final weight will be measured during Store Audit. Your invoice is generated after the audit.</p>
+                {pieceSelected.length > 0 && <div className="mt-1.5 flex justify-between text-xs text-amber-900"><span>Per-piece items</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>}
+              </div>
+            ) : (
+              <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
+            )}
             <button disabled={!canContinue} onClick={() => setStep("details")} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>Continue to Checkout</button>
           </div>
         </>)}
@@ -435,17 +480,26 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
           <div className="overflow-y-auto px-5 py-4 flex-1 space-y-3">
             <div><p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">Order Review</p>
               <div className="rounded-xl border border-gray-100 p-3 space-y-1">
+                {isPerKg && (
+                  <div className="flex justify-between text-sm"><span className="text-gray-600">{service.name} · ~{weightKg || "?"} kg (est.)</span><span className="text-xs font-medium text-amber-700">Billed after audit</span></div>
+                )}
                 {selected.map((it) => (
-                  <div key={it.garmentId} className="flex justify-between text-sm"><span className="text-gray-600">{qty[it.garmentId]} × {it.garmentName}</span><span className="font-medium">{inr((it.unitPrice || 0) * (qty[it.garmentId] || 0))}</span></div>
+                  <div key={it.garmentId} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{qty[it.garmentId]} × {it.garmentName}</span>
+                    {it.unit === "kg"
+                      ? <span className="text-xs font-medium text-amber-700">Billed after audit</span>
+                      : <span className="font-medium">{inr((it.unitPrice || 0) * (qty[it.garmentId] || 0))}</span>}
+                  </div>
                 ))}
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Laundry Services</span><span className="font-medium">{inr(clientSubtotal)}</span></div>
+                {pieceSelected.length > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Laundry Services</span><span className="font-medium">{inr(clientSubtotal)}</span></div>}
+                {hasKgPortion && <p className="text-[11px] text-amber-700">Final weight will be measured during Store Audit; laundry charges are invoiced after the audit.</p>}
                 {subscriptionInCart && (
                   <div className="flex justify-between text-sm items-start">
                     <span className="text-gray-500">Subscription · {subscriptionInCart.name}<br /><span className="text-[10px] text-gray-400">Pay now, applies from next order</span></span>
                     <span className="font-medium">{inr(subscriptionInCart.price)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm pt-1 border-t border-gray-100 mt-1"><span className="font-semibold text-gray-700">Total Due</span><span className="font-bold" style={{ color: brandColor }}>{inr(clientSubtotal + (subscriptionInCart?.price || 0))}</span></div>
+                <div className="flex justify-between text-sm pt-1 border-t border-gray-100 mt-1"><span className="font-semibold text-gray-700">Total Due{hasKgPortion ? " (now)" : ""}</span><span className="font-bold" style={{ color: brandColor }}>{inr(clientSubtotal + (subscriptionInCart?.price || 0))}</span></div>
               </div>
             </div>
             {/* Customer identity (shared account) — complete profile inline if needed */}
@@ -580,7 +634,12 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             <div className="mt-4 rounded-xl border border-gray-100 p-4 text-left text-sm space-y-1.5">
               <Row k="Order ID" v={result.orderNumber} mono />
               <Row k="Pickup" v={`${result.pickup.date ? new Date(result.pickup.date).toLocaleDateString() : "—"} · ${result.pickup.timeSlot || "—"}`} />
-              <Row k="Order Total" v={inr(result.grandTotal)} />
+              {hasKgPortion ? (<>
+                <Row k="Estimated Total" v={inr(result.grandTotal)} />
+                <p className="text-[11px] text-amber-700">Final weight is measured during Store Audit; your invoice is generated after the audit.</p>
+              </>) : (
+                <Row k="Order Total" v={inr(result.grandTotal)} />
+              )}
               {result.subscription && (<>
                 <div className="pt-1.5 mt-1.5 border-t border-gray-100" />
                 <Row k="Subscription Used" v={`${result.subscription.covered} clothes`} />
