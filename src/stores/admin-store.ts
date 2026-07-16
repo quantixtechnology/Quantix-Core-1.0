@@ -475,6 +475,11 @@ interface AdminState {
   // cleared by the Customers / Orders views).
   laundryFocusCustomerId: string | null
   setLaundryFocusCustomerId: (id: string | null) => void
+  // Normalized mobile carried alongside the focus id so the Orders view can
+  // filter by the person's phone (matching the phone-aggregated snapshot),
+  // not just one Customer id. Null when the customer has no usable phone.
+  laundryFocusCustomerPhone: string | null
+  setLaundryFocusCustomerPhone: (phone: string | null) => void
   selectedReviewProductId: string | null
   setSelectedReviewProductId: (id: string | null) => void
   selectedLeadId: string | null
@@ -674,6 +679,8 @@ export const useAdminStore = create<AdminState>((set) => ({
   setSelectedOrderId: (id) => set({ selectedOrderId: id }),
   laundryFocusCustomerId: null,
   setLaundryFocusCustomerId: (id) => set({ laundryFocusCustomerId: id }),
+  laundryFocusCustomerPhone: null,
+  setLaundryFocusCustomerPhone: (phone) => set({ laundryFocusCustomerPhone: phone }),
   selectedReviewProductId: null,
   setSelectedReviewProductId: (id) => set({ selectedReviewProductId: id }),
   selectedLeadId: null,

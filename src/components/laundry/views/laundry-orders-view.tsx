@@ -65,7 +65,7 @@ const STAGE_ACTION: Record<string, { label: string; page: LP; icon: typeof Clipb
 
 export function LaundryOrdersView() {
   const { currentBusinessId } = useAuthStore()
-  const { setLaundryPage, setSelectedOrderId, laundryFocusCustomerId, setLaundryFocusCustomerId } = useAdminStore()
+  const { setLaundryPage, setSelectedOrderId, laundryFocusCustomerId, setLaundryFocusCustomerId, laundryFocusCustomerPhone, setLaundryFocusCustomerPhone } = useAdminStore()
   const [rows, setRows] = useState<OrderRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -73,11 +73,17 @@ export function LaundryOrdersView() {
   const [status, setStatus] = useState("ALL")
   const [page, setPage] = useState(0)
   // Customer filter — seeded from the New Order "View Orders" quick action.
+  // Prefer the person's MOBILE: the existing `search` param resolves every
+  // Customer id sharing that phone, so legacy/duplicate records are included
+  // (matching the phone-aggregated Customer Snapshot). Fall back to the single
+  // customerId only when there is no usable phone.
   const [custFilter, setCustFilter] = useState<string | null>(null)
   useEffect(() => {
-    if (!laundryFocusCustomerId) return
-    setCustFilter(laundryFocusCustomerId); setLaundryFocusCustomerId(null); setPage(0)
-  }, [laundryFocusCustomerId, setLaundryFocusCustomerId])
+    if (!laundryFocusCustomerId && !laundryFocusCustomerPhone) return
+    if (laundryFocusCustomerPhone) { setSearch(laundryFocusCustomerPhone); setCustFilter(null) }
+    else if (laundryFocusCustomerId) setCustFilter(laundryFocusCustomerId)
+    setLaundryFocusCustomerId(null); setLaundryFocusCustomerPhone(null); setPage(0)
+  }, [laundryFocusCustomerId, laundryFocusCustomerPhone, setLaundryFocusCustomerId, setLaundryFocusCustomerPhone])
 
   const load = useCallback(async () => {
     if (!currentBusinessId) return

@@ -76,6 +76,8 @@ interface GarmentMaster { id: string; name: string; categoryId: string | null; d
 interface LineItem { uid: string; garmentId: string; serviceId: string; quantity: number }
 interface StoreInfo { id: string; storeName: string; city?: string | null }
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
+// Digits-only, last-10 mobile (matches customerStats' phone aggregation).
+const normPhone = (p: string | null | undefined) => { const d = (p || "").replace(/\D/g, ""); return d.length >= 10 ? d.slice(-10) : "" }
 
 const turnaroundLabel = (h: number) => (h <= 0 ? "Custom" : h <= 12 ? "Same Day" : `${h} Hours`)
 const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
@@ -83,7 +85,7 @@ const fmtDateTime = (d: Date) => `${fmtDate(d)} ${d.toLocaleTimeString("en-IN", 
 
 export default function LaundryNewOrder() {
   const { currentBusinessId, user } = useAuthStore()
-  const { setLaundryPage, setLaundryFocusCustomerId, setSelectedOrderId } = useAdminStore()
+  const { setLaundryPage, setLaundryFocusCustomerId, setLaundryFocusCustomerPhone, setSelectedOrderId } = useAdminStore()
   const { toast } = useToast()
   const now = useMemo(() => new Date(), [])
 
@@ -592,7 +594,7 @@ export default function LaundryNewOrder() {
                         <div className="flex flex-wrap gap-2 pt-1">
                           <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => document.getElementById("laundry-order-garments")?.scrollIntoView({ behavior: "smooth" })}><ShoppingCart className="h-3.5 w-3.5" /> New Order</Button>
                           <Button size="sm" variant="outline" className="gap-1" onClick={() => { setLaundryFocusCustomerId(selectedCustomer.id); setLaundryPage("customers") }}><UserCircle className="h-3.5 w-3.5" /> View Customer</Button>
-                          <Button size="sm" variant="outline" className="gap-1" onClick={() => { setLaundryFocusCustomerId(selectedCustomer.id); setLaundryPage("orders") }}><ShoppingBag className="h-3.5 w-3.5" /> View Orders</Button>
+                          <Button size="sm" variant="outline" className="gap-1" onClick={() => { setLaundryFocusCustomerId(selectedCustomer.id); setLaundryFocusCustomerPhone(normPhone(selectedCustomer.phone) || null); setLaundryPage("orders") }}><ShoppingBag className="h-3.5 w-3.5" /> View Orders</Button>
                         </div>
                       </div>
                       <Button onClick={() => handleSubmit("create")} disabled={submitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white">Create Order</Button>
