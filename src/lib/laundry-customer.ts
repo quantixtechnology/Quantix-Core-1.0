@@ -27,7 +27,7 @@ export function mergeMeta(existing: string | null | undefined, patch: Partial<Cu
 export async function customerStats(customerId: string) {
   const [cust, orders] = await Promise.all([
     prisma.customer.findUnique({ where: { id: customerId }, select: { createdAt: true, loyaltyTier: true } }),
-    prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
+    prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, paymentStatus: true, grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
   ])
   const active = orders.filter((o) => o.status !== "CANCELLED")
   const totalOrders = orders.length
@@ -42,7 +42,7 @@ export async function customerStats(customerId: string) {
   const lastOrderAt = orders.length ? orders[0].createdAt : null // orders are createdAt desc
   const avgOrderValue = active.length ? r2(grossValue / active.length) : 0
   const sub = await prisma.customerSubscription.findFirst({ where: { customerId, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true } } }, orderBy: { createdAt: "desc" } })
-  const slim = (o: (typeof orders)[number]) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, grandTotal: o.grandTotal, createdAt: o.createdAt })
+  const slim = (o: (typeof orders)[number]) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, paymentStatus: o.paymentStatus, grandTotal: o.grandTotal, createdAt: o.createdAt })
   return {
     memberSince: cust?.createdAt ?? null,
     loyaltyTier: cust?.loyaltyTier ?? null,
