@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Truck, Scan, Thermometer, Home, Shield } from "lucide-react"
 import { LaundryStorageWidget } from "./laundry-storage-widget"
+import { LaundryFinancialSettingsForm } from "./laundry-financial-settings-form"
 
 interface WorkspaceSettingsProps {
   businessId: string
@@ -58,6 +59,8 @@ export function LaundryWorkspaceSettings({ businessId }: WorkspaceSettingsProps)
       </div>
 
       <LaundryStorageWidget businessId={businessId} />
+
+      <LaundryFinancialSettingsForm businessId={businessId} />
 
       <div className="grid gap-4">
         {sections
