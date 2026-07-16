@@ -121,7 +121,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Inbound",
     items: [
       { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 3, perm: "processing.console_receive.view" },
-      { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 3, perm: "processing.audit_barcode.view" },
+      { key: "audit-barcode", label: "Barcode Generation", icon: Barcode, page: "audit-barcode", minRank: 3, perm: "processing.audit_barcode.view" },
     ],
   },
   {
@@ -153,7 +153,7 @@ const PROCESSING_GROUPS: NavGroup[] = [
   ] },
   { sectionHeader: "Processing Center", label: "Inbound", items: [
     { key: "processing-centers", label: "Console & Receive", icon: Factory, page: "processing-centers", minRank: 1 },
-    { key: "audit-barcode", label: "Audit & Barcode", icon: Barcode, page: "audit-barcode", minRank: 1 },
+    { key: "audit-barcode", label: "Barcode Generation", icon: Barcode, page: "audit-barcode", minRank: 1 },
   ] },
   { label: "Processing", items: [
     { key: "ws-wash", label: "Washing", icon: Droplets, page: "ws-wash", minRank: 1 },

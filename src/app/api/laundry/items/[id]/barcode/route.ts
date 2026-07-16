@@ -15,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!item) return NextResponse.json({ error: "Garment not found" }, { status: 404 })
 
     await prisma.laundryOrderItem.update({ where: { id }, data: { barcodeGenerated: true, barcodePrintedAt: new Date(), printCount: { increment: 1 }, lastPrintedBy: b.actorName || null } })
-    await prisma.laundryItemEvent.create({ data: { itemId: id, orderId: item.orderId, businessId: item.order.businessId, action: reprint ? "BARCODE_REPRINT" : "BARCODE_GENERATED", department: "Audit & Barcode", actorName: b.actorName || null } })
+    await prisma.laundryItemEvent.create({ data: { itemId: id, orderId: item.orderId, businessId: item.order.businessId, action: reprint ? "BARCODE_REPRINT" : "BARCODE_GENERATED", department: "Barcode Generation", actorName: b.actorName || null } })
 
     return NextResponse.json({ success: true, data: { id, barcode: item.barcode || item.itemNumber, barcodeGenerated: true } })
   } catch (e) {

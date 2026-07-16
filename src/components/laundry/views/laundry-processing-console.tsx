@@ -59,14 +59,14 @@ export function LaundryProcessingConsole() {
   }, [currentBusinessId])
   useEffect(() => { load() }, [load])
 
-  // Receive a dispatched packet → immediately open Audit & Barcode.
+  // Receive a dispatched packet → immediately open Barcode Generation.
   const receive = async (orderId: string) => {
     setActing(true)
     try {
       const res = await fetch(`/api/laundry/orders/${orderId}/receive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actorName: user?.name || "operator" }) })
       const j = await res.json()
       if (!res.ok || !j.success) { toast({ title: "Receive failed", description: j.error, variant: "destructive" }); return }
-      toast({ title: "Packet received", description: `${j.data.packetNumber || ""} · ${j.data.received} garment(s) → Audit & Barcode.` })
+      toast({ title: "Packet received", description: `${j.data.packetNumber || ""} · ${j.data.received} garment(s) → Barcode Generation.` })
       openAuditBarcode(orderId)
     } catch { toast({ title: "Receive failed", variant: "destructive" }) } finally { setActing(false) }
   }
@@ -156,9 +156,9 @@ export function LaundryProcessingConsole() {
         </CardContent>
       </Card>
 
-      {/* Awaiting Audit & Barcode → dedicated page */}
+      {/* Awaiting Barcode Generation → dedicated page */}
       <Card className="rounded-xl border-slate-200 shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Awaiting Garment Audit &amp; Barcode <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{awaitingBarcode.length}</Badge></CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-[15px] font-semibold text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-[18px] w-[18px] text-blue-600" /> Awaiting Barcode Generation <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">{awaitingBarcode.length}</Badge></CardTitle></CardHeader>
         <CardContent className="p-0">
           {loading ? <div className="py-8 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : awaitingBarcode.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">No packets awaiting audit.</p>
@@ -171,7 +171,7 @@ export function LaundryProcessingConsole() {
                   <TableCell className="text-sm">{o.customer || "—"}</TableCell>
                   <TableCell className="text-center">{o.items}</TableCell>
                   <TableCell><Badge variant="outline" className={o.barcoded === o.items ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-amber-300 text-amber-700 bg-amber-50"}>{o.barcoded}/{o.items} barcoded</Badge></TableCell>
-                  <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => openAuditBarcode(o.id)} className="gap-1 border-blue-200 text-blue-700 hover:bg-blue-50"><BarcodeIcon className="h-3.5 w-3.5" /> Audit &amp; Barcode <ArrowRight className="h-3 w-3" /></Button></TableCell>
+                  <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => openAuditBarcode(o.id)} className="gap-1 border-blue-200 text-blue-700 hover:bg-blue-50"><BarcodeIcon className="h-3.5 w-3.5" /> Barcode Generation <ArrowRight className="h-3 w-3" /></Button></TableCell>
                 </TableRow>
               ))}</TableBody>
             </Table>

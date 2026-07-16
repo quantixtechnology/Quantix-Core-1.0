@@ -48,7 +48,7 @@ export async function GET(request: Request) {
       .filter((o) => o.items.length > 0 && o.items.every((i) => i.processingStage === "PACKED" && i.processingStatus === "DONE"))
       .map((o) => ({ id: o.id, orderNumber: o.orderNumber, customer: o.customerId ? rtMap.get(o.customerId) || null : null, items: o.items.length, toStore: o.store?.storeName || null, packetNumber: o.packet?.packetNumber || null }))
 
-    // Awaiting Audit & Barcode Generation — received, not yet moved to processing.
+    // Awaiting Barcode Generation — received, not yet moved to processing.
     const abOrders = await prisma.laundryOrder.findMany({
       where: { businessId: biz.id, items: { some: { processingStage: "RECEIVED" } } },
       select: { id: true, orderNumber: true, customerId: true, items: { where: { processingStage: "RECEIVED" }, select: { id: true, barcodeGenerated: true } } },

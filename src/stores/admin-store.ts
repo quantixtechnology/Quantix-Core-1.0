@@ -411,7 +411,7 @@ interface AdminState {
   // ── Laundry Business Workspace pages ────────────────────────────────────
   laundryPage: LaundryBusinessPage
   setLaundryPage: (page: LaundryBusinessPage) => void
-  // Order selected for the dedicated Audit & Barcode Generation page.
+  // Order selected for the dedicated Barcode Generation page.
   processingOrderId: string | null
   setProcessingOrderId: (id: string | null) => void
   openAuditBarcode: (orderId: string) => void

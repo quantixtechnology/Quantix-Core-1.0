@@ -1,7 +1,7 @@
 // POST /api/laundry/orders/[id]/receive — Received at Processing Center.
 // STRICT: only a DISPATCHED packet (order IN_TRANSIT_TO_PROCESSING) can be
 // received — an undispatched order is rejected. Records who received it and
-// any package condition note, moves every garment to the Audit & Barcode
+// any package condition note, moves every garment to the Barcode Generation
 // queue, and advances the order to PROCESSING. Duplicate receipt is blocked
 // by the atomic status guard.
 //
@@ -49,9 +49,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     let received = 0
     for (const it of order.items) {
       if (it.receivedAt) continue // idempotent per garment
-      // Received garments wait at Audit & Barcode Generation — they only enter
-      // the processing queues after barcodes are generated + "Move to Processing".
-      await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { processingStage: "RECEIVED", processingStatus: "WAITING", processingDept: "Audit & Barcode", receivedAt: now } })
+      // Received garments wait at Barcode Generation (Processing Center Receive)
+      // — they only enter the processing queues after barcodes are generated +
+      // "Move to Processing". (Store Audit is a separate, earlier store-side stage.)
+      await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { processingStage: "RECEIVED", processingStatus: "WAITING", processingDept: "Barcode Generation", receivedAt: now } })
       await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "RECEIVED", toStage: "RECEIVED", department: "Receiving", actorName: b.actorName || null } })
       received++
     }

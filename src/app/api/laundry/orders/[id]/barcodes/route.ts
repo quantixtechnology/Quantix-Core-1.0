@@ -1,4 +1,4 @@
-// Audit & Barcode Generation for a received package.
+// Barcode Generation for a received package.
 // GET  — package summary + garments (with barcode/generated flag) for the screen
 // POST — { action: "GENERATE_ALL" | "MOVE_TO_PROCESSING", actorName? }
 //   GENERATE_ALL: marks every garment's barcode label generated.
@@ -46,7 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const pending = order.items.filter((i) => !i.barcodeGenerated)
       for (const it of pending) {
         await prisma.laundryOrderItem.update({ where: { id: it.id }, data: { barcodeGenerated: true, barcodePrintedAt: new Date() } })
-        await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "BARCODE_GENERATED", department: "Audit & Barcode", actorName: b.actorName || null } })
+        await prisma.laundryItemEvent.create({ data: { itemId: it.id, orderId: order.id, businessId: order.businessId, action: "BARCODE_GENERATED", department: "Barcode Generation", actorName: b.actorName || null } })
       }
       return NextResponse.json({ success: true, data: { generated: pending.length } })
     }

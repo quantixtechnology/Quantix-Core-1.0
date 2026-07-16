@@ -44,7 +44,7 @@ export const RBAC_CATALOG: ModuleDef[] = [
   {
     key: "processing", label: "Processing Center", screens: [
       { key: "console_receive", label: "Console & Receive", actions: INBOUND },
-      { key: "audit_barcode", label: "Audit & Barcode", actions: INBOUND },
+      { key: "audit_barcode", label: "Barcode Generation", actions: INBOUND }, // Processing Center Receive → one barcode per garment (NOT store audit)
       { key: "washing", label: "Washing", actions: WORKSTATION },
       { key: "drying", label: "Drying", actions: WORKSTATION },
       { key: "dry_cleaning", label: "Dry Cleaning", actions: WORKSTATION },

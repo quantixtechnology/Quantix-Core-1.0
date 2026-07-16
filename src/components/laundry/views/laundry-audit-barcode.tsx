@@ -1,6 +1,6 @@
 "use client"
 
-// Audit & Barcode Generation — mandatory stage after a package is received.
+// Barcode Generation — mandatory stage after a package is received.
 // Re-audit garments, generate Code128+QR barcode labels, print/preview/reprint
 // (thermal 20mm default, configurable), then Move to Processing (gated on all
 // garments barcoded AND payment collected). Garments then auto-route by service.
@@ -75,7 +75,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved }: { orderId: str
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-5 w-5 text-blue-600" /> Audit &amp; Barcode Generation <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">In Progress</Badge></h1>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><BarcodeIcon className="h-5 w-5 text-blue-600" /> Barcode Generation <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">In Progress</Badge></h1>
           <p className="text-sm text-slate-500 font-mono">{data.order.orderNumber}</p>
         </div>
         <LaundryPaymentBanner orderId={orderId} />
