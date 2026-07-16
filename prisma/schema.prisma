@@ -4476,6 +4476,7 @@ model LaundryOrder {
   services   LaundryOrderService[]
   items      LaundryOrderItem[]
   payments   LaundryPayment[]
+  invoice    LaundryInvoice?
   timestamps LaundryStageTimestamp[]
   events     LaundryOrderEvent[]
 
@@ -4783,6 +4784,71 @@ model LaundryPayment {
   @@index([orderId])
   @@index([businessId])
   @@index([createdAt])
+}
+
+// ============================================================================
+// LAUNDRY OS — Invoice & Financial Engine (single source of truth)
+//
+// ONE invoice per LaundryOrder. Totals are NOT duplicated — they are read from
+// the order's persisted financial snapshot (subtotal / gstTotal / grandTotal /
+// amountPaid / balanceDue, finalised at Store Audit → billedAt). Payment history
+// reuses the existing LaundryPayment records. This model only adds the invoice
+// DOCUMENT identity: number, status, GST treatment, issue date, lifecycle.
+// ============================================================================
+model LaundryInvoice {
+  id            String    @id @default(cuid())
+  businessId    String
+  orderId       String    @unique
+  invoiceNumber String    @unique
+  // DRAFT | GENERATED | PARTIALLY_PAID | PAID | CANCELLED | REFUNDED | CREDIT_NOTE | VOID
+  status        String    @default("GENERATED")
+  // NONE | INTRA_STATE (CGST+SGST) | INTER_STATE (IGST)
+  gstTreatment  String    @default("NONE")
+  placeOfSupply String?
+  issuedAt      DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelReason  String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  order LaundryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([invoiceNumber])
+  @@index([status])
+}
+
+// Per-tenant financial identity + the invoice number counter. Central config so
+// invoice/GST/currency/rounding/branding rules are never hardcoded and can be
+// reused across products. Numbering is sequential, tenant-scoped, gap-tolerant
+// (a failed transaction may skip a number; numbers are never reused/changed).
+model LaundryFinancialSettings {
+  id                   String   @id @default(cuid())
+  businessId           String   @unique
+  // Invoice numbering
+  invoicePrefix        String   @default("INV-LND")
+  invoiceNextNumber    Int      @default(1)
+  invoiceNumberPadding Int      @default(6)
+  // GST
+  gstEnabled           Boolean  @default(false)
+  gstNumber            String?
+  taxInclusive         Boolean  @default(false)
+  homeState            String? // business place-of-supply (intra vs inter state)
+  // Presentation / branding
+  currency             String   @default("INR")
+  rounding             String   @default("NEAREST") // NEAREST | UP | DOWN | NONE
+  decimalPrecision     Int      @default(2)
+  businessLogo         String?
+  businessAddress      String?
+  invoiceFooter        String?
+  invoiceTerms         String?
+  signatureUrl         String?
+  paymentInstructions  String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([businessId])
 }
 
 // ============================================================================
