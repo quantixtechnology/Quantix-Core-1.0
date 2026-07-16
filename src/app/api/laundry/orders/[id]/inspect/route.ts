@@ -1,23 +1,24 @@
 // PUT /api/laundry/orders/[id]/inspect
 // Store Audit — the official verification + BILLING stage. Persists garment
-// inspection (condition/defects/notes) against the order's EXISTING items and,
-// for PER_KG garments, the MEASURED WEIGHT entered here (never at booking).
-// Entering weight reprices the PER_KG lines (amount = weight × rate) and refreshes
-// the order's financial snapshot — Store Audit is the invoice trigger for KG
-// services. PER_PIECE lines were billed at booking and are left untouched.
+// inspection (condition/defects/notes) and, for KG billing, the SINGLE TOTAL
+// ORDER WEIGHT measured here (never at booking). Billing is done ONCE via the
+// PER_KG strategy (total weight × rate); garment quantities stay for inventory /
+// tracking / barcode / QC / delivery. This is the invoice trigger for KG orders;
+// PER_PIECE lines were billed at booking and are left untouched.
 //
-// Body: { businessId, auditNotes?, auditPhotos?: string[], auditedBy?,
-//         items: [{ itemId, condition?, defects?: string[], notes?, weightKg? }] }
+// Body: { businessId, totalWeightKg?, auditNotes?, auditPhotos?: string[],
+//         auditedBy?, items: [{ itemId, condition?, defects?: string[], notes? }] }
 import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { perKgStrategy } from "@/lib/laundry-billing-strategies"
 
 export const runtime = "nodejs"
 const r2 = (n: number) => Math.round((n || 0) * 100) / 100
 
-interface InspItem { itemId: string; condition?: string; defects?: string[]; notes?: string; weightKg?: number | string | null }
+interface InspItem { itemId: string; condition?: string; defects?: string[]; notes?: string }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -40,27 +41,25 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const now = new Date()
     const inItems: InspItem[] = Array.isArray(b.items) ? b.items : []
-    const weightByItem = new Map<string, number>()
-    for (const it of inItems) {
-      if (it.weightKg !== undefined && it.weightKg !== null && it.weightKg !== "") {
-        const w = Math.max(0, Number(it.weightKg) || 0)
-        weightByItem.set(it.itemId, w)
-      }
-    }
+    const hasWeight = b.totalWeightKg !== undefined && b.totalWeightKg !== null && b.totalWeightKg !== ""
+    const totalWeightKg = hasWeight ? Math.max(0, Number(b.totalWeightKg) || 0) : 0
 
-    // ── Reprice: a PER_KG line bills weight × unitPrice (the rate). Only lines
-    // whose weight is (re)entered here change; PER_PIECE lines are untouched. ──
     const writes: Prisma.PrismaPromise<unknown>[] = []
-    for (const item of order.items) {
-      const isKg = item.pricingType === "PER_KG"
-      const newW = weightByItem.get(item.id)
-      if (isKg && newW !== undefined) {
-        const lineAmount = r2(item.unitPrice * newW)
-        const gstAmount = r2(lineAmount * (item.gstPercent || 0) / 100)
-        const total = r2(lineAmount + gstAmount)
-        writes.push(prisma.laundryOrderItem.update({ where: { id: item.id }, data: { weightKg: newW, lineAmount, gstAmount, total } }))
-        item.weightKg = newW; item.lineAmount = lineAmount; item.gstAmount = gstAmount; item.total = total
-      }
+
+    // ── Bill KG ONCE via the PER_KG strategy: total order weight × rate, allocated
+    // across the PER_KG garment lines (quantities kept for inventory only). Runs
+    // only when a total weight is submitted; PER_PIECE lines are never touched. ──
+    const kgItems = order.items.filter((it) => it.pricingType === "PER_KG")
+    if (hasWeight && kgItems.length > 0) {
+      const priced = perKgStrategy.price(
+        kgItems.map((it) => ({ pricingType: "PER_KG", quantity: it.quantity, unitPrice: it.unitPrice, gstPercent: it.gstPercent })),
+        { totalWeightKg },
+      )
+      kgItems.forEach((item, j) => {
+        const p = priced[j]
+        writes.push(prisma.laundryOrderItem.update({ where: { id: item.id }, data: { lineAmount: p.lineAmount, gstAmount: p.gstAmount, total: p.total } }))
+        item.lineAmount = p.lineAmount; item.gstAmount = p.gstAmount; item.total = p.total
+      })
     }
 
     // Inspection fields (condition/defects/notes) per item.
@@ -77,11 +76,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     // Refresh the order financial snapshot from the (repriced) items + the stored
-    // order-level charges. This is the invoice for KG services (billed at audit).
+    // order-level charges. This is the invoice for KG orders (billed at audit).
     const subtotal = r2(order.items.reduce((s, l) => s + (l.lineAmount || 0), 0))
     const gstTotal = r2(order.items.reduce((s, l) => s + (l.gstAmount || 0), 0))
     const grandTotal = r2(subtotal + gstTotal + (order.pickupCharge || 0) + (order.deliveryCharge || 0) + (order.expressCharge || 0) - (order.discount || 0))
-    const repriced = weightByItem.size > 0
+    const repriced = hasWeight && kgItems.length > 0
 
     writes.push(prisma.laundryOrder.update({
       where: { id: order.id },
@@ -90,6 +89,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         auditPhotos: Array.isArray(b.auditPhotos) ? JSON.stringify(b.auditPhotos) : null,
         auditedBy: b.auditedBy ?? null,
         auditedAt: now,
+        ...(hasWeight ? { totalWeightKg } : {}),
         ...(repriced ? { subtotal, gstTotal, grandTotal, balanceDue: r2(Math.max(0, grandTotal - (order.amountPaid || 0))), billedAt: now } : {}),
       },
     }))

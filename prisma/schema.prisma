@@ -4460,6 +4460,10 @@ model LaundryOrder {
   auditPhotos String? // JSON array of uploaded photo URLs
   auditedBy   String?
   auditedAt   DateTime?
+  // The single total order weight (KG) measured at Store Audit. Drives PER_KG
+  // billing for the whole order (weight × rate). 0 until weighed. Garment
+  // quantities remain on the items for inventory/tracking/barcode/QC/delivery.
+  totalWeightKg Float @default(0)
 
   // ── Delivery completion (final operational action) ──
   deliveredAt   DateTime?

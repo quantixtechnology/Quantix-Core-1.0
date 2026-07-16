@@ -13,6 +13,7 @@
 // record — nothing more. Categories only organise garments; they never price.
 // There is no scope scoring, no priority, no tie-breaking.
 // ============================================================================
+import { billingStrategyFor } from "@/lib/laundry-billing-strategies"
 
 export interface PricingRule {
   id: string
@@ -50,6 +51,9 @@ export interface BillingLineInput {
 export interface BillingContext {
   storeId?: string | null
   customerType?: string | null
+  // The single total order weight measured at Store Audit. Drives PER_KG billing
+  // (one weight × rate for the whole order). 0/undefined before audit = estimate.
+  totalWeightKg?: number
   weekend?: boolean
   express?: boolean
   pickup?: boolean
@@ -206,8 +210,32 @@ export function evaluateLine(rules: PricingRule[], line: BillingLineInput): Line
   return { winnerId: winner?.id ?? null, evaluations: evals }
 }
 
-export function computeQuote(rules: PricingRule[], items: BillingLineInput[], ctx: BillingContext, now = new Date()): BillingQuote {
-  const lines = items.map((line) => computeLine(resolveLineRule(rules, line), line, ctx))
+export function computeQuote(rules: PricingRule[], items: BillingLineInput[], ctx: BillingContext): BillingQuote {
+  // Resolve each garment line to its single Service+Garment rule + rate.
+  const resolved = items.map((line) => {
+    const rule = resolveLineRule(rules, line)
+    const unitPrice = rule ? (ctx.weekend && rule.weekendPrice != null ? rule.weekendPrice : rule.price) : 0
+    return { line, rule, pricingType: (rule?.pricingType ?? null) as string | null, unitPrice, gstPercent: rule?.gstPercent ?? 0, quantity: line.quantity != null && line.quantity > 0 ? line.quantity : 1 }
+  })
+
+  // Delegate amount computation to the billing STRATEGY for each type (grouped
+  // so PER_KG can bill the whole order once by total weight). The Order/Workflow
+  // engines never see this — they just read the priced lines.
+  const lines: BillingLineResult[] = new Array(items.length)
+  const groups = new Map<string, number[]>()
+  resolved.forEach((r, i) => {
+    if (!r.rule) { lines[i] = { ...r.line, matchedRuleId: null, pricingType: null, unitPrice: 0, baseAmount: 0, gstPercent: 0, gstAmount: 0, lineTotal: 0, note: "No pricing rule" }; return }
+    const key = r.pricingType || "PER_PIECE"
+    const arr = groups.get(key) || []; arr.push(i); groups.set(key, arr)
+  })
+  for (const [key, idxs] of groups) {
+    const strat = billingStrategyFor(key)
+    const priced = strat.price(idxs.map((i) => ({ pricingType: key, quantity: resolved[i].quantity, unitPrice: resolved[i].unitPrice, gstPercent: resolved[i].gstPercent })), { totalWeightKg: ctx.totalWeightKg ?? 0 })
+    idxs.forEach((i, j) => {
+      const r = resolved[i]; const p = priced[j]
+      lines[i] = { ...r.line, matchedRuleId: r.rule!.id, pricingType: r.pricingType, unitPrice: r.unitPrice, baseAmount: p.lineAmount, gstPercent: r.gstPercent, gstAmount: p.gstAmount, lineTotal: p.total, weightRequired: p.weightRequired }
+    })
+  }
 
   const subtotal = r2(lines.reduce((s, l) => s + l.baseAmount, 0))
   const gstTotal = r2(lines.reduce((s, l) => s + l.gstAmount, 0))
