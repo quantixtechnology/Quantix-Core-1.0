@@ -16,6 +16,9 @@ const STATUS_STYLE: Record<string, string> = {
   CANCELLED: "bg-rose-50 text-rose-700 border-rose-200",
 }
 
+const inr = (n: number | null | undefined) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const fmtDate = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")
+
 export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; businessId: string }) {
   const [data, setData] = useState<InvoiceView | null>(null)
   const [loading, setLoading] = useState(true)
@@ -61,6 +64,7 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Invoice</p>
           <p className="mt-0.5 font-mono text-sm text-slate-800">{number || "Draft — available after Store Audit"}</p>
+          {data?.invoice?.issuedAt && <p className="text-[11px] text-slate-400">Generated {fmtDate(data.invoice.issuedAt)}</p>}
         </div>
         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[status] || STATUS_STYLE.DRAFT}`}>{status}</span>
       </div>
@@ -74,6 +78,28 @@ export function LaundryInvoicePanel({ orderId, businessId }: { orderId: string; 
         )}
       </div>
       <p className="mt-2 text-[11px] text-slate-400">Download PDF uses your browser&apos;s print dialog — choose &quot;Save as PDF&quot;.</p>
+
+      {/* Payment history — reuses the existing LaundryPayment records (never duplicated). */}
+      {data && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Payment History</p>
+            {data.totals.balanceDue > 0 && <span className="text-[11px] font-semibold text-amber-700">Balance {inr(data.totals.balanceDue)}</span>}
+          </div>
+          {data.payments.length > 0 ? (
+            <div className="mt-1 space-y-0.5">
+              {data.payments.map((p) => (
+                <div key={p.id} className="flex items-center justify-between text-xs text-slate-600">
+                  <span>{p.method} · {fmtDate(p.at)}</span>
+                  <span className="font-medium text-slate-800">{inr(p.amount)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-slate-400">No payments recorded yet.</p>
+          )}
+        </div>
+      )}
 
       {preview && data && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 no-print" onClick={() => setPreview(false)}>

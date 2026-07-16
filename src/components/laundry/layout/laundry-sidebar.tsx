@@ -20,7 +20,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
 import {
   LayoutDashboard, ShoppingBag, Users, Store, Factory, BarChart3, Settings,
-  Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet, Receipt,
+  Plus, ClipboardCheck, CreditCard, Truck, IndianRupee, Wallet,
   UsersRound, Shirt, Droplets, Wind, Layers, ShieldCheck, Barcode, Repeat,
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
@@ -112,7 +112,9 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3, perm: "laundry.subscriptions.view" },
       { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3, perm: "laundry.reports.view" },
       { key: "payments", label: "Payments", icon: Wallet, comingSoon: true, minRank: 3 },
-      { key: "invoices", label: "Invoices", icon: Receipt, comingSoon: true, minRank: 3 },
+      // "Invoices" list menu intentionally removed — invoices are managed on the
+      // Order Detail screen (single operational place). Re-add only if a genuine
+      // standalone invoice list is needed later.
       { key: "settings", label: "Settings", icon: Settings, page: "settings", minRank: 3, perm: "laundry.settings.view" },
     ],
   },
