@@ -1,7 +1,10 @@
-// GET /api/core/storefront/orders/[id]/laundry-invoice
+// GET /api/core/storefront/orders/[orderId]/laundry-invoice
 // The authenticated customer's invoice for one of THEIR laundry orders. Reuses
 // the SAME invoice service (resolveInvoiceView) as the Admin endpoint — the
 // customer sees exactly the same invoice. Ownership + tenant scoped.
+//
+// NOTE: the dynamic segment MUST be [orderId] to match its sibling
+// orders/[orderId]/invoice — differing slug names break the whole route tree.
 import { NextResponse } from "next/server"
 import { withMiddleware } from "@/lib/middleware"
 import { db } from "@/lib/db"
@@ -22,7 +25,7 @@ async function resolveCustomerId(userId: string, businessId: string): Promise<st
 export const GET = withMiddleware({ requireAuth: true, requiredRoles: ["CUSTOMER"] })(async (req, context) => {
   try {
     const params = await context?.params
-    const orderId = params?.id as string | undefined
+    const orderId = params?.orderId as string | undefined
     if (!orderId) return NextResponse.json({ success: false, error: "orderId required" }, { status: 400 })
     const user = req.user!
     const platformId = user.businessId!
