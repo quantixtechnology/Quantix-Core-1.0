@@ -24,11 +24,37 @@ export function mergeMeta(existing: string | null | undefined, patch: Partial<Cu
 // Additive Customer-360 fields (memberSince, activeOrders, lastOrders,
 // activeOrdersList) power the New Order lifecycle panel. Read-only; the frozen
 // order/subscription engines are never mutated.
+// Digits-only normalization; a valid mobile resolves to its last 10 digits so
+// "+91 9876543210", "09876543210" and "9876543210" all match. Shorter/garbage
+// values return < 10 chars and are treated as "no usable phone".
+const normalizePhone = (p: string | null | undefined): string => {
+  const d = (p || "").replace(/\D/g, "")
+  return d.length >= 10 ? d.slice(-10) : ""
+}
+
 export async function customerStats(customerId: string) {
-  const [cust, orders] = await Promise.all([
-    prisma.customer.findUnique({ where: { id: customerId }, select: { createdAt: true, loyaltyTier: true } }),
-    prisma.laundryOrder.findMany({ where: { customerId }, select: { id: true, orderNumber: true, status: true, paymentStatus: true, grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
-  ])
+  const self = await prisma.customer.findUnique({ where: { id: customerId }, select: { createdAt: true, loyaltyTier: true, phone: true, businessId: true } })
+
+  // ── Identity set: this customer + every OTHER customer in the same business
+  //    with the same normalized mobile (legacy/duplicate records). A null/empty
+  //    or sub-10-digit phone never merges — we fall back to this id alone.
+  const selfNorm = normalizePhone(self?.phone)
+  let matchingIds = [customerId]
+  let memberSince = self?.createdAt ?? null
+  if (selfNorm && self?.businessId) {
+    const candidates = await prisma.customer.findMany({
+      where: { businessId: self.businessId, phone: { contains: selfNorm } },
+      select: { id: true, phone: true, createdAt: true },
+    })
+    const same = candidates.filter((c) => normalizePhone(c.phone) === selfNorm)
+    if (same.length) {
+      matchingIds = [...new Set([customerId, ...same.map((c) => c.id)])]
+      // Customer Since = earliest membership across the merged records.
+      memberSince = same.reduce<Date | null>((m, c) => (!m || c.createdAt < m ? c.createdAt : m), self?.createdAt ?? null)
+    }
+  }
+
+  const orders = await prisma.laundryOrder.findMany({ where: { customerId: { in: matchingIds } }, select: { id: true, orderNumber: true, status: true, paymentStatus: true, grandTotal: true, amountPaid: true, balanceDue: true, subscriptionCoveredAmount: true, createdAt: true }, orderBy: { createdAt: "desc" } })
   const active = orders.filter((o) => o.status !== "CANCELLED")
   const totalOrders = orders.length
   const completed = orders.filter((o) => o.status === "DELIVERED").length
@@ -41,11 +67,11 @@ export async function customerStats(customerId: string) {
   const subsidised = r2(active.reduce((n, o) => n + (o.subscriptionCoveredAmount || 0), 0))
   const lastOrderAt = orders.length ? orders[0].createdAt : null // orders are createdAt desc
   const avgOrderValue = active.length ? r2(grossValue / active.length) : 0
-  const sub = await prisma.customerSubscription.findFirst({ where: { customerId, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true } } }, orderBy: { createdAt: "desc" } })
+  const sub = await prisma.customerSubscription.findFirst({ where: { customerId: { in: matchingIds }, status: { in: ["ACTIVE", "GRACE"] } }, include: { plan: { select: { name: true } } }, orderBy: { createdAt: "desc" } })
   const slim = (o: (typeof orders)[number]) => ({ id: o.id, orderNumber: o.orderNumber, status: o.status, paymentStatus: o.paymentStatus, grandTotal: o.grandTotal, createdAt: o.createdAt })
   return {
-    memberSince: cust?.createdAt ?? null,
-    loyaltyTier: cust?.loyaltyTier ?? null,
+    memberSince,
+    loyaltyTier: self?.loyaltyTier ?? null,
     totalOrders, completed, cancelled, activeOrders: inProgress.length,
     grossValue, collected, outstanding, subsidised, avgOrderValue, lastOrderAt,
     lastOrders: orders.slice(0, 5).map(slim),
