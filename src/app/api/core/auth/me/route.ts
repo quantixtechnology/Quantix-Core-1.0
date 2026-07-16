@@ -5,6 +5,7 @@
 
 import { db } from '@/lib/db';
 import { resolveUserPermissions } from '@/lib/db-permissions';
+import { isPlatformOwnerEmail } from '@/lib/permissions';
 import { NextResponse } from 'next/server';
 
 const PLATFORM_ROLES = ['QUANTIX_SUPER_ADMIN', 'PLATFORM_ADMIN', 'QUANTIX_SALES_TEAM', 'SUPPORT_TEAM', 'DEPLOYMENT_TEAM', 'FINANCE_TEAM'];
@@ -64,9 +65,15 @@ export async function GET(request: Request) {
 
     // Determine primary role and resolve permissions (role + user-level overrides)
     let primaryRole = 'CUSTOMER';
-    const isPlatformUser = user.platformRole && PLATFORM_ROLES.includes(user.platformRole);
-    if (isPlatformUser) {
-      primaryRole = user.platformRole!;
+    // The single canonical platform owner is always resolved as Super Admin,
+    // even if its explicit platformRole is momentarily unset — keeps /me in
+    // agreement with the login route (no downgrade during syncPermissions).
+    const isOwnerEmail = isPlatformOwnerEmail(user.email);
+    const isPlatformUser = (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) || isOwnerEmail;
+    if (user.platformRole && PLATFORM_ROLES.includes(user.platformRole)) {
+      primaryRole = user.platformRole;
+    } else if (isOwnerEmail) {
+      primaryRole = 'QUANTIX_SUPER_ADMIN';
     } else if (user.businessUsers.length > 0) {
       primaryRole = user.businessUsers[0].role;
     }

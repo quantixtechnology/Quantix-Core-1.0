@@ -264,7 +264,7 @@ export function AppSidebar({ mobileOpen = false, onMobileOpenChange }: AppSideba
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : "QT"
   const userName = user?.name ?? "Quantix Admin"
-  const userEmail = user?.email ?? "admin@quantix.in"
+  const userEmail = user?.email ?? "superadmin@quantixtechnology.in"
 
   // Visibility is driven entirely by ADMIN_NAV_PERMISSIONS.
   // A nav item with no entry in the map is always hidden (fail-closed).

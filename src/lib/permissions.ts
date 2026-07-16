@@ -144,6 +144,18 @@ export const ROLE_LABELS: Record<string, string> = {
 }
 
 // Which roles are platform-level (Quantix internal team — stored on User.platformRole)
+// ── Canonical platform owner (single source of truth) ───────────────────────
+// There is exactly ONE platform Super Admin. This is the only email that is
+// recognised as the platform owner by the auth fallback (when an explicit
+// platformRole is not yet set). Its authority still comes from the
+// QUANTIX_SUPER_ADMIN role — this constant just names the one canonical account
+// so no other address can implicitly become Super Admin.
+export const PLATFORM_OWNER_EMAIL = "superadmin@quantixtechnology.in"
+
+export function isPlatformOwnerEmail(email: string | null | undefined): boolean {
+  return !!email && email.trim().toLowerCase() === PLATFORM_OWNER_EMAIL
+}
+
 export const PLATFORM_ROLES: PlatformRole[] = [
   "QUANTIX_SUPER_ADMIN",
   "PLATFORM_ADMIN",

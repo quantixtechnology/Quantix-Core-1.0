@@ -9,6 +9,7 @@ import { resolveUserPermissions } from '@/lib/db-permissions';
 import { checkRateLimit } from '@/lib/middleware';
 import { logAuthActivity } from '@/lib/core/audit';
 import { logPlatformEvent } from '@/lib/platform-audit';
+import { isPlatformOwnerEmail } from '@/lib/permissions';
 import { NextResponse } from 'next/server';
 import type { Role, BusinessType, Permission } from '@/lib/types';
 
@@ -157,8 +158,11 @@ export async function POST(request: Request) {
       if (!validStatuses.includes(primaryBU.business.status)) {
         return NextResponse.json({ success: false, error: 'Your business account is not active. Please contact Quantix support.' }, { status: 403 });
       }
-    } else if (user.email.toLowerCase().endsWith('@quantixtechnology.in')) {
-      // Fallback for super admin without platformRole set
+    } else if (isPlatformOwnerEmail(user.email)) {
+      // Safety-net fallback: ONLY the single canonical platform owner is
+      // recognised as Super Admin without an explicit platformRole. No other
+      // address (not even other @quantixtechnology.in accounts) implicitly
+      // becomes Super Admin — enforces exactly one platform owner.
       role = 'QUANTIX_SUPER_ADMIN';
       isPlatformAdmin = true;
     }

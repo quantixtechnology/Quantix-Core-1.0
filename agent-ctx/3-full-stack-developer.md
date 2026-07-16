@@ -26,4 +26,4 @@ Stage Summary:
 - All Prisma enums matched with TypeScript types
 - Indian GST compliance built into constants, utils, validations, and seed data
 - Multi-tenant business context flows through API client headers and Zustand store
-- Demo credentials: admin@quantix.in / Admin@123
+- Platform Super Admin: superadmin@quantixtechnology.in (single canonical platform owner)

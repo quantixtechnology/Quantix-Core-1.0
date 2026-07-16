@@ -16,6 +16,7 @@
 import type { NextRequest } from 'next/server';
 import type { ZodSchema } from 'zod';
 import type { Role } from './types';
+import { isPlatformOwnerEmail } from './permissions';
 import { checkRateLimit } from './middleware';
 
 // ============================================================================
@@ -191,7 +192,7 @@ async function extractUserFromRequest(req: NextRequest): Promise<AuthenticatedRe
 
     if (user.salesProfile) {
       role = 'QUANTIX_SALES_TEAM';
-    } else if (user.email.endsWith('@quantixtechnology.in') && user.businessUsers.length === 0) {
+    } else if (isPlatformOwnerEmail(user.email) && user.businessUsers.length === 0) {
       role = 'QUANTIX_SUPER_ADMIN';
     } else if (user.businessUsers.length > 0) {
       const targetBU = businessIdHeader

@@ -13,6 +13,7 @@ import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { db } from './db';
 import { verifyPassword } from './password-utils';
+import { isPlatformOwnerEmail } from './permissions';
 import type { Role, BusinessType, Permission } from './types';
 import { getPermissionsForRole, isPlatformRole } from './permissions';
 
@@ -97,7 +98,7 @@ export const authOptions: NextAuthOptions = {
         // Check if user is a Quantix Super Admin (has salesProfile or is in the platform admin list)
         if (user.salesProfile) {
           role = 'QUANTIX_SALES_TEAM';
-        } else if (user.email.endsWith('@quantixtechnology.in') && user.businessUsers.length === 0) {
+        } else if (isPlatformOwnerEmail(user.email) && user.businessUsers.length === 0) {
           role = 'QUANTIX_SUPER_ADMIN';
         } else if (user.businessUsers.length > 0) {
           // Use the first active business user record
