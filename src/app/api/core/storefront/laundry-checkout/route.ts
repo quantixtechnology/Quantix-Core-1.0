@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { generateOrderNumber } from "@/lib/laundry-codes"
+import { createLaundryOrder } from "@/lib/laundry-order-engine"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-address"
 import { createSubscriptionPurchase } from "@/lib/laundry-subscription-purchase"
@@ -74,21 +75,24 @@ export async function POST(request: Request) {
       const grandTotal = Math.round((subtotal + gstTotal) * 100) / 100
       const orderNumber = await generateOrderNumber(store.storeCode || lb?.businessCode || `LND-${lbId}`)
       const serviceLines = Array.from(new Map(lines.filter((l) => l.serviceId).map((l) => [l.serviceId, { serviceId: l.serviceId, serviceName: l.serviceName, turnaroundHours: 24 }])).values())
-      const created = await prisma.laundryOrder.create({
-        data: {
-          orderNumber, businessId: lbId, storeId: store.id, customerId: customerRow.id,
-          orderType: isPickup ? "HOME_PICKUP" : "STORE_DROP", source: "CUSTOMER_STOREFRONT", status: "PENDING_STORE_AUDIT",
-          paymentPreference: paymentMethod === "ONLINE" ? "FULL_ADVANCE" : "COD",
-          pickupDate: pickup?.date ? new Date(pickup.date) : null, pickupTimeSlot: pickup?.timeSlot || null, pickupAddress: pickupSnapshot,
-          subtotal, gstTotal, pickupCharge: 0, deliveryCharge: 0, expressCharge: 0, discount: 0,
-          grandTotal, amountPaid: 0, balanceDue: grandTotal, paymentStatus: "UNPAID", customerType: isPickup ? "PICKUP" : "WALK_IN", billedAt: new Date(),
-          services: { create: serviceLines },
-          items: { create: lines.map((l, i) => ({ itemNumber: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, barcode: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, serviceId: l.serviceId, serviceName: l.serviceName, garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId, pricingRuleId: l.pricingRuleId, pricingType: l.pricingType, quantity: l.quantity, weightKg: 0, unitPrice: l.unitPrice, lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount, discount: 0, total: l.total })) },
-        },
-        select: { id: true, orderNumber: true, grandTotal: true },
+      order = await createLaundryOrder({
+        laundryBusinessId: lbId,
+        storeId: store.id,
+        orderNumber,
+        customerId: customerRow.id,
+        orderType: isPickup ? "HOME_PICKUP" : "STORE_DROP",
+        orderSource: "ONLINE_WEB",
+        source: "CUSTOMER_STOREFRONT",
+        customerType: isPickup ? "PICKUP" : "WALK_IN",
+        lines: lines as never,
+        serviceLines,
+        financials: { subtotal, gstTotal, grandTotal, balanceDue: grandTotal, paymentStatus: "UNPAID", billed: true },
+        paymentPreference: paymentMethod === "ONLINE" ? "FULL_ADVANCE" : "COD",
+        pickupDate: pickup?.date ? new Date(pickup.date) : null,
+        pickupTimeSlot: pickup?.timeSlot || null,
+        pickupAddress: pickupSnapshot,
       })
-      order = created
-      await prisma.customer.update({ where: { id: customerRow.id }, data: { totalOrders: { increment: 1 }, lastOrderAt: new Date() } }).catch(() => {})
+      // Customer history is updated by the Order Engine (createLaundryOrder).
     }
 
     // ── Subscription purchase (pending due, not activated) ───────────────────

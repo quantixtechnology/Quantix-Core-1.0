@@ -19,7 +19,7 @@ import { resolvePickupAddress, type StructuredAddress } from "@/lib/laundry-addr
 import { generateOrderNumber } from "@/lib/laundry-codes"
 import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
 import { computeSubscriptionAllocation, type SubscriptionState } from "@/lib/laundry-subscription"
-import { explodePieces } from "@/lib/laundry-order-items"
+import { createLaundryOrder } from "@/lib/laundry-order-engine"
 
 export const runtime = "nodejs"
 
@@ -128,24 +128,27 @@ export async function POST(request: Request) {
     // Distinct workflow service lines
     const serviceLines = Array.from(new Map(orderLines.filter((l) => l.serviceId).map((l) => [l.serviceId, { serviceId: l.serviceId, serviceName: l.serviceName, turnaroundHours: 24 }])).values())
 
-    const order = await prisma.laundryOrder.create({
-      data: {
-        orderNumber, businessId: lbId, storeId: store.id, customerId: customerRow.id,
-        orderType: sub ? "SUBSCRIPTION" : (isPickup ? "HOME_PICKUP" : "STORE_DROP"),
-        source: "CUSTOMER_STOREFRONT",
-        status: "PENDING_STORE_AUDIT",
-        paymentPreference: sub ? "SUBSCRIPTION_BILLING" : "COD",
-        pickupDate: pickup?.date ? new Date(pickup.date) : null,
-        pickupTimeSlot: pickup?.timeSlot || null,
-        pickupAddress: pickupSnapshot,
-        pickupInstructions: pickup?.instructions || null,
-        subtotal, gstTotal, pickupCharge: 0, deliveryCharge: 0, expressCharge: 0, discount: 0,
-        grandTotal, amountPaid: 0, balanceDue: grandTotal,
+    const order = await createLaundryOrder({
+      laundryBusinessId: lbId,
+      storeId: store.id,
+      orderNumber,
+      customerId: customerRow.id,
+      orderType: sub ? "SUBSCRIPTION" : (isPickup ? "HOME_PICKUP" : "STORE_DROP"),
+      orderSource: "ONLINE_WEB",
+      source: "CUSTOMER_STOREFRONT",
+      customerType,
+      lines: orderLines as never,
+      serviceLines,
+      financials: {
+        subtotal, gstTotal, grandTotal, balanceDue: grandTotal,
         paymentStatus: sub && grandTotal === 0 ? "SUBSCRIPTION" : "UNPAID",
-        customerType, billedAt: new Date(),
-        services: { create: serviceLines },
-        items: { create: explodePieces(orderLines).map((l, i) => ({ itemNumber: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, barcode: `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`, serviceId: l.serviceId, serviceName: l.serviceName, garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId, pricingRuleId: l.pricingRuleId, pricingType: l.pricingType, quantity: l.quantity, weightKg: 0, unitPrice: l.unitPrice, lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount, discount: 0, total: l.total })) },
+        billed: true,
       },
+      paymentPreference: sub ? "SUBSCRIPTION_BILLING" : "COD",
+      pickupDate: pickup?.date ? new Date(pickup.date) : null,
+      pickupTimeSlot: pickup?.timeSlot || null,
+      pickupAddress: pickupSnapshot,
+      pickupInstructions: pickup?.instructions || null,
       include: { items: true, store: { select: { storeName: true, storeCode: true } } },
     })
 
@@ -163,7 +166,8 @@ export async function POST(request: Request) {
       subscriptionResult = { covered: allocation.covered, extra: allocation.extra, remaining: allocation.remainingAfter, planAllowance: sub.totalCredits, ordersUsed: allocation.ordersUsedAfter, maxOrders: sub.maxOrders ?? 0, extraCharge: grandTotal }
     }
 
-    await prisma.customer.update({ where: { id: customerRow.id }, data: { totalOrders: { increment: 1 }, totalSpent: { increment: grandTotal }, lastOrderAt: new Date() } }).catch(() => {})
+    // (Customer history — totalOrders/totalSpent/lastOrderAt — is updated by the
+    // Order Engine during createLaundryOrder above.)
 
     return NextResponse.json({ success: true, data: {
       orderId: order.id, orderNumber: order.orderNumber, status: order.status,

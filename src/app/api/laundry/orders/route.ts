@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { resolveOrderBilling, orderTypeToCustomerType, type ResolvedItemInput } from "@/lib/laundry-billing-server"
 import { generateOrderNumber } from "@/lib/laundry-codes"
-import { explodePieces } from "@/lib/laundry-order-items"
+import { createLaundryOrder, defaultOrderSource } from "@/lib/laundry-order-engine"
 import { applySubscriptionToOrder } from "@/lib/laundry-subscription-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
@@ -12,7 +12,7 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId: businessIdInput, storeId, customerId, orderType, services, items, isExpress, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupDate, pickupTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
+    const { businessId: businessIdInput, storeId, customerId, orderType, orderSource, services, items, isExpress, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupDate, pickupTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
 
     if (!businessIdInput || !storeId) {
       return NextResponse.json({ error: "Missing required fields: businessId, storeId" }, { status: 400 })
@@ -53,7 +53,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const now = new Date()
     // Enterprise order number via the shared generator, scoped to the store:
     // ORD-{storeCode}-NNNNNN. Falls back to a business-scoped number if the
     // store has no code yet.
@@ -92,27 +91,19 @@ export async function POST(request: Request) {
           ).values(),
         )
 
-    const order = await prisma.laundryOrder.create({
-      data: {
-        orderNumber,
-        businessId,
-        storeId,
-        customerId: customerId || null,
-        orderType: resolvedOrderType,
-        source: "MANUAL",
-        status: "PENDING_STORE_AUDIT",
-        paymentPreference: paymentPreference || "COD",
-        expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
-        deliveryOverride: deliveryOverride || false,
-        overrideReason: overrideReason || null,
-        pickupDate: pickupDate ? new Date(pickupDate) : null,
-        pickupTimeSlot: pickupTimeSlot || null,
-        pickupAddress: pickupAddress || null,
-        pickupInstructions: pickupInstructions || null,
-        specialInstructions: specialInstructions || null,
-        notes: notes || null,
-        createdBy: createdBy || null,
-        // Financial snapshot
+    // ── Single Order Engine: identical create path for every source ───────────
+    const order = await createLaundryOrder({
+      laundryBusinessId: businessId,
+      storeId,
+      orderNumber,
+      customerId: customerId || null,
+      orderType: resolvedOrderType,
+      orderSource: orderSource || defaultOrderSource(resolvedOrderType),
+      source: "MANUAL",
+      customerType,
+      lines: (billing?.lines ?? []) as never,
+      serviceLines,
+      financials: {
         subtotal: q?.subtotal ?? 0,
         gstTotal: q?.gstTotal ?? 0,
         pickupCharge: q?.pickupCharge ?? 0,
@@ -120,37 +111,22 @@ export async function POST(request: Request) {
         expressCharge: q?.expressCharge ?? 0,
         discount: 0,
         grandTotal,
-        amountPaid: 0,
         balanceDue: grandTotal,
         paymentStatus: customerType === "SUBSCRIPTION" && grandTotal === 0 ? "SUBSCRIPTION" : "UNPAID",
-        isExpress: !!isExpress,
-        customerType,
-        billedAt: hasItems ? new Date() : null,
-        services: { create: serviceLines },
-        // One row per INDIVIDUAL garment: PER_PIECE billing lines with qty > 1
-        // are exploded so every physical piece carries its own ITM code,
-        // barcode and processing history (amounts still sum exactly).
-        items: billing
-          ? { create: explodePieces(billing.lines).map((l, i) => {
-              // Permanent per-garment ID + barcode: ITM-{orderNumber}-NNNN.
-              const itemNumber = `ITM-${orderNumber}-${String(i + 1).padStart(4, "0")}`
-              return {
-                itemNumber, barcode: itemNumber,
-                serviceId: l.serviceId, serviceName: l.serviceName,
-                garmentId: l.garmentId, garmentName: l.garmentName, categoryId: l.categoryId,
-                pricingRuleId: l.pricingRuleId, pricingType: l.pricingType,
-                quantity: l.quantity, weightKg: l.weightKg, unitPrice: l.unitPrice,
-                lineAmount: l.lineAmount, gstPercent: l.gstPercent, gstAmount: l.gstAmount,
-                discount: l.discount, total: l.total,
-              }
-            }) }
-          : undefined,
+        billed: hasItems,
       },
-      include: {
-        services: true,
-        items: true,
-        store: { select: { storeName: true, storeCode: true } },
-      },
+      isExpress: !!isExpress,
+      paymentPreference: paymentPreference || "COD",
+      expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
+      deliveryOverride: deliveryOverride || false,
+      overrideReason: overrideReason || null,
+      pickupDate: pickupDate ? new Date(pickupDate) : null,
+      pickupTimeSlot: pickupTimeSlot || null,
+      pickupAddress: pickupAddress || null,
+      pickupInstructions: pickupInstructions || null,
+      specialInstructions: specialInstructions || null,
+      notes: notes || null,
+      createdBy: createdBy || null,
     })
 
     await prisma.laundryAuditLog.create({
@@ -165,14 +141,6 @@ export async function POST(request: Request) {
         ipAddress: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown",
       },
     })
-
-    // Update customer history (order count + lifetime value + last order).
-    if (customerId) {
-      await prisma.customer.update({
-        where: { id: customerId },
-        data: { totalOrders: { increment: 1 }, totalSpent: { increment: order.grandTotal || 0 }, lastOrderAt: now },
-      }).catch((e) => console.error("[laundry-orders] customer history update failed:", e))
-    }
 
     // ── Automatic subscription consumption (integration) ──────────────────────
     // The operator never applies a subscription manually. If the customer has an

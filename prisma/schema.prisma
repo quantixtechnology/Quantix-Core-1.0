@@ -4410,6 +4410,10 @@ model LaundryOrder {
   customerId           String?
   orderType            String             @default("WALK_IN") // WALK_IN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION
   source               String             @default("MANUAL")
+  // Informational channel that CREATED the order. Never branches business logic —
+  // the workflow is identical for every source. ONLINE_WEB | ONLINE_APP |
+  // STORE_WALKIN | STORE_DROP | HOME_PICKUP | CORPORATE | SUBSCRIPTION | API.
+  orderSource          String             @default("STORE_WALKIN")
   status               LaundryOrderStatus @default(DRAFT)
   paymentPreference    String             @default("COD") // FULL_ADVANCE | PARTIAL_ADVANCE | COD | SUBSCRIPTION_BILLING
   expectedDeliveryDate DateTime?

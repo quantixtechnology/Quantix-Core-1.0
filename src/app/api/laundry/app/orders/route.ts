@@ -43,6 +43,8 @@ export async function POST(request: Request) {
   const payload = {
     businessId: biz.id, storeId, customerId: sess.customerId,
     orderType: b.orderType || "HOME_PICKUP",
+    orderSource: "ONLINE_APP", // informational — the workflow is identical
+
     items: b.items.map((l: { serviceId: string; garmentId: string; quantity?: number; weightKg?: number }) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity || 1, ...(l.weightKg ? { weightKg: l.weightKg } : {}) })),
     isExpress: !!b.isExpress,
     pickupDate: b.pickupDate || null, pickupTimeSlot: b.pickupTimeSlot || null, pickupAddress: b.pickupAddress || null, pickupInstructions: b.pickupInstructions || null,
