@@ -1,9 +1,11 @@
 "use client"
 
-// Store Audit (Stage 2) — inspection only. Reads the garments the order already
-// carries (recorded at New Order) and captures condition / defects / photos /
-// remarks, then Approve → Payment via the workflow engine. It never re-enters
-// garments and never touches pricing or the workflow rules.
+// Store Audit (Stage 2) — the official verification + billing stage. Reads the
+// garments the order already carries (recorded at booking as quantities) and
+// captures condition / defects / photos / remarks AND, for PER_KG garments, the
+// MEASURED WEIGHT (never entered at booking). Entering weight reprices the KG
+// lines and generates the invoice; then Approve → Payment via the workflow
+// engine. PER_PIECE orders were billed at booking and are unaffected.
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
@@ -31,6 +33,7 @@ const DEFECTS = [
 interface OrderRow { id: string; orderNumber: string; status: string; grandTotal: number; createdAt: string; customerId: string | null }
 interface Item {
   id: string; garmentName: string; serviceName: string; quantity: number; weightKg: number
+  pricingType: string; unitPrice: number
   condition: string | null; defects: string | null; inspectionNotes: string | null
 }
 interface OrderDetail extends OrderRow {
@@ -56,6 +59,7 @@ export function LaundryStoreAudit() {
   const [loadingDetail, setLoadingDetail] = useState(false)
 
   const [inspect, setInspect] = useState<Record<string, Inspection>>({})
+  const [weights, setWeights] = useState<Record<string, string>>({}) // measured weight (KG) per PER_KG item — captured HERE, never at booking
   const [auditNotes, setAuditNotes] = useState("")
   const [photos, setPhotos] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
@@ -81,8 +85,13 @@ export function LaundryStoreAudit() {
         const d = json.data as OrderDetail
         setDetail(d)
         const init: Record<string, Inspection> = {}
-        d.items.forEach((it) => { init[it.id] = { condition: it.condition || "GOOD", defects: it.defects ? it.defects.split(",") : [], notes: it.inspectionNotes || "" } })
+        const w: Record<string, string> = {}
+        d.items.forEach((it) => {
+          init[it.id] = { condition: it.condition || "GOOD", defects: it.defects ? it.defects.split(",") : [], notes: it.inspectionNotes || "" }
+          if (it.pricingType === "PER_KG") w[it.id] = it.weightKg > 0 ? String(it.weightKg) : ""
+        })
         setInspect(init)
+        setWeights(w)
         setAuditNotes(d.auditNotes || "")
         setPhotos(d.auditPhotos ? JSON.parse(d.auditPhotos) : [])
       }
@@ -119,17 +128,28 @@ export function LaundryStoreAudit() {
     if (!detail) return false
     const body = {
       businessId: currentBusinessId, auditNotes, auditPhotos: photos, auditedBy: user?.name || "auditor",
-      items: detail.items.map((it) => ({ itemId: it.id, condition: inspect[it.id]?.condition || "GOOD", defects: inspect[it.id]?.defects || [], notes: inspect[it.id]?.notes || "" })),
+      items: detail.items.map((it) => ({
+        itemId: it.id, condition: inspect[it.id]?.condition || "GOOD", defects: inspect[it.id]?.defects || [], notes: inspect[it.id]?.notes || "",
+        ...(it.pricingType === "PER_KG" && weights[it.id] !== undefined && weights[it.id] !== "" ? { weightKg: Number(weights[it.id]) } : {}),
+      })),
     }
     const res = await fetch(`/api/laundry/orders/${detail.id}/inspect`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
     const json = await res.json()
     return res.ok && json.success !== false
-  }, [detail, currentBusinessId, auditNotes, photos, inspect, user])
+  }, [detail, currentBusinessId, auditNotes, photos, inspect, weights, user])
+
+  // PER_KG garments must be weighed at audit before the invoice is generated.
+  const pendingWeight = detail?.items.filter((it) => it.pricingType === "PER_KG" && !(weights[it.id] && Number(weights[it.id]) > 0)) || []
 
   const handleSave = async () => { setSaving(true); const ok = await saveInspection(); setSaving(false); toast(ok ? { title: "Inspection saved" } : { title: "Save failed", variant: "destructive" }) }
 
   const transition = async (toStatus: string, label: string) => {
     if (!detail) return
+    // KG garments must be weighed before the invoice is generated (Approve → Payment).
+    if (toStatus === "PAYMENT_PENDING" && pendingWeight.length > 0) {
+      toast({ title: "Weight required", description: `Enter the measured weight for ${pendingWeight.map((it) => it.garmentName).join(", ")} before approving.`, variant: "destructive" })
+      return
+    }
     setActing(true)
     try {
       await saveInspection()
@@ -182,12 +202,24 @@ export function LaundryStoreAudit() {
                 {detail.items.length === 0 ? <p className="text-sm text-muted-foreground py-4 text-center">This order has no recorded garments.</p> : detail.items.map((it) => {
                   const ins = inspect[it.id] || { condition: "GOOD", defects: [], notes: "" }
                   const damaged = ins.defects.length > 0
+                  const isKg = it.pricingType === "PER_KG"
+                  const w = weights[it.id] === undefined || weights[it.id] === "" ? 0 : Math.max(0, Number(weights[it.id]) || 0)
                   return (
                     <div key={it.id} className={`rounded-lg border p-3 ${damaged ? "border-amber-300 bg-amber-50/40" : ""}`}>
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2"><span className="flex h-9 min-w-9 px-1.5 items-center justify-center rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold">{it.weightKg > 0 ? `${it.weightKg}kg` : `×${it.quantity}`}</span><div><p className="font-medium text-sm">{it.garmentName}</p><p className="text-[11px] text-muted-foreground">{it.serviceName}</p></div></div>
+                        <div className="flex items-center gap-2"><span className="flex h-9 min-w-9 px-1.5 items-center justify-center rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold">×{it.quantity}</span><div><p className="font-medium text-sm">{it.garmentName}</p><p className="text-[11px] text-muted-foreground">{it.serviceName}{isKg ? ` · ${inr(it.unitPrice)}/kg` : ""}</p></div></div>
                         <Badge variant="outline" className={damaged ? "border-amber-300 text-amber-700 bg-amber-50" : "border-emerald-300 text-emerald-700 bg-emerald-50"}>{damaged ? "Damaged" : "Good"}</Badge>
                       </div>
+                      {/* Measured weight — captured at Store Audit for PER_KG garments only. */}
+                      {isKg && (
+                        <div className="flex items-center gap-2 mb-2 rounded-md bg-blue-50/60 border border-blue-100 px-2.5 py-1.5">
+                          <span className="text-xs font-medium text-blue-700">Measured Weight</span>
+                          <Input type="number" min="0" step="0.05" value={weights[it.id] ?? ""} onChange={(e) => setWeights((p) => ({ ...p, [it.id]: e.target.value }))} placeholder="0.00"
+                            className={`h-8 w-24 text-sm tabular-nums ${w <= 0 ? "border-rose-300 bg-rose-50" : ""}`} />
+                          <span className="text-xs text-muted-foreground">KG</span>
+                          <span className="ml-auto text-sm font-semibold text-slate-800 tabular-nums">{w > 0 ? inr(it.unitPrice * w) : <span className="text-[11px] text-rose-500">Enter weight</span>}</span>
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-1.5 mb-2">
                         {DEFECTS.map((d) => (
                           <button key={d.code} onClick={() => toggleDefect(it.id, d.code)} className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${ins.defects.includes(d.code) ? "border-amber-400 bg-amber-100 text-amber-800 font-medium" : "text-muted-foreground hover:bg-muted/50"}`}>{d.label}</button>
@@ -223,7 +255,7 @@ export function LaundryStoreAudit() {
             <div className="flex flex-wrap items-center justify-end gap-2 pb-4">
               <Button variant="outline" onClick={handleSave} disabled={saving || acting} className="gap-1">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save Progress</Button>
               <Button variant="outline" onClick={() => transition("UNDER_AUDIT", "On Hold")} disabled={acting} className="gap-1 text-orange-700 border-orange-300 hover:bg-orange-50"><PauseCircle className="h-4 w-4" /> Hold</Button>
-              <Button onClick={() => transition("PAYMENT_PENDING", "Audit Approved")} disabled={acting} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">{acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve Audit <ArrowRight className="h-4 w-4" /></Button>
+              <Button onClick={() => transition("PAYMENT_PENDING", "Audit Approved")} disabled={acting || pendingWeight.length > 0} title={pendingWeight.length > 0 ? "Enter measured weight for all KG garments first" : undefined} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">{acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {pendingWeight.length > 0 ? "Weigh KG Garments" : "Approve & Generate Invoice"} <ArrowRight className="h-4 w-4" /></Button>
             </div>
           </>
         )}
