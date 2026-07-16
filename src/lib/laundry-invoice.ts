@@ -40,7 +40,7 @@ export interface FinancialSettings {
 }
 
 const DEFAULTS: Omit<FinancialSettings, "businessId"> = {
-  invoicePrefix: "INV-LND",
+  invoicePrefix: "INV",
   invoiceNextNumber: 1,
   invoiceNumberPadding: 6,
   gstEnabled: false,
@@ -58,17 +58,13 @@ const DEFAULTS: Omit<FinancialSettings, "businessId"> = {
   paymentInstructions: null,
 }
 
-function roundAmount(n: number, mode: string, precision: number): number {
-  const f = Math.pow(10, precision)
-  const v = (n || 0) * f
-  if (mode === "UP") return Math.ceil(v) / f
-  if (mode === "DOWN") return Math.floor(v) / f
-  if (mode === "NONE") return n || 0
-  return Math.round(v) / f
-}
-
-function periodYYYYMM(d: Date): string {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`
+// Simple display status (Draft | Unpaid | Paid | Cancelled) derived from the
+// existing order state — never stored redundantly, never recomputed totals.
+function deriveInvoiceStatus(order: { status: string; billedAt: Date | null; paymentStatus: string; balanceDue: number }): "DRAFT" | "UNPAID" | "PAID" | "CANCELLED" {
+  if (order.status === "CANCELLED") return "CANCELLED"
+  if (!order.billedAt) return "DRAFT"
+  if ((order.balanceDue ?? 0) <= 0 || order.paymentStatus === "PAID" || order.paymentStatus === "SUBSCRIPTION") return "PAID"
+  return "UNPAID"
 }
 
 // Per-tenant financial settings, with safe defaults when none are configured yet.
@@ -107,16 +103,10 @@ export async function generateLaundryInvoice(
     } else {
       await tx.laundryFinancialSettings.create({ data: { businessId: order.businessId, invoiceNextNumber: seq + 1 } })
     }
-    const gstEnabled = s?.gstEnabled ?? DEFAULTS.gstEnabled
-    const number = `${prefix}-${periodYYYYMM(new Date())}-${String(seq).padStart(padding, "0")}`
+    // Simple sequential number, e.g. INV-000001 (no date segment).
+    const number = `${prefix}-${String(seq).padStart(padding, "0")}`
     return tx.laundryInvoice.create({
-      data: {
-        businessId: order.businessId,
-        orderId,
-        invoiceNumber: number,
-        status: "GENERATED",
-        gstTreatment: gstEnabled ? "INTRA_STATE" : "NONE",
-      },
+      data: { businessId: order.businessId, orderId, invoiceNumber: number, status: "GENERATED", gstTreatment: "NONE" },
     })
   })
   return { ok: true, invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber }
@@ -150,16 +140,14 @@ export async function resolveInvoiceView(orderId: string, opts?: { autoGenerate?
         .catch(() => null)
     : null
 
-  const p = settings.decimalPrecision
-  const gstTotal = order.gstTotal || 0
-  const treatment = invoice?.gstTreatment ?? (settings.gstEnabled ? "INTRA_STATE" : "NONE")
-  const cgst = treatment === "INTRA_STATE" ? roundAmount(gstTotal / 2, settings.rounding, p) : 0
-  const sgst = treatment === "INTRA_STATE" ? roundAmount(gstTotal - cgst, settings.rounding, p) : 0
-  const igst = treatment === "INTER_STATE" ? roundAmount(gstTotal, settings.rounding, p) : 0
+  // GST kept deliberately simple: a single amount shown ONLY when the business
+  // enabled GST in settings. No CGST/SGST/IGST, no state detection.
+  const gstTotal = settings.gstEnabled ? (order.gstTotal || 0) : 0
 
   // Payment status resolved from the persisted order snapshot (never recomputed
   // here — the Order/Payment engine owns it).
   const paymentStatus = order.paymentStatus
+  const displayStatus = deriveInvoiceStatus({ status: order.status, billedAt: order.billedAt, paymentStatus, balanceDue: order.balanceDue })
 
   return {
     ok: true as const,
@@ -167,14 +155,11 @@ export async function resolveInvoiceView(orderId: string, opts?: { autoGenerate?
       invoice: invoice
         ? {
             number: invoice.invoiceNumber,
-            status: invoice.status,
-            gstTreatment: invoice.gstTreatment,
+            status: displayStatus, // Draft | Unpaid | Paid | Cancelled
             issuedAt: invoice.issuedAt,
-            cancelledAt: invoice.cancelledAt,
-            cancelReason: invoice.cancelReason,
             notes: invoice.notes,
           }
-        : null, // null → billing not final yet (no invoice)
+        : { number: null, status: displayStatus, issuedAt: null, notes: null }, // not billed yet → Draft
       order: {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -199,12 +184,8 @@ export async function resolveInvoiceView(orderId: string, opts?: { autoGenerate?
       },
       gst: {
         enabled: settings.gstEnabled,
-        treatment,
-        cgst,
-        sgst,
-        igst,
-        sellerGstNumber: settings.gstNumber,
-        buyerGstNumber: customer?.gstNumber ?? null,
+        amount: gstTotal,
+        gstNumber: settings.gstNumber,
       },
       items: order.items.map((it) => ({
         id: it.id,

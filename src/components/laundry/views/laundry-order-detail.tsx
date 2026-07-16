@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
+import { LaundryInvoicePanel } from "@/components/laundry/invoice/laundry-invoice-panel"
 
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
@@ -118,6 +119,8 @@ export function LaundryOrderDetail() {
           ))}
         </div>
       </div>
+
+      {selectedOrderId && <LaundryInvoicePanel orderId={selectedOrderId} businessId={currentBusinessId || ""} />}
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         {/* Garments — individually traceable */}
