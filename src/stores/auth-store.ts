@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 import type { Role, BusinessType, Permission, SessionUser } from "@/lib/types";
-import { importSessionFromHash } from "@/lib/session-handoff";
+import { importSessionFromHash, exchangeHandoffSession } from "@/lib/session-handoff";
 
 // ============================================================================
 // TYPES
@@ -49,6 +49,7 @@ interface AuthState {
   logout: () => void;
   clearSession: () => void;
   refreshAuthToken: () => Promise<void>;
+  syncTokensFromStorage: () => void;
   syncPermissions: () => Promise<void>;
   switchBusiness: (businessId: string) => void;
   setActiveBusinessId: (businessId: string) => void;
@@ -187,7 +188,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: () => {
     // Import a cross-subdomain session handoff (Open Workspace → product host)
     // into this origin's localStorage BEFORE hydration. No-op when absent.
-    importSessionFromHash();
+    const importedHandoff = importSessionFromHash();
     const stored = loadFromStorage();
     if (stored.token && stored.user) {
       set({
@@ -208,6 +209,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       get().syncPermissions()
         .catch(() => null)
         .finally(() => set({ _isSynced: true }));
+
+      // Per-origin sessions: if this session arrived via a workspace handoff, it
+      // currently holds the LAUNCHING origin's refresh token. Swap it for an
+      // origin-specific one so rotating this origin's token never logs the
+      // launching origin (or another workspace) out. Fire-and-forget — the
+      // handed-off session keeps working if the exchange can't complete.
+      if (importedHandoff) {
+        exchangeHandoffSession()
+          .then((res) => { if (res) set({ token: res.accessToken, refreshToken: res.refreshToken }); })
+          .catch(() => null);
+      }
     } else {
       set({ _isHydrated: true, _isSynced: true });
     }
@@ -434,44 +446,86 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  // ─── Refresh auth token ─────────────────────────────────────────────
-  refreshAuthToken: async () => {
-    const { refreshToken } = get();
-    if (!refreshToken) {
-      // No refresh token to renew with — clear LOCALLY only (never a server
-      // logout), so a valid session is never invalidated by this automatic path.
-      get().clearSession();
-      return;
+  // ─── Adopt tokens another tab (same origin) just rotated ────────────
+  // Same-origin tabs share localStorage. When one tab rotates the refresh token,
+  // the others must pick up the new value instead of refreshing with their now-
+  // stale in-memory token (which would 401 and log them out).
+  syncTokensFromStorage: () => {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
+    const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+    if (token && token !== get().token) {
+      set({ token, refreshToken: refreshToken || get().refreshToken, isAuthenticated: true });
     }
+  },
 
-    try {
-      const response = await fetch("/api/core/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        // Refresh token already invalid server-side — clear LOCALLY only (no
-        // server logout call) and fall back to the Login page.
+  // ─── Refresh auth token (cross-tab single-flight) ───────────────────
+  // Refresh-token rotation is single-use, so two tabs / workspaces on the SAME
+  // origin must never refresh with the same token concurrently (one would rotate
+  // the other out). A cross-tab lock (Web Locks API) serialises refreshes on
+  // this origin; whichever tab wins reads the FRESHEST token from storage first,
+  // and any tab that finds storage already ahead just adopts it (no network,
+  // no double rotation). Different origins keep their own independent tokens
+  // (see session-exchange), so they never collide.
+  refreshAuthToken: async () => {
+    const runRefresh = async () => {
+      // Freshest refresh token wins — another tab may have rotated it already.
+      const latest = (typeof window !== "undefined"
+        ? localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN)
+        : null) || get().refreshToken;
+      if (!latest) {
         get().clearSession();
         return;
       }
+      // If storage already holds a newer access token than ours, another tab on
+      // this origin just refreshed — adopt it and skip the network call entirely.
+      const storedAccess = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.TOKEN) : null;
+      if (storedAccess && storedAccess !== get().token) {
+        get().syncTokensFromStorage();
+        return;
+      }
 
-      const { accessToken, refreshToken: newRefreshToken } = data.data;
+      try {
+        const response = await fetch("/api/core/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: latest }),
+        });
+        const data = await response.json();
 
-      const updates: Partial<AuthState> = {
-        token: accessToken,
-        refreshToken: newRefreshToken,
-      };
+        if (!data.success) {
+          // Before clearing: another tab may have rotated between our read and
+          // this call. If storage now holds a different refresh token, adopt it
+          // instead of destroying a session that is actually still valid.
+          const nowRt = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN) : null;
+          if (nowRt && nowRt !== latest) {
+            get().syncTokensFromStorage();
+            return;
+          }
+          // Genuinely invalid — clear LOCALLY only (never a server logout).
+          get().clearSession();
+          return;
+        }
 
-      saveToStorage(updates);
-      set(updates);
-    } catch {
-      // Network error — don't logout, just fail silently
-      console.error("[AuthStore] Token refresh failed");
+        const { accessToken, refreshToken: newRefreshToken } = data.data;
+        const updates: Partial<AuthState> = { token: accessToken, refreshToken: newRefreshToken };
+        saveToStorage(updates);
+        set(updates);
+      } catch {
+        // Network error — keep the session, just fail silently.
+        console.error("[AuthStore] Token refresh failed");
+      }
+    };
+
+    // Serialise refreshes across tabs of THIS origin when the Web Locks API is
+    // available; otherwise fall back to a plain (best-effort) refresh.
+    const locks = typeof navigator !== "undefined"
+      ? (navigator as Navigator & { locks?: { request: (name: string, cb: () => Promise<void>) => Promise<void> } }).locks
+      : undefined;
+    if (locks?.request) {
+      await locks.request("quantix-auth-refresh", runRefresh);
+    } else {
+      await runRefresh();
     }
   },
 

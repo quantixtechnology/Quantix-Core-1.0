@@ -80,6 +80,7 @@ export function AuthProvider({
     refreshToken,
     refreshAuthToken,
     clearSession,
+    syncTokensFromStorage,
     user,
     currentBusinessId,
   } = useAuthStore();
@@ -219,13 +220,24 @@ export function AuthProvider({
       if (e.key === "quantix_auth_token" && e.newValue && !isAuthenticated) {
         initialize();
       }
+
+      // Another tab on this origin rotated the token while we stay signed in —
+      // adopt the new value so THIS tab never refreshes with a stale token
+      // (which would 401 and log it out). Covers both access + refresh keys.
+      if (
+        (e.key === "quantix_auth_token" || e.key === "quantix_auth_refresh_token") &&
+        e.newValue &&
+        isAuthenticated
+      ) {
+        syncTokensFromStorage();
+      }
     };
 
     window.addEventListener("storage", handleStorageChange);
     return () => {
       window.removeEventListener("storage", handleStorageChange);
     };
-  }, [isAuthenticated, clearSession, initialize, onSessionExpired]);
+  }, [isAuthenticated, clearSession, syncTokensFromStorage, initialize, onSessionExpired]);
 
   // ─── Not yet hydrated — show loading ────────────────────────────────
   if (!_isHydrated) {

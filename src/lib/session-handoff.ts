@@ -28,6 +28,7 @@ const SESSION_KEYS = [
 ] as const
 
 const TOKEN_KEY = "quantix_auth_token"
+const REFRESH_KEY = "quantix_auth_refresh_token"
 const HANDOFF_PARAM = "__qxsession"
 
 function b64encode(s: string): string {
@@ -61,11 +62,16 @@ export function buildSessionHandoffHash(): string {
  * origin's localStorage (only when this origin has no session yet — never
  * clobber a real local login), then strip the fragment. Safe to call once on
  * app initialization, before reading localStorage.
+ *
+ * Returns true when a handoff was actually imported — the caller then swaps the
+ * (shared) handoff refresh token for an origin-specific one via
+ * exchangeHandoffSession(), so this origin rotates independently.
  */
-export function importSessionFromHash(): void {
-  if (typeof window === "undefined") return
+export function importSessionFromHash(): boolean {
+  if (typeof window === "undefined") return false
   const hash = window.location.hash.replace(/^#/, "")
-  if (!hash.includes(HANDOFF_PARAM)) return
+  if (!hash.includes(HANDOFF_PARAM)) return false
+  let imported = false
   try {
     const raw = new URLSearchParams(hash).get(HANDOFF_PARAM)
     if (raw && !window.localStorage.getItem(TOKEN_KEY)) {
@@ -73,6 +79,7 @@ export function importSessionFromHash(): void {
       for (const k of SESSION_KEYS) {
         if (typeof bag[k] === "string") window.localStorage.setItem(k, bag[k])
       }
+      imported = !!window.localStorage.getItem(TOKEN_KEY)
     }
   } catch {
     // Ignore a malformed handoff — fall through to the normal (unauthenticated) flow.
@@ -82,5 +89,38 @@ export function importSessionFromHash(): void {
     window.history.replaceState(null, "", window.location.pathname + window.location.search)
   } catch {
     /* no-op */
+  }
+  return imported
+}
+
+/**
+ * Per-origin sessions: after a handoff is imported, the origin still holds the
+ * LAUNCHING origin's refresh token. Exchange it for a brand-new, INDEPENDENT
+ * access + refresh token dedicated to THIS origin, so rotating this origin's
+ * token never invalidates the launching origin (or any other workspace).
+ *
+ * Returns the new { accessToken, refreshToken } (also written to localStorage),
+ * or null if the exchange could not be completed (the handed-off session keeps
+ * working in that case — no worse than before).
+ */
+export async function exchangeHandoffSession(): Promise<{ accessToken: string; refreshToken: string } | null> {
+  if (typeof window === "undefined") return null
+  try {
+    const presented =
+      window.localStorage.getItem(REFRESH_KEY) || window.localStorage.getItem(TOKEN_KEY)
+    if (!presented) return null
+    const res = await fetch("/api/core/auth/session-exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: presented }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data?.success || !data.data?.accessToken || !data.data?.refreshToken) return null
+    window.localStorage.setItem(TOKEN_KEY, data.data.accessToken)
+    window.localStorage.setItem(REFRESH_KEY, data.data.refreshToken)
+    return { accessToken: data.data.accessToken, refreshToken: data.data.refreshToken }
+  } catch {
+    return null
   }
 }
