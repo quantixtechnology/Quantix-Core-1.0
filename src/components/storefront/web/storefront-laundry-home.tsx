@@ -186,29 +186,25 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
             </section>
           )}
 
-          {/* Section 3 — Popular Services (garment prices) — compact, below Plans */}
+          {/* Section 3 — Popular Services — compact price cards below Plans.
+              Denser grid, minimal padding, essential garment + price only, whole
+              card tappable with a small inline CTA (no full-width button). */}
           {popular.length > 0 && (
             <section className="px-4 sm:px-6 mt-6">
               <h2 className="text-base font-bold text-gray-900">Popular Services</h2>
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {popular.slice(0, 4).map((s) => (
-                  <div key={s.id} className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-                    <p className="text-sm font-semibold text-gray-900">{s.name}</p>
-                    <div className="mt-1 divide-y divide-gray-50">
+              <div className="mt-2 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                {popular.slice(0, 8).map((s) => (
+                  <button key={s.id} onClick={() => setActiveService(s)} className="text-left rounded-lg border border-gray-100 bg-white p-2.5 shadow-sm active:bg-gray-50 flex flex-col">
+                    <p className="text-[13px] font-semibold text-gray-900 truncate">{s.name}</p>
+                    <div className="mt-1 space-y-0.5">
                       {s.perKg ? (
-                        <div className="flex items-center justify-between py-1 text-sm">
-                          <span className="text-gray-600">By weight</span>
-                          <span className="font-semibold text-gray-900">{inr(s.perKg.price)} <span className="text-xs font-normal text-gray-400">/ Per KG</span></span>
-                        </div>
-                      ) : s.items.slice(0, 3).map((it) => (
-                        <div key={it.garmentId} className="flex items-center justify-between py-1 text-sm">
-                          <span className="text-gray-600">{it.garmentName}</span>
-                          <span className="font-semibold text-gray-900">{inr(it.unitPrice)} <span className="text-xs font-normal text-gray-400">/ {it.unit === "kg" ? "Per KG" : it.unit === "fixed" ? "Fixed" : "Per Piece"}</span></span>
-                        </div>
+                        <div className="flex items-center justify-between text-xs"><span className="text-gray-500 truncate mr-1">By weight</span><span className="font-semibold text-gray-900 whitespace-nowrap">{inr(s.perKg.price)}<span className="text-[10px] font-normal text-gray-400">/kg</span></span></div>
+                      ) : s.items.slice(0, 2).map((it) => (
+                        <div key={it.garmentId} className="flex items-center justify-between text-xs"><span className="text-gray-500 truncate mr-1">{it.garmentName}</span><span className="font-semibold text-gray-900 whitespace-nowrap">{inr(it.unitPrice)}<span className="text-[10px] font-normal text-gray-400">/{it.unit === "kg" ? "kg" : it.unit === "fixed" ? "item" : "pc"}</span></span></div>
                       ))}
                     </div>
-                    <button onClick={() => setActiveService(s)} className="mt-2 w-full rounded-lg border border-gray-200 py-1.5 text-xs font-semibold text-gray-700 active:bg-gray-50">Select Service</button>
-                  </div>
+                    <span className="mt-1.5 text-[11px] font-semibold" style={accent}>Select →</span>
+                  </button>
                 ))}
               </div>
             </section>

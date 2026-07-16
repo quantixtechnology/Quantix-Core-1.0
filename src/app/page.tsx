@@ -118,6 +118,20 @@ function AccessDenied() {
   )
 }
 
+// Terminal recovery for a stale/expired session that is stuck in a workspace
+// view it can no longer authorise. Clears the auth state and resets the view so
+// AuthProvider re-renders the Login page — instead of a blank white screen.
+// A spinner shows for the one frame before logout() takes effect.
+function SessionRecovery() {
+  const { logout } = useAuthStore()
+  const { setViewMode } = useAdminStore()
+  useEffect(() => {
+    setViewMode("super_admin")
+    logout()
+  }, [logout, setViewMode])
+  return <PageLoader />
+}
+
 // Page access derives directly from ADMIN_NAV_PERMISSIONS — the single source
 // of truth for all navigation and route visibility. No hardcoded role checks.
 function canAccessPage(page: string, permissions: string[]): boolean {
@@ -857,7 +871,16 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
   }
 
   if (viewMode === "business_owner") {
-    if (_isHydrated && !isBusinessRole && !canImpersonate) return null
+    // Session no longer authorises a business workspace (wrong role / lost
+    // impersonate permission — e.g. a stale or expired session, common on a
+    // product-workspace host where the reset effect is intentionally skipped).
+    // NEVER render a blank screen here: show a loader while permissions are
+    // still syncing, then clear the stale session and drop to Login once we
+    // know for certain the session cannot use this workspace.
+    if (_isHydrated && !isBusinessRole && !canImpersonate) {
+      if (!_isSynced) return <PageLoader />
+      return <SessionRecovery />
+    }
     // Laundry workspace is chosen by the business type OR, on a product host,
     // by the product itself (so a platform admin launching laundry.* gets the
     // Laundry workspace even though their session has no business type).
