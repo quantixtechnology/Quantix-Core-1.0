@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail, MapPin, Save, Trash2, AlertTriangle } from "lucide-react"
+import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail, MapPin, Save, Trash2, AlertTriangle, RotateCcw } from "lucide-react"
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -55,6 +55,8 @@ export function LaundryCustomersView() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
+  const [showArchived, setShowArchived] = useState(false)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
 
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -91,17 +93,31 @@ export function LaundryCustomersView() {
     } catch { toast({ title: "Archive failed", variant: "destructive" }) } finally { setDeleting(false) }
   }
 
+  // Restore an archived/merged customer (status → ACTIVE also flips isActive).
+  // Additive; the same record is reactivated (no duplicate is ever created).
+  const restore = async (c: Row) => {
+    setRestoringId(c.id)
+    try {
+      const res = await fetch(`/api/laundry/customers/${c.id}`, { method: "PUT", headers: { ...getAuthHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, status: "ACTIVE" }) })
+      const json = await res.json()
+      if (!res.ok || json.success === false) { toast({ title: "Restore failed", description: json.error, variant: "destructive" }); return }
+      toast({ title: "Customer restored", description: `${c.name} is active again.` })
+      load()
+    } catch { toast({ title: "Restore failed", variant: "destructive" }) } finally { setRestoringId(null) }
+  }
+
   const load = useCallback(async () => {
     if (!currentBusinessId) return
     setLoading(true)
     try {
       const params = new URLSearchParams({ businessId: currentBusinessId, limit: String(PAGE), offset: String(page * PAGE) })
       if (search.trim()) params.set("q", search.trim())
+      if (showArchived) params.set("includeArchived", "1")
       const json = await fetch(`/api/laundry/customers?${params}`).then((r) => r.json())
       setRows(json.success ? json.data : []); setTotal(json.total || 0)
       if (json.summary) setSummary(json.summary)
     } catch { setRows([]) } finally { setLoading(false) }
-  }, [currentBusinessId, page, search])
+  }, [currentBusinessId, page, search, showArchived])
   useEffect(() => { load() }, [load])
 
   const openCustomer = async (id: string, edit: boolean) => {
@@ -209,7 +225,10 @@ export function LaundryCustomersView() {
 
       <Card className="rounded-xl border-slate-200 shadow-sm">
         <CardContent className="p-3">
-          <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Search by name, mobile, email or customer ID…" className="pl-9 h-9 bg-slate-50 border-slate-200" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} /></div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="relative max-w-md flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input placeholder="Search by name, mobile, email or customer ID…" className="pl-9 h-9 bg-slate-50 border-slate-200" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0) }} /></div>
+            <label className="flex items-center gap-2 text-xs text-slate-500 shrink-0 cursor-pointer select-none"><input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(0) }} /> Show Archived</label>
+          </div>
         </CardContent>
       </Card>
 
@@ -228,19 +247,23 @@ export function LaundryCustomersView() {
               </TableRow></TableHeader>
               <TableBody>
                 {rows.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} className={c.isActive ? "" : "opacity-60 bg-slate-50/50"}>
                     <TableCell><div className="flex items-center gap-2.5"><Avatar className="h-9 w-9"><AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">{initials(c.name)}</AvatarFallback></Avatar><div><p className="text-sm font-medium text-slate-800">{c.name}</p><p className="text-[11px] text-slate-400 font-mono">{c.customerCode || "—"}</p></div></div></TableCell>
                     <TableCell><p className="text-sm text-slate-600">{c.phone || "—"}</p><p className="text-[11px] text-slate-400">{c.email || ""}</p></TableCell>
                     <TableCell><Badge variant="outline" className={`text-[11px] ${tierStyle(c.loyaltyTier)}`}>{c.loyaltyTier || "Bronze"}</Badge></TableCell>
                     <TableCell className="text-right tabular-nums">{inr(c.walletBalance)}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{inr(c.totalSpent)}</TableCell>
-                    <TableCell><Badge variant="outline" className={c.isActive ? "border-green-300 text-green-700 bg-green-50" : "border-slate-300 text-slate-500 bg-slate-50"}>{c.isActive ? "Active" : "Inactive"}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className={c.isActive ? "border-green-300 text-green-700 bg-green-50" : "border-amber-300 text-amber-600 bg-amber-50"}>{c.isActive ? "Active" : c.status === "MERGED" ? "Archived · Merged" : "Archived"}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="View" onClick={() => openCustomer(c.id, false)}><Eye className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="Edit" onClick={() => openCustomer(c.id, true)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="New Order" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /></Button>
-                        {canArchive && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-amber-600" title="Archive customer (keeps order history)" onClick={() => setDeleteTarget(c)}><Trash2 className="h-4 w-4" /></Button>}
+                        {c.isActive ? (<>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="Edit" onClick={() => openCustomer(c.id, true)}><Pencil className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" title="New Order" onClick={() => setLaundryPage("new-order")}><Plus className="h-4 w-4" /></Button>
+                          {canArchive && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-amber-600" title="Archive customer (keeps order history)" onClick={() => setDeleteTarget(c)}><Trash2 className="h-4 w-4" /></Button>}
+                        </>) : (
+                          canArchive && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-emerald-600" title="Restore customer" disabled={restoringId === c.id} onClick={() => restore(c)}>{restoringId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}</Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

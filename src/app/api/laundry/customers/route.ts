@@ -24,9 +24,10 @@ export async function GET(request: Request) {
     if (!biz?.platformBusinessId) return NextResponse.json({ success: true, data: [], total: 0 })
 
     const where: Record<string, unknown> = { businessId: biz.platformBusinessId }
-    // Archived ("deleted") customers are hidden from the list + search unless the
-    // caller explicitly asks (includeArchived=1). Their history is untouched.
-    if (sp.get("includeArchived") !== "1") where.status = { not: "ARCHIVED" }
+    // Archived (soft-deleted) AND merged customers are hidden from the list +
+    // search unless the caller explicitly asks (includeArchived=1). Both carry
+    // isActive=false; their history is untouched and they can be restored.
+    if (sp.get("includeArchived") !== "1") where.isActive = true
     if (q) where.OR = [{ name: { contains: q } }, { phone: { contains: q } }, { customerCode: { contains: q } }, { email: { contains: q } }]
     // Part 9: fast filter to subscribers only.
     const subscription = sp.get("subscription")

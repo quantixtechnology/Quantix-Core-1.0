@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, Plus, Pencil, IndianRupee, Tag, ArrowLeft, Trash2, Search, WashingMachine } from "lucide-react"
+import { Loader2, Plus, Pencil, IndianRupee, Tag, ArrowLeft, Trash2, Search, WashingMachine, Power } from "lucide-react"
 import { toast } from "sonner"
 import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
@@ -49,7 +49,7 @@ export function LaundryServicesPricing({ businessId }: { businessId: string }) {
     if (!businessId) return
     setLoading(true)
     Promise.all([
-      fetch(`/api/laundry/services?businessId=${businessId}`).then((r) => r.json()),
+      fetch(`/api/laundry/services?businessId=${businessId}&includeInactive=1`).then((r) => r.json()),
       fetch(`/api/laundry/garments?businessId=${businessId}`).then((r) => r.json()),
       fetch(`/api/laundry/categories?businessId=${businessId}`).then((r) => r.json()),
     ]).then(([s, g, c]) => { if (s.success) setServices(s.data || []); if (g.success) setGarments(g.data || []); if (c.success) setCategories((c.data || []).map((x: Category) => ({ id: x.id, name: x.name }))) })
@@ -101,6 +101,18 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed") } finally { setSaving(false) }
   }
 
+  // Activate / deactivate in place — the SAME record (never duplicated). Editing
+  // the name later updates this record everywhere; existing orders keep their
+  // historical service-name snapshot.
+  const toggleActive = async (s: Service) => {
+    try {
+      const res = await fetch(`/api/laundry/services/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, isActive: !s.isActive }) })
+      const j = await res.json()
+      if (!res.ok || j.error) throw new Error(j.error || "Failed")
+      toast.success(s.isActive ? "Service deactivated" : "Service activated"); onChanged()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -124,8 +136,13 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
               <div className="mt-2 text-xs text-slate-500">{stats[s.id]?.count ?? 0} garments configured{stats[s.id]?.from != null && <> · <span className="font-medium text-slate-700">from {inr(stats[s.id]!.from)}</span></>}</div>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" variant="outline" className="h-8 gap-1 flex-1" onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
-                <Button size="sm" className="h-8 gap-1 flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onManage(s)}><Tag className="h-3.5 w-3.5" /> Manage Prices</Button>
+                {s.isActive ? (
+                  <Button size="sm" className="h-8 gap-1 flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onManage(s)}><Tag className="h-3.5 w-3.5" /> Manage Prices</Button>
+                ) : (
+                  <Button size="sm" className="h-8 gap-1 flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => toggleActive(s)}><Power className="h-3.5 w-3.5" /> Activate</Button>
+                )}
               </div>
+              {s.isActive && <button onClick={() => toggleActive(s)} className="mt-1.5 w-full text-[11px] text-slate-400 hover:text-slate-600">Deactivate service</button>}
             </CardContent></Card>
           ))}
         </div>
