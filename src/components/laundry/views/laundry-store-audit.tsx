@@ -98,16 +98,20 @@ export function LaundryStoreAudit() {
 
   const backToQueue = () => { setSelectedId(null); setDetail(null) }
 
-  // Scan a Pickup Bag QR/code → open that order's audit directly (no search).
+  // Scan a bag QR/code → open that order's audit directly (no search). Resolves
+  // a REUSABLE bag first (its currentOrderId), then falls back to a legacy
+  // temporary Pickup Bag for backward compatibility.
   const scanToAudit = useCallback(async (code: string) => {
     const c = code.trim()
     if (!c || !currentBusinessId) return
     try {
+      const rb = await fetch(`/api/laundry/bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(c)}`).then((r) => r.json())
+      const bag = (rb.data || []).find((b: { bagNumber: string; currentOrderId: string | null }) => b.bagNumber.toUpperCase() === c.toUpperCase()) || (rb.data || [])[0]
+      if (bag?.currentOrderId) { openOrder(bag.currentOrderId); return }
       const j = await fetch(`/api/laundry/pickup-bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(c)}`).then((r) => r.json())
-      const bags: { code: string; orderId: string; orderNumber: string | null }[] = j.data || []
-      const bag = bags.find((b) => b.code.toUpperCase() === c.toUpperCase()) || bags[0]
-      if (!bag) { toast({ title: "Not found", description: `No pickup bag for "${c}".`, variant: "destructive" }); return }
-      openOrder(bag.orderId)
+      const legacy = (j.data || []).find((b: { code: string; orderId: string }) => b.code.toUpperCase() === c.toUpperCase()) || (j.data || [])[0]
+      if (legacy?.orderId) { openOrder(legacy.orderId); return }
+      toast({ title: "Not found", description: `No bag for "${c}".`, variant: "destructive" })
     } catch { toast({ title: "Scan failed", variant: "destructive" }) }
   }, [currentBusinessId, openOrder, toast])
 
@@ -168,12 +172,11 @@ export function LaundryStoreAudit() {
       const res = await fetch(`/api/laundry/orders/${detail.id}/transition`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStatus, actorName: user?.name || "auditor", note: auditNotes || null }) })
       const json = await res.json()
       if (!res.ok || json.success === false) { toast({ title: "Error", description: json.error || "Transition failed", variant: "destructive" }); return }
-      // Audit approved → generate (or reuse) the Processing Package QR that the
-      // Processing + Delivery teams use for the rest of the lifecycle. Additive,
-      // idempotent, best-effort — a pickup order gets its PKG here; walk-in/
-      // garment orders create a package for the order too. Never blocks audit.
+      // Reusable bags carry the SAME permanent QR through processing → delivery,
+      // so no Processing Package QR is generated. Advance this order's bags to
+      // PROCESSING (best-effort, non-blocking).
       if (toStatus === "PAYMENT_PENDING") {
-        fetch(`/api/laundry/orders/${detail.id}/processing-package`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {})
+        fetch(`/api/laundry/bags/order/${detail.id}/advance`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, toStatus: "PROCESSING" }) }).catch(() => {})
       }
       toast({ title: label, description: `${detail.orderNumber} → ${toStatus === "PAYMENT_PENDING" ? "Payment" : toStatus}` })
       backToQueue(); loadQueue()

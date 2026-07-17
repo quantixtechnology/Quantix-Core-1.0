@@ -109,6 +109,7 @@ export type LaundryBusinessPage =
   | "store-receive-queue"
   | "ready-delivery-queue"
   | "pickup-bags"
+  | "bag-management"
   | "order-detail"
   | "customers"
   | "stores"
