@@ -40,7 +40,7 @@ export function StorefrontLayout({
   onOpenStorePicker,
 }: StorefrontLayoutProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance, currentBusinessType } = useAdminStore()
-  const { items, totalItems, subtotal, updateQuantity, removeItem } = useCartStore()
+  const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout } = useCartStore()
 
   // Customer-facing terminology for LAUNDRY workspaces (internal cart store is
   // reused unchanged; only visible labels differ). Ecommerce is unaffected.
@@ -168,7 +168,7 @@ export function StorefrontLayout({
                       <p className="text-[11px] text-gray-500 mt-0.5">{item.variantName}</p>
                     )}
                     <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>
-                      {formatINR(item.price * item.quantity)}
+                      {item.billedAfterAudit ? <span className="text-[11px] font-semibold text-amber-600">Billed after audit</span> : formatINR(item.price * item.quantity)}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2 shrink-0">
@@ -178,28 +178,33 @@ export function StorefrontLayout({
                     >
                       <Trash2 className="w-3.5 h-3.5 text-red-400" />
                     </button>
-                    <div
-                      className="flex items-center h-7 rounded-xl overflow-hidden"
-                      style={{ border: `1.5px solid ${brandColor}` }}
-                    >
-                      <button
-                        onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)}
-                        className="w-7 h-full flex items-center justify-center active:opacity-70"
-                        style={{ color: brandColor }}
+                    {/* Subscription + weight-based lines carry no quantity stepper. */}
+                    {item.kind === "subscription" || item.billedAfterAudit ? (
+                      <span className="text-[11px] font-medium text-gray-400">{item.kind === "subscription" ? "Plan" : `~${item.weightKg || 0} kg`}</span>
+                    ) : (
+                      <div
+                        className="flex items-center h-7 rounded-xl overflow-hidden"
+                        style={{ border: `1.5px solid ${brandColor}` }}
                       >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span className="w-6 text-center text-[13px] font-bold" style={{ color: brandColor }}>
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() => updateQuantity(item.productId, item.variantId, item.quantity + 1)}
-                        className="w-7 h-full flex items-center justify-center active:opacity-70"
-                        style={{ color: brandColor }}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
+                        <button
+                          onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)}
+                          className="w-7 h-full flex items-center justify-center active:opacity-70"
+                          style={{ color: brandColor }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-6 text-center text-[13px] font-bold" style={{ color: brandColor }}>
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() => updateQuantity(item.productId, item.variantId, item.quantity + 1)}
+                          className="w-7 h-full flex items-center justify-center active:opacity-70"
+                          style={{ color: brandColor }}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -209,9 +214,9 @@ export function StorefrontLayout({
                 <span className="text-sm text-gray-600">Subtotal</span>
                 <span className="text-base font-bold text-gray-900">{formatINR(cartSubtotal)}</span>
               </div>
-              <p className="text-[11px] text-gray-400">Taxes &amp; delivery calculated at checkout</p>
+              <p className="text-[11px] text-gray-400">{isLaundry ? "Pickup, taxes & weight-based items confirmed at checkout" : "Taxes & delivery calculated at checkout"}</p>
               <button
-                onClick={() => { setCartOpen(false); nav.go("checkout") }}
+                onClick={() => { setCartOpen(false); if (isLaundry) requestLaundryCheckout(); else nav.go("checkout") }}
                 className="w-full h-12 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
                 style={{ backgroundColor: brandColor }}
               >

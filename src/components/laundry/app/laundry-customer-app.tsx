@@ -7,6 +7,8 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { Loader2, Home, ShoppingBag, Repeat, User, Package, LogOut, ChevronRight, MapPin, Plus, Minus, CheckCircle2, Clock } from "lucide-react"
+import { useCartStore } from "@/stores/cart-store"
+import { makeGarmentLine, laundryLines, cartToOrderItems } from "@/lib/laundry-cart"
 
 const inr = (n: number) => `₹${(n || 0).toLocaleString("en-IN")}`
 type View = "home" | "order" | "subscription" | "orders" | "orderDetail" | "profile"
@@ -180,7 +182,12 @@ function HomeView({ me, go }: { me: Me; go: (v: View) => void }) {
 
 function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Promise<{ success?: boolean; data?: { services: Service[] } | unknown; error?: string; subscription?: { coveredAmount: number } }>; onPlaced: () => void }) {
   const [services, setServices] = useState<Service[]>([])
-  const [cart, setCart] = useState<Record<string, { serviceId: string; garmentId: string; name: string; price: number; qty: number }>>({})
+  // ONE shared cart — same store + mapping helpers as the Web Storefront. The
+  // PWA keeps no independent cart implementation; only the UI differs.
+  const cartItems = useCartStore((s) => s.items)
+  const addItem = useCartStore((s) => s.addItem)
+  const updateQuantity = useCartStore((s) => s.updateQuantity)
+  const clearKind = useCartStore((s) => s.clearKind)
   const [quote, setQuote] = useState<{ grandTotal: number; coveredAmount: number; extraAmount: number } | null>(null)
   const [pickupDate, setPickupDate] = useState("")
   const [instructions, setInstructions] = useState("")
@@ -188,21 +195,27 @@ function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Pro
   const [msg, setMsg] = useState("")
 
   useEffect(() => { api("/catalog").then((j) => { if (j.success) setServices((j.data as { services: Service[] }).services) }) }, [api])
-  const items = Object.values(cart).filter((c) => c.qty > 0)
+  const lines = laundryLines(cartItems)
+  const orderItems = cartToOrderItems(cartItems)
   useEffect(() => {
-    if (items.length === 0) { setQuote(null); return }
-    const t = setTimeout(async () => { const j = await api("/quote", { method: "POST", body: JSON.stringify({ items: items.map((i) => ({ serviceId: i.serviceId, garmentId: i.garmentId, quantity: i.qty })) }) }); if (j.success) setQuote(j.data as { grandTotal: number; coveredAmount: number; extraAmount: number }) }, 300)
+    if (orderItems.length === 0) { setQuote(null); return }
+    const t = setTimeout(async () => { const j = await api("/quote", { method: "POST", body: JSON.stringify({ items: orderItems }) }); if (j.success) setQuote(j.data as { grandTotal: number; coveredAmount: number; extraAmount: number }) }, 300)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(items)])
+  }, [JSON.stringify(orderItems)])
 
-  const bump = (s: Service, g: Garment, d: number) => setCart((c) => { const key = `${s.id}:${g.garmentId}`; const cur = c[key]?.qty || 0; const qty = Math.max(0, cur + d); return { ...c, [key]: { serviceId: s.id, garmentId: g.garmentId, name: g.name, price: g.price, qty } } })
+  const qtyOf = (s: Service, g: Garment) => cartItems.find((i) => i.garmentId === g.garmentId && i.serviceId === s.id)?.quantity || 0
+  const bump = (s: Service, g: Garment, d: number) => {
+    const cur = qtyOf(s, g); const next = Math.max(0, cur + d)
+    if (cur > 0) updateQuantity(g.garmentId, s.id, next)
+    else if (next > 0) addItem(makeGarmentLine({ serviceId: s.id, serviceName: s.name, garmentId: g.garmentId, garmentName: g.name, unitPrice: g.price, unit: g.pricingType === "PER_KG" ? "kg" : "piece", pricingType: g.pricingType, quantity: next }))
+  }
   const place = async () => {
     setBusy(true); setMsg("")
-    const j = await api("/orders", { method: "POST", body: JSON.stringify({ orderType: "HOME_PICKUP", items: items.map((i) => ({ serviceId: i.serviceId, garmentId: i.garmentId, quantity: i.qty })), pickupDate: pickupDate || null, specialInstructions: instructions || null }) })
+    const j = await api("/orders", { method: "POST", body: JSON.stringify({ orderType: "HOME_PICKUP", items: orderItems, pickupDate: pickupDate || null, specialInstructions: instructions || null }) })
     setBusy(false)
     if (j.error) { setMsg(j.error); return }
-    onPlaced()
+    clearKind("laundry"); onPlaced()
   }
 
   return (
@@ -212,7 +225,7 @@ function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Pro
         <div key={s.id} className="rounded-xl bg-white border border-slate-100 p-3">
           <p className="font-medium text-slate-700 text-sm mb-2">{s.name}</p>
           <div className="space-y-1.5">
-            {s.garments.map((g) => { const qty = cart[`${s.id}:${g.garmentId}`]?.qty || 0; return (
+            {s.garments.map((g) => { const qty = qtyOf(s, g); return (
               <div key={g.garmentId} className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">{g.name} <span className="text-slate-400 text-xs">{inr(g.price)}{g.pricingType === "PER_KG" ? "/kg" : ""}</span></span>
                 <div className="flex items-center gap-2">
@@ -225,7 +238,7 @@ function OrderView({ api, onPlaced }: { api: (p: string, o?: RequestInit) => Pro
           </div>
         </div>
       ))}
-      {items.length > 0 && (
+      {lines.length > 0 && (
         <div className="rounded-xl bg-white border border-slate-100 p-3 space-y-2">
           <div className="space-y-1"><label className="text-xs text-slate-400">Pickup date</label><input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm" /></div>
           <div className="space-y-1"><label className="text-xs text-slate-400">Instructions</label><input value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="e.g. Separate whites" className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm" /></div>

@@ -14,6 +14,8 @@ import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-sto
 import { INDIAN_STATES } from "@/lib/constants"
 import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
 import { toast } from "sonner"
+import { useCartStore } from "@/stores/cart-store"
+import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, subscriptionLine, laundryLines, cartToOrderItems } from "@/lib/laundry-cart"
 import type { WebNav } from "./storefront-website"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
@@ -68,8 +70,19 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [activeService, setActiveService] = useState<Service | null>(null)
-  const [subscriptionInCart, setSubscriptionInCart] = useState<Plan | null>(null)
   const [subOnlyCheckout, setSubOnlyCheckout] = useState<Plan | null>(null)
+  const [openAtDetails, setOpenAtDetails] = useState(false)
+
+  // ── ONE shared cart (single source of truth). Services + Subscription plans
+  //    both live in useCartStore; the badge + Laundry Bag read it directly. ──
+  const cartItems = useCartStore((s) => s.items)
+  const cartAddItem = useCartStore((s) => s.addItem)
+  const clearKind = useCartStore((s) => s.clearKind)
+  const laundryCheckoutTick = useCartStore((s) => s.laundryCheckoutTick)
+  const cartSubLine = subscriptionLine(cartItems)
+  const subscriptionInCart = useMemo(() => (cartSubLine ? plans.find((p) => p.id === cartSubLine.planId) || null : null), [cartSubLine, plans])
+  const addSubscription = useCallback((p: Plan) => { clearKind("subscription"); cartAddItem(makeSubscriptionLine({ planId: p.id, name: p.name, price: p.price, billingCycle: p.billingCycle })) }, [clearKind, cartAddItem])
+  const clearSubscription = useCallback(() => clearKind("subscription"), [clearKind])
 
   useEffect(() => {
     if (!currentBusinessId) return
@@ -91,6 +104,18 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
       .then((r) => r.json()).then((j) => { if (j.success) setSubSummary(j.data) }).catch(() => {})
   }, [currentBusinessId, authCustomer?.phone])
   useEffect(() => { refreshSummary() }, [refreshSummary])
+
+  // The Laundry Bag "Proceed to Checkout" bumps this tick → open the reused
+  // laundry checkout for the cart's contents (service sheet at its details step,
+  // or the plan-only checkout when the cart holds a subscription alone).
+  useEffect(() => {
+    if (!laundryCheckoutTick) return
+    const svcId = laundryLines(cartItems)[0]?.serviceId
+    const svc = svcId ? services.find((s) => s.id === svcId) : null
+    if (svc) { setActiveService(svc); setOpenAtDetails(true) }
+    else if (cartSubLine) { const p = plans.find((x) => x.id === cartSubLine.planId); if (p) setSubOnlyCheckout(p) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [laundryCheckoutTick])
 
   const popular = useMemo(() => services.filter((s) => s.pricedCount > 0), [services])
   const q = search.trim().toLowerCase()
@@ -164,9 +189,9 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
                   ) : isPendingPlan ? (
                     <button onClick={() => setSubOnlyCheckout(p)} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>Pay Now</button>
                   ) : subscriptionInCart?.id === p.id ? (
-                    <button onClick={() => setSubscriptionInCart(null)} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
+                    <button onClick={() => clearSubscription()} className="w-full rounded-lg h-9 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 active:opacity-80">✓ Added — Remove</button>
                   ) : (
-                    <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } setSubscriptionInCart(p); toast.success(`${p.name} added — ₹${p.price} at checkout`) }} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Subscribe" : "Sign in"}</button>
+                    <button onClick={() => { if (!isAuthenticated) { nav.go("auth"); return } addSubscription(p); toast.success(`${p.name} added to your bag — ₹${p.price} at checkout`) }} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{isAuthenticated ? "Subscribe" : "Sign in"}</button>
                   )
                   return (
                     <ServiceCard
@@ -240,8 +265,8 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
         </div>
       )}
 
-      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={(p) => setSubscriptionInCart(p)} clearSubscription={() => setSubscriptionInCart(null)} onClose={() => setActiveService(null)} />}
-      {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); setSubscriptionInCart(null); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
+      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={addSubscription} clearSubscription={clearSubscription} initialDetails={openAtDetails} onClose={() => { setActiveService(null); setOpenAtDetails(false) }} />}
+      {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); clearSubscription(); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
     </div>
   )
 }
@@ -251,9 +276,20 @@ interface SubStatus { active: boolean; subscriptionId?: string; planName?: strin
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
 interface Addr { id: string; label?: string | null; addressLine1: string; addressLine2?: string | null; area?: string | null; landmark?: string | null; city: string; state?: string | null; pincode: string; country?: string | null; isDefault?: boolean }
 const fmtAddr = (a: Addr) => [a.addressLine1, a.area, a.landmark, [a.city, a.state].filter(Boolean).join(", ") + (a.pincode ? ` - ${a.pincode}` : "")].filter((x) => x && String(x).trim()).join(", ")
-function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, clearSubscription, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; clearSubscription: () => void; onClose: () => void }) {
-  const [step, setStep] = useState<"select" | "details" | "success">("select")
-  const [qty, setQty] = useState<Record<string, number>>({})
+function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, clearSubscription, initialDetails, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; clearSubscription: () => void; initialDetails?: boolean; onClose: () => void }) {
+  // Shared cart — the single source of truth this checkout consumes.
+  const cartItems = useCartStore((s) => s.items)
+  const cartAddItem = useCartStore((s) => s.addItem)
+  const clearKind = useCartStore((s) => s.clearKind)
+  // When reopened from the Laundry Bag (initialDetails), restore the selection
+  // from the cart's laundry lines for THIS service so the review renders.
+  const cartForService = useMemo(() => laundryLines(cartItems).filter((l) => l.serviceId === service.id), [service.id])// eslint-disable-line react-hooks/exhaustive-deps
+  const [step, setStep] = useState<"select" | "details" | "success">(initialDetails ? "details" : "select")
+  const [qty, setQty] = useState<Record<string, number>>(() => {
+    const q: Record<string, number> = {}
+    for (const l of cartForService) if (l.garmentId) q[l.garmentId] = l.quantity
+    return q
+  })
   const [name, setName] = useState(authCustomer?.name || ""); const [phone, setPhone] = useState(authCustomer?.phone || "")
   const [date, setDate] = useState(""); const [slot, setSlot] = useState("Morning (9AM–12PM)")
   const [useSub, setUseSub] = useState(false); const [forceNormal, setForceNormal] = useState(false)
@@ -266,7 +302,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [showSubRequired, setShowSubRequired] = useState(false)
   const [combined, setCombined] = useState<{ orderNumber: string; laundryCharges: number; subscriptionDue: number; totalDue: number; planName: string } | null>(null)
   const [gSearch, setGSearch] = useState("")
-  const [weightKg, setWeightKg] = useState("")
+  const [weightKg, setWeightKg] = useState(() => { const kg = cartForService.find((l) => !l.garmentId)?.weightKg; return kg ? String(kg) : "" })
   const isPerKg = service.pricingMode === "PER_KG"
 
   // ── Customer identity + structured address (reuse shared /profile + /addresses) ──
@@ -334,6 +370,18 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     ? [{ serviceId: service.id, garmentId: null, weightKg: Number(weightKg) || 0 }]
     : selected.map((it) => ({ serviceId: service.id, garmentId: it.garmentId, quantity: qty[it.garmentId] }))
 
+  // Write the current selection into the shared cart (single source of truth) so
+  // the badge + Laundry Bag reflect it. Replaces this checkout's laundry lines;
+  // any subscription line is left untouched. Reuses the shared mapping helpers.
+  const syncCart = () => {
+    clearKind("laundry")
+    if (isPerKg) {
+      cartAddItem(makePerKgLine({ serviceId: service.id, serviceName: service.name, weightKg: Number(weightKg) || 0, unitPrice: service.perKg?.price ?? null, gstPercent: service.perKg?.gstPercent ?? null }))
+    } else {
+      for (const it of selected) cartAddItem(makeGarmentLine({ serviceId: service.id, serviceName: service.name, garmentId: it.garmentId, garmentName: it.garmentName, unitPrice: it.unitPrice, unit: it.unit, pricingType: it.pricingType, gstPercent: it.gstPercent, quantity: qty[it.garmentId] || 0 }))
+    }
+  }
+
   // Entitlement check — runs when the customer ticks "Use my subscription
   // allowance". Never consumes allowance. No active plan → Subscription Required.
   const onToggleSub = async (checked: boolean) => {
@@ -392,7 +440,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Checkout failed")
         setCombined({ orderNumber: j.data.order?.orderNumber || "—", laundryCharges: j.data.allocation.laundryCharges, subscriptionDue: j.data.allocation.subscriptionDue, totalDue: j.data.allocation.totalDue, planName: j.data.subscription?.planName || subscriptionInCart.name })
-        clearSubscription(); setStep("success")
+        clearSubscription(); clearKind("laundry"); setStep("success")
         return
       }
       const res = await fetch("/api/core/storefront/laundry-order", {
@@ -409,7 +457,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       if (j.noSubscription) { setUseSub(false); setShowSubRequired(true); setSubmitting(false); return }
       if (j.needsNormalOrder) { setLimitNotice(j.reason || "Subscription limit reached."); setForceNormal(true); setUseSub(false); setSubmitting(false); return }
       if (!res.ok || !j.success) throw new Error(j.error || "Order failed")
-      setResult(j.data); setStep("success")
+      setResult(j.data); clearKind("laundry"); setStep("success")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Order failed") } finally { setSubmitting(false) }
   }
 
@@ -486,7 +534,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             ) : (
               <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
             )}
-            <button disabled={!canContinue} onClick={() => setStep("details")} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>Continue to Checkout</button>
+            <button disabled={!canContinue} onClick={() => { syncCart(); setStep("details") }} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>Continue to Checkout</button>
           </div>
         </>)}
 

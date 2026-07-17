@@ -13,6 +13,19 @@ export interface CartItem {
   mrp: number
   image: string
   isVeg: boolean | null
+  // ── Laundry storefront (single shared cart) — additive, optional; commerce
+  //    product lines leave these undefined and behave exactly as before. ──
+  kind?: "product" | "laundry" | "subscription"
+  serviceId?: string
+  serviceName?: string
+  garmentId?: string
+  pricingType?: string // PER_PIECE | PER_KG | FIXED
+  unit?: string        // piece | kg | fixed
+  gstPercent?: number
+  weightKg?: number     // estimate for a PER_KG service line (billed after audit)
+  billedAfterAudit?: boolean
+  planId?: string       // subscription line
+  billingCycle?: string
 }
 
 export interface StorePaymentGateway {
@@ -36,7 +49,12 @@ interface CartState {
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void
   removeItem: (productId: string, variantId: string) => void
   updateQuantity: (productId: string, variantId: string, quantity: number) => void
+  clearKind: (kind: NonNullable<CartItem["kind"]>) => void
   clearCart: () => void
+  // Transient (never persisted): the Laundry Bag asks the storefront to open the
+  // reused laundry checkout for the cart's contents. Bumped on "Proceed".
+  laundryCheckoutTick: number
+  requestLaundryCheckout: () => void
   applyCoupon: (code: string, discount: number) => void
   removeCoupon: () => void
   subtotal: () => number
@@ -106,7 +124,12 @@ export const useCartStore = create<CartState>()(
     }))
   },
 
+  clearKind: (kind) => set((state) => ({ items: state.items.filter((i) => (i.kind || "product") !== kind) })),
+
   clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, paymentGateways: [], couponCode: null, couponDiscount: 0 }),
+
+  laundryCheckoutTick: 0,
+  requestLaundryCheckout: () => set((state) => ({ laundryCheckoutTick: state.laundryCheckoutTick + 1 })),
 
   applyCoupon: (code, discount) => set({ couponCode: code, couponDiscount: discount }),
   removeCoupon: () => set({ couponCode: null, couponDiscount: 0 }),
