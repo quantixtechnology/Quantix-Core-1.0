@@ -40,7 +40,12 @@ export function StorefrontLayout({
   onOpenStorePicker,
 }: StorefrontLayoutProps) {
   const { currentBusinessId, currentBusinessName, currentBusinessLogo, currentPwaAppearance, currentBusinessType } = useAdminStore()
-  const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout } = useCartStore()
+  const { items, totalItems, subtotal, updateQuantity, removeItem, requestLaundryCheckout, setBusinessType } = useCartStore()
+
+  // Stamp the active workspace type onto the shared Quantix Cart Engine — makes
+  // the ONE cart business-type-aware (future-ready for analytics, abandoned-cart
+  // and per-workspace rules) without any per-product cart.
+  useEffect(() => { if (currentBusinessType) setBusinessType(currentBusinessType) }, [currentBusinessType, setBusinessType])
 
   // Customer-facing terminology for LAUNDRY workspaces (internal cart store is
   // reused unchanged; only visible labels differ). Ecommerce is unaffected.

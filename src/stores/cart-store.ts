@@ -1,5 +1,21 @@
 "use client"
 
+// ============================================================================
+// QUANTIX CART ENGINE — the ONE cart for every Quantix workspace.
+//
+// This store is the single Cart Engine for the whole platform (Laundry,
+// Commerce, Grocery, Bakery, Pharmacy, …). There is deliberately no per-product
+// cart. Every workspace maps its purchasable things (services, garments,
+// subscription plans, products, variants, add-ons) into the SAME `CartItem`
+// shape via a small per-workspace "item-type adapter" (the reference adapter is
+// src/lib/laundry-cart.ts), then relies on the identical add / update / remove /
+// persist / checkout behaviour here. The cart only PREPARES an order — pricing,
+// order creation, workflow, subscription and payment stay in each workspace's
+// existing engines.
+//
+// See docs/quantix-cart-standard.md for the official standard.
+// ============================================================================
+
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
@@ -42,6 +58,15 @@ interface CartState {
   paymentGateways: StorePaymentGateway[]
   couponCode: string | null
   couponDiscount: number
+  // ── Quantix Cart Engine metadata (see docs/quantix-cart-standard.md) ──
+  // Business-type awareness + change tracking make the ONE cart future-ready for
+  // abandoned-cart reminders, analytics and server/device sync WITHOUT redesign.
+  businessType: string | null
+  updatedAt: number
+  setBusinessType: (businessType: string | null) => void
+  // Server-sync seam: a future cart-persistence service hydrates the whole cart
+  // for a logged-in customer via replaceItems(); guests stay on localStorage.
+  replaceItems: (items: CartItem[]) => void
   setCartStoreId: (id: string) => void
   setStoreContext: (deliveryFee: number | null, minOrderAmount: number | null, paymentGateways?: StorePaymentGateway[]) => void
   switchStore: (newStoreId: string, deliveryFee: number | null, paymentGateways: StorePaymentGateway[]) => void
@@ -73,6 +98,11 @@ export const useCartStore = create<CartState>()(
   paymentGateways: [],
   couponCode: null,
   couponDiscount: 0,
+  businessType: null,
+  updatedAt: 0,
+
+  setBusinessType: (businessType) => set({ businessType }),
+  replaceItems: (items) => set({ items, updatedAt: Date.now() }),
 
   setCartStoreId: (id) => set({ storeId: id }),
   setStoreContext: (deliveryFee, _minOrderAmount, paymentGateways) =>
@@ -89,6 +119,7 @@ export const useCartStore = create<CartState>()(
       )
       if (existing) {
         return {
+          updatedAt: Date.now(),
           items: state.items.map((i) =>
             i.productId === item.productId && i.variantId === item.variantId
               ? { ...i, quantity: i.quantity + (item.quantity || 1) }
@@ -97,6 +128,7 @@ export const useCartStore = create<CartState>()(
         }
       }
       return {
+        updatedAt: Date.now(),
         items: [...state.items, { ...item, quantity: item.quantity || 1 }],
       }
     })
@@ -104,6 +136,7 @@ export const useCartStore = create<CartState>()(
 
   removeItem: (productId, variantId) => {
     set((state) => ({
+      updatedAt: Date.now(),
       items: state.items.filter(
         (i) => !(i.productId === productId && i.variantId === variantId)
       ),
@@ -116,6 +149,7 @@ export const useCartStore = create<CartState>()(
       return
     }
     set((state) => ({
+      updatedAt: Date.now(),
       items: state.items.map((i) =>
         i.productId === productId && i.variantId === variantId
           ? { ...i, quantity }
@@ -124,9 +158,9 @@ export const useCartStore = create<CartState>()(
     }))
   },
 
-  clearKind: (kind) => set((state) => ({ items: state.items.filter((i) => (i.kind || "product") !== kind) })),
+  clearKind: (kind) => set((state) => ({ updatedAt: Date.now(), items: state.items.filter((i) => (i.kind || "product") !== kind) })),
 
-  clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, paymentGateways: [], couponCode: null, couponDiscount: 0 }),
+  clearCart: () => set({ items: [], storeId: null, storeDeliveryFee: null, paymentGateways: [], couponCode: null, couponDiscount: 0, updatedAt: Date.now() }),
 
   laundryCheckoutTick: 0,
   requestLaundryCheckout: () => set((state) => ({ laundryCheckoutTick: state.laundryCheckoutTick + 1 })),
@@ -172,6 +206,8 @@ export const useCartStore = create<CartState>()(
       storeDeliveryFee: state.storeDeliveryFee,
       couponCode: state.couponCode,
       couponDiscount: state.couponDiscount,
+      businessType: state.businessType,
+      updatedAt: state.updatedAt,
     }),
   }
   )
