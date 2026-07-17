@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Search, Loader2, ClipboardCheck, ArrowLeft, ArrowRight, User, Store as StoreIcon, Clock,
-  Shirt, Camera, X, Check, PauseCircle, Save, ImageIcon,
+  Shirt, Camera, X, Check, PauseCircle, Save, ImageIcon, ScanLine,
 } from "lucide-react"
 import { LaundryWorkflowTimeline } from "./laundry-workflow-timeline"
 
@@ -55,6 +55,7 @@ export function LaundryStoreAudit() {
   const [rows, setRows] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [scanCode, setScanCode] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<OrderDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -96,6 +97,19 @@ export function LaundryStoreAudit() {
   }, [])
 
   const backToQueue = () => { setSelectedId(null); setDetail(null) }
+
+  // Scan a Pickup Bag QR/code → open that order's audit directly (no search).
+  const scanToAudit = useCallback(async (code: string) => {
+    const c = code.trim()
+    if (!c || !currentBusinessId) return
+    try {
+      const j = await fetch(`/api/laundry/pickup-bags?businessId=${encodeURIComponent(currentBusinessId)}&search=${encodeURIComponent(c)}`).then((r) => r.json())
+      const bags: { code: string; orderId: string; orderNumber: string | null }[] = j.data || []
+      const bag = bags.find((b) => b.code.toUpperCase() === c.toUpperCase()) || bags[0]
+      if (!bag) { toast({ title: "Not found", description: `No pickup bag for "${c}".`, variant: "destructive" }); return }
+      openOrder(bag.orderId)
+    } catch { toast({ title: "Scan failed", variant: "destructive" }) }
+  }, [currentBusinessId, openOrder, toast])
 
   const toggleDefect = (itemId: string, code: string) => setInspect((p) => {
     const cur = p[itemId] || { condition: "GOOD", defects: [], notes: "" }
@@ -154,6 +168,13 @@ export function LaundryStoreAudit() {
       const res = await fetch(`/api/laundry/orders/${detail.id}/transition`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStatus, actorName: user?.name || "auditor", note: auditNotes || null }) })
       const json = await res.json()
       if (!res.ok || json.success === false) { toast({ title: "Error", description: json.error || "Transition failed", variant: "destructive" }); return }
+      // Audit approved → generate (or reuse) the Processing Package QR that the
+      // Processing + Delivery teams use for the rest of the lifecycle. Additive,
+      // idempotent, best-effort — a pickup order gets its PKG here; walk-in/
+      // garment orders create a package for the order too. Never blocks audit.
+      if (toStatus === "PAYMENT_PENDING") {
+        fetch(`/api/laundry/orders/${detail.id}/processing-package`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {})
+      }
       toast({ title: label, description: `${detail.orderNumber} → ${toStatus === "PAYMENT_PENDING" ? "Payment" : toStatus}` })
       backToQueue(); loadQueue()
     } catch { toast({ title: "Error", variant: "destructive" }) } finally { setActing(false) }
@@ -277,7 +298,11 @@ export function LaundryStoreAudit() {
         <div><h1 className="text-xl font-bold flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-blue-600" /> Store Audit</h1><p className="text-sm text-muted-foreground">Inspect and approve orders waiting for audit</p></div>
         <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50">{rows.length} pending</Badge>
       </div>
-      <div className="relative max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search order no…" className="pl-9 h-9" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative max-w-sm flex-1 min-w-[200px]"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search order no…" className="pl-9 h-9" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+        {/* Scan a Pickup Bag QR → open that order's audit directly (no search). */}
+        <div className="relative max-w-xs flex-1 min-w-[200px]"><ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-500" /><Input placeholder="Scan Pickup Bag (PB-…)" className="pl-9 h-9 font-mono" value={scanCode} onChange={(e) => setScanCode(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") { scanToAudit(scanCode); setScanCode("") } }} /></div>
+      </div>
       <Card><CardContent className="p-0">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
