@@ -76,8 +76,9 @@ export function StorefrontLayout({
   // subscription lines. Subscription + weight-based lines carry no stepper.
   const renderCartLine = (item: CartItem) => {
     const isSub = item.kind === "subscription"
-    const isWeightService = !!item.billedAfterAudit && !item.garmentId // whole-service PER_KG line
-    const noStepper = isSub || isWeightService
+    const isBag = !!item.bagMode // Pickup-First (Bag) line — service only
+    const isWeightService = !!item.billedAfterAudit && !item.garmentId && !isBag // whole-service PER_KG line
+    const noStepper = isSub || isWeightService || isBag
     return (
       <div key={`${item.productId}-${item.variantId}`} className="flex items-start gap-3 bg-gray-50/80 rounded-2xl p-3">
         <ProductImage src={resolveImageUrl(item.image)} alt={item.name} className="w-[52px] h-[52px] rounded-xl shrink-0 border border-gray-100" />
@@ -88,6 +89,8 @@ export function StorefrontLayout({
               it is shown once under the Service group. */}
           {isSub ? (
             <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>{formatINR(item.price)}</p>
+          ) : isBag ? (
+            <p className="text-[11px] font-medium text-blue-600 mt-1">Pickup bag · counted at audit</p>
           ) : isWeightService ? (
             <p className="text-[11px] font-medium text-gray-500 mt-1">~{item.weightKg || 0} kg (est.)</p>
           ) : item.billedAfterAudit ? null : (
@@ -99,7 +102,7 @@ export function StorefrontLayout({
             <Trash2 className="w-3.5 h-3.5 text-red-400" />
           </button>
           {noStepper ? (
-            <span className="text-[11px] font-medium text-gray-400">{isSub ? "Plan" : "By weight"}</span>
+            <span className="text-[11px] font-medium text-gray-400">{isSub ? "Plan" : isBag ? "1 bag" : "By weight"}</span>
           ) : (
             <div className="flex items-center h-7 rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brandColor}` }}>
               <button onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)} className="w-7 h-full flex items-center justify-center active:opacity-70" style={{ color: brandColor }}><Minus className="w-3 h-3" /></button>

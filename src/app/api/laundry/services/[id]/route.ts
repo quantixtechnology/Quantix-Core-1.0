@@ -43,6 +43,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(b.subscriptionEligible !== undefined && { subscriptionEligible: !!b.subscriptionEligible }),
         ...(b.displayOrder !== undefined && { displayOrder: b.displayOrder }),
         ...(b.isActive !== undefined && { isActive: !!b.isActive }),
+        ...(b.orderMode !== undefined && { orderMode: b.orderMode === "BAG" ? "BAG" : "GARMENT" }),
         // Configurable processing route — validated by validateProcessFlow
         // (QC → PACKED appended; STEAM/duplicates/malformed terminals rejected
         // above). null clears the config (engine falls back to the heuristic).

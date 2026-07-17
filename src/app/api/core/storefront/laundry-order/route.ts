@@ -28,16 +28,21 @@ interface OrderItemInput { serviceId: string; garmentId: string; quantity: numbe
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, items, customer, pickup, useSubscription, forceNormal } = body as {
+    const { businessId, items, services, customer, pickup, useSubscription, forceNormal } = body as {
       businessId?: string
       items?: OrderItemInput[]
+      services?: { serviceId: string; serviceName?: string }[] // Pickup-First (Bag) services — no items
       customer?: { name?: string; phone?: string; email?: string; id?: string }
       pickup?: { address?: string; addressId?: string; structured?: StructuredAddress; date?: string; timeSlot?: string; instructions?: string }
       useSubscription?: boolean
       forceNormal?: boolean
     }
     if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
-    if (!Array.isArray(items) || items.length === 0) return NextResponse.json({ success: false, error: "items are required" }, { status: 400 })
+    // Pickup-First (Bag) services carry no garments/price — one workflow service
+    // line per bag; garments are counted later at Store Audit.
+    const bagServiceLines = Array.isArray(services) ? services.filter((s) => s?.serviceId).map((s) => ({ serviceId: s.serviceId, serviceName: s.serviceName || "Service", turnaroundHours: 24 })) : []
+    const hasItems = Array.isArray(items) && items.length > 0
+    if (!hasItems && bagServiceLines.length === 0) return NextResponse.json({ success: false, error: "items or services are required" }, { status: 400 })
     if (!customer?.name || !customer?.phone) return NextResponse.json({ success: false, error: "customer name and phone are required" }, { status: 400 })
 
     const biz = await resolveLaundryBusiness(businessId)
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
     // ── Subscription context (optional) ──────────────────────────────────────
     let sub: { id: string; totalCredits: number; planName: string; maxOrders: number | null } | null = null
     let allocation: ReturnType<typeof computeSubscriptionAllocation> | null = null
-    if (useSubscription) {
+    if (useSubscription && hasItems) {
       const active = await prisma.customerSubscription.findFirst({
         where: { businessId: platformId, customerId: customerRow.id, status: "ACTIVE" },
         include: { plan: { select: { name: true, totalCredits: true, maxOrdersPerCycle: true, serviceType: true } }, usages: { select: { creditsUsed: true } } },
@@ -95,9 +100,13 @@ export async function POST(request: Request) {
     }
 
     // ── Price snapshot via the Billing Resolver (authoritative, server-side) ──
+    // Bag (Pickup-First) orders carry no items → no billing here; garments are
+    // priced later at Store Audit (billed = false).
     const isPickup = !!pickupSnapshot
     const customerType = sub ? "SUBSCRIPTION" : (isPickup ? "PICKUP" : "WALK_IN")
-    const { lines: resolved } = await resolveOrderBilling(lbId, { storeId: store.id, customerType: sub ? null : customerType, pickup: isPickup, delivery: isPickup }, items)
+    const resolved = hasItems
+      ? (await resolveOrderBilling(lbId, { storeId: store.id, customerType: sub ? null : customerType, pickup: isPickup, delivery: isPickup }, items!)).lines
+      : []
 
     // Build order items. For a subscription order, split each line into a
     // covered part (₹0, SUBSCRIPTION) and a chargeable extra part (resolved).
@@ -108,9 +117,9 @@ export async function POST(request: Request) {
     if (sub && allocation) {
       // Deterministic coverage in customer line order (matches the engine).
       let remaining = allocation.availableBefore
-      for (let i = 0; i < items.length; i++) {
+      for (let i = 0; i < items!.length; i++) {
         const r = resolved[i]
-        const qty = Math.max(0, Math.floor(items[i].quantity))
+        const qty = Math.max(0, Math.floor(items![i].quantity))
         const covered = Math.min(qty, remaining)
         remaining -= covered
         const extra = qty - covered
@@ -125,8 +134,9 @@ export async function POST(request: Request) {
     const gstTotal = orderLines.reduce((s, l) => s + l.gstAmount, 0)
     const grandTotal = Math.round((subtotal + gstTotal) * 100) / 100
 
-    // Distinct workflow service lines
-    const serviceLines = Array.from(new Map(orderLines.filter((l) => l.serviceId).map((l) => [l.serviceId, { serviceId: l.serviceId, serviceName: l.serviceName, turnaroundHours: 24 }])).values())
+    // Distinct workflow service lines = garment-derived + Pickup-First bag services.
+    const derivedServiceLines = orderLines.filter((l) => l.serviceId).map((l) => ({ serviceId: l.serviceId as string, serviceName: l.serviceName, turnaroundHours: 24 }))
+    const serviceLines = Array.from(new Map([...derivedServiceLines, ...bagServiceLines].map((s) => [s.serviceId, s])).values())
 
     const order = await createLaundryOrder({
       laundryBusinessId: lbId,
@@ -142,7 +152,7 @@ export async function POST(request: Request) {
       financials: {
         subtotal, gstTotal, grandTotal, balanceDue: grandTotal,
         paymentStatus: sub && grandTotal === 0 ? "SUBSCRIPTION" : "UNPAID",
-        billed: true,
+        billed: hasItems, // Bag orders are billed later, at Store Audit
       },
       paymentPreference: sub ? "SUBSCRIPTION_BILLING" : "COD",
       pickupDate: pickup?.date ? new Date(pickup.date) : null,

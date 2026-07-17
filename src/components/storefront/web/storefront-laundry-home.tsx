@@ -15,7 +15,7 @@ import { INDIAN_STATES } from "@/lib/constants"
 import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
 import { toast } from "sonner"
 import { useCartStore } from "@/stores/cart-store"
-import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, subscriptionLine, laundryLines, cartToOrderItems, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
+import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subscriptionLine, laundryLines, cartToOrderItems, cartBagServices, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
 import type { WebNav } from "./storefront-website"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
@@ -24,7 +24,7 @@ type AuthCustomer = { name: string; phone: string; email: string } | null
 const maskPhone = (p: string) => p && p.length >= 4 ? `••••••${p.slice(-4)}` : p
 const maskEmail = (e: string) => { const [u, d] = e.split("@"); return u && d ? `${u.slice(0, 3)}•••@${d}` : e }
 interface SvcItem { garmentId: string; garmentName: string; categoryName: string | null; unitPrice: number; pricingType: string | null; unit: string | null; gstPercent: number | null }
-interface Service { id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; pricingMode: string; items: SvcItem[]; perKg: { price: number; minWeightKg: number | null; gstPercent: number | null } | null; pricedCount: number; fromPrice: number | null; fromUnit: string }
+interface Service { id: string; name: string; description: string | null; icon: string | null; imageUrl: string | null; orderMode?: string; pricingMode: string; items: SvcItem[]; perKg: { price: number; minWeightKg: number | null; gstPercent: number | null } | null; pricedCount: number; fromPrice: number | null; fromUnit: string }
 interface Plan { id: string; name: string; slug: string; description: string | null; imageUrl: string | null; price: number; billingCycle: string; totalCredits: number; creditLabel: string; allowanceType: string | null; maxOrdersPerCycle: number | null; features: string[]; isFeatured: boolean }
 
 // Tenant marketing image with a graceful icon fallback (no distortion, lazy).
@@ -173,7 +173,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
                       ? <p className="mt-0.5 text-sm font-bold text-gray-900"><span className="text-[11px] font-medium text-gray-400">From </span>{inr(s.fromPrice)} <span className="text-xs font-medium text-gray-400">/ {s.fromUnit === "kg" ? "kg" : s.fromUnit === "fixed" ? "item" : "piece"}</span></p>
                       : <p className="mt-0.5 text-xs text-gray-400">Pricing unavailable</p>}
                     metaLine={s.description ? <p className="mt-1 hidden sm:block text-xs text-gray-500 line-clamp-2">{s.description}</p> : undefined}
-                    button={<button onClick={() => setActiveService(s)} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}><span className="sm:hidden">Select</span><span className="hidden sm:inline">Select Service</span></button>}
+                    button={<button onClick={() => setActiveService(s)} className="w-full rounded-lg h-9 text-xs font-semibold text-white active:opacity-80" style={accentBg}>{s.orderMode === "BAG" ? <><span className="sm:hidden">Book</span><span className="hidden sm:inline">Book Pickup</span></> : <><span className="sm:hidden">Select</span><span className="hidden sm:inline">Select Service</span></>}</button>}
                   />
                 ))}
               </div>
@@ -317,6 +317,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [couponBusy, setCouponBusy] = useState(false)
   const [weightKg, setWeightKg] = useState(() => { const kg = cartForService.find((l) => !l.garmentId)?.weightKg; return kg ? String(kg) : "" })
   const isPerKg = service.pricingMode === "PER_KG"
+  const isBag = service.orderMode === "BAG" // Pickup-First: book the service only, no garments
 
   // ── Customer identity + structured address (reuse shared /profile + /addresses) ──
   const [email, setEmail] = useState(authCustomer?.email || "")
@@ -376,7 +377,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const hasKgPortion = isPerKg || kgSelected.length > 0
   // Booking subtotal = per-piece lines only. It NEVER includes a PER_KG amount.
   const clientSubtotal = pieceSelected.reduce((s, it) => s + (it.unitPrice || 0) * (qty[it.garmentId] || 0), 0)
-  const canContinue = isPerKg ? (Number(weightKg) || 0) > 0 : selected.length > 0
+  const canContinue = isBag ? true : isPerKg ? (Number(weightKg) || 0) > 0 : selected.length > 0
   const bump = (id: string, d: number) => setQty((p) => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) }))
   const accentBg = { backgroundColor: brandColor }
   // The order ALWAYS reflects the whole cart (every service), so one checkout
@@ -388,11 +389,13 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   // The subscription line and other workspaces' lines are never touched.
   const addToCart = () => {
     const others = cartItems.filter((l) => !(l.kind === "laundry" && l.serviceId === service.id))
-    const mine = isPerKg
-      ? [makePerKgLine({ serviceId: service.id, serviceName: service.name, weightKg: Number(weightKg) || 0, unitPrice: service.perKg?.price ?? null, gstPercent: service.perKg?.gstPercent ?? null })]
-      : selected.map((it) => makeGarmentLine({ serviceId: service.id, serviceName: service.name, garmentId: it.garmentId, garmentName: it.garmentName, unitPrice: it.unitPrice, unit: it.unit, pricingType: it.pricingType, gstPercent: it.gstPercent, quantity: qty[it.garmentId] || 0 }))
+    const mine = isBag
+      ? [makeBagLine({ serviceId: service.id, serviceName: service.name })]
+      : isPerKg
+        ? [makePerKgLine({ serviceId: service.id, serviceName: service.name, weightKg: Number(weightKg) || 0, unitPrice: service.perKg?.price ?? null, gstPercent: service.perKg?.gstPercent ?? null })]
+        : selected.map((it) => makeGarmentLine({ serviceId: service.id, serviceName: service.name, garmentId: it.garmentId, garmentName: it.garmentName, unitPrice: it.unitPrice, unit: it.unit, pricingType: it.pricingType, gstPercent: it.gstPercent, quantity: qty[it.garmentId] || 0 }))
     replaceItems([...others, ...mine])
-    toast.success("Added to your bag")
+    toast.success(isBag ? "Pickup bag added" : "Added to your bag")
     onClose()
   }
 
@@ -487,6 +490,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         body: JSON.stringify({
           businessId,
           items: orderItems(),
+          services: cartBagServices(cartItems), // Pickup-First (Bag) services — no items; counted at audit
           customer: customerPayload,
           pickup: pickupPayload,
           useSubscription: useSub, forceNormal: force || forceNormal,
@@ -535,7 +539,20 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
 
         {/* STEP: select garments (or weight for PER_KG services) */}
         {step === "select" && (<>
-          {isPerKg ? (
+          {isBag ? (
+            <div className="overflow-y-auto px-5 py-6 flex-1 space-y-3">
+              <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-center">
+                <div className="mx-auto w-12 h-12 rounded-full bg-white flex items-center justify-center" style={{ color: brandColor }}><PackageCheck className="w-6 h-6" /></div>
+                <p className="mt-2 text-sm font-semibold text-gray-900">Pickup-First Service</p>
+                <p className="mt-1 text-xs text-gray-500">No need to count garments. We collect your clothes for <b>{service.name}</b> in a dedicated bag and count them at Store Audit — you only book the pickup.</p>
+              </div>
+              <ul className="text-xs text-gray-500 space-y-1.5">
+                <li>• One bag for this service</li>
+                <li>• Garments counted &amp; priced after Store Audit</li>
+                <li>• Schedule pickup at the next step</li>
+              </ul>
+            </div>
+          ) : isPerKg ? (
             <div className="overflow-y-auto px-5 py-4 flex-1 space-y-3">
               <p className="text-sm text-gray-600">This service is priced by weight at <b>{inr(service.perKg?.price)} / kg</b>{service.perKg?.minWeightKg ? ` (min ${service.perKg.minWeightKg} kg)` : ""}.</p>
               <Field label="Estimated Weight (kg)"><input type="number" min={0} step="0.5" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="e.g. 3" /></Field>
@@ -563,8 +580,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             </div>
           )}
           <div className="border-t border-gray-100 px-5 py-4 bg-gray-50/60">
-            {!isPerKg && selected.length > 0 && <div className="flex justify-between text-xs text-gray-500 mb-1"><span>{selected.reduce((s, it) => s + (qty[it.garmentId] || 0), 0)} item(s) selected</span></div>}
-            {hasKgPortion ? (
+            {!isBag && !isPerKg && selected.length > 0 && <div className="flex justify-between text-xs text-gray-500 mb-1"><span>{selected.reduce((s, it) => s + (qty[it.garmentId] || 0), 0)} item(s) selected</span></div>}
+            {isBag ? null : hasKgPortion ? (
               <div className="mb-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
                 <p className="text-xs font-semibold text-amber-800">Estimated booking</p>
                 <p className="text-[11px] text-amber-700">Final weight will be measured during Store Audit. Your invoice is generated after the audit.</p>
@@ -573,7 +590,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             ) : (
               <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
             )}
-            <button disabled={!canContinue} onClick={addToCart} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80 flex items-center justify-center gap-1.5" style={accentBg}><Plus className="w-4 h-4" /> Add to Cart</button>
+            <button disabled={!canContinue} onClick={addToCart} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80 flex items-center justify-center gap-1.5" style={accentBg}><Plus className="w-4 h-4" /> {isBag ? "Add Pickup Bag" : "Add to Cart"}</button>
             <p className="mt-1.5 text-center text-[11px] text-gray-400">Keep shopping and add more services — pickup details are entered at checkout.</p>
           </div>
         </>)}
@@ -589,8 +606,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                     <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{g.serviceName}</p>
                     {g.lines.map((l) => (
                       <div key={`${l.productId}-${l.variantId}`} className="flex justify-between text-sm pl-1">
-                        <span className="text-gray-600">{l.garmentId ? `${l.quantity} × ${l.name}` : `~${l.weightKg || "?"} kg (est.)`}</span>
-                        {l.billedAfterAudit ? <span className="text-xs font-medium text-amber-700">Billed after audit</span> : <span className="font-medium">{inr(l.price * l.quantity)}</span>}
+                        <span className="text-gray-600">{l.bagMode ? "Pickup bag" : l.garmentId ? `${l.quantity} × ${l.name}` : `~${l.weightKg || "?"} kg (est.)`}</span>
+                        {l.billedAfterAudit ? <span className="text-xs font-medium text-amber-700">{l.bagMode ? "Counted at audit" : "Billed after audit"}</span> : <span className="font-medium">{inr(l.price * l.quantity)}</span>}
                       </div>
                     ))}
                   </div>

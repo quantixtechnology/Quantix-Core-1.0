@@ -18,7 +18,7 @@ import { toast } from "sonner"
 import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
 
-interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; processFlow: string | null; compatibleCategoryIds?: string[] }
+interface Service { id: string; name: string; description: string | null; image: string | null; displayOrder: number; isActive: boolean; displayOnWebsite: boolean; orderMode?: string; processFlow: string | null; compatibleCategoryIds?: string[] }
 interface Category { id: string; name: string }
 
 // Configurable working stages a route can be composed from. Quality Check →
@@ -36,7 +36,7 @@ function parseRoute(raw: string | null): string[] {
 interface Garment { id: string; name: string; category?: { id: string; name: string | null } | null }
 interface PriceRow { garmentId: string; garmentName: string; category: string | null; price: number }
 
-const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true }
+const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isActive: true, displayOnWebsite: true, orderMode: "GARMENT" }
 
 export function LaundryServicesPricing({ businessId }: { businessId: string }) {
   const [services, setServices] = useState<Service[]>([])
@@ -85,7 +85,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
   }, [services, businessId])
 
   const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setCompatCats([]); setOpen(true) }
-  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
+  const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT" }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
   const toggleStage = (code: string) => setRoute((r) => r.includes(code) ? r.filter((c) => c !== code) : [...r, code])
   const moveStage = (i: number, dir: -1 | 1) => setRoute((r) => { const j = i + dir; if (j < 0 || j >= r.length) return r; const c = [...r]; [c[i], c[j]] = [c[j], c[i]]; return c })
   const toggleCat = (id: string) => setCompatCats((c) => c.includes(id) ? c.filter((x) => x !== id) : [...c, id])
@@ -93,7 +93,7 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
     if (!form.name.trim()) { toast.error("Service name is required"); return }
     setSaving(true)
     try {
-      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite, processFlow: route.length ? route : null, ...(edit ? { compatibleCategoryIds: compatCats } : {}) }
+      const payload = { businessId, name: form.name, description: form.description, image: form.image || null, displayOrder: Number(form.displayOrder) || 0, isActive: form.isActive, displayOnWebsite: form.displayOnWebsite, orderMode: form.orderMode, processFlow: route.length ? route : null, ...(edit ? { compatibleCategoryIds: compatCats } : {}) }
       const res = await fetch(edit ? `/api/laundry/services/${edit.id}` : `/api/laundry/services`, { method: edit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || j.error) throw new Error(j.error || "Save failed")
@@ -143,6 +143,20 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
               <div className="space-y-1.5"><Label className="text-xs">Website</Label><div className="flex items-center gap-2 h-9"><Switch checked={form.displayOnWebsite} onCheckedChange={(v) => set("displayOnWebsite", v)} /><span className="text-sm text-slate-600">{form.displayOnWebsite ? "Visible" : "Hidden"}</span></div></div>
             </div>
             <div className="flex items-center gap-2"><Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} className="data-[state=checked]:bg-emerald-600" /><span className="text-sm font-medium">{form.isActive ? "Active" : "Inactive"}</span></div>
+
+            {/* Booking method (additive). BAG = Pickup-First: customers book the
+                service only; garments are counted later at Store Audit. */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Order Mode</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {([["GARMENT", "Garment Based", "Customer counts garments at booking"], ["BAG", "Pickup First (Bag)", "Book service only · counted at audit"]] as const).map(([v, label, desc]) => (
+                  <button type="button" key={v} onClick={() => set("orderMode", v)} className={`rounded-lg border p-2.5 text-left ${form.orderMode === v ? "border-blue-500 bg-blue-50" : "border-slate-200"}`}>
+                    <p className={`text-sm font-semibold ${form.orderMode === v ? "text-blue-700" : "text-slate-700"}`}>{label}</p>
+                    <p className="text-[11px] text-slate-400 leading-tight mt-0.5">{desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Processing route — the department sequence garments follow.
                 Quality Check → Packed are always appended automatically. */}

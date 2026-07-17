@@ -71,6 +71,7 @@ export async function POST(request: Request) {
         subscriptionEligible: b.subscriptionEligible ?? false,
         displayOrder: typeof b.displayOrder === "number" ? b.displayOrder : 0,
         isActive: b.isActive ?? true,
+        orderMode: b.orderMode === "BAG" ? "BAG" : "GARMENT",
         processFlow: flow.flow ? JSON.stringify(flow.flow) : null,
       },
     })

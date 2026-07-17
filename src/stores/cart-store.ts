@@ -40,6 +40,7 @@ export interface CartItem {
   gstPercent?: number
   weightKg?: number     // estimate for a PER_KG service line (billed after audit)
   billedAfterAudit?: boolean
+  bagMode?: boolean     // Pickup-First (Bag) line: service only, no garments, counted at audit
   planId?: string       // subscription line
   billingCycle?: string
 }

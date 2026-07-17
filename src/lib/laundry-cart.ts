@@ -51,6 +51,20 @@ export function makePerKgLine(o: {
   }
 }
 
+// A Pickup-First (Bag) line — the service ONLY, no garments and no price.
+// One bag per service; garments are counted later at Store Audit.
+export function makeBagLine(o: { serviceId: string; serviceName: string }): CartItemInput {
+  return {
+    kind: "laundry",
+    productId: `bag:${o.serviceId}`, variantId: o.serviceId,
+    name: o.serviceName, variantName: "Pickup bag · counted at audit",
+    serviceId: o.serviceId, serviceName: o.serviceName,
+    price: 0, mrp: 0, image: "", isVeg: null,
+    bagMode: true, billedAfterAudit: true,
+    quantity: 1,
+  }
+}
+
 // A subscription plan line — always quantity 1, keyed by plan.
 export function makeSubscriptionLine(o: { planId: string; name: string; price: number; billingCycle?: string | null }): CartItemInput {
   return {
@@ -73,12 +87,18 @@ export const hasLaundry = (items: CartItem[]) => items.some(isLaundryLine)
 // checkout APIs accept: {serviceId, garmentId, quantity} for piece/fixed lines
 // and {serviceId, garmentId:null, weightKg} for a weight-based line.
 export function cartToOrderItems(items: CartItem[]): Array<{ serviceId: string; garmentId: string | null; quantity?: number; weightKg?: number }> {
-  return laundryLines(items).map((i) =>
-    i.garmentId
-      ? { serviceId: i.serviceId as string, garmentId: i.garmentId, quantity: i.quantity }        // per-garment (piece or per-kg garment)
-      : { serviceId: i.serviceId as string, garmentId: null, weightKg: i.weightKg || 0 },          // whole-service PER_KG mode
-  )
+  return laundryLines(items)
+    .filter((i) => !i.bagMode) // Bag lines carry no garments/price → they become order SERVICES, not items.
+    .map((i) =>
+      i.garmentId
+        ? { serviceId: i.serviceId as string, garmentId: i.garmentId, quantity: i.quantity }      // per-garment (piece or per-kg garment)
+        : { serviceId: i.serviceId as string, garmentId: null, weightKg: i.weightKg || 0 },        // whole-service PER_KG mode
+    )
 }
+
+// Pickup-First (Bag) services in the cart → order service lines (no items).
+export const cartBagServices = (items: CartItem[]) =>
+  laundryLines(items).filter((i) => i.bagMode).map((i) => ({ serviceId: i.serviceId as string, serviceName: i.serviceName || "Service" }))
 
 // Booking subtotal = priced lines only (weight-based lines are billed after audit → price 0).
 export const laundryPieceSubtotal = (items: CartItem[]) =>

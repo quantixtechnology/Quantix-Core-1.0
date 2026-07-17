@@ -4570,6 +4570,10 @@ model LaundryService {
   subscriptionEligible   Boolean  @default(false)
   displayOrder           Int      @default(0)
   isActive               Boolean  @default(true)
+  // Booking method (additive). GARMENT = customer counts garments at booking
+  // (existing default). BAG = Pickup-First: customer books the service only;
+  // one bag per service; garments are counted later at Store Audit.
+  orderMode              String   @default("GARMENT") // GARMENT | BAG
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 

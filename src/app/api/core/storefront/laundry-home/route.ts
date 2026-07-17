@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const [business, rules, services, garments, plans] = await Promise.all([
       prisma.business.findUnique({ where: { id: platformId }, select: { name: true, businessType: true, isOnline: true } }),
       prisma.laundryPricingRule.findMany({ where: { businessId: lbId, isActive: true } }),
-      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true, displayOnWebsite: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true, image: true } }),
+      prisma.laundryService.findMany({ where: { businessId: lbId, isActive: true, displayOnWebsite: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, description: true, icon: true, image: true, orderMode: true } }),
       prisma.laundryGarment.findMany({ where: { businessId: lbId, isActive: true }, orderBy: { displayOrder: "asc" }, select: { id: true, name: true, categoryId: true, category: { select: { name: true } } } }),
       prisma.subscriptionPlan.findMany({ where: { businessId: platformId, serviceType: "LAUNDRY", isActive: true }, orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }] }),
     ])
@@ -74,6 +74,7 @@ export async function GET(request: Request) {
       return {
         id: svc.id, name: svc.name, description: svc.description, icon: svc.icon,
         imageUrl: svc.image ? resolveImageUrl(svc.image) : null,
+        orderMode: svc.orderMode || "GARMENT",
         pricingMode,
         items, // only configured, orderable garments (PER_GARMENT services)
         perKg: perKgRule ? { price: perKgRule.price, minWeightKg: perKgRule.minWeightKg, gstPercent: perKgRule.gstPercent } : null,
