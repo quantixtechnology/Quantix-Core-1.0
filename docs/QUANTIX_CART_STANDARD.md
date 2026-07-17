@@ -57,9 +57,13 @@ A workspace never touches the engine internals. It provides a small **adapter** 
 
 ## 5. Laundry implementation (the template)
 
-- **Services/garments:** the Service Selection sheet writes lines to the shared cart on *Continue to Checkout*; the Laundry Bag badge/drawer reflect it live.
+**Official flow:** Browse Services → Select Garments → **Add to Cart** → Continue Shopping → **Laundry Bag** → **Proceed to Checkout** → Pickup Details → Subscription (optional) → Review → Place Order. The Service popup is an *Add to Cart* experience — it **never** bypasses the cart and **never** collects pickup details.
+
+- **Add to Cart (accumulating):** the Service sheet's primary action is **Add to Cart**; it writes this service's lines into the shared cart **alongside** any services already there and closes so the customer keeps shopping. Re-opening a service edits its own lines. Multiple services accumulate in ONE cart.
+- **Grouped by service:** the Laundry Bag and the checkout review list items **grouped by service** (e.g. *Wash* → Shirt×3, Pant×2 · *Wash & Iron* → Jeans×4), never a flat garment list.
+- **Edit in the cart:** `+ / − / delete` directly in the Bag (weight-based and subscription lines have no stepper) — no need to reopen the Service popup.
 - **Subscription plans:** *Subscribe* adds a subscription line to the **same** cart. A cart may hold laundry services **and** a subscription together; the Pricing/Subscription engines decide behaviour at checkout — the cart does not.
-- **Checkout:** the Laundry Bag's *Proceed to Checkout* opens the **existing** laundry checkout, which consumes the cart via `cartToOrderItems` and posts to the existing APIs (`/api/core/storefront/laundry-order`, `/laundry-checkout`).
+- **Cart-level checkout:** *Proceed to Checkout* opens the **existing** laundry checkout, which consumes the **whole cart** via `cartToOrderItems` (every service in one order) and posts to the existing APIs (`/api/core/storefront/laundry-order`, `/laundry-checkout`). **Pickup address / date / slot / instructions and subscription usage are collected ONLY here.** Cart clears on success.
 - **PWA:** [`laundry-customer-app.tsx`](../src/components/laundry/app/laundry-customer-app.tsx) uses the **same** `useCartStore` + `laundry-cart` helpers and posts to its existing `/api/laundry/app/orders`. No second cart.
 
 **Identical orders (Web ⇄ PWA):** both surfaces build the order payload from the same `cartToOrderItems(items)`, so the same cart contents produce the same order regardless of surface.

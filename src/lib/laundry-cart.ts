@@ -85,3 +85,15 @@ export const laundryPieceSubtotal = (items: CartItem[]) =>
   laundryLines(items).reduce((s, i) => s + i.price * i.quantity, 0)
 
 export const cartHasKgPortion = (items: CartItem[]) => laundryLines(items).some((i) => i.billedAfterAudit || i.pricingType === "PER_KG" || i.unit === "kg")
+
+// Group laundry lines by service → ordered [{serviceId, serviceName, lines}] so
+// the Bag + checkout review show items GROUPED BY SERVICE, never a flat list.
+export function groupLaundryByService(items: CartItem[]): { serviceId: string; serviceName: string; lines: CartItem[] }[] {
+  const map = new Map<string, { serviceId: string; serviceName: string; lines: CartItem[] }>()
+  for (const l of laundryLines(items)) {
+    const key = l.serviceId || "svc"
+    if (!map.has(key)) map.set(key, { serviceId: key, serviceName: l.serviceName || "Service", lines: [] })
+    map.get(key)!.lines.push(l)
+  }
+  return [...map.values()]
+}

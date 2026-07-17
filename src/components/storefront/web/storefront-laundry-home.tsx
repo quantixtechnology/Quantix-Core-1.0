@@ -15,7 +15,7 @@ import { INDIAN_STATES } from "@/lib/constants"
 import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
 import { toast } from "sonner"
 import { useCartStore } from "@/stores/cart-store"
-import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, subscriptionLine, laundryLines, cartToOrderItems } from "@/lib/laundry-cart"
+import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, subscriptionLine, laundryLines, cartToOrderItems, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
 import type { WebNav } from "./storefront-website"
 
 const inr = (n: number | null | undefined) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`)
@@ -105,15 +105,19 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
   }, [currentBusinessId, authCustomer?.phone])
   useEffect(() => { refreshSummary() }, [refreshSummary])
 
-  // The Laundry Bag "Proceed to Checkout" bumps this tick → open the reused
-  // laundry checkout for the cart's contents (service sheet at its details step,
-  // or the plan-only checkout when the cart holds a subscription alone).
-  useEffect(() => {
-    if (!laundryCheckoutTick) return
+  // Open the reused laundry checkout for the WHOLE cart: the service sheet at its
+  // cart-level details/pickup step (consumes every service + the subscription),
+  // or the plan-only checkout when the cart holds a subscription alone.
+  const openCartCheckout = useCallback(() => {
     const svcId = laundryLines(cartItems)[0]?.serviceId
     const svc = svcId ? services.find((s) => s.id === svcId) : null
     if (svc) { setActiveService(svc); setOpenAtDetails(true) }
     else if (cartSubLine) { const p = plans.find((x) => x.id === cartSubLine.planId); if (p) setSubOnlyCheckout(p) }
+  }, [cartItems, services, plans, cartSubLine])
+  // The Laundry Bag "Proceed to Checkout" bumps this tick → open the checkout.
+  useEffect(() => {
+    if (!laundryCheckoutTick) return
+    openCartCheckout()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [laundryCheckoutTick])
 
@@ -256,16 +260,16 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
         </>
       )}
 
-      {/* Subscription-in-cart bar — check out the plan alone, or add garments
-          from a service to pay both together. */}
+      {/* Subscription-in-cart bar — one checkout for the whole bag (plan +
+          any garments together); the cart-level checkout decides allocation. */}
       {subscriptionInCart && !activeService && !subOnlyCheckout && (
         <div className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-100 bg-white px-4 py-3 shadow-[0_-2px_12px_rgba(0,0,0,0.05)] flex items-center justify-between">
-          <div className="text-sm"><b className="text-gray-900">{subscriptionInCart.name}</b><span className="text-gray-400"> · {inr(subscriptionInCart.price)} in cart</span><p className="text-[11px] text-gray-400">Add garments from a service to pay together, or check out the plan.</p></div>
-          <button onClick={() => setSubOnlyCheckout(subscriptionInCart)} className="rounded-xl px-4 py-2 text-sm font-semibold text-white active:opacity-80 shrink-0" style={{ backgroundColor: brandColor }}>Checkout</button>
+          <div className="text-sm"><b className="text-gray-900">{subscriptionInCart.name}</b><span className="text-gray-400"> · {inr(subscriptionInCart.price)} in bag</span><p className="text-[11px] text-gray-400">Add garments from a service to pay together, or check out now.</p></div>
+          <button onClick={openCartCheckout} className="rounded-xl px-4 py-2 text-sm font-semibold text-white active:opacity-80 shrink-0" style={{ backgroundColor: brandColor }}>Checkout</button>
         </div>
       )}
 
-      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={addSubscription} clearSubscription={clearSubscription} initialDetails={openAtDetails} onClose={() => { setActiveService(null); setOpenAtDetails(false) }} />}
+      {activeService && <ServiceSheet service={activeService} businessId={currentBusinessId} brandColor={brandColor} nav={nav} plans={plans} isAuthenticated={isAuthenticated} token={token} authCustomer={authCustomer} subscriptionInCart={subscriptionInCart} addSubscription={addSubscription} initialDetails={openAtDetails} onClose={() => { setActiveService(null); setOpenAtDetails(false) }} />}
       {subOnlyCheckout && <SubscriptionCheckoutSheet plan={subOnlyCheckout} businessId={currentBusinessId} brandColor={brandColor} authCustomer={authCustomer} onDone={() => { setSubOnlyCheckout(null); clearSubscription(); refreshSummary() }} onClose={() => setSubOnlyCheckout(null)} />}
     </div>
   )
@@ -276,14 +280,18 @@ interface SubStatus { active: boolean; subscriptionId?: string; planName?: strin
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
 interface Addr { id: string; label?: string | null; addressLine1: string; addressLine2?: string | null; area?: string | null; landmark?: string | null; city: string; state?: string | null; pincode: string; country?: string | null; isDefault?: boolean }
 const fmtAddr = (a: Addr) => [a.addressLine1, a.area, a.landmark, [a.city, a.state].filter(Boolean).join(", ") + (a.pincode ? ` - ${a.pincode}` : "")].filter((x) => x && String(x).trim()).join(", ")
-function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, clearSubscription, initialDetails, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; clearSubscription: () => void; initialDetails?: boolean; onClose: () => void }) {
+function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthenticated, token, authCustomer, subscriptionInCart, addSubscription, initialDetails, onClose }: { service: Service; businessId: string; brandColor: string; nav: WebNav; plans: Plan[]; isAuthenticated: boolean; token: string | null; authCustomer: AuthCustomer; subscriptionInCart: Plan | null; addSubscription: (p: Plan) => void; initialDetails?: boolean; onClose: () => void }) {
   // Shared cart — the single source of truth this checkout consumes.
   const cartItems = useCartStore((s) => s.items)
-  const cartAddItem = useCartStore((s) => s.addItem)
-  const clearKind = useCartStore((s) => s.clearKind)
-  // When reopened from the Laundry Bag (initialDetails), restore the selection
-  // from the cart's laundry lines for THIS service so the review renders.
+  const clearCart = useCartStore((s) => s.clearCart)
+  const replaceItems = useCartStore((s) => s.replaceItems)
+  // Prefill the garment steppers from this service's existing cart lines so
+  // re-opening a service EDITS its lines rather than duplicating them.
   const cartForService = useMemo(() => laundryLines(cartItems).filter((l) => l.serviceId === service.id), [service.id])// eslint-disable-line react-hooks/exhaustive-deps
+  // Cart-level values for the CHECKOUT step (consumes EVERY service in the cart).
+  const cartGroups = useMemo(() => groupLaundryByService(cartItems), [cartItems])
+  const cartSubtotalPieces = laundryPieceSubtotal(cartItems)
+  const cartKgPortion = cartHasKgPortion(cartItems)
   const [step, setStep] = useState<"select" | "details" | "success">(initialDetails ? "details" : "select")
   const [qty, setQty] = useState<Record<string, number>>(() => {
     const q: Record<string, number> = {}
@@ -366,20 +374,21 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const canContinue = isPerKg ? (Number(weightKg) || 0) > 0 : selected.length > 0
   const bump = (id: string, d: number) => setQty((p) => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) }))
   const accentBg = { backgroundColor: brandColor }
-  const orderItems = () => isPerKg
-    ? [{ serviceId: service.id, garmentId: null, weightKg: Number(weightKg) || 0 }]
-    : selected.map((it) => ({ serviceId: service.id, garmentId: it.garmentId, quantity: qty[it.garmentId] }))
+  // The order ALWAYS reflects the whole cart (every service), so one checkout
+  // places one multi-service order — the cart is the single source of truth.
+  const orderItems = () => cartToOrderItems(cartItems)
 
-  // Write the current selection into the shared cart (single source of truth) so
-  // the badge + Laundry Bag reflect it. Replaces this checkout's laundry lines;
-  // any subscription line is left untouched. Reuses the shared mapping helpers.
-  const syncCart = () => {
-    clearKind("laundry")
-    if (isPerKg) {
-      cartAddItem(makePerKgLine({ serviceId: service.id, serviceName: service.name, weightKg: Number(weightKg) || 0, unitPrice: service.perKg?.price ?? null, gstPercent: service.perKg?.gstPercent ?? null }))
-    } else {
-      for (const it of selected) cartAddItem(makeGarmentLine({ serviceId: service.id, serviceName: service.name, garmentId: it.garmentId, garmentName: it.garmentName, unitPrice: it.unitPrice, unit: it.unit, pricingType: it.pricingType, gstPercent: it.gstPercent, quantity: qty[it.garmentId] || 0 }))
-    }
+  // Add THIS service's selection to the shared cart, ACCUMULATING alongside any
+  // other services already in the bag (re-adding a service edits its own lines).
+  // The subscription line and other workspaces' lines are never touched.
+  const addToCart = () => {
+    const others = cartItems.filter((l) => !(l.kind === "laundry" && l.serviceId === service.id))
+    const mine = isPerKg
+      ? [makePerKgLine({ serviceId: service.id, serviceName: service.name, weightKg: Number(weightKg) || 0, unitPrice: service.perKg?.price ?? null, gstPercent: service.perKg?.gstPercent ?? null })]
+      : selected.map((it) => makeGarmentLine({ serviceId: service.id, serviceName: service.name, garmentId: it.garmentId, garmentName: it.garmentName, unitPrice: it.unitPrice, unit: it.unit, pricingType: it.pricingType, gstPercent: it.gstPercent, quantity: qty[it.garmentId] || 0 }))
+    replaceItems([...others, ...mine])
+    toast.success("Added to your bag")
+    onClose()
   }
 
   // Entitlement check — runs when the customer ticks "Use my subscription
@@ -440,7 +449,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Checkout failed")
         setCombined({ orderNumber: j.data.order?.orderNumber || "—", laundryCharges: j.data.allocation.laundryCharges, subscriptionDue: j.data.allocation.subscriptionDue, totalDue: j.data.allocation.totalDue, planName: j.data.subscription?.planName || subscriptionInCart.name })
-        clearSubscription(); clearKind("laundry"); setStep("success")
+        clearCart(); setStep("success")
         return
       }
       const res = await fetch("/api/core/storefront/laundry-order", {
@@ -457,7 +466,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       if (j.noSubscription) { setUseSub(false); setShowSubRequired(true); setSubmitting(false); return }
       if (j.needsNormalOrder) { setLimitNotice(j.reason || "Subscription limit reached."); setForceNormal(true); setUseSub(false); setSubmitting(false); return }
       if (!res.ok || !j.success) throw new Error(j.error || "Order failed")
-      setResult(j.data); clearKind("laundry"); setStep("success")
+      setResult(j.data); clearCart(); setStep("success")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Order failed") } finally { setSubmitting(false) }
   }
 
@@ -466,7 +475,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
-            <p className="font-bold text-gray-900">{service.name}</p>
+            <p className="font-bold text-gray-900">{step === "select" ? service.name : "Checkout"}</p>
             <p className="text-xs text-gray-400">{step === "select" ? "Choose garments & quantity" : step === "details" ? "Pickup details" : "Pickup scheduled"}</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-50"><X className="w-4 h-4 text-gray-500" /></button>
@@ -534,7 +543,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             ) : (
               <div className="flex justify-between text-sm mb-2"><span className="text-gray-500">Subtotal</span><span className="font-semibold">{inr(clientSubtotal)}</span></div>
             )}
-            <button disabled={!canContinue} onClick={() => { syncCart(); setStep("details") }} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80" style={accentBg}>Continue to Checkout</button>
+            <button disabled={!canContinue} onClick={addToCart} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40 active:opacity-80 flex items-center justify-center gap-1.5" style={accentBg}><Plus className="w-4 h-4" /> Add to Cart</button>
+            <p className="mt-1.5 text-center text-[11px] text-gray-400">Keep shopping and add more services — pickup details are entered at checkout.</p>
           </div>
         </>)}
 
@@ -542,27 +552,28 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         {step === "details" && (<>
           <div className="overflow-y-auto px-5 py-4 flex-1 space-y-3">
             <div><p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">Order Review</p>
-              <div className="rounded-xl border border-gray-100 p-3 space-y-1">
-                {isPerKg && (
-                  <div className="flex justify-between text-sm"><span className="text-gray-600">{service.name} · ~{weightKg || "?"} kg (est.)</span><span className="text-xs font-medium text-amber-700">Billed after audit</span></div>
-                )}
-                {selected.map((it) => (
-                  <div key={it.garmentId} className="flex justify-between text-sm">
-                    <span className="text-gray-600">{qty[it.garmentId]} × {it.garmentName}</span>
-                    {it.unit === "kg"
-                      ? <span className="text-xs font-medium text-amber-700">Billed after audit</span>
-                      : <span className="font-medium">{inr((it.unitPrice || 0) * (qty[it.garmentId] || 0))}</span>}
+              <div className="rounded-xl border border-gray-100 p-3 space-y-2">
+                {/* Grouped by service — every service in the cart, never a flat list. */}
+                {cartGroups.map((g) => (
+                  <div key={g.serviceId} className="space-y-0.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{g.serviceName}</p>
+                    {g.lines.map((l) => (
+                      <div key={`${l.productId}-${l.variantId}`} className="flex justify-between text-sm pl-1">
+                        <span className="text-gray-600">{l.garmentId ? `${l.quantity} × ${l.name}` : `~${l.weightKg || "?"} kg (est.)`}</span>
+                        {l.billedAfterAudit ? <span className="text-xs font-medium text-amber-700">Billed after audit</span> : <span className="font-medium">{inr(l.price * l.quantity)}</span>}
+                      </div>
+                    ))}
                   </div>
                 ))}
-                {pieceSelected.length > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Laundry Services</span><span className="font-medium">{inr(clientSubtotal)}</span></div>}
-                {hasKgPortion && <p className="text-[11px] text-amber-700">Final weight will be measured during Store Audit; laundry charges are invoiced after the audit.</p>}
+                {cartSubtotalPieces > 0 && <div className="flex justify-between text-sm pt-1 border-t border-gray-50"><span className="text-gray-500">Laundry Services</span><span className="font-medium">{inr(cartSubtotalPieces)}</span></div>}
+                {cartKgPortion && <p className="text-[11px] text-amber-700">Weight-based items are measured during Store Audit; those charges are invoiced after the audit.</p>}
                 {subscriptionInCart && (
                   <div className="flex justify-between text-sm items-start">
                     <span className="text-gray-500">Subscription · {subscriptionInCart.name}<br /><span className="text-[10px] text-gray-400">Pay now, applies from next order</span></span>
                     <span className="font-medium">{inr(subscriptionInCart.price)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm pt-1 border-t border-gray-100 mt-1"><span className="font-semibold text-gray-700">Total Due{hasKgPortion ? " (now)" : ""}</span><span className="font-bold" style={{ color: brandColor }}>{inr(clientSubtotal + (subscriptionInCart?.price || 0))}</span></div>
+                <div className="flex justify-between text-sm pt-1 border-t border-gray-100 mt-1"><span className="font-semibold text-gray-700">Total Due{cartKgPortion ? " (now)" : ""}</span><span className="font-bold" style={{ color: brandColor }}>{inr(cartSubtotalPieces + (subscriptionInCart?.price || 0))}</span></div>
               </div>
             </div>
             {/* Customer identity (shared account) — complete profile inline if needed */}
@@ -658,7 +669,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
             )}
           </div>
           <div className="border-t border-gray-100 px-5 py-4 flex gap-2">
-            <button onClick={() => setStep("select")} className="rounded-xl px-4 py-2.5 text-sm font-semibold border border-gray-200 text-gray-600">Back</button>
+            <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-sm font-semibold border border-gray-200 text-gray-600">Back</button>
             <button disabled={submitting} onClick={() => submit(forceNormal)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white active:opacity-80 flex items-center justify-center gap-2" style={accentBg}>
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {subscriptionInCart ? "Place Order · Pay at Pickup" : forceNormal ? "Continue as Normal Order" : "Confirm Order"}

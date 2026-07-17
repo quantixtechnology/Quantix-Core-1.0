@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCartStore } from "@/stores/cart-store"
+import type { CartItem } from "@/stores/cart-store"
+import { groupLaundryByService, isSubscriptionLine } from "@/lib/laundry-cart"
 import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import {
   ShoppingCart, Search, X, User, Trash2, Plus, Minus,
@@ -63,6 +65,35 @@ export function StorefrontLayout({
 
   const cartCount    = totalItems()
   const cartSubtotal = subtotal()
+
+  // One cart line row — reused for commerce products AND laundry service/
+  // subscription lines. Subscription + weight-based lines carry no stepper.
+  const renderCartLine = (item: CartItem) => (
+    <div key={`${item.productId}-${item.variantId}`} className="flex items-start gap-3 bg-gray-50/80 rounded-2xl p-3">
+      <ProductImage src={resolveImageUrl(item.image)} alt={item.name} className="w-[52px] h-[52px] rounded-xl shrink-0 border border-gray-100" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-semibold text-gray-900 leading-tight line-clamp-2">{item.name}</p>
+        {item.variantName && <p className="text-[11px] text-gray-500 mt-0.5">{item.variantName}</p>}
+        <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>
+          {item.billedAfterAudit ? <span className="text-[11px] font-semibold text-amber-600">Billed after audit</span> : formatINR(item.price * item.quantity)}
+        </p>
+      </div>
+      <div className="flex flex-col items-end gap-2 shrink-0">
+        <button onClick={() => removeItem(item.productId, item.variantId)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50">
+          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+        </button>
+        {item.kind === "subscription" || item.billedAfterAudit ? (
+          <span className="text-[11px] font-medium text-gray-400">{item.kind === "subscription" ? "Plan" : `~${item.weightKg || 0} kg`}</span>
+        ) : (
+          <div className="flex items-center h-7 rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brandColor}` }}>
+            <button onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)} className="w-7 h-full flex items-center justify-center active:opacity-70" style={{ color: brandColor }}><Minus className="w-3 h-3" /></button>
+            <span className="w-6 text-center text-[13px] font-bold" style={{ color: brandColor }}>{item.quantity}</span>
+            <button onClick={() => updateQuantity(item.productId, item.variantId, item.quantity + 1)} className="w-7 h-full flex items-center justify-center active:opacity-70" style={{ color: brandColor }}><Plus className="w-3 h-3" /></button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
   // ── Categories for desktop nav strip + mobile hamburger (web only) ─────
   useEffect(() => {
@@ -154,65 +185,22 @@ export function StorefrontLayout({
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-              {items.map((item) => (
-                <div
-                  key={`${item.productId}-${item.variantId}`}
-                  className="flex items-start gap-3 bg-gray-50/80 rounded-2xl p-3"
-                >
-                  <ProductImage
-                    src={resolveImageUrl(item.image)}
-                    alt={item.name}
-                    className="w-[52px] h-[52px] rounded-xl shrink-0 border border-gray-100"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-gray-900 leading-tight line-clamp-2">
-                      {item.name}
-                    </p>
-                    {item.variantName && (
-                      <p className="text-[11px] text-gray-500 mt-0.5">{item.variantName}</p>
-                    )}
-                    <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>
-                      {item.billedAfterAudit ? <span className="text-[11px] font-semibold text-amber-600">Billed after audit</span> : formatINR(item.price * item.quantity)}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <button
-                      onClick={() => removeItem(item.productId, item.variantId)}
-                      className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    </button>
-                    {/* Subscription + weight-based lines carry no quantity stepper. */}
-                    {item.kind === "subscription" || item.billedAfterAudit ? (
-                      <span className="text-[11px] font-medium text-gray-400">{item.kind === "subscription" ? "Plan" : `~${item.weightKg || 0} kg`}</span>
-                    ) : (
-                      <div
-                        className="flex items-center h-7 rounded-xl overflow-hidden"
-                        style={{ border: `1.5px solid ${brandColor}` }}
-                      >
-                        <button
-                          onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)}
-                          className="w-7 h-full flex items-center justify-center active:opacity-70"
-                          style={{ color: brandColor }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="w-6 text-center text-[13px] font-bold" style={{ color: brandColor }}>
-                          {item.quantity}
-                        </span>
-                        <button
-                          onClick={() => updateQuantity(item.productId, item.variantId, item.quantity + 1)}
-                          className="w-7 h-full flex items-center justify-center active:opacity-70"
-                          style={{ color: brandColor }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+              {/* Laundry Bag: GROUPED BY SERVICE (never a flat garment list) +
+                  subscription lines below. Commerce carts stay a flat list. */}
+              {isLaundry ? (
+                <>
+                  {groupLaundryByService(items).map((g) => (
+                    <div key={g.serviceId} className="space-y-2">
+                      <p className="px-1 text-[11px] font-bold uppercase tracking-wide text-gray-400">{g.serviceName}</p>
+                      {g.lines.map(renderCartLine)}
+                    </div>
+                  ))}
+                  {items.filter(isSubscriptionLine).map(renderCartLine)}
+                </>
+              ) : (
+                items.map(renderCartLine)
+              )}
             </div>
             <div className="px-4 py-4 border-t border-gray-100 space-y-3">
               <div className="flex items-center justify-between">
