@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, Plus, Pencil, IndianRupee, Tag, ArrowLeft, Trash2, Search, WashingMachine, Power } from "lucide-react"
+import { Loader2, Plus, Pencil, IndianRupee, Tag, ArrowLeft, Trash2, Search, WashingMachine, Power, ChevronDown } from "lucide-react"
 import { toast } from "sonner"
 import { inr } from "./pricing-shared"
 import { LaundryImageUpload } from "./laundry-image-upload"
@@ -149,97 +149,130 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[460px]">
-          <DialogHeader><DialogTitle>{edit ? "Edit Service" : "Add Service"}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5"><Label className="text-xs">Service Photo</Label><p className="text-[10px] text-slate-400 -mt-1">Shown on your laundry website and customer app.</p><LaundryImageUpload value={form.image || null} businessId={businessId} folder="laundry-services" onChange={(url) => set("image", url || "")} /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Service Name *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Wash & Iron" /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Description</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Professional washing and steam ironing for everyday clothes." className="min-h-[56px]" /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs">Display Order</Label><Input type="number" value={form.displayOrder} onChange={(e) => set("displayOrder", e.target.value)} /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Website</Label><div className="flex items-center gap-2 h-9"><Switch checked={form.displayOnWebsite} onCheckedChange={(v) => set("displayOnWebsite", v)} /><span className="text-sm text-slate-600">{form.displayOnWebsite ? "Visible" : "Hidden"}</span></div></div>
-            </div>
-            <div className="flex items-center gap-2"><Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} className="data-[state=checked]:bg-emerald-600" /><span className="text-sm font-medium">{form.isActive ? "Active" : "Inactive"}</span></div>
+        <DialogContent className="w-[95vw] sm:max-w-[760px] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden">
+          <DialogHeader className="px-6 py-4 border-b border-slate-100 shrink-0">
+            <DialogTitle className="text-[18px] font-bold text-slate-800">{edit ? "Edit Service" : "Add Service"}</DialogTitle>
+          </DialogHeader>
 
-            {/* Booking method (additive). BAG = Pickup-First: customers book the
-                service only; garments are counted later at Store Audit. */}
-            <div className="space-y-1.5">
-              <Label className="text-xs">Order Mode</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {([["GARMENT", "Garment Based", "Customer counts garments at booking"], ["BAG", "Pickup First (Bag)", "Book service only · counted at audit"]] as const).map(([v, label, desc]) => (
-                  <button type="button" key={v} onClick={() => set("orderMode", v)} className={`rounded-lg border p-2.5 text-left ${form.orderMode === v ? "border-blue-500 bg-blue-50" : "border-slate-200"}`}>
-                    <p className={`text-sm font-semibold ${form.orderMode === v ? "text-blue-700" : "text-slate-700"}`}>{label}</p>
-                    <p className="text-[11px] text-slate-400 leading-tight mt-0.5">{desc}</p>
-                  </button>
-                ))}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+            {/* ── Basic Information ── */}
+            <FormSection title="Basic Information" subtitle="Name, description and marketing photo">
+              <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-5">
+                <div className="space-y-1.5">
+                  <Label className="text-sm text-slate-600">Service Photo</Label>
+                  <LaundryImageUpload value={form.image || null} businessId={businessId} folder="laundry-services" onChange={(url) => set("image", url || "")} />
+                  <p className="text-[12px] text-slate-400 leading-tight">Shown on your laundry website and customer app.</p>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-1.5"><Label className="text-sm text-slate-600">Service Name *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Wash & Iron" className="h-11 text-[15px]" /></div>
+                  <div className="space-y-1.5"><Label className="text-sm text-slate-600">Description</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Professional washing and steam ironing for everyday clothes." className="min-h-[84px] text-[15px] leading-relaxed" /></div>
+                </div>
               </div>
-            </div>
+            </FormSection>
 
-            {/* Processing route — the department sequence garments follow.
-                Quality Check → Packed are always appended automatically. */}
-            <div className="space-y-1.5 border-t pt-3">
-              <Label className="text-xs">Processing Route</Label>
-              <p className="text-[10px] text-slate-400 -mt-1">Which departments a garment goes through, in order. Leave empty to auto-detect from the service name. QC → Packed are added automatically.</p>
-              <div className="flex flex-wrap gap-1.5">
+            {/* ── Order Configuration ── */}
+            <FormSection title="Order Configuration" subtitle="Visibility, status and booking method">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="space-y-1.5"><Label className="text-sm text-slate-600">Display Order</Label><Input type="number" value={form.displayOrder} onChange={(e) => set("displayOrder", e.target.value)} className="h-11 text-[15px]" /></div>
+                <div className="space-y-1.5"><Label className="text-sm text-slate-600">Website</Label><div className="flex items-center gap-2.5 h-11"><Switch checked={form.displayOnWebsite} onCheckedChange={(v) => set("displayOnWebsite", v)} /><span className="text-[15px] text-slate-600">{form.displayOnWebsite ? "Visible" : "Hidden"}</span></div></div>
+                <div className="space-y-1.5"><Label className="text-sm text-slate-600">Status</Label><div className="flex items-center gap-2.5 h-11"><Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} className="data-[state=checked]:bg-emerald-600" /><span className="text-[15px] font-medium text-slate-700">{form.isActive ? "Active" : "Inactive"}</span></div></div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm text-slate-600">Order Mode</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {([["GARMENT", "Garment Based", "Customer counts garments at booking"], ["BAG", "Pickup First (Bag)", "Book service only · counted at audit"]] as const).map(([v, label, desc]) => (
+                    <button type="button" key={v} onClick={() => set("orderMode", v)} className={`rounded-xl border p-4 text-left transition-colors ${form.orderMode === v ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                      <p className={`text-[15px] font-semibold ${form.orderMode === v ? "text-blue-700" : "text-slate-700"}`}>{label}</p>
+                      <p className="text-[13px] text-slate-400 leading-snug mt-1">{desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </FormSection>
+
+            {/* ── Processing Route ── */}
+            <FormSection title="Processing Route" subtitle="Departments a garment goes through, in order">
+              <p className="text-[13px] text-slate-400 -mt-1">Leave empty to auto-detect from the service name. Quality Check → Packing are added automatically.</p>
+              <div className="flex flex-wrap gap-2">
                 {ROUTE_OPTIONS.map((o) => (
                   <button key={o.code} type="button" onClick={() => toggleStage(o.code)}
-                    className={`rounded-lg border px-2.5 h-8 text-xs font-medium transition-colors ${route.includes(o.code) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                    className={`rounded-lg border px-3.5 h-10 text-[14px] font-medium transition-colors ${route.includes(o.code) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                     {o.label}
                   </button>
                 ))}
               </div>
               {route.length > 0 && (
-                <div className="rounded-lg border bg-slate-50 p-2 space-y-1">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-1.5">
                   {route.map((code, i) => (
-                    <div key={code} className="flex items-center gap-2 text-xs">
-                      <span className="text-slate-400 w-4">{i + 1}.</span>
+                    <div key={code} className="flex items-center gap-2.5 text-[14px]">
+                      <span className="text-slate-400 w-5">{i + 1}.</span>
                       <span className="font-medium text-slate-700 flex-1">{ROUTE_OPTIONS.find((o) => o.code === code)?.label || code}</span>
-                      <button type="button" onClick={() => moveStage(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1">↑</button>
-                      <button type="button" onClick={() => moveStage(i, 1)} disabled={i === route.length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1">↓</button>
-                      <button type="button" onClick={() => toggleStage(code)} className="text-slate-400 hover:text-rose-600 px-1">✕</button>
+                      <button type="button" onClick={() => moveStage(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↑</button>
+                      <button type="button" onClick={() => moveStage(i, 1)} disabled={i === route.length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 px-1.5 text-base">↓</button>
+                      <button type="button" onClick={() => toggleStage(code)} className="text-slate-400 hover:text-rose-600 px-1.5 text-base">✕</button>
                     </div>
                   ))}
-                  <div className="flex items-center gap-2 text-xs pt-1 border-t mt-1">
-                    <span className="text-slate-400 w-4">{route.length + 1}.</span>
+                  <div className="flex items-center gap-2.5 text-[14px] pt-1.5 border-t border-slate-200 mt-1">
+                    <span className="text-slate-400 w-5">{route.length + 1}.</span>
                     <span className="font-medium text-slate-500 flex-1">Quality Check</span>
-                    <span className="text-[9px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-slate-400 w-4">{route.length + 2}.</span>
+                  <div className="flex items-center gap-2.5 text-[14px]">
+                    <span className="text-slate-400 w-5">{route.length + 2}.</span>
                     <span className="font-medium text-slate-500 flex-1">Packing</span>
-                    <span className="text-[9px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Required</span>
                   </div>
-                  <p className="text-[10px] text-slate-400 pt-1">Route: {route.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")} → Quality Check → Packing</p>
+                  <p className="text-[12px] text-slate-400 pt-1.5">Route: {route.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label).join(" → ")} → Quality Check → Packing</p>
                 </div>
               )}
-            </div>
+            </FormSection>
 
-            {/* Compatible garment categories — controls which garments appear
-                by default in Add Garments. Selection rule only; never affects
-                existing pricing. (Saved when editing an existing service.) */}
+            {/* ── Compatible Categories (edit only) ── */}
             {edit && (
-              <div className="space-y-1.5 border-t pt-3">
-                <Label className="text-xs">Compatible Garment Categories</Label>
-                <p className="text-[10px] text-slate-400 -mt-1">Garments in these categories appear by default when adding garments to this service. Leave empty to show all garments. Existing prices are never affected.</p>
+              <FormSection title="Compatible Categories" subtitle="Garment categories shown by default when adding garments">
+                <p className="text-[13px] text-slate-400 -mt-1">Leave empty to show all garments. Existing prices are never affected.</p>
                 {categories.length === 0 ? (
-                  <p className="text-[11px] text-slate-400">No categories configured for this business.</p>
+                  <p className="text-[14px] text-slate-400">No categories configured for this business.</p>
                 ) : (
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {categories.map((c) => (
                       <button key={c.id} type="button" onClick={() => toggleCat(c.id)}
-                        className={`rounded-lg border px-2.5 h-8 text-xs font-medium transition-colors ${compatCats.includes(c.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                        className={`rounded-lg border px-3.5 h-10 text-[14px] font-medium transition-colors ${compatCats.includes(c.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                         {c.name}
                       </button>
                     ))}
                   </div>
                 )}
-              </div>
+              </FormSection>
             )}
           </div>
-          <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={saving} onClick={save} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Service</Button></div>
+
+          {/* Sticky footer — always visible */}
+          <div className="shrink-0 border-t border-slate-100 bg-white px-6 py-4 flex justify-end gap-3">
+            <Button variant="outline" className="h-11 px-5 text-[15px]" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button disabled={saving} onClick={save} className="h-11 px-6 text-[15px] gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Save Service</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+// Collapsible form section (UI only) — larger heading, chevron toggle, open by
+// default. Used to organise the Service editor into scannable groups.
+function FormSection({ title, subtitle, defaultOpen = true, children }: { title: string; subtitle?: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="rounded-xl border border-slate-200 overflow-hidden">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-slate-50/70 hover:bg-slate-100/70 transition-colors">
+        <span className="text-left">
+          <span className="block text-[16px] font-semibold text-slate-800">{title}</span>
+          {subtitle && <span className="block text-[13px] text-slate-400 mt-0.5">{subtitle}</span>}
+        </span>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+      </button>
+      {open && <div className="px-5 py-5 space-y-5">{children}</div>}
+    </section>
   )
 }
 
