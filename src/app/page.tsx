@@ -234,6 +234,13 @@ const ProcessingDashboard = dynamic(() => import("@/components/laundry/views/pro
 // Optional CRM module (feature-gated per tenant; CrmGate + server enforce entitlement)
 const CrmGate = dynamic(() => import("@/components/laundry/views/crm/crm-gate").then(m => ({ default: m.CrmGate })), { loading: () => <PageLoader /> })
 const CrmDashboard = dynamic(() => import("@/components/laundry/views/crm/crm-dashboard").then(m => ({ default: m.CrmDashboard })), { loading: () => <PageLoader /> })
+// Marketing module (Phase 1)
+const MarketingGate = dynamic(() => import("@/components/laundry/views/marketing/marketing-views").then(m => ({ default: m.MarketingGate })), { loading: () => <PageLoader /> })
+const MarketingDashboard = dynamic(() => import("@/components/laundry/views/marketing/marketing-views").then(m => ({ default: m.MarketingDashboard })), { loading: () => <PageLoader /> })
+const MarketingCoupons = dynamic(() => import("@/components/laundry/views/marketing/marketing-views").then(m => ({ default: m.MarketingCoupons })), { loading: () => <PageLoader /> })
+const MarketingDiscounts = dynamic(() => import("@/components/laundry/views/marketing/marketing-views").then(m => ({ default: m.MarketingDiscounts })), { loading: () => <PageLoader /> })
+const MarketingReports = dynamic(() => import("@/components/laundry/views/marketing/marketing-views").then(m => ({ default: m.MarketingReports })), { loading: () => <PageLoader /> })
+const MarketingPlaceholder = dynamic(() => import("@/components/laundry/views/marketing/marketing-views").then(m => ({ default: m.MarketingPlaceholder })), { loading: () => <PageLoader /> })
 const CrmLeads = dynamic(() => import("@/components/laundry/views/crm/crm-leads").then(m => ({ default: m.CrmLeads })), { loading: () => <PageLoader /> })
 const CrmOpportunities = dynamic(() => import("@/components/laundry/views/crm/crm-opportunities").then(m => ({ default: m.CrmOpportunities })), { loading: () => <PageLoader /> })
 const CrmActivities = dynamic(() => import("@/components/laundry/views/crm/crm-activities").then(m => ({ default: m.CrmActivities })), { loading: () => <PageLoader /> })
@@ -682,6 +689,18 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "crm-tasks": return <CrmGate><CrmTasks businessId={wsBusinessId} /></CrmGate>
       case "crm-reports": return <CrmGate><CrmReports businessId={wsBusinessId} /></CrmGate>
       case "crm-settings": return <CrmGate><CrmSettings businessId={wsBusinessId} /></CrmGate>
+      // Marketing module (Phase 1: live screens; later-phase modules = placeholder)
+      case "marketing-dashboard": return <MarketingGate><MarketingDashboard businessId={wsBusinessId} /></MarketingGate>
+      case "marketing-discounts": return <MarketingGate><MarketingDiscounts /></MarketingGate>
+      case "marketing-coupons": return <MarketingGate><MarketingCoupons businessId={wsBusinessId} /></MarketingGate>
+      case "marketing-reports": return <MarketingGate><MarketingReports businessId={wsBusinessId} /></MarketingGate>
+      case "marketing-loyalty": return <MarketingGate><MarketingPlaceholder title="Loyalty Program" phase="Phase 2" /></MarketingGate>
+      case "marketing-membership": return <MarketingGate><MarketingPlaceholder title="Membership Levels" phase="Phase 2" /></MarketingGate>
+      case "marketing-credits": return <MarketingGate><MarketingPlaceholder title="Promotional Credits" phase="Phase 2" /></MarketingGate>
+      case "marketing-giftcards": return <MarketingGate><MarketingPlaceholder title="Gift Cards" phase="Phase 3" /></MarketingGate>
+      case "marketing-referral": return <MarketingGate><MarketingPlaceholder title="Referral Program" phase="Phase 3" /></MarketingGate>
+      case "marketing-campaigns": return <MarketingGate><MarketingPlaceholder title="Campaigns" phase="Phase 3" /></MarketingGate>
+      case "marketing-cart-recovery": return <MarketingGate><MarketingPlaceholder title="Cart Recovery" phase="Phase 4" /></MarketingGate>
       case "dashboard": return <LaundryDashboard />
       case "inbox": return <LaundryInboxView />
       case "orders": return <LaundryOrdersView />

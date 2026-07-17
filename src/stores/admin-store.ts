@@ -129,6 +129,18 @@ export type LaundryBusinessPage =
   | "ws-qc"
   | "ws-pack"
   | "audit-barcode"
+  // Marketing module (Phase 1: dashboard/discounts/coupons/reports live; rest placeholder)
+  | "marketing-dashboard"
+  | "marketing-discounts"
+  | "marketing-coupons"
+  | "marketing-loyalty"
+  | "marketing-membership"
+  | "marketing-giftcards"
+  | "marketing-referral"
+  | "marketing-credits"
+  | "marketing-cart-recovery"
+  | "marketing-campaigns"
+  | "marketing-reports"
 
 export type BusinessPage =
   | "dashboard"

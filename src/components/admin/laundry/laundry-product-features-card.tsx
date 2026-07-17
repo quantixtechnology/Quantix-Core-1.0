@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 
 const PRODUCT_FEATURES: { key: string; label: string; desc: string }[] = [
   { key: "CRM", label: "CRM", desc: "Sales CRM inside Laundry OS: Leads → Opportunities → configurable Sales Stages → Won/Lost. Shows a CRM section in the tenant's workspace sidebar." },
+  { key: "MARKETING", label: "Marketing", desc: "Marketing Engine (Phase 1): Discounts, Coupons/Vouchers & Reports. Laundry coupons apply after Store Audit; commerce applies immediately. Adds a Marketing section to the workspace sidebar." },
 ]
 
 export function LaundryProductFeaturesCard({ businessId }: { businessId: string }) {

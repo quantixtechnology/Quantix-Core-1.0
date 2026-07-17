@@ -5587,3 +5587,81 @@ model CommerceCategoryDefault {
   @@unique([workspaceType, businessCategory])
   @@index([templateId])
 }
+
+// ============================================================================
+// QUANTIX MARKETING ENGINE — Phase 1 (Vouchers/Coupons).
+// Additive, business-scoped, workspace-agnostic. Reuses existing Customer /
+// Cart / Order / Pricing engines — the Marketing layer only DECIDES a benefit
+// and records issuance/redemption. See docs/QUANTIX_MARKETING_ENGINE_STANDARD.md.
+// `businessId` is a plain scoped key (no relation) so existing models are
+// untouched. Gated per business by the existing feature-toggle ("MARKETING").
+// ============================================================================
+model Promotion {
+  id                 String    @id @default(cuid())
+  businessId         String // platform Business id (scoped; no relation — additive)
+  workspaceType      String? // LAUNDRY | COMMERCE | ... (null = all workspaces)
+  kind               String    @default("VOUCHER") // DISCOUNT | VOUCHER
+  title              String
+  description        String?
+  code               String? // manual coupon code (unique per business when set)
+  discountType       String    @default("PERCENT") // FIXED | PERCENT
+  discountValue      Float     @default(0)
+  maxDiscount        Float? // cap for PERCENT
+  minOrderValue      Float? // order condition
+  status             String    @default("DRAFT") // DRAFT|SCHEDULED|ACTIVE|PAUSED|EXPIRED|CANCELLED
+  enabled            Boolean   @default(true) // feature-flag / quick on-off
+  startAt            DateTime?
+  endAt              DateTime?
+  maxUses            Int? // global cap (null = unlimited)
+  maxUsesPerCustomer Int?
+  usedCount          Int       @default(0)
+  applyTo            String    @default("[\"ORDER\"]") // JSON: ORDER|SUBSCRIPTION_PURCHASE|SUBSCRIPTION_RENEWAL
+  createdBy          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  rules       PromotionRule[]
+  redemptions PromotionRedemption[]
+
+  @@index([businessId])
+  @@index([businessId, code])
+  @@index([businessId, status])
+}
+
+// Data-driven eligibility rule (fact/op/value) — NO hardcoded promo logic.
+model PromotionRule {
+  id          String @id @default(cuid())
+  promotionId String
+  fact        String // firstOrder|orderValue|customerTier|customerTags|mobile|email|subscriptionActive|...
+  op          String // eq|neq|gt|gte|lt|lte|in|contains|isTrue|isFalse
+  value       String // JSON-encoded comparison value
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@index([promotionId])
+}
+
+// Append-only issuance / redemption ledger — the single source for reports and
+// per-customer limits. Laundry redemptions sit at PENDING_AUDIT until the
+// invoice finalizes them; commerce goes straight to APPLIED.
+model PromotionRedemption {
+  id          String   @id @default(cuid())
+  promotionId String
+  businessId  String
+  customerId  String?
+  orderId     String?
+  status      String   @default("APPLIED") // HELD|APPLIED|PENDING_AUDIT|FINALIZED|REVERSED
+  amount      Float    @default(0) // discount amount (0 while pending)
+  workspaceType String?
+  meta        String? // JSON snapshot (code, orderValue, applyTo)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@index([promotionId])
+  @@index([businessId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([businessId, status])
+}

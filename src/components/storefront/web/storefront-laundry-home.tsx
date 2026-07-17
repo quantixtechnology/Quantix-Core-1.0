@@ -310,6 +310,11 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [showSubRequired, setShowSubRequired] = useState(false)
   const [combined, setCombined] = useState<{ orderNumber: string; laundryCharges: number; subscriptionDue: number; totalDue: number; planName: string } | null>(null)
   const [gSearch, setGSearch] = useState("")
+  // Marketing coupon (Phase 1) — validated read-only at checkout; recorded on
+  // successful order. Laundry shows "Discount Pending" (applied after audit).
+  const [couponCode, setCouponCode] = useState("")
+  const [couponMsg, setCouponMsg] = useState<{ ok: boolean; text: string; code: string; pending: boolean } | null>(null)
+  const [couponBusy, setCouponBusy] = useState(false)
   const [weightKg, setWeightKg] = useState(() => { const kg = cartForService.find((l) => !l.garmentId)?.weightKg; return kg ? String(kg) : "" })
   const isPerKg = service.pricingMode === "PER_KG"
 
@@ -391,6 +396,31 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     onClose()
   }
 
+  // Validate a coupon (read-only) via the Marketing evaluate API. Laundry → the
+  // discount is "pending" (applied after Store Audit).
+  const applyCoupon = async () => {
+    if (!couponCode.trim()) return
+    setCouponBusy(true)
+    try {
+      const res = await fetch("/api/core/marketing/evaluate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, workspaceType: "LAUNDRY", customerId: custId || undefined, code: couponCode.trim(), orderValue: cartSubtotalPieces, applyTo: "ORDER" }),
+      })
+      const j = await res.json()
+      if (!j.success) { setCouponMsg({ ok: false, text: j.error || "Invalid coupon code.", code: "", pending: false }); return }
+      setCouponMsg({ ok: true, text: j.data.message, code: couponCode.trim().toUpperCase(), pending: !!j.data.pending })
+    } catch { setCouponMsg({ ok: false, text: "Could not apply coupon. Try again.", code: "", pending: false }) } finally { setCouponBusy(false) }
+  }
+  const removeCoupon = () => { setCouponMsg(null); setCouponCode("") }
+  // Record the redemption after a successful order (best-effort; never blocks).
+  const recordCoupon = (orderId: string | null) => {
+    if (!couponMsg?.ok) return
+    fetch("/api/core/marketing/apply", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessId, workspaceType: "LAUNDRY", customerId: custId || undefined, code: couponMsg.code, orderValue: cartSubtotalPieces, applyTo: "ORDER", orderId }),
+    }).catch(() => {})
+  }
+
   // Entitlement check — runs when the customer ticks "Use my subscription
   // allowance". Never consumes allowance. No active plan → Subscription Required.
   const onToggleSub = async (checked: boolean) => {
@@ -449,7 +479,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         const j = await res.json()
         if (!res.ok || !j.success) throw new Error(j.error || "Checkout failed")
         setCombined({ orderNumber: j.data.order?.orderNumber || "—", laundryCharges: j.data.allocation.laundryCharges, subscriptionDue: j.data.allocation.subscriptionDue, totalDue: j.data.allocation.totalDue, planName: j.data.subscription?.planName || subscriptionInCart.name })
-        clearCart(); setStep("success")
+        recordCoupon(j.data.order?.id || null); clearCart(); setStep("success")
         return
       }
       const res = await fetch("/api/core/storefront/laundry-order", {
@@ -466,7 +496,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       if (j.noSubscription) { setUseSub(false); setShowSubRequired(true); setSubmitting(false); return }
       if (j.needsNormalOrder) { setLimitNotice(j.reason || "Subscription limit reached."); setForceNormal(true); setUseSub(false); setSubmitting(false); return }
       if (!res.ok || !j.success) throw new Error(j.error || "Order failed")
-      setResult(j.data); clearCart(); setStep("success")
+      setResult(j.data); recordCoupon(j.data?.id || null); clearCart(); setStep("success")
     } catch (e) { toast.error(e instanceof Error ? e.message : "Order failed") } finally { setSubmitting(false) }
   }
 
@@ -576,6 +606,27 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
                 <div className="flex justify-between text-sm pt-1 border-t border-gray-100 mt-1"><span className="font-semibold text-gray-700">Total Due{cartKgPortion ? " (now)" : ""}</span><span className="font-bold" style={{ color: brandColor }}>{inr(cartSubtotalPieces + (subscriptionInCart?.price || 0))}</span></div>
               </div>
             </div>
+
+            {/* Coupon (Marketing Engine) */}
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">Coupon</p>
+              {couponMsg?.ok ? (
+                <div className="flex items-start justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-emerald-700">{couponMsg.code} applied{couponMsg.pending ? " · Discount Pending" : ""}</p>
+                    <p className="text-[11px] text-emerald-600">{couponMsg.text}</p>
+                  </div>
+                  <button onClick={removeCoupon} className="text-[11px] font-semibold text-gray-500 shrink-0 ml-2">Remove</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} placeholder="Enter coupon code" className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none uppercase" />
+                  <button onClick={applyCoupon} disabled={couponBusy || !couponCode.trim()} className="rounded-lg px-4 text-sm font-semibold text-white disabled:opacity-40" style={accentBg}>{couponBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}</button>
+                </div>
+              )}
+              {couponMsg && !couponMsg.ok && <p className="mt-1 text-[11px] text-rose-600">{couponMsg.text}</p>}
+            </div>
+
             {/* Customer identity (shared account) — complete profile inline if needed */}
             {isAuthenticated ? (
               <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-sm">

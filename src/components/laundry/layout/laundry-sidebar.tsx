@@ -24,8 +24,10 @@ import {
   UsersRound, Shirt, Droplets, Wind, Layers, ShieldCheck, Barcode, Repeat,
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
+  Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
+import { useMarketingEnabled } from "@/components/laundry/views/marketing/marketing-shared"
 
 type NavCfg = {
   key: string
@@ -69,6 +71,26 @@ const CRM_GROUP: { label: string | null; items: NavCfg[] } = {
     { key: "crm-tasks", label: "Tasks", icon: CheckSquare, page: "crm-tasks", minRank: 2, perm: "crm.activities.view" },
     { key: "crm-reports", label: "CRM Reports", icon: PieChart, page: "crm-reports", minRank: 3, perm: "crm.reports.view" },
     { key: "crm-settings", label: "CRM Settings", icon: SlidersHorizontal, page: "crm-settings", minRank: 3, perm: "crm.settings.view" },
+  ],
+}
+
+// Optional Marketing module — rendered when the tenant's MARKETING feature is
+// enabled. Phase 1 ships Dashboard/Discounts/Coupons/Reports; the rest are
+// placeholders. Admin/owner only (gated by laundry.settings.view; owner sees all).
+const MARKETING_GROUP: { label: string | null; items: NavCfg[] } = {
+  label: "Marketing",
+  items: [
+    { key: "marketing-dashboard", label: "Dashboard", icon: Megaphone, page: "marketing-dashboard", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-discounts", label: "Discounts", icon: BadgePercent, page: "marketing-discounts", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-coupons", label: "Coupons / Vouchers", icon: Ticket, page: "marketing-coupons", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-loyalty", label: "Loyalty Program", icon: Sparkles, page: "marketing-loyalty", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-membership", label: "Membership Levels", icon: Crown, page: "marketing-membership", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-giftcards", label: "Gift Cards", icon: Gift, page: "marketing-giftcards", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-referral", label: "Referral Program", icon: UserPlus, page: "marketing-referral", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-credits", label: "Promotional Credits", icon: Coins, page: "marketing-credits", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-cart-recovery", label: "Cart Recovery", icon: ShoppingCart, page: "marketing-cart-recovery", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-campaigns", label: "Campaigns", icon: Target, page: "marketing-campaigns", minRank: 3, perm: "laundry.settings.view" },
+    { key: "marketing-reports", label: "Reports", icon: BarChart3, page: "marketing-reports", minRank: 3, perm: "laundry.settings.view" },
   ],
 }
 
@@ -211,15 +233,18 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
   const brandInitials = brand.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
   const crmState = useCrmEnabled() // null while loading
   const crmEnabled = crmState === true
+  const marketingEnabled = useMarketingEnabled() === true
 
   // CRM section first, then the Laundry OS sections (first laundry group gets
   // the "Laundry OS" header so the two products read as separate sections).
   // When CRM is disabled nothing changes — no empty headings or spacing.
   const baseGroups: NavGroup[] = isProcessing
     ? PROCESSING_GROUPS
-    : crmEnabled
-      ? [CRM_GROUP, ...NAV_GROUPS]
-      : NAV_GROUPS
+    : [
+        ...(crmEnabled ? [CRM_GROUP] : []),
+        ...(marketingEnabled ? [MARKETING_GROUP] : []),
+        ...NAV_GROUPS,
+      ]
 
   const groups = baseGroups
     .map((g) => ({ label: g.label, sectionHeader: g.sectionHeader, items: g.items.filter((i) => rank >= i.minRank && permAllows(i)) }))
