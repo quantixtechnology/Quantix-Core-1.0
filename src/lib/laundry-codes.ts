@@ -59,6 +59,23 @@ export async function generateBusinessCode(): Promise<string> {
   return `${prefix}${padNumber(next)}`
 }
 
+// ─── Pickup Bag Code: PB-YYYYMM-NNNNNN ──────────────────────────────────────
+// One physical pickup bag (one per booked service). QR at pickup.
+export async function generatePickupBagCode(): Promise<string> {
+  const prefix = `PB-${getMonthPrefix()}-`
+  const next = await getNextSequential("laundryPickupBag", "code", prefix)
+  return `${prefix}${padNumber(next, 6)}`
+}
+
+// ─── Processing Package Code: PKG-YYYYMM-NNNNNN ─────────────────────────────
+// The operational QR generated after Store Audit (unless the tenant reuses the
+// pickup bag QR).
+export async function generateProcessingPackageCode(): Promise<string> {
+  const prefix = `PKG-${getMonthPrefix()}-`
+  const next = await getNextSequential("laundryProcessingPackage", "code", prefix)
+  return `${prefix}${padNumber(next, 6)}`
+}
+
 // ─── Store Code: STR-LND-YYYYMM-NNNN-NNN ────────────────────────────────────
 // Example: STR-LND-202606-0001-001
 export async function generateStoreCode(businessCode: string): Promise<string> {

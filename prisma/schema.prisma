@@ -4141,6 +4141,8 @@ model LaundryBusiness {
   // garments process and requires payment before delivery.
   paymentPolicy                String    @default("BEFORE_DELIVERY")
   allowProcessingBeforePayment Boolean   @default(false) // deprecated (kept for compat)
+  // Pickup-First: how the operational QR is created after Store Audit.
+  processingPackageQrMode      String    @default("GENERATE_NEW") // GENERATE_NEW | REUSE_BAG
   defaultServiceRadius         Float?
   defaultDailyCapacity         Float?
   platformBusinessId           String?   @unique
@@ -5668,4 +5670,61 @@ model PromotionRedemption {
   @@index([customerId])
   @@index([orderId])
   @@index([businessId, status])
+}
+
+// ============================================================================
+// PICKUP-FIRST tracking (additive). One Order → one/more Pickup Bags (one per
+// service, QR at pickup) → one/more Processing Packages (QR after Store Audit)
+// → one Invoice. Reuses the existing order/audit/pricing/invoice engines; these
+// tables only track the physical bags/packages + their QR + status. `orderId`
+// is a plain scoped key (no relation) so LaundryOrder is untouched.
+// See the Pickup-First service mode ([[laundry-pickup-first-bag-mode]]).
+// ============================================================================
+model LaundryPickupBag {
+  id              String    @id @default(cuid())
+  code            String    @unique // PB-YYYYMM-NNNNNN
+  qrValue         String // stable QR payload = code
+  businessId      String
+  orderId         String
+  orderNumber     String?
+  serviceId       String?
+  serviceName     String
+  customerId      String?
+  customerName    String?
+  pickupDate      DateTime?
+  pickupExecutive String?
+  status          String    @default("COLLECTED") // COLLECTED | RECEIVED_AT_STORE | AUDITED
+  collectedAt     DateTime  @default(now())
+  receivedAt      DateTime?
+  receivedBy      String?
+  auditedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([businessId])
+  @@index([orderId])
+  @@index([businessId, status])
+  @@index([code])
+}
+
+model LaundryProcessingPackage {
+  id            String    @id @default(cuid())
+  code          String    @unique // PKG-YYYYMM-NNNNNN (or reused Pickup Bag code)
+  qrValue       String
+  businessId    String
+  orderId       String
+  orderNumber   String?
+  pickupBagId   String? // parent bag when generated from a pickup bag
+  serviceId     String?
+  serviceName   String?
+  garmentCount  Int       @default(0)
+  weightKg      Float     @default(0)
+  reusedBagQr   Boolean   @default(false) // tenant setting: reuse the Pickup Bag QR
+  status        String    @default("CREATED") // CREATED | IN_PROCESSING | QC | READY | RETURNED
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([businessId])
+  @@index([orderId])
+  @@index([code])
 }
