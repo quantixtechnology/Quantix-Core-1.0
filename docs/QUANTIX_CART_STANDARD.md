@@ -68,6 +68,28 @@ A workspace never touches the engine internals. It provides a small **adapter** 
 
 **Identical orders (Web ⇄ PWA):** both surfaces build the order payload from the same `cartToOrderItems(items)`, so the same cart contents produce the same order regardless of surface.
 
+## 5a. Cart UX Standard (presentation — reuse verbatim)
+
+The shared cart drawer ([`storefront-layout.tsx`](../src/components/storefront/web/storefront-layout.tsx) → `CartDrawer`, rendered by BOTH the web and installed-PWA layouts so it looks identical on desktop / tablet / mobile / PWA) defines the reusable cart UX. Future workspaces reuse this layout, grouping, editing and checkout-entry; only the item types and labels change.
+
+- **Grouped with a count.** Items are grouped into cards by their group key (Service for laundry) with a count header:
+  ```
+  Wash & Iron            3 Garments
+    Shirt ×1  Pant ×1  Jeans ×1
+  ```
+- **Edit in place.** Every editable line has `[−] qty [+]` and a delete; changes apply immediately via `updateQuantity` / `removeItem`. Customers never reopen the item selector.
+- **Auto-remove empty groups.** Removing the last line in a group drops the whole group card (the grouping helper only emits non-empty groups). No empty sections.
+- **One "billed/estimated later" note per group**, never repeated per line.
+- **Confidence summary**, not a bare subtotal:
+  ```
+  Laundry Bag         6 Garments · 2 Services
+  Estimated Today                        ₹0
+  Final amount will be confirmed after Store Audit.
+  ```
+- **Checkout entry reads for the workspace.** Laundry says **Schedule Pickup** (customers book a pickup, not buy products); commerce keeps *Proceed to Checkout*.
+- **Empty state is actionable**: a headline + a next step + a browse button (laundry: "Your Laundry Bag is empty." / "Browse Services to start your pickup request.").
+- **Subscription plans render as just another group** ("Subscription" · *Available*) — no bespoke styling.
+
 ## 6. Persistence & sync
 
 | Customer | Storage | Mechanism |

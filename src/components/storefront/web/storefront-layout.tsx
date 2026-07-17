@@ -66,34 +66,51 @@ export function StorefrontLayout({
   const cartCount    = totalItems()
   const cartSubtotal = subtotal()
 
+  // Laundry Bag summary counts (presentation only).
+  const laundryGroups     = isLaundry ? groupLaundryByService(items) : []
+  const laundrySubLines   = isLaundry ? items.filter(isSubscriptionLine) : []
+  const laundryGarments   = items.reduce((n, i) => n + (i.kind === "laundry" && i.garmentId ? i.quantity : 0), 0)
+  const laundryHasWeight  = items.some((i) => i.kind === "laundry" && i.billedAfterAudit)
+
   // One cart line row — reused for commerce products AND laundry service/
   // subscription lines. Subscription + weight-based lines carry no stepper.
-  const renderCartLine = (item: CartItem) => (
-    <div key={`${item.productId}-${item.variantId}`} className="flex items-start gap-3 bg-gray-50/80 rounded-2xl p-3">
-      <ProductImage src={resolveImageUrl(item.image)} alt={item.name} className="w-[52px] h-[52px] rounded-xl shrink-0 border border-gray-100" />
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold text-gray-900 leading-tight line-clamp-2">{item.name}</p>
-        {item.variantName && <p className="text-[11px] text-gray-500 mt-0.5">{item.variantName}</p>}
-        <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>
-          {item.billedAfterAudit ? <span className="text-[11px] font-semibold text-amber-600">Billed after audit</span> : formatINR(item.price * item.quantity)}
-        </p>
+  const renderCartLine = (item: CartItem) => {
+    const isSub = item.kind === "subscription"
+    const isWeightService = !!item.billedAfterAudit && !item.garmentId // whole-service PER_KG line
+    const noStepper = isSub || isWeightService
+    return (
+      <div key={`${item.productId}-${item.variantId}`} className="flex items-start gap-3 bg-gray-50/80 rounded-2xl p-3">
+        <ProductImage src={resolveImageUrl(item.image)} alt={item.name} className="w-[52px] h-[52px] rounded-xl shrink-0 border border-gray-100" />
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-semibold text-gray-900 leading-tight line-clamp-2">{item.name}</p>
+          {item.variantName && <p className="text-[11px] text-gray-500 mt-0.5">{item.variantName}</p>}
+          {/* Per-garment "billed after audit" is intentionally NOT repeated here —
+              it is shown once under the Service group. */}
+          {isSub ? (
+            <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>{formatINR(item.price)}</p>
+          ) : isWeightService ? (
+            <p className="text-[11px] font-medium text-gray-500 mt-1">~{item.weightKg || 0} kg (est.)</p>
+          ) : item.billedAfterAudit ? null : (
+            <p className="text-sm font-bold mt-1" style={{ color: brandColor }}>{formatINR(item.price * item.quantity)}</p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <button onClick={() => removeItem(item.productId, item.variantId)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50">
+            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+          </button>
+          {noStepper ? (
+            <span className="text-[11px] font-medium text-gray-400">{isSub ? "Plan" : "By weight"}</span>
+          ) : (
+            <div className="flex items-center h-7 rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brandColor}` }}>
+              <button onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)} className="w-7 h-full flex items-center justify-center active:opacity-70" style={{ color: brandColor }}><Minus className="w-3 h-3" /></button>
+              <span className="w-6 text-center text-[13px] font-bold" style={{ color: brandColor }}>{item.quantity}</span>
+              <button onClick={() => updateQuantity(item.productId, item.variantId, item.quantity + 1)} className="w-7 h-full flex items-center justify-center active:opacity-70" style={{ color: brandColor }}><Plus className="w-3 h-3" /></button>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="flex flex-col items-end gap-2 shrink-0">
-        <button onClick={() => removeItem(item.productId, item.variantId)} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50">
-          <Trash2 className="w-3.5 h-3.5 text-red-400" />
-        </button>
-        {item.kind === "subscription" || item.billedAfterAudit ? (
-          <span className="text-[11px] font-medium text-gray-400">{item.kind === "subscription" ? "Plan" : `~${item.weightKg || 0} kg`}</span>
-        ) : (
-          <div className="flex items-center h-7 rounded-xl overflow-hidden" style={{ border: `1.5px solid ${brandColor}` }}>
-            <button onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)} className="w-7 h-full flex items-center justify-center active:opacity-70" style={{ color: brandColor }}><Minus className="w-3 h-3" /></button>
-            <span className="w-6 text-center text-[13px] font-bold" style={{ color: brandColor }}>{item.quantity}</span>
-            <button onClick={() => updateQuantity(item.productId, item.variantId, item.quantity + 1)} className="w-7 h-full flex items-center justify-center active:opacity-70" style={{ color: brandColor }}><Plus className="w-3 h-3" /></button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
+    )
+  }
 
   // ── Categories for desktop nav strip + mobile hamburger (web only) ─────
   useEffect(() => {
@@ -173,48 +190,90 @@ export function StorefrontLayout({
             >
               <ShoppingCart className="w-9 h-9" style={{ color: brandColor }} />
             </div>
-            <p className="text-sm font-semibold text-gray-700">{bagEmpty}</p>
-            <p className="text-xs text-gray-400">Add items to get started</p>
+            <p className="text-sm font-semibold text-gray-700">{isLaundry ? "Your Laundry Bag is empty." : bagEmpty}</p>
+            <p className="text-xs text-gray-400">{isLaundry ? "Browse Services to start your pickup request." : "Add items to get started"}</p>
             <button
-              onClick={() => { setCartOpen(false); nav.go("category") }}
+              onClick={() => { setCartOpen(false); nav.go(isLaundry ? "home" : "category") }}
               className="mt-2 px-6 py-2.5 text-sm font-semibold text-white rounded-xl transition-opacity hover:opacity-90"
               style={{ backgroundColor: brandColor }}
             >
-              Browse Products
+              {isLaundry ? "Browse Services" : "Browse Products"}
             </button>
           </div>
         ) : (
           <>
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-              {/* Laundry Bag: GROUPED BY SERVICE (never a flat garment list) +
-                  subscription lines below. Commerce carts stay a flat list. */}
+              {/* Laundry Bag: GROUPED BY SERVICE with a garment count + a single
+                  per-service "billed after audit" note. Subscription plans render
+                  as just another group. Commerce carts stay a flat list. */}
               {isLaundry ? (
                 <>
-                  {groupLaundryByService(items).map((g) => (
-                    <div key={g.serviceId} className="space-y-2">
-                      <p className="px-1 text-[11px] font-bold uppercase tracking-wide text-gray-400">{g.serviceName}</p>
-                      {g.lines.map(renderCartLine)}
+                  {laundryGroups.map((g) => {
+                    const count = g.lines.reduce((n, l) => n + (l.garmentId ? l.quantity : 0), 0)
+                    const groupHasWeight = g.lines.some((l) => l.billedAfterAudit)
+                    return (
+                      <div key={g.serviceId} className="rounded-2xl border border-gray-100 p-2.5 space-y-1.5">
+                        <div className="flex items-baseline justify-between px-1">
+                          <p className="text-[13px] font-bold text-gray-800">{g.serviceName}</p>
+                          {count > 0 && <span className="text-[11px] font-medium text-gray-400">{count} Garment{count === 1 ? "" : "s"}</span>}
+                        </div>
+                        {g.lines.map(renderCartLine)}
+                        {groupHasWeight && <p className="px-1 text-[11px] font-medium text-amber-600">Final billing after Store Audit.</p>}
+                      </div>
+                    )
+                  })}
+                  {laundrySubLines.length > 0 && (
+                    <div className="rounded-2xl border border-gray-100 p-2.5 space-y-1.5">
+                      <div className="flex items-baseline justify-between px-1">
+                        <p className="text-[13px] font-bold text-gray-800">Subscription</p>
+                        <span className="text-[11px] font-semibold text-emerald-600">Available</span>
+                      </div>
+                      {laundrySubLines.map(renderCartLine)}
                     </div>
-                  ))}
-                  {items.filter(isSubscriptionLine).map(renderCartLine)}
+                  )}
                 </>
               ) : (
                 items.map(renderCartLine)
               )}
             </div>
             <div className="px-4 py-4 border-t border-gray-100 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Subtotal</span>
-                <span className="text-base font-bold text-gray-900">{formatINR(cartSubtotal)}</span>
-              </div>
-              <p className="text-[11px] text-gray-400">{isLaundry ? "Pickup, taxes & weight-based items confirmed at checkout" : "Taxes & delivery calculated at checkout"}</p>
-              <button
-                onClick={() => { setCartOpen(false); if (isLaundry) requestLaundryCheckout(); else nav.go("checkout") }}
-                className="w-full h-12 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
-                style={{ backgroundColor: brandColor }}
-              >
-                Proceed to Checkout <ChevronRight className="w-4 h-4" />
-              </button>
+              {isLaundry ? (
+                <>
+                  <div className="rounded-2xl bg-gray-50 px-3.5 py-3 space-y-1.5">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-bold text-gray-800">Laundry Bag</span>
+                      <span className="text-[11px] text-gray-400">{laundryGarments} Garment{laundryGarments === 1 ? "" : "s"} · {laundryGroups.length} Service{laundryGroups.length === 1 ? "" : "s"}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm text-gray-600">Estimated Today</span>
+                      <span className="text-base font-bold text-gray-900">{formatINR(cartSubtotal)}</span>
+                    </div>
+                    {laundryHasWeight && <p className="text-[11px] text-gray-400">Final amount will be confirmed after Store Audit.</p>}
+                  </div>
+                  <button
+                    onClick={() => { setCartOpen(false); requestLaundryCheckout() }}
+                    className="w-full h-12 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: brandColor }}
+                  >
+                    Schedule Pickup <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Subtotal</span>
+                    <span className="text-base font-bold text-gray-900">{formatINR(cartSubtotal)}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-400">Taxes &amp; delivery calculated at checkout</p>
+                  <button
+                    onClick={() => { setCartOpen(false); nav.go("checkout") }}
+                    className="w-full h-12 text-white font-bold text-sm rounded-2xl flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: brandColor }}
+                  >
+                    Proceed to Checkout <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
