@@ -140,11 +140,20 @@ export function LaundryStoreAudit() {
     } catch { toast({ title: "Upload failed", variant: "destructive" }) } finally { setUploading(false) }
   }
 
+  // Single source of truth for weight: if per-garment weights were captured at
+  // intake, they already priced the KG lines — the audit must NOT re-enter or
+  // re-price by a separate "total weight" (doing so would overwrite/zero it).
+  const hasPerGarmentWeight = !!detail?.items.some((it) => it.pricingType === "PER_KG" && (it.weightKg || 0) > 0)
+
   const saveInspection = useCallback(async () => {
     if (!detail) return false
+    const perGarment = detail.items.some((it) => it.pricingType === "PER_KG" && (it.weightKg || 0) > 0)
     const body = {
       businessId: currentBusinessId, auditNotes, auditPhotos: photos, auditedBy: user?.name || "auditor",
-      ...(totalWeight !== "" ? { totalWeightKg: Number(totalWeight) } : {}),
+      // Only send a total weight in BAG-weight mode (no per-garment weights) —
+      // that's the case the inspect endpoint reprices. Per-garment orders are
+      // already priced at intake; sending it would reprice by the bag model.
+      ...(totalWeight !== "" && !perGarment ? { totalWeightKg: Number(totalWeight) } : {}),
       items: detail.items.map((it) => ({ itemId: it.id, condition: inspect[it.id]?.condition || "GOOD", defects: inspect[it.id]?.defects || [], notes: inspect[it.id]?.notes || "" })),
     }
     const res = await fetch(`/api/laundry/orders/${detail.id}/inspect`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -152,11 +161,12 @@ export function LaundryStoreAudit() {
     return res.ok && json.success !== false
   }, [detail, currentBusinessId, auditNotes, photos, inspect, totalWeight, user])
 
-  // A KG order must have its single total weight recorded before the invoice.
+  // A KG order must have its weight before the invoice — but per-garment weights
+  // (captured at intake) already satisfy this, so only BAG-weight orders prompt.
   const hasKgItems = !!detail?.items.some((it) => it.pricingType === "PER_KG")
   const totalWeightKg = totalWeight === "" ? 0 : Math.max(0, Number(totalWeight) || 0)
   const kgRate = detail?.items.find((it) => it.pricingType === "PER_KG" && it.unitPrice > 0)?.unitPrice ?? 0
-  const needsWeight = hasKgItems && totalWeightKg <= 0
+  const needsWeight = hasKgItems && !hasPerGarmentWeight && totalWeightKg <= 0
 
   const handleSave = async () => { setSaving(true); const ok = await saveInspection(); setSaving(false); toast(ok ? { title: "Inspection saved" } : { title: "Save failed", variant: "destructive" }) }
 
@@ -219,22 +229,34 @@ export function LaundryStoreAudit() {
               </CardContent>
             </Card>
 
-            {/* KG billing — ONE total order weight, measured once. Garment
-                quantities below stay for inventory/tracking; they don't price KG. */}
+            {/* KG billing. Per-garment weights (from intake) are the single source
+                of truth → total is auto-calculated + read-only. Bag-weight orders
+                enter ONE total weight here. Never both. */}
             {hasKgItems && (
               <Card className="border-blue-200">
-                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2 text-blue-700"><ClipboardCheck className="h-4 w-4" /> Total Order Weight (KG)</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2 text-blue-700"><ClipboardCheck className="h-4 w-4" /> {hasPerGarmentWeight ? "Order Weight (KG)" : "Total Order Weight (KG)"}</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Input type="number" min="0" step="0.05" value={totalWeight} onChange={(e) => setTotalWeight(e.target.value)} placeholder="0.00"
-                      className={`h-10 w-32 text-lg font-semibold tabular-nums ${needsWeight ? "border-rose-300 bg-rose-50" : "border-blue-200"}`} />
-                    <span className="text-sm text-muted-foreground">KG {kgRate > 0 && <>× {inr(kgRate)}/KG</>}</span>
-                    <span className="ml-auto text-right">
-                      <span className="block text-[11px] text-muted-foreground">KG Amount</span>
-                      <span className="text-xl font-bold text-slate-800 tabular-nums">{totalWeightKg > 0 && kgRate > 0 ? inr(totalWeightKg * kgRate) : <span className="text-sm text-rose-500">Enter total weight</span>}</span>
-                    </span>
-                  </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">Weigh the whole KG load once. The invoice is generated from this weight × rate.</p>
+                  {hasPerGarmentWeight ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="h-10 px-3 inline-flex items-center rounded-md border border-blue-200 bg-blue-50/60 text-lg font-semibold tabular-nums text-slate-800">{detail.totalWeightKg.toFixed(2)} KG</span>
+                      <span className="text-sm text-muted-foreground">auto-calculated from garment weights</span>
+                      <span className="ml-auto text-right">
+                        <span className="block text-[11px] text-muted-foreground">KG Amount</span>
+                        <span className="text-xl font-bold text-slate-800 tabular-nums">{inr(detail.items.filter((it) => it.pricingType === "PER_KG").reduce((s, it) => s + (it.unitPrice * (it.weightKg || 0)), 0))}</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Input type="number" min="0" step="0.05" value={totalWeight} onChange={(e) => setTotalWeight(e.target.value)} placeholder="0.00"
+                        className={`h-10 w-32 text-lg font-semibold tabular-nums ${needsWeight ? "border-rose-300 bg-rose-50" : "border-blue-200"}`} />
+                      <span className="text-sm text-muted-foreground">KG {kgRate > 0 && <>× {inr(kgRate)}/KG</>}</span>
+                      <span className="ml-auto text-right">
+                        <span className="block text-[11px] text-muted-foreground">KG Amount</span>
+                        <span className="text-xl font-bold text-slate-800 tabular-nums">{totalWeightKg > 0 && kgRate > 0 ? inr(totalWeightKg * kgRate) : <span className="text-sm text-rose-500">Enter total weight</span>}</span>
+                      </span>
+                    </div>
+                  )}
+                  <p className="mt-2 text-[11px] text-muted-foreground">{hasPerGarmentWeight ? "Per-garment weights were captured at intake — the total is the sum, no re-entry needed." : "Weigh the whole KG load once. The invoice is generated from this weight × rate."}</p>
                 </CardContent>
               </Card>
             )}

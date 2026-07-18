@@ -25,7 +25,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const order = await prisma.laundryOrder.findUnique({
       where: { id },
-      select: { id: true, businessId: true, orderNumber: true, storeId: true, customerType: true, subtotal: true, gstTotal: true, grandTotal: true, balanceDue: true, billedAt: true, _count: { select: { items: true } } },
+      select: { id: true, businessId: true, orderNumber: true, storeId: true, customerType: true, subtotal: true, gstTotal: true, grandTotal: true, balanceDue: true, amountPaid: true, totalWeightKg: true, billedAt: true, _count: { select: { items: true } } },
     })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     const guard = await requireLaundryPermission(request, order.businessId, "store_ops.store_audit.view")
@@ -38,14 +38,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       clean.map((it) => ({ serviceId: it.serviceId || null, garmentId: it.garmentId || null, quantity: Number(it.quantity) || 0, weightKg: Number(it.weightKg) || 0 })),
     )
 
-    const addSubtotal = r2(lines.reduce((s, l) => s + l.lineAmount, 0))
-    const addGst = r2(lines.reduce((s, l) => s + l.gstAmount, 0))
+    // PER_KG lines bill ₹0 until weighed. The auditor entered a PER-GARMENT weight
+    // at intake, so price each PER_KG line by ITS OWN weight × rate (single source
+    // of truth) — no separate "total weight" step. Total weight = the sum, stored
+    // so the audit never asks for it again. PER_PIECE lines keep their booking price.
+    const priced = lines.map((l) => {
+      if (l.pricingType === "PER_KG" && (l.weightKg || 0) > 0) {
+        const lineAmount = r2(l.unitPrice * l.weightKg)
+        const gstAmount = r2((lineAmount * (l.gstPercent || 0)) / 100)
+        return { ...l, lineAmount, gstAmount, total: r2(lineAmount + gstAmount) }
+      }
+      return l
+    })
+    const addSubtotal = r2(priced.reduce((s, l) => s + l.lineAmount, 0))
+    const addGst = r2(priced.reduce((s, l) => s + l.gstAmount, 0))
     const addTotal = r2(addSubtotal + addGst)
+    const addWeight = r2(priced.filter((l) => l.pricingType === "PER_KG").reduce((s, l) => s + (l.weightKg || 0), 0))
     const base = order._count.items
+    const newGrand = r2(order.grandTotal + addTotal)
 
     const updated = await prisma.$transaction(async (tx) => {
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i]
+      for (let i = 0; i < priced.length; i++) {
+        const l = priced[i]
         const itemNumber = `ITM-${order.orderNumber}-${String(base + i + 1).padStart(4, "0")}`
         await tx.laundryOrderItem.create({
           data: {
@@ -62,14 +76,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         data: {
           subtotal: r2(order.subtotal + addSubtotal),
           gstTotal: r2(order.gstTotal + addGst),
-          grandTotal: r2(order.grandTotal + addTotal),
-          balanceDue: r2(order.balanceDue + addTotal),
+          grandTotal: newGrand,
+          balanceDue: r2(Math.max(0, newGrand - (order.amountPaid || 0))),
+          totalWeightKg: r2((order.totalWeightKg || 0) + addWeight),
           billedAt: order.billedAt || new Date(),
         },
         select: { id: true, grandTotal: true },
       })
     })
-    return NextResponse.json({ success: true, data: { orderId: updated.id, added: lines.length, grandTotal: updated.grandTotal } }, { status: 201 })
+    return NextResponse.json({ success: true, data: { orderId: updated.id, added: priced.length, grandTotal: updated.grandTotal } }, { status: 201 })
   } catch (e) {
     console.error("[order-intake-items] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
