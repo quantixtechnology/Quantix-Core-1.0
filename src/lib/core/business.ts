@@ -1033,11 +1033,12 @@ export async function toggleOnline(businessId: string, isOnline: boolean) {
   }
 
   if (isOnline) {
+    // Storefront availability depends ONLY on the business being active (an
+    // operational decision the Super Admin controls) and the storefront being
+    // enabled — NOT on subscription / invoice / payment status. Billing state is
+    // informational and must never block operational availability.
     if (business.status === 'SUSPENDED') {
       throw new Error('Cannot set a suspended business online. Activate it first.');
-    }
-    if (!business.businessSubscription || business.businessSubscription.status !== 'ACTIVE') {
-      throw new Error('Cannot set business online without an active subscription. Activate the subscription first.');
     }
   }
 
