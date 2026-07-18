@@ -4165,6 +4165,7 @@ model LaundryBusiness {
   workflowQuality      LaundryWorkflowQualityConfig?
   auditLogs            LaundryAuditLog[]
   orders               LaundryOrder[]
+  deliveryExecutives   LaundryDeliveryExecutive[]
 
   @@index([businessCode])
   @@index([status])
@@ -4363,10 +4364,42 @@ model LaundryStore {
   assignments     LaundryUserAssignment[]
   orders          LaundryOrder[]
   pricingRules    LaundryPricingRule[]
+  deliveryExecutives LaundryDeliveryExecutive[]
 
   @@index([laundryBusinessId])
   @@index([storeCode])
   @@index([storeType])
+}
+
+// Delivery Executive — a dedicated OPERATIONAL master for field pickup/delivery
+// staff. NOT a second auth system: each executive links to an existing auth User
+// (login flows through the platform auth + RBAC). It exists so pickup/delivery
+// people carry delivery-specific attributes (vehicle, availability, live status,
+// assigned store) without overloading the general Staff model, and so the Admin
+// has one clean screen to manage who can be assigned to field jobs. Only these
+// executives can log into the Pickup & Delivery PWA.
+model LaundryDeliveryExecutive {
+  id            String   @id @default(cuid())
+  businessId    String // LaundryBusiness.id (laundry-scoped, like other laundry masters)
+  userId        String? // linked auth User — login via existing auth system
+  employeeCode  String
+  name          String
+  mobile        String
+  storeId       String? // assigned store
+  vehicleType   String? // BIKE | SCOOTER | CAR | VAN | CYCLE | null
+  isActive      Boolean  @default(true)
+  availability  String   @default("AVAILABLE") // AVAILABLE | BUSY | OFF
+  currentStatus String? // mirrors live field status; null = idle
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  store    LaundryStore?   @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, employeeCode])
+  @@index([businessId])
+  @@index([userId])
+  @@index([storeId])
 }
 
 model LaundryBusinessFeature {

@@ -14,7 +14,7 @@ import { Loader2, Truck, MapPin, User, Package, Zap, Navigation } from "lucide-r
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 
-interface Exec { userId: string; name: string; phone: string | null; roleName: string | null; isExecutive: boolean }
+interface Exec { id: string; name: string; mobile: string | null; storeName: string | null; availability: string }
 interface Job {
   id: string; orderNumber: string; status: string; fieldStatus: string | null; priority: string
   customerName: string; customerPhone: string | null; timeSlot: string | null
@@ -131,7 +131,7 @@ export function LaundryPickupScheduler() {
                   onChange={(e) => assign(job, e.target.value || null)}
                   className="h-9 flex-1 rounded-md border border-slate-200 px-2 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-400">
                   <option value="">— Unassigned —</option>
-                  {execs.map((ex) => <option key={ex.userId} value={ex.userId}>{ex.name}{ex.roleName ? ` (${ex.roleName})` : ""}</option>)}
+                  {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}{ex.storeName ? ` · ${ex.storeName}` : ""}</option>)}
                 </select>
                 {savingId === job.id && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
               </div>

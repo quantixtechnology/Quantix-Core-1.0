@@ -53,12 +53,12 @@ export async function GET(request: Request) {
       orderBy: [{ pickupTimeSlot: "asc" }, { createdAt: "asc" }],
     })
 
-    // Assigned-executive names + customer name/phone (platform Customer, by id —
-    // there is no direct relation on LaundryOrder).
+    // Assigned Delivery Executive names + customer name/phone (platform Customer,
+    // by id — there is no direct relation on LaundryOrder).
     const execIds = [...new Set(orders.flatMap((o) => [o.pickupExecutiveId, o.deliveryExecutiveId]).filter(Boolean) as string[])]
     const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
     const [execs, custs] = await Promise.all([
-      prisma.user.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true } }),
+      prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true } }),
       prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true, phone: true } }),
     ])
     const execName = new Map(execs.map((e) => [e.id, e.name]))
@@ -116,9 +116,9 @@ export async function POST(request: Request) {
     const execId: string | null = b.executiveId || null
     let execName: string | null = null
     if (execId) {
-      const u = await prisma.user.findUnique({ where: { id: execId }, select: { name: true } })
-      if (!u) return NextResponse.json({ error: "Executive not found" }, { status: 404 })
-      execName = u.name
+      const ex = await prisma.laundryDeliveryExecutive.findFirst({ where: { id: execId, businessId: biz.id, isActive: true }, select: { name: true } })
+      if (!ex) return NextResponse.json({ error: "Delivery executive not found or inactive" }, { status: 404 })
+      execName = ex.name
     }
     const actor = { id: guard.ctx?.userId ?? null, name: guard.ctx?.userName ?? "Supervisor" }
 
