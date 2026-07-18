@@ -4516,6 +4516,14 @@ model LaundryOrder {
   deliveryExecutiveId String?
   pickupAssignedAt    DateTime?
   deliveryAssignedAt  DateTime?
+  // Assignment acceptance (dedicated Pickup/Delivery Assignment layer, between
+  // order creation and bag scanning). PENDING = assigned, awaiting the
+  // executive's response; ACCEPTED / REJECTED = their decision. Rejection returns
+  // the job to "Awaiting Assignment" (executive cleared) and is logged.
+  pickupAcceptance    String? // PENDING | ACCEPTED | REJECTED
+  pickupAcceptedAt    DateTime?
+  deliveryAcceptance  String? // PENDING | ACCEPTED | REJECTED
+  deliveryAcceptedAt  DateTime?
   // Denormalised live status for the Live Operations dashboard / PWA lists, e.g.
   // ASSIGNED, STARTED, NAVIGATING, REACHED, PICKUP_STARTED, PICKUP_COMPLETED,
   // RETURNING_STORE, STORE_RECEIVED, OUT_FOR_DELIVERY, DELIVERED. Purely a

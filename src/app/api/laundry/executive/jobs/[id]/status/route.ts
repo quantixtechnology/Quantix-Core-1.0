@@ -27,9 +27,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const b = await request.json().catch(() => ({}))
     const status = String(b.status || "")
 
-    const order = await prisma.laundryOrder.findFirst({ where: { id, businessId: session.businessId }, select: { id: true, pickupExecutiveId: true, fieldStatus: true, services: { select: { serviceId: true, serviceName: true } } } })
+    const order = await prisma.laundryOrder.findFirst({ where: { id, businessId: session.businessId }, select: { id: true, pickupExecutiveId: true, pickupAcceptance: true, fieldStatus: true, services: { select: { serviceId: true, serviceName: true } } } })
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
     if (order.pickupExecutiveId !== session.executiveId) return NextResponse.json({ error: "This pickup is not assigned to you" }, { status: 403 })
+    if (order.pickupAcceptance !== "ACCEPTED") return NextResponse.json({ error: "Accept the assignment before starting the pickup" }, { status: 409 })
 
     // Customer verification (name or OTP) — recorded as an event, then the job
     // moves into "pickup in progress" so bags can be scanned.

@@ -20,21 +20,25 @@ interface Job {
   customerName: string; customerPhone: string | null; timeSlot: string | null
   storeName: string | null; address: string | null; landmark: string | null; mapsLink: string | null; lat: number | null; lng: number | null
   services: string[]; bagCount: number; itemCount: number
-  executiveId: string | null; executiveName: string | null; bucket: string
+  executiveId: string | null; executiveName: string | null; vehicle: string | null
+  acceptance: string | null; assignedAt: string | null; acceptedAt: string | null; bucket: string
 }
 
 const BUCKETS: { key: string; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "unassigned", label: "Unassigned" },
+  { key: "awaiting", label: "Awaiting Assignment" },
   { key: "assigned", label: "Assigned" },
+  { key: "accepted", label: "Accepted" },
   { key: "completed", label: "Completed" },
   { key: "missed", label: "Missed" },
   { key: "cancelled", label: "Cancelled" },
 ]
 const today = () => new Date().toISOString().slice(0, 10)
 const fieldLabel = (s: string | null) => s ? s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : null
+const fmtTime = (s: string | null) => s ? new Date(s).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : null
 
-export function LaundryPickupScheduler() {
+export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | "delivery" }) {
+  const isDelivery = mode === "delivery"
   const { currentBusinessId } = useAuthStore()
   const [date, setDate] = useState(today())
   const [jobs, setJobs] = useState<Job[]>([])
@@ -49,19 +53,19 @@ export function LaundryPickupScheduler() {
     setLoading(true)
     try {
       const [s, e] = await Promise.all([
-        fetch(`/api/laundry/pickup-scheduler?businessId=${currentBusinessId}&date=${date}&type=pickup`).then((r) => r.json()),
+        fetch(`/api/laundry/pickup-scheduler?businessId=${currentBusinessId}&date=${date}&type=${mode}`).then((r) => r.json()),
         fetch(`/api/laundry/executives?businessId=${currentBusinessId}`).then((r) => r.json()),
       ])
       if (s.success) { setJobs(s.data); setCounts(s.counts || {}) }
       if (e.success) setExecs(e.data)
     } catch { /* noop */ } finally { setLoading(false) }
-  }, [currentBusinessId, date])
+  }, [currentBusinessId, date, mode])
   useEffect(() => { load() }, [load])
 
   const assign = async (job: Job, executiveId: string | null) => {
     setSavingId(job.id)
     try {
-      const res = await fetch("/api/laundry/pickup-scheduler", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, orderId: job.id, type: "pickup", executiveId }) })
+      const res = await fetch("/api/laundry/pickup-scheduler", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, orderId: job.id, type: mode, executiveId }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Failed")
       toast.success(executiveId ? "Executive assigned" : "Assignment cleared")
@@ -75,8 +79,8 @@ export function LaundryPickupScheduler() {
     <div className="px-4 lg:px-6 py-6 space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Truck className="h-5 w-5 text-blue-600" /> Pickup Scheduler</h1>
-          <p className="text-sm text-slate-500">Assign field executives to today&apos;s pickups. Admin stays the master — this only records who&apos;s assigned.</p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Truck className="h-5 w-5 text-blue-600" /> {isDelivery ? "Delivery Assignments" : "Pickup Assignments"}</h1>
+          <p className="text-sm text-slate-500">Assign an active Delivery Executive to each {isDelivery ? "delivery" : "pickup"}. The executive Accepts or Rejects it in their app. Admin stays the master.</p>
         </div>
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 w-auto" />
       </div>
@@ -93,7 +97,7 @@ export function LaundryPickupScheduler() {
       {loading ? (
         <div className="py-16 text-center text-slate-400"><Loader2 className="h-5 w-5 animate-spin inline" /></div>
       ) : visible.length === 0 ? (
-        <Card className="rounded-xl border-slate-200"><CardContent className="py-16 text-center text-slate-400 text-sm">No pickups {tab === "all" ? "scheduled" : `in "${tab}"`} for this date.</CardContent></Card>
+        <Card className="rounded-xl border-slate-200"><CardContent className="py-16 text-center text-slate-400 text-sm">No {isDelivery ? "deliveries" : "pickups"} {tab === "all" ? "for this date" : `in "${BUCKETS.find((b) => b.key === tab)?.label}"`}.</CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {visible.map((job) => (
@@ -123,6 +127,21 @@ export function LaundryPickupScheduler() {
                 </div>
               )}
 
+              {/* Assignment status — acceptance, vehicle, timestamps, live field status */}
+              {job.executiveId && (
+                <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">{job.vehicle ? <>🛵 {job.vehicle}</> : "Assigned"}</span>
+                    <AcceptanceBadge acceptance={job.acceptance} />
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 text-slate-400">
+                    {job.assignedAt && <span>Assigned {fmtTime(job.assignedAt)}</span>}
+                    {job.acceptedAt && <span>Accepted {fmtTime(job.acceptedAt)}</span>}
+                    {job.fieldStatus && job.fieldStatus !== "ASSIGNED" && <span className="text-blue-600">{fieldLabel(job.fieldStatus)}</span>}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-2 pt-1 border-t border-slate-50">
                 <span className="text-xs text-slate-400 shrink-0">Executive</span>
                 <select
@@ -130,7 +149,7 @@ export function LaundryPickupScheduler() {
                   disabled={savingId === job.id || job.bucket === "completed" || job.bucket === "cancelled"}
                   onChange={(e) => assign(job, e.target.value || null)}
                   className="h-9 flex-1 rounded-md border border-slate-200 px-2 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-400">
-                  <option value="">— Unassigned —</option>
+                  <option value="">— Awaiting Assignment —</option>
                   {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}{ex.storeName ? ` · ${ex.storeName}` : ""}</option>)}
                 </select>
                 {savingId === job.id && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
@@ -145,12 +164,20 @@ export function LaundryPickupScheduler() {
 
 function BucketBadge({ bucket, field }: { bucket: string; field: string | null }) {
   const map: Record<string, string> = {
-    unassigned: "border-slate-300 text-slate-500 bg-slate-50",
+    awaiting: "border-amber-300 text-amber-700 bg-amber-50",
     assigned: "border-blue-300 text-blue-700 bg-blue-50",
+    accepted: "border-indigo-300 text-indigo-700 bg-indigo-50",
     completed: "border-emerald-300 text-emerald-700 bg-emerald-50",
     missed: "border-rose-300 text-rose-700 bg-rose-50",
     cancelled: "border-slate-300 text-slate-400 bg-slate-50",
   }
-  const label = bucket === "assigned" && field && field !== "ASSIGNED" ? fieldLabel(field) : bucket.charAt(0).toUpperCase() + bucket.slice(1)
-  return <Badge variant="outline" className={`text-[10px] shrink-0 ${map[bucket] || map.unassigned}`}>{label}</Badge>
+  const labels: Record<string, string> = { awaiting: "Awaiting", assigned: "Assigned", accepted: "In Progress", completed: "Completed", missed: "Missed", cancelled: "Cancelled" }
+  const label = bucket === "accepted" && field && field !== "ASSIGNED" ? fieldLabel(field) : labels[bucket] || bucket
+  return <Badge variant="outline" className={`text-[10px] shrink-0 ${map[bucket] || map.awaiting}`}>{label}</Badge>
+}
+
+function AcceptanceBadge({ acceptance }: { acceptance: string | null }) {
+  if (!acceptance || acceptance === "PENDING") return <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 bg-amber-50">Awaiting response</Badge>
+  if (acceptance === "ACCEPTED") return <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50">Accepted</Badge>
+  return <Badge variant="outline" className="text-[10px] border-rose-300 text-rose-700 bg-rose-50">Rejected</Badge>
 }

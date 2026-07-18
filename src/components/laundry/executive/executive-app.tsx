@@ -17,7 +17,7 @@ const DEFAULT_BRAND: Brand = { name: "Pickup & Delivery", logo: null, color: "#2
 interface Exec { id: string; name: string; employeeCode: string; mobile: string; storeName: string | null; vehicleType: string | null; vehicleNumber: string | null; photo: string | null; availability: string }
 interface Svc { serviceId: string | null; serviceName: string; bagNumber: string | null }
 interface Job {
-  id: string; orderNumber: string; status: string; fieldStatus: string | null; priority: string
+  id: string; orderNumber: string; status: string; fieldStatus: string | null; acceptance: string | null; priority: string
   customerName: string; customerPhone: string | null; timeSlot: string | null
   address: string | null; landmark: string | null; mapsLink: string | null; lat: number | null; lng: number | null
   services: Svc[]; bagCount: number; assignedBags: number; itemCount: number
@@ -210,6 +210,17 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
   }
 
+  const respond = async (action: "accept" | "reject") => {
+    setBusy(true)
+    try {
+      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/respond`, token, { method: "POST", body: JSON.stringify({ action, type: "pickup", executiveName: exec.name }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      if (action === "reject") { toast.success("Assignment rejected"); onChanged(); onBack(); return }
+      toast.success("Assignment accepted"); await refresh()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
+  }
+
   const scanBag = async (code: string, svc: Svc) => {
     try {
       const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/assign-bag`, token, { method: "POST", body: JSON.stringify({ code, serviceId: svc.serviceId, serviceName: svc.serviceName, executiveName: exec.name }) })
@@ -245,8 +256,22 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
           <button onClick={navigate} className="w-full h-11 mt-1 rounded-xl bg-slate-900 text-white font-medium flex items-center justify-center gap-2"><Navigation className="h-4 w-4" /> Navigate</button>
         </div>
 
-        {/* Workflow actions */}
-        {st < RANK.PICKUP_STARTED && (
+        {/* Assignment acceptance (before any field work) */}
+        {job.acceptance !== "ACCEPTED" && (
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">New pickup assignment</p>
+              <p className="text-xs text-slate-500">Accept to start this pickup, or reject to send it back to your supervisor.</p>
+            </div>
+            <div className="flex gap-2">
+              <button disabled={busy} onClick={() => respond("reject")} className="flex-1 h-12 rounded-xl border border-rose-200 text-rose-600 font-semibold disabled:opacity-60">Reject</button>
+              <button disabled={busy} onClick={() => respond("accept")} className="flex-1 h-12 rounded-xl text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60" style={{ backgroundColor: brand.color }}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Accept</button>
+            </div>
+          </div>
+        )}
+
+        {/* Workflow actions (after acceptance) */}
+        {job.acceptance === "ACCEPTED" && st < RANK.PICKUP_STARTED && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
             {st < RANK.STARTED && <ActionBtn color={brand.color} onClick={() => setStatus("STARTED")} busy={busy} label="Start Pickup" />}
             {st >= RANK.STARTED && st < RANK.REACHED && <ActionBtn color={brand.color} onClick={() => setStatus("REACHED")} busy={busy} label="Reached Customer" />}
@@ -256,7 +281,7 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
         )}
 
         {/* Bag assignment (after customer verified) */}
-        {st >= RANK.PICKUP_STARTED && (
+        {job.acceptance === "ACCEPTED" && st >= RANK.PICKUP_STARTED && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Assign Bags — one bag per service</p>
             {job.services.map((s, i) => (

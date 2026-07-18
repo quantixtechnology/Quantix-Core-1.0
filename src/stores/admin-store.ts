@@ -111,6 +111,7 @@ export type LaundryBusinessPage =
   | "pickup-bags"
   | "bag-management"
   | "pickup-scheduler"
+  | "delivery-assignments"
   | "delivery-executives"
   | "mobile-apps"
   | "order-detail"

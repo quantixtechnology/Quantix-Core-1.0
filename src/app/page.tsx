@@ -720,7 +720,8 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "store-receive-queue": return <LaundryStoreReceive />
       case "pickup-bags": return <LaundryPickupBags />
       case "bag-management": return <LaundryBagManagement />
-      case "pickup-scheduler": return <LaundryPickupScheduler />
+      case "pickup-scheduler": return <LaundryPickupScheduler mode="pickup" />
+      case "delivery-assignments": return <LaundryPickupScheduler mode="delivery" />
       case "delivery-executives": return <LaundryDeliveryExecutives />
       case "mobile-apps": return <LaundryMobileApps />
       case "ready-delivery-queue": return <LaundryReadyForDelivery />

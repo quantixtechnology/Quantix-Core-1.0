@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       select: {
         id: true, orderNumber: true, status: true, fieldStatus: true, isExpress: true, customerId: true,
         pickupDate: true, pickupTimeSlot: true, pickupAddress: true, pickupLandmark: true, pickupMapsLink: true, pickupLat: true, pickupLng: true,
-        expectedDeliveryDate: true, deliveredAt: true,
+        expectedDeliveryDate: true, deliveredAt: true, pickupAcceptance: true, deliveryAcceptance: true,
         services: { select: { serviceId: true, serviceName: true } },
         _count: { select: { items: true } },
       },
@@ -69,6 +69,7 @@ export async function GET(request: Request) {
       }))
       return {
         id: o.id, orderNumber: o.orderNumber, status: o.status, fieldStatus: o.fieldStatus,
+        acceptance: type === "delivery" ? o.deliveryAcceptance : o.pickupAcceptance,
         priority: o.isExpress ? "EXPRESS" : "NORMAL",
         customerName: cust?.name ?? "—", customerPhone: cust?.phone ?? null,
         timeSlot: type === "delivery" ? (o.expectedDeliveryDate ? new Date(o.expectedDeliveryDate).toLocaleString() : null) : o.pickupTimeSlot,

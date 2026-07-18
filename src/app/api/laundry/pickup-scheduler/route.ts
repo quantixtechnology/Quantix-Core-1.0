@@ -46,6 +46,8 @@ export async function GET(request: Request) {
         pickupDate: true, pickupTimeSlot: true, pickupAddress: true, pickupLandmark: true, pickupMapsLink: true, pickupLat: true, pickupLng: true,
         expectedDeliveryDate: true, deliveredAt: true, fieldStatus: true,
         pickupExecutiveId: true, deliveryExecutiveId: true,
+        pickupAssignedAt: true, pickupAcceptance: true, pickupAcceptedAt: true,
+        deliveryAssignedAt: true, deliveryAcceptance: true, deliveryAcceptedAt: true,
         storeId: true, store: { select: { storeName: true } },
         services: { select: { serviceName: true } },
         _count: { select: { items: true } },
@@ -58,28 +60,29 @@ export async function GET(request: Request) {
     const execIds = [...new Set(orders.flatMap((o) => [o.pickupExecutiveId, o.deliveryExecutiveId]).filter(Boolean) as string[])]
     const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
     const [execs, custs] = await Promise.all([
-      prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true } }),
+      prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true, vehicleType: true, vehicleNumber: true } }),
       prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true, phone: true } }),
     ])
-    const execName = new Map(execs.map((e) => [e.id, e.name]))
+    const execMap = new Map(execs.map((e) => [e.id, e]))
     const custMap = new Map(custs.map((c) => [c.id, c]))
 
     const bucketOf = (o: (typeof orders)[number]): string => {
       if (o.status === "CANCELLED") return "cancelled"
       if (type === "delivery") {
         if (o.status === "DELIVERED") return "completed"
-        if (o.deliveryExecutiveId) return "assigned"
-        return "unassigned"
+        if (o.deliveryExecutiveId) return o.deliveryAcceptance === "ACCEPTED" ? "accepted" : "assigned"
+        return "awaiting"
       }
       const done = (o.fieldStatus && PICKUP_DONE.has(o.fieldStatus)) || PAST_PICKUP.has(o.status)
       if (done) return "completed"
+      if (o.pickupExecutiveId) return o.pickupAcceptance === "ACCEPTED" ? "accepted" : "assigned"
       if (o.pickupDate && o.pickupDate < now) return "missed"
-      if (o.pickupExecutiveId) return "assigned"
-      return "unassigned"
+      return "awaiting"
     }
 
     const data = orders.map((o) => {
       const execId = type === "delivery" ? o.deliveryExecutiveId : o.pickupExecutiveId
+      const ex = execId ? execMap.get(execId) : null
       const cust = o.customerId ? custMap.get(o.customerId) : null
       return {
         id: o.id, orderNumber: o.orderNumber, status: o.status, fieldStatus: o.fieldStatus,
@@ -89,7 +92,11 @@ export async function GET(request: Request) {
         storeId: o.storeId, storeName: o.store?.storeName ?? null,
         address: o.pickupAddress, landmark: o.pickupLandmark, mapsLink: o.pickupMapsLink, lat: o.pickupLat, lng: o.pickupLng,
         services: o.services.map((s) => s.serviceName), bagCount: o.services.length, itemCount: o._count.items,
-        executiveId: execId, executiveName: execId ? execName.get(execId) ?? null : null,
+        executiveId: execId, executiveName: ex?.name ?? null,
+        vehicle: ex ? [ex.vehicleType, ex.vehicleNumber].filter(Boolean).join(" · ") || null : null,
+        acceptance: type === "delivery" ? o.deliveryAcceptance : o.pickupAcceptance,
+        assignedAt: type === "delivery" ? o.deliveryAssignedAt : o.pickupAssignedAt,
+        acceptedAt: type === "delivery" ? o.deliveryAcceptedAt : o.pickupAcceptedAt,
         bucket: bucketOf(o),
       }
     })
@@ -123,10 +130,10 @@ export async function POST(request: Request) {
     const actor = { id: guard.ctx?.userId ?? null, name: guard.ctx?.userName ?? "Supervisor" }
 
     if (type === "delivery") {
-      await prisma.laundryOrder.update({ where: { id: order.id }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: execId ? new Date() : null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : {}) } })
+      await prisma.laundryOrder.update({ where: { id: order.id }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: execId ? new Date() : null, deliveryAcceptance: execId ? "PENDING" : null, deliveryAcceptedAt: null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : {}) } })
       await logFieldEvent({ orderId: order.id, businessId: biz.id, action: execId ? "DELIVERY_ASSIGNED" : "DELIVERY_UNASSIGNED", note: execId ? `Delivery assigned to ${execName}` : "Delivery assignment cleared", actor })
     } else {
-      await prisma.laundryOrder.update({ where: { id: order.id }, data: { pickupExecutiveId: execId, pickupAssignedAt: execId ? new Date() : null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : { fieldStatus: null }) } })
+      await prisma.laundryOrder.update({ where: { id: order.id }, data: { pickupExecutiveId: execId, pickupAssignedAt: execId ? new Date() : null, pickupAcceptance: execId ? "PENDING" : null, pickupAcceptedAt: null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : { fieldStatus: null }) } })
       await logFieldEvent({ orderId: order.id, businessId: biz.id, action: execId ? "PICKUP_ASSIGNED" : "PICKUP_UNASSIGNED", note: execId ? `Pickup assigned to ${execName}` : "Pickup assignment cleared", actor })
     }
     return NextResponse.json({ success: true })
