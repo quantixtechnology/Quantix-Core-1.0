@@ -56,6 +56,7 @@ export function LaundryStoreAudit() {
   const [rows, setRows] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [intakeOpen, setIntakeOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<OrderDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -80,7 +81,7 @@ export function LaundryStoreAudit() {
   useEffect(() => { loadQueue() }, [loadQueue])
 
   const openOrder = useCallback(async (id: string) => {
-    setSelectedId(id); setLoadingDetail(true); setDetail(null)
+    setSelectedId(id); setLoadingDetail(true); setDetail(null); setIntakeOpen(false)
     try {
       const json = await fetch(`/api/laundry/orders/${id}`).then((r) => r.json())
       if (json.success) {
@@ -241,7 +242,16 @@ export function LaundryStoreAudit() {
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-base flex items-center justify-between"><span className="flex items-center gap-2"><Shirt className="h-4 w-4" /> Garments</span><span className="text-xs font-normal text-muted-foreground">{totalPieces} pc{totalPieces === 1 ? "" : "s"} · {detail.items.length} type{detail.items.length === 1 ? "" : "s"}</span></CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {detail.items.length === 0 ? <p className="text-sm text-muted-foreground py-4 text-center">This order has no recorded garments.</p> : detail.items.map((it) => {
+                {detail.items.length === 0 ? (
+                  intakeOpen ? (
+                    <IntakeAudit orderId={detail.id} orderNumber={detail.orderNumber} businessId={currentBusinessId} onSaved={() => { setIntakeOpen(false); openOrder(detail.id) }} onCancel={() => setIntakeOpen(false)} />
+                  ) : (
+                    <div className="py-6 text-center space-y-3">
+                      <p className="text-sm text-muted-foreground">Pickup-First order — garments were not counted at booking. Count them here at intake.</p>
+                      <Button onClick={() => setIntakeOpen(true)} className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"><Shirt className="h-4 w-4" /> Start Intake Audit</Button>
+                    </div>
+                  )
+                ) : detail.items.map((it) => {
                   const ins = inspect[it.id] || { condition: "GOOD", defects: [], notes: "" }
                   const damaged = ins.defects.length > 0
                   const isKg = it.pricingType === "PER_KG"
@@ -328,6 +338,78 @@ export function LaundryStoreAudit() {
           </Table>
         )}
       </CardContent></Card>
+    </div>
+  )
+}
+
+// ── Intake Audit (Pickup-First) — record garments for an order that has none.
+// Same order (no new order); on save the garments are priced by the Pricing
+// Engine and the order continues in the EXISTING audit flow.
+function IntakeAudit({ orderId, orderNumber, businessId, onSaved, onCancel }: { orderId: string; orderNumber: string; businessId: string | null; onSaved: () => void; onCancel: () => void }) {
+  const { toast } = useToast()
+  const [garments, setGarments] = useState<{ id: string; name: string }[]>([])
+  const [services, setServices] = useState<{ serviceId: string | null; serviceName: string }[]>([])
+  const [rows, setRows] = useState<{ serviceKey: string; garmentId: string; quantity: string; weightKg: string }[]>([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!businessId) return
+    fetch(`/api/laundry/garments?businessId=${businessId}`).then((r) => r.json()).then((j) => setGarments(j.success ? (j.data || []).map((g: { id: string; name: string }) => ({ id: g.id, name: g.name })) : [])).catch(() => {})
+    fetch(`/api/laundry/bags?businessId=${businessId}&search=${encodeURIComponent(orderNumber)}`).then((r) => r.json()).then((j) => {
+      const bags = (j.data || []).filter((b: { currentOrderId: string | null }) => b.currentOrderId === orderId)
+      const map = new Map<string, { serviceId: string | null; serviceName: string }>()
+      for (const b of bags) { const key = b.currentServiceId || b.currentServiceName || "svc"; map.set(key, { serviceId: b.currentServiceId || null, serviceName: b.currentServiceName || "Laundry" }) }
+      const svcs = map.size ? [...map.values()] : [{ serviceId: null, serviceName: "Laundry" }]
+      setServices(svcs)
+      setRows(svcs.map((s) => ({ serviceKey: s.serviceId || s.serviceName, garmentId: "", quantity: "1", weightKg: "" })))
+    }).catch(() => {})
+  }, [businessId, orderId, orderNumber])
+
+  const keyOf = (s: { serviceId: string | null; serviceName: string }) => s.serviceId || s.serviceName
+  const svcByKey = (k: string) => services.find((s) => keyOf(s) === k) || services[0]
+  const addRow = () => setRows((r) => [...r, { serviceKey: services[0] ? keyOf(services[0]) : "Laundry", garmentId: "", quantity: "1", weightKg: "" }])
+  const upd = (i: number, patch: Partial<{ serviceKey: string; garmentId: string; quantity: string; weightKg: string }>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+  const del = (i: number) => setRows((r) => r.filter((_, j) => j !== i))
+
+  const save = async () => {
+    const items = rows.filter((r) => r.garmentId && ((Number(r.quantity) || 0) > 0 || (Number(r.weightKg) || 0) > 0)).map((r) => {
+      const s = svcByKey(r.serviceKey)
+      return { serviceId: s?.serviceId || null, garmentId: r.garmentId, quantity: Number(r.quantity) || 0, weightKg: Number(r.weightKg) || 0 }
+    })
+    if (!items.length) { toast({ title: "Add at least one garment", variant: "destructive" }); return }
+    setSaving(true)
+    try {
+      const j = await fetch(`/api/laundry/orders/${orderId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.json())
+      if (!j.success) throw new Error(j.error || "Could not save garments")
+      toast({ title: "Garments recorded", description: `${j.data.added} line(s) added — continue the audit.` })
+      onSaved()
+    } catch (e) { toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" }) } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">Scan the reusable bag or pick its service, then record each garment. Weight is used for Per-KG services; quantity for piece-based.</p>
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} className="grid grid-cols-[1fr_1fr_64px_72px_32px] gap-1.5 items-center">
+            <select value={r.serviceKey} onChange={(e) => upd(i, { serviceKey: e.target.value })} className="h-9 rounded-md border border-input px-2 text-sm bg-background">
+              {services.map((s) => <option key={keyOf(s)} value={keyOf(s)}>{s.serviceName}</option>)}
+            </select>
+            <select value={r.garmentId} onChange={(e) => upd(i, { garmentId: e.target.value })} className="h-9 rounded-md border border-input px-2 text-sm bg-background">
+              <option value="">Garment…</option>
+              {garments.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+            <Input type="number" min={0} value={r.quantity} onChange={(e) => upd(i, { quantity: e.target.value })} placeholder="Qty" className="h-9 text-sm" />
+            <Input type="number" min={0} step="0.05" value={r.weightKg} onChange={(e) => upd(i, { weightKg: e.target.value })} placeholder="kg" className="h-9 text-sm" />
+            <button onClick={() => del(i)} className="text-slate-400 hover:text-rose-600 flex justify-center"><X className="h-4 w-4" /></button>
+          </div>
+        ))}
+      </div>
+      <button onClick={addRow} className="text-xs font-semibold text-blue-600">+ Add garment</button>
+      <div className="flex gap-2 pt-1">
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button onClick={save} disabled={saving} className="flex-1 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save Garments & Continue</Button>
+      </div>
     </div>
   )
 }
