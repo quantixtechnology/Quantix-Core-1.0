@@ -4472,6 +4472,25 @@ model LaundryOrder {
   deliveredBy   String?
   recipientName String?
 
+  // ── Field operations (Pickup & Delivery PWA) — ADDITIVE. The Admin Portal
+  //    stays the master: these only record WHO is assigned and the live field
+  //    status/geo the executive reports. The order's own `status` lifecycle and
+  //    every existing engine (audit/payment/processing/QC/delivery) are
+  //    unchanged; field events are logged as LaundryOrderEvent rows. ──
+  pickupExecutiveId   String?
+  deliveryExecutiveId String?
+  pickupAssignedAt    DateTime?
+  deliveryAssignedAt  DateTime?
+  // Denormalised live status for the Live Operations dashboard / PWA lists, e.g.
+  // ASSIGNED, STARTED, NAVIGATING, REACHED, PICKUP_STARTED, PICKUP_COMPLETED,
+  // RETURNING_STORE, STORE_RECEIVED, OUT_FOR_DELIVERY, DELIVERED. Purely a
+  // reporting mirror — the authoritative history lives in LaundryOrderEvent.
+  fieldStatus         String?
+  pickupLat           Float?
+  pickupLng           Float?
+  pickupLandmark      String?
+  pickupMapsLink      String?
+
   business   LaundryBusiness         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   store      LaundryStore            @relation(fields: [storeId], references: [id])
   packet     LaundryPacket?
@@ -4489,6 +4508,8 @@ model LaundryOrder {
   @@index([createdAt])
   @@index([orderNumber])
   @@index([paymentStatus])
+  @@index([pickupExecutiveId])
+  @@index([deliveryExecutiveId])
 }
 
 // ── Operational master data (per laundry business) ─────────────────────────

@@ -110,6 +110,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Store Operations",
     items: [
+      { key: "pickup-scheduler", label: "Pickup Scheduler", icon: Truck, page: "pickup-scheduler", minRank: 2, perm: "laundry.orders.view" },
       { key: "pickup-bags", label: "Assign Bags", icon: Package, page: "pickup-bags", minRank: 1, perm: "store_ops.store_audit.view" },
       { key: "bag-management", label: "Bag Management", icon: Package, page: "bag-management", minRank: 2, perm: "store_ops.store_audit.view" },
       { key: "audit-queue", label: "Store Audit", icon: ClipboardCheck, page: "audit-queue", minRank: 1, perm: "store_ops.store_audit.view" },
