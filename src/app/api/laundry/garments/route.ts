@@ -33,7 +33,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId, name, code, categoryId, defaultService, defaultUnit, image, material, careInstructions, barcodePrefix, weightFactor, averageWeight, displayOrder, isActive } = body
+    const { businessId, name, code, categoryId, defaultService, defaultUnit, image, material, careInstructions, barcodePrefix, weightFactor, averageWeight, subscriptionIncluded, displayOrder, isActive } = body
     if (!businessId || !name?.trim()) return NextResponse.json({ error: "businessId and name are required" }, { status: 400 })
     const guard = await requireLaundryPermission(request, businessId, "laundry.pricing.edit_pricing")
     if (!guard.ok) return guard.res
@@ -54,6 +54,7 @@ export async function POST(request: Request) {
         barcodePrefix: barcodePrefix?.trim() || null,
         weightFactor: NUM(weightFactor),
         averageWeight: NUM(averageWeight),
+        subscriptionIncluded: !!subscriptionIncluded,
         displayOrder: typeof displayOrder === "number" ? displayOrder : 0,
         isActive: isActive !== undefined ? !!isActive : true,
       },

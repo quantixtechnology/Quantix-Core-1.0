@@ -220,7 +220,7 @@ const LaundryOrderDetail = dynamic(() => import("@/components/laundry/views/laun
 const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views/laundry-categories-master").then(m => ({ default: m.LaundryCategoriesMaster })), { loading: () => <PageLoader /> })
 const LaundryGarmentsMaster = dynamic(() => import("@/components/laundry/views/laundry-garments-master").then(m => ({ default: m.LaundryGarmentsMaster })), { loading: () => <PageLoader /> })
 const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/laundry-services-master").then(m => ({ default: m.LaundryServicesMaster })), { loading: () => <PageLoader /> })
-const LaundryPricingEngine = dynamic(() => import("@/components/laundry/views/laundry-pricing-engine").then(m => ({ default: m.LaundryPricingEngine })), { loading: () => <PageLoader /> })
+const LaundryPricingMatrix = dynamic(() => import("@/components/laundry/views/laundry-pricing-matrix").then(m => ({ default: m.LaundryPricingMatrix })), { loading: () => <PageLoader /> })
 const LaundrySubscriptionsView = dynamic(() => import("@/components/laundry/views/laundry-subscriptions-view").then(m => ({ default: m.LaundrySubscriptionsView })), { loading: () => <PageLoader /> })
 const LaundryStoreAudit = dynamic(() => import("@/components/laundry/views/laundry-store-audit").then(m => ({ default: m.LaundryStoreAudit })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
@@ -732,7 +732,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "categories": return <LaundryCategoriesMaster />
       case "garments": return <LaundryGarmentsMaster />
       case "services": return <LaundryServicesMaster />
-      case "pricing": return <LaundryPricingEngine />
+      case "pricing": return <LaundryPricingMatrix />
       case "subscriptions": return <LaundrySubscriptionsView />
       case "roles": return <LaundryRolesPermissions businessId={wsBusinessId} />
       case "staff": return <LaundryStaff businessId={wsBusinessId} />

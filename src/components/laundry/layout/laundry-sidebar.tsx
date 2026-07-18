@@ -132,7 +132,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3, perm: "laundry.stores.view" },
       { key: "staff", label: "Staff", icon: UsersRound, page: "staff", minRank: 3, perm: "laundry.staff.view" },
       { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", minRank: 3, perm: "laundry.staff.assign_role" },
-      { key: "pricing", label: "Services & Pricing", icon: IndianRupee, page: "pricing", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "pricing", label: "Pricing Matrix", icon: IndianRupee, page: "pricing", minRank: 3, perm: "laundry.pricing.view" },
       { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3, perm: "laundry.subscriptions.view" },
       { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3, perm: "laundry.reports.view" },
       { key: "payments", label: "Payments", icon: Wallet, comingSoon: true, minRank: 3 },

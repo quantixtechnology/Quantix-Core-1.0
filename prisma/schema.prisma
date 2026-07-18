@@ -4534,6 +4534,8 @@ model LaundryGarment {
   barcodePrefix    String?
   weightFactor     Float? // multiplier for weight-based pricing
   averageWeight    Float? // avg weight (kg) for estimates
+  // Pricing Matrix: a simple per-garment subscription-inclusion flag (Yes/No).
+  subscriptionIncluded Boolean @default(false)
   displayOrder     Int      @default(0)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
