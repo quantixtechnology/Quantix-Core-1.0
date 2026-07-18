@@ -1,7 +1,8 @@
-// PUT  /api/laundry/delivery-executives/[id]  — edit / activate / deactivate /
-//                                                assign store / availability
-// POST /api/laundry/delivery-executives/[id]  — { action: "reset-password" }
-// The linked auth User is kept in sync (name/phone/active) so login stays valid.
+// GET  /api/laundry/delivery-executives/[id] — full detail + reset history + login info
+// PUT  — edit / activate / assign store / availability
+// POST — { action: "reset-password" | "lock" | "unlock" | "force-logout" | "archive" | "restore" }
+// The linked auth User is kept in sync. No change to the platform auth system —
+// these are operational admin controls on the executive model.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
@@ -9,13 +10,44 @@ import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { hashPassword } from "@/lib/password-utils"
 
 export const runtime = "nodejs"
-const genPassword = () => `Delivery@${Math.random().toString(36).slice(2, 7).toUpperCase()}`
+const genPassword = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#"
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("")
+}
 
 async function loadOwned(id: string, businessId: string) {
   const biz = await resolveLaundryBusiness(businessId)
   if (!biz) return { biz: null, exec: null }
   const exec = await prisma.laundryDeliveryExecutive.findFirst({ where: { id, businessId: biz.id } })
   return { biz, exec }
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    const businessId = new URL(request.url).searchParams.get("businessId")
+    const guard = await requireLaundryPermission(request, businessId, "laundry.staff.view")
+    if (!guard.ok) return guard.res
+    const { exec } = await loadOwned(id, businessId!)
+    if (!exec) return NextResponse.json({ error: "Executive not found" }, { status: 404 })
+    const [user, resets] = await Promise.all([
+      exec.userId ? prisma.user.findUnique({ where: { id: exec.userId }, select: { lastLoginAt: true, mustChangePassword: true } }) : Promise.resolve(null),
+      prisma.laundryDeliveryExecutiveReset.findMany({ where: { executiveId: exec.id }, orderBy: { createdAt: "desc" }, take: 20 }),
+    ])
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: exec.id, employeeCode: exec.employeeCode, name: exec.name, mobile: exec.mobile,
+        isLocked: exec.isLocked, lockedUntil: exec.lockedUntil, failedAttempts: exec.failedAttempts,
+        lastLoginIp: exec.lastLoginIp, lastLoginDevice: exec.lastLoginDevice, lastLoginAt: user?.lastLoginAt ?? null,
+        mustChangePassword: user?.mustChangePassword ?? false,
+        resets: resets.map((r) => ({ id: r.id, adminName: r.adminName, mode: r.mode, forceChange: r.forceChange, reason: r.reason, createdAt: r.createdAt })),
+      },
+    })
+  } catch (e) {
+    console.error("[delivery-executives] GET detail", e)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -36,10 +68,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (b.photo !== undefined) data.photo = b.photo ? String(b.photo).trim() : null
     if (b.isActive !== undefined) data.isActive = !!b.isActive
     if (b.availability !== undefined) data.availability = String(b.availability)
-    // employeeCode is immutable (the operational key).
     const updated = await prisma.laundryDeliveryExecutive.update({ where: { id }, data })
 
-    // Keep the linked auth User consistent so login state matches the master.
     if (exec.userId && (b.name !== undefined || b.mobile !== undefined || b.isActive !== undefined)) {
       await prisma.user.update({
         where: { id: exec.userId },
@@ -65,13 +95,43 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!guard.ok) return guard.res
     const { exec } = await loadOwned(id, b.businessId)
     if (!exec) return NextResponse.json({ error: "Executive not found" }, { status: 404 })
-    if (b.action !== "reset-password") return NextResponse.json({ error: "Unknown action" }, { status: 400 })
-    if (!exec.userId) return NextResponse.json({ error: "No login account for this executive" }, { status: 400 })
+    const adminName = guard.ctx.userName || "Admin"
 
-    const rawPassword = String(b.password || "").trim() || genPassword()
-    if (rawPassword.length < 6) return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 })
-    await prisma.user.update({ where: { id: exec.userId }, data: { passwordHash: await hashPassword(rawPassword), hasPassword: true, mustChangePassword: true } })
-    return NextResponse.json({ success: true, tempPassword: rawPassword })
+    switch (b.action) {
+      case "reset-password": {
+        if (!exec.userId) return NextResponse.json({ error: "No login account for this executive" }, { status: 400 })
+        const mode = b.password ? "MANUAL" : "RANDOM"
+        const rawPassword = String(b.password || "").trim() || genPassword()
+        if (rawPassword.length < 6) return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 })
+        const forceChange = b.forceChange !== false
+        await prisma.user.update({ where: { id: exec.userId }, data: { passwordHash: await hashPassword(rawPassword), hasPassword: true, mustChangePassword: forceChange } })
+        // Reset any lock and reveal the credential to the admin.
+        await prisma.laundryDeliveryExecutive.update({ where: { id }, data: { failedAttempts: 0, lockedUntil: null } })
+        await prisma.laundryDeliveryExecutiveReset.create({ data: { executiveId: exec.id, businessId: exec.businessId, adminName, mode, forceChange, reason: b.reason ? String(b.reason).trim() : null } })
+        return NextResponse.json({ success: true, tempPassword: rawPassword, mode, forceChange })
+      }
+      case "lock":
+        await prisma.laundryDeliveryExecutive.update({ where: { id }, data: { isLocked: true } })
+        return NextResponse.json({ success: true })
+      case "unlock":
+        await prisma.laundryDeliveryExecutive.update({ where: { id }, data: { isLocked: false, lockedUntil: null, failedAttempts: 0 } })
+        return NextResponse.json({ success: true })
+      case "force-logout": {
+        // Revoke every active session token for this executive (all devices).
+        const count = exec.userId ? (await prisma.refreshToken.deleteMany({ where: { userId: exec.userId } })).count : 0
+        return NextResponse.json({ success: true, revoked: count })
+      }
+      case "archive":
+        await prisma.laundryDeliveryExecutive.update({ where: { id }, data: { isActive: false, archivedAt: new Date() } })
+        if (exec.userId) await prisma.user.update({ where: { id: exec.userId }, data: { isActive: false } }).catch(() => {})
+        return NextResponse.json({ success: true })
+      case "restore":
+        await prisma.laundryDeliveryExecutive.update({ where: { id }, data: { isActive: true, archivedAt: null } })
+        if (exec.userId) await prisma.user.update({ where: { id: exec.userId }, data: { isActive: true } }).catch(() => {})
+        return NextResponse.json({ success: true })
+      default:
+        return NextResponse.json({ error: "Unknown action" }, { status: 400 })
+    }
   } catch (e) {
     console.error("[delivery-executives] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

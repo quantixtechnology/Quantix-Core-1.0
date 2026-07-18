@@ -4392,16 +4392,42 @@ model LaundryDeliveryExecutive {
   isActive      Boolean  @default(true)
   availability  String   @default("AVAILABLE") // AVAILABLE | BUSY | OFF
   currentStatus String? // mirrors live field status; null = idle
+  // Operational security/status (NOT a new auth system — the platform auth is
+  // unchanged; these extend the executive OPERATIONAL model for admin control).
+  isLocked        Boolean   @default(false) // admin manual lock
+  lockedUntil     DateTime? // auto-lock after failed attempts
+  failedAttempts  Int       @default(0)
+  lastLoginIp     String?
+  lastLoginDevice String?
+  archivedAt      DateTime? // never hard-deleted; archived stays searchable
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   business LaundryBusiness @relation(fields: [businessId], references: [id], onDelete: Cascade)
   store    LaundryStore?   @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  resets   LaundryDeliveryExecutiveReset[]
 
   @@unique([businessId, employeeCode])
   @@index([businessId])
   @@index([userId])
   @@index([storeId])
+}
+
+// Password-reset audit for delivery executives (date/admin/reason). Additive.
+model LaundryDeliveryExecutiveReset {
+  id          String   @id @default(cuid())
+  executiveId String
+  businessId  String
+  adminName   String?
+  mode        String // RANDOM | MANUAL
+  forceChange Boolean  @default(true)
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  executive LaundryDeliveryExecutive @relation(fields: [executiveId], references: [id], onDelete: Cascade)
+
+  @@index([executiveId])
+  @@index([businessId])
 }
 
 model LaundryBusinessFeature {

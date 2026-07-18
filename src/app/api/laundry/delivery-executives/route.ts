@@ -50,6 +50,8 @@ export async function GET(request: Request) {
       storeId: e.storeId, storeName: e.store?.storeName ?? null, vehicleType: e.vehicleType,
       vehicleNumber: e.vehicleNumber, photo: e.photo,
       isActive: e.isActive, availability: e.availability, currentStatus: e.currentStatus,
+      isLocked: e.isLocked, lockedUntil: e.lockedUntil, failedAttempts: e.failedAttempts,
+      lastLoginIp: e.lastLoginIp, lastLoginDevice: e.lastLoginDevice, archivedAt: e.archivedAt,
       hasLogin: !!e.userId,
       lastLoginAt: e.userId ? lastLogin.get(e.userId) ?? null : null,
       todaysPickups: pickupCount.get(e.id) ?? 0,

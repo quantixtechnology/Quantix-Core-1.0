@@ -36,9 +36,23 @@ export async function GET(request: Request) {
     const { start, end } = dayRange(sp.get("date"))
     const now = new Date()
 
+    // Pickup queue = orders that NEED a pickup and haven't been picked up yet.
+    // We DON'T hard-filter by pickupDate (orders often have no date set), else the
+    // "Awaiting Assignment" queue looks empty. Pickup-eligible = a home/online
+    // pickup, has pickup details, is already assigned, or is dated for this day.
     const where = type === "delivery"
       ? { businessId: lbId, OR: [{ status: "READY_FOR_DELIVERY" as const }, { AND: [{ status: "DELIVERED" as const }, { deliveredAt: { gte: start, lt: end } }] }] }
-      : { businessId: lbId, pickupDate: { gte: start, lt: end } }
+      : {
+          businessId: lbId,
+          status: { notIn: [...PAST_PICKUP, "CANCELLED"] as never[] },
+          OR: [
+            { pickupExecutiveId: { not: null } },
+            { orderType: "HOME_PICKUP" },
+            { orderSource: { in: ["HOME_PICKUP", "ONLINE_WEB", "ONLINE_APP", "APP"] } },
+            { pickupAddress: { not: null } },
+            { pickupDate: { gte: start, lt: end } },
+          ],
+        }
 
     const orders = await prisma.laundryOrder.findMany({
       where,
