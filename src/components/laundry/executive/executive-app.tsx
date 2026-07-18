@@ -6,13 +6,51 @@
 // Scanner + the shared bag-assignment engine. Mobile-first, single-page.
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone } from "lucide-react"
+import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone, Download, Share } from "lucide-react"
 import { toast } from "sonner"
+import { usePwaInstall } from "@/hooks/use-pwa-install"
 
 const TOKEN_KEY = "qx_exec_token"
 
 interface Brand { name: string; logo: string | null; color: string }
 const DEFAULT_BRAND: Brand = { name: "Pickup & Delivery", logo: null, color: "#2563EB" }
+
+// Install-as-PWA CTA. Installing gives a standalone app context — camera/scanner
+// permissions persist properly, unlike an incognito-ish browser tab. Reuses the
+// platform usePwaInstall hook + service worker (no separate PWA framework).
+function InstallCta({ color, variant = "light" }: { color: string; variant?: "light" | "onColor" }) {
+  const { canInstall, isInstalled, isIos, install } = usePwaInstall({ ignoreDismiss: true })
+  const [help, setHelp] = useState(false)
+  if (isInstalled) return null
+
+  const onClick = async () => {
+    if (isIos) { setHelp(true); return }
+    const ok = await install()
+    if (!ok && !canInstall) setHelp(true)
+  }
+  const onColor = variant === "onColor"
+  return (
+    <>
+      <button onClick={onClick} className="w-full h-11 rounded-xl font-medium flex items-center justify-center gap-2 border"
+        style={onColor ? { background: "rgba(255,255,255,0.15)", color: "#fff", borderColor: "rgba(255,255,255,0.3)" } : { color, borderColor: color }}>
+        <Download className="h-4 w-4" /> Install App
+      </button>
+      {help && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-end sm:items-center justify-center" onClick={() => setHelp(false)}>
+          <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <p className="font-semibold text-slate-800 flex items-center gap-2"><Download className="h-4 w-4" /> Install this app</p>
+            {isIos ? (
+              <p className="text-sm text-slate-600 flex items-start gap-2"><Share className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" /> In Safari, tap the <b>Share</b> icon, then <b>Add to Home Screen</b>. Open it from your home screen for camera scanning.</p>
+            ) : (
+              <p className="text-sm text-slate-600">Open your browser menu (⋮ top-right) and tap <b>Install app</b> / <b>Add to Home screen</b>. Then open the app from your home screen — the camera scanner works properly in the installed app.</p>
+            )}
+            <button onClick={() => setHelp(false)} className="w-full h-10 rounded-xl text-white font-medium" style={{ backgroundColor: color }}>Got it</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
 
 interface Exec { id: string; name: string; employeeCode: string; mobile: string; storeName: string | null; vehicleType: string | null; vehicleNumber: string | null; photo: string | null; availability: string }
 interface Svc { serviceId: string | null; serviceName: string; bagNumber: string | null }
@@ -100,6 +138,8 @@ function Login({ onLoggedIn, brand }: { onLoggedIn: (t: string, e: Exec) => void
           </button>
           <p className="text-[11px] text-slate-400 text-center pt-1">Accounts are created by your admin. No self-registration.</p>
         </form>
+        <div className="mt-4"><InstallCta color={brand.color} variant="onColor" /></div>
+        <p className="text-[11px] text-white/70 text-center mt-2">Install the app for reliable camera scanning.</p>
       </div>
     </div>
   )
@@ -441,7 +481,8 @@ function Profile({ exec, brand, onBack, onLogout }: { exec: Exec; brand: Brand; 
           <Row label="Vehicle" value={[exec.vehicleType, exec.vehicleNumber].filter(Boolean).join(" · ") || "—"} />
           <Row label="Availability" value={exec.availability} />
         </div>
-        <button onClick={onLogout} className="mt-5 w-full h-12 rounded-xl border border-rose-200 text-rose-600 font-medium flex items-center justify-center gap-2"><LogOut className="h-4 w-4" /> Log Out</button>
+        <div className="mt-5"><InstallCta color={brand.color} /></div>
+        <button onClick={onLogout} className="mt-3 w-full h-12 rounded-xl border border-rose-200 text-rose-600 font-medium flex items-center justify-center gap-2"><LogOut className="h-4 w-4" /> Log Out</button>
         <p className="text-center text-[11px] text-slate-300 mt-4">{brand.name} · Pickup &amp; Delivery</p>
       </div>
     </div>
