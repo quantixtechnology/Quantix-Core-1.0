@@ -6,12 +6,12 @@
 // Store staff scan the same bag to mark it Received. Uses /api/laundry/bags.
 import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Search, Package, PackageCheck, ScanLine, CheckCircle2 } from "lucide-react"
+import { Loader2, Search, Package, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
+import { BagScanButton } from "@/components/laundry/bag-scanner"
 
 interface Bag { id: string; bagNumber: string; status: string; currentOrderId: string | null; currentServiceId: string | null; currentServiceName: string | null; currentCustomerName: string | null; currentOrderNumber: string | null }
 interface OrderRow { id: string; orderNumber: string; customer?: { name?: string | null } | null; customerName?: string | null; createdAt: string; services?: { serviceId: string | null; serviceName: string }[] }
@@ -40,8 +40,6 @@ function AssignTab({ businessId }: { businessId: string | null }) {
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(false)
   const [bagsByOrder, setBagsByOrder] = useState<Record<string, Bag[]>>({})
-  const [codeByKey, setCodeByKey] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!businessId) return
@@ -62,17 +60,15 @@ function AssignTab({ businessId }: { businessId: string | null }) {
   }, [businessId])
   useEffect(() => { orders.forEach((o) => loadBags(o)) }, [orders, loadBags])
 
-  const assign = async (o: OrderRow, service: { serviceId: string | null; serviceName: string }) => {
-    const key = `${o.id}:${service.serviceId || service.serviceName}`
-    const code = (codeByKey[key] || "").trim()
-    if (!code) { toast.error("Scan a bag first"); return }
-    setBusy(key)
+  // Scan → validate → assign to this service → reload so the NEXT unassigned
+  // service becomes the target automatically. Errors allow immediate rescan.
+  const assign = async (o: OrderRow, service: { serviceId: string | null; serviceName: string }, code: string) => {
     try {
       const j = await fetch("/api/laundry/bags/assign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, code, orderId: o.id, serviceId: service.serviceId, serviceName: service.serviceName }) }).then((r) => r.json())
-      if (!j.success) throw new Error(j.error || "Failed")
+      if (!j.success) throw new Error(j.error || "Bag not found.")
       toast.success(`${j.data.bagNumber} → ${service.serviceName}`)
-      setCodeByKey((m) => ({ ...m, [key]: "" })); loadBags(o)
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(null) }
+      await loadBags(o)
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not found.") }
   }
 
   return (
@@ -87,26 +83,34 @@ function AssignTab({ businessId }: { businessId: string | null }) {
             const services = o.services?.length ? o.services : [{ serviceId: null, serviceName: "Laundry" }]
             return (
               <Card key={o.id} className="rounded-xl border-slate-200"><CardContent className="p-4">
-                <p className="font-mono text-sm font-semibold text-slate-800">{o.orderNumber} <span className="font-sans font-normal text-slate-400">· {o.customer?.name || o.customerName || "—"}</span></p>
-                <div className="mt-3 space-y-2">
-                  {services.map((s) => {
-                    const key = `${o.id}:${s.serviceId || s.serviceName}`
-                    const assigned = bags.find((b) => (s.serviceId ? b.currentServiceId === s.serviceId : b.currentServiceName === s.serviceName))
-                    return (
-                      <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
-                        <span className="text-sm font-medium text-slate-700">{s.serviceName}</span>
-                        {assigned ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {assigned.bagNumber}</span>
-                        ) : (
-                          <div className="flex gap-2">
-                            <div className="relative w-40"><ScanLine className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-blue-500" /><Input value={codeByKey[key] || ""} onChange={(e) => setCodeByKey((m) => ({ ...m, [key]: e.target.value.toUpperCase() }))} onKeyDown={(e) => e.key === "Enter" && assign(o, s)} placeholder="Scan BAG-…" className="pl-8 h-9 font-mono text-xs" /></div>
-                            <Button size="sm" className="h-9 gap-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={busy === key} onClick={() => assign(o, s)}>{busy === key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Assign"}</Button>
-                          </div>
-                        )}
+                {(() => {
+                  const isAssigned = (s: { serviceId: string | null; serviceName: string }) => bags.some((b) => (s.serviceId ? b.currentServiceId === s.serviceId : b.currentServiceName === s.serviceName))
+                  const next = services.find((s) => !isAssigned(s))
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-mono text-sm font-semibold text-slate-800">{o.orderNumber} <span className="font-sans font-normal text-slate-400">· {o.customer?.name || o.customerName || "—"}</span></p>
+                        {next
+                          ? <BagScanButton size="sm" label={`Scan Bag → ${next.serviceName}`} onScan={(code) => assign(o, next, code)} />
+                          : <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Pickup complete</span>}
                       </div>
-                    )
-                  })}
-                </div>
+                      <div className="mt-3 space-y-1.5">
+                        {services.map((s) => {
+                          const assigned = bags.find((b) => (s.serviceId ? b.currentServiceId === s.serviceId : b.currentServiceName === s.serviceName))
+                          const isNext = next && (s.serviceId ? s.serviceId === next.serviceId : s.serviceName === next.serviceName)
+                          return (
+                            <div key={`${o.id}:${s.serviceId || s.serviceName}`} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${isNext ? "border-blue-300 bg-blue-50/40" : "border-slate-100"}`}>
+                              <span className="text-sm font-medium text-slate-700">{s.serviceName}{isNext && <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-blue-600">Next</span>}</span>
+                              {assigned
+                                ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {assigned.bagNumber}</span>
+                                : <span className="text-xs text-slate-400">Pending</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )
+                })()}
               </CardContent></Card>
             )
           })}
@@ -117,8 +121,6 @@ function AssignTab({ businessId }: { businessId: string | null }) {
 }
 
 function ReceiveTab({ businessId }: { businessId: string | null }) {
-  const [code, setCode] = useState("")
-  const [busy, setBusy] = useState(false)
   const [received, setReceived] = useState<Bag[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -132,25 +134,21 @@ function ReceiveTab({ businessId }: { businessId: string | null }) {
   }, [businessId])
   useEffect(() => { load() }, [load])
 
-  const receive = async () => {
-    if (!code.trim()) return
-    setBusy(true)
+  const receive = async (code: string) => {
     try {
       const j = await fetch("/api/laundry/bags/advance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId, code: code.trim(), toStatus: "RECEIVED_AT_STORE" }) }).then((r) => r.json())
-      if (!j.success) throw new Error(j.error || "Not found")
-      toast.success(`${j.data.bagNumber} received`)
-      setCode(""); load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
+      if (!j.success) throw new Error(j.error || "Bag not found.")
+      const b = j.data
+      toast.success(`${b.bagNumber} received — ${b.currentOrderNumber || ""} · ${b.currentServiceName || ""} · ${b.currentCustomerName || ""}`)
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Bag not found.") }
   }
 
   return (
     <>
-      <Card className="rounded-xl border-slate-200"><CardContent className="p-4">
-        <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5 mb-2"><ScanLine className="h-4 w-4 text-blue-600" /> Scan bag to receive at store</p>
-        <div className="flex gap-2 max-w-md">
-          <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && receive()} placeholder="BAG-000001" className="h-10 font-mono" autoFocus />
-          <Button onClick={receive} disabled={busy || !code.trim()} className="h-10 gap-1 bg-blue-600 hover:bg-blue-700 text-white">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />} Receive</Button>
-        </div>
+      <Card className="rounded-xl border-slate-200"><CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm font-semibold text-slate-700">Scan a reusable bag to receive it at the store.</p>
+        <BagScanButton label="Receive Bag" onScan={receive} />
       </CardContent></Card>
       <Card className="rounded-xl border-slate-200"><CardContent className="p-0">
         <p className="px-4 py-2.5 text-[13px] font-semibold text-slate-600 border-b border-slate-50">Received at store</p>
