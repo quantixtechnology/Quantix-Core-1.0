@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const actor = { id: session.executiveId, name: b.executiveName ?? "Executive" }
 
     if (b.action === "out_for_delivery") {
-      await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: FIELD_STATUS.OUT_FOR_DELIVERY } })
+      await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: FIELD_STATUS.OUT_FOR_DELIVERY, deliveryStartedAt: new Date() } })
       await logFieldEvent({ orderId: order.id, businessId: session.businessId, action: "OUT_FOR_DELIVERY", note: "Out for delivery", actor })
       await notifyCustomerForOrder(order.id, session.businessId, { type: "DELIVERY_UPDATE", title: "Out for delivery", message: "Your order is out for delivery." })
       return NextResponse.json({ success: true })
@@ -39,7 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const recipientName = String(b.recipientName || "").trim() || null
       const r = await markOrderDelivered({ lbId: session.businessId, orderId: order.id, deliveredBy: actor.name, recipientName, note: `Verified (${method}${b.otp ? `: ${b.otp}` : ""})`, actor })
       if (!r.ok) return NextResponse.json({ error: r.error, ...(r.code ? { code: r.code, balanceDue: r.balanceDue } : {}) }, { status: r.status })
-      await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: FIELD_STATUS.DELIVERED } })
+      await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: FIELD_STATUS.DELIVERED, deliveryCompletedAt: new Date() } })
       await notifyCustomerForOrder(order.id, session.businessId, { type: "DELIVERY_UPDATE", title: "Order delivered", message: `Your order ${r.orderNumber} has been delivered.` })
       return NextResponse.json({ success: true, delivered: true })
     }

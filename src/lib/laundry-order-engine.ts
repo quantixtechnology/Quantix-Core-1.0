@@ -156,6 +156,10 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
       orderSource: input.orderSource,
       source: input.source,
       status: (input.status || "PENDING_STORE_AUDIT") as never,
+      // Field Operations eligibility (independent of order status). A HOME_PICKUP
+      // order needs a field pickup + delivery; walk-in/store-drop do not.
+      pickupRequired: input.orderType === "HOME_PICKUP",
+      deliveryRequired: input.orderType === "HOME_PICKUP",
       paymentPreference: input.paymentPreference || "COD",
       expectedDeliveryDate: input.expectedDeliveryDate ?? null,
       deliveryOverride: input.deliveryOverride || false,

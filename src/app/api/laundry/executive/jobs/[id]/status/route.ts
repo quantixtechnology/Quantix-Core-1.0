@@ -53,7 +53,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (missing.length) return NextResponse.json({ error: `Assign a bag for: ${missing.map((s) => s.serviceName).join(", ")}` }, { status: 409 })
     }
 
-    await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: (FIELD_STATUS as Record<string, string>)[status] ?? status } })
+    const upd: Record<string, unknown> = { fieldStatus: (FIELD_STATUS as Record<string, string>)[status] ?? status }
+    if (status === "STARTED") upd.pickupStartedAt = new Date()
+    if (status === "PICKUP_COMPLETED") upd.pickupCompletedAt = new Date()
+    await prisma.laundryOrder.update({ where: { id: order.id }, data: upd })
     await logFieldEvent({ orderId: order.id, businessId: session.businessId, action: cfg.action, note: cfg.note(), actor: { id: session.executiveId, name: b.executiveName ?? "Executive" } })
     if (status === "PICKUP_COMPLETED") await notifyCustomerForOrder(order.id, session.businessId, { type: "ORDER_STATUS", title: "Items picked up", message: "Your laundry has been picked up and is on the way to our store." })
     return NextResponse.json({ success: true, done: PICKUP_DONE.has(status) })

@@ -8,7 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { logFieldEvent, FIELD_STATUS, PICKUP_DONE } from "@/lib/laundry-field-ops"
+import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 
 export const runtime = "nodejs"
@@ -19,9 +19,6 @@ const dayRange = (dateStr: string | null) => {
   const end = new Date(start); end.setDate(end.getDate() + 1)
   return { start, end }
 }
-
-// Order statuses that mean the pickup leg is already behind us.
-const PAST_PICKUP = new Set(["PENDING_STORE_AUDIT", "UNDER_AUDIT", "PAYMENT_PENDING", "READY_FOR_PROCESSING", "PACKED", "IN_TRANSIT_TO_PROCESSING", "PROCESSING", "QC_PENDING", "RETURN_IN_TRANSIT", "READY_FOR_DELIVERY", "DELIVERED"])
 
 export async function GET(request: Request) {
   try {
@@ -36,23 +33,20 @@ export async function GET(request: Request) {
     const { start, end } = dayRange(sp.get("date"))
     const now = new Date()
 
-    // Pickup queue = orders that NEED a pickup and haven't been picked up yet.
-    // We DON'T hard-filter by pickupDate (orders often have no date set), else the
-    // "Awaiting Assignment" queue looks empty. Pickup-eligible = a home/online
-    // pickup, has pickup details, is already assigned, or is dated for this day.
+    // Backfill the operational flag for legacy HOME_PICKUP orders created before
+    // pickupRequired existed (idempotent — zero rows after the first pass).
+    await prisma.laundryOrder.updateMany({ where: { businessId: lbId, orderType: "HOME_PICKUP", pickupRequired: false }, data: { pickupRequired: true, deliveryRequired: true } }).catch(() => {})
+
+    // Assignment eligibility is OPERATIONAL and INDEPENDENT of order status.
+    // Pickup queue  = every pickupRequired order (WALK_IN never qualifies;
+    //                 HOME_PICKUP appears immediately after creation).
+    // Delivery queue = deliveryRequired orders that are physically ready to hand
+    //                 over (READY_FOR_DELIVERY) or delivered today. deliveryRequired
+    //                 keeps walk-ins out; readiness is a real prerequisite, not a
+    //                 status-exclusion filter.
     const where = type === "delivery"
-      ? { businessId: lbId, OR: [{ status: "READY_FOR_DELIVERY" as const }, { AND: [{ status: "DELIVERED" as const }, { deliveredAt: { gte: start, lt: end } }] }] }
-      : {
-          businessId: lbId,
-          status: { notIn: [...PAST_PICKUP, "CANCELLED"] as never[] },
-          OR: [
-            { pickupExecutiveId: { not: null } },
-            { orderType: "HOME_PICKUP" },
-            { orderSource: { in: ["HOME_PICKUP", "ONLINE_WEB", "ONLINE_APP", "APP"] } },
-            { pickupAddress: { not: null } },
-            { pickupDate: { gte: start, lt: end } },
-          ],
-        }
+      ? { businessId: lbId, deliveryRequired: true, OR: [{ status: "READY_FOR_DELIVERY" as const }, { AND: [{ status: "DELIVERED" as const }, { deliveredAt: { gte: start, lt: end } }] }] }
+      : { businessId: lbId, pickupRequired: true }
 
     const orders = await prisma.laundryOrder.findMany({
       where,
@@ -61,8 +55,8 @@ export async function GET(request: Request) {
         pickupDate: true, pickupTimeSlot: true, pickupAddress: true, pickupLandmark: true, pickupMapsLink: true, pickupLat: true, pickupLng: true,
         expectedDeliveryDate: true, deliveredAt: true, fieldStatus: true,
         pickupExecutiveId: true, deliveryExecutiveId: true,
-        pickupAssignedAt: true, pickupAcceptance: true, pickupAcceptedAt: true,
-        deliveryAssignedAt: true, deliveryAcceptance: true, deliveryAcceptedAt: true,
+        pickupAssignedAt: true, pickupAcceptance: true, pickupAcceptedAt: true, pickupStartedAt: true, pickupCompletedAt: true,
+        deliveryAssignedAt: true, deliveryAcceptance: true, deliveryAcceptedAt: true, deliveryStartedAt: true, deliveryCompletedAt: true,
         storeId: true, store: { select: { storeName: true } },
         services: { select: { serviceName: true } },
         _count: { select: { items: true } },
@@ -81,16 +75,18 @@ export async function GET(request: Request) {
     const execMap = new Map(execs.map((e) => [e.id, e]))
     const custMap = new Map(custs.map((c) => [c.id, c]))
 
+    // Buckets are derived from OPERATIONAL fields only (assignment → acceptance →
+    // completion). Order status is read solely to LABEL a cancelled order, never
+    // to decide whether it appears in the queue.
     const bucketOf = (o: (typeof orders)[number]): string => {
       if (o.status === "CANCELLED") return "cancelled"
       if (type === "delivery") {
-        if (o.status === "DELIVERED") return "completed"
-        if (o.deliveryExecutiveId) return o.deliveryAcceptance === "ACCEPTED" ? "accepted" : "assigned"
+        if (o.deliveryCompletedAt || o.status === "DELIVERED") return "completed"
+        if (o.deliveryExecutiveId) return o.deliveryAcceptedAt ? "accepted" : "assigned"
         return "awaiting"
       }
-      const done = (o.fieldStatus && PICKUP_DONE.has(o.fieldStatus)) || PAST_PICKUP.has(o.status)
-      if (done) return "completed"
-      if (o.pickupExecutiveId) return o.pickupAcceptance === "ACCEPTED" ? "accepted" : "assigned"
+      if (o.pickupCompletedAt) return "completed"
+      if (o.pickupExecutiveId) return o.pickupAcceptedAt ? "accepted" : "assigned"
       if (o.pickupDate && o.pickupDate < now) return "missed"
       return "awaiting"
     }

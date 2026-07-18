@@ -4,11 +4,8 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
-import { PICKUP_DONE } from "@/lib/laundry-field-ops"
 
 export const runtime = "nodejs"
-
-const PAST_PICKUP = ["PENDING_STORE_AUDIT", "UNDER_AUDIT", "PAYMENT_PENDING", "READY_FOR_PROCESSING", "PACKED", "IN_TRANSIT_TO_PROCESSING", "PROCESSING", "QC_PENDING", "RETURN_IN_TRANSIT", "READY_FOR_DELIVERY", "DELIVERED"] as const
 
 export async function GET(request: Request) {
   try {
@@ -18,19 +15,23 @@ export async function GET(request: Request) {
     const lbId = session.businessId
     const execId = session.executiveId
 
+    // Jobs are keyed by OPERATIONAL fields (assignment + completion), NOT by order
+    // status — a freshly-assigned pickup (order still at PENDING_STORE_AUDIT) must
+    // appear in the executive's queue. Cancelled orders are excluded by a single
+    // equality check, not a broad status NOT IN(...).
     let where: Record<string, unknown>
     if (type === "delivery") {
-      where = { businessId: lbId, deliveryExecutiveId: execId, status: "READY_FOR_DELIVERY" }
+      where = { businessId: lbId, deliveryExecutiveId: execId, deliveryCompletedAt: null, status: "READY_FOR_DELIVERY" }
     } else if (type === "completed") {
       where = { businessId: lbId, OR: [
-        { pickupExecutiveId: execId, fieldStatus: { in: [...PICKUP_DONE] } },
-        { deliveryExecutiveId: execId, status: "DELIVERED" },
+        { pickupExecutiveId: execId, pickupCompletedAt: { not: null } },
+        { deliveryExecutiveId: execId, deliveryCompletedAt: { not: null } },
       ] }
     } else if (type === "history") {
       where = { businessId: lbId, OR: [{ pickupExecutiveId: execId }, { deliveryExecutiveId: execId }] }
     } else {
-      // pickup (default): assigned, not yet completed / past pickup / cancelled.
-      where = { businessId: lbId, pickupExecutiveId: execId, status: { notIn: [...PAST_PICKUP, "CANCELLED"] }, NOT: { fieldStatus: { in: [...PICKUP_DONE] } } }
+      // pickup (default): assigned to me, not yet completed, not cancelled.
+      where = { businessId: lbId, pickupExecutiveId: execId, pickupCompletedAt: null, status: { not: "CANCELLED" } }
     }
 
     const orders = await prisma.laundryOrder.findMany({

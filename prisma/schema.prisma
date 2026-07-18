@@ -4538,10 +4538,22 @@ model LaundryOrder {
   //    status/geo the executive reports. The order's own `status` lifecycle and
   //    every existing engine (audit/payment/processing/QC/delivery) are
   //    unchanged; field events are logged as LaundryOrderEvent rows. ──
+  // Field Operations eligibility — INDEPENDENT of order status. pickupRequired /
+  // deliveryRequired decide whether an order EVER appears in the Pickup / Delivery
+  // Assignment workflow (set from orderType = HOME_PICKUP at creation). A WALK_IN
+  // is never pickupRequired; a HOME_PICKUP is pickupRequired immediately. The
+  // assignment buckets are derived from the operational fields below — NEVER from
+  // the order status.
+  pickupRequired      Boolean   @default(false)
+  deliveryRequired    Boolean   @default(false)
   pickupExecutiveId   String?
   deliveryExecutiveId String?
   pickupAssignedAt    DateTime?
   deliveryAssignedAt  DateTime?
+  pickupStartedAt     DateTime?
+  pickupCompletedAt   DateTime?
+  deliveryStartedAt   DateTime?
+  deliveryCompletedAt DateTime?
   // Assignment acceptance (dedicated Pickup/Delivery Assignment layer, between
   // order creation and bag scanning). PENDING = assigned, awaiting the
   // executive's response; ACCEPTED / REJECTED = their decision. Rejection returns
