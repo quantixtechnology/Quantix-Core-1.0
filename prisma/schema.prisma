@@ -4544,6 +4544,10 @@ model LaundryGarment {
   category     LaundryCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   pricingRules LaundryPricingRule[]
 
+  // Garment Code is the immutable enterprise key (unique per business). Nulls are
+  // distinct in SQLite so legacy code-less rows are allowed until backfilled;
+  // the app auto-generates + enforces a code for every garment going forward.
+  @@unique([businessId, code])
   @@index([businessId])
   @@index([categoryId])
 }

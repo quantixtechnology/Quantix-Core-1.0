@@ -4,6 +4,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { ensureGarmentCodes, reserveGarmentCode } from "@/lib/laundry-garment-codes"
 
 export const runtime = "nodejs"
 
@@ -14,6 +15,9 @@ export async function GET(request: Request) {
     if (!businessId) return NextResponse.json({ error: "Missing businessId" }, { status: 400 })
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, data: [] })
+    // Lazily backfill any legacy code-less garments so Code is always present
+    // (immutable enterprise key). Idempotent + cheap (only touches null codes).
+    await ensureGarmentCodes(biz.id)
     // Active-only by default so deactivated ("deleted") garments never surface in
     // New Order, Add Garment or the Customer App. Management screens pass
     // includeInactive=1 to see/reactivate them.
@@ -40,11 +44,20 @@ export async function POST(request: Request) {
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ error: "Laundry business not found" }, { status: 404 })
     const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
+    // Code is the immutable key: use the supplied custom code (must be unique) or
+    // auto-generate the next GAR##### sequence.
+    let finalCode = code?.trim() || ""
+    if (finalCode) {
+      const clash = await prisma.laundryGarment.findFirst({ where: { businessId: biz.id, code: finalCode }, select: { id: true } })
+      if (clash) return NextResponse.json({ error: `Garment code "${finalCode}" already exists` }, { status: 409 })
+    } else {
+      finalCode = await reserveGarmentCode(biz.id)
+    }
     const data = await prisma.laundryGarment.create({
       data: {
         businessId: biz.id,
         name: name.trim(),
-        code: code?.trim() || null,
+        code: finalCode,
         categoryId: categoryId || null,
         defaultService: defaultService || null,
         defaultUnit: defaultUnit === "KG" ? "KG" : "PIECE",

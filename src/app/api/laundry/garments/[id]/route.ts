@@ -13,13 +13,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!existing) return NextResponse.json({ error: "Garment not found" }, { status: 404 })
     const guard = await requireLaundryPermission(request, existing.businessId, "laundry.pricing.edit_pricing")
     if (!guard.ok) return guard.res
-    const { name, code, categoryId, defaultService, defaultUnit, image, material, careInstructions, barcodePrefix, weightFactor, averageWeight, displayOrder, isActive } = await request.json()
+    const { name, categoryId, defaultService, defaultUnit, image, material, careInstructions, barcodePrefix, weightFactor, averageWeight, displayOrder, isActive } = await request.json()
     const NUM = (v: unknown) => (v === "" || v === null || v === undefined ? null : Number(v))
+    // NOTE: `code` is intentionally NOT updatable — the garment code is immutable
+    // once assigned (pricing + history reference garment identity by it).
     const data = await prisma.laundryGarment.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
-        ...(code !== undefined && { code: code?.trim() || null }),
         ...(categoryId !== undefined && { categoryId: categoryId || null }),
         ...(defaultService !== undefined && { defaultService: defaultService || null }),
         ...(defaultUnit !== undefined && { defaultUnit: defaultUnit === "KG" ? "KG" : "PIECE" }),
