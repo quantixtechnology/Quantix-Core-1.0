@@ -13,10 +13,11 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Loader2, Plus, Pencil, KeyRound, Bike, Search } from "lucide-react"
+import { Loader2, Plus, Pencil, KeyRound, Bike, Search, Copy } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 import { LaundryImageUpload } from "./pricing/laundry-image-upload"
+import { AppShareCard } from "@/components/laundry/apps/app-share-card"
 
 interface Store { id: string; storeName: string }
 interface Exec {
@@ -24,8 +25,10 @@ interface Exec {
   storeId: string | null; storeName: string | null; vehicleType: string | null
   vehicleNumber: string | null; photo: string | null
   isActive: boolean; availability: string; currentStatus: string | null
+  lastLoginAt: string | null
   todaysPickups: number; todaysDeliveries: number
 }
+const fmtLogin = (s: string | null) => s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "Never"
 const VEHICLES = ["BIKE", "SCOOTER", "CAR", "VAN", "CYCLE"]
 const EMPTY = { name: "", mobile: "", employeeCode: "", storeId: "", vehicleType: "", vehicleNumber: "", photo: "", password: "", isActive: true }
 
@@ -86,6 +89,14 @@ export function LaundryDeliveryExecutives() {
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed") }
   }
 
+  const [origin, setOrigin] = useState("")
+  useEffect(() => { setOrigin(window.location.origin) }, [])
+  const appUrl = origin ? `${origin}/laundry/executive` : ""
+  const copyLogin = async (e: Exec) => {
+    const text = `App: ${appUrl}\nMobile: ${e.mobile}\nUse the password shared by your admin (Reset Password to set a new one).`
+    try { await navigator.clipboard.writeText(text); toast.success("Login details copied") } catch { toast.error("Could not copy") }
+  }
+
   const filtered = items.filter((e) => { const q = search.trim().toLowerCase(); return !q || e.name.toLowerCase().includes(q) || e.mobile.includes(q) || e.employeeCode.toLowerCase().includes(q) })
 
   return (
@@ -98,6 +109,17 @@ export function LaundryDeliveryExecutives() {
         <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNew}><Plus className="h-3.5 w-3.5" /> New Executive</Button>
       </div>
 
+      {/* Executive App distribution */}
+      {appUrl && (
+        <AppShareCard
+          title="Executive App"
+          description="Share this link with your delivery executives to install their branded app."
+          icon={<Bike className="h-5 w-5" />}
+          url={appUrl}
+          note="Executives sign in with their mobile number + password. The business is set automatically from this link."
+        />
+      )}
+
       <div className="relative max-w-sm"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Search name, mobile, code…" className="pl-8 h-9" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
 
       <Card><CardContent className="p-0">
@@ -106,7 +128,7 @@ export function LaundryDeliveryExecutives() {
         : <div className="overflow-x-auto"><Table>
             <TableHeader><TableRow>
               <TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead>Mobile</TableHead><TableHead>Store</TableHead>
-              <TableHead>Vehicle</TableHead><TableHead>Today</TableHead><TableHead>Availability</TableHead><TableHead>Active</TableHead><TableHead className="text-right">Actions</TableHead>
+              <TableHead>Vehicle</TableHead><TableHead>Today</TableHead><TableHead>Last Login</TableHead><TableHead>Active</TableHead><TableHead className="text-right">Actions</TableHead>
             </TableRow></TableHeader>
             <TableBody>{filtered.map((e) => (
               <TableRow key={e.id} className={e.isActive ? "" : "opacity-60"}>
@@ -116,9 +138,10 @@ export function LaundryDeliveryExecutives() {
                 <TableCell>{e.storeName ? <Badge variant="outline">{e.storeName}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="text-xs">{e.vehicleType || "—"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{e.todaysPickups}P · {e.todaysDeliveries}D</TableCell>
-                <TableCell><Badge variant="outline" className={e.availability === "AVAILABLE" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-amber-300 text-amber-700 bg-amber-50"}>{e.availability}</Badge></TableCell>
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtLogin(e.lastLoginAt)}</TableCell>
                 <TableCell><Switch checked={e.isActive} onCheckedChange={() => toggleActive(e)} /></TableCell>
                 <TableCell className="text-right whitespace-nowrap">
+                  <Button variant="ghost" size="icon" title="Copy login details" onClick={() => copyLogin(e)}><Copy className="h-4 w-4 text-slate-500" /></Button>
                   <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(e)}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" title="Reset password" onClick={() => resetPassword(e)}><KeyRound className="h-4 w-4 text-amber-600" /></Button>
                 </TableCell>

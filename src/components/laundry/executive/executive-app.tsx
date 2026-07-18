@@ -6,10 +6,13 @@
 // Scanner + the shared bag-assignment engine. Mobile-first, single-page.
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Truck, Bike } from "lucide-react"
+import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike } from "lucide-react"
 import { toast } from "sonner"
 
 const TOKEN_KEY = "qx_exec_token"
+
+interface Brand { name: string; logo: string | null; color: string }
+const DEFAULT_BRAND: Brand = { name: "Pickup & Delivery", logo: null, color: "#2563EB" }
 
 interface Exec { id: string; name: string; employeeCode: string; mobile: string; storeName: string | null; vehicleType: string | null; vehicleNumber: string | null; photo: string | null; availability: string }
 interface Svc { serviceId: string | null; serviceName: string; bagNumber: string | null }
@@ -31,9 +34,13 @@ async function execFetch(path: string, token: string, opts: RequestInit = {}) {
 export function ExecutiveApp() {
   const [token, setToken] = useState<string | null>(null)
   const [exec, setExec] = useState<Exec | null>(null)
+  const [brand, setBrand] = useState<Brand>(DEFAULT_BRAND)
   const [booting, setBooting] = useState(true)
 
   useEffect(() => {
+    fetch("/api/laundry/executive/config").then((r) => r.json()).then((j) => {
+      if (j.data) setBrand({ name: j.data.name || "Pickup & Delivery", logo: j.data.logo || null, color: j.data.primaryColor || "#2563EB" })
+    }).catch(() => {})
     const t = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null
     if (!t) { setBooting(false); return }
     execFetch("/api/laundry/executive/me", t).then((r) => r.json()).then((j) => {
@@ -47,13 +54,13 @@ export function ExecutiveApp() {
     localStorage.removeItem(TOKEN_KEY); setToken(null); setExec(null)
   }
 
-  if (booting) return <div className="min-h-screen grid place-items-center bg-slate-50"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div>
-  if (!token || !exec) return <Login onLoggedIn={onLoggedIn} />
-  return <Shell token={token} exec={exec} onLogout={logout} />
+  if (booting) return <div className="min-h-screen grid place-items-center bg-slate-50"><Loader2 className="h-6 w-6 animate-spin" style={{ color: brand.color }} /></div>
+  if (!token || !exec) return <Login onLoggedIn={onLoggedIn} brand={brand} />
+  return <Shell token={token} exec={exec} brand={brand} onLogout={logout} />
 }
 
 // ── Login ──
-function Login({ onLoggedIn }: { onLoggedIn: (t: string, e: Exec) => void }) {
+function Login({ onLoggedIn, brand }: { onLoggedIn: (t: string, e: Exec) => void; brand: Brand }) {
   const [mobile, setMobile] = useState("")
   const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
@@ -70,23 +77,25 @@ function Login({ onLoggedIn }: { onLoggedIn: (t: string, e: Exec) => void }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-600 to-blue-700 flex flex-col justify-center px-6 py-10">
+    <div className="min-h-screen flex flex-col justify-center px-6 py-10" style={{ background: `linear-gradient(to bottom, ${brand.color}, ${brand.color}cc)` }}>
       <div className="mx-auto w-full max-w-sm">
         <div className="text-center mb-8 text-white">
-          <div className="mx-auto h-14 w-14 rounded-2xl bg-white/15 grid place-items-center mb-3"><Bike className="h-7 w-7" /></div>
-          <h1 className="text-xl font-bold">Pickup &amp; Delivery</h1>
-          <p className="text-blue-100 text-sm mt-1">Delivery Executive sign in</p>
+          <div className="mx-auto h-16 w-16 rounded-2xl bg-white grid place-items-center mb-3 overflow-hidden shadow-lg">
+            {brand.logo ? <img src={brand.logo} alt={brand.name} className="h-16 w-16 object-contain" /> : <Bike className="h-8 w-8" style={{ color: brand.color }} />}
+          </div>
+          <h1 className="text-xl font-bold">{brand.name}</h1>
+          <p className="text-white/80 text-sm mt-1">Pickup &amp; Delivery · Executive sign in</p>
         </div>
         <form onSubmit={submit} className="bg-white rounded-2xl p-5 space-y-3 shadow-xl">
           <div>
             <label className="text-xs font-medium text-slate-500">Mobile Number</label>
-            <input value={mobile} onChange={(e) => setMobile(e.target.value)} inputMode="numeric" placeholder="9876543210" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={mobile} onChange={(e) => setMobile(e.target.value)} inputMode="numeric" placeholder="9876543210" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500">Password</label>
-            <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••" className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
           </div>
-          <button disabled={busy} className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60">
+          <button disabled={busy} className="w-full h-11 rounded-xl text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60" style={{ backgroundColor: brand.color }}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />} Sign In
           </button>
           <p className="text-[11px] text-slate-400 text-center pt-1">Accounts are created by your admin. No self-registration.</p>
@@ -99,7 +108,7 @@ function Login({ onLoggedIn }: { onLoggedIn: (t: string, e: Exec) => void }) {
 // ── Shell (tabs + job list + detail + profile) ──
 const TABS = [{ k: "pickup", l: "Pickups" }, { k: "delivery", l: "Deliveries" }, { k: "completed", l: "Completed" }, { k: "history", l: "History" }]
 
-function Shell({ token, exec, onLogout }: { token: string; exec: Exec; onLogout: () => void }) {
+function Shell({ token, exec, brand, onLogout }: { token: string; exec: Exec; brand: Brand; onLogout: () => void }) {
   const [tab, setTab] = useState("pickup")
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
@@ -115,24 +124,27 @@ function Shell({ token, exec, onLogout }: { token: string; exec: Exec; onLogout:
   }, [tab, token])
   useEffect(() => { load(tab) }, [load, tab])
 
-  if (showProfile) return <Profile exec={exec} onBack={() => setShowProfile(false)} onLogout={onLogout} />
-  if (openJob) return <JobDetail token={token} exec={exec} job={openJob} onBack={() => { setOpenJob(null); load() }} onChanged={load} />
+  if (showProfile) return <Profile exec={exec} brand={brand} onBack={() => setShowProfile(false)} onLogout={onLogout} />
+  if (openJob) return <JobDetail token={token} exec={exec} brand={brand} job={openJob} onBack={() => { setOpenJob(null); load() }} onChanged={load} />
 
   return (
     <div className="min-h-screen bg-slate-50 pb-6">
-      <header className="bg-blue-600 text-white px-4 pt-4 pb-3 sticky top-0 z-10">
+      <header className="text-white px-4 pt-4 pb-3 sticky top-0 z-10" style={{ backgroundColor: brand.color }}>
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[11px] text-blue-100">{exec.storeName || "Field Ops"}</p>
-            <p className="font-semibold">{exec.name}</p>
+          <div className="flex items-center gap-2 min-w-0">
+            {brand.logo && <img src={brand.logo} alt="" className="h-8 w-8 rounded-lg bg-white object-contain shrink-0" />}
+            <div className="min-w-0">
+              <p className="text-[11px] text-white/70 truncate">{brand.name} · {exec.storeName || "Field Ops"}</p>
+              <p className="font-semibold truncate">{exec.name}</p>
+            </div>
           </div>
-          <button onClick={() => setShowProfile(true)} className="h-10 w-10 rounded-full bg-white/15 grid place-items-center">
+          <button onClick={() => setShowProfile(true)} className="h-10 w-10 rounded-full bg-white/15 grid place-items-center shrink-0">
             {exec.photo ? <img src={exec.photo} alt="" className="h-10 w-10 rounded-full object-cover" /> : <User className="h-5 w-5" />}
           </button>
         </div>
         <div className="mt-3 flex gap-1 bg-white/10 rounded-xl p-1">
           {TABS.map((t) => (
-            <button key={t.k} onClick={() => setTab(t.k)} className={`flex-1 h-8 rounded-lg text-xs font-medium ${tab === t.k ? "bg-white text-blue-700" : "text-blue-50"}`}>{t.l}</button>
+            <button key={t.k} onClick={() => setTab(t.k)} className="flex-1 h-8 rounded-lg text-xs font-medium" style={tab === t.k ? { backgroundColor: "#fff", color: brand.color } : { color: "rgba(255,255,255,0.85)" }}>{t.l}</button>
           ))}
         </div>
       </header>
@@ -175,7 +187,7 @@ function StatusPill({ field }: { field: string | null }) {
 }
 
 // ── Pickup workflow ──
-function JobDetail({ token, exec, job: initial, onBack, onChanged }: { token: string; exec: Exec; job: Job; onBack: () => void; onChanged: () => void }) {
+function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { token: string; exec: Exec; brand: Brand; job: Job; onBack: () => void; onChanged: () => void }) {
   const [job, setJob] = useState<Job>(initial)
   const [busy, setBusy] = useState(false)
   const [verifyOpen, setVerifyOpen] = useState(false)
@@ -236,9 +248,9 @@ function JobDetail({ token, exec, job: initial, onBack, onChanged }: { token: st
         {/* Workflow actions */}
         {st < RANK.PICKUP_STARTED && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
-            {st < RANK.STARTED && <ActionBtn onClick={() => setStatus("STARTED")} busy={busy} label="Start Pickup" />}
-            {st >= RANK.STARTED && st < RANK.REACHED && <ActionBtn onClick={() => setStatus("REACHED")} busy={busy} label="Reached Customer" />}
-            {st === RANK.REACHED && <ActionBtn onClick={() => setVerifyOpen(true)} busy={busy} label="Verify Customer" />}
+            {st < RANK.STARTED && <ActionBtn color={brand.color} onClick={() => setStatus("STARTED")} busy={busy} label="Start Pickup" />}
+            {st >= RANK.STARTED && st < RANK.REACHED && <ActionBtn color={brand.color} onClick={() => setStatus("REACHED")} busy={busy} label="Reached Customer" />}
+            {st === RANK.REACHED && <ActionBtn color={brand.color} onClick={() => setVerifyOpen(true)} busy={busy} label="Verify Customer" />}
             <StepList current={st} />
           </div>
         )}
@@ -271,8 +283,8 @@ function JobDetail({ token, exec, job: initial, onBack, onChanged }: { token: st
   )
 }
 
-function ActionBtn({ onClick, busy, label }: { onClick: () => void; busy: boolean; label: string }) {
-  return <button disabled={busy} onClick={onClick} className="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60">{busy && <Loader2 className="h-4 w-4 animate-spin" />} {label}</button>
+function ActionBtn({ onClick, busy, label, color }: { onClick: () => void; busy: boolean; label: string; color: string }) {
+  return <button disabled={busy} onClick={onClick} className="w-full h-12 rounded-xl text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60" style={{ backgroundColor: color }}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} {label}</button>
 }
 
 function StepList({ current }: { current: number }) {
@@ -310,19 +322,19 @@ function VerifyDialog({ customerName, onClose, onConfirm }: { customerName: stri
 }
 
 // ── Profile ──
-function Profile({ exec, onBack, onLogout }: { exec: Exec; onBack: () => void; onLogout: () => void }) {
+function Profile({ exec, brand, onBack, onLogout }: { exec: Exec; brand: Brand; onBack: () => void; onLogout: () => void }) {
   const Row = ({ label, value }: { label: string; value: string }) => (
     <div className="flex items-center justify-between py-3 border-b border-slate-50"><span className="text-sm text-slate-500">{label}</span><span className="text-sm font-medium text-slate-800">{value}</span></div>
   )
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="bg-blue-600 text-white px-4 py-3 flex items-center gap-2">
+      <header className="text-white px-4 py-3 flex items-center gap-2" style={{ backgroundColor: brand.color }}>
         <button onClick={onBack} className="h-9 w-9 grid place-items-center rounded-lg hover:bg-white/10"><ChevronLeft className="h-5 w-5" /></button>
         <p className="font-semibold">Profile</p>
       </header>
       <div className="px-4 py-5">
         <div className="flex flex-col items-center mb-4">
-          <div className="h-20 w-20 rounded-full bg-blue-100 grid place-items-center overflow-hidden">{exec.photo ? <img src={exec.photo} alt="" className="h-20 w-20 object-cover" /> : <User className="h-9 w-9 text-blue-600" />}</div>
+          <div className="h-20 w-20 rounded-full grid place-items-center overflow-hidden" style={{ backgroundColor: `${brand.color}22` }}>{exec.photo ? <img src={exec.photo} alt="" className="h-20 w-20 object-cover" /> : <User className="h-9 w-9" style={{ color: brand.color }} />}</div>
           <p className="mt-2 font-semibold text-slate-800">{exec.name}</p>
           <p className="text-xs text-slate-400 font-mono">{exec.employeeCode}</p>
         </div>
@@ -333,7 +345,7 @@ function Profile({ exec, onBack, onLogout }: { exec: Exec; onBack: () => void; o
           <Row label="Availability" value={exec.availability} />
         </div>
         <button onClick={onLogout} className="mt-5 w-full h-12 rounded-xl border border-rose-200 text-rose-600 font-medium flex items-center justify-center gap-2"><LogOut className="h-4 w-4" /> Log Out</button>
-        <p className="text-center text-[11px] text-slate-300 mt-4 flex items-center justify-center gap-1"><Truck className="h-3 w-3" /> Quantix Laundry OS</p>
+        <p className="text-center text-[11px] text-slate-300 mt-4">{brand.name} · Pickup &amp; Delivery</p>
       </div>
     </div>
   )

@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { verifyPassword, createAccessToken } from "@/lib/password-utils"
+import { resolveExecutiveTenant } from "@/lib/laundry-executive-tenant"
 
 export const runtime = "nodejs"
 
@@ -16,9 +17,13 @@ export async function POST(request: Request) {
     const password = String(b.password || "")
     if (!mobile || !password) return NextResponse.json({ error: "Mobile and password are required" }, { status: 400 })
 
+    // The tenant is inferred from the host (white-label deployment). When it
+    // resolves, scope the lookup to that business so mobile is per-tenant.
+    const tenant = await resolveExecutiveTenant(request).catch(() => null)
+
     // Active executives with this mobile + a linked login account.
     const execs = await prisma.laundryDeliveryExecutive.findMany({
-      where: { mobile, isActive: true, userId: { not: null } },
+      where: { mobile, isActive: true, userId: { not: null }, ...(tenant ? { businessId: tenant.laundryBusinessId } : {}) },
       include: { store: { select: { storeName: true } } },
     })
     if (execs.length === 0) return NextResponse.json({ error: "No active delivery executive found for this mobile" }, { status: 401 })
@@ -32,10 +37,11 @@ export async function POST(request: Request) {
     if (!matched) return NextResponse.json({ error: "Incorrect mobile or password" }, { status: 401 })
     if (!matched.storeId) return NextResponse.json({ error: "No store assigned. Contact your admin." }, { status: 403 })
 
-    // Mint a 24h access token in the shared session store.
+    // Mint a 24h access token in the shared session store + record last login.
     const token = createAccessToken()
     const expiresAt = new Date(); expiresAt.setHours(expiresAt.getHours() + 24)
     await prisma.refreshToken.create({ data: { userId: matched.userId!, token, expiresAt } })
+    await prisma.user.update({ where: { id: matched.userId! }, data: { lastLoginAt: new Date() } }).catch(() => {})
 
     return NextResponse.json({
       success: true,

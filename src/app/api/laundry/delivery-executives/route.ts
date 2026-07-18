@@ -41,6 +41,9 @@ export async function GET(request: Request) {
     ])
     const pickupCount = new Map(pickupGroups.map((g) => [g.pickupExecutiveId, g._count]))
     const deliveryCount = new Map(deliveryGroups.map((g) => [g.deliveryExecutiveId, g._count]))
+    const userIds = execs.map((e) => e.userId).filter(Boolean) as string[]
+    const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, lastLoginAt: true } })
+    const lastLogin = new Map(users.map((u) => [u.id, u.lastLoginAt]))
 
     const data = execs.map((e) => ({
       id: e.id, employeeCode: e.employeeCode, name: e.name, mobile: e.mobile,
@@ -48,6 +51,7 @@ export async function GET(request: Request) {
       vehicleNumber: e.vehicleNumber, photo: e.photo,
       isActive: e.isActive, availability: e.availability, currentStatus: e.currentStatus,
       hasLogin: !!e.userId,
+      lastLoginAt: e.userId ? lastLogin.get(e.userId) ?? null : null,
       todaysPickups: pickupCount.get(e.id) ?? 0,
       todaysDeliveries: deliveryCount.get(e.id) ?? 0,
     }))

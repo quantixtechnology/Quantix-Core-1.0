@@ -34,6 +34,10 @@ export async function GET(request: Request) {
   // /delivery). The DeliveryLayout swaps the <link rel="manifest"> href to
   // this URL so agents install the workforce app, not the storefront.
   const isDelivery = new URL(request.url).searchParams.get('app') === 'delivery'
+  // ?app=executive → Laundry Pickup & Delivery Executive PWA ("{Business} Pickup
+  // & Delivery", start_url /laundry/executive). Installed alongside the customer
+  // app as a separate, fully white-label field-ops app.
+  const isExecutive = new URL(request.url).searchParams.get('app') === 'executive'
 
   // ── Resolve tenant from Host header ───────────────────────────────────────
   const host = (request.headers.get('host') ?? '').toLowerCase().split(':')[0]
@@ -78,7 +82,29 @@ export async function GET(request: Request) {
   // Icons are shared between flavors (tenant logo); name/start_url/identity
   // differ so Android/iOS/desktop treat the Delivery PWA as a separate app
   // that can be installed alongside the customer storefront.
-  const manifest = isDelivery
+  const manifest = isExecutive
+    ? {
+        id:               '/laundry/executive',
+        name:             `${name} Pickup & Delivery`,
+        short_name:       shortName(name),
+        description:      'Pickup & delivery field operations',
+        start_url:        '/laundry/executive?source=pwa',
+        display:          'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        background_color: '#ffffff',
+        theme_color:      theme,
+        orientation:      'portrait-primary',
+        lang:             'en-IN',
+        scope:            '/laundry/executive',
+        categories:       ['business', 'productivity'],
+        icons: [
+          { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        prefer_related_applications: false,
+      }
+    : isDelivery
     ? {
         id:               '/delivery',
         name:             `${name} Delivery`,

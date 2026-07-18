@@ -217,6 +217,7 @@ const LaundryPickupBags = dynamic(() => import("@/components/laundry/views/laund
 const LaundryBagManagement = dynamic(() => import("@/components/laundry/views/laundry-bag-management").then(m => ({ default: m.LaundryBagManagement })), { loading: () => <PageLoader /> })
 const LaundryPickupScheduler = dynamic(() => import("@/components/laundry/views/laundry-pickup-scheduler").then(m => ({ default: m.LaundryPickupScheduler })), { loading: () => <PageLoader /> })
 const LaundryDeliveryExecutives = dynamic(() => import("@/components/laundry/views/laundry-delivery-executives").then(m => ({ default: m.LaundryDeliveryExecutives })), { loading: () => <PageLoader /> })
+const LaundryMobileApps = dynamic(() => import("@/components/laundry/views/laundry-mobile-apps").then(m => ({ default: m.LaundryMobileApps })), { loading: () => <PageLoader /> })
 const LaundryReadyForDelivery = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryReadyForDelivery })), { loading: () => <PageLoader /> })
 const LaundryOrderDetail = dynamic(() => import("@/components/laundry/views/laundry-order-detail").then(m => ({ default: m.LaundryOrderDetail })), { loading: () => <PageLoader /> })
 const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views/laundry-categories-master").then(m => ({ default: m.LaundryCategoriesMaster })), { loading: () => <PageLoader /> })
@@ -721,6 +722,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "bag-management": return <LaundryBagManagement />
       case "pickup-scheduler": return <LaundryPickupScheduler />
       case "delivery-executives": return <LaundryDeliveryExecutives />
+      case "mobile-apps": return <LaundryMobileApps />
       case "ready-delivery-queue": return <LaundryReadyForDelivery />
       case "order-detail": return <LaundryOrderDetail />
       case "customers": return <LaundryCustomersView />
