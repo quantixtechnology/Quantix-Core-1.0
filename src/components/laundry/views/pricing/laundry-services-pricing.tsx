@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Plus, Pencil, IndianRupee, Tag, ArrowLeft, Trash2, Search, WashingMachine, Power, ChevronDown } from "lucide-react"
 import { toast } from "sonner"
@@ -40,49 +41,33 @@ const SVC_EMPTY = { name: "", description: "", image: "", displayOrder: "0", isA
 
 export function LaundryServicesPricing({ businessId }: { businessId: string }) {
   const [services, setServices] = useState<Service[]>([])
-  const [garments, setGarments] = useState<Garment[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
-  const [managing, setManaging] = useState<Service | null>(null)
 
   const load = useCallback(() => {
     if (!businessId) return
     setLoading(true)
     Promise.all([
       fetch(`/api/laundry/services?businessId=${businessId}&includeInactive=1`).then((r) => r.json()),
-      fetch(`/api/laundry/garments?businessId=${businessId}`).then((r) => r.json()),
       fetch(`/api/laundry/categories?businessId=${businessId}`).then((r) => r.json()),
-    ]).then(([s, g, c]) => { if (s.success) setServices(s.data || []); if (g.success) setGarments(g.data || []); if (c.success) setCategories((c.data || []).map((x: Category) => ({ id: x.id, name: x.name }))) })
+    ]).then(([s, c]) => { if (s.success) setServices(s.data || []); if (c.success) setCategories((c.data || []).map((x: Category) => ({ id: x.id, name: x.name }))) })
       .catch(() => {}).finally(() => setLoading(false))
   }, [businessId])
   useEffect(() => { load() }, [load])
 
-  // Keep the managed service in sync after a compatibility save (so Add Garments
-  // uses the latest compatible categories without leaving the pricing screen).
-  const managedService = managing ? services.find((s) => s.id === managing.id) || managing : null
-
-  if (managedService) return <ManagePrices service={managedService} garments={garments} categories={categories} businessId={businessId} onBack={() => { setManaging(null); load() }} onGarmentsChanged={load} />
-
-  return <ServicesList services={services} garments={garments} categories={categories} businessId={businessId} loading={loading} onChanged={load} onManage={setManaging} />
+  // Services master only — no pricing here. Garment pricing lives on the
+  // Pricing Matrix (single garment×service pricing source).
+  return <ServicesList services={services} categories={categories} businessId={businessId} loading={loading} onChanged={load} />
 }
 
-function ServicesList({ services, categories, businessId, loading, onChanged, onManage }: { services: Service[]; garments: Garment[]; categories: Category[]; businessId: string; loading: boolean; onChanged: () => void; onManage: (s: Service) => void }) {
+function ServicesList({ services, categories, businessId, loading, onChanged }: { services: Service[]; categories: Category[]; businessId: string; loading: boolean; onChanged: () => void }) {
   const [edit, setEdit] = useState<Service | null>(null)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ ...SVC_EMPTY })
   const [route, setRoute] = useState<string[]>([])
   const [compatCats, setCompatCats] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
-  const [stats, setStats] = useState<Record<string, { count: number; from: number | null }>>({})
   const set = (k: string, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }))
-
-  // Per-service garment count + starting price (from the simple price API).
-  useEffect(() => {
-    let cancel = false
-    Promise.all(services.map((s) => fetch(`/api/laundry/services/${s.id}/prices?businessId=${businessId}`).then((r) => r.json()).then((j) => [s.id, j.success ? j.data : null] as const).catch(() => [s.id, null] as const)))
-      .then((pairs) => { if (cancel) return; const m: Record<string, { count: number; from: number | null }> = {}; for (const [id, d] of pairs) { const rows = (d?.rows || []) as PriceRow[]; const prices = rows.map((r) => r.price).filter((p) => p > 0); m[id] = { count: rows.length, from: prices.length ? Math.min(...prices) : (d?.perKg?.price ?? null) } } setStats(m) })
-    return () => { cancel = true }
-  }, [services, businessId])
 
   const openNew = () => { setEdit(null); setForm({ ...SVC_EMPTY }); setRoute([]); setCompatCats([]); setOpen(true) }
   const openEdit = (s: Service) => { setEdit(s); setForm({ name: s.name, description: s.description || "", image: s.image || "", displayOrder: String(s.displayOrder), isActive: s.isActive, displayOnWebsite: s.displayOnWebsite, orderMode: s.orderMode || "GARMENT" }); setRoute(parseRoute(s.processFlow)); setCompatCats(s.compatibleCategoryIds || []); setOpen(true) }
@@ -116,35 +101,45 @@ function ServicesList({ services, categories, businessId, loading, onChanged, on
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Manage laundry services, garments and customer prices.</p>
+        <p className="text-sm text-muted-foreground">Manage your laundry services — details, workflow, visibility and status. Garment pricing lives on the Pricing Matrix.</p>
         <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white h-9 shrink-0" onClick={openNew}><Plus className="h-3.5 w-3.5" /> Add Service</Button>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
       ) : services.length === 0 ? (
-        <Card><CardContent className="text-center py-16"><WashingMachine className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">No services yet</p><p className="text-xs text-muted-foreground mt-1">Add a service like “Wash & Iron”, then set garment prices.</p></CardContent></Card>
+        <Card><CardContent className="text-center py-16"><WashingMachine className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">No services yet</p><p className="text-xs text-muted-foreground mt-1">Add a service like “Wash & Iron”, then set prices on the Pricing Matrix.</p></CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {services.map((s) => (
+          {services.map((s) => {
+            const stages = parseRoute(s.processFlow)
+            return (
             <Card key={s.id} className={s.isActive ? "" : "opacity-60"}><CardContent className="p-4">
-              <div className="flex items-start justify-between">
-                <p className="font-semibold text-slate-800">{s.name}</p>
-                {!s.isActive && <span className="text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Inactive</span>}
+              <div className="flex items-start gap-3">
+                {s.image
+                  ? <img src={s.image} alt={s.name} className="h-12 w-12 rounded-lg object-cover border border-slate-100 shrink-0" />
+                  : <div className="h-12 w-12 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0"><WashingMachine className="h-5 w-5 text-slate-300" /></div>}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-slate-800 truncate">{s.name}</p>
+                    {!s.isActive && <span className="text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 shrink-0">Inactive</span>}
+                  </div>
+                  {s.description && <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{s.description}</p>}
+                </div>
               </div>
-              {s.description && <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{s.description}</p>}
-              <div className="mt-2 text-xs text-slate-500">{stats[s.id]?.count ?? 0} garments configured{stats[s.id]?.from != null && <> · <span className="font-medium text-slate-700">from {inr(stats[s.id]!.from)}</span></>}</div>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {s.orderMode === "BAG" && <Badge variant="outline" className="text-[10px] border-indigo-200 text-indigo-700 bg-indigo-50">Pickup First</Badge>}
+                <Badge variant="outline" className={`text-[10px] ${s.displayOnWebsite ? "border-emerald-200 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-400"}`}>{s.displayOnWebsite ? "Website" : "Hidden"}</Badge>
+                {stages.length > 0 && <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-500">{stages.map((c) => ROUTE_OPTIONS.find((o) => o.code === c)?.label || c).join(" → ")}</Badge>}
+              </div>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" variant="outline" className="h-8 gap-1 flex-1" onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
-                {s.isActive ? (
-                  <Button size="sm" className="h-8 gap-1 flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onManage(s)}><Tag className="h-3.5 w-3.5" /> Manage Prices</Button>
-                ) : (
-                  <Button size="sm" className="h-8 gap-1 flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => toggleActive(s)}><Power className="h-3.5 w-3.5" /> Activate</Button>
-                )}
+                {s.isActive
+                  ? <Button size="sm" variant="outline" className="h-8 gap-1 flex-1 text-slate-500" onClick={() => toggleActive(s)}><Power className="h-3.5 w-3.5" /> Deactivate</Button>
+                  : <Button size="sm" className="h-8 gap-1 flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => toggleActive(s)}><Power className="h-3.5 w-3.5" /> Activate</Button>}
               </div>
-              {s.isActive && <button onClick={() => toggleActive(s)} className="mt-1.5 w-full text-[11px] text-slate-400 hover:text-slate-600">Deactivate service</button>}
             </CardContent></Card>
-          ))}
+          )})}
         </div>
       )}
 

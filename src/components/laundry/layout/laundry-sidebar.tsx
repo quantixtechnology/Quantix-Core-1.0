@@ -25,6 +25,7 @@ import {
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
   Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
+  WashingMachine, Calculator, Tags,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 import { useMarketingEnabled } from "@/components/laundry/views/marketing/marketing-shared"
@@ -127,12 +128,27 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Master data is kept SEPARATE from pricing. Each master (Services,
+    // Categories, Garments) is its own screen; the Pricing Matrix manages only
+    // prices. Subscription Plans / Charges & Rules / Pricing Simulator are the
+    // pricing sub-tools that used to live as tabs here.
+    label: "Services & Pricing",
+    items: [
+      { key: "services", label: "Services", icon: WashingMachine, page: "services", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "categories", label: "Categories", icon: Tags, page: "categories", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "garments", label: "Garments", icon: Shirt, page: "garments", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "pricing", label: "Pricing Matrix", icon: IndianRupee, page: "pricing", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "subscription-plans", label: "Subscription Plans", icon: Repeat, page: "subscription-plans", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "charges-rules", label: "Charges & Rules", icon: SlidersHorizontal, page: "charges-rules", minRank: 3, perm: "laundry.pricing.view" },
+      { key: "pricing-simulator", label: "Pricing Simulator", icon: Calculator, page: "pricing-simulator", minRank: 3, perm: "laundry.pricing.view" },
+    ],
+  },
+  {
     label: "Business Management",
     items: [
       { key: "stores", label: "Stores", icon: Store, page: "stores", minRank: 3, perm: "laundry.stores.view" },
       { key: "staff", label: "Staff", icon: UsersRound, page: "staff", minRank: 3, perm: "laundry.staff.view" },
       { key: "roles", label: "Roles & Permissions", icon: Shield, page: "roles", minRank: 3, perm: "laundry.staff.assign_role" },
-      { key: "pricing", label: "Pricing Matrix", icon: IndianRupee, page: "pricing", minRank: 3, perm: "laundry.pricing.view" },
       { key: "subscriptions", label: "Subscriptions", icon: Repeat, page: "subscriptions", minRank: 3, perm: "laundry.subscriptions.view" },
       { key: "reports", label: "Reports", icon: BarChart3, page: "reports", minRank: 3, perm: "laundry.reports.view" },
       { key: "payments", label: "Payments", icon: Wallet, comingSoon: true, minRank: 3 },

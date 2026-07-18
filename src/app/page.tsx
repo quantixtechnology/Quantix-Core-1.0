@@ -219,8 +219,11 @@ const LaundryReadyForDelivery = dynamic(() => import("@/components/laundry/views
 const LaundryOrderDetail = dynamic(() => import("@/components/laundry/views/laundry-order-detail").then(m => ({ default: m.LaundryOrderDetail })), { loading: () => <PageLoader /> })
 const LaundryCategoriesMaster = dynamic(() => import("@/components/laundry/views/laundry-categories-master").then(m => ({ default: m.LaundryCategoriesMaster })), { loading: () => <PageLoader /> })
 const LaundryGarmentsMaster = dynamic(() => import("@/components/laundry/views/laundry-garments-master").then(m => ({ default: m.LaundryGarmentsMaster })), { loading: () => <PageLoader /> })
-const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/laundry-services-master").then(m => ({ default: m.LaundryServicesMaster })), { loading: () => <PageLoader /> })
+const LaundryServicesMaster = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.ServicesMasterPage })), { loading: () => <PageLoader /> })
 const LaundryPricingMatrix = dynamic(() => import("@/components/laundry/views/laundry-pricing-matrix").then(m => ({ default: m.LaundryPricingMatrix })), { loading: () => <PageLoader /> })
+const LaundrySubscriptionPlansPage = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.SubscriptionPlansPage })), { loading: () => <PageLoader /> })
+const LaundryChargesRulesPage = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.ChargesRulesPage })), { loading: () => <PageLoader /> })
+const LaundryPricingSimulatorPage = dynamic(() => import("@/components/laundry/views/pricing/pricing-page-wrappers").then(m => ({ default: m.PricingSimulatorPage })), { loading: () => <PageLoader /> })
 const LaundrySubscriptionsView = dynamic(() => import("@/components/laundry/views/laundry-subscriptions-view").then(m => ({ default: m.LaundrySubscriptionsView })), { loading: () => <PageLoader /> })
 const LaundryStoreAudit = dynamic(() => import("@/components/laundry/views/laundry-store-audit").then(m => ({ default: m.LaundryStoreAudit })), { loading: () => <PageLoader /> })
 const LaundryCustomersView = dynamic(() => import("@/components/laundry/views/laundry-customers-view").then(m => ({ default: m.LaundryCustomersView })), { loading: () => <PageLoader /> })
@@ -733,6 +736,9 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "garments": return <LaundryGarmentsMaster />
       case "services": return <LaundryServicesMaster />
       case "pricing": return <LaundryPricingMatrix />
+      case "subscription-plans": return <LaundrySubscriptionPlansPage />
+      case "charges-rules": return <LaundryChargesRulesPage />
+      case "pricing-simulator": return <LaundryPricingSimulatorPage />
       case "subscriptions": return <LaundrySubscriptionsView />
       case "roles": return <LaundryRolesPermissions businessId={wsBusinessId} />
       case "staff": return <LaundryStaff businessId={wsBusinessId} />
