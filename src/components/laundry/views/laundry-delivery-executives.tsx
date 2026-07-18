@@ -16,16 +16,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Loader2, Plus, Pencil, KeyRound, Bike, Search } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
+import { LaundryImageUpload } from "./pricing/laundry-image-upload"
 
 interface Store { id: string; storeName: string }
 interface Exec {
   id: string; employeeCode: string; name: string; mobile: string
   storeId: string | null; storeName: string | null; vehicleType: string | null
+  vehicleNumber: string | null; photo: string | null
   isActive: boolean; availability: string; currentStatus: string | null
   todaysPickups: number; todaysDeliveries: number
 }
 const VEHICLES = ["BIKE", "SCOOTER", "CAR", "VAN", "CYCLE"]
-const EMPTY = { name: "", mobile: "", employeeCode: "", storeId: "", vehicleType: "", password: "", isActive: true }
+const EMPTY = { name: "", mobile: "", employeeCode: "", storeId: "", vehicleType: "", vehicleNumber: "", photo: "", password: "", isActive: true }
 
 export function LaundryDeliveryExecutives() {
   const { currentBusinessId } = useAuthStore()
@@ -50,7 +52,7 @@ export function LaundryDeliveryExecutives() {
   useEffect(() => { load() }, [load])
 
   const openNew = () => { setEditing(null); setForm({ ...EMPTY }); setOpen(true) }
-  const openEdit = (e: Exec) => { setEditing(e); setForm({ name: e.name, mobile: e.mobile, employeeCode: e.employeeCode, storeId: e.storeId || "", vehicleType: e.vehicleType || "", password: "", isActive: e.isActive }); setOpen(true) }
+  const openEdit = (e: Exec) => { setEditing(e); setForm({ name: e.name, mobile: e.mobile, employeeCode: e.employeeCode, storeId: e.storeId || "", vehicleType: e.vehicleType || "", vehicleNumber: e.vehicleNumber || "", photo: e.photo || "", password: "", isActive: e.isActive }); setOpen(true) }
 
   const save = async () => {
     if (!form.name.trim()) { toast.error("Name is required"); return }
@@ -59,8 +61,8 @@ export function LaundryDeliveryExecutives() {
     try {
       const url = editing ? `/api/laundry/delivery-executives/${editing.id}` : "/api/laundry/delivery-executives"
       const payload = editing
-        ? { businessId: currentBusinessId, name: form.name, mobile: form.mobile, storeId: form.storeId || null, vehicleType: form.vehicleType || null, isActive: form.isActive }
-        : { businessId: currentBusinessId, name: form.name, mobile: form.mobile, employeeCode: form.employeeCode || undefined, storeId: form.storeId || null, vehicleType: form.vehicleType || null, password: form.password || undefined, isActive: form.isActive }
+        ? { businessId: currentBusinessId, name: form.name, mobile: form.mobile, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, isActive: form.isActive }
+        : { businessId: currentBusinessId, name: form.name, mobile: form.mobile, employeeCode: form.employeeCode || undefined, storeId: form.storeId || null, vehicleType: form.vehicleType || null, vehicleNumber: form.vehicleNumber || null, photo: form.photo || null, password: form.password || undefined, isActive: form.isActive }
       const res = await fetch(url, { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (!res.ok || j.success === false) throw new Error(j.error || "Save failed")
@@ -138,6 +140,10 @@ export function LaundryDeliveryExecutives() {
               </div>
               <div><Label>Vehicle Type</Label>
                 <select value={form.vehicleType} onChange={(e) => set("vehicleType", e.target.value)} className="h-10 w-full rounded-md border border-slate-200 px-2 text-sm bg-white"><option value="">—</option>{VEHICLES.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+              </div>
+              <div><Label>Vehicle Number</Label><Input value={form.vehicleNumber} onChange={(e) => set("vehicleNumber", e.target.value)} placeholder="KA01AB1234" /></div>
+              <div className="col-span-2 space-y-1"><Label>Profile Photo (optional)</Label>
+                {currentBusinessId && <LaundryImageUpload value={form.photo || null} businessId={currentBusinessId} folder="laundry-executives" onChange={(url) => set("photo", url || "")} />}
               </div>
               {!editing && <div className="col-span-2"><Label>Login Password</Label><Input value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="Leave blank to auto-generate" /></div>}
             </div>

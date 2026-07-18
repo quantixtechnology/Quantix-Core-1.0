@@ -32,6 +32,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (b.mobile !== undefined) data.mobile = String(b.mobile).trim()
     if (b.storeId !== undefined) data.storeId = b.storeId || null
     if (b.vehicleType !== undefined) data.vehicleType = b.vehicleType || null
+    if (b.vehicleNumber !== undefined) data.vehicleNumber = b.vehicleNumber ? String(b.vehicleNumber).trim() : null
+    if (b.photo !== undefined) data.photo = b.photo ? String(b.photo).trim() : null
     if (b.isActive !== undefined) data.isActive = !!b.isActive
     if (b.availability !== undefined) data.availability = String(b.availability)
     // employeeCode is immutable (the operational key).

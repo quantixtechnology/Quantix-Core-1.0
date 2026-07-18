@@ -4387,6 +4387,8 @@ model LaundryDeliveryExecutive {
   mobile        String
   storeId       String? // assigned store
   vehicleType   String? // BIKE | SCOOTER | CAR | VAN | CYCLE | null
+  vehicleNumber String? // registration plate (optional)
+  photo         String? // profile photo URL (optional; future customer-facing)
   isActive      Boolean  @default(true)
   availability  String   @default("AVAILABLE") // AVAILABLE | BUSY | OFF
   currentStatus String? // mirrors live field status; null = idle
