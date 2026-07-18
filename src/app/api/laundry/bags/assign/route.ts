@@ -22,8 +22,14 @@ export async function POST(request: Request) {
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
 
     const bag = await prisma.laundryBag.findFirst({ where: { businessId: biz.id, OR: [{ bagNumber: code }, { qrValue: code }] } })
-    if (!bag) return NextResponse.json({ success: false, error: `Bag "${code}" not found.` }, { status: 404 })
-    if (bag.status !== "AVAILABLE") return NextResponse.json({ success: false, error: `Bag ${bag.bagNumber} is not available (${bag.status.replace(/_/g, " ")}).` }, { status: 409 })
+    if (!bag) return NextResponse.json({ success: false, error: "Bag not found." }, { status: 404 })
+    if (bag.status !== "AVAILABLE") {
+      const msg = bag.status === "DAMAGED" ? "Bag marked as Damaged. Please use another bag."
+        : bag.status === "LOST" ? "Bag is marked Lost."
+        : bag.status === "CLEANING" ? "Bag is being cleaned. Please use another bag."
+        : "Bag already assigned to another order."
+      return NextResponse.json({ success: false, error: msg }, { status: 409 })
+    }
 
     const order = await prisma.laundryOrder.findFirst({ where: { id: orderId, businessId: biz.id }, select: { id: true, orderNumber: true, customerId: true } })
     if (!order) return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 })
