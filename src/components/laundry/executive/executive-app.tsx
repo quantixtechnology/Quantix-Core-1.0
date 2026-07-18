@@ -6,7 +6,7 @@
 // Scanner + the shared bag-assignment engine. Mobile-first, single-page.
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { BagScanButton } from "@/components/laundry/bag-scanner"
-import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike } from "lucide-react"
+import { Loader2, MapPin, Navigation, LogOut, User, Package, Zap, CheckCircle2, ChevronLeft, Bike, Phone } from "lucide-react"
 import { toast } from "sonner"
 
 const TOKEN_KEY = "qx_exec_token"
@@ -23,7 +23,7 @@ interface Job {
   services: Svc[]; bagCount: number; assignedBags: number; itemCount: number
 }
 
-const RANK: Record<string, number> = { ASSIGNED: 0, STARTED: 1, NAVIGATING: 2, REACHED: 3, PICKUP_STARTED: 4, PICKUP_COMPLETED: 5 }
+const RANK: Record<string, number> = { ASSIGNED: 0, STARTED: 1, NAVIGATING: 2, REACHED: 3, PICKUP_STARTED: 4, PICKUP_COMPLETED: 5, OUT_FOR_DELIVERY: 6, DELIVERED: 7 }
 const rank = (s: string | null) => RANK[s || "ASSIGNED"] ?? 0
 
 async function execFetch(path: string, token: string, opts: RequestInit = {}) {
@@ -125,7 +125,7 @@ function Shell({ token, exec, brand, onLogout }: { token: string; exec: Exec; br
   useEffect(() => { load(tab) }, [load, tab])
 
   if (showProfile) return <Profile exec={exec} brand={brand} onBack={() => setShowProfile(false)} onLogout={onLogout} />
-  if (openJob) return <JobDetail token={token} exec={exec} brand={brand} job={openJob} onBack={() => { setOpenJob(null); load() }} onChanged={load} />
+  if (openJob) return <JobDetail token={token} exec={exec} brand={brand} kind={tab === "delivery" ? "delivery" : "pickup"} job={openJob} onBack={() => { setOpenJob(null); load() }} onChanged={load} />
 
   return (
     <div className="min-h-screen bg-slate-50 pb-6">
@@ -187,17 +187,19 @@ function StatusPill({ field }: { field: string | null }) {
 }
 
 // ── Pickup workflow ──
-function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { token: string; exec: Exec; brand: Brand; job: Job; onBack: () => void; onChanged: () => void }) {
+function JobDetail({ token, exec, brand, kind, job: initial, onBack, onChanged }: { token: string; exec: Exec; brand: Brand; kind: "pickup" | "delivery"; job: Job; onBack: () => void; onChanged: () => void }) {
+  const isDelivery = kind === "delivery"
   const [job, setJob] = useState<Job>(initial)
   const [busy, setBusy] = useState(false)
   const [verifyOpen, setVerifyOpen] = useState(false)
+  const [deliverOpen, setDeliverOpen] = useState(false)
   const st = rank(job.fieldStatus)
 
   const refresh = useCallback(async () => {
-    const j = await execFetch(`/api/laundry/executive/jobs?type=pickup`, token).then((r) => r.json()).catch(() => null)
+    const j = await execFetch(`/api/laundry/executive/jobs?type=${kind}`, token).then((r) => r.json()).catch(() => null)
     const fresh = j?.data?.find((x: Job) => x.id === job.id)
     if (fresh) setJob(fresh); else onChanged()
-  }, [token, job.id, onChanged])
+  }, [token, job.id, kind, onChanged])
 
   const setStatus = async (status: string, extra: Record<string, unknown> = {}) => {
     setBusy(true)
@@ -213,11 +215,22 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
   const respond = async (action: "accept" | "reject") => {
     setBusy(true)
     try {
-      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/respond`, token, { method: "POST", body: JSON.stringify({ action, type: "pickup", executiveName: exec.name }) })
+      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/respond`, token, { method: "POST", body: JSON.stringify({ action, type: kind, executiveName: exec.name }) })
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Failed")
       if (action === "reject") { toast.success("Assignment rejected"); onChanged(); onBack(); return }
       toast.success("Assignment accepted"); await refresh()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
+  }
+
+  const deliver = async (action: "out_for_delivery" | "delivered", extra: Record<string, unknown> = {}) => {
+    setBusy(true)
+    try {
+      const res = await execFetch(`/api/laundry/executive/jobs/${job.id}/deliver`, token, { method: "POST", body: JSON.stringify({ action, executiveName: exec.name, ...extra }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      if (action === "delivered") { toast.success("Delivered"); onChanged(); onBack(); return }
+      await refresh()
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setBusy(false) }
   }
 
@@ -233,35 +246,54 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
 
   const navigate = () => {
     const url = job.mapsLink || (job.lat && job.lng ? `https://www.google.com/maps/search/?api=1&query=${job.lat},${job.lng}` : job.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}` : null)
-    if (!url) { toast.error("No location for this pickup"); return }
-    if (st < RANK.NAVIGATING) setStatus("NAVIGATING")
+    if (!url) { toast.error("No location for this order"); return }
+    if (isDelivery) { if (job.acceptance === "ACCEPTED" && st < RANK.OUT_FOR_DELIVERY) deliver("out_for_delivery") }
+    else if (st < RANK.NAVIGATING) setStatus("NAVIGATING")
     window.open(url, "_blank")
   }
 
   const allBagsDone = job.services.every((s) => s.bagNumber)
+  const delivered = job.status === "DELIVERED"
 
   return (
     <div className="min-h-screen bg-slate-50 pb-28">
       <header className="bg-white border-b border-slate-100 px-4 py-3 sticky top-0 z-10 flex items-center gap-2">
         <button onClick={onBack} className="h-9 w-9 grid place-items-center rounded-lg hover:bg-slate-50"><ChevronLeft className="h-5 w-5 text-slate-500" /></button>
-        <div><p className="font-mono text-sm font-semibold text-slate-800">{job.orderNumber}</p><p className="text-xs text-slate-400">{job.customerName}</p></div>
+        <div><p className="font-mono text-sm font-semibold text-slate-800">{job.orderNumber}</p><p className="text-xs text-slate-400">{isDelivery ? "Delivery" : "Pickup"} · {job.customerName}</p></div>
         <div className="ml-auto"><StatusPill field={job.fieldStatus} /></div>
       </header>
 
       <div className="px-4 py-4 space-y-4">
-        {/* Customer + location */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
-          <p className="text-sm text-slate-700 flex items-center gap-1.5"><User className="h-4 w-4 text-slate-400" /> {job.customerName}{job.customerPhone && <a href={`tel:${job.customerPhone}`} className="ml-auto text-blue-600 text-xs">{job.customerPhone}</a>}</p>
+        {/* Customer + Call + Navigate */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5"><User className="h-4 w-4 text-slate-400" /> {job.customerName}</p>
+            {job.priority === "EXPRESS" && <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 flex items-center gap-0.5"><Zap className="h-3 w-3" />Express</span>}
+          </div>
+          {job.timeSlot && <p className="text-xs text-slate-400">🕑 {job.timeSlot}</p>}
           {job.address && <p className="text-sm text-slate-500 flex items-start gap-1.5"><MapPin className="h-4 w-4 mt-0.5 text-slate-400 shrink-0" /> {job.address}{job.landmark ? ` (${job.landmark})` : ""}</p>}
-          <button onClick={navigate} className="w-full h-11 mt-1 rounded-xl bg-slate-900 text-white font-medium flex items-center justify-center gap-2"><Navigation className="h-4 w-4" /> Navigate</button>
+          <div className="grid grid-cols-2 gap-2">
+            {job.customerPhone
+              ? <a href={`tel:${job.customerPhone}`} className="h-11 rounded-xl border border-slate-200 text-slate-700 font-medium flex items-center justify-center gap-2"><Phone className="h-4 w-4" /> Call</a>
+              : <div className="h-11 rounded-xl border border-slate-100 text-slate-300 flex items-center justify-center gap-2 text-sm"><Phone className="h-4 w-4" /> No phone</div>}
+            <button onClick={navigate} className="h-11 rounded-xl bg-slate-900 text-white font-medium flex items-center justify-center gap-2"><Navigation className="h-4 w-4" /> Navigate</button>
+          </div>
+        </div>
+
+        {/* View Order */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
+          <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"><Package className="h-4 w-4 text-slate-400" /> Order · {job.bagCount} service{job.bagCount === 1 ? "" : "s"}{job.itemCount ? ` · ${job.itemCount} items` : ""}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {job.services.map((s, i) => <span key={i} className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600">{s.serviceName}{s.bagNumber ? <span className="text-emerald-600 font-mono"> · {s.bagNumber}</span> : null}</span>)}
+          </div>
         </div>
 
         {/* Assignment acceptance (before any field work) */}
-        {job.acceptance !== "ACCEPTED" && (
+        {!delivered && job.acceptance !== "ACCEPTED" && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <div>
-              <p className="text-sm font-semibold text-slate-700">New pickup assignment</p>
-              <p className="text-xs text-slate-500">Accept to start this pickup, or reject to send it back to your supervisor.</p>
+              <p className="text-sm font-semibold text-slate-700">New {isDelivery ? "delivery" : "pickup"} assignment</p>
+              <p className="text-xs text-slate-500">Accept to start, or reject to send it back to your supervisor.</p>
             </div>
             <div className="flex gap-2">
               <button disabled={busy} onClick={() => respond("reject")} className="flex-1 h-12 rounded-xl border border-rose-200 text-rose-600 font-semibold disabled:opacity-60">Reject</button>
@@ -270,8 +302,8 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
           </div>
         )}
 
-        {/* Workflow actions (after acceptance) */}
-        {job.acceptance === "ACCEPTED" && st < RANK.PICKUP_STARTED && (
+        {/* Pickup workflow */}
+        {!isDelivery && job.acceptance === "ACCEPTED" && st < RANK.PICKUP_STARTED && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
             {st < RANK.STARTED && <ActionBtn color={brand.color} onClick={() => setStatus("STARTED")} busy={busy} label="Start Pickup" />}
             {st >= RANK.STARTED && st < RANK.REACHED && <ActionBtn color={brand.color} onClick={() => setStatus("REACHED")} busy={busy} label="Reached Customer" />}
@@ -281,7 +313,7 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
         )}
 
         {/* Bag assignment (after customer verified) */}
-        {job.acceptance === "ACCEPTED" && st >= RANK.PICKUP_STARTED && (
+        {!isDelivery && job.acceptance === "ACCEPTED" && st >= RANK.PICKUP_STARTED && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-3">
             <p className="text-sm font-semibold text-slate-700">Assign Bags — one bag per service</p>
             {job.services.map((s, i) => (
@@ -292,18 +324,35 @@ function JobDetail({ token, exec, brand, job: initial, onBack, onChanged }: { to
             ))}
           </div>
         )}
+
+        {/* Delivery workflow */}
+        {isDelivery && job.acceptance === "ACCEPTED" && !delivered && (
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2">
+            <p className="text-sm font-semibold text-slate-700">Delivery</p>
+            <p className="text-xs text-slate-500">{st >= RANK.OUT_FOR_DELIVERY ? "Out for delivery — hand over to the customer and confirm below." : "Tap Navigate to head out, then confirm delivery with the customer."}</p>
+          </div>
+        )}
+        {isDelivery && delivered && <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-emerald-700 text-sm flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> Delivered</div>}
       </div>
 
-      {/* Confirm pickup */}
-      {st >= RANK.PICKUP_STARTED && st < RANK.PICKUP_COMPLETED && (
+      {/* Bottom action bar */}
+      {!isDelivery && st >= RANK.PICKUP_STARTED && st < RANK.PICKUP_COMPLETED && (
         <div className="fixed bottom-0 inset-x-0 p-4 bg-white/90 backdrop-blur border-t border-slate-100">
           <button disabled={busy || !allBagsDone} onClick={() => setStatus("PICKUP_COMPLETED")} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirm Pickup {allBagsDone ? "" : `(${job.assignedBags}/${job.bagCount})`}
           </button>
         </div>
       )}
+      {isDelivery && job.acceptance === "ACCEPTED" && !delivered && (
+        <div className="fixed bottom-0 inset-x-0 p-4 bg-white/90 backdrop-blur border-t border-slate-100">
+          <button disabled={busy} onClick={() => setDeliverOpen(true)} className="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />} Mark as Delivered
+          </button>
+        </div>
+      )}
 
       {verifyOpen && <VerifyDialog customerName={job.customerName} onClose={() => setVerifyOpen(false)} onConfirm={(method, value) => { setVerifyOpen(false); setStatus("REACHED", { verify: true, verifyMethod: method, verifyValue: value }) }} />}
+      {deliverOpen && <DeliverDialog customerName={job.customerName} color={brand.color} onClose={() => setDeliverOpen(false)} onConfirm={(recipientName, method, otp) => { setDeliverOpen(false); deliver("delivered", { recipientName, method, otp }) }} />}
     </div>
   )
 }
@@ -341,6 +390,29 @@ function VerifyDialog({ customerName, onClose, onConfirm }: { customerName: stri
           ? <p className="text-sm text-slate-500">Confirm you are meeting <b className="text-slate-700">{customerName}</b>.</p>
           : <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="numeric" placeholder="Enter OTP" className="w-full h-11 rounded-xl border border-slate-200 px-3" />}
         <button onClick={() => onConfirm(method, method === "NAME" ? customerName : value)} className="w-full h-11 rounded-xl bg-blue-600 text-white font-semibold">Confirm &amp; Continue</button>
+      </div>
+    </div>
+  )
+}
+
+function DeliverDialog({ customerName, color, onClose, onConfirm }: { customerName: string; color: string; onClose: () => void; onConfirm: (recipientName: string, method: string, otp: string) => void }) {
+  const [method, setMethod] = useState<"NAME" | "OTP">("NAME")
+  const [recipient, setRecipient] = useState(customerName)
+  const [otp, setOtp] = useState("")
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <p className="font-semibold text-slate-800">Confirm Delivery</p>
+        <div className="flex gap-2">
+          <button onClick={() => setMethod("NAME")} className={`flex-1 h-9 rounded-lg text-sm border ${method === "NAME" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}>Name</button>
+          <button onClick={() => setMethod("OTP")} className={`flex-1 h-9 rounded-lg text-sm border ${method === "OTP" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}>OTP</button>
+        </div>
+        <div>
+          <label className="text-xs text-slate-500">Received by</label>
+          <input value={recipient} onChange={(e) => setRecipient(e.target.value)} className="mt-1 w-full h-11 rounded-xl border border-slate-200 px-3" placeholder="Recipient name" />
+        </div>
+        {method === "OTP" && <input value={otp} onChange={(e) => setOtp(e.target.value)} inputMode="numeric" placeholder="Enter delivery OTP" className="w-full h-11 rounded-xl border border-slate-200 px-3" />}
+        <button onClick={() => onConfirm(recipient.trim() || customerName, method, otp)} className="w-full h-11 rounded-xl text-white font-semibold" style={{ backgroundColor: color }}>Confirm Delivered</button>
       </div>
     </div>
   )

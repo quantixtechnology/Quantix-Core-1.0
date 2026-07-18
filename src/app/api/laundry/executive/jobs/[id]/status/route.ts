@@ -7,6 +7,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveExecutive, bearerToken } from "@/lib/laundry-executive-auth"
 import { logFieldEvent, FIELD_STATUS, PICKUP_DONE } from "@/lib/laundry-field-ops"
+import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 
 export const runtime = "nodejs"
 
@@ -54,6 +55,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     await prisma.laundryOrder.update({ where: { id: order.id }, data: { fieldStatus: (FIELD_STATUS as Record<string, string>)[status] ?? status } })
     await logFieldEvent({ orderId: order.id, businessId: session.businessId, action: cfg.action, note: cfg.note(), actor: { id: session.executiveId, name: b.executiveName ?? "Executive" } })
+    if (status === "PICKUP_COMPLETED") await notifyCustomerForOrder(order.id, session.businessId, { type: "ORDER_STATUS", title: "Items picked up", message: "Your laundry has been picked up and is on the way to our store." })
     return NextResponse.json({ success: true, done: PICKUP_DONE.has(status) })
   } catch (e) {
     console.error("[executive-status] POST", e)

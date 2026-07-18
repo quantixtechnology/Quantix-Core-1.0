@@ -114,6 +114,54 @@ function DashboardContent({ laundryBusinessId }: { laundryBusinessId: string }) 
           ))}
         </div>
       </div>
+
+      {/* Field Operations — pickup & delivery assignments/statuses */}
+      <FieldOps businessId={laundryBusinessId} onOpen={(p) => setLaundryPage(p as never)} />
+    </div>
+  )
+}
+
+const FIELD_BUCKETS: { key: string; label: string; color: string }[] = [
+  { key: "awaiting", label: "Awaiting", color: "text-amber-600 bg-amber-100" },
+  { key: "assigned", label: "Assigned", color: "text-blue-600 bg-blue-100" },
+  { key: "accepted", label: "In Progress", color: "text-indigo-600 bg-indigo-100" },
+  { key: "completed", label: "Completed", color: "text-emerald-600 bg-emerald-100" },
+]
+function FieldOps({ businessId, onOpen }: { businessId: string; onOpen: (page: string) => void }) {
+  const [pickup, setPickup] = useState<Record<string, number>>({})
+  const [delivery, setDelivery] = useState<Record<string, number>>({})
+  useEffect(() => {
+    let cancel = false
+    const q = `businessId=${encodeURIComponent(businessId)}`
+    Promise.all([
+      fetch(`/api/laundry/pickup-scheduler?${q}&type=pickup`).then((r) => r.json()).catch(() => null),
+      fetch(`/api/laundry/pickup-scheduler?${q}&type=delivery`).then((r) => r.json()).catch(() => null),
+    ]).then(([p, d]) => { if (cancel) return; if (p?.success) setPickup(p.counts || {}); if (d?.success) setDelivery(d.counts || {}) })
+    return () => { cancel = true }
+  }, [businessId])
+
+  const Row = ({ title, counts, page }: { title: string; counts: Record<string, number>; page: string }) => (
+    <Card className="cursor-pointer hover:bg-accent/40 transition-colors" onClick={() => onOpen(page)}>
+      <CardContent className="p-4">
+        <p className="text-sm font-medium text-slate-700 mb-3">{title}</p>
+        <div className="grid grid-cols-4 gap-2">
+          {FIELD_BUCKETS.map((b) => (
+            <div key={b.key} className="text-center">
+              <div className={`mx-auto h-8 w-8 rounded-lg grid place-items-center text-sm font-bold ${b.color}`}>{counts[b.key] ?? 0}</div>
+              <p className="text-[10px] text-muted-foreground mt-1">{b.label}</p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-muted-foreground mb-3">Field Operations (Today)</h3>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Row title="Pickups" counts={pickup} page="pickup-scheduler" />
+        <Row title="Deliveries" counts={delivery} page="delivery-assignments" />
+      </div>
     </div>
   )
 }

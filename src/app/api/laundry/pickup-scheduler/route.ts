@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { logFieldEvent, FIELD_STATUS, PICKUP_DONE } from "@/lib/laundry-field-ops"
+import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 
 export const runtime = "nodejs"
 
@@ -135,6 +136,7 @@ export async function POST(request: Request) {
     } else {
       await prisma.laundryOrder.update({ where: { id: order.id }, data: { pickupExecutiveId: execId, pickupAssignedAt: execId ? new Date() : null, pickupAcceptance: execId ? "PENDING" : null, pickupAcceptedAt: null, ...(execId ? { fieldStatus: FIELD_STATUS.ASSIGNED } : { fieldStatus: null }) } })
       await logFieldEvent({ orderId: order.id, businessId: biz.id, action: execId ? "PICKUP_ASSIGNED" : "PICKUP_UNASSIGNED", note: execId ? `Pickup assigned to ${execName}` : "Pickup assignment cleared", actor })
+      if (execId) await notifyCustomerForOrder(order.id, biz.id, { type: "ORDER_STATUS", title: "Pickup scheduled", message: "A pickup executive has been assigned for your order." })
     }
     return NextResponse.json({ success: true })
   } catch (e) {
