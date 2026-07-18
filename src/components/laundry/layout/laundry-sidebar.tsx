@@ -14,7 +14,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useAdminStore, type LaundryBusinessPage } from "@/stores/admin-store"
 import { useAuthStore } from "@/stores/auth-store"
 import { useResponsive } from "@/hooks/use-responsive"
@@ -25,7 +25,7 @@ import {
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
   Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
-  WashingMachine, Calculator, Tags,
+  WashingMachine, Calculator, Tags, ChevronDown,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 import { useMarketingEnabled } from "@/components/laundry/views/marketing/marketing-shared"
@@ -226,10 +226,42 @@ interface LaundrySidebarProps {
   onMobileOpenChange?: (open: boolean) => void
 }
 
+// ── Session-scoped nav UX state (survives page switches; resets on tab close) ──
+// Collapsed group keys + last sidebar scroll position. Kept in sessionStorage so
+// the sidebar remembers exactly where the user was, feeling like a desktop ERP.
+const COLLAPSE_KEY = "quantix_nav_collapsed"
+const SCROLL_KEY = "quantix_nav_scroll"
+function loadCollapsed(): Set<string> {
+  if (typeof window === "undefined") return new Set()
+  try { return new Set(JSON.parse(sessionStorage.getItem(COLLAPSE_KEY) || "[]") as string[]) } catch { return new Set() }
+}
+function persistCollapsed(s: Set<string>) {
+  try { sessionStorage.setItem(COLLAPSE_KEY, JSON.stringify([...s])) } catch { /* private mode */ }
+}
+const groupKey = (g: { sectionHeader?: string; label: string | null }) => `${g.sectionHeader ?? ""}::${g.label ?? ""}`
+
 export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: LaundrySidebarProps) {
   const { laundryPage, setLaundryPage } = useAdminStore()
   const { user, currentRole, currentBusinessId } = useAuthStore()
   const { isMobile } = useResponsive()
+
+  // §3/§4 nav UX: collapsible groups + remembered scroll position.
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
+  const toggleGroup = (key: string) => setCollapsed((s) => {
+    const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); persistCollapsed(n); return n
+  })
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const onNavScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    try { sessionStorage.setItem(SCROLL_KEY, String(e.currentTarget.scrollTop)) } catch { /* noop */ }
+  }
+  // Restore the saved scroll once the list is mounted so switching pages never
+  // bounces the sidebar back to the top.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const saved = Number(sessionStorage.getItem(SCROLL_KEY) || "0")
+    if (saved > 0) el.scrollTop = saved
+  }, [])
 
   // RBAC: the user's effective permissions drive left-menu security. While it
   // loads (null) only rank-based visibility applies; once resolved, items whose
@@ -303,10 +335,16 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
     </div>
   )
 
-  const NavList = ({ collapsedTooltips = true }: { collapsedTooltips?: boolean }) => (
+  // Rendered inline (NOT as <NavList/>) so the scroll container is never
+  // remounted on navigation — that remount was what reset the scroll to the top.
+  const renderNav = (collapsedTooltips = true) => (
     <>
-      {groups.map((section, gi) => (
-        <div key={`${section.sectionHeader ?? ""}-${section.label ?? ""}-${gi}`}>
+      {groups.map((section, gi) => {
+        const gk = groupKey(section)
+        const canCollapse = !!section.label
+        const isCollapsed = canCollapse && collapsed.has(gk)
+        return (
+        <div key={`${gk}-${gi}`}>
           {section.sectionHeader && (
             <div className="px-3 pt-2.5 pb-0.5 mt-2 border-t border-slate-100">
               <p className="text-[10px] font-extrabold tracking-widest uppercase text-slate-500">{section.sectionHeader}</p>
@@ -314,10 +352,14 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
           )}
           <SidebarGroup className="px-2 py-0">
           {section.label && (
-            <SidebarGroupLabel className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 mt-2 h-auto py-1 text-slate-400">
-              {section.label}
+            <SidebarGroupLabel asChild className="text-[10px] font-bold tracking-widest uppercase px-2 mb-1 mt-2 h-auto py-1 text-slate-400">
+              <button type="button" onClick={() => toggleGroup(gk)} className="w-full flex items-center justify-between gap-2 hover:text-slate-600 transition-colors">
+                <span>{section.label}</span>
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+              </button>
             </SidebarGroupLabel>
           )}
+          {!isCollapsed && (
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
               {section.items.map((item) => {
@@ -347,9 +389,10 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
               })}
             </SidebarMenu>
           </SidebarGroupContent>
+          )}
         </SidebarGroup>
         </div>
-      ))}
+      )})}
     </>
   )
 
@@ -371,7 +414,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
             <SheetDescription className="sr-only">Navigation</SheetDescription>
             <div className="flex items-center h-16 px-4">{Brand}</div>
           </SheetHeader>
-          <ScrollArea className="flex-1 py-3" style={WHITE_THEME}><NavList collapsedTooltips={false} /></ScrollArea>
+          <ScrollArea className="flex-1 py-3" style={WHITE_THEME}>{renderNav(false)}</ScrollArea>
           <div className="p-3 shrink-0 border-t border-slate-200">{Footer}</div>
         </SheetContent>
       </Sheet>
@@ -383,8 +426,8 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
       <SidebarHeader className="p-0 shrink-0 border-b border-slate-200">
         <div className="flex items-center h-16 px-2">{Brand}</div>
       </SidebarHeader>
-      <SidebarContent className="py-3 gap-0">
-        <NavList />
+      <SidebarContent ref={scrollRef} onScroll={onNavScroll} className="py-3 gap-0">
+        {renderNav()}
       </SidebarContent>
       <SidebarFooter className="p-3 border-t border-slate-200">{Footer}</SidebarFooter>
       <SidebarRail />
