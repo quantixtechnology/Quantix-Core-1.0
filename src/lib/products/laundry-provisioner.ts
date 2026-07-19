@@ -58,6 +58,14 @@ class LaundryProvisioner implements ProductProvisioner {
         },
       })
 
+      // Auto-provision BOTH public apps (customer <domain> + executive
+      // delivery.<domain>) via the shared engine — no manual infra step. Runs in
+      // the background (certbot needs DNS to resolve, which may lag creation); the
+      // Mobile Apps status view auto-heals it once DNS + server are ready.
+      void import("@/lib/laundry-app-provisioning")
+        .then((m) => m.provisionTenantApps(businessId))
+        .catch(() => { /* best-effort; retryable from Mobile Apps */ })
+
       return {
         success: true,
         message: `Laundry OS provisioned for business ${business.name}`,

@@ -2305,6 +2305,12 @@ model DomainMapping {
   sslExpiryDate    DateTime?
   sslError         String?
   sslLastCheckedAt DateTime?
+  // Executive PWA host (delivery.<domain>) provisioning status — the tenant's
+  // SECOND public app, provisioned by the same engine alongside the customer site.
+  executiveSslStatus        String    @default("pending")
+  executiveSslExpiryDate    DateTime?
+  executiveSslError         String?
+  executiveSslLastCheckedAt DateTime?
   dnsProvider      String?
   dnsConfig        String       @default("{}")
   status           DomainStatus @default(PENDING_DNS)
