@@ -91,11 +91,27 @@ async function ensureNginxConfig(host: string): Promise<'created' | 'existing'> 
     await shell(`sudo ln -sf ${confPath} ${enabledPath}`)
   }
 
+  // Long/multi-label hostnames (e.g. delivery.<slug>.<base>) overflow nginx's
+  // default server_names_hash_bucket_size (64), which makes `nginx -t` fail
+  // globally with "could not build server_names_hash" — blocking certbot for
+  // EVERY host in the run. Ensure a sufficient bucket size (idempotent) so the
+  // engine scales to long names + many tenants. conf.d/*.conf is included in the
+  // http{} block, which is where this directive must live.
+  await ensureServerNamesHash()
+
   const valid = await shellSafe('sudo nginx -t 2>&1')
   if (!valid.includes('syntax is ok')) {
     throw new Error(`nginx config invalid:\n${valid}`)
   }
   return created ? 'created' : 'existing'
+}
+
+async function ensureServerNamesHash(): Promise<void> {
+  const path = '/etc/nginx/conf.d/00-server-names-hash.conf'
+  const present = await shellSafe(`sudo test -f ${path} && echo "EXISTS"`)
+  if (present !== 'EXISTS') {
+    await shell(`echo 'server_names_hash_bucket_size 128;' | sudo tee ${path} > /dev/null`)
+  }
 }
 
 async function certExists(host: string): Promise<boolean> {
