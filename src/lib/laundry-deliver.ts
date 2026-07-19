@@ -4,6 +4,7 @@
 // outstanding-balance gate, item completion and the MARK_DELIVERED timeline
 // event. No parallel delivery logic. No auth here; callers gate.
 import { prisma } from "@/lib/prisma"
+import { releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 
 export type DeliverResult =
   | { ok: true; orderNumber: string; deliveredAt: Date; deliveryType: string }
@@ -49,6 +50,12 @@ export async function markOrderDelivered(opts: {
       note: [deliveryType, opts.recipientName ? `Received by ${opts.recipientName}` : null, opts.note || null].filter(Boolean).join(" · "),
     },
   }).catch(() => null)
+
+  // Reusable-bag release: the order is delivered → the bag has completed its
+  // purpose. Return every bag carrying this order to AVAILABLE automatically
+  // (cleared of order links, usage++), so it is immediately reusable with NO
+  // manual reset. History is preserved on LaundryBagAssignment.
+  await releaseBagsForOrder(opts.lbId, order.id).catch(() => 0)
 
   return { ok: true, orderNumber: order.orderNumber, deliveredAt: now, deliveryType }
 }

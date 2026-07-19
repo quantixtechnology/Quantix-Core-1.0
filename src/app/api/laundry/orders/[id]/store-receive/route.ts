@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { advanceBagsForOrder } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
@@ -50,6 +51,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         note: b.note || `${order._count.items} garment(s) verified at store`,
       },
     }).catch(() => null)
+
+    // Keep the reusable bags' lifecycle in step with the order (display accuracy).
+    await advanceBagsForOrder(biz.id, order.id, "READY_FOR_DELIVERY")
 
     return NextResponse.json({ success: true, data: { orderNumber: order.orderNumber } })
   } catch (e) {

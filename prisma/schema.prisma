@@ -5864,6 +5864,7 @@ model LaundryBag {
   currentCustomerId   String?
   currentCustomerName String?
   lastUsedAt          DateTime?
+  lastReturnedAt      DateTime?
   totalUsageCount     Int       @default(0)
   notes               String?
   createdAt           DateTime  @default(now())

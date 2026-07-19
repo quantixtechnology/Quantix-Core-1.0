@@ -50,7 +50,9 @@ export async function assignBagToOrder(opts: {
         currentOrderId: order.id, currentOrderNumber: order.orderNumber,
         currentServiceId: serviceId, currentServiceName: serviceName,
         currentCustomerId: order.customerId || null, currentCustomerName: customer?.name || null,
-        lastUsedAt: new Date(), totalUsageCount: { increment: 1 },
+        // usageCount is incremented on RELEASE (one completed reuse cycle), not
+        // here — see releaseBagsForOrder().
+        lastUsedAt: new Date(),
       },
     })
     await tx.laundryBagAssignment.create({
@@ -59,4 +61,42 @@ export async function assignBagToOrder(opts: {
     return bg
   })
   return { ok: true, bag: updated }
+}
+
+// ── Reusable-bag lifecycle release/advance ───────────────────────────────────
+// A reusable bag is a company asset — reserved ONLY while carrying an order. When
+// its order is delivered, the bag is RELEASED automatically: cleared of the order
+// links and returned to AVAILABLE, ready for the next pickup. History is NEVER
+// lost — it lives in LaundryBagAssignment (closed as RETURNED). No manual reset.
+const RELEASABLE = ["ASSIGNED", "COLLECTED", "RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING"] as const
+
+export async function releaseBagsForOrder(lbId: string, orderId: string): Promise<number> {
+  const bags = await prisma.laundryBag.findMany({ where: { businessId: lbId, currentOrderId: orderId, status: { in: [...RELEASABLE] } }, select: { id: true } })
+  if (!bags.length) return 0
+  const now = new Date()
+  await prisma.$transaction(async (tx) => {
+    for (const b of bags) {
+      await tx.laundryBag.update({
+        where: { id: b.id },
+        data: {
+          status: "AVAILABLE",
+          currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null,
+          currentCustomerId: null, currentCustomerName: null,
+          lastReturnedAt: now, totalUsageCount: { increment: 1 },
+        },
+      })
+      await tx.laundryBagAssignment.updateMany({ where: { bagId: b.id, orderId, status: "ASSIGNED" }, data: { status: "RETURNED", returnedAt: now } })
+    }
+  })
+  return bags.length
+}
+
+// Advance the bags carrying an order to a mid-lifecycle status (e.g.
+// READY_FOR_DELIVERY) as the order progresses — display accuracy only. Never
+// touches released/lost/damaged bags.
+export async function advanceBagsForOrder(lbId: string, orderId: string, status: string): Promise<void> {
+  await prisma.laundryBag.updateMany({
+    where: { businessId: lbId, currentOrderId: orderId, status: { notIn: ["AVAILABLE", "LOST", "DAMAGED", "RETIRED"] } },
+    data: { status },
+  }).catch(() => {})
 }
