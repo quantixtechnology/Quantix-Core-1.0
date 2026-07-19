@@ -37,10 +37,14 @@ export async function GET(request: Request) {
   // ?app=executive → Laundry Pickup & Delivery Executive PWA ("{Business} Pickup
   // & Delivery", start_url /laundry/executive). Installed alongside the customer
   // app as a separate, fully white-label field-ops app.
-  const isExecutive = new URL(request.url).searchParams.get('app') === 'executive'
+  // A `delivery.<tenant>` host IS the dedicated executive app — its manifest is
+  // the executive flavor (root start_url) regardless of query params.
+  const rawHost = (request.headers.get('host') ?? '').toLowerCase().split(':')[0]
+  const isDeliveryHost = rawHost.startsWith('delivery.')
+  const isExecutive = isDeliveryHost || new URL(request.url).searchParams.get('app') === 'executive'
 
-  // ── Resolve tenant from Host header ───────────────────────────────────────
-  const host = (request.headers.get('host') ?? '').toLowerCase().split(':')[0]
+  // ── Resolve tenant from Host header (strip the delivery. prefix) ───────────
+  const host = isDeliveryHost ? rawHost.slice('delivery.'.length) : rawHost
 
   let name        = 'Quantix Store'
   let theme       = '#10B981'
@@ -82,20 +86,24 @@ export async function GET(request: Request) {
   // Icons are shared between flavors (tenant logo); name/start_url/identity
   // differ so Android/iOS/desktop treat the Delivery PWA as a separate app
   // that can be installed alongside the customer storefront.
+  // On a dedicated delivery.<tenant> host the app lives at the ROOT; on the shared
+  // workspace host it lives under /laundry/executive.
+  const execStart = isDeliveryHost ? '/?source=pwa' : '/laundry/executive?source=pwa'
+  const execScope = isDeliveryHost ? '/' : '/laundry/executive'
   const manifest = isExecutive
     ? {
-        id:               '/laundry/executive',
+        id:               isDeliveryHost ? '/' : '/laundry/executive',
         name:             `${name} Pickup & Delivery`,
         short_name:       shortName(name),
         description:      'Pickup & delivery field operations',
-        start_url:        '/laundry/executive?source=pwa',
+        start_url:        execStart,
         display:          'standalone',
         display_override: ['standalone', 'minimal-ui'],
         background_color: '#ffffff',
         theme_color:      theme,
         orientation:      'portrait-primary',
         lang:             'en-IN',
-        scope:            '/laundry/executive',
+        scope:            execScope,
         categories:       ['business', 'productivity'],
         icons: [
           { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },

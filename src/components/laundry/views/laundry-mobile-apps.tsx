@@ -8,10 +8,21 @@ import { useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { AppShareCard } from "@/components/laundry/apps/app-share-card"
 import { Smartphone, Bike, MapPin } from "lucide-react"
+import { useAuthStore } from "@/stores/auth-store"
 
 export function LaundryMobileApps() {
+  const { currentBusinessId } = useAuthStore()
+  const [urls, setUrls] = useState<{ customerUrl: string | null; executiveUrl: string | null }>({ customerUrl: null, executiveUrl: null })
   const [origin, setOrigin] = useState("")
   useEffect(() => { setOrigin(window.location.origin) }, [])
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/app-urls?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success && j.data) setUrls(j.data) }).catch(() => {})
+  }, [currentBusinessId])
+  // Tenant-specific dedicated hosts; fall back to the current origin only if the
+  // tenant slug isn't resolved yet (dev / not provisioned).
+  const customerUrl = urls.customerUrl || (origin ? `${origin}/laundry/app` : "")
+  const executiveUrl = urls.executiveUrl || (origin ? `${origin}/laundry/executive` : "")
 
   return (
     <div className="space-y-4">
@@ -25,15 +36,15 @@ export function LaundryMobileApps() {
           title="Customer App"
           description="Customers book pickups, track orders and pay."
           icon={<Smartphone className="h-5 w-5" />}
-          url={`${origin}/laundry/app`}
-          note="Installs as your branded customer app (logo, colours, name)."
+          url={customerUrl}
+          note="Your dedicated branded customer website & PWA."
         />
         <AppShareCard
           title="Executive Pickup & Delivery App"
           description="Field executives run assigned pickups and deliveries."
           icon={<Bike className="h-5 w-5" />}
-          url={`${origin}/laundry/executive`}
-          note="Only active Delivery Executives can sign in (mobile + password)."
+          url={executiveUrl}
+          note="Dedicated per-tenant host — only active Delivery Executives sign in (mobile + password), the business is set by the URL."
         />
         <Card className="rounded-xl border-slate-200">
           <CardContent className="p-4 space-y-2">

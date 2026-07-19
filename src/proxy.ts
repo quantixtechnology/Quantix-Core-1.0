@@ -48,6 +48,19 @@ export default function proxy(request: NextRequest) {
   if (!SKIP_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     const hostWithoutPort = host.split(':')[0]
 
+    // 0) Dedicated Laundry Executive PWA host: delivery.<tenant>.<base> (and, on
+    // a custom domain, delivery.<customdomain>). The whole subdomain IS the
+    // executive app — serve /laundry/executive at the root so the URL stays
+    // clean (delivery.<tenant>/…) and the app resolves the tenant from the host.
+    // API / sw.js / manifest.json are in SKIP_PATHS and pass straight through.
+    if (hostWithoutPort.startsWith('delivery.')) {
+      const url = request.nextUrl.clone()
+      if (!pathname.startsWith('/laundry/executive')) url.pathname = '/laundry/executive'
+      url.searchParams.set('_exec', '1')
+      log(`[proxy] EXECUTIVE host=${hostWithoutPort} → ${url.toString()}`)
+      return withSecurityHeaders(NextResponse.rewrite(url))
+    }
+
     // 1) Product workspace host (commerce.*, laundry.*, …) — handled BEFORE
     // storefront so a product subdomain is never mistaken for a tenant slug.
     const productCode = getProductCodeForHost(hostWithoutPort, STOREFRONT_BASE)

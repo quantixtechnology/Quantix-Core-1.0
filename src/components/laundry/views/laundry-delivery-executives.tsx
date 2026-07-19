@@ -54,8 +54,14 @@ export function LaundryDeliveryExecutives() {
   const set = (k: keyof typeof EMPTY, v: string | boolean) => setForm((p) => ({ ...p, [k]: v }))
 
   const [origin, setOrigin] = useState("")
+  const [execUrl, setExecUrl] = useState<string | null>(null)
   useEffect(() => { setOrigin(window.location.origin) }, [])
-  const appUrl = origin ? `${origin}/laundry/executive` : ""
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/app-urls?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success && j.data?.executiveUrl) setExecUrl(j.data.executiveUrl) }).catch(() => {})
+  }, [currentBusinessId])
+  // Dedicated per-tenant executive host; origin fallback only until provisioned.
+  const appUrl = execUrl || (origin ? `${origin}/laundry/executive` : "")
 
   const load = useCallback(async () => {
     if (!currentBusinessId) return
