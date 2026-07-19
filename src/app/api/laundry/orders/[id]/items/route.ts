@@ -8,6 +8,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { explodePieces } from "@/lib/laundry-order-items"
 
 export const runtime = "nodejs"
 
@@ -57,9 +58,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const base = order._count.items
     const newGrand = r2(order.grandTotal + addTotal)
 
+    // NORMALIZE to physical garments — identical to createLaundryOrder. Every line
+    // with quantity > 1 becomes N individual LaundryOrderItem records (qty 1 each,
+    // amounts split to sum exactly), so each garment gets its OWN item id +
+    // barcode + processing/QC/delivery lifecycle. Barcode Generation must always
+    // operate on per-garment records, never service/cart lines.
+    const exploded = explodePieces(priced)
+
     const updated = await prisma.$transaction(async (tx) => {
-      for (let i = 0; i < priced.length; i++) {
-        const l = priced[i]
+      for (let i = 0; i < exploded.length; i++) {
+        const l = exploded[i]
         const itemNumber = `ITM-${order.orderNumber}-${String(base + i + 1).padStart(4, "0")}`
         await tx.laundryOrderItem.create({
           data: {
@@ -84,7 +92,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         select: { id: true, grandTotal: true },
       })
     })
-    return NextResponse.json({ success: true, data: { orderId: updated.id, added: priced.length, grandTotal: updated.grandTotal } }, { status: 201 })
+    return NextResponse.json({ success: true, data: { orderId: updated.id, added: exploded.length, grandTotal: updated.grandTotal } }, { status: 201 })
   } catch (e) {
     console.error("[order-intake-items] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
