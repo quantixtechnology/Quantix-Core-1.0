@@ -4149,6 +4149,11 @@ model LaundryBusiness {
   allowProcessingBeforePayment Boolean   @default(false) // deprecated (kept for compat)
   // Pickup-First: how the operational QR is created after Store Audit.
   processingPackageQrMode      String    @default("GENERATE_NEW") // GENERATE_NEW | REUSE_BAG
+  // Reusable-bag release policy — WHEN a bag returns to AVAILABLE. Different
+  // laundries empty the bag at different points: STORE_RECEIVE (garments removed
+  // when the picked-up bag arrives at the store — recommended default) or
+  // AFTER_DELIVERY (bag stays with the order through delivery, released after).
+  reusableBagReleaseStage      String    @default("STORE_RECEIVE") // STORE_RECEIVE | AFTER_DELIVERY
   defaultServiceRadius         Float?
   defaultDailyCapacity         Float?
   platformBusinessId           String?   @unique

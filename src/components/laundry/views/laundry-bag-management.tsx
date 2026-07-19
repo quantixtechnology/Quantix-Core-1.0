@@ -52,6 +52,23 @@ export function LaundryBagManagement() {
   const [genCount, setGenCount] = useState("50")
   const [busy, setBusy] = useState(false)
   const [detail, setDetail] = useState<{ bag: Bag; assignments: Assignment[] } | null>(null)
+  const [releaseStage, setReleaseStage] = useState<string>("STORE_RECEIVE")
+  const [savingStage, setSavingStage] = useState(false)
+
+  useEffect(() => {
+    if (!currentBusinessId) return
+    fetch(`/api/laundry/bag-settings?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success) setReleaseStage(j.data.reusableBagReleaseStage) }).catch(() => {})
+  }, [currentBusinessId])
+
+  const saveReleaseStage = async (stage: string) => {
+    setReleaseStage(stage); setSavingStage(true)
+    try {
+      const res = await fetch("/api/laundry/bag-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, reusableBagReleaseStage: stage }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      toast.success("Bag release policy saved")
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") } finally { setSavingStage(false) }
+  }
 
   const load = useCallback(async () => {
     if (!currentBusinessId) return
@@ -98,6 +115,25 @@ export function LaundryBagManagement() {
         </div>
         <Button onClick={() => setGenOpen(true)} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-4 w-4" /> Generate Bags</Button>
       </div>
+
+      {/* Reusable Bag Release Stage — configurable per laundry */}
+      <Card className="rounded-xl border-slate-200"><CardContent className="p-4 flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-700">Reusable Bag Release Stage {savingStage && <Loader2 className="inline h-3 w-3 animate-spin text-slate-400" />}</p>
+          <p className="text-xs text-slate-500 mt-0.5">When a reusable bag automatically returns to <b>Available</b> for the next order.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {[
+            { v: "STORE_RECEIVE", t: "Release at Store Receive", d: "Bag freed when scanned in at the store (recommended)" },
+            { v: "AFTER_DELIVERY", t: "Release after Delivery", d: "Bag stays with the order until it's delivered" },
+          ].map((o) => (
+            <button key={o.v} onClick={() => saveReleaseStage(o.v)} className={`text-left rounded-lg border p-3 w-full sm:w-56 transition-colors ${releaseStage === o.v ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <p className={`text-sm font-medium ${releaseStage === o.v ? "text-blue-700" : "text-slate-700"}`}>{o.t}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{o.d}</p>
+            </button>
+          ))}
+        </div>
+      </CardContent></Card>
 
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative w-full max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bag no, order, customer…" className="pl-9 h-9" /></div>

@@ -7,6 +7,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getBagReleaseStage, releaseBag } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
@@ -28,18 +29,20 @@ export async function POST(request: Request) {
     const bag = await prisma.laundryBag.findFirst({ where: { businessId: biz.id, OR: [{ bagNumber: code }, { qrValue: code }] } })
     if (!bag) return NextResponse.json({ success: false, error: `Bag "${code}" not found.` }, { status: 404 })
 
-    const data: Record<string, unknown> = { status: toStatus }
-    if (toStatus === "AVAILABLE") {
-      Object.assign(data, { currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null, currentCustomerId: null, currentCustomerName: null })
+    // Configurable release: on STORE_RECEIVE laundries the bag is RELEASED the
+    // moment it is scanned in at the store (garments removed there). Manual
+    // "receive returned bag" (→ AVAILABLE) always routes through the same
+    // release. Both use the single release engine (history + usage preserved).
+    const shouldRelease = toStatus === "AVAILABLE" ||
+      (toStatus === "RECEIVED_AT_STORE" && (await getBagReleaseStage(biz.id)) === "STORE_RECEIVE")
+    if (shouldRelease) {
+      const orderId = bag.currentOrderId
+      await releaseBag(biz.id, bag.id) // no-op if already released
+      const fresh = await prisma.laundryBag.findUnique({ where: { id: bag.id } })
+      return NextResponse.json({ success: true, data: fresh, released: true, orderId })
     }
-    const updated = await prisma.$transaction(async (tx) => {
-      const bg = await tx.laundryBag.update({ where: { id: bag.id }, data })
-      // Close the open assignment once the bag is fully returned/available.
-      if ((toStatus === "RETURNED" || toStatus === "AVAILABLE") && bag.currentOrderId) {
-        await tx.laundryBagAssignment.updateMany({ where: { bagId: bag.id, orderId: bag.currentOrderId, status: "ASSIGNED" }, data: { status: "RETURNED", returnedAt: new Date() } })
-      }
-      return bg
-    })
+
+    const updated = await prisma.laundryBag.update({ where: { id: bag.id }, data: { status: toStatus } })
     return NextResponse.json({ success: true, data: updated, orderId: bag.currentOrderId })
   } catch (e) {
     console.error("[bags-advance] POST", e)

@@ -28,7 +28,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const body = await request.json()
     const {
       businessName, legalName, ownerName, mobile, email, gstNumber, logo, favicon, address,
-      plan, status, defaultServiceRadius, defaultDailyCapacity,
+      plan, status, defaultServiceRadius, defaultDailyCapacity, reusableBagReleaseStage,
     } = body
 
     const business = await prisma.laundryBusiness.update({
@@ -47,6 +47,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(status !== undefined && { status }),
         ...(defaultServiceRadius !== undefined && { defaultServiceRadius: defaultServiceRadius ? parseFloat(defaultServiceRadius) : null }),
         ...(defaultDailyCapacity !== undefined && { defaultDailyCapacity: defaultDailyCapacity ? parseFloat(defaultDailyCapacity) : null }),
+        ...(reusableBagReleaseStage !== undefined && { reusableBagReleaseStage: reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "STORE_RECEIVE" }),
       },
     })
 

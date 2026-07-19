@@ -65,30 +65,49 @@ export async function assignBagToOrder(opts: {
 
 // ── Reusable-bag lifecycle release/advance ───────────────────────────────────
 // A reusable bag is a company asset — reserved ONLY while carrying an order. When
-// its order is delivered, the bag is RELEASED automatically: cleared of the order
-// links and returned to AVAILABLE, ready for the next pickup. History is NEVER
-// lost — it lives in LaundryBagAssignment (closed as RETURNED). No manual reset.
+// it is RELEASED it returns to AVAILABLE: cleared of the order links, ready for
+// the next pickup. WHEN the release happens is CONFIGURABLE per laundry
+// (reusableBagReleaseStage: STORE_RECEIVE | AFTER_DELIVERY) — the release logic
+// itself is identical. History is NEVER lost — it lives in LaundryBagAssignment
+// (closed as RETURNED). No manual reset.
 const RELEASABLE = ["ASSIGNED", "COLLECTED", "RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING"] as const
 
+export type BagReleaseStage = "STORE_RECEIVE" | "AFTER_DELIVERY"
+
+export async function getBagReleaseStage(lbId: string): Promise<BagReleaseStage> {
+  const b = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { reusableBagReleaseStage: true } })
+  return b?.reusableBagReleaseStage === "AFTER_DELIVERY" ? "AFTER_DELIVERY" : "STORE_RECEIVE"
+}
+
+// Core: return one bag to AVAILABLE + close its open assignment (history).
+async function releaseBagRow(tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0], bagId: string, orderId: string | null, now: Date) {
+  await tx.laundryBag.update({
+    where: { id: bagId },
+    data: {
+      status: "AVAILABLE",
+      currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null,
+      currentCustomerId: null, currentCustomerName: null,
+      lastReturnedAt: now, totalUsageCount: { increment: 1 },
+    },
+  })
+  if (orderId) await tx.laundryBagAssignment.updateMany({ where: { bagId, orderId, status: "ASSIGNED" }, data: { status: "RETURNED", returnedAt: now } })
+}
+
+// Release ALL bags carrying an order (e.g. AFTER_DELIVERY policy).
 export async function releaseBagsForOrder(lbId: string, orderId: string): Promise<number> {
   const bags = await prisma.laundryBag.findMany({ where: { businessId: lbId, currentOrderId: orderId, status: { in: [...RELEASABLE] } }, select: { id: true } })
   if (!bags.length) return 0
   const now = new Date()
-  await prisma.$transaction(async (tx) => {
-    for (const b of bags) {
-      await tx.laundryBag.update({
-        where: { id: b.id },
-        data: {
-          status: "AVAILABLE",
-          currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null,
-          currentCustomerId: null, currentCustomerName: null,
-          lastReturnedAt: now, totalUsageCount: { increment: 1 },
-        },
-      })
-      await tx.laundryBagAssignment.updateMany({ where: { bagId: b.id, orderId, status: "ASSIGNED" }, data: { status: "RETURNED", returnedAt: now } })
-    }
-  })
+  await prisma.$transaction(async (tx) => { for (const b of bags) await releaseBagRow(tx, b.id, orderId, now) })
   return bags.length
+}
+
+// Release ONE bag (e.g. STORE_RECEIVE policy — released as it is scanned in).
+export async function releaseBag(lbId: string, bagId: string): Promise<boolean> {
+  const bag = await prisma.laundryBag.findFirst({ where: { id: bagId, businessId: lbId, status: { in: [...RELEASABLE] } }, select: { id: true, currentOrderId: true } })
+  if (!bag) return false
+  await prisma.$transaction(async (tx) => releaseBagRow(tx, bag.id, bag.currentOrderId, new Date()))
+  return true
 }
 
 // Advance the bags carrying an order to a mid-lifecycle status (e.g.
