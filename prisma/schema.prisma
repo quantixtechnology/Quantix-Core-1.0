@@ -5872,10 +5872,15 @@ model LaundryBag {
   lastReturnedAt      DateTime?
   totalUsageCount     Int       @default(0)
   notes               String?
+  releasedAt          DateTime?
+  releasedBy          String?
+  releaseReason       String?
+  lastAssignmentId    String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
   assignments LaundryBagAssignment[]
+  releases    LaundryBagRelease[]
 
   @@unique([businessId, bagNumber])
   @@index([businessId])
@@ -5904,4 +5909,28 @@ model LaundryBagAssignment {
   @@index([bagId])
   @@index([businessId])
   @@index([orderId])
+}
+
+// Append-only release audit — one row per time a bag is returned to AVAILABLE.
+model LaundryBagRelease {
+  id              String   @id @default(cuid())
+  bagId           String
+  bagNumber       String
+  businessId      String
+  storeId         String?
+  orderId         String?
+  orderNumber     String?
+  releaseType     String   @default("QR_SCAN") // QR_SCAN | MANUAL
+  reason          String?
+  previousStatus  String
+  newStatus       String   @default("AVAILABLE")
+  releasedBy      String?
+  releasedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  bag LaundryBag @relation(fields: [bagId], references: [id], onDelete: Cascade)
+
+  @@index([bagId])
+  @@index([businessId])
+  @@index([releasedAt])
 }

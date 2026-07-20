@@ -25,6 +25,7 @@ export const RBAC_CATALOG: ModuleDef[] = [
       { key: "pricing", label: "Pricing", actions: ["view", "edit_pricing", "edit_billing_type", "delete_rules"] },
       { key: "stores", label: "Stores", actions: ["view", "create", "edit", "delete"] },
       { key: "staff", label: "Staff", actions: ["view", "create", "edit", "delete", "assign_role"] },
+      { key: "bags", label: "Reusable Bags", actions: ["view", "create", "return_scan", "manual_release"] },
       { key: "reports", label: "Reports", actions: ["view", "export"] },
       { key: "settings", label: "Settings", actions: ["view", "edit"] },
     ],
@@ -106,7 +107,7 @@ export interface SystemRoleDef { code: string; name: string; description: string
 
 export const SYSTEM_ROLES: SystemRoleDef[] = [
   { code: "BUSINESS_OWNER", name: "Business Owner", description: "Full, unrestricted access. Cannot be deleted or lose access.", isOwner: true, perms: () => keys() },
-  { code: "STORE_MANAGER", name: "Store Manager", description: "Operational management across store + processing.", perms: () => [...moduleAll("laundry").filter((k) => !k.startsWith("laundry.settings")), ...moduleAll("store_ops"), ...moduleAll("processing"), ...screenAll("laundry", "reports")] },
+  { code: "STORE_MANAGER", name: "Store Manager", description: "Operational management across store + processing.", perms: () => [...moduleAll("laundry").filter((k) => !k.startsWith("laundry.settings")), ...moduleAll("store_ops"), ...moduleAll("processing"), ...screenAll("laundry", "reports"), ...screenAll("laundry", "bags")] },
   { code: "COUNTER_EXECUTIVE", name: "Counter Executive", description: "Order creation and customer handling.", perms: () => [DASH, ...screenAll("laundry", "orders").filter((k) => /\.(view|create|edit|print)$/.test(k)), ...screenAll("laundry", "customers").filter((k) => /\.(view|create|edit|invite)$/.test(k)), ...screenAll("laundry", "subscriptions").filter((k) => k.endsWith(".view")), ...screenAll("store_ops", "store_audit"), ...screenAll("store_ops", "payment_collection"), ...screenAll("store_ops", "packing_qr")] },
   { code: "PROCESSING_MANAGER", name: "Processing Manager", description: "Processing Center management.", perms: () => [DASH, ...moduleAll("processing")] },
   { code: "PROCESSING_STAFF", name: "Processing Staff", description: "Workstation operations only (no override).", perms: () => [DASH, ...workstationOps()] },

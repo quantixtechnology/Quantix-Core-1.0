@@ -10,12 +10,13 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Loader2, Search, Package, Plus, Printer, History, Wrench, XCircle, RotateCcw } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Loader2, Search, Package, Plus, Printer, History, Wrench, XCircle, RotateCcw, ScanLine } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
+import { BagScanButton } from "@/components/laundry/bag-scanner"
 
-interface Bag { id: string; bagNumber: string; qrValue: string; status: string; currentOrderNumber: string | null; currentServiceName: string | null; currentCustomerName: string | null; lastUsedAt: string | null; totalUsageCount: number }
+interface Bag { id: string; bagNumber: string; qrValue: string; status: string; currentOrderNumber: string | null; currentServiceName: string | null; currentCustomerName: string | null; lastUsedAt: string | null; totalUsageCount: number; lastAssignmentId?: string | null }
 interface Assignment { id: string; orderNumber: string | null; serviceName: string | null; customerName: string | null; assignedAt: string; returnedAt: string | null; status: string }
 
 const STATUS_TONE: Record<string, string> = {
@@ -54,10 +55,19 @@ export function LaundryBagManagement() {
   const [detail, setDetail] = useState<{ bag: Bag; assignments: Assignment[] } | null>(null)
   const [releaseStage, setReleaseStage] = useState<string>("STORE_RECEIVE")
   const [savingStage, setSavingStage] = useState(false)
+  const [manualReleaseTarget, setManualReleaseTarget] = useState<Bag | null>(null)
+  const [manualReleaseReason, setManualReleaseReason] = useState("")
+  const [releasing, setReleasing] = useState(false)
+  const [canManualRelease, setCanManualRelease] = useState(false)
+  const [permsLoaded, setPermsLoaded] = useState(false)
 
   useEffect(() => {
     if (!currentBusinessId) return
     fetch(`/api/laundry/bag-settings?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => { if (j.success) setReleaseStage(j.data.reusableBagReleaseStage) }).catch(() => {})
+    fetch(`/api/laundry/rbac/me?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => {
+      if (j.success) setCanManualRelease(j.data.isOwner || j.data.permissions?.includes("laundry.bags.manual_release"))
+      setPermsLoaded(true)
+    }).catch(() => setPermsLoaded(true))
   }, [currentBusinessId])
 
   const saveReleaseStage = async (stage: string) => {
@@ -101,10 +111,51 @@ export function LaundryBagManagement() {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") }
   }
 
+  const handleReturnScan = async (code: string) => {
+    setBusy(true)
+    try {
+      const res = await fetch("/api/laundry/bags/return", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: currentBusinessId, code }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      toast.success(`Bag ${code} returned → Available`)
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed to release bag") }
+    finally { setBusy(false) }
+  }
+
+  const handleManualRelease = async () => {
+    if (!manualReleaseTarget || !manualReleaseReason.trim()) return
+    setReleasing(true)
+    try {
+      const res = await fetch("/api/laundry/bags/manual-release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: currentBusinessId,
+          code: manualReleaseTarget.bagNumber,
+          reason: manualReleaseReason.trim(),
+        }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      toast.success(`Bag ${manualReleaseTarget.bagNumber} manually released → Available`)
+      setManualReleaseTarget(null)
+      setManualReleaseReason("")
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") }
+    finally { setReleasing(false) }
+  }
+
   const openDetail = async (bag: Bag) => {
     const j = await fetch(`/api/laundry/bags/${bag.id}`).then((r) => r.json())
     if (j.success) setDetail({ bag: j.data, assignments: j.data.assignments || [] })
   }
+
+  const notAvailable = (s: string) => s !== "AVAILABLE" && s !== "DAMAGED" && s !== "LOST"
 
   return (
     <div className="px-4 lg:px-6 py-6 space-y-4">
@@ -113,7 +164,10 @@ export function LaundryBagManagement() {
           <h1 className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2"><Package className="h-5 w-5 text-blue-600" /> Bag Management</h1>
           <p className="text-sm text-slate-500">Reusable bags with a permanent QR. Generate the pool once, then assign bags to orders at pickup.</p>
         </div>
-        <Button onClick={() => setGenOpen(true)} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-4 w-4" /> Generate Bags</Button>
+        <div className="flex items-center gap-2">
+          <BagScanButton onScan={handleReturnScan} label="Return Bag Scan" size="sm" disabled={busy} />
+          <Button onClick={() => setGenOpen(true)} className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-4 w-4" /> Generate Bags</Button>
+        </div>
       </div>
 
       {/* Reusable Bag Release Stage — configurable per laundry */}
@@ -136,7 +190,7 @@ export function LaundryBagManagement() {
       </CardContent></Card>
 
       <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative w-full max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bag no, order, customer…" className="pl-9 h-9" /></div>
+        <div className="relative w-full max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search bag no, order, customer\u2026" className="pl-9 h-9" /></div>
         <div className="flex gap-1 flex-wrap">
           {FILTERS.map((f) => (
             <button key={f} onClick={() => setFilter(f)} className={`rounded-full border px-3 h-8 text-xs font-medium ${filter === f ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
@@ -148,21 +202,29 @@ export function LaundryBagManagement() {
 
       <Card className="rounded-xl border-slate-200"><CardContent className="p-0">
         {loading ? <div className="py-12 text-center text-slate-400"><Loader2 className="h-4 w-4 animate-spin inline" /></div> : bags.length === 0 ? (
-          <p className="py-12 text-center text-sm text-slate-400">No bags. Click “Generate Bags” to create your reusable pool.</p>
+          <p className="py-12 text-center text-sm text-slate-400">No bags. Click \u201CGenerate Bags\u201D to create your reusable pool.</p>
         ) : (
           <div className="divide-y divide-slate-50">
-            {bags.map((b) => (
+            {bags.map((b) => {
+              const canRelease = permsLoaded && canManualRelease && notAvailable(b.status)
+              return (
               <div key={b.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-sm font-bold text-slate-800">{b.bagNumber}</span>
                     <Badge variant="outline" className={`text-[10px] ${tone(b.status)}`}>{b.status.replace(/_/g, " ")}</Badge>
                   </div>
-                  <p className="text-[11px] text-slate-400 truncate">{b.currentOrderNumber ? `${b.currentOrderNumber} · ${b.currentServiceName || ""} · ${b.currentCustomerName || ""}` : "Idle"} · used {b.totalUsageCount}×</p>
+                  <p className="text-[11px] text-slate-400 truncate">{b.currentOrderNumber ? `${b.currentOrderNumber} \u00B7 ${b.currentServiceName || ""} \u00B7 ${b.currentCustomerName || ""}` : "Idle"} \u00B7 used {b.totalUsageCount}\u00D7</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="History" onClick={() => openDetail(b)}><History className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="Reprint label" onClick={() => printBagLabels([b])}><Printer className="h-4 w-4" /></Button>
+                  {canRelease && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" title="Manual Release"
+                      onClick={() => { setManualReleaseTarget(b); setManualReleaseReason("") }}>
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  )}
                   {b.status !== "DAMAGED" && b.status !== "LOST" ? (<>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-500" title="Mark damaged" onClick={() => setStatus(b, "DAMAGED")}><Wrench className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500" title="Mark lost" onClick={() => setStatus(b, "LOST")}><XCircle className="h-4 w-4" /></Button>
@@ -171,7 +233,7 @@ export function LaundryBagManagement() {
                   )}
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </CardContent></Card>
@@ -189,22 +251,52 @@ export function LaundryBagManagement() {
         </DialogContent>
       </Dialog>
 
+      {/* Manual Release confirmation */}
+      <Dialog open={!!manualReleaseTarget} onOpenChange={(o) => !o && setManualReleaseTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-emerald-600" /> Manual Bag Release</DialogTitle>
+            <DialogDescription>
+              Release <span className="font-mono font-semibold">{manualReleaseTarget?.bagNumber}</span> back to Available inventory.
+              Current status: <Badge variant="outline" className="text-[10px]">{manualReleaseTarget?.status?.replace(/_/g, " ") || ""}</Badge>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-500">Reason for manual release <span className="text-rose-500">*</span></label>
+            <Input
+              value={manualReleaseReason}
+              onChange={(e) => setManualReleaseReason(e.target.value)}
+              placeholder="e.g. QR sticker damaged, scanner not working"
+              className="h-10"
+              autoFocus
+            />
+            <p className="text-[11px] text-slate-400">This will create an audit log entry. Manual release is restricted to authorized users only.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualReleaseTarget(null)}>Cancel</Button>
+            <Button onClick={handleManualRelease} disabled={releasing || !manualReleaseReason.trim()} className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+              {releasing && <Loader2 className="h-4 w-4 animate-spin" />} Release Bag
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Detail + history */}
       <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="font-mono">{detail?.bag.bagNumber}</DialogTitle></DialogHeader>
           {detail && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2"><Badge variant="outline" className={`text-[10px] ${tone(detail.bag.status)}`}>{detail.bag.status.replace(/_/g, " ")}</Badge><span className="text-xs text-slate-400">Used {detail.bag.totalUsageCount}× · last {detail.bag.lastUsedAt ? new Date(detail.bag.lastUsedAt).toLocaleDateString("en-IN") : "—"}</span></div>
+              <div className="flex items-center gap-2"><Badge variant="outline" className={`text-[10px] ${tone(detail.bag.status)}`}>{detail.bag.status.replace(/_/g, " ")}</Badge><span className="text-xs text-slate-400">Used {detail.bag.totalUsageCount}\u00D7 \u00B7 last {detail.bag.lastUsedAt ? new Date(detail.bag.lastUsedAt).toLocaleDateString("en-IN") : "\u2014"}</span></div>
               <div className="flex justify-center py-2"><QrImage value={detail.bag.qrValue} /></div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">History</p>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Assignment History</p>
                 {detail.assignments.length === 0 ? <p className="text-xs text-slate-400">No usage yet.</p> : (
                   <div className="divide-y divide-slate-50 rounded-lg border border-slate-100">
                     {detail.assignments.map((a) => (
                       <div key={a.id} className="px-3 py-2 text-xs">
-                        <p className="font-mono font-semibold text-slate-700">{a.orderNumber || "—"} <span className="font-sans font-normal text-slate-400">· {a.serviceName || ""}</span></p>
-                        <p className="text-[11px] text-slate-400">{a.customerName || "—"} · {new Date(a.assignedAt).toLocaleDateString("en-IN")}{a.returnedAt ? ` → returned ${new Date(a.returnedAt).toLocaleDateString("en-IN")}` : ` · ${a.status.toLowerCase()}`}</p>
+                        <p className="font-mono font-semibold text-slate-700">{a.orderNumber || "\u2014"} <span className="font-sans font-normal text-slate-400">\u00B7 {a.serviceName || ""}</span></p>
+                        <p className="text-[11px] text-slate-400">{a.customerName || "\u2014"} \u00B7 {new Date(a.assignedAt).toLocaleDateString("en-IN")}{a.returnedAt ? ` \u2192 returned ${new Date(a.returnedAt).toLocaleDateString("en-IN")}` : ` \u00B7 ${a.status.toLowerCase()}`}</p>
                       </div>
                     ))}
                   </div>
