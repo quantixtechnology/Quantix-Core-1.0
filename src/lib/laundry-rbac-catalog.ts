@@ -11,7 +11,7 @@ export interface ScreenDef { key: string; label: string; actions: string[] }
 export interface ModuleDef { key: string; label: string; screens: ScreenDef[] }
 
 // Common action groups.
-const WORKSTATION = ["view", "process", "pause", "resume", "complete", "override"]
+const WORKSTATION = ["view", "process", "pause", "resume", "complete", "override", "return_queue"]
 const STORE_SCREEN = ["view", "operate", "reopen", "override"]
 const INBOUND = ["view", "operate", "override"]
 

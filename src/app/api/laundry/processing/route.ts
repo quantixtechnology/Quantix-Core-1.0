@@ -21,6 +21,7 @@ export async function GET(request: Request) {
     if (!guard.ok) return guard.res
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: true, incoming: [], awaitingBarcode: [], readyToReturn: [], stageCounts: {}, items: [] })
+    const bizSettings = await prisma.laundryBusiness.findUnique({ where: { id: biz.id }, select: { workstationScanSound: true } })
 
     // Incoming = DISPATCHED packets only (order IN_TRANSIT_TO_PROCESSING).
     // An undispatched order is NOT receivable — work-queue integrity.
@@ -89,7 +90,7 @@ export async function GET(request: Request) {
       }))
     }
 
-    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items })
+    return NextResponse.json({ success: true, incoming, awaitingBarcode, readyToReturn, stageCounts, items, soundEnabled: bizSettings?.workstationScanSound ?? true })
   } catch (e) {
     console.error("[laundry-processing] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

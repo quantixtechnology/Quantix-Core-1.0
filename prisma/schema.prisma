@@ -4154,6 +4154,7 @@ model LaundryBusiness {
   // when the picked-up bag arrives at the store — recommended default) or
   // AFTER_DELIVERY (bag stays with the order through delivery, released after).
   reusableBagReleaseStage      String    @default("STORE_RECEIVE") // STORE_RECEIVE | AFTER_DELIVERY
+  workstationScanSound         Boolean   @default(true) // play success/error beep on scan
   defaultServiceRadius         Float?
   defaultDailyCapacity         Float?
   platformBusinessId           String?   @unique

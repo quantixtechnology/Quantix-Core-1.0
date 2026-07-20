@@ -1,18 +1,19 @@
 // POST /api/laundry/items/[id]/process
 // Scan-driven garment processing. Advances a single garment through its
 // SNAPSHOTTED processing route and records a timeline event for every action.
-// State transitions are server-guarded (no double completion, no invalid
-// starts). QC failure requires a reason and a valid rework destination from
-// the garment's own route; processing history is never overwritten.
+// State transitions are server-guarded with optimistic locking (no double
+// completion, no duplicate starts). QC failure requires a reason and a valid
+// rework destination from the garment's own route; processing history is never
+// overwritten. RETURN (return-to-queue) requires return_queue permission and
+// records a full audit with operator, department, timestamps, and reason.
 //
 // Body: { action, actorName?, note?, photos?: string[], reworkStage? }
-//   action ∈ START | PAUSE | RESUME | COMPLETE | QC_PASS | QC_FAIL | REJECT | NOTE
+//   action ∈ START | PAUSE | RESUME | COMPLETE | QC_PASS | QC_FAIL | REJECT | RETURN | NOTE
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor } from "@/lib/laundry-processing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
-// Map a processing stage code → its RBAC workstation screen key.
 const STAGE_SCREEN: Record<string, string> = {
   WASH: "washing", DRY: "drying", DRYCLEAN: "dry_cleaning", IRON: "ironing",
   FOLD: "folding", QC: "quality_check", PACKED: "packing",
@@ -30,10 +31,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       select: { id: true, orderId: true, serviceName: true, processingStage: true, processingStatus: true, processFlow: true, qcFailCount: true, order: { select: { businessId: true } } },
     })
     if (!item) return NextResponse.json({ error: "Garment not found" }, { status: 404 })
-    // Enforce the workstation permission for the garment's current stage.
-    // QC_FAIL / REJECT are override operations; the rest are process.
+
     const screen = STAGE_SCREEN[item.processingStage || ""] || "washing"
-    const permAction = action === "QC_FAIL" || action === "REJECT" ? "override" : "process"
+    let permAction: string
+    if (action === "QC_FAIL" || action === "REJECT") permAction = "override"
+    else if (action === "RETURN") permAction = "return_queue"
+    else permAction = "process"
     const guard = await requireLaundryPermission(request, item.order.businessId, `processing.${screen}.${permAction}`)
     if (!guard.ok) return guard.res
 
@@ -60,7 +63,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         if (action === "QC_PASS" && cur !== "QC") return NextResponse.json({ error: "QC Pass is only valid at Quality Check" }, { status: 409 })
         const nxt = nextStageOf(flow, cur)
         stage = nxt || "PACKED"; status = nxt ? "WAITING" : "DONE"; dept = departmentFor(stage); toStage = stage
-        // PACKED is the terminal working state — mark done immediately.
         if (stage === "PACKED") status = "DONE"
         break
       }
@@ -79,6 +81,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         note = `QC FAIL (attempt ${(item.qcFailCount || 0) + 1}): ${reason} → rework at ${departmentFor(rework)}`
         break
       }
+      case "RETURN":
+        if (curStatus !== "IN_PROGRESS") return NextResponse.json({ error: `Garment is ${curStatus} — only in-progress items can be returned to queue` }, { status: 409 })
+        status = "WAITING"; note = b.note || "Returned to queue"; break
       case "REJECT":
         status = "REJECTED"; break
       case "NOTE":
@@ -87,9 +92,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: `Unknown action "${action}"` }, { status: 400 })
     }
 
+    // Optimistic locking: atomically update only if current status matches expected.
+    // Uses updateMany with a status where-clause — returns 0 rows if another
+    // operator moved this garment between read and write.
     const [updated] = await prisma.$transaction([
-      prisma.laundryOrderItem.update({
-        where: { id },
+      prisma.laundryOrderItem.updateManyAndReturn({
+        where: { id, processingStatus: curStatus },
         data: {
           processingStage: stage, processingStatus: status, processingDept: dept,
           ...(qcFailIncrement ? { qcFailCount: { increment: qcFailIncrement } } : {}),
@@ -104,6 +112,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         },
       }),
     ])
+    if (!updated || updated.length === 0) {
+      return NextResponse.json({ error: "Conflict — garment was already moved by another operator" }, { status: 409 })
+    }
 
     // Order milestone: when the LAST garment finishes its route, record
     // "All Garments Completed" once on the order timeline (idempotent).
