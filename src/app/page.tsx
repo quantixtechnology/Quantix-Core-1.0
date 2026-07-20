@@ -239,6 +239,7 @@ const LaundryReportsView = dynamic(() => import("@/components/laundry/views/laun
 const LaundryStoresWorkspace = dynamic(() => import("@/components/admin/laundry/laundry-stores-view").then(m => ({ default: m.LaundryStoresView })), { loading: () => <PageLoader /> })
 const LaundryWorkspaceSettings = dynamic(() => import("@/components/laundry/views/laundry-workspace-settings").then(m => ({ default: m.LaundryWorkspaceSettings })), { loading: () => <PageLoader /> })
 const ProcessingDashboard = dynamic(() => import("@/components/laundry/views/processing-dashboard").then(m => ({ default: m.ProcessingDashboard })), { loading: () => <PageLoader /> })
+const LaundryGarmentLookup = dynamic(() => import("@/components/laundry/views/laundry-garment-lookup").then(m => ({ default: m.LaundryGarmentLookup })), { loading: () => <PageLoader /> })
 // Optional CRM module (feature-gated per tenant; CrmGate + server enforce entitlement)
 const CrmGate = dynamic(() => import("@/components/laundry/views/crm/crm-gate").then(m => ({ default: m.CrmGate })), { loading: () => <PageLoader /> })
 const CrmDashboard = dynamic(() => import("@/components/laundry/views/crm/crm-dashboard").then(m => ({ default: m.CrmDashboard })), { loading: () => <PageLoader /> })
@@ -685,6 +686,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
         case "ws-pack": return <LaundryWorkstation stage="PACKED" />
         case "orders": return <LaundryOrdersView />
         case "reports": return <LaundryReportsView />
+        case "garment-lookup": return <LaundryGarmentLookup />
         default: return <ProcessingDashboard />
       }
     }
@@ -749,6 +751,7 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "subscriptions": return <LaundrySubscriptionsView />
       case "roles": return <LaundryRolesPermissions businessId={wsBusinessId} />
       case "staff": return <LaundryStaff businessId={wsBusinessId} />
+      case "garment-lookup": return <LaundryGarmentLookup />
       default: return <LaundryDashboard />
     }
   }

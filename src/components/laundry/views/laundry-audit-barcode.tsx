@@ -49,7 +49,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
   }, [orderId])
   useEffect(() => { load() }, [load])
 
-  const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName, garScanCode: it.garmentScanCode })
+  const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName, garScanCode: it.garmentScanCode, orderNumber: data?.order.orderNumber, storeName: data?.store?.storeName })
 
   const genOne = async (it: Item, reprint = false) => {
     setBusy(true)
@@ -176,6 +176,17 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
                   <div className="space-y-1"><Label className="text-xs">Text Position</Label><Select value={cfg.textPosition || "bottom"} onValueChange={(v) => setCfg({ ...cfg, textPosition: v as LabelConfig["textPosition"], barcodeProfile: "custom" })}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent>{TEXT_POSITIONS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent></Select></div>
                 </div>
               )}
+
+              <div className="border-t pt-3 space-y-3">
+                <Label className="text-xs block mb-1.5 font-semibold text-slate-700">Margins & Scaling</Label>
+                <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                  <div className="space-y-1"><Label className="text-xs">Left (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginLeft ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginLeft: +e.target.value })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Right (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginRight ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginRight: +e.target.value })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Top (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginTop ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginTop: +e.target.value })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Bottom (mm)</Label><Input type="number" min={0} max={5} step={0.1} value={cfg.marginBottom ?? 0.4} onChange={(e) => setCfg({ ...cfg, marginBottom: +e.target.value })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Print Scaling</Label><Input type="number" min={0.5} max={3} step={0.1} value={cfg.scaling ?? 1} onChange={(e) => setCfg({ ...cfg, scaling: +e.target.value })} className="h-8 text-xs" /></div>
+                </div>
+              </div>
             </div>
 
             <p className="text-[11px] text-slate-400 leading-snug">Barcode encodes the Global Garment Number (GAR). The garment Item ID is shown below for human reference.</p>

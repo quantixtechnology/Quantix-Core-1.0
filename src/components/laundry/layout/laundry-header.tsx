@@ -22,11 +22,24 @@ import { ROLE_LABELS } from "@/lib/permissions"
 export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () => void }) {
   const { supportMode, clearSupportMode } = useAdminStore()
   const { user, currentRole, logout } = useAuthStore()
+  const { setLaundryPage } = useAdminStore()
   const [search, setSearch] = useState("")
 
   const name = user?.name ?? "Laundry User"
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
   const roleLabel = (currentRole && ROLE_LABELS[currentRole]) || "Team Member"
+
+  // Detect GAR codes in search bar and redirect to Garment Lookup
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && search.trim()) {
+      const q = search.trim().toUpperCase()
+      if (/^GAR\d{12}$/.test(q) || /^ITM-/.test(q)) {
+        e.preventDefault()
+        setSearch(q)
+        setLaundryPage("garment-lookup")
+      }
+    }
+  }
 
   const handleLogout = () => { try { logout() } catch {} ; window.location.href = "/" }
 
@@ -51,8 +64,9 @@ export function LaundryHeader({ onMobileMenuClick }: { onMobileMenuClick?: () =>
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search orders, customers, invoices..."
-            className="h-10 pl-10 bg-slate-50 border-slate-200 rounded-lg text-sm focus-visible:bg-white"
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search orders, customers, invoices... (GAR codes open lookup)"
+            className="h-10 pl-10 bg-slate-50 border-slate-200 rounded-lg text-sm focus-visible:bg-white font-mono"
           />
         </div>
 

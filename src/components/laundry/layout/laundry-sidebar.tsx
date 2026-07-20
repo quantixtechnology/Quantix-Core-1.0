@@ -25,7 +25,7 @@ import {
   Target, CheckSquare, ClipboardList, PieChart, SlidersHorizontal, Gauge,
   PackageCheck, CheckCheck, Sparkles, Package, Shield,
   Megaphone, Ticket, BadgePercent, Gift, Crown, UserPlus, Coins, ShoppingCart,
-  WashingMachine, Calculator, Tags, ChevronDown, Bike, Smartphone,
+  WashingMachine, Calculator, Tags, ChevronDown, Bike, Smartphone, Search,
 } from "lucide-react"
 import { useCrmEnabled } from "@/components/laundry/views/crm/crm-shared"
 import { useMarketingEnabled } from "@/components/laundry/views/marketing/marketing-shared"
@@ -127,6 +127,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "orders", label: "Orders", icon: ShoppingBag, page: "orders", minRank: 2, perm: "laundry.orders.view" },
       { key: "customers", label: "Customers", icon: Users, page: "customers", minRank: 2, perm: "laundry.customers.view" },
+      { key: "garment-lookup", label: "Garment Lookup", icon: Search, page: "garment-lookup", minRank: 1, perm: "laundry.orders.view" },
     ],
   },
   {
@@ -306,7 +307,7 @@ export function LaundrySidebar({ mobileOpen = false, onMobileOpenChange }: Laund
 
   // Pages reached programmatically (drill-downs), not from a nav item — these
   // must not be bounced back to the dashboard by the guard below.
-  const PROGRAMMATIC_PAGES = new Set<LaundryBusinessPage>(["order-detail", "audit-barcode"])
+  const PROGRAMMATIC_PAGES = new Set<LaundryBusinessPage>(["order-detail", "audit-barcode", "garment-lookup"])
   const validPages = new Set([
     ...groups.flatMap((g) => g.items).filter((i) => i.page && !i.comingSoon).map((i) => i.page),
     ...PROGRAMMATIC_PAGES,

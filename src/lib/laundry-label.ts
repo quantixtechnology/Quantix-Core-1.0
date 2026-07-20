@@ -16,6 +16,13 @@ export interface LabelConfig {
   quietZone?: number      // margin around barcode (default 10)
   fontSize?: number       // human-readable text below barcode (default 10)
   textPosition?: "top" | "bottom" | "hidden"
+  // Margins around the label content (mm, default 0.4)
+  marginLeft?: number
+  marginRight?: number
+  marginTop?: number
+  marginBottom?: number
+  // Scaling multiplier for thermal printer (default 1)
+  scaling?: number
 }
 
 export type BarcodeProfile = "compact" | "standard" | "wide-scan" | "warehouse" | "custom"
@@ -36,8 +43,15 @@ export function resolveBarcodeOpts(cfg: LabelConfig) {
     quietZone: cfg.quietZone ?? profile?.quietZone ?? 10,
     fontSize: cfg.fontSize ?? profile?.fontSize ?? 10,
     textPosition: cfg.textPosition ?? profile?.textPosition ?? "bottom",
+    marginLeft: cfg.marginLeft ?? 0.4,
+    marginRight: cfg.marginRight ?? 0.4,
+    marginTop: cfg.marginTop ?? 0.4,
+    marginBottom: cfg.marginBottom ?? 0.4,
+    scaling: cfg.scaling ?? 1,
   }
 }
+
+export type LabelLayoutOpts = ReturnType<typeof resolveBarcodeOpts>
 
 export const DEFAULT_LABEL_CONFIG: LabelConfig = { widthMm: 20, heightMm: 30, dpi: 203 }
 const KEY = "qx-laundry-label-config"
@@ -47,7 +61,7 @@ export function loadLabelConfig(): LabelConfig {
 }
 export function saveLabelConfig(c: LabelConfig) { try { localStorage.setItem(KEY, JSON.stringify(c)) } catch {} }
 
-export interface LabelData { itemNumber: string; garment: string; service: string; garScanCode?: string | null }
+export interface LabelData { itemNumber: string; garment: string; service: string; garScanCode?: string | null; orderNumber?: string; storeName?: string }
 
 function barcodeDataURL(value: string, cfg: LabelConfig): string {
   const opts = resolveBarcodeOpts(cfg)
@@ -72,33 +86,37 @@ function idHtml(value: string): string {
 
 function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
   const w = cfg.widthMm, h = cfg.heightMm
-  const fs = Math.max(6, Math.round(w / 3))
   const opts = resolveBarcodeOpts(cfg)
   const rows = labels.map((l) => {
     const bcValue = l.garScanCode || l.itemNumber
     const bc = barcodeDataURL(bcValue, cfg)
-    const textLine = l.garScanCode ? `<div class="gar">${escapeHtml(l.garScanCode)}</div>` : ""
-    const itemLine = `<div class="id">${idHtml(l.itemNumber)}</div>`
+    const hasGar = !!l.garScanCode
+    const hasItm = !!l.itemNumber
     return `<div class="label">
         <div class="g">${escapeHtml(l.garment)}</div>
         <div class="s">${escapeHtml(l.service)}</div>
-        ${opts.textPosition === "top" ? textLine : ""}
-        ${bc ? `<img class="bc" src="${bc}" alt="barcode"/>` : ""}
-        ${opts.textPosition === "bottom" ? textLine : ""}
-        ${itemLine}
+        <div class="sep"></div>
+        ${hasGar ? `<div class="gar">${escapeHtml(l.garScanCode)}</div>` : ""}
+        ${bc ? `<img class="bc" src="${bc}" alt=""/>` : ""}
+        ${hasItm ? `<div class="id"><span class="lbl">Item Code</span> ${idHtml(l.itemNumber)}</div>` : ""}
+        ${l.orderNumber ? `<div class="meta"><span class="lbl">Order</span> ${escapeHtml(l.orderNumber)}</div>` : ""}
+        ${l.storeName ? `<div class="meta"><span class="lbl">Store</span> ${escapeHtml(l.storeName)}</div>` : ""}
       </div>`
   })
   return `<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
     @page { size: ${w}mm ${h}mm; margin: 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     html,body { margin:0; padding:0; background:#fff; font-family: Arial, Helvetica, sans-serif; }
-    .label { width:${w}mm; height:${h}mm; padding:0.8mm 0.4mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; overflow:hidden; }
-    .g { font-weight:800; text-transform:uppercase; letter-spacing:0.3px; font-size:${fs + 1}pt; line-height:1.1; margin-bottom:1mm; }
-    .s { font-weight:700; font-size:${fs}pt; line-height:1.1; margin-bottom:1.2mm; }
-    .bc { width:98%; height:${Math.round(h * 0.42)}mm; object-fit:fill; margin-bottom:0.8mm; }
-    .gar { font-family:'Roboto Mono','Consolas','Courier New',monospace; font-weight:700; font-size:${Math.max(6, fs)}pt; line-height:1.2; letter-spacing:0.3px; margin-bottom:0.6mm; }
-    .id { font-family:'Roboto Mono','Consolas','Courier New',monospace; font-weight:600; font-size:${Math.max(5, fs - 1)}pt; line-height:1.25; letter-spacing:-0.2px; word-break:normal; overflow-wrap:break-word; max-width:100%; }
-    @media screen { body{background:#eef2f7;padding:10px;} .label{border:1px dashed #cbd5e1;margin:6px auto;background:#fff;} }
+    .label { width:${w}mm; height:${h}mm; padding:${opts.marginTop}mm ${opts.marginRight}mm ${opts.marginBottom}mm ${opts.marginLeft}mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; text-align:center; overflow:hidden; justify-content:center; }
+    .g { font-weight:800; text-transform:uppercase; letter-spacing:0.3px; font-size:${Math.max(7, Math.round(w / 2.8))}pt; line-height:1.15; margin-bottom:0.6mm; }
+    .s { font-weight:600; font-size:${Math.max(6, Math.round(w / 3.5))}pt; color:#444; line-height:1.15; margin-bottom:0.4mm; }
+    .sep { width:60%; height:0.5px; background:#bbb; margin:0.4mm auto 0.6mm; }
+    .gar { font-family:'Courier New',monospace; font-weight:800; font-size:${Math.max(7, Math.round(w / 2.5))}pt; letter-spacing:0.5px; line-height:1.2; margin-bottom:0.4mm; }
+    .bc { width:96%; max-height:${Math.max(30, Math.round(h * 0.35))}mm; object-fit:contain; margin-bottom:0.6mm; }
+    .id, .meta { font-family:'Courier New',monospace; font-weight:500; font-size:${Math.max(5, Math.round(w / 4.5))}pt; line-height:1.3; color:#555; max-width:100%; word-break:break-all; }
+    .id { margin-bottom:0.3mm; }
+    .lbl { color:#999; font-size:90%; margin-right:0.5mm; }
+    @media screen { body{background:#eef2f7;padding:10px;} .label{border:1px dashed #cbd5e1;margin:6px auto;background:#fff;border-radius:2px;} }
   </style></head><body>${rows.join("")}</body></html>`
 }
 
