@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { resolveOrderBilling } from "@/lib/laundry-billing-server"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 import { explodePieces } from "@/lib/laundry-order-items"
+import { nextGarScanCode } from "@/lib/laundry-codes"
 
 export const runtime = "nodejs"
 
@@ -65,13 +66,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // operate on per-garment records, never service/cart lines.
     const exploded = explodePieces(priced)
 
+    // Pre-generate GAR codes for every garment (atomic sequence, one per item).
+    const garCodes = await Promise.all(exploded.map(() => nextGarScanCode()))
     const updated = await prisma.$transaction(async (tx) => {
       for (let i = 0; i < exploded.length; i++) {
         const l = exploded[i]
         const itemNumber = `ITM-${order.orderNumber}-${String(base + i + 1).padStart(4, "0")}`
+        const gar = garCodes[i]
         await tx.laundryOrderItem.create({
           data: {
-            orderId: order.id, itemNumber, barcode: itemNumber,
+            orderId: order.id, itemNumber, barcode: gar, garmentScanCode: gar,
             serviceId: l.serviceId, serviceName: l.serviceName, garmentId: l.garmentId, garmentName: l.garmentName,
             categoryId: l.categoryId, pricingRuleId: l.pricingRuleId, pricingType: l.pricingType,
             quantity: l.quantity, weightKg: l.weightKg, unitPrice: l.unitPrice, lineAmount: l.lineAmount,

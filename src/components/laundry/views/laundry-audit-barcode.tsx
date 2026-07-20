@@ -21,10 +21,18 @@ import { Barcode } from "./barcode"
 import { LaundryPaymentBanner } from "./laundry-payment-banner"
 import { printLabels, loadLabelConfig, saveLabelConfig, type LabelConfig, type LabelData } from "@/lib/laundry-label"
 
-interface Item { id: string; itemNumber: string | null; barcode: string | null; barcodeGenerated: boolean; printCount: number; lastPrintedBy: string | null; garmentName: string; serviceName: string; quantity: number; condition: string | null; defects: string | null }
+interface Item { id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null; barcodeGenerated: boolean; printCount: number; lastPrintedBy: string | null; garmentName: string; serviceName: string; quantity: number; condition: string | null; defects: string | null }
 interface Data { order: { id: string; orderNumber: string; status: string; grandTotal: number }; store?: { storeName: string } | null; customer?: { name: string; phone: string | null } | null; items: Item[]; totalItems: number; barcoded: number; allBarcoded: boolean }
 
 const WIDTHS = [20, 25, 30, 40, 50], HEIGHTS = [20, 30, 40], DPIS = [203, 300, 600]
+const PROFILES: { value: string; label: string }[] = [
+  { value: "compact", label: "Compact (58mm)" },
+  { value: "standard", label: "Standard (Current)" },
+  { value: "wide-scan", label: "Wide Scan" },
+  { value: "warehouse", label: "Warehouse" },
+  { value: "custom", label: "Custom" },
+]
+const TEXT_POSITIONS = [{ value: "bottom", label: "Bottom" }, { value: "top", label: "Top" }, { value: "hidden", label: "Hidden" }]
 
 export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false }: { orderId: string; onBack: () => void; onMoved: () => void; readOnly?: boolean }) {
   const { user } = useAuthStore()
@@ -41,7 +49,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
   }, [orderId])
   useEffect(() => { load() }, [load])
 
-  const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName })
+  const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName, garScanCode: it.garmentScanCode })
 
   const genOne = async (it: Item, reprint = false) => {
     setBusy(true)
@@ -104,7 +112,16 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
                   <TableCell className="text-sm font-medium">{it.garmentName}</TableCell>
                   <TableCell className="text-sm text-slate-600">{it.serviceName}</TableCell>
                   <TableCell className="text-center">{it.quantity}</TableCell>
-                  <TableCell>{it.barcodeGenerated ? <Barcode value={it.barcode || it.itemNumber || ""} height={30} /> : <span className="text-[11px] font-mono text-slate-400">{it.itemNumber}</span>}</TableCell>
+                  <TableCell>
+                    {it.barcodeGenerated ? (
+                      <div className="flex flex-col gap-0.5">
+                        <Barcode value={it.garmentScanCode || it.barcode || it.itemNumber || ""} height={30} />
+                        {it.garmentScanCode && <span className="text-[9px] font-mono text-slate-400">{it.garmentScanCode}</span>}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] font-mono text-slate-400">{it.itemNumber}</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs text-slate-400">{it.printCount > 0 ? `${it.printCount}×${it.lastPrintedBy ? ` · ${it.lastPrintedBy}` : ""}` : "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -131,17 +148,43 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
 
       {/* Print settings */}
       <Dialog open={showCfg} onOpenChange={setShowCfg}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Printer className="h-5 w-5 text-blue-600" /> Thermal Label Settings</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1"><Label className="text-xs">Width (mm)</Label><Select value={String(cfg.widthMm)} onValueChange={(v) => setCfg({ ...cfg, widthMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{WIDTHS.map((w) => <SelectItem key={w} value={String(w)}>{w} mm</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><Label className="text-xs">Height (mm)</Label><Select value={String(cfg.heightMm)} onValueChange={(v) => setCfg({ ...cfg, heightMm: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{HEIGHTS.map((h) => <SelectItem key={h} value={String(h)}>{h} mm</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-1"><Label className="text-xs">Printer DPI</Label><Select value={String(cfg.dpi)} onValueChange={(v) => setCfg({ ...cfg, dpi: +v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DPIS.map((d) => <SelectItem key={d} value={String(d)}>{d}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <p className="text-[11px] text-slate-400 leading-snug">Garment labels carry only garment name, service, Code128 barcode and the Item ID. QR codes are printed at the package level, not per garment.</p>
+
+            <div className="border-t pt-3 space-y-3">
+              <div>
+                <Label className="text-xs block mb-1.5">Barcode Profile</Label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PROFILES.map((p) => (
+                    <button key={p.value} onClick={() => setCfg({ ...cfg, barcodeProfile: p.value as LabelConfig["barcodeProfile"] })} className={`rounded-md border px-3 py-2 text-xs font-medium text-left ${(cfg.barcodeProfile || "standard") === p.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>{p.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {(cfg.barcodeProfile === "custom" || !cfg.barcodeProfile) && (
+                <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                  <div className="space-y-1"><Label className="text-xs">Module Width</Label><Input type="number" min={0.5} max={10} step={0.1} value={cfg.moduleWidth ?? 2} onChange={(e) => setCfg({ ...cfg, moduleWidth: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Barcode Height</Label><Input type="number" min={30} max={500} step={5} value={cfg.barcodeHeight ?? 150} onChange={(e) => setCfg({ ...cfg, barcodeHeight: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Quiet Zone</Label><Input type="number" min={0} max={50} step={1} value={cfg.quietZone ?? 10} onChange={(e) => setCfg({ ...cfg, quietZone: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Font Size</Label><Input type="number" min={4} max={24} step={1} value={cfg.fontSize ?? 10} onChange={(e) => setCfg({ ...cfg, fontSize: +e.target.value, barcodeProfile: "custom" })} className="h-8 text-xs" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Text Position</Label><Select value={cfg.textPosition || "bottom"} onValueChange={(v) => setCfg({ ...cfg, textPosition: v as LabelConfig["textPosition"], barcodeProfile: "custom" })}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent>{TEXT_POSITIONS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent></Select></div>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-snug">Barcode encodes the Global Garment Number (GAR). The garment Item ID is shown below for human reference.</p>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setShowCfg(false)}>Close</Button><Button className="bg-blue-600 hover:bg-blue-700 text-white gap-1" onClick={() => { saveLabelConfig(cfg); setShowCfg(false); toast({ title: "Label settings saved" }) }}><Check className="h-4 w-4" /> Save</Button></DialogFooter>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCfg(false)}>Close</Button>
+            <Button variant="outline" className="gap-1" onClick={() => { if (data) printLabels(data.items.map(toLabel), cfg, false) }}><Eye className="h-4 w-4" /> Preview</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white gap-1" onClick={() => { saveLabelConfig(cfg); setShowCfg(false); toast({ title: "Label settings saved", description: `${cfg.barcodeProfile || "standard"} profile` }) }}><Check className="h-4 w-4" /> Save</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

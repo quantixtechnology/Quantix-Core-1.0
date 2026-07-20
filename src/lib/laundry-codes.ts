@@ -144,6 +144,43 @@ export async function generateTransportBatchNumber(businessCode: string): Promis
   return `${prefix}${padNumber(next, 6)}`
 }
 
+// ─── Global Garment Number (GAR) — platform-wide atomic sequence ────────────
+// GAR000000000001, GAR000000000002, … GAR999999999999, GAR1000000000000, …
+// Never per-business, never per-store, never reset, never recycled.
+// Counter auto-extends when 12 digits are exhausted.
+export async function nextGarScanCode(): Promise<string> {
+  const { prisma } = await import("@/lib/prisma")
+  const result = await prisma.laundryGarSequenceCounter.upsert({
+    where: { id: "singleton" },
+    create: { id: "singleton", next: 2 },
+    update: { next: { increment: 1 } },
+  })
+  const n = result.next - 1
+  return `GAR${String(n).padStart(12, "0")}`
+}
+
+// Backfill GAR codes for every LaundryOrderItem that doesn't have one.
+// Idempotent — safe to re-run. Must be called after db push.
+export async function backfillGarScanCodes(chunkSize = 50): Promise<number> {
+  const { prisma } = await import("@/lib/prisma")
+  let filled = 0
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const items = await prisma.laundryOrderItem.findMany({
+      where: { garmentScanCode: null },
+      take: chunkSize,
+      select: { id: true },
+    })
+    if (!items.length) break
+    for (const item of items) {
+      const code = await nextGarScanCode()
+      await prisma.laundryOrderItem.update({ where: { id: item.id }, data: { garmentScanCode: code } })
+      filled++
+    }
+  }
+  return filled
+}
+
 // ─── Examples ───────────────────────────────────────────────────────────────
 // Business Code:        LND-202606-0001
 // Store Code:           STR-LND-202606-0001-001

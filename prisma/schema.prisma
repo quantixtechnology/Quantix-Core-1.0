@@ -4855,6 +4855,10 @@ model LaundryOrderItem {
   // later service-route config changes never rewrite in-progress history.
   processFlow      String? // JSON array of stage codes, e.g. ["WASH","DRY","IRON","QC","PACKED"]
   qcFailCount      Int       @default(0) // QC attempts tracking (rework cycles)
+  // ── Global Garment Number (GAR) — platform-wide permanent scan identifier.
+  // Barcode payload will contain only the GAR number (not the itemNumber).
+  // Scannable with old ITM-format barcodes for backward compatibility.
+  garmentScanCode  String?   @unique // GAR000000000001 — permanent, never reused
   // Store Audit inspection (captured at Stage 2, never re-entering garments).
   condition        String? // GOOD | DAMAGED
   defects          String? // CSV of defect codes
@@ -4867,6 +4871,7 @@ model LaundryOrderItem {
   @@index([orderId])
   @@index([serviceId])
   @@index([garmentId])
+  @@index([garmentScanCode])
 }
 
 // Per-garment timeline — every scan/action on an item (Processing Center).
@@ -5934,4 +5939,13 @@ model LaundryBagRelease {
   @@index([bagId])
   @@index([businessId])
   @@index([releasedAt])
+}
+
+// ── Global Garment Number (GAR) atomic sequence counter ──────────────────────
+// Platform-wide, never per-business/per-store. Counter starts at 1 and
+// increments atomically on every call. The GAR number is GAR+12-digit-zero-
+// padded decimal. When 12 digits are exhausted the format auto-extends.
+model LaundryGarSequenceCounter {
+  id   String @id @default("singleton")
+  next Int    @default(1)
 }

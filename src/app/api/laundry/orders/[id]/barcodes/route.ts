@@ -17,7 +17,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     where: { id },
     select: {
       id: true, orderNumber: true, status: true, storeId: true, customerId: true, businessId: true, grandTotal: true, expectedDeliveryDate: true,
-      items: { orderBy: { itemNumber: "asc" }, select: { id: true, itemNumber: true, barcode: true, barcodeGenerated: true, printCount: true, lastPrintedBy: true, garmentName: true, serviceName: true, quantity: true, processingStage: true, condition: true, defects: true, inspectionNotes: true } },
+      items: { orderBy: { itemNumber: "asc" }, select: { id: true, itemNumber: true, barcode: true, barcodeGenerated: true, printCount: true, lastPrintedBy: true, garmentName: true, serviceName: true, quantity: true, processingStage: true, condition: true, defects: true, inspectionNotes: true, garmentScanCode: true } },
     },
   })
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })

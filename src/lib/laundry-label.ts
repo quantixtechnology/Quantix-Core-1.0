@@ -1,8 +1,7 @@
-// Thermal garment-label printing. A garment label carries ONLY: garment name,
-// service, Code128 barcode and the human-readable Item ID — nothing else (no
-// QR, no customer, no order number). QR lives at the PACKAGE level, not the
-// garment. Sized for thermal ribbon printers (20mm default, configurable) with
-// print-specific CSS — no A4, no browser margins, no scaling. Client-side only.
+// Thermal garment-label printing. The barcode encodes the Global Garment Number
+// (GAR) for scanning, while the human-readable garment ID (ITM-format) is shown
+// for reference. Sized for thermal ribbon printers (20mm default, configurable)
+// with print-specific CSS. Client-side only.
 
 import JsBarcode from "jsbarcode"
 
@@ -10,7 +9,36 @@ export interface LabelConfig {
   widthMm: number
   heightMm: number
   dpi: number // 203 | 300 | 600
+  // Barcode appearance (defaults match current output for backward compat)
+  barcodeProfile?: BarcodeProfile
+  moduleWidth?: number    // JsBarcode width param (default 2)
+  barcodeHeight?: number  // JsBarcode height param (default 150)
+  quietZone?: number      // margin around barcode (default 10)
+  fontSize?: number       // human-readable text below barcode (default 10)
+  textPosition?: "top" | "bottom" | "hidden"
 }
+
+export type BarcodeProfile = "compact" | "standard" | "wide-scan" | "warehouse" | "custom"
+
+export const BARCODE_PROFILES: Record<BarcodeProfile, { moduleWidth: number; barcodeHeight: number; quietZone: number; fontSize: number; textPosition: "top" | "bottom" | "hidden" }> = {
+  "compact":   { moduleWidth: 1.2, barcodeHeight: 80,  quietZone: 5,  fontSize: 7,  textPosition: "bottom" },
+  "standard":  { moduleWidth: 2,   barcodeHeight: 150, quietZone: 10, fontSize: 10, textPosition: "bottom" },
+  "wide-scan": { moduleWidth: 3,   barcodeHeight: 180, quietZone: 12, fontSize: 11, textPosition: "bottom" },
+  "warehouse": { moduleWidth: 4,   barcodeHeight: 220, quietZone: 14, fontSize: 12, textPosition: "bottom" },
+  "custom":    { moduleWidth: 2,   barcodeHeight: 150, quietZone: 10, fontSize: 10, textPosition: "bottom" },
+}
+
+export function resolveBarcodeOpts(cfg: LabelConfig) {
+  const profile = cfg.barcodeProfile && cfg.barcodeProfile !== "custom" ? BARCODE_PROFILES[cfg.barcodeProfile] : null
+  return {
+    moduleWidth: cfg.moduleWidth ?? profile?.moduleWidth ?? 2,
+    barcodeHeight: cfg.barcodeHeight ?? profile?.barcodeHeight ?? 150,
+    quietZone: cfg.quietZone ?? profile?.quietZone ?? 10,
+    fontSize: cfg.fontSize ?? profile?.fontSize ?? 10,
+    textPosition: cfg.textPosition ?? profile?.textPosition ?? "bottom",
+  }
+}
+
 export const DEFAULT_LABEL_CONFIG: LabelConfig = { widthMm: 20, heightMm: 30, dpi: 203 }
 const KEY = "qx-laundry-label-config"
 export function loadLabelConfig(): LabelConfig {
@@ -19,20 +47,25 @@ export function loadLabelConfig(): LabelConfig {
 }
 export function saveLabelConfig(c: LabelConfig) { try { localStorage.setItem(KEY, JSON.stringify(c)) } catch {} }
 
-export interface LabelData { itemNumber: string; garment: string; service: string }
+export interface LabelData { itemNumber: string; garment: string; service: string; garScanCode?: string | null }
 
 function barcodeDataURL(value: string, cfg: LabelConfig): string {
+  const opts = resolveBarcodeOpts(cfg)
   const canvas = document.createElement("canvas")
   try {
-    // margin = quiet zone baked into the image (scales with the barcode);
-    // tall bars + a crisp module width for reliable scanning on thermal heads.
-    JsBarcode(canvas, value, { format: "CODE128", displayValue: false, margin: 10, height: 150, width: cfg.dpi >= 300 ? 3 : 2 })
+    JsBarcode(canvas, value, {
+      format: "CODE128",
+      displayValue: opts.textPosition !== "hidden",
+      margin: opts.quietZone,
+      height: opts.barcodeHeight,
+      width: opts.moduleWidth,
+      fontSize: opts.fontSize,
+      textMargin: 4,
+    })
     return canvas.toDataURL("image/png")
   } catch { return "" }
 }
 
-// Break a long Item ID cleanly at its hyphen segments (2–3 logical lines)
-// rather than splitting at random character positions.
 function idHtml(value: string): string {
   return escapeHtml(value).replace(/-/g, "-<wbr>")
 }
@@ -40,13 +73,19 @@ function idHtml(value: string): string {
 function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
   const w = cfg.widthMm, h = cfg.heightMm
   const fs = Math.max(6, Math.round(w / 3))
+  const opts = resolveBarcodeOpts(cfg)
   const rows = labels.map((l) => {
-    const bc = barcodeDataURL(l.itemNumber, cfg)
+    const bcValue = l.garScanCode || l.itemNumber
+    const bc = barcodeDataURL(bcValue, cfg)
+    const textLine = l.garScanCode ? `<div class="gar">${escapeHtml(l.garScanCode)}</div>` : ""
+    const itemLine = `<div class="id">${idHtml(l.itemNumber)}</div>`
     return `<div class="label">
         <div class="g">${escapeHtml(l.garment)}</div>
         <div class="s">${escapeHtml(l.service)}</div>
+        ${opts.textPosition === "top" ? textLine : ""}
         ${bc ? `<img class="bc" src="${bc}" alt="barcode"/>` : ""}
-        <div class="id">${idHtml(l.itemNumber)}</div>
+        ${opts.textPosition === "bottom" ? textLine : ""}
+        ${itemLine}
       </div>`
   })
   return `<!doctype html><html><head><meta charset="utf-8"><title>Labels</title><style>
@@ -56,8 +95,8 @@ function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
     .label { width:${w}mm; height:${h}mm; padding:0.8mm 0.4mm; page-break-after: always; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; overflow:hidden; }
     .g { font-weight:800; text-transform:uppercase; letter-spacing:0.3px; font-size:${fs + 1}pt; line-height:1.1; margin-bottom:1mm; }
     .s { font-weight:700; font-size:${fs}pt; line-height:1.1; margin-bottom:1.2mm; }
-    /* Code128 ~98% of the printable width; quiet zones come from the baked-in image margin. */
-    .bc { width:98%; height:${Math.round(h * 0.47)}mm; object-fit:fill; margin-bottom:1.2mm; }
+    .bc { width:98%; height:${Math.round(h * 0.42)}mm; object-fit:fill; margin-bottom:0.8mm; }
+    .gar { font-family:'Roboto Mono','Consolas','Courier New',monospace; font-weight:700; font-size:${Math.max(6, fs)}pt; line-height:1.2; letter-spacing:0.3px; margin-bottom:0.6mm; }
     .id { font-family:'Roboto Mono','Consolas','Courier New',monospace; font-weight:600; font-size:${Math.max(5, fs - 1)}pt; line-height:1.25; letter-spacing:-0.2px; word-break:normal; overflow-wrap:break-word; max-width:100%; }
     @media screen { body{background:#eef2f7;padding:10px;} .label{border:1px dashed #cbd5e1;margin:6px auto;background:#fff;} }
   </style></head><body>${rows.join("")}</body></html>`
@@ -65,7 +104,6 @@ function buildHTML(labels: LabelData[], cfg: LabelConfig): string {
 
 function escapeHtml(s: string) { return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)) }
 
-// Open a print window. autoPrint=false → preview only (no dialog).
 export function printLabels(labels: LabelData[], cfg: LabelConfig, autoPrint = true) {
   if (labels.length === 0) return
   const html = buildHTML(labels, cfg)

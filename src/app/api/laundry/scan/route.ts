@@ -1,7 +1,6 @@
-// GET /api/laundry/scan?barcode=   — identify a garment by its barcode/item ID.
-// Scanning anywhere instantly returns the full context (business, store,
-// customer, order, garment, service, current stage/status) + the item timeline
-// so operators never have to search.
+// GET /api/laundry/scan?barcode=   — identify a garment by its GAR code,
+// barcode, or itemNumber. Old format (ITM-ORD-...) and new format
+// (GAR000000000001) both resolve the same garment instantly.
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { stageLabel, departmentFor } from "@/lib/laundry-processing"
@@ -13,9 +12,9 @@ export async function GET(request: Request) {
     const code = (new URL(request.url).searchParams.get("barcode") || "").trim()
     if (!code) return NextResponse.json({ error: "Missing barcode" }, { status: 400 })
 
-    // Barcode == itemNumber. Accept either (both stored on the item).
+    // Accept GAR code, barcode, or itemNumber (backward compatible).
     const item = await prisma.laundryOrderItem.findFirst({
-      where: { OR: [{ barcode: code }, { itemNumber: code }] },
+      where: { OR: [{ garmentScanCode: code }, { barcode: code }, { itemNumber: code }] },
       include: { order: { select: { id: true, orderNumber: true, status: true, businessId: true, storeId: true, customerId: true, grandTotal: true, expectedDeliveryDate: true } } },
     })
     if (!item) return NextResponse.json({ success: false, error: `No garment found for barcode "${code}"` }, { status: 404 })
