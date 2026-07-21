@@ -411,7 +411,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const handlePreForgot = async () => {
     setAuthLoading(true); setAuthError("")
     try {
-      const r = await fetch("/api/core/storefront/auth/forgot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), businessId }) })
+      const r = await fetch("/api/core/storefront/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), businessId }) })
       const d = await r.json()
       if (d.success) { setPreAuth("login"); setAuthError("Check your email for reset instructions") }
       else { setAuthError(d.error || "Failed to send reset email") }

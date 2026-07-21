@@ -19,6 +19,7 @@
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { CheckCircle2, Eye, EyeOff, Lock, Loader2, AlertCircle } from "lucide-react"
+import { useCustomerAuthStore } from "@/stores/customer-auth-store"
 
 const PASSWORD_RULES = [
   { label: "8+ characters", test: (p: string) => p.length >= 8 },
@@ -42,6 +43,7 @@ function ResetPasswordInner() {
   const [showConf,   setShowConf]  = useState(false)
   const [error,      setError]     = useState("")
   const [loading,    setLoading]   = useState(false)
+  const setSession = useCustomerAuthStore((s) => s.setSession)
 
   const rules      = PASSWORD_RULES.map(r => ({ ...r, passed: r.test(password) }))
   const allPassed  = rules.every(r => r.passed)
@@ -80,13 +82,12 @@ function ResetPasswordInner() {
 
       // Store the session returned by reset-password-via-token
       if (json.data?.accessToken) {
-        localStorage.setItem("quantix_auth_token", json.data.accessToken)
-        if (json.data.refreshToken) localStorage.setItem("quantix_auth_refresh_token", json.data.refreshToken)
-        if (json.data.user) {
-          localStorage.setItem("quantix_auth_user", JSON.stringify(json.data.user))
-          localStorage.setItem("quantix_auth_role", json.data.user.role ?? "CUSTOMER")
-          if (json.data.user.businessId) localStorage.setItem("quantix_auth_business_id", json.data.user.businessId)
-        }
+        setSession({
+          token: json.data.accessToken,
+          refreshToken: json.data.refreshToken,
+          user: json.data.user,
+          businesses: json.data.businesses,
+        })
       }
 
       setState("success")

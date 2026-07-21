@@ -1,8 +1,9 @@
 // ============================================================================
 // POST /api/core/storefront/auth/reset-password-via-token
-// Reset customer password using the token from forgot-password email link.
-// Token is stored on Customer record, single-use (cleared after use).
-// Body: { token, password, confirmPassword }
+// Reset User password using the token from forgot-password email link.
+// Token is stored on PasswordResetToken model (User-level), single-use.
+// After reset, creates a session and resolves/creates the Customer record.
+// Body: { token, password, confirmPassword, businessId }
 // Returns: session (auto-login after reset)
 // ============================================================================
 
@@ -11,6 +12,11 @@ import { db } from '@/lib/db';
 import { hashPassword } from '@/lib/password-utils';
 import { createStorefrontSession } from '@/lib/storefront-auth';
 import { resolveBusinessIdFromRequest } from '@/lib/tenant-resolver';
+import crypto from 'crypto';
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
 
 function validatePassword(pw: string): string | null {
   if (pw.length < 8) return 'Password must be at least 8 characters';
@@ -27,6 +33,7 @@ export async function POST(request: Request) {
       token: string;
       password: string;
       confirmPassword: string;
+      businessId?: string;
     };
 
     const { token, password, confirmPassword } = body;
@@ -45,79 +52,101 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: pwError }, { status: 400 });
     }
 
-    // Scope token lookup to the current subdomain so a token generated on
-    // Business A cannot be consumed on Business B's reset-password page.
+    // Resolve businessId for Customer session creation
     const hostnameBusinessId = await resolveBusinessIdFromRequest(request);
+    const businessId = hostnameBusinessId || body.businessId;
+    if (!businessId) {
+      return NextResponse.json({ success: false, error: 'businessId is required' }, { status: 400 });
+    }
 
-    const customer = await db.customer.findFirst({
-      where: {
-        passwordResetToken: token,
-        ...(hostnameBusinessId ? { businessId: hostnameBusinessId } : {}),
-      },
-      select: {
-        id: true, businessId: true, name: true, email: true, phone: true,
-        passwordResetTokenExpiry: true, isLoginDisabled: true, userId: true,
-      },
+    // Look up the PasswordResetToken by hashed token
+    const hashedToken = hashToken(token);
+    const resetToken = await db.passwordResetToken.findUnique({
+      where: { token: hashedToken },
+      select: { id: true, userId: true, expiresAt: true, usedAt: true },
     });
 
-    if (
-      !customer ||
-      !customer.passwordResetTokenExpiry ||
-      customer.passwordResetTokenExpiry < new Date()
-    ) {
+    if (!resetToken) {
       return NextResponse.json(
-        { success: false, error: 'Invalid or expired reset token' },
+        { success: false, error: 'Invalid reset token' },
         { status: 401 }
       );
     }
 
-    if (customer.isLoginDisabled) {
-      return NextResponse.json({ success: false, error: 'Account is disabled.' }, { status: 403 });
+    if (resetToken.usedAt) {
+      return NextResponse.json(
+        { success: false, error: 'This reset link has already been used' },
+        { status: 401 }
+      );
     }
 
-    if (!customer.email) {
-      return NextResponse.json({ success: false, error: 'Customer email not found' }, { status: 400 });
+    if (resetToken.expiresAt < new Date()) {
+      return NextResponse.json(
+        { success: false, error: 'Reset token has expired' },
+        { status: 401 }
+      );
     }
 
+    // Validate the User exists and is active
+    const user = await db.user.findUnique({
+      where: { id: resetToken.userId },
+      select: { id: true, email: true, isActive: true },
+    });
+
+    if (!user || !user.isActive) {
+      return NextResponse.json(
+        { success: false, error: 'Account is disabled or not found' },
+        { status: 403 }
+      );
+    }
+
+    // Update User password
     const passwordHash = await hashPassword(password);
     const now = new Date();
 
-    await db.customer.update({
-      where: { id: customer.id },
+    await db.user.update({
+      where: { id: user.id },
       data: {
         passwordHash,
-        isPasswordSet: true,
-        passwordUpdatedAt: now,
-        lastPasswordResetAt: now,
-        mustChangePassword: false,
-        failedLoginAttempts: 0,
-        accountLockedUntil: null,
-        passwordResetToken: null,
-        passwordResetTokenExpiry: null,
+        hasPassword: true,
+        passwordChangedAt: now,
+        lastLoginAt: now,
+        authProvider: 'EMAIL_OTP',
       },
     });
 
-    console.log(`[storefront/auth/reset-password-via-token] ok customerId=${customer.id} email=${customer.email}`);
+    // Invalidate the token (single-use)
+    await db.passwordResetToken.update({
+      where: { id: resetToken.id },
+      data: { usedAt: now },
+    });
 
-    if (customer.userId) {
-      await db.activityLog.create({
-        data: {
-          userId: customer.userId,
-          action: 'customer.password_reset',
-          entity: 'Customer',
-          entityId: customer.id,
-          details: JSON.stringify({ email: customer.email, businessId: customer.businessId }),
-        },
-      }).catch(() => null);
-    }
+    // Invalidate all existing refresh tokens for security
+    await db.refreshToken.deleteMany({
+      where: { userId: user.id },
+    });
 
+    // Log activity
+    await db.activityLog.create({
+      data: {
+        userId: user.id,
+        action: 'user.password_reset',
+        entity: 'User',
+        entityId: user.id,
+        details: JSON.stringify({ email: user.email }),
+      },
+    }).catch(() => null);
+
+    // Create a session (finds/creates Customer record for this business)
     const session = await createStorefrontSession({
-      email: customer.email,
-      phone: customer.phone || '',
-      name: customer.name,
-      businessId: customer.businessId,
+      email: user.email,
+      phone: '',
+      name: user.email.split('@')[0],
+      businessId,
       emailVerified: true,
     });
+
+    console.log(`[storefront/auth/reset-password-via-token] ok userId=${user.id} email=${user.email}`);
 
     return NextResponse.json({ success: true, message: 'Password reset successfully', data: session });
   } catch (error) {
