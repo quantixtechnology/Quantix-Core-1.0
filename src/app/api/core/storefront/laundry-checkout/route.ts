@@ -13,8 +13,14 @@
 // A subscription bought in the SAME cart does NOT cover this order's garments
 // (explicit first-order rule) — the plan applies from the NEXT order.
 //
+// AUTH: If a Bearer token is present, the authenticated User is resolved and
+// the Customer is looked up by userId. Server-side name/phone from the User
+// record are authoritative — client-provided name/phone are NEVER trusted for
+// authenticated users. If the resolved Customer has no name or phone, the API
+// returns PROFILE_INCOMPLETE.
+//
 // Body: { businessId, items?: [{serviceId,garmentId,quantity}], subscriptionPlanId?,
-//         customer:{name,phone,email?}, pickup?, paymentMethod?: "COD"|"ONLINE" }
+//         customer:{name?,phone?,email?}, pickup?, paymentMethod?: "COD"|"ONLINE" }
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
@@ -34,14 +40,24 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { businessId, items, subscriptionPlanId, customer, pickup, paymentMethod } = body as {
       businessId?: string; items?: Item[]; subscriptionPlanId?: string
-      customer?: { name?: string; phone?: string; email?: string }
+      customer?: { name?: string; phone?: string; email?: string; id?: string }
       pickup?: { address?: string; addressId?: string; structured?: StructuredAddress; date?: string; timeSlot?: string }
       paymentMethod?: "COD" | "ONLINE"
     }
     if (!businessId) return NextResponse.json({ success: false, error: "businessId is required" }, { status: 400 })
     const hasItems = Array.isArray(items) && items.length > 0
     if (!hasItems && !subscriptionPlanId) return NextResponse.json({ success: false, error: "Cart is empty" }, { status: 400 })
-    if (!customer?.name || !customer?.phone) return NextResponse.json({ success: false, error: "customer name and phone are required" }, { status: 400 })
+
+    // ── Resolve authenticated user from Bearer token ──────────────────────────
+    const authHeader = request.headers.get("authorization") || ""
+    const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null
+    let resolvedUser: { id: string; name: string; email: string; phone: string | null } | null = null
+    if (bearerToken) {
+      const rt = await prisma.refreshToken.findFirst({ where: { token: bearerToken, expiresAt: { gte: new Date() } }, select: { userId: true } })
+      if (rt?.userId) {
+        resolvedUser = await prisma.user.findUnique({ where: { id: rt.userId }, select: { id: true, name: true, email: true, phone: true } })
+      }
+    }
 
     const biz = await resolveLaundryBusiness(businessId)
     if (!biz) return NextResponse.json({ success: false, error: "Laundry business not found" }, { status: 404 })
@@ -49,14 +65,25 @@ export async function POST(request: Request) {
     const platformId = biz.platformBusinessId || businessId
     const lb = await prisma.laundryBusiness.findUnique({ where: { id: lbId }, select: { businessCode: true } })
 
-    // Canonical customer — shared resolver (no duplicate on phone format / channel).
+    // Canonical customer — resolved from auth userid (server-side) when
+    // authenticated, or from client-provided values as a guest fallback.
     const resolved = await resolveOrCreateLaundryCustomer({
       platformBusinessId: platformId, businessCodeForCode: lb?.businessCode || `LND-${lbId}`,
-      name: customer.name, phone: customer.phone, email: customer.email, customerId: (customer as { id?: string }).id,
-      source: "STOREFRONT", emailRequiredForNew: true,
+      userId: resolvedUser?.id || undefined,
+      name: resolvedUser?.name || customer?.name || undefined,
+      phone: resolvedUser?.phone || customer?.phone || undefined,
+      email: resolvedUser?.email || customer?.email || undefined,
+      customerId: customer?.id,
+      source: "STOREFRONT",
+      emailRequiredForNew: !resolvedUser,
     })
     if (!resolved.customer) return NextResponse.json({ success: false, error: resolved.error || "Could not resolve customer" }, { status: 400 })
     const customerRow = resolved.customer
+
+    // ── Validate profile completeness ─────────────────────────────────────────
+    if (!customerRow.name || !customerRow.phone) {
+      return NextResponse.json({ success: false, error: "PROFILE_INCOMPLETE" }, { status: 400 })
+    }
 
     // Pickup address snapshot (shared Address, ownership + tenant validated).
     const addr = await resolvePickupAddress({ addressId: pickup?.addressId, structured: pickup?.structured, legacyString: pickup?.address, customerId: customerRow.id, customerName: customerRow.name, customerPhone: customerRow.phone })
@@ -92,7 +119,6 @@ export async function POST(request: Request) {
         pickupTimeSlot: pickup?.timeSlot || null,
         pickupAddress: pickupSnapshot,
       })
-      // Customer history is updated by the Order Engine (createLaundryOrder).
     }
 
     // ── Subscription purchase (pending due, not activated) ───────────────────
@@ -100,7 +126,7 @@ export async function POST(request: Request) {
     if (subscriptionPlanId) {
       const res = await createSubscriptionPurchase({ businessId: platformId, customerId: customerRow.id, planId: subscriptionPlanId, laundryOrderId: order?.id })
       if (!res.ok) {
-        if (res.alreadyActive) subscription = null // already subscribed — ignore the plan line
+        if (res.alreadyActive) subscription = null
         else return NextResponse.json({ success: false, error: res.error }, { status: 400 })
       } else {
         subscription = { purchaseId: res.purchase.id, planName: res.plan.name, amount: res.purchase.amount }
@@ -117,8 +143,6 @@ export async function POST(request: Request) {
       allocation: { laundryCharges: orderTotal, subscriptionDue, totalDue },
       paymentMethod: paymentMethod || "COD",
       customer: { id: customerRow.id, name: customerRow.name },
-      // Online payment gateway handoff is not exercised here (no test env) —
-      // COD/Pay-Later places the order + records the pending subscription due.
       paymentPending: true,
     } }, { status: 201 })
   } catch (e) {

@@ -628,7 +628,6 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const submit = async (force = false) => {
     // Email is NEVER required (optional; edited from My Profile). Only name +
     // mobile (identity) and a pickup address/date are needed to place an order.
-    if (!name.trim() || !phone.trim()) { toast.error("Name and mobile number are required"); return }
     if (!selAddr && !addrForm.addressLine1.trim()) { toast.error("Add a pickup address"); return }
     if (!date) { toast.error("Select a pickup date"); return }
     const customerPayload = { id: custId || undefined, name, phone, email }
@@ -658,7 +657,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       // The new plan does NOT cover this order (first-order rule).
       if (subscriptionInCart) {
         const res = await fetch("/api/core/storefront/laundry-checkout", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", headers: authHeaders,
           body: JSON.stringify({ businessId, items: orderItems(), subscriptionPlanId: subscriptionInCart.id, customer: customerPayload, pickup: pickupPayload, paymentMethod: "COD" }),
         })
         const j = await res.json()
@@ -668,7 +667,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
         return
       }
       const res = await fetch("/api/core/storefront/laundry-order", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: authHeaders,
         body: JSON.stringify({
           businessId,
           items: orderItems(),
