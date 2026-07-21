@@ -139,6 +139,18 @@ export const ACTION_LABELS: Record<string, string> = {
   CANCEL: "Cancelled",
   QC_PASS: "QC Passed",
   QC_REWORK: "Sent for Rework",
+  PICKUP_REQUESTED: "Pickup Requested",
+  PICKUP_ASSIGNED: "Pickup Assigned",
+  PICKUP_UNASSIGNED: "Pickup Unassigned",
+  PICKUP_ACCEPTED: "Pickup Accepted",
+  PICKUP_REJECTED: "Pickup Rejected",
+  PICKUP_CANCELLED: "Pickup Cancelled",
+  DELIVERY_REQUESTED: "Delivery Requested",
+  DELIVERY_ASSIGNED: "Delivery Assigned",
+  DELIVERY_UNASSIGNED: "Delivery Unassigned",
+  DELIVERY_ACCEPTED: "Delivery Accepted",
+  DELIVERY_REJECTED: "Delivery Rejected",
+  DELIVERY_CANCELLED: "Delivery Cancelled",
 }
 export const actionLabel = (a: string) => ACTION_LABELS[a] || a.replace(/_/g, " ")
 

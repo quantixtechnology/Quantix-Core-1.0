@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Loader2, RefreshCw, Search, Clock, Package, CreditCard, QrCode, Truck,
-  PackageCheck, HandCoins, CheckCircle2, Printer, User, Phone, Shirt, IndianRupee,
+  PackageCheck, HandCoins, CheckCircle2, Printer, User, Phone, Shirt, IndianRupee, Navigation, MapPin,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
@@ -496,8 +496,19 @@ export function LaundryReadyForDelivery() {
   const [method, setMethod] = useState("CASH")
   const [reference, setReference] = useState("")
   const [busy, setBusy] = useState(false)
+  const [schedulingDel, setSchedulingDel] = useState(false)
+  const [delForm, setDelForm] = useState({ address: "", date: "", timeSlot: "", assignNow: false, executiveId: "" })
+  const [scheduleBusy, setScheduleBusy] = useState(false)
+  const [execs, setExecs] = useState<{ id: string; name: string }[]>([])
 
-  const openOrder = (o: OrderRow | null) => { setSelected(o); setRecipient(o?.customer?.name || ""); setNote(""); setReference("") }
+  const openOrder = async (o: OrderRow | null) => {
+    setSelected(o); setRecipient(o?.customer?.name || ""); setNote(""); setReference(""); setSchedulingDel(false)
+    setDelForm({ address: "", date: new Date().toISOString().split("T")[0], timeSlot: "", assignNow: false, executiveId: "" })
+    if (o && currentBusinessId) {
+      const j = await fetch(`/api/laundry/delivery-executives?businessId=${currentBusinessId}`).then((r) => r.json()).catch(() => null)
+      if (j?.success) setExecs(j.data)
+    }
+  }
   const covered = selected ? selected.paymentStatus === "PAID" || selected.paymentStatus === "SUBSCRIPTION" || selected.balanceDue <= 0 : false
 
   const collectFinal = async () => {
@@ -545,6 +556,63 @@ export function LaundryReadyForDelivery() {
             <div className="rounded-lg border p-3"><p className="text-[10px] uppercase text-slate-400">Paid</p><p className="text-lg font-bold text-emerald-600">{inr(selected.amountPaid)}</p></div>
             <div className={`rounded-lg border p-3 ${covered ? "" : "border-rose-300 bg-rose-50"}`}><p className="text-[10px] uppercase text-slate-400">Balance Due</p><p className={`text-lg font-bold ${covered ? "text-emerald-600" : "text-rose-600"}`}>{selected.paymentStatus === "SUBSCRIPTION" ? "Covered" : inr(selected.balanceDue)}</p></div>
           </div>
+
+          {/* Schedule Home Delivery */}
+          {!pickupType && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+              {!schedulingDel ? (
+                <Button onClick={() => setSchedulingDel(true)} variant="outline" className="gap-1 border-blue-200 text-blue-700 w-full h-8 text-xs">
+                  <Truck className="h-3.5 w-3.5" /> Schedule Home Delivery
+                </Button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-blue-800">Schedule Home Delivery</p>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-slate-500">Delivery Address</label>
+                    <input value={delForm.address} onChange={(e) => setDelForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white" placeholder="Enter delivery address" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Date</label><input type="date" value={delForm.date} onChange={(e) => setDelForm((f) => ({ ...f, date: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white" /></div>
+                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label><input value={delForm.timeSlot} onChange={(e) => setDelForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white" placeholder="e.g. 14:00–16:00" /></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="checkbox" checked={delForm.assignNow} onChange={(e) => setDelForm((f) => ({ ...f, assignNow: e.target.checked }))} /> Assign Now</label>
+                    {delForm.assignNow && (
+                      <select value={delForm.executiveId} onChange={(e) => setDelForm((f) => ({ ...f, executiveId: e.target.value }))} className="h-7 text-[10px] rounded border border-slate-200 px-1 bg-white flex-1">
+                        <option value="">Select executive</option>
+                        {execs.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={scheduleBusy} onClick={async () => {
+                      if (!selected || !currentBusinessId) return
+                      setScheduleBusy(true)
+                      try {
+                        const res = await fetch("/api/laundry/dispatch/delivery", {
+                          method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            businessId: currentBusinessId, orderId: selected.id,
+                            executiveId: delForm.assignNow && delForm.executiveId ? delForm.executiveId : null,
+                            notes: `Delivery scheduled${delForm.timeSlot ? ` at ${delForm.timeSlot}` : ""}${delForm.address ? ` to ${delForm.address}` : ""}`,
+                          }),
+                        })
+                        const j = await res.json()
+                        if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+                        toast.success("Delivery scheduled")
+                        setSchedulingDel(false)
+                        queue.load()
+                      } catch (e) { toast.error(e instanceof Error ? e.message : "Failed") }
+                      finally { setScheduleBusy(false) }
+                    }}>
+                      {scheduleBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />} Schedule
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setSchedulingDel(false)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {!covered && (
             <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-3 space-y-3">

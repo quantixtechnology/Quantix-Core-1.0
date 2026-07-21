@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail, MapPin, Save, Trash2, AlertTriangle, RotateCcw } from "lucide-react"
+import { Users, Search, Loader2, Eye, Pencil, Plus, ChevronLeft, ChevronRight, UserCheck, Repeat, Wallet, Phone, Mail, MapPin, Save, Trash2, AlertTriangle, RotateCcw, Truck, Calendar, Clock, Navigation, CheckCircle2, XCircle } from "lucide-react"
 import { SearchableSelect } from "./pricing/searchable-select"
 import { INDIAN_STATES, isValidPincode, formatAddressLines } from "@/lib/india"
 import { getAuthHeaders } from "@/lib/admin-fetch"
@@ -69,6 +69,10 @@ export function LaundryCustomersView() {
   const [notes, setNotes] = useState<Note[]>([])
   const [newNote, setNewNote] = useState("")
   const [tab, setTab] = useState<"overview" | "addresses" | "timeline" | "notes">("overview")
+  const [dispatchStatus, setDispatchStatus] = useState<any[]>([])
+  const [scheduling, setScheduling] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState({ address: "", date: "", timeSlot: "", notes: "", assignNow: false, executiveId: "" })
+  const [schedulingBusy, setSchedulingBusy] = useState(false)
   // Merge duplicate
   const [mergeOpen, setMergeOpen] = useState(false)
   const [mergeQuery, setMergeQuery] = useState("")
@@ -121,12 +125,13 @@ export function LaundryCustomersView() {
   useEffect(() => { load() }, [load])
 
   const openCustomer = async (id: string, edit: boolean) => {
-    setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setTimeline([]); setNotes([]); setTab("overview"); setLoadingDetail(true)
+    setOpenId(id); setEditing(edit); setDetail(null); setCustSub(null); setTimeline([]); setNotes([]); setTab("overview"); setLoadingDetail(true); setScheduling(false); setDispatchStatus([])
     // Active/GRACE subscription (Part 8) — detected, never assumed.
     fetch(`/api/laundry/subscriptions/active?businessId=${currentBusinessId}&customerId=${id}`).then((r) => r.json())
       .then((j) => setCustSub(j.success && j.data.length ? j.data[0] : null)).catch(() => setCustSub(null))
     fetch(`/api/laundry/customers/${id}/timeline?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setTimeline(j.success ? j.data : [])).catch(() => {})
     fetch(`/api/laundry/customers/${id}/notes?businessId=${currentBusinessId}`).then((r) => r.json()).then((j) => setNotes(j.success ? j.data : [])).catch(() => {})
+    fetch(`/api/laundry/dispatch/status?businessId=${currentBusinessId}&customerId=${id}`).then((r) => r.json()).then((j) => setDispatchStatus(j.success ? j.data : [])).catch(() => {})
     try {
       const json = await fetch(`/api/laundry/customers/${id}?businessId=${currentBusinessId}`).then((r) => r.json())
       if (json.success) {
@@ -142,9 +147,9 @@ export function LaundryCustomersView() {
   // customer once, then clear the flag so it doesn't re-trigger.
   useEffect(() => {
     if (!laundryFocusCustomerId || !currentBusinessId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     openCustomer(laundryFocusCustomerId, false)
     setLaundryFocusCustomerId(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [laundryFocusCustomerId, currentBusinessId])
 
   const addNote = async () => {
@@ -160,6 +165,32 @@ export function LaundryCustomersView() {
     if (q.trim().length < 2) { setMergeResults([]); return }
     try { const j = await fetch(`/api/laundry/customers?businessId=${currentBusinessId}&q=${encodeURIComponent(q)}`).then((r) => r.json()); setMergeResults((j.data || []).filter((c: Row) => c.id !== detail?.id)) } catch { setMergeResults([]) }
   }
+  const schedulePickup = async () => {
+    if (!detail || !currentBusinessId) return
+    setSchedulingBusy(true)
+    try {
+      const res = await fetch("/api/laundry/dispatch/pickup", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: currentBusinessId, customerId: detail.id,
+          pickupAddress: scheduleForm.address || detail.addresses?.[0]?.addressLine1 || null,
+          pickupDate: scheduleForm.date || null,
+          pickupTimeSlot: scheduleForm.timeSlot || null,
+          notes: scheduleForm.notes || null,
+          executiveId: scheduleForm.assignNow && scheduleForm.executiveId ? scheduleForm.executiveId : null,
+        }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      toast({ title: j.existing ? "Active pickup exists" : "Pickup scheduled", description: j.data?.orderNumber || "" })
+      setScheduling(false)
+      setScheduleForm({ address: "", date: "", timeSlot: "", notes: "", assignNow: false, executiveId: "" })
+      const r = await fetch(`/api/laundry/dispatch/status?businessId=${currentBusinessId}&customerId=${detail.id}`).then((r) => r.json())
+      if (r.success) setDispatchStatus(r.data)
+    } catch (e) { toast({ title: "Schedule failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) }
+    finally { setSchedulingBusy(false) }
+  }
+
   const sendInvite = async () => {
     if (!detail?.email) { toast({ title: "Email required", description: "Add an email address before sending an app invitation.", variant: "destructive" }); return }
     try {
@@ -333,6 +364,49 @@ export function LaundryCustomersView() {
                     {(detail.tags || []).map((t) => <Badge key={t} variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50">{t}</Badge>)}
                   </div>
                 </div>
+              </div>
+
+              {/* Dispatch Actions */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-blue-800 flex items-center gap-1"><Truck className="h-3.5 w-3.5" /> Dispatch</p>
+                  {!scheduling && <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => setScheduling(true)}><Plus className="h-3 w-3" /> Schedule Pickup</Button>}
+                </div>
+                {scheduling && (
+                  <div className="space-y-2 bg-white rounded border border-blue-200 p-2">
+                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Pickup Address</label><input value={scheduleForm.address} onChange={(e) => setScheduleForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder={detail.addresses?.[0] ? `${detail.addresses[0].addressLine1}, ${detail.addresses[0].city}` : "Enter address"} /></div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1"><label className="text-[10px] text-slate-500">Date</label><input type="date" value={scheduleForm.date} onChange={(e) => setScheduleForm((f) => ({ ...f, date: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" /></div>
+                      <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label><input value={scheduleForm.timeSlot} onChange={(e) => setScheduleForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="e.g. 10:00–12:00" /></div>
+                    </div>
+                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Notes</label><input value={scheduleForm.notes} onChange={(e) => setScheduleForm((f) => ({ ...f, notes: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="Optional" /></div>
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="checkbox" checked={scheduleForm.assignNow} onChange={(e) => setScheduleForm((f) => ({ ...f, assignNow: e.target.checked }))} /> Assign Now</label>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={schedulingBusy} onClick={schedulePickup}>
+                        {schedulingBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />} Schedule
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setScheduling(false)}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+                {dispatchStatus.length > 0 && (
+                  <div className="space-y-1">
+                    {dispatchStatus.filter((d: any) => d.pickup.required && d.pickup.status !== "COMPLETED").map((d: any) => (
+                      <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-blue-100 px-2 py-1">
+                        <span className="font-mono text-blue-700">{d.orderNumber}</span>
+                        <span className="flex items-center gap-1 text-slate-600">{d.pickup.executiveName || "Unassigned"} · {d.pickup.status}</span>
+                      </div>
+                    ))}
+                    {dispatchStatus.filter((d: any) => d.delivery.required && d.delivery.status !== "COMPLETED").map((d: any) => (
+                      <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-violet-100 px-2 py-1">
+                        <span className="font-mono text-violet-700">{d.orderNumber}</span>
+                        <span className="flex items-center gap-1 text-slate-600">{d.delivery.executiveName || "Unassigned"} · {d.delivery.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Statistics (Part 8) */}

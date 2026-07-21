@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Loader2, ChevronLeft, Clock, User, Phone, Shirt, ShoppingBag, Store as StoreIcon,
-  Search, ArrowRight, ChevronDown, ChevronUp,
+  Search, ArrowRight, ChevronDown, ChevronUp, Truck, MapPin, CheckCircle2, XCircle, Navigation,
 } from "lucide-react"
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
@@ -53,15 +53,21 @@ export function LaundryOrderDetail() {
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [scanCode, setScanCode] = useState("")
+  const [dispatchStatus, setDispatchStatus] = useState<any>(null)
 
   const load = useCallback(async () => {
     if (!selectedOrderId) return
     setLoading(true)
     try {
-      const j = await fetch(`/api/laundry/orders/${selectedOrderId}`).then((r) => r.json())
-      if (j.success) setOrder(j.data)
+      const [ord, disp] = await Promise.all([
+        fetch(`/api/laundry/orders/${selectedOrderId}`).then((r) => r.json()),
+        fetch(`/api/laundry/dispatch/status?businessId=${currentBusinessId}&orderId=${selectedOrderId}`).then((r) => r.json()),
+      ])
+      if (ord.success) setOrder(ord.data)
+      if (disp.success && disp.data?.[0]) setDispatchStatus(disp.data[0])
     } catch { setOrder(null) } finally { setLoading(false) }
-  }, [selectedOrderId])
+  }, [selectedOrderId, currentBusinessId])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [load])
 
   // Lazy-load a garment's own timeline via the scan endpoint (has item events).
@@ -121,6 +127,38 @@ export function LaundryOrderDetail() {
       </div>
 
       {selectedOrderId && <LaundryInvoicePanel orderId={selectedOrderId} businessId={currentBusinessId || ""} />}
+
+      {/* Dispatch Status */}
+      {dispatchStatus && (
+        <Card className="rounded-lg border-blue-200 bg-blue-50/40">
+          <CardContent className="p-3 space-y-2">
+            <p className="text-xs font-semibold text-blue-800 flex items-center gap-1"><Truck className="h-3.5 w-3.5" /> Dispatch Status</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <p className="text-[10px] text-slate-500 uppercase font-medium">Pickup</p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className={`text-[10px] ${dispatchStatus.pickup.status === "COMPLETED" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : dispatchStatus.pickup.status === "ACCEPTED" ? "border-indigo-300 text-indigo-700 bg-indigo-50" : dispatchStatus.pickup.status === "ASSIGNED" ? "border-blue-300 text-blue-700 bg-blue-50" : "border-amber-300 text-amber-700 bg-amber-50"}`}>
+                    {dispatchStatus.pickup.status}
+                  </Badge>
+                  {dispatchStatus.pickup.executiveName && <span className="text-[10px] text-slate-600">→ {dispatchStatus.pickup.executiveName}</span>}
+                </div>
+                {dispatchStatus.pickup.timeSlot && <p className="text-[10px] text-slate-400">{dispatchStatus.pickup.scheduledDate ? new Date(dispatchStatus.pickup.scheduledDate).toLocaleDateString("en-IN") : ""} {dispatchStatus.pickup.timeSlot}</p>}
+                {dispatchStatus.pickup.completedAt && <p className="text-[10px] text-emerald-600">Completed {new Date(dispatchStatus.pickup.completedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] text-slate-500 uppercase font-medium">Delivery</p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className={`text-[10px] ${dispatchStatus.delivery.status === "COMPLETED" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : dispatchStatus.delivery.status === "ACCEPTED" ? "border-indigo-300 text-indigo-700 bg-indigo-50" : dispatchStatus.delivery.status === "ASSIGNED" ? "border-blue-300 text-blue-700 bg-blue-50" : dispatchStatus.delivery.status === "NOT_REQUIRED" ? "border-slate-200 text-slate-400" : "border-amber-300 text-amber-700 bg-amber-50"}`}>
+                    {dispatchStatus.delivery.status === "NOT_REQUIRED" ? "Not Scheduled" : dispatchStatus.delivery.status}
+                  </Badge>
+                  {dispatchStatus.delivery.executiveName && <span className="text-[10px] text-slate-600">→ {dispatchStatus.delivery.executiveName}</span>}
+                </div>
+                {dispatchStatus.delivery.completedAt && <p className="text-[10px] text-emerald-600">Completed {new Date(dispatchStatus.delivery.completedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         {/* Garments — individually traceable */}
