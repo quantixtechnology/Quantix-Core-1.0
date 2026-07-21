@@ -1,9 +1,10 @@
-// Dispatch Center — Admin assigns field executives to today's pickups or
-// deliveries. Assignment writes the executive + live field status onto the
-// order and appends a LaundryOrderEvent for the timeline.
+// Dispatch Center — live operations queue + historical archive.
 //
-//   GET  ?businessId=&type=pickup|delivery&tab=&search= → today's jobs
-//   GET  ?businessId=&type=&manifest=true&orderIds=     → manifest data
+//   GET  ?businessId=&type=pickup|delivery&scope=active
+//        → today's live queue (awaiting / assigned / accepted / completed)
+//   GET  ?businessId=&type=pickup|delivery&scope=history&datePreset=&fromDate=&toDate=&page=0&limit=50&search=
+//        → paginated historical archive
+//   GET  ?businessId=&type=&manifest=true&orderIds=     → manifest
 //   POST { businessId, orderId, type, executiveId|null } → single assign
 //   POST { businessId, orderIds, type, executiveId }     → bulk assign / unassign
 import { NextResponse } from "next/server"
@@ -15,10 +16,33 @@ import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 
 export const runtime = "nodejs"
 
-const todayRange = () => {
-  const start = new Date(); start.setHours(0, 0, 0, 0)
-  const end = new Date(start); end.setDate(end.getDate() + 1)
-  return { start, end }
+const dayRange = (d: Date) => {
+  const s = new Date(d); s.setHours(0, 0, 0, 0)
+  const e = new Date(s); e.setDate(e.getDate() + 1)
+  return { start: s, end: e }
+}
+
+const dateRangeForPreset = (preset: string, fromDate?: string, toDate?: string) => {
+  const now = new Date()
+  if (preset === "custom" && fromDate && toDate) {
+    const s = new Date(fromDate); s.setHours(0, 0, 0, 0)
+    const e = new Date(toDate); e.setHours(23, 59, 59, 999)
+    return { start: s, end: e }
+  }
+  if (preset === "yesterday") {
+    const d = new Date(now); d.setDate(d.getDate() - 1)
+    return dayRange(d)
+  }
+  if (preset === "last7d") {
+    const s = new Date(now); s.setDate(s.getDate() - 7); s.setHours(0, 0, 0, 0)
+    return { start: s, end: now }
+  }
+  if (preset === "thisMonth") {
+    const s = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { start: s, end: now }
+  }
+  // default: today
+  return dayRange(now)
 }
 
 export async function GET(request: Request) {
@@ -32,7 +56,6 @@ export async function GET(request: Request) {
     if (!biz) return NextResponse.json({ success: true, data: [], counts: {} })
     const lbId = biz.id
     const now = new Date()
-    const { start, end } = todayRange()
 
     // ── Manifest ──────────────────────────────────────────────────────────
     if (sp.get("manifest") === "true") {
@@ -67,7 +90,17 @@ export async function GET(request: Request) {
       })
     }
 
-    // ── Today's dispatch ──────────────────────────────────────────────────
+    // ── Scope ──────────────────────────────────────────────────────────────
+    const scope = sp.get("scope") || "active"
+
+    if (scope === "history") {
+      return await handleHistory(sp, lbId, type, now)
+    }
+
+    // ── Active (today's live queue) ─────────────────────────────────────────
+    const { start, end } = dayRange(now)
+
+    // Ensure HOME_PICKUP orders have pickupRequired flagged
     await prisma.laundryOrder.updateMany({
       where: { businessId: lbId, orderType: "HOME_PICKUP", pickupRequired: false },
       data: { pickupRequired: true, deliveryRequired: true },
@@ -88,6 +121,7 @@ export async function GET(request: Request) {
         pickupStartedAt: true, pickupCompletedAt: true,
         deliveryAssignedAt: true, deliveryAcceptance: true, deliveryAcceptedAt: true,
         deliveryStartedAt: true, deliveryCompletedAt: true, deliveredAt: true,
+        expectedDeliveryDate: true,
         storeId: true, store: { select: { storeName: true, city: true } },
         services: { select: { serviceName: true } },
         _count: { select: { items: true } },
@@ -104,6 +138,7 @@ export async function GET(request: Request) {
     const execMap = new Map(execs.map((e) => [e.id, e]))
     const custMap = new Map(custs.map((c) => [c.id, c]))
 
+    // Correct MISSED: only if executive ACCEPTED and schedule expired and never completed
     const bucketOf = (o: (typeof orders)[number]): string => {
       if (o.status === "CANCELLED") return "cancelled"
       if (type === "delivery") {
@@ -113,7 +148,6 @@ export async function GET(request: Request) {
       }
       if (o.pickupCompletedAt) return "completed"
       if (o.pickupExecutiveId) return o.pickupAcceptedAt ? "accepted" : "assigned"
-      if (o.pickupDate && o.pickupDate < now) return "missed"
       return "awaiting"
     }
 
@@ -171,6 +205,136 @@ export async function GET(request: Request) {
   }
 }
 
+// ── History handler ─────────────────────────────────────────────────────────
+async function handleHistory(sp: URLSearchParams, lbId: string, type: string, now: Date) {
+  const preset = sp.get("datePreset") || "today"
+  const fromDate = sp.get("fromDate") || undefined
+  const toDate = sp.get("toDate") || undefined
+  const searchQ = sp.get("search")?.toLowerCase().trim() || ""
+  const page = Math.max(0, parseInt(sp.get("page") || "0", 10))
+  const limit = Math.min(200, Math.max(10, parseInt(sp.get("limit") || "50", 10)))
+  const { start, end } = dateRangeForPreset(preset, fromDate, toDate)
+
+  // Build WHERE for completed/historical dispatches within the date range
+  const isPickup = type !== "delivery"
+  const timeField = isPickup ? "pickupCompletedAt" : "deliveryCompletedAt"
+  const execField = isPickup ? "pickupExecutiveId" : "deliveryExecutiveId"
+  const acceptField = isPickup ? "pickupAcceptance" : "deliveryAcceptance"
+
+  // Completed: within date range
+  const completedWhere: any = {
+    businessId: lbId,
+    [isPickup ? "pickupRequired" : "deliveryRequired"]: true,
+    OR: [
+      { [timeField]: { gte: start, lte: end } },
+      { status: "CANCELLED", updatedAt: { gte: start, lte: end } },
+      // Also include DELIVERED orders within period
+      ...(isPickup ? [] : [{ status: "DELIVERED" as const, deliveredAt: { gte: start, lte: end } }]),
+    ],
+  }
+
+  const [total, orders] = await Promise.all([
+    prisma.laundryOrder.count({ where: completedWhere }),
+    prisma.laundryOrder.findMany({
+      where: completedWhere,
+      select: {
+        id: true, orderNumber: true, status: true, isExpress: true, customerId: true,
+        pickupDate: true, pickupTimeSlot: true, pickupAddress: true, pickupLandmark: true,
+        pickupMapsLink: true, pickupLat: true, pickupLng: true, fieldStatus: true,
+        pickupExecutiveId: true, deliveryExecutiveId: true,
+        pickupAssignedAt: true, pickupAcceptance: true, pickupAcceptedAt: true,
+        pickupStartedAt: true, pickupCompletedAt: true,
+        deliveryAssignedAt: true, deliveryAcceptance: true, deliveryAcceptedAt: true,
+        deliveryStartedAt: true, deliveryCompletedAt: true, deliveredAt: true,
+        expectedDeliveryDate: true, createdAt: true,
+        storeId: true, store: { select: { storeName: true, city: true } },
+        services: { select: { serviceName: true } },
+        _count: { select: { items: true } },
+        customer: { select: { name: true, phone: true } },
+      },
+      orderBy: { [timeField]: "desc" },
+      skip: page * limit,
+      take: limit,
+    }),
+  ])
+
+  const execIds = [...new Set(orders.flatMap((o) => [o.pickupExecutiveId, o.deliveryExecutiveId]).filter(Boolean) as string[])]
+  const execs = await prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true } })
+  const execMap = new Map(execs.map((e) => [e.id, e.name]))
+
+  // Fetch latest relevant events for context (rejection reason, cancellation reason)
+  const eventActions = isPickup
+    ? ["PICKUP_COMPLETED", "PICKUP_CANCELLED", "PICKUP_REJECTED", "PICKUP_ACCEPTED"]
+    : ["MARK_DELIVERED", "DELIVERY_CANCELLED", "DELIVERY_REJECTED", "DELIVERY_ACCEPTED", "OUT_FOR_DELIVERY"]
+  const events = await prisma.laundryOrderEvent.findMany({
+    where: { orderId: { in: orders.map((o) => o.id) }, action: { in: eventActions } },
+    select: { id: true, orderId: true, action: true, note: true, actorName: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  })
+  const eventsByOrder = new Map<string, typeof events>()
+  for (const e of events) {
+    const arr = eventsByOrder.get(e.orderId) || []
+    arr.push(e)
+    eventsByOrder.set(e.orderId, arr)
+  }
+
+  let data = orders.map((o) => {
+    const execId = isPickup ? o.pickupExecutiveId : o.deliveryExecutiveId
+    const execName = execId ? execMap.get(execId) ?? null : null
+    const cust = o.customer
+    const orderEvents = eventsByOrder.get(o.id) || []
+
+    const completedTime = isPickup ? o.pickupCompletedAt : (o.deliveryCompletedAt || o.deliveredAt)
+    const requestedAt = isPickup ? o.createdAt : (o.deliveryAssignedAt || o.createdAt)
+    const acceptedAt = isPickup ? o.pickupAcceptedAt : o.deliveryAcceptedAt
+
+    // Determine reason for cancelled/rejected
+    const rejectEvent = orderEvents.find((e) => e.action === (isPickup ? "PICKUP_REJECTED" : "DELIVERY_REJECTED"))
+    const cancelEvent = orderEvents.find((e) => e.action === (isPickup ? "PICKUP_CANCELLED" : "DELIVERY_CANCELLED"))
+
+    let bucket = "completed"
+    if (o.status === "CANCELLED") {
+      bucket = cancelEvent ? "cancelled" : "cancelled"
+    } else if (isPickup ? o.pickupAcceptance === "REJECTED" : o.deliveryAcceptance === "REJECTED") {
+      bucket = "rejected"
+    } else if (isPickup ? !o.pickupCompletedAt : !o.deliveryCompletedAt && o.status !== "DELIVERED") {
+      bucket = "failed"
+    }
+
+    return {
+      id: o.id, orderNumber: o.orderNumber, status: o.status, fieldStatus: o.fieldStatus,
+      priority: o.isExpress ? "EXPRESS" : "NORMAL",
+      customerName: cust?.name ?? "—", customerPhone: cust?.phone ?? null,
+      timeSlot: isPickup ? o.pickupTimeSlot : (o.expectedDeliveryDate ? new Date(o.expectedDeliveryDate).toLocaleDateString() : null),
+      storeName: o.store?.storeName ?? null, address: o.pickupAddress,
+      landmark: o.pickupLandmark, mapsLink: o.pickupMapsLink, lat: o.pickupLat, lng: o.pickupLng,
+      services: o.services.map((s) => s.serviceName), bagCount: o.services.length,
+      executiveId: execId, executiveName: execName,
+      acceptance: isPickup ? o.pickupAcceptance : o.deliveryAcceptance,
+      assignedAt: (isPickup ? o.pickupAssignedAt : o.deliveryAssignedAt)?.toISOString() ?? null,
+      acceptedAt: acceptedAt?.toISOString() ?? null,
+      completedAt: completedTime?.toISOString() ?? null,
+      requestedAt: requestedAt?.toISOString() ?? null,
+      createdAt: o.createdAt?.toISOString() ?? null,
+      reason: rejectEvent?.note || cancelEvent?.note || null,
+      bucket,
+    }
+  })
+
+  if (searchQ) {
+    const q = searchQ
+    data = data.filter((j) =>
+      j.orderNumber.toLowerCase().includes(q) ||
+      j.customerName.toLowerCase().includes(q) ||
+      (j.customerPhone && j.customerPhone.includes(q)) ||
+      (j.address && j.address.toLowerCase().includes(q)) ||
+      (j.executiveName && j.executiveName.toLowerCase().includes(q))
+    )
+  }
+
+  return NextResponse.json({ success: true, data, total, page, limit })
+}
+
 export async function POST(request: Request) {
   try {
     const b = await request.json()
@@ -204,12 +368,12 @@ export async function POST(request: Request) {
         }
         return NextResponse.json({ success: true, unassigned: orderIds.length })
       }
-      const now = new Date()
+      const now2 = new Date()
       if (type === "delivery") {
-        await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: now, deliveryAcceptance: "PENDING", deliveryAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
+        await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { deliveryExecutiveId: execId, deliveryAssignedAt: now2, deliveryAcceptance: "PENDING", deliveryAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
         for (const oid of orderIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "DELIVERY_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
       } else {
-        await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { pickupExecutiveId: execId, pickupAssignedAt: now, pickupAcceptance: "PENDING", pickupAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
+        await prisma.laundryOrder.updateMany({ where: { id: { in: orderIds } }, data: { pickupExecutiveId: execId, pickupAssignedAt: now2, pickupAcceptance: "PENDING", pickupAcceptedAt: null, fieldStatus: FIELD_STATUS.ASSIGNED } })
         for (const oid of orderIds) { await logFieldEvent({ orderId: oid, businessId: biz.id, action: "PICKUP_ASSIGNED", note: `Bulk → ${execName}`, actor }).catch(() => {}) }
         for (const oid of orderIds) { await notifyCustomerForOrder(oid, biz.id, { type: "ORDER_STATUS", title: "Pickup scheduled", message: "A pickup executive has been assigned for your order." }).catch(() => {}) }
       }
