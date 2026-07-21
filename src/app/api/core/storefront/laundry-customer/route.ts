@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
-import { resolveOrCreateLaundryCustomer } from "@/lib/customer-identity"
+import { resolveOrCreateLaundryCustomer, normalizePhone } from "@/lib/customer-identity"
 
 export const runtime = "nodejs"
 
@@ -36,6 +36,18 @@ export async function POST(request: Request) {
     })
 
     if (!result.customer) return NextResponse.json({ success: false, error: result.error || "Could not resolve customer" }, { status: 400 })
+
+    // Apply profile updates if name/phone are provided in the request body.
+    // This allows the storefront checkout to set/overwrite name and phone after
+    // registration or during profile completion — without needing a separate
+    // endpoint or laundry admin RBAC.
+    const updates: Record<string, unknown> = {}
+    if (body.name !== undefined) updates.name = body.name
+    if (body.phone !== undefined) updates.phone = normalizePhone(body.phone)
+    if (Object.keys(updates).length) {
+      await prisma.customer.update({ where: { id: result.customer.id }, data: updates as never })
+      result.customer = { ...result.customer, ...updates } as typeof result.customer
+    }
 
     return NextResponse.json({
       success: true,

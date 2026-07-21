@@ -7,8 +7,8 @@ import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-sto
 import type { WebNav } from "./storefront-website"
 import type { PickedStore } from "./storefront-store-picker"
 import {
-  ArrowLeft, Loader2, CheckCircle2, MapPin, Plus, Trash2, Edit, Navigation,
-  Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, AlertCircle, CreditCard, Home, Building, Map as MapIcon,
+  ArrowLeft, Loader2, CheckCircle2, MapPin, Plus, Trash2, Navigation,
+  Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, AlertCircle, CreditCard, Home, Building,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 
@@ -32,6 +32,14 @@ interface Addr {
   instructions?: string | null
 }
 
+interface CustomerInfo {
+  id: string
+  name: string | null
+  phone: string | null
+  email: string | null
+  customerCode: string | null
+}
+
 interface LaundryCheckoutProps {
   brandColor: string
   nav: WebNav
@@ -40,9 +48,9 @@ interface LaundryCheckoutProps {
   storeClosedMessage?: string
 }
 
-type CheckoutStep = "auth" | "customer" | "address" | "review" | "confirm" | "success"
+type CheckoutStep = "email" | "auth" | "profile" | "address" | "review" | "success"
 
-type AuthView = "email" | "login" | "register" | "otp" | "set-password" | "forgot"
+type AuthView = "login" | "register" | "otp" | "forgot"
 
 const PICKUP_SLOTS = ["07:00 - 09:00", "09:00 - 12:00", "12:00 - 15:00", "15:00 - 18:00", "18:00 - 21:00"]
 const ADDR_LABELS = ["Home", "Office", "Other"]
@@ -62,9 +70,12 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
 
   const rawSubtotal = subtotal()
   const itemCount = items.filter((i) => i.kind === "laundry" || !i.kind).length
+  const deliveryFee = currentStore?.deliveryFee ?? 0
+  const hasCartItems = itemCount > 0
 
-  const [step, setStep] = useState<CheckoutStep>("auth")
-  const [authView, setAuthView] = useState<AuthView>("email")
+  const [step, setStep] = useState<CheckoutStep>("email")
+  const [authView, setAuthView] = useState<AuthView>("login")
+
   const [email, setEmail] = useState("")
   const [authEmail, setAuthEmail] = useState("")
   const [authPassword, setAuthPassword] = useState("")
@@ -75,22 +86,22 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
   const [otp, setOtp] = useState("")
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState("")
-  const [customerResolved, setCustomerResolved] = useState<{ id: string; name: string } | null>(null)
+
+  const otpDetails = useRef<{ email: string; name: string; phone: string; password: string } | null>(null)
+  const setStepOtpDetails = (d: typeof otpDetails.current) => { otpDetails.current = d }
+
+  const [customerResolved, setCustomerResolved] = useState<CustomerInfo | null>(null)
   const [customerLoading, setCustomerLoading] = useState(false)
+
+  const [profileName, setProfileName] = useState("")
+  const [profilePhone, setProfilePhone] = useState("")
+  const [profileLoading, setProfileLoading] = useState(false)
 
   const [addresses, setAddresses] = useState<Addr[]>([])
   const [addressesLoading, setAddressesLoading] = useState(false)
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
   const [showAddrForm, setShowAddrForm] = useState(false)
   const [addrError, setAddrError] = useState("")
-
-  const [pickupDate, setPickupDate] = useState("")
-  const [pickupSlot, setPickupSlot] = useState("")
-  const [pickupInstructions, setPickupInstructions] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState("COD")
-  const [placing, setPlacing] = useState(false)
-  const [orderError, setOrderError] = useState("")
-  const [orderResult, setOrderResult] = useState<{ orderNumber: string; orderId: string } | null>(null)
 
   const [newAddr, setNewAddr] = useState({
     label: "Home", addressType: "HOME",
@@ -100,20 +111,23 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
   })
   const [addingGps, setAddingGps] = useState(false)
 
-  const deliveryFee = currentStore?.deliveryFee ?? 0
-  const hasCartItems = itemCount > 0
+  const [pickupDate, setPickupDate] = useState("")
+  const [pickupSlot, setPickupSlot] = useState("")
+  const [pickupInstructions, setPickupInstructions] = useState("")
+  const [paymentMethod, setPaymentMethod] = useState("COD")
+  const [placing, setPlacing] = useState(false)
+  const [orderError, setOrderError] = useState("")
+  const [orderResult, setOrderResult] = useState<{ orderNumber: string; orderId: string } | null>(null)
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      if (step === "auth") setStep("customer")
-    }
-  }, [isAuthenticated, step])
+  const selectedAddr = addresses.find((a) => a.id === selectedAddressId)
+  const canConfirm = !!customerResolved && !!selectedAddressId && (!!pickupDate || currentStore?.id !== undefined) && hasCartItems && !storeClosed
 
+  // Auto-resolve customer when authenticated
   useEffect(() => {
-    if (step === "customer" && token) {
+    if (isAuthenticated && token && !customerResolved && (step === "email" || step === "auth")) {
       resolveCustomer()
     }
-  }, [step, token])
+  }, [isAuthenticated, token, step, customerResolved])
 
   const resolveCustomer = async () => {
     if (!currentBusinessId || !token) return
@@ -126,9 +140,16 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       })
       const data = await res.json()
       if (data.success) {
-        setCustomerResolved({ id: data.data.id, name: data.data.name })
-        setStep("address")
-        fetchAddresses()
+        const c = data.data as CustomerInfo
+        setCustomerResolved(c)
+        if (c.name && c.phone) {
+          setStep("address")
+          fetchAddresses()
+        } else {
+          setProfileName(c.name || "")
+          setProfilePhone(c.phone || "")
+          setStep("profile")
+        }
       } else {
         setAuthError(data.error || "Could not resolve customer")
       }
@@ -159,6 +180,175 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       setAddressesLoading(false)
     }
   }, [token])
+
+  // ── Auth handlers ──────────────────────────────────────────────────────────
+
+  const handleCheckEmail = async () => {
+    const e = normalizeEmail(email)
+    if (!e) { setAuthError("Please enter your email"); return }
+    setAuthEmail(e)
+    setAuthLoading(true)
+    setAuthError("")
+    try {
+      const res = await fetch("/api/core/storefront/auth/check-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: e }),
+      })
+      const data = await res.json()
+      if (data.success && data.exists) {
+        setAuthView("login")
+      } else {
+        setAuthView("register")
+      }
+      setStep("auth")
+    } catch {
+      setAuthError("Network error. Please try again.")
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleLogin = async () => {
+    if (!authPassword) { setAuthError("Enter your password"); return }
+    setAuthLoading(true)
+    setAuthError("")
+    try {
+      const res = await fetch("/api/core/storefront/auth/login-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail, password: authPassword }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSession({ token: data.data.accessToken, refreshToken: data.data.refreshToken, user: data.data.user, businesses: data.data.businesses })
+      } else {
+        setAuthError(data.error || "Invalid email or password")
+      }
+    } catch {
+      setAuthError("Network error")
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleRegister = async () => {
+    if (!regName || !regPhone) { setAuthError("Name and mobile number are required"); return }
+    const pw = regPassword
+    if (pw.length < 8) { setAuthError("Password must be at least 8 characters"); return }
+    setAuthLoading(true)
+    setAuthError("")
+    try {
+      const phone = normalizePhone(regPhone)
+      const registerRes = await fetch("/api/core/storefront/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail, name: regName, phone }),
+      })
+      const registerData = await registerRes.json()
+      if (registerData.success) {
+        setStepOtpDetails({ email: authEmail, name: regName, phone, password: pw })
+        setAuthView("otp")
+      } else {
+        setAuthError(registerData.error || "Registration failed")
+      }
+    } catch {
+      setAuthError("Network error")
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleVerifyOtp = async () => {
+    if (!otp || otp.length < 4) { setAuthError("Enter the verification code"); return }
+    const details = otpDetails.current
+    if (!details) { setAuthError("Session expired, please restart"); return }
+    setAuthLoading(true)
+    setAuthError("")
+    try {
+      const verifyRes = await fetch("/api/core/storefront/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: details.email, code: otp, name: details.name, phone: details.phone }),
+      })
+      const verifyData = await verifyRes.json()
+      if (verifyData.success) {
+        const setPwRes = await fetch("/api/core/storefront/auth/set-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: details.email, password: details.password, token: verifyData.data?.token || verifyData.data?.accessToken }),
+        })
+        const setPwData = await setPwRes.json()
+        if (setPwData.success || setPwData.data?.accessToken) {
+          setSession({ token: setPwData.data.accessToken || verifyData.data.accessToken, refreshToken: setPwData.data?.refreshToken, user: setPwData.data.user || verifyData.data.user, businesses: setPwData.data?.businesses })
+        } else {
+          setAuthError(setPwData.error || "Failed to set password")
+        }
+      } else {
+        setAuthError(verifyData.error || "Invalid verification code")
+      }
+    } catch {
+      setAuthError("Network error")
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleForgot = async () => {
+    setAuthLoading(true)
+    setAuthError("")
+    try {
+      const res = await fetch("/api/core/storefront/auth/forgot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setAuthView("login")
+        setAuthError("Check your email for reset instructions")
+      } else {
+        setAuthError(data.error || "Failed to send reset email")
+      }
+    } catch {
+      setAuthError("Network error")
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  // ── Profile handler ────────────────────────────────────────────────────────
+
+  const handleSaveProfile = async () => {
+    const pn = profileName.trim()
+    const pp = profilePhone.replace(/\D/g, "")
+    if (!pn || !pp) { setAuthError("Name and mobile number are required"); return }
+    if (!token || !customerResolved) return
+    setProfileLoading(true)
+    setAuthError("")
+    try {
+      const phone = normalizePhone(pp)
+      const res = await fetch("/api/core/storefront/laundry-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ businessId: currentBusinessId, name: pn, phone }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setCustomerResolved({ ...customerResolved, name: pn, phone })
+        setStep("address")
+        fetchAddresses()
+      } else {
+        setAuthError(data.error || "Failed to save profile")
+      }
+    } catch {
+      setAuthError("Network error")
+    } finally {
+      setProfileLoading(false)
+    }
+  }
+
+  // ── Address handlers ───────────────────────────────────────────────────────
 
   const handleAddAddress = async () => {
     if (!newAddr.line1 || !newAddr.city || !newAddr.pincode) {
@@ -223,141 +413,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     )
   }
 
-  const handleCheckEmail = async () => {
-    const e = normalizeEmail(email)
-    if (!e) { setAuthError("Please enter your email"); return }
-    setAuthEmail(e)
-    setAuthLoading(true)
-    setAuthError("")
-    try {
-      const res = await fetch("/api/core/storefront/auth/check-customer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: e }),
-      })
-      const data = await res.json()
-      if (data.success && data.exists) {
-        setAuthView("login")
-      } else {
-        setAuthView("register")
-      }
-    } catch {
-      setAuthError("Network error. Please try again.")
-    } finally {
-      setAuthLoading(false)
-    }
-  }
-
-  const handleLogin = async () => {
-    if (!authPassword) { setAuthError("Enter your password"); return }
-    setAuthLoading(true)
-    setAuthError("")
-    try {
-      const res = await fetch("/api/core/storefront/auth/login-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: authEmail, password: authPassword }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setSession({ token: data.data.accessToken, refreshToken: data.data.refreshToken, user: data.data.user, businesses: data.data.businesses })
-      } else {
-        setAuthError(data.error || "Invalid email or password")
-      }
-    } catch {
-      setAuthError("Network error")
-    } finally {
-      setAuthLoading(false)
-    }
-  }
-
-  const handleRegister = async () => {
-    if (!regName || !regPhone) { setAuthError("Name and mobile number are required"); return }
-    const pw = regPassword
-    if (pw.length < 8) { setAuthError("Password must be at least 8 characters"); return }
-    setAuthLoading(true)
-    setAuthError("")
-    try {
-      const phone = normalizePhone(regPhone)
-      const registerRes = await fetch("/api/core/storefront/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: authEmail, name: regName, phone }),
-      })
-      const registerData = await registerRes.json()
-      if (registerData.success) {
-        setStepOtpDetails({ email: authEmail, name: regName, phone, password: pw })
-        setAuthView("otp")
-      } else {
-        setAuthError(registerData.error || "Registration failed")
-      }
-    } catch {
-      setAuthError("Network error")
-    } finally {
-      setAuthLoading(false)
-    }
-  }
-
-  const otpDetails = useRef<{ email: string; name: string; phone: string; password: string } | null>(null)
-  const setStepOtpDetails = (d: { email: string; name: string; phone: string; password: string }) => { otpDetails.current = d }
-
-  const handleVerifyOtp = async () => {
-    if (!otp || otp.length < 4) { setAuthError("Enter the verification code"); return }
-    const details = otpDetails.current
-    if (!details) { setAuthError("Session expired, please restart"); return }
-    setAuthLoading(true)
-    setAuthError("")
-    try {
-      const verifyRes = await fetch("/api/core/storefront/auth/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: details.email, code: otp, name: details.name, phone: details.phone }),
-      })
-      const verifyData = await verifyRes.json()
-      if (verifyData.success) {
-        const setPwRes = await fetch("/api/core/storefront/auth/set-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: details.email, password: details.password, token: verifyData.data?.token || verifyData.data?.accessToken }),
-        })
-        const setPwData = await setPwRes.json()
-        if (setPwData.success || setPwData.data?.accessToken) {
-          setSession({ token: setPwData.data.accessToken || verifyData.data.accessToken, refreshToken: setPwData.data?.refreshToken, user: setPwData.data.user || verifyData.data.user, businesses: setPwData.data?.businesses })
-        } else {
-          setAuthError(setPwData.error || "Failed to set password")
-        }
-      } else {
-        setAuthError(verifyData.error || "Invalid verification code")
-      }
-    } catch {
-      setAuthError("Network error")
-    } finally {
-      setAuthLoading(false)
-    }
-  }
-
-  const handleForgot = async () => {
-    setAuthLoading(true)
-    setAuthError("")
-    try {
-      const res = await fetch("/api/core/storefront/auth/forgot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: authEmail }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setAuthView("email")
-        setAuthError("Check your email for reset instructions")
-      } else {
-        setAuthError(data.error || "Failed to send reset email")
-      }
-    } catch {
-      setAuthError("Network error")
-    } finally {
-      setAuthLoading(false)
-    }
-  }
+  // ── Order handler ──────────────────────────────────────────────────────────
 
   const handlePlaceOrder = async () => {
     if (!currentBusinessId || !token || !customerResolved || !selectedAddressId) {
@@ -411,10 +467,9 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     }
   }
 
-  const selectedAddr = addresses.find((a) => a.id === selectedAddressId)
-  const canConfirm = !!customerResolved && !!selectedAddressId && (!!pickupDate || currentStore?.id !== undefined) && hasCartItems && !storeClosed
+  // ── Empty cart state ───────────────────────────────────────────────────────
 
-  if (!hasCartItems && step !== "success" && step !== "auth") {
+  if (!hasCartItems && step !== "success" && step !== "email") {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4">
         <div className="text-5xl">🧺</div>
@@ -425,6 +480,8 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       </div>
     )
   }
+
+  // ── Success state ──────────────────────────────────────────────────────────
 
   if (step === "success" && orderResult) {
     return (
@@ -447,70 +504,102 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     )
   }
 
+  // ── Progress indicator ─────────────────────────────────────────────────────
+
+  const progressSteps: { key: CheckoutStep; label: string }[] = [
+    { key: "email", label: "Email" },
+    { key: "auth", label: "Login" },
+    { key: "profile", label: "Profile" },
+    { key: "address", label: "Address" },
+    { key: "review", label: "Confirm" },
+  ]
+  const currentProgressIdx = Math.max(0, progressSteps.findIndex((s) => s.key === step))
+  const visibleProgress = step !== "success" ? progressSteps.slice(0, Math.max(currentProgressIdx + 1, 3)) : []
+
   const inputCls = "w-full h-10 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 bg-white"
   const labelCls = "text-xs font-semibold text-gray-500 uppercase tracking-wide"
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-      <button onClick={() => { if (step === "auth") nav.goBack("home"); else setStep("auth") }} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors">
+      <button
+        onClick={() => {
+          if (step === "email") nav.goBack("home")
+          else if (step === "auth") { setStep("email"); setAuthError("") }
+          else if (step === "profile") nav.goBack("home")
+          else if (step === "address") { setStep("review") } // not used, but consistent
+          else nav.goBack("home")
+        }}
+        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
+      >
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Checkout</h1>
 
       {/* Progress indicator */}
-      <div className="flex items-center gap-2 mb-8">
-        {(() => {
-          const ORDER: CheckoutStep[] = ["auth", "customer", "address", "review", "confirm", "success"]
-          const stepIdx = ORDER.indexOf(step)
-          return (["auth", "address", "review"] as const).map((s, i) => {
-            const sIdx = ORDER.indexOf(s)
-            const isCurrent = step === s
-            const isDone = stepIdx > sIdx
-            return (
-              <div key={s} className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isCurrent ? "text-white" : isDone ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"}`}
-                  style={isCurrent ? { backgroundColor: brandColor } : {}}>
-                  {isDone ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
-                </div>
-                <span className={`text-xs font-medium ${isCurrent ? "text-gray-900" : "text-gray-400"}`}>
-                  {s === "auth" ? "Login" : s === "address" ? "Address" : "Review"}
-                </span>
-                {i < 2 && <div className="w-6 h-px bg-gray-200 mx-1" />}
+      <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
+        {visibleProgress.map((s, i) => {
+          const sIdx = visibleProgress.findIndex((p) => p.key === step)
+          const isCurrent = s.key === step
+          const isDone = sIdx > i
+          const isSkipped = s.key === "profile" && step !== "profile" && step !== "email" && step !== "auth"
+          if (isSkipped) return null
+          return (
+            <div key={s.key} className="flex items-center gap-2">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  isCurrent ? "text-white" : isDone ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"
+                }`}
+                style={isCurrent ? { backgroundColor: brandColor } : {}}
+              >
+                {isDone ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
               </div>
-            )
-          })
-        })()}
+              <span className={`text-xs font-medium whitespace-nowrap ${isCurrent ? "text-gray-900" : "text-gray-400"}`}>
+                {s.label}
+              </span>
+              {i < visibleProgress.length - 1 && <div className="w-6 h-px bg-gray-200 mx-1 shrink-0" />}
+            </div>
+          )
+        })}
       </div>
 
-      {/* STEP: Authentication */}
-      {step === "auth" && !isAuthenticated && (
+      {/* ────────────── STEP: Email ────────────── */}
+      {step === "email" && (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md mx-auto">
-          {authView === "email" && (
-            <div className="space-y-4">
-              <div className="text-center mb-4">
-                <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
-                  <Mail className="w-6 h-6 text-gray-500" />
-                </div>
-                <h2 className="text-lg font-bold text-gray-900">Welcome</h2>
-                <p className="text-sm text-gray-500 mt-1">Enter your email to continue</p>
+          <div className="space-y-4">
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                <Mail className="w-6 h-6 text-gray-500" />
               </div>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="email" placeholder="Your email address" value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCheckEmail()}
-                  className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus />
-              </div>
-              {authError && <p className="text-xs text-red-500">{authError}</p>}
-              <button onClick={handleCheckEmail} disabled={authLoading || !email}
-                className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
-                style={{ backgroundColor: brandColor }}>
-                {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continue"}
-              </button>
+              <h2 className="text-lg font-bold text-gray-900">Continue with Email</h2>
+              <p className="text-sm text-gray-500 mt-1">Enter your email address to get started</p>
             </div>
-          )}
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="email" placeholder="Email Address" value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCheckEmail()}
+                className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus
+              />
+            </div>
+            {authError && <p className="text-xs text-red-500">{authError}</p>}
+            <button
+              onClick={handleCheckEmail}
+              disabled={authLoading || !email}
+              className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+              style={{ backgroundColor: brandColor }}
+            >
+              {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continue"}
+            </button>
+          </div>
+        </div>
+      )}
 
+      {/* ────────────── STEP: Auth ────────────── */}
+      {step === "auth" && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md mx-auto">
+          {/* Login */}
           {authView === "login" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -519,14 +608,16 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                 </div>
                 <h2 className="text-lg font-bold text-gray-900">Welcome back</h2>
                 <p className="text-sm text-gray-500 mt-1">{authEmail}</p>
-                <button onClick={() => { setAuthView("email"); setEmail(""); setAuthError("") }} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">Not you?</button>
+                <button onClick={() => { setStep("email"); setAuthEmail(""); setEmail(""); setAuthError("") }} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">Not you?</button>
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type={showPassword ? "text" : "password"} placeholder="Password" value={authPassword}
+                <input
+                  type={showPassword ? "text" : "password"} placeholder="Password" value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                  className="w-full h-11 pl-10 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus />
+                  className="w-full h-11 pl-10 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus
+                />
                 <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
                   {showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
                 </button>
@@ -535,12 +626,14 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
               {authError && <p className="text-xs text-red-500">{authError}</p>}
               <button onClick={handleLogin} disabled={authLoading || !authPassword}
                 className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
-                style={{ backgroundColor: brandColor }}>
+                style={{ backgroundColor: brandColor }}
+              >
                 {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Login"}
               </button>
             </div>
           )}
 
+          {/* Register */}
           {authView === "register" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -549,7 +642,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
                 </div>
                 <h2 className="text-lg font-bold text-gray-900">Create Account</h2>
                 <p className="text-sm text-gray-500 mt-1">{authEmail}</p>
-                <button onClick={() => { setAuthView("email"); setEmail(""); setAuthError("") }} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">Use different email</button>
+                <button onClick={() => { setStep("email"); setAuthEmail(""); setEmail(""); setAuthError("") }} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">Use different email</button>
               </div>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -571,13 +664,15 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
               {authError && <p className="text-xs text-red-500">{authError}</p>}
               <button onClick={handleRegister} disabled={authLoading || !regName || !regPhone || !regPassword}
                 className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
-                style={{ backgroundColor: brandColor }}>
+                style={{ backgroundColor: brandColor }}
+              >
                 {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account"}
               </button>
               <p className="text-xs text-center text-gray-400">We'll send a verification code to your email</p>
             </div>
           )}
 
+          {/* OTP */}
           {authView === "otp" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -594,12 +689,14 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
               {authError && <p className="text-xs text-red-500">{authError}</p>}
               <button onClick={handleVerifyOtp} disabled={authLoading || otp.length < 4}
                 className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
-                style={{ backgroundColor: brandColor }}>
+                style={{ backgroundColor: brandColor }}
+              >
                 {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
               </button>
             </div>
           )}
 
+          {/* Forgot */}
           {authView === "forgot" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -609,7 +706,8 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
               {authError && <p className="text-xs text-red-500">{authError}</p>}
               <button onClick={handleForgot} disabled={authLoading}
                 className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
-                style={{ backgroundColor: brandColor }}>
+                style={{ backgroundColor: brandColor }}
+              >
                 {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Reset Link"}
               </button>
               <button onClick={() => setAuthView("login")} className="w-full text-sm text-gray-500 hover:text-gray-700">Back to login</button>
@@ -618,27 +716,51 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         </div>
       )}
 
-      {/* STEP: Customer loading */}
-      {step === "customer" && isAuthenticated && (
+      {/* ────────────── STEP: Customer loading (between auth steps) ────────────── */}
+      {step === "auth" && isAuthenticated && customerLoading && (
         <div className="bg-white border border-gray-200 rounded-2xl p-8 max-w-md mx-auto text-center">
-          {customerLoading ? (
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-8 h-8 animate-spin" style={{ color: brandColor }} />
-              <p className="text-sm text-gray-500">Setting up your profile...</p>
-            </div>
-          ) : authError ? (
-            <div className="space-y-4">
-              <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
-              <p className="text-sm text-red-500">{authError}</p>
-              <button onClick={resolveCustomer} className="px-6 py-2 text-white font-semibold text-sm rounded-xl" style={{ backgroundColor: brandColor }}>
-                Retry
-              </button>
-            </div>
-          ) : null}
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: brandColor }} />
+            <p className="text-sm text-gray-500">Setting up your profile...</p>
+          </div>
         </div>
       )}
 
-      {/* STEP: Address */}
+      {/* ────────────── STEP: Profile ────────────── */}
+      {step === "profile" && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md mx-auto">
+          <div className="space-y-4">
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-orange-50 flex items-center justify-center mx-auto mb-3">
+                <User className="w-6 h-6 text-orange-500" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900">Complete Your Profile</h2>
+              <p className="text-sm text-gray-500 mt-1">We need your name and mobile number to continue</p>
+            </div>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input type="text" placeholder="Full Name *" value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus />
+            </div>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input type="tel" placeholder="Mobile Number *" value={profilePhone}
+                onChange={(e) => setProfilePhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
+            </div>
+            {authError && <p className="text-xs text-red-500">{authError}</p>}
+            <button onClick={handleSaveProfile} disabled={profileLoading || !profileName || !profilePhone}
+              className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+              style={{ backgroundColor: brandColor }}
+            >
+              {profileLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ────────────── STEP: Address ────────────── */}
       {step === "address" && (
         <div className="space-y-6">
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
@@ -758,13 +880,14 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         </div>
       )}
 
-      {/* STEP: Review */}
+      {/* ────────────── STEP: Review ────────────── */}
       {step === "review" && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
           <div className="space-y-4">
             <div className="bg-white border border-gray-200 rounded-2xl p-5">
               <h3 className="text-sm font-bold text-gray-900 mb-3">Customer</h3>
               <p className="text-sm text-gray-700">{customerResolved?.name}</p>
+              <p className="text-xs text-gray-500">{customerResolved?.phone}</p>
             </div>
 
             <div className="bg-white border border-gray-200 rounded-2xl p-5">
