@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminStore } from "@/stores/admin-store"
 import { useCustomerAuthStore as useAuthStore } from "@/stores/customer-auth-store";
 import { INDIAN_STATES } from "@/lib/constants"
-import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard } from "lucide-react"
+import { Search, Shirt, Truck, Sparkles, PackageCheck, CheckCircle2, Minus, Plus, X, Calendar, Repeat, Loader2, AlertCircle, LogIn, CreditCard, Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, MapPin } from "lucide-react"
 import { toast } from "sonner"
 import { useCartStore } from "@/stores/cart-store"
 import { makeGarmentLine, makePerKgLine, makeSubscriptionLine, makeBagLine, subscriptionLine, laundryLines, cartToOrderItems, cartBagServices, laundryPieceSubtotal, cartHasKgPortion, groupLaundryByService } from "@/lib/laundry-cart"
@@ -276,6 +276,7 @@ export function StorefrontLaundryHome({ brandColor, nav }: { brandColor: string;
 }
 
 // ── Order flow: Select garments → Details/Pickup → Confirm → Success ─────────
+interface CustomerInfo { id: string; name: string | null; phone: string | null; email: string | null; customerCode: string | null }
 interface SubStatus { active: boolean; subscriptionId?: string; planName?: string; allowance?: number; used?: number; remaining?: number; ordersUsed?: number; maxOrders?: number | null }
 interface Coverage { covered: number; extra: number; extraCharge: { grandTotal: number } }
 interface Addr { id: string; label?: string | null; addressLine1: string; addressLine2?: string | null; area?: string | null; landmark?: string | null; city: string; state?: string | null; pincode: string; country?: string | null; isDefault?: boolean }
@@ -285,6 +286,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const cartItems = useCartStore((s) => s.items)
   const clearCart = useCartStore((s) => s.clearCart)
   const replaceItems = useCartStore((s) => s.replaceItems)
+  const { setSession } = useAuthStore()
   // Prefill the garment steppers from this service's existing cart lines so
   // re-opening a service EDITS its lines rather than duplicating them.
   const cartForService = useMemo(() => laundryLines(cartItems).filter((l) => l.serviceId === service.id), [service.id])// eslint-disable-line react-hooks/exhaustive-deps
@@ -292,7 +294,36 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const cartGroups = useMemo(() => groupLaundryByService(cartItems), [cartItems])
   const cartSubtotalPieces = laundryPieceSubtotal(cartItems)
   const cartKgPortion = cartHasKgPortion(cartItems)
-  const [step, setStep] = useState<"select" | "details" | "success">(initialDetails ? "details" : "select")
+
+  // ── Auth gate (pre-checkout for unauthenticated users) ─────────────────────
+  type PreAuthStep = "email" | "login" | "register" | "otp" | "forgot" | "profile" | "address" | null
+  const [preAuth, setPreAuth] = useState<PreAuthStep>(initialDetails && !isAuthenticated ? "email" : null)
+  const [authEmail, setAuthEmail] = useState("")
+  const [authPassword, setAuthPassword] = useState("")
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState("")
+  const [regName, setRegName] = useState(authCustomer?.name || "")
+  const [regPhone, setRegPhone] = useState(authCustomer?.phone || "")
+  const [regPassword, setRegPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [otp, setOtp] = useState("")
+  const otpRef = useRef<{ email: string; name: string; phone: string; password: string } | null>(null)
+
+  // After auth: resolve customer, check profile, handle addresses
+  const [gateCustomer, setGateCustomer] = useState<CustomerInfo | null>(null)
+  const [gateAddresses, setGateAddresses] = useState<Addr[]>([])
+  const [gateAddrId, setGateAddrId] = useState<string | null>(null)
+  const [gateAddrForm, setGateAddrForm] = useState({ label: "Home", addressLine1: "", area: "", landmark: "", city: "", state: "", pincode: "", isDefault: false })
+  const [gateSaving, setGateSaving] = useState(false)
+  const [gateProfileName, setGateProfileName] = useState("")
+  const [gateProfilePhone, setGateProfilePhone] = useState("")
+
+  // Once the auth gate is fully passed, show the real checkout step
+  const [gatePassed, setGatePassed] = useState(initialDetails && isAuthenticated)
+
+  const [step, setStep] = useState<"select" | "details" | "success">(
+    initialDetails && isAuthenticated ? "details" : "select"
+  )
   const [qty, setQty] = useState<Record<string, number>>(() => {
     const q: Record<string, number> = {}
     for (const l of cartForService) if (l.garmentId) q[l.garmentId] = l.quantity
@@ -318,6 +349,147 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const [weightKg, setWeightKg] = useState(() => { const kg = cartForService.find((l) => !l.garmentId)?.weightKg; return kg ? String(kg) : "" })
   const isPerKg = service.pricingMode === "PER_KG"
   const isBag = service.orderMode === "BAG" // Pickup-First: book the service only, no garments
+
+  // ── Auth gate handlers ────────────────────────────────────────────────────────
+  const ge = (e: string) => e.trim().toLowerCase()
+  const gp = (p: string) => { const d = p.replace(/\D/g, ""); if (d.length === 10) return `+91${d}`; if (d.startsWith("91") && d.length === 12) return `+${d}`; return p.startsWith("+") ? p : `+${d}` }
+
+  const handlePreCheckEmail = async () => {
+    const e = ge(authEmail)
+    if (!e) { setAuthError("Please enter your email"); return }
+    setAuthLoading(true); setAuthError("")
+    try {
+      const res = await fetch("/api/core/storefront/auth/check-customer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: e }) })
+      const d = await res.json()
+      if (d.success && d.exists) setPreAuth("login")
+      else { setRegName(""); setRegPhone(""); setRegPassword(""); setPreAuth("register") }
+    } catch { setAuthError("Network error") } finally { setAuthLoading(false) }
+  }
+
+  const handlePreLogin = async () => {
+    if (!authPassword) { setAuthError("Enter your password"); return }
+    setAuthLoading(true); setAuthError("")
+    try {
+      const res = await fetch("/api/core/storefront/auth/login-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), password: authPassword }) })
+      const d = await res.json()
+      if (d.success) { setSession({ token: d.data.accessToken, refreshToken: d.data.refreshToken, user: d.data.user, businesses: d.data.businesses }) }
+      else { setAuthError(d.error || "Invalid email or password") }
+    } catch { setAuthError("Network error") } finally { setAuthLoading(false) }
+  }
+
+  const handlePreRegister = async () => {
+    if (!regName || !regPhone) { setAuthError("Name and mobile number are required"); return }
+    if (regPassword.length < 8) { setAuthError("Password must be at least 8 characters"); return }
+    setAuthLoading(true); setAuthError("")
+    try {
+      const ph = gp(regPhone)
+      const r = await fetch("/api/core/storefront/auth/send-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), name: regName, phone: ph }) })
+      const j = await r.json()
+      if (j.success) { otpRef.current = { email: ge(authEmail), name: regName, phone: ph, password: regPassword }; setPreAuth("otp") }
+      else { setAuthError(j.error || "Registration failed") }
+    } catch { setAuthError("Network error") } finally { setAuthLoading(false) }
+  }
+
+  const handlePreVerifyOtp = async () => {
+    if (!otp || otp.length < 4) { setAuthError("Enter the verification code"); return }
+    const det = otpRef.current
+    if (!det) { setAuthError("Session expired, please restart"); return }
+    setAuthLoading(true); setAuthError("")
+    try {
+      const v = await fetch("/api/core/storefront/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: det.email, code: otp, name: det.name, phone: det.phone }) })
+      const vd = await v.json()
+      if (vd.success) {
+        const sp = await fetch("/api/core/storefront/auth/set-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: det.email, password: det.password, token: vd.data?.token || vd.data?.accessToken }) })
+        const sd = await sp.json()
+        if (sd.success || sd.data?.accessToken) {
+          setSession({ token: sd.data.accessToken || vd.data.accessToken, refreshToken: sd.data?.refreshToken, user: sd.data.user || vd.data.user, businesses: sd.data?.businesses })
+        } else { setAuthError(sd.error || "Failed to set password") }
+      } else { setAuthError(vd.error || "Invalid verification code") }
+    } catch { setAuthError("Network error") } finally { setAuthLoading(false) }
+  }
+
+  const handlePreForgot = async () => {
+    setAuthLoading(true); setAuthError("")
+    try {
+      const r = await fetch("/api/core/storefront/auth/forgot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail) }) })
+      const d = await r.json()
+      if (d.success) { setPreAuth("login"); setAuthError("Check your email for reset instructions") }
+      else { setAuthError(d.error || "Failed to send reset email") }
+    } catch { setAuthError("Network error") } finally { setAuthLoading(false) }
+  }
+
+  // After auth: resolve gate customer → check profile → handle address
+  const resolveGateCustomer = useCallback(async () => {
+    if (!token || !businessId) return
+    try {
+      const r = await fetch("/api/core/storefront/laundry-customer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ businessId }) })
+      const d = await r.json()
+      if (d.success) {
+        const c = d.data as CustomerInfo
+        setGateCustomer(c)
+        if (c.name && c.phone) { setPreAuth("address"); fetchGateAddresses() }
+        else { setGateProfileName(c.name || ""); setGateProfilePhone(c.phone || ""); setPreAuth("profile") }
+      } else { setAuthError(d.error || "Could not resolve customer") }
+    } catch { setAuthError("Network error") }
+  }, [token, businessId])
+
+  const fetchGateAddresses = useCallback(async () => {
+    if (!token) return
+    try {
+      const r = await fetch("/api/laundry/app/addresses", { headers: { Authorization: `Bearer ${token}` } })
+      const d = await r.json()
+      if (d.success && Array.isArray(d.data)) {
+        setGateAddresses(d.data)
+        const def = d.data.find((a: Addr) => a.isPickupDefault || a.isDefault)
+        if (def) setGateAddrId(def.id)
+        else if (d.data.length > 0) setGateAddrId(d.data[0].id)
+        if (d.data.length > 0) { setPreAuth(null); setGatePassed(true); setStep("details") }
+      }
+    } catch {}
+  }, [token])
+
+  const handleGateSaveProfile = async () => {
+    const n = gateProfileName.trim(); const p = gateProfilePhone.replace(/\D/g, "")
+    if (!n || !p) { setAuthError("Name and mobile number are required"); return }
+    if (!token || !gateCustomer) return
+    setGateSaving(true); setAuthError("")
+    try {
+      const r = await fetch("/api/core/storefront/laundry-customer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ businessId, name: n, phone: gp(p) }) })
+      const d = await r.json()
+      if (d.success) { setGateCustomer({ ...gateCustomer, name: n, phone: p }); setPreAuth("address"); fetchGateAddresses() }
+      else { setAuthError(d.error || "Failed to save profile") }
+    } catch { setAuthError("Network error") } finally { setGateSaving(false) }
+  }
+
+  const handleGateSaveAddress = async () => {
+    if (!gateAddrForm.addressLine1.trim() || !gateAddrForm.city.trim() || !gateAddrForm.pincode.trim()) { setAuthError("Street, city and pincode are required"); return }
+    if (!token) return
+    setGateSaving(true); setAuthError("")
+    try {
+      const r = await fetch("/api/laundry/app/addresses", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ label: gateAddrForm.label, addressLine1: gateAddrForm.addressLine1, area: gateAddrForm.area || undefined, landmark: gateAddrForm.landmark || undefined, city: gateAddrForm.city, state: gateAddrForm.state, pincode: gateAddrForm.pincode, isPickupDefault: gateAddrForm.isDefault, isDeliveryDefault: gateAddrForm.isDefault }) })
+      const d = await r.json()
+      if (d.success) { setPreAuth(null); setGatePassed(true); setStep("details") }
+      else { setAuthError(d.error || "Failed to save address") }
+    } catch { setAuthError("Network error") } finally { setGateSaving(false) }
+  }
+
+  useEffect(() => {
+    if (isAuthenticated && preAuth === "login" && token) { resolveGateCustomer() }
+  }, [isAuthenticated, token, preAuth, resolveGateCustomer])
+
+  // Bridge auth gate state into the details step's own state
+  useEffect(() => {
+    if (gatePassed && gateCustomer) {
+      setCustId(gateCustomer.id)
+      if (gateCustomer.name) setName(gateCustomer.name)
+      if (gateCustomer.phone) setPhone(gateCustomer.phone)
+      setEmail(gateCustomer.email || "")
+      if (gateAddresses.length > 0) {
+        setAddresses(gateAddresses)
+        if (gateAddrId) setSelAddr(gateAddrId)
+      }
+    }
+  }, [gatePassed, gateCustomer, gateAddresses, gateAddrId])
 
   // ── Customer identity + structured address (reuse shared /profile + /addresses) ──
   const [email, setEmail] = useState(authCustomer?.email || "")
@@ -509,8 +681,12 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
       <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
-            <p className="font-bold text-gray-900">{step === "select" ? service.name : "Checkout"}</p>
-            <p className="text-xs text-gray-400">{step === "select" ? "Choose garments & quantity" : step === "details" ? "Pickup details" : "Pickup scheduled"}</p>
+            <p className="font-bold text-gray-900">
+              {preAuth ? "Sign In" : step === "select" ? service.name : "Checkout"}
+            </p>
+            <p className="text-xs text-gray-400">
+              {preAuth ? "Complete your account" : step === "select" ? "Choose garments & quantity" : step === "details" ? "Pickup details" : "Pickup scheduled"}
+            </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-50"><X className="w-4 h-4 text-gray-500" /></button>
         </div>
@@ -537,8 +713,169 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
           </div>
         )}
 
+        {/* ── Pre-checkout Auth Gate (unauthenticated users) ── */}
+        {preAuth && !isAuthenticated && (<>
+          <div className="overflow-y-auto px-5 py-4 flex-1">
+            {preAuth === "email" && (
+              <div className="space-y-4 max-w-xs mx-auto pt-4">
+                <div className="text-center">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3"><Mail className="w-5 h-5 text-gray-500" /></div>
+                  <h2 className="text-base font-bold text-gray-900">Sign in to continue</h2>
+                  <p className="text-xs text-gray-500 mt-1">Enter your email to get started</p>
+                </div>
+                <input type="email" placeholder="Email Address" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePreCheckEmail()} className="w-full h-11 px-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus />
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+                <button onClick={handlePreCheckEmail} disabled={authLoading || !authEmail} className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" style={accentBg}>
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continue"}
+                </button>
+              </div>
+            )}
+            {preAuth === "login" && (
+              <div className="space-y-4 max-w-xs mx-auto pt-4">
+                <div className="text-center">
+                  <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-3"><Lock className="w-5 h-5 text-blue-500" /></div>
+                  <h2 className="text-base font-bold text-gray-900">Welcome back</h2>
+                  <p className="text-xs text-gray-500 mt-1">{authEmail}</p>
+                  <button onClick={() => { setAuthEmail(""); setPreAuth("email"); setAuthError("") }} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">Not you?</button>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type={showPassword ? "text" : "password"} placeholder="Password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePreLogin()} className="w-full h-11 pl-10 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus />
+                  <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">{showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}</button>
+                </div>
+                <button onClick={() => setPreAuth("forgot")} className="text-xs text-gray-500 hover:text-gray-700 underline">Forgot password?</button>
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+                <button onClick={handlePreLogin} disabled={authLoading || !authPassword} className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" style={accentBg}>
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Login"}
+                </button>
+              </div>
+            )}
+            {preAuth === "register" && (
+              <div className="space-y-4 max-w-xs mx-auto pt-4">
+                <div className="text-center">
+                  <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-3"><User className="w-5 h-5 text-green-500" /></div>
+                  <h2 className="text-base font-bold text-gray-900">Create Account</h2>
+                  <p className="text-xs text-gray-500 mt-1">{authEmail}</p>
+                  <button onClick={() => { setAuthEmail(""); setPreAuth("email"); setAuthError("") }} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">Use different email</button>
+                </div>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" placeholder="Full Name *" value={regName} onChange={(e) => setRegName(e.target.value)} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
+                </div>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="tel" placeholder="Mobile Number *" value={regPhone} onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
+                </div>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type={showPassword ? "text" : "password"} placeholder="Password (min 8 chars) *" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="w-full h-11 pl-10 pr-10 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
+                  <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">{showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}</button>
+                </div>
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+                <button onClick={handlePreRegister} disabled={authLoading || !regName || !regPhone || !regPassword} className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" style={accentBg}>
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account"}
+                </button>
+                <p className="text-xs text-center text-gray-400">We'll send a verification code to your email</p>
+              </div>
+            )}
+            {preAuth === "otp" && (
+              <div className="space-y-4 max-w-xs mx-auto pt-4">
+                <div className="text-center">
+                  <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-3"><Mail className="w-5 h-5 text-purple-500" /></div>
+                  <h2 className="text-base font-bold text-gray-900">Verify Email</h2>
+                  <p className="text-xs text-gray-500 mt-1">Enter the code sent to {authEmail}</p>
+                </div>
+                <input type="text" placeholder="Verification code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(e) => e.key === "Enter" && handlePreVerifyOtp()} className="w-full h-11 text-center text-lg tracking-widest border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus />
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+                <button onClick={handlePreVerifyOtp} disabled={authLoading || otp.length < 4} className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" style={accentBg}>
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
+                </button>
+              </div>
+            )}
+            {preAuth === "forgot" && (
+              <div className="space-y-4 max-w-xs mx-auto pt-4">
+                <div className="text-center">
+                  <h2 className="text-base font-bold text-gray-900">Reset Password</h2>
+                  <p className="text-xs text-gray-500 mt-1">We'll send reset instructions to {authEmail}</p>
+                </div>
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+                <button onClick={handlePreForgot} disabled={authLoading} className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" style={accentBg}>
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send Reset Link"}
+                </button>
+                <button onClick={() => setPreAuth("login")} className="w-full text-sm text-gray-500 hover:text-gray-700">Back to login</button>
+              </div>
+            )}
+            {preAuth === "profile" && (
+              <div className="space-y-4 max-w-xs mx-auto pt-4">
+                <div className="text-center">
+                  <div className="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center mx-auto mb-3"><User className="w-5 h-5 text-orange-500" /></div>
+                  <h2 className="text-base font-bold text-gray-900">Complete Your Profile</h2>
+                  <p className="text-xs text-gray-500 mt-1">We need your name and mobile number</p>
+                </div>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" placeholder="Full Name *" value={gateProfileName} onChange={(e) => setGateProfileName(e.target.value)} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" autoFocus />
+                </div>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="tel" placeholder="Mobile Number *" value={gateProfilePhone} onChange={(e) => setGateProfilePhone(e.target.value.replace(/\D/g, "").slice(0, 10))} className="w-full h-11 pl-10 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400" />
+                </div>
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+                <button onClick={handleGateSaveProfile} disabled={gateSaving || !gateProfileName || !gateProfilePhone} className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" style={accentBg}>
+                  {gateSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue"}
+                </button>
+              </div>
+            )}
+            {preAuth === "address" && (
+              <div className="space-y-4 max-w-xs mx-auto pt-2">
+                <div className="text-center">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3"><MapPin className="w-5 h-5 text-gray-500" /></div>
+                  <h2 className="text-base font-bold text-gray-900">Pickup Address</h2>
+                  <p className="text-xs text-gray-500 mt-1">Where should we pick up from?</p>
+                </div>
+                {gateAddresses.length > 0 && (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {gateAddresses.map((a) => (
+                      <button key={a.id} onClick={() => { setGateAddrId(a.id); setPreAuth(null); setGatePassed(true); setStep("details") }}
+                        className={`w-full text-left rounded-lg border p-3 text-sm ${gateAddrId === a.id ? "border-2" : "border-gray-200"}`}
+                        style={gateAddrId === a.id ? { borderColor: brandColor } : {}}>
+                        <span className="text-[10px] font-bold uppercase text-gray-400">{a.label || "Address"}</span>
+                        <p className="text-gray-700 text-xs mt-0.5">{a.addressLine1}, {a.city} - {a.pincode}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs font-semibold text-gray-600">Add a new address</p>
+                <div className="flex gap-1.5">{[{ k: "Home", v: "HOME" }, { k: "Office", v: "OFFICE" }, { k: "Other", v: "OTHER" }].map((t) => (
+                  <button key={t.k} onClick={() => setGateAddrForm((f) => ({ ...f, label: t.k }))} className={`rounded-lg px-2.5 py-1 text-xs border ${gateAddrForm.label === t.k ? "text-white border-transparent" : "border-gray-200 text-gray-600"}`} style={gateAddrForm.label === t.k ? accentBg : {}}>{t.k}</button>
+                ))}</div>
+                <input value={gateAddrForm.addressLine1} onChange={(e) => setGateAddrForm((f) => ({ ...f, addressLine1: e.target.value }))} placeholder="Flat / Building / Street *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                <input value={gateAddrForm.area} onChange={(e) => setGateAddrForm((f) => ({ ...f, area: e.target.value }))} placeholder="Area / Locality" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                <input value={gateAddrForm.landmark} onChange={(e) => setGateAddrForm((f) => ({ ...f, landmark: e.target.value }))} placeholder="Landmark (optional)" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={gateAddrForm.city} onChange={(e) => setGateAddrForm((f) => ({ ...f, city: e.target.value }))} placeholder="City *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                  <input value={gateAddrForm.pincode} onChange={(e) => setGateAddrForm((f) => ({ ...f, pincode: e.target.value }))} placeholder="Pincode *" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" />
+                </div>
+                <select value={gateAddrForm.state} onChange={(e) => setGateAddrForm((f) => ({ ...f, state: e.target.value }))} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none bg-white text-gray-700">
+                  <option value="">Select State</option>
+                  {INDIAN_STATES.map((st) => <option key={st} value={st}>{st}</option>)}
+                </select>
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+                <button onClick={handleGateSaveAddress} disabled={gateSaving || !gateAddrForm.addressLine1 || !gateAddrForm.city || !gateAddrForm.pincode} className="w-full h-11 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" style={accentBg}>
+                  {gateSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save & Continue to Checkout"}
+                </button>
+              </div>
+            )}
+          </div>
+        </>)}
+        {preAuth && !isAuthenticated && (
+          <div className="border-t border-gray-100 px-5 py-3">
+            <button onClick={onClose} className="w-full rounded-xl py-2.5 text-sm font-semibold border border-gray-200 text-gray-600">Cancel</button>
+          </div>
+        )}
+
         {/* STEP: select garments (or weight for PER_KG services) */}
-        {step === "select" && (<>
+        {step === "select" && !preAuth && (<>
           {isBag ? (
             <div className="overflow-y-auto px-5 py-6 flex-1 space-y-3">
               <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-center">
@@ -595,8 +932,8 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
           </div>
         </>)}
 
-        {/* STEP: pickup details */}
-        {step === "details" && (<>
+        {/* STEP: pickup details (only accessible after auth gate passes) */}
+        {step === "details" && gatePassed && (<>
           <div className="overflow-y-auto px-5 py-4 flex-1 space-y-3">
             <div><p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">Order Review</p>
               <div className="rounded-xl border border-gray-100 p-3 space-y-2">
@@ -644,27 +981,12 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
               {couponMsg && !couponMsg.ok && <p className="mt-1 text-[11px] text-rose-600">{couponMsg.text}</p>}
             </div>
 
-            {/* Customer identity (shared account) — complete profile inline if needed */}
-            {isAuthenticated ? (
-              <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-sm">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{profileIncomplete ? "Add Mobile Number" : "Ordering As"}</p>
-                <p className="font-semibold text-gray-800">{name || authCustomer?.name}</p>
-                {!profileIncomplete && phone && <p className="text-xs text-gray-500">{maskPhone(phone)}</p>}
-                {profileIncomplete && (
-                  <div className="mt-2 space-y-2">
-                    <Field label="Mobile Number *"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
-                    <button onClick={saveProfile} disabled={savingProfile} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white inline-flex items-center gap-1" style={accentBg}>{savingProfile && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save &amp; Continue</button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Your Details</p>
-                <Field label="Full Name *"><input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="Your full name" /></Field>
-                <Field label="Mobile Number *"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="10-digit mobile" /></Field>
-                <Field label="Email Address (optional)"><input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none" placeholder="you@email.com" /></Field>
-              </div>
-            )}
+            {/* Customer identity — always authenticated at this step */}
+            <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-sm">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Ordering As</p>
+              <p className="font-semibold text-gray-800">{name || authCustomer?.name}</p>
+              {phone && <p className="text-xs text-gray-500">{maskPhone(phone)}</p>}
+            </div>
 
             {/* Structured pickup address (shared Address model) */}
             <div>
