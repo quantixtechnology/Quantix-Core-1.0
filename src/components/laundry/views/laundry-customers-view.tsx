@@ -68,11 +68,18 @@ export function LaundryCustomersView() {
   const [timeline, setTimeline] = useState<TL[]>([])
   const [notes, setNotes] = useState<Note[]>([])
   const [newNote, setNewNote] = useState("")
-  const [tab, setTab] = useState<"overview" | "addresses" | "timeline" | "notes">("overview")
+  const [tab, setTab] = useState<"overview" | "addresses" | "dispatch-history" | "timeline" | "notes">("overview")
   const [dispatchStatus, setDispatchStatus] = useState<any[]>([])
   const [scheduling, setScheduling] = useState(false)
   const [scheduleForm, setScheduleForm] = useState({ address: "", date: "", timeSlot: "", notes: "", assignNow: false, executiveId: "" })
   const [schedulingBusy, setSchedulingBusy] = useState(false)
+  // Address CRUD
+  const [editAddress, setEditAddress] = useState<Partial<Addr> | null>(null)
+  const [savingAddress, setSavingAddress] = useState(false)
+  const [addressAction, setAddressAction] = useState<string | null>(null)
+  // Dispatch history
+  const [dispatchHistory, setDispatchHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
   // Merge duplicate
   const [mergeOpen, setMergeOpen] = useState(false)
   const [mergeQuery, setMergeQuery] = useState("")
@@ -210,6 +217,60 @@ export function LaundryCustomersView() {
       toast({ title: "Customers merged", description: "Orders, subscriptions, addresses and history moved to this profile." })
       setMergeOpen(false); setMergeQuery(""); setMergeResults([]); load(); openCustomer(detail.id, false)
     } catch (e) { toast({ title: "Merge failed", description: e instanceof Error ? e.message : "", variant: "destructive" }) } finally { setMerging(false) }
+  }
+
+  // Address CRUD
+  const openAddressForm = (a?: Addr) => {
+    setEditAddress(a ? { ...a } : { addressType: "HOME", isDefault: false, isPickupDefault: false, isDeliveryDefault: false, addressLine1: "", addressLine2: "", area: "", landmark: "", city: "", state: "", pincode: "", country: "India" })
+    setAddressAction(a ? "edit" : "add")
+  }
+  const closeAddressForm = () => { setEditAddress(null); setAddressAction(null) }
+  const saveAddress = async () => {
+    if (!editAddress || !detail) return
+    if (!editAddress.addressLine1?.trim()) { toast({ title: "Address line 1 is required", variant: "destructive" }); return }
+    const isNew = addressAction === "add"
+    setSavingAddress(true)
+    try {
+      const url = isNew ? `/api/laundry/customers/${detail.id}/addresses` : `/api/laundry/customers/${detail.id}/addresses/${editAddress.id}`
+      const method = isNew ? "POST" : "PUT"
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, ...editAddress }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast({ title: isNew ? "Add failed" : "Update failed", description: j.error, variant: "destructive" }); return }
+      toast({ title: isNew ? "Address added" : "Address updated" })
+      const r = await fetch(`/api/laundry/customers/${detail.id}?businessId=${currentBusinessId}`).then((r) => r.json())
+      if (r.success) setDetail(r.data)
+      closeAddressForm()
+    } catch { toast({ title: "Address save failed", variant: "destructive" }) } finally { setSavingAddress(false) }
+  }
+  const deleteAddress = async (addrId: string) => {
+    if (!detail) return
+    try {
+      const res = await fetch(`/api/laundry/customers/${detail.id}/addresses/${addrId}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast({ title: "Delete failed", description: j.error, variant: "destructive" }); return }
+      toast({ title: "Address deleted" })
+      const r = await fetch(`/api/laundry/customers/${detail.id}?businessId=${currentBusinessId}`).then((r) => r.json())
+      if (r.success) setDetail(r.data)
+    } catch { toast({ title: "Address delete failed", variant: "destructive" }) }
+  }
+  const setDefaultAddress = async (addrId: string, field: "isDefault" | "isPickupDefault" | "isDeliveryDefault") => {
+    if (!detail) return
+    try {
+      const res = await fetch(`/api/laundry/customers/${detail.id}/addresses/${addrId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: currentBusinessId, [field]: true }) })
+      const j = await res.json()
+      if (!res.ok || !j.success) { toast({ title: "Set default failed", description: j.error, variant: "destructive" }); return }
+      toast({ title: "Default updated" })
+      const r = await fetch(`/api/laundry/customers/${detail.id}?businessId=${currentBusinessId}`).then((r) => r.json())
+      if (r.success) setDetail(r.data)
+    } catch { toast({ title: "Set default failed", variant: "destructive" }) }
+  }
+  const loadDispatchHistory = async () => {
+    if (!detail || !currentBusinessId) return
+    setLoadingHistory(true)
+    try {
+      const r = await fetch(`/api/laundry/dispatch/status?businessId=${currentBusinessId}&customerId=${detail.id}&scope=history`).then((r) => r.json())
+      if (r.success) setDispatchHistory(r.data)
+    } catch { /* silent */ } finally { setLoadingHistory(false) }
   }
 
   const saveEdit = async () => {
@@ -370,11 +431,22 @@ export function LaundryCustomersView() {
               <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-blue-800 flex items-center gap-1"><Truck className="h-3.5 w-3.5" /> Dispatch</p>
-                  {!scheduling && <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => setScheduling(true)}><Plus className="h-3 w-3" /> Schedule Pickup</Button>}
+                  {!scheduling && <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => { const def = detail.addresses?.find((a: Addr) => a.isPickupDefault) || detail.addresses?.[0]; setScheduleForm((f) => ({ ...f, address: def ? `${def.addressLine1}, ${def.area ? def.area + ", " : ""}${def.city}` : "" })); setScheduling(true) }}><Plus className="h-3 w-3" /> Schedule Pickup</Button>}
                 </div>
                 {scheduling && (
                   <div className="space-y-2 bg-white rounded border border-blue-200 p-2">
-                    <div className="space-y-1"><label className="text-[10px] text-slate-500">Pickup Address</label><input value={scheduleForm.address} onChange={(e) => setScheduleForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder={detail.addresses?.[0] ? `${detail.addresses[0].addressLine1}, ${detail.addresses[0].city}` : "Enter address"} /></div>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-slate-500">Pickup Address</label>
+                        {detail.addresses.length > 0 && (
+                          <select className="text-[10px] border border-slate-200 rounded px-1 h-5 max-w-[140px]" value="" onChange={(e) => { if (!e.target.value) return; const a = detail.addresses.find((ad: Addr) => ad.id === e.target.value); if (a) setScheduleForm((f) => ({ ...f, address: `${a.addressLine1}, ${a.area ? a.area + ", " : ""}${a.city}` })) }}>
+                            <option value="">Change address…</option>
+                            {detail.addresses.map((a: Addr) => <option key={a.id} value={a.id}>{a.label || a.addressType || "HOME"} — {a.addressLine1}, {a.city}</option>)}
+                          </select>
+                        )}
+                      </div>
+                      <input value={scheduleForm.address} onChange={(e) => setScheduleForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="Type or select an address above" />
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1"><label className="text-[10px] text-slate-500">Date</label><input type="date" value={scheduleForm.date} onChange={(e) => setScheduleForm((f) => ({ ...f, date: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" /></div>
                       <div className="space-y-1"><label className="text-[10px] text-slate-500">Time Slot</label><input value={scheduleForm.timeSlot} onChange={(e) => setScheduleForm((f) => ({ ...f, timeSlot: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2" placeholder="e.g. 10:00–12:00" /></div>
@@ -420,8 +492,8 @@ export function LaundryCustomersView() {
 
               {/* Tabs */}
               <div className="flex gap-1 border-b border-slate-100">
-                {(["overview", "addresses", "timeline", "notes"] as const).map((t) => (
-                  <button key={t} onClick={() => setTab(t)} className={`px-2.5 h-8 text-xs font-medium capitalize border-b-2 -mb-px ${tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}>{t}</button>
+                {(["overview", "addresses", "dispatch-history", "timeline", "notes"] as const).map((t) => (
+                  <button key={t} onClick={() => { setTab(t); if (t === "dispatch-history") loadDispatchHistory() }} className={`px-2.5 h-8 text-xs font-medium capitalize border-b-2 -mb-px ${tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}>{t === "dispatch-history" ? "Dispatch" : t}</button>
                 ))}
               </div>
 
@@ -453,16 +525,70 @@ export function LaundryCustomersView() {
               </div>}
 
               {tab === "addresses" && <div className="space-y-2">
-                {detail.addresses.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No addresses.</p> : detail.addresses.map((a) => (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400">{detail.addresses.length} address{detail.addresses.length !== 1 ? "es" : ""}</span>
+                  <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-blue-200 text-blue-700" onClick={() => openAddressForm()}><Plus className="h-3 w-3" /> Add Address</Button>
+                </div>
+                {detail.addresses.length === 0 && !editAddress ? <p className="text-slate-400 text-xs py-3 text-center">No addresses saved. Click "Add Address" to create one.</p> : null}
+                {editAddress && addressAction ? (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-blue-800">{addressAction === "add" ? "New Address" : "Edit Address"}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-0.5 col-span-2"><Label className="text-[10px]">Address Line 1 *</Label><Input className="h-7 text-xs" value={editAddress.addressLine1 || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, addressLine1: e.target.value } : f)} /></div>
+                      <div className="space-y-0.5"><Label className="text-[10px]">Address Line 2</Label><Input className="h-7 text-xs" value={editAddress.addressLine2 || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, addressLine2: e.target.value } : f)} /></div>
+                      <div className="space-y-0.5"><Label className="text-[10px]">Area</Label><Input className="h-7 text-xs" value={editAddress.area || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, area: e.target.value } : f)} /></div>
+                      <div className="space-y-0.5"><Label className="text-[10px]">Landmark</Label><Input className="h-7 text-xs" value={editAddress.landmark || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, landmark: e.target.value } : f)} /></div>
+                      <div className="space-y-0.5"><Label className="text-[10px]">City</Label><Input className="h-7 text-xs" value={editAddress.city || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, city: e.target.value } : f)} /></div>
+                      <div className="space-y-0.5"><Label className="text-[10px]">State</Label><SearchableSelect className="h-7 text-xs" value={editAddress.state || ""} onChange={(v) => setEditAddress((f) => f ? { ...f, state: v } : f)} options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} placeholder="State" /></div>
+                      <div className="space-y-0.5"><Label className="text-[10px]">PIN Code</Label><Input className="h-7 text-xs" value={editAddress.pincode || ""} inputMode="numeric" maxLength={6} onChange={(e) => setEditAddress((f) => f ? { ...f, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) } : f)} /></div>
+                      <div className="space-y-0.5"><Label className="text-[10px]">Label</Label><Input className="h-7 text-xs" value={editAddress.label || ""} onChange={(e) => setEditAddress((f) => f ? { ...f, label: e.target.value } : f)} placeholder="e.g. Home, Office" /></div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isPickupDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isPickupDefault: e.target.checked } : f)} /> Default for Pickup</label>
+                      <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isDeliveryDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isDeliveryDefault: e.target.checked } : f)} /> Default for Delivery</label>
+                      <label className="flex items-center gap-1 text-[10px] cursor-pointer"><input type="checkbox" checked={editAddress.isDefault || false} onChange={(e) => setEditAddress((f) => f ? { ...f, isDefault: e.target.checked } : f)} /> General Default</label>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="h-7 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white flex-1" disabled={savingAddress} onClick={saveAddress}>
+                        {savingAddress ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} {addressAction === "add" ? "Add Address" : "Save Changes"}
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={closeAddressForm}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : null}
+                {detail.addresses.map((a: Addr) => (
                   <div key={a.id} className="rounded-lg border border-slate-200 p-2.5">
                     <div className="flex items-center gap-1.5 mb-1">
                       <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                      <span className="text-xs font-medium text-slate-700">{a.addressType || "HOME"}</span>
+                      <span className="text-xs font-medium text-slate-700">{a.label || a.addressType || "HOME"}</span>
                       {a.isDefault && <Badge variant="outline" className="text-[9px] border-emerald-300 text-emerald-700 bg-emerald-50">Default</Badge>}
                       {a.isPickupDefault && <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-700 bg-blue-50">Pickup</Badge>}
                       {a.isDeliveryDefault && <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-700 bg-violet-50">Delivery</Badge>}
+                      <div className="ml-auto flex gap-1">
+                        <button className="text-[10px] text-slate-400 hover:text-blue-600" onClick={() => openAddressForm(a)}><Pencil className="h-3 w-3" /></button>
+                        <button className="text-[10px] text-slate-400 hover:text-red-600" onClick={() => { if (confirm("Delete this address?")) deleteAddress(a.id) }}><Trash2 className="h-3 w-3" /></button>
+                      </div>
                     </div>
                     <p className="text-slate-600 text-xs whitespace-pre-line leading-snug">{formatAddressLines(a).join("\n")}</p>
+                    <div className="flex gap-1.5 mt-1">
+                      {!a.isPickupDefault && <button className="text-[9px] text-blue-500 hover:underline" onClick={() => setDefaultAddress(a.id, "isPickupDefault")}>Set pickup default</button>}
+                      {!a.isDeliveryDefault && <button className="text-[9px] text-violet-500 hover:underline" onClick={() => setDefaultAddress(a.id, "isDeliveryDefault")}>Set delivery default</button>}
+                    </div>
+                  </div>
+                ))}
+              </div>}
+
+              {tab === "dispatch-history" && <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {loadingHistory ? <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div> : dispatchHistory.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No dispatch history found.</p> : dispatchHistory.map((d: any) => (
+                  <div key={d.orderId} className="rounded-lg border border-slate-200 p-2 text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-mono text-blue-700 font-medium">{d.orderNumber}</span>
+                      <span className="text-[10px] text-slate-400">{new Date(d.createdAt || d.pickup?.date || d.delivery?.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                    </div>
+                    <div className="flex gap-3 text-[10px] text-slate-600">
+                      {d.pickup?.required && <span className="flex items-center gap-0.5"><Truck className="h-3 w-3 text-blue-500" /> Pickup: {d.pickup.status} {d.pickup.executiveName ? `· ${d.pickup.executiveName}` : ""}</span>}
+                      {d.delivery?.required && <span className="flex items-center gap-0.5"><Truck className="h-3 w-3 text-violet-500" /> Delivery: {d.delivery.status} {d.delivery.executiveName ? `· ${d.delivery.executiveName}` : ""}</span>}
+                    </div>
                   </div>
                 ))}
               </div>}

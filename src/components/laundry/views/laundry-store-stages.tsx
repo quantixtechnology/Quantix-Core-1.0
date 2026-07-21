@@ -33,7 +33,7 @@ const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("e
 interface OrderRow {
   id: string; orderNumber: string; status: string; orderType: string; createdAt: string
   grandTotal: number; amountPaid: number; balanceDue: number; paymentStatus: string
-  expectedDeliveryDate: string | null; itemCount: number
+  expectedDeliveryDate: string | null; itemCount: number; customerId?: string | null
   store?: { storeName: string | null } | null
   customer?: { name: string; phone: string | null } | null
 }
@@ -500,13 +500,27 @@ export function LaundryReadyForDelivery() {
   const [delForm, setDelForm] = useState({ address: "", date: "", timeSlot: "", assignNow: false, executiveId: "" })
   const [scheduleBusy, setScheduleBusy] = useState(false)
   const [execs, setExecs] = useState<{ id: string; name: string }[]>([])
+  const [delAddresses, setDelAddresses] = useState<{ id: string; addressLine1: string; area: string | null; city: string; label?: string | null; addressType?: string | null; isDeliveryDefault?: boolean }[]>([])
+  const [delAddrLoading, setDelAddrLoading] = useState(false)
 
   const openOrder = async (o: OrderRow | null) => {
     setSelected(o); setRecipient(o?.customer?.name || ""); setNote(""); setReference(""); setSchedulingDel(false)
     setDelForm({ address: "", date: new Date().toISOString().split("T")[0], timeSlot: "", assignNow: false, executiveId: "" })
+    setDelAddresses([])
     if (o && currentBusinessId) {
       const j = await fetch(`/api/laundry/delivery-executives?businessId=${currentBusinessId}`).then((r) => r.json()).catch(() => null)
       if (j?.success) setExecs(j.data)
+      if (o.customerId) {
+        setDelAddrLoading(true)
+        const addrRes = await fetch(`/api/laundry/customers/${o.customerId}/addresses?businessId=${currentBusinessId}`).then((r) => r.json()).catch(() => null)
+        if (addrRes?.success) {
+          const addrs = addrRes.data || []
+          setDelAddresses(addrs)
+          const def = addrs.find((a: any) => a.isDeliveryDefault) || addrs[0]
+          if (def) setDelForm((f) => ({ ...f, address: [def.addressLine1, def.area, def.city].filter(Boolean).join(", ") }))
+        }
+        setDelAddrLoading(false)
+      }
     }
   }
   const covered = selected ? selected.paymentStatus === "PAID" || selected.paymentStatus === "SUBSCRIPTION" || selected.balanceDue <= 0 : false
@@ -569,7 +583,16 @@ export function LaundryReadyForDelivery() {
                   <p className="text-xs font-semibold text-blue-800">Schedule Home Delivery</p>
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-slate-500">Delivery Address</label>
-                    <input value={delForm.address} onChange={(e) => setDelForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white" placeholder="Enter delivery address" />
+                    <div className="flex gap-1">
+                      <input value={delForm.address} onChange={(e) => setDelForm((f) => ({ ...f, address: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white flex-1" placeholder="Enter delivery address" />
+                      {delAddresses.length > 0 && (
+                        <select className="h-7 text-[10px] border border-slate-200 rounded px-1 bg-white shrink-0 max-w-[120px]" defaultValue="" onChange={(e) => { if (!e.target.value) return; const a = delAddresses.find((ad) => ad.id === e.target.value); if (a) setDelForm((f) => ({ ...f, address: [a.addressLine1, a.area, a.city].filter(Boolean).join(", ") })) }}>
+                          <option value="" disabled>Change…</option>
+                          {delAddresses.map((a) => <option key={a.id} value={a.id}>{a.label || a.addressType || "Addr"}</option>)}
+                        </select>
+                      )}
+                      {delAddrLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 my-auto" />}
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1"><label className="text-[10px] text-slate-500">Date</label><input type="date" value={delForm.date} onChange={(e) => setDelForm((f) => ({ ...f, date: e.target.value }))} className="w-full h-7 text-xs rounded border border-slate-200 px-2 bg-white" /></div>

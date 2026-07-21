@@ -51,7 +51,7 @@ const PAYMENT_PREFERENCES = [
 const QUICK_NOTES = ["Starch Shirts", "Separate White Clothes", "Gentle Wash", "Express Delivery"]
 const PICKUP_SLOTS = ["07:00 - 09:00", "09:00 - 12:00", "12:00 - 15:00", "15:00 - 18:00", "18:00 - 21:00"]
 
-interface AddressRow { addressLine1?: string | null; addressLine2?: string | null; area?: string | null; landmark?: string | null; city?: string | null; state?: string | null; pincode?: string | null; country?: string | null }
+interface AddressRow { id?: string; addressType?: string; label?: string | null; isPickupDefault?: boolean; isDeliveryDefault?: boolean; isDefault?: boolean; addressLine1?: string | null; addressLine2?: string | null; area?: string | null; landmark?: string | null; city?: string | null; state?: string | null; pincode?: string | null; country?: string | null }
 interface CustomerResult {
   id: string; name: string; phone: string | null; email: string | null
   loyaltyTier: string; walletBalance: number; customerCode: string | null
@@ -131,6 +131,8 @@ export default function LaundryNewOrder() {
   const [pickupTimeSlot, setPickupTimeSlot] = useState("")
   const [pickupAddress, setPickupAddress] = useState("")
   const [pickupInstructions, setPickupInstructions] = useState("")
+  const [savedAddresses, setSavedAddresses] = useState<AddressRow[]>([])
+  const [addressesLoading, setAddressesLoading] = useState(false)
   const [paymentPreference, setPaymentPreference] = useState("COD")
   const [quickNotes, setQuickNotes] = useState<string[]>(["Separate White Clothes"])
   const [otherInstructions, setOtherInstructions] = useState("")
@@ -251,6 +253,32 @@ export default function LaundryNewOrder() {
       .finally(() => { if (!cancel) setLcLoading(false) })
     return () => { cancel = true }
   }, [currentBusinessId, selectedCustomer])
+
+  // Fetch full addresses when customer is selected; auto-populate pickup address
+  useEffect(() => {
+    if (!currentBusinessId || !selectedCustomer) { setSavedAddresses([]); return }
+    setAddressesLoading(true)
+    fetch(`/api/laundry/customers/${selectedCustomer.id}/addresses?businessId=${currentBusinessId}`).then((r) => r.json())
+      .then((j) => {
+        const addrs: AddressRow[] = j.success ? j.data || [] : []
+        setSavedAddresses(addrs)
+        if (addrs.length > 0) {
+          const def = addrs.find((a: AddressRow) => a.isPickupDefault) || addrs[0]
+          const addrStr = [def.addressLine1, def.area, def.city].filter(Boolean).join(", ")
+          if (addrStr) setPickupAddress(addrStr)
+        }
+      }).catch(() => { setSavedAddresses([]) })
+      .finally(() => setAddressesLoading(false))
+  }, [currentBusinessId, selectedCustomer])
+
+  // Auto-populate pickup address when switching to HOME_PICKUP with saved addresses
+  useEffect(() => {
+    if (isPickup && savedAddresses.length > 0 && !pickupAddress) {
+      const def = savedAddresses.find((a: AddressRow) => a.isPickupDefault) || savedAddresses[0]
+      const addrStr = [def.addressLine1, def.area, def.city].filter(Boolean).join(", ")
+      if (addrStr) setPickupAddress(addrStr)
+    }
+  }, [isPickup, savedAddresses, pickupAddress])
 
   const subPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
@@ -801,7 +829,18 @@ export default function LaundryNewOrder() {
                       <SelectContent>{PICKUP_SLOTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
                   </div>
                 </div>
-                <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Address</Label><Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} disabled={!isPickup} placeholder="Enter pickup address" className="bg-slate-50 border-slate-200" /></div>
+                <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Address</Label>
+                  <div className="flex gap-1">
+                    <Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} disabled={!isPickup} placeholder="Enter pickup address" className="bg-slate-50 border-slate-200 flex-1" />
+                    {isPickup && savedAddresses.length > 0 && (
+                      <select className="h-9 text-xs border border-slate-200 rounded-md px-2 bg-slate-50 shrink-0 max-w-[130px]" defaultValue="" onChange={(e) => { if (!e.target.value) return; const a = savedAddresses.find((ad: AddressRow) => ad.id === e.target.value); if (a) setPickupAddress([a.addressLine1, a.area, a.city].filter(Boolean).join(", ")) }}>
+                        <option value="" disabled>Change…</option>
+                        {savedAddresses.map((a: AddressRow) => <option key={a.id || Math.random()} value={a.id || ""}>{a.label || a.addressType || "Addr"} — {a.city}</option>)}
+                      </select>
+                    )}
+                    {isPickup && addressesLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 my-auto" />}
+                  </div>
+                </div>
                 <div className="space-y-1"><Label className="text-xs text-slate-600">Special Instructions</Label><Input value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} disabled={!isPickup} placeholder="e.g. Call before arrival" className="bg-slate-50 border-slate-200" /></div>
               </CardContent>
             </Card>
