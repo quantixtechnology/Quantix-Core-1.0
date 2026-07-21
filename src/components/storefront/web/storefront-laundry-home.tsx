@@ -359,7 +359,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (!e) { setAuthError("Please enter your email"); return }
     setAuthLoading(true); setAuthError("")
     try {
-      const res = await fetch("/api/core/storefront/auth/check-customer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: e }) })
+      const res = await fetch("/api/core/storefront/auth/check-customer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: e, businessId }) })
       const d = await res.json()
       if (d.success && d.exists) setPreAuth("login")
       else { setRegName(""); setRegPhone(""); setRegPassword(""); setPreAuth("register") }
@@ -370,7 +370,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (!authPassword) { setAuthError("Enter your password"); return }
     setAuthLoading(true); setAuthError("")
     try {
-      const res = await fetch("/api/core/storefront/auth/login-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), password: authPassword }) })
+      const res = await fetch("/api/core/storefront/auth/login-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), password: authPassword, businessId }) })
       const d = await res.json()
       if (d.success) { setSession({ token: d.data.accessToken, refreshToken: d.data.refreshToken, user: d.data.user, businesses: d.data.businesses }) }
       else { setAuthError(d.error || "Invalid email or password") }
@@ -383,7 +383,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     setAuthLoading(true); setAuthError("")
     try {
       const ph = gp(regPhone)
-      const r = await fetch("/api/core/storefront/auth/send-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), name: regName, phone: ph }) })
+      const r = await fetch("/api/core/storefront/auth/send-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), name: regName, phone: ph, businessId }) })
       const j = await r.json()
       if (j.success) { otpRef.current = { email: ge(authEmail), name: regName, phone: ph, password: regPassword }; setPreAuth("otp") }
       else { setAuthError(j.error || "Registration failed") }
@@ -396,10 +396,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
     if (!det) { setAuthError("Session expired, please restart"); return }
     setAuthLoading(true); setAuthError("")
     try {
-      const v = await fetch("/api/core/storefront/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: det.email, code: otp, name: det.name, phone: det.phone }) })
+      const v = await fetch("/api/core/storefront/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: det.email, code: otp, name: det.name, phone: det.phone, businessId }) })
       const vd = await v.json()
       if (vd.success) {
-        const sp = await fetch("/api/core/storefront/auth/set-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: det.email, password: det.password, token: vd.data?.token || vd.data?.accessToken }) })
+        const sp = await fetch("/api/core/storefront/auth/set-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: det.email, password: det.password, token: vd.data?.token || vd.data?.accessToken, businessId }) })
         const sd = await sp.json()
         if (sd.success || sd.data?.accessToken) {
           setSession({ token: sd.data.accessToken || vd.data.accessToken, refreshToken: sd.data?.refreshToken, user: sd.data.user || vd.data.user, businesses: sd.data?.businesses })
@@ -411,7 +411,7 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const handlePreForgot = async () => {
     setAuthLoading(true); setAuthError("")
     try {
-      const r = await fetch("/api/core/storefront/auth/forgot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail) }) })
+      const r = await fetch("/api/core/storefront/auth/forgot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ge(authEmail), businessId }) })
       const d = await r.json()
       if (d.success) { setPreAuth("login"); setAuthError("Check your email for reset instructions") }
       else { setAuthError(d.error || "Failed to send reset email") }
@@ -420,9 +420,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
 
   // After auth: resolve gate customer → check profile → handle address
   const resolveGateCustomer = useCallback(async () => {
-    if (!token || !businessId) return
+    const t = useAuthStore.getState().token
+    if (!t || !businessId) return
     try {
-      const r = await fetch("/api/core/storefront/laundry-customer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ businessId }) })
+      const r = await fetch("/api/core/storefront/laundry-customer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: JSON.stringify({ businessId }) })
       const d = await r.json()
       if (d.success) {
         const c = d.data as CustomerInfo
@@ -434,9 +435,10 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   }, [token, businessId])
 
   const fetchGateAddresses = useCallback(async () => {
-    if (!token) return
+    const t = useAuthStore.getState().token
+    if (!t) return
     try {
-      const r = await fetch("/api/laundry/app/addresses", { headers: { Authorization: `Bearer ${token}` } })
+      const r = await fetch("/api/laundry/app/addresses", { headers: { Authorization: `Bearer ${t}` } })
       const d = await r.json()
       if (d.success && Array.isArray(d.data)) {
         setGateAddresses(d.data)
@@ -451,10 +453,11 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
   const handleGateSaveProfile = async () => {
     const n = gateProfileName.trim(); const p = gateProfilePhone.replace(/\D/g, "")
     if (!n || !p) { setAuthError("Name and mobile number are required"); return }
-    if (!token || !gateCustomer) return
+    const t = useAuthStore.getState().token
+    if (!t || !gateCustomer) return
     setGateSaving(true); setAuthError("")
     try {
-      const r = await fetch("/api/core/storefront/laundry-customer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ businessId, name: n, phone: gp(p) }) })
+      const r = await fetch("/api/core/storefront/laundry-customer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: JSON.stringify({ businessId, name: n, phone: gp(p) }) })
       const d = await r.json()
       if (d.success) { setGateCustomer({ ...gateCustomer, name: n, phone: p }); setPreAuth("address"); fetchGateAddresses() }
       else { setAuthError(d.error || "Failed to save profile") }
@@ -463,19 +466,26 @@ function ServiceSheet({ service, businessId, brandColor, nav, plans, isAuthentic
 
   const handleGateSaveAddress = async () => {
     if (!gateAddrForm.addressLine1.trim() || !gateAddrForm.city.trim() || !gateAddrForm.pincode.trim()) { setAuthError("Street, city and pincode are required"); return }
-    if (!token) return
+    const t = useAuthStore.getState().token
+    if (!t) return
     setGateSaving(true); setAuthError("")
     try {
-      const r = await fetch("/api/laundry/app/addresses", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ label: gateAddrForm.label, addressLine1: gateAddrForm.addressLine1, area: gateAddrForm.area || undefined, landmark: gateAddrForm.landmark || undefined, city: gateAddrForm.city, state: gateAddrForm.state, pincode: gateAddrForm.pincode, isPickupDefault: gateAddrForm.isDefault, isDeliveryDefault: gateAddrForm.isDefault }) })
+      const r = await fetch("/api/laundry/app/addresses", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: JSON.stringify({ label: gateAddrForm.label, addressLine1: gateAddrForm.addressLine1, area: gateAddrForm.area || undefined, landmark: gateAddrForm.landmark || undefined, city: gateAddrForm.city, state: gateAddrForm.state, pincode: gateAddrForm.pincode, isPickupDefault: gateAddrForm.isDefault, isDeliveryDefault: gateAddrForm.isDefault }) })
       const d = await r.json()
       if (d.success) { setPreAuth(null); setGatePassed(true); setStep("details") }
       else { setAuthError(d.error || "Failed to save address") }
     } catch { setAuthError("Network error") } finally { setGateSaving(false) }
   }
 
+  const gateResolvedRef = useRef(false)
+
   useEffect(() => {
-    if (isAuthenticated && preAuth === "login" && token) { resolveGateCustomer() }
-  }, [isAuthenticated, token, preAuth, resolveGateCustomer])
+    if (isAuthenticated && preAuth !== null && !gateResolvedRef.current) {
+      gateResolvedRef.current = true
+      resolveGateCustomer()
+    }
+    if (preAuth === null) { gateResolvedRef.current = false }
+  }, [isAuthenticated, preAuth, resolveGateCustomer])
 
   // Bridge auth gate state into the details step's own state
   useEffect(() => {
