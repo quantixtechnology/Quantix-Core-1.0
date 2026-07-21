@@ -8,7 +8,7 @@ import type { WebNav } from "./storefront-website"
 import type { PickedStore } from "./storefront-store-picker"
 import {
   ArrowLeft, Loader2, CheckCircle2, MapPin, Plus, Trash2, Navigation,
-  Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, AlertCircle, CreditCard, Home, Building,
+  Mail, Lock, User, Phone, KeyRound, Eye, EyeOff, CreditCard, Home, Building, Tag,
 } from "lucide-react"
 import { formatINR } from "@/lib/currency"
 
@@ -48,8 +48,7 @@ interface LaundryCheckoutProps {
   storeClosedMessage?: string
 }
 
-type CheckoutStep = "email" | "auth" | "profile" | "address" | "review" | "success"
-
+type Step = "email" | "auth" | "profile" | "address" | "review" | "success"
 type AuthView = "login" | "register" | "otp" | "forgot"
 
 const PICKUP_SLOTS = ["07:00 - 09:00", "09:00 - 12:00", "12:00 - 15:00", "15:00 - 18:00", "18:00 - 21:00"]
@@ -73,7 +72,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
   const deliveryFee = currentStore?.deliveryFee ?? 0
   const hasCartItems = itemCount > 0
 
-  const [step, setStep] = useState<CheckoutStep>("email")
+  const [step, setStep] = useState<Step>(isAuthenticated ? "address" : "email")
   const [authView, setAuthView] = useState<AuthView>("login")
 
   const [email, setEmail] = useState("")
@@ -88,7 +87,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
   const [authError, setAuthError] = useState("")
 
   const otpDetails = useRef<{ email: string; name: string; phone: string; password: string } | null>(null)
-  const setStepOtpDetails = (d: typeof otpDetails.current) => { otpDetails.current = d }
 
   const [customerResolved, setCustomerResolved] = useState<CustomerInfo | null>(null)
   const [customerLoading, setCustomerLoading] = useState(false)
@@ -119,12 +117,16 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
   const [orderError, setOrderError] = useState("")
   const [orderResult, setOrderResult] = useState<{ orderNumber: string; orderId: string } | null>(null)
 
-  const selectedAddr = addresses.find((a) => a.id === selectedAddressId)
-  const canConfirm = !!customerResolved && !!selectedAddressId && (!!pickupDate || currentStore?.id !== undefined) && hasCartItems && !storeClosed
+  const [couponCode, setCouponCode] = useState("")
+  const [couponMsg, setCouponMsg] = useState<{ ok: boolean; text: string; code: string; pending: boolean } | null>(null)
+  const [couponBusy, setCouponBusy] = useState(false)
 
-  // Auto-resolve customer when authenticated
+  const selectedAddr = addresses.find((a) => a.id === selectedAddressId)
+
+  const canConfirm = isAuthenticated && !!customerResolved && !!selectedAddressId && !!pickupDate && !!pickupSlot && hasCartItems && !storeClosed
+
   useEffect(() => {
-    if (isAuthenticated && token && !customerResolved && (step === "email" || step === "auth")) {
+    if (isAuthenticated && token && !customerResolved && (step === "email" || step === "address")) {
       resolveCustomer()
     }
   }, [isAuthenticated, token, step, customerResolved])
@@ -175,13 +177,10 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         else if (data.data.length > 0) setSelectedAddressId(data.data[0].id)
       }
     } catch {
-      /* non-critical */
     } finally {
       setAddressesLoading(false)
     }
   }, [token])
-
-  // ── Auth handlers ──────────────────────────────────────────────────────────
 
   const handleCheckEmail = async () => {
     const e = normalizeEmail(email)
@@ -247,7 +246,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       })
       const registerData = await registerRes.json()
       if (registerData.success) {
-        setStepOtpDetails({ email: authEmail, name: regName, phone, password: pw })
+        otpDetails.current = { email: authEmail, name: regName, phone, password: pw }
         setAuthView("otp")
       } else {
         setAuthError(registerData.error || "Registration failed")
@@ -317,8 +316,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     }
   }
 
-  // ── Profile handler ────────────────────────────────────────────────────────
-
   const handleSaveProfile = async () => {
     const pn = profileName.trim()
     const pp = profilePhone.replace(/\D/g, "")
@@ -347,8 +344,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       setProfileLoading(false)
     }
   }
-
-  // ── Address handlers ───────────────────────────────────────────────────────
 
   const handleAddAddress = async () => {
     if (!newAddr.line1 || !newAddr.city || !newAddr.pincode) {
@@ -396,7 +391,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       setAddresses((prev) => prev.filter((a) => a.id !== addrId))
       if (selectedAddressId === addrId) setSelectedAddressId(null)
     } catch {
-      /* ignore */
     }
   }
 
@@ -413,7 +407,28 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     )
   }
 
-  // ── Order handler ──────────────────────────────────────────────────────────
+  const applyCoupon = async () => {
+    if (!couponCode.trim()) return
+    setCouponBusy(true)
+    try {
+      const res = await fetch("/api/core/marketing/evaluate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: currentBusinessId, workspaceType: "LAUNDRY", customerId: customerResolved?.id || undefined, code: couponCode.trim(), orderValue: rawSubtotal, applyTo: "ORDER" }),
+      })
+      const j = await res.json()
+      if (!j.success) { setCouponMsg({ ok: false, text: j.error || "Invalid coupon code.", code: "", pending: false }); return }
+      setCouponMsg({ ok: true, text: j.data.message, code: couponCode.trim().toUpperCase(), pending: !!j.data.pending })
+    } catch { setCouponMsg({ ok: false, text: "Could not apply coupon. Try again.", code: "", pending: false }) } finally { setCouponBusy(false) }
+  }
+  const removeCoupon = () => { setCouponMsg(null); setCouponCode("") }
+
+  const recordCoupon = (orderId: string | null) => {
+    if (!couponMsg?.ok) return
+    fetch("/api/core/marketing/apply", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessId: currentBusinessId, workspaceType: "LAUNDRY", customerId: customerResolved?.id || undefined, code: couponMsg.code, orderValue: rawSubtotal, applyTo: "ORDER", orderId }),
+    }).catch(() => {})
+  }
 
   const handlePlaceOrder = async () => {
     if (!currentBusinessId || !token || !customerResolved || !selectedAddressId) {
@@ -455,6 +470,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       const data = await res.json()
       if (data.success) {
         clearCart()
+        recordCoupon(data.data.id || null)
         setOrderResult({ orderNumber: data.data.orderNumber, orderId: data.data.orderId })
         setStep("success")
       } else {
@@ -467,8 +483,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     }
   }
 
-  // ── Empty cart state ───────────────────────────────────────────────────────
-
   if (!hasCartItems && step !== "success" && step !== "email") {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4">
@@ -480,8 +494,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
       </div>
     )
   }
-
-  // ── Success state ──────────────────────────────────────────────────────────
 
   if (step === "success" && orderResult) {
     return (
@@ -504,14 +516,12 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
     )
   }
 
-  // ── Progress indicator ─────────────────────────────────────────────────────
-
-  const progressSteps: { key: CheckoutStep; label: string }[] = [
+  const progressSteps: { key: Step; label: string }[] = [
     { key: "email", label: "Email" },
     { key: "auth", label: "Login" },
     { key: "profile", label: "Profile" },
     { key: "address", label: "Address" },
-    { key: "review", label: "Confirm" },
+    { key: "review", label: "Checkout" },
   ]
   const currentProgressIdx = Math.max(0, progressSteps.findIndex((s) => s.key === step))
   const visibleProgress = step !== "success" ? progressSteps.slice(0, Math.max(currentProgressIdx + 1, 3)) : []
@@ -526,7 +536,8 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
           if (step === "email") nav.goBack("home")
           else if (step === "auth") { setStep("email"); setAuthError("") }
           else if (step === "profile") nav.goBack("home")
-          else if (step === "address") { setStep("review") } // not used, but consistent
+          else if (step === "address") { setStep("email"); setAuthError("") }
+          else if (step === "review") { setStep("address") }
           else nav.goBack("home")
         }}
         className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
@@ -563,7 +574,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         })}
       </div>
 
-      {/* ────────────── STEP: Email ────────────── */}
+      {/* ── STEP: Email ── */}
       {step === "email" && (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md mx-auto">
           <div className="space-y-4">
@@ -596,10 +607,9 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         </div>
       )}
 
-      {/* ────────────── STEP: Auth ────────────── */}
+      {/* ── STEP: Auth ── */}
       {step === "auth" && (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md mx-auto">
-          {/* Login */}
           {authView === "login" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -633,7 +643,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
             </div>
           )}
 
-          {/* Register */}
           {authView === "register" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -672,7 +681,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
             </div>
           )}
 
-          {/* OTP */}
           {authView === "otp" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -696,7 +704,6 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
             </div>
           )}
 
-          {/* Forgot */}
           {authView === "forgot" && (
             <div className="space-y-4">
               <div className="text-center mb-4">
@@ -716,7 +723,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         </div>
       )}
 
-      {/* ────────────── STEP: Customer loading (between auth steps) ────────────── */}
+      {/* ── STEP: Auth loading (after login, resolving customer) ── */}
       {step === "auth" && isAuthenticated && customerLoading && (
         <div className="bg-white border border-gray-200 rounded-2xl p-8 max-w-md mx-auto text-center">
           <div className="flex flex-col items-center gap-3">
@@ -726,7 +733,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         </div>
       )}
 
-      {/* ────────────── STEP: Profile ────────────── */}
+      {/* ── STEP: Profile ── */}
       {step === "profile" && (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md mx-auto">
           <div className="space-y-4">
@@ -760,7 +767,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
         </div>
       )}
 
-      {/* ────────────── STEP: Address ────────────── */}
+      {/* ── STEP: Address (pre-checkout: select or add address only) ── */}
       {step === "address" && (
         <div className="space-y-6">
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
@@ -850,59 +857,87 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
             )}
           </div>
 
-          {/* Pickup details */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-6">
-            <h2 className="text-base font-bold text-gray-900 mb-4">Pickup Details</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Pickup Date</label>
-                <input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Time Slot</label>
-                <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)} className={inputCls}>
-                  <option value="">Select slot</option>
-                  {PICKUP_SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="mt-3">
-              <label className={labelCls}>Instructions (optional)</label>
-              <input type="text" placeholder="e.g. Call before arrival" value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} className={inputCls} />
-            </div>
-          </div>
-
           <button onClick={() => setStep("review")} disabled={!selectedAddressId}
             className="w-full h-12 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: brandColor }}>
-            Continue to Review
+            Continue to Checkout
           </button>
         </div>
       )}
 
-      {/* ────────────── STEP: Review ────────────── */}
+      {/* ── STEP: Review (Checkout — no auth fields) ── */}
       {step === "review" && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
           <div className="space-y-4">
+            {/* Pickup Address (read-only with change) */}
             <div className="bg-white border border-gray-200 rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-gray-900 mb-3">Customer</h3>
-              <p className="text-sm text-gray-700">{customerResolved?.name}</p>
-              <p className="text-xs text-gray-500">{customerResolved?.phone}</p>
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-gray-900 mb-3">Pickup Address</h3>
+              <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <MapPin className="w-4 h-4" style={{ color: brandColor }} />
+                Pickup Address
+              </h3>
               {selectedAddr && (
                 <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{selectedAddr.label || selectedAddr.addressType || "Address"}</span>
+                    {(selectedAddr.isPickupDefault || selectedAddr.isDefault) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>Default</span>}
+                  </div>
                   <p className="text-sm font-medium text-gray-900">{selectedAddr.addressLine1}</p>
                   {selectedAddr.area && <p className="text-xs text-gray-500">{selectedAddr.area}</p>}
+                  {selectedAddr.landmark && <p className="text-xs text-gray-400">Near {selectedAddr.landmark}</p>}
                   <p className="text-sm text-gray-600">{selectedAddr.city}{selectedAddr.state ? `, ${selectedAddr.state}` : ""} - {selectedAddr.pincode}</p>
                 </div>
               )}
-              {pickupDate && <p className="text-xs text-gray-500 mt-2">Pickup: {pickupDate} {pickupSlot ? `(${pickupSlot})` : ""}</p>}
               <button onClick={() => setStep("address")} className="text-xs font-medium mt-2" style={{ color: brandColor }}>Change</button>
             </div>
 
+            {/* Pickup Schedule */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-gray-900 mb-4">Pickup Schedule</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Pickup Date</label>
+                  <input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Time Slot</label>
+                  <select value={pickupSlot} onChange={(e) => setPickupSlot(e.target.value)} className={inputCls}>
+                    <option value="">Select slot</option>
+                    {PICKUP_SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className={labelCls}>Instructions (optional)</label>
+                <input type="text" placeholder="e.g. Call before arrival" value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+
+            {/* Coupon */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <Tag className="w-4 h-4" style={{ color: brandColor }} />
+                Coupon
+              </h3>
+              {couponMsg?.ok ? (
+                <div className="flex items-start justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-emerald-700">{couponMsg.code} applied{couponMsg.pending ? " · Discount Pending" : ""}</p>
+                    <p className="text-[11px] text-emerald-600">{couponMsg.text}</p>
+                  </div>
+                  <button onClick={removeCoupon} className="text-[11px] font-semibold text-gray-500 shrink-0 ml-2">Remove</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} placeholder="Enter coupon code" className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none uppercase" />
+                  <button onClick={applyCoupon} disabled={couponBusy || !couponCode.trim()} className="rounded-lg px-4 text-sm font-semibold text-white disabled:opacity-40" style={{ backgroundColor: brandColor }}>
+                    {couponBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+                  </button>
+                </div>
+              )}
+              {couponMsg && !couponMsg.ok && <p className="mt-1 text-[11px] text-rose-600">{couponMsg.text}</p>}
+            </div>
+
+            {/* Payment Method */}
             <div className="bg-white border border-gray-200 rounded-2xl p-5">
               <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
                 <CreditCard className="w-4 h-4" style={{ color: brandColor }} />
@@ -917,6 +952,7 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
             </div>
           </div>
 
+          {/* Order Summary sidebar */}
           <div>
             <div className="bg-white border border-gray-200 rounded-2xl p-5 sticky top-24">
               <h3 className="text-sm font-bold text-gray-900 mb-3">Order Summary</h3>
@@ -947,8 +983,20 @@ export function StorefrontLaundryCheckout({ brandColor, nav, currentStore, store
               <button onClick={handlePlaceOrder} disabled={placing || !canConfirm}
                 className="w-full h-12 text-white font-bold text-sm rounded-xl mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: brandColor }}>
-                {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Confirm Order · ${formatINR(rawSubtotal + deliveryFee)}`}
+                {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Confirm Pickup · ${formatINR(rawSubtotal + deliveryFee)}`}
               </button>
+
+              {!canConfirm && (
+                <div className="mt-2 space-y-1">
+                  {!isAuthenticated && <p className="text-[10px] text-red-400">Sign in required</p>}
+                  {!customerResolved && <p className="text-[10px] text-red-400">Customer profile required</p>}
+                  {!selectedAddressId && <p className="text-[10px] text-red-400">Select a pickup address</p>}
+                  {!pickupDate && <p className="text-[10px] text-red-400">Select pickup date</p>}
+                  {!pickupSlot && <p className="text-[10px] text-red-400">Select pickup time slot</p>}
+                  {!hasCartItems && <p className="text-[10px] text-red-400">Add items to your bag</p>}
+                  {storeClosed && <p className="text-[10px] text-red-400">Store is closed</p>}
+                </div>
+              )}
             </div>
           </div>
         </div>
