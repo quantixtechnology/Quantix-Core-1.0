@@ -69,7 +69,7 @@ function barcodeDataURL(value: string, cfg: LabelConfig): string {
   try {
     JsBarcode(canvas, value, {
       format: "CODE128",
-      displayValue: opts.textPosition !== "hidden",
+      displayValue: false, // GAR rendered as separate .gar div
       margin: opts.quietZone,
       height: opts.barcodeHeight,
       width: opts.moduleWidth,

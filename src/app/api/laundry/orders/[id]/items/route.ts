@@ -66,8 +66,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // operate on per-garment records, never service/cart lines.
     const exploded = explodePieces(priced)
 
-    // Pre-generate GAR codes for every garment (atomic sequence, one per item).
-    const garCodes = await Promise.all(exploded.map(() => nextGarScanCode()))
+    // Pre-generate GAR codes sequentially (must not be parallel — atomic counter
+    // needs serial access to guarantee items get ordered GAR numbers).
+    const garCodes: string[] = []
+    for (let i = 0; i < exploded.length; i++) garCodes.push(await nextGarScanCode())
     const updated = await prisma.$transaction(async (tx) => {
       for (let i = 0; i < exploded.length; i++) {
         const l = exploded[i]
