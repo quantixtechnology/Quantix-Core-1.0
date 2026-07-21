@@ -579,11 +579,11 @@ export function LaundryCustomersView() {
               </div>}
 
               {tab === "dispatch-history" && <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {loadingHistory ? <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div> : dispatchHistory.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No dispatch history found.</p> : dispatchHistory.map((d: any) => (
+                {loadingHistory ? <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div> : dispatchHistory.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No dispatch history found. Run backfill if historical records are missing.</p> : dispatchHistory.map((d: any) => (
                   <div key={d.orderId} className="rounded-lg border border-slate-200 p-2 text-xs">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-mono text-blue-700 font-medium">{d.orderNumber}</span>
-                      <span className="text-[10px] text-slate-400">{new Date(d.createdAt || d.pickup?.date || d.delivery?.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                      <span className="text-[10px] text-slate-400">{d.createdAt ? new Date(d.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span>
                     </div>
                     <div className="flex gap-3 text-[10px] text-slate-600">
                       {d.pickup?.required && <span className="flex items-center gap-0.5"><Truck className="h-3 w-3 text-blue-500" /> Pickup: {d.pickup.status} {d.pickup.executiveName ? `· ${d.pickup.executiveName}` : ""}</span>}

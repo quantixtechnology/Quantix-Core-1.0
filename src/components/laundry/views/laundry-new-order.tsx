@@ -257,6 +257,12 @@ export default function LaundryNewOrder() {
   // Fetch full addresses when customer is selected; auto-populate pickup address
   useEffect(() => {
     if (!currentBusinessId || !selectedCustomer) { setSavedAddresses([]); return }
+    // Immediate fallback: use address from search results
+    const searchAddr = selectedCustomer.addresses?.[0]
+    if (searchAddr) {
+      const addrStr = [searchAddr.addressLine1, searchAddr.area, searchAddr.city].filter(Boolean).join(", ")
+      if (addrStr) setPickupAddress(addrStr)
+    }
     setAddressesLoading(true)
     fetch(`/api/laundry/customers/${selectedCustomer.id}/addresses?businessId=${currentBusinessId}`).then((r) => r.json())
       .then((j) => {
@@ -267,7 +273,7 @@ export default function LaundryNewOrder() {
           const addrStr = [def.addressLine1, def.area, def.city].filter(Boolean).join(", ")
           if (addrStr) setPickupAddress(addrStr)
         }
-      }).catch(() => { setSavedAddresses([]) })
+      }).catch(() => { /* address fetch failed — fallback already applied */ })
       .finally(() => setAddressesLoading(false))
   }, [currentBusinessId, selectedCustomer])
 
@@ -831,14 +837,14 @@ export default function LaundryNewOrder() {
                 </div>
                 <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Address</Label>
                   <div className="flex gap-1">
-                    <Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} disabled={!isPickup} placeholder="Enter pickup address" className="bg-slate-50 border-slate-200 flex-1" />
-                    {isPickup && savedAddresses.length > 0 && (
-                      <select className="h-9 text-xs border border-slate-200 rounded-md px-2 bg-slate-50 shrink-0 max-w-[130px]" defaultValue="" onChange={(e) => { if (!e.target.value) return; const a = savedAddresses.find((ad: AddressRow) => ad.id === e.target.value); if (a) setPickupAddress([a.addressLine1, a.area, a.city].filter(Boolean).join(", ")) }}>
+                    <Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} disabled={!isPickup} placeholder={isPickup ? "Enter pickup address" : "Select Home Pickup order type to edit"} className="bg-slate-50 border-slate-200 flex-1" />
+                    {savedAddresses.length > 0 && (
+                      <select disabled={!isPickup} className="h-9 text-xs border border-slate-200 rounded-md px-2 bg-slate-50 shrink-0 max-w-[130px]" defaultValue="" onChange={(e) => { if (!e.target.value) return; const a = savedAddresses.find((ad: AddressRow) => ad.id === e.target.value); if (a) setPickupAddress([a.addressLine1, a.area, a.city].filter(Boolean).join(", ")) }}>
                         <option value="" disabled>Change…</option>
-                        {savedAddresses.map((a: AddressRow) => <option key={a.id || Math.random()} value={a.id || ""}>{a.label || a.addressType || "Addr"} — {a.city}</option>)}
+                        {savedAddresses.map((a: AddressRow) => <option key={a.id} value={a.id}>{a.label || a.addressType || "Addr"} — {a.city}</option>)}
                       </select>
                     )}
-                    {isPickup && addressesLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 my-auto" />}
+                    {addressesLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 my-auto" />}
                   </div>
                 </div>
                 <div className="space-y-1"><Label className="text-xs text-slate-600">Special Instructions</Label><Input value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} disabled={!isPickup} placeholder="e.g. Call before arrival" className="bg-slate-50 border-slate-200" /></div>

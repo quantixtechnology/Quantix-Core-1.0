@@ -22,10 +22,20 @@ export async function GET(request: Request) {
     if (orderId) where.id = orderId
     if (customerId) where.customerId = customerId
 
+    const scope = sp.get("scope")
+    if (scope === "history") {
+      // History scope: completed pickups/deliveries
+      ;(where as any).OR = [
+        { pickupCompletedAt: { not: null } },
+        { deliveryCompletedAt: { not: null } },
+        { deliveredAt: { not: null } },
+      ]
+    }
+
     const orders = await prisma.laundryOrder.findMany({
       where: where as any,
       select: {
-        id: true, orderNumber: true, status: true, orderType: true,
+        id: true, orderNumber: true, status: true, orderType: true, createdAt: true,
         pickupRequired: true, pickupExecutiveId: true, pickupAssignedAt: true,
         pickupAcceptance: true, pickupAcceptedAt: true, pickupCompletedAt: true, pickupDate: true, pickupTimeSlot: true,
         deliveryRequired: true, deliveryExecutiveId: true, deliveryAssignedAt: true,
@@ -35,11 +45,11 @@ export async function GET(request: Request) {
         deliveryExecutive: { select: { name: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: scope === "history" ? 50 : 20,
     })
 
     const data = orders.map((o) => ({
-      orderId: o.id, orderNumber: o.orderNumber, status: o.status, orderType: o.orderType,
+      orderId: o.id, orderNumber: o.orderNumber, status: o.status, orderType: o.orderType, createdAt: o.createdAt?.toISOString() ?? null,
       pickup: {
         required: o.pickupRequired,
         status: o.pickupCompletedAt ? "COMPLETED" : o.pickupAcceptedAt ? "ACCEPTED" : o.pickupExecutiveId ? "ASSIGNED" : "PENDING",
