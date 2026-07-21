@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Loader2, Barcode as BarcodeIcon, Printer, ArrowRight, User, ShoppingBag, Check, RefreshCw, Eye, Settings } from "lucide-react"
 import { Barcode } from "./barcode"
 import { LaundryPaymentBanner } from "./laundry-payment-banner"
-import { printLabels, loadLabelConfig, saveLabelConfig, type LabelConfig, type LabelData } from "@/lib/laundry-label"
+import { printLabels, loadLabelConfig, saveLabelConfig, scannerQuality, type LabelConfig, type LabelData } from "@/lib/laundry-label"
 
 interface Item { id: string; itemNumber: string | null; barcode: string | null; garmentScanCode?: string | null; barcodeGenerated: boolean; printCount: number; lastPrintedBy: string | null; garmentName: string; serviceName: string; quantity: number; condition: string | null; defects: string | null }
 interface Data { order: { id: string; orderNumber: string; status: string; grandTotal: number }; store?: { storeName: string } | null; customer?: { name: string; phone: string | null } | null; items: Item[]; totalItems: number; barcoded: number; allBarcoded: boolean }
@@ -51,6 +51,7 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
 
   const toLabel = (it: Item): LabelData => ({ itemNumber: it.itemNumber || it.barcode || "", garment: it.garmentName, service: it.serviceName, garScanCode: it.garmentScanCode, orderNumber: data?.order.orderNumber, storeName: data?.store?.storeName })
 
+  // ── API call: generate or reprint barcode (separate from print) ──────────────
   const genOne = async (it: Item, reprint = false) => {
     setBusy(true)
     try {
@@ -58,7 +59,8 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
       await load()
     } finally { setBusy(false) }
   }
-  const printOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, true); if (!readOnly) genOne(it, true) }
+  // ── Print: read-only — no API, no state mutation, no workflow trigger ────────
+  const printOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, true) }
   const previewOne = async (it: Item) => { await printLabels([toLabel(it)], cfg, false) }
   const genAll = async () => {
     setBusy(true)
@@ -114,9 +116,10 @@ export function LaundryAuditBarcode({ orderId, onBack, onMoved, readOnly = false
                   <TableCell className="text-center">{it.quantity}</TableCell>
                   <TableCell>
                     {it.barcodeGenerated ? (
-                      <div className="flex flex-col gap-0.5">
-                        <Barcode value={it.garmentScanCode || it.barcode || it.itemNumber || ""} height={30} />
-                        {it.garmentScanCode && <span className="text-[9px] font-mono text-slate-400">{it.garmentScanCode}</span>}
+                      <div className="flex flex-col gap-0.5 items-center">
+                        <span className="text-[11px] font-bold font-mono text-blue-700 leading-tight">{it.garmentScanCode || it.barcode || it.itemNumber || ""}</span>
+                        <Barcode value={it.garmentScanCode || it.barcode || it.itemNumber || ""} height={28} width={1.5} />
+                        <span className="text-[8px] text-slate-400">{'★'.repeat(scannerQuality(cfg).stars)}{'☆'.repeat(5 - scannerQuality(cfg).stars)} <span className="text-slate-500">{scannerQuality(cfg).label}</span></span>
                       </div>
                     ) : (
                       <span className="text-[11px] font-mono text-slate-400">{it.itemNumber}</span>
