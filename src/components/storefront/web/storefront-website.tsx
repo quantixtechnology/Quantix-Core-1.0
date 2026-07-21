@@ -9,6 +9,7 @@ import { StorefrontCategoryPage } from "./storefront-category"
 import { StorefrontProductPage } from "./storefront-product"
 import { StorefrontAuth } from "./storefront-auth"
 import { StorefrontCheckout } from "./storefront-checkout"
+import { StorefrontLaundryCheckout } from "./storefront-laundry-checkout"
 import { StorefrontOrderTracking } from "./storefront-order-tracking"
 import { StorefrontOrders } from "./storefront-orders"
 import { StorefrontLaundryOrders } from "./storefront-laundry-orders"
@@ -356,7 +357,9 @@ export function StorefrontWebsite() {
         {page === "category"       && <StorefrontCategoryPage  brandColor={brandColor} nav={nav} storeClosed={storeClosed} />}
         {page === "product"        && <StorefrontProductPage   brandColor={brandColor} nav={nav} />}
         {page === "auth"           && <StorefrontAuth          brandColor={brandColor} nav={nav} />}
-        {page === "checkout"       && <StorefrontCheckout      brandColor={brandColor} nav={nav} currentStore={currentStore} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />}
+        {page === "checkout" && (currentBusinessType === "LAUNDRY"
+          ? <StorefrontLaundryCheckout brandColor={brandColor} nav={nav} currentStore={currentStore} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />
+          : <StorefrontCheckout brandColor={brandColor} nav={nav} currentStore={currentStore} storeClosed={storeClosed} storeClosedMessage={storeStatus.message} />)}
         {/* LAUNDRY reuses the laundry Order Engine end-to-end (orders + tracking +
             payments + invoice). Non-laundry keeps the ecommerce screens. */}
         {page === "order-tracking" && (currentBusinessType === "LAUNDRY"
