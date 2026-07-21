@@ -16,7 +16,7 @@ import { useAuthStore } from "@/stores/auth-store"
 
 interface ScanResult {
   item: {
-    id: string; itemNumber: string; barcode: string; garmentName: string; serviceName: string;
+    id: string; itemNumber: string; barcode: string; garmentScanCode: string | null; garmentName: string; serviceName: string;
     quantity: number; processingStage: string; processingStatus: string; processFlow: string;
     qcFailCount: number; department: string; stageLabel: string;
     condition: string | null; defects: string | null;
@@ -98,6 +98,7 @@ export function LaundryGarmentLookup() {
   const { toast } = useToast()
   const { user } = useAuthStore()
   const { setLaundryPage } = useAdminStore()
+  const garCode = (r: ScanResult | null) => r?.item.garmentScanCode || r?.item.barcode || ""
   const [code, setCode] = useState("")
   const [result, setResult] = useState<ScanResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -185,10 +186,10 @@ export function LaundryGarmentLookup() {
   const toLabel = (): LabelData | null => {
     if (!result) return null
     return {
-      itemNumber: result.item.itemNumber || result.item.barcode || "",
+      itemNumber: result.item.itemNumber || garCode(result) || "",
       garment: result.item.garmentName,
       service: result.item.serviceName,
-      garScanCode: result.item.barcode,
+      garScanCode: garCode(result),
       orderNumber: result.order.orderNumber,
       storeName: result.store?.storeName,
     }
@@ -296,7 +297,7 @@ export function LaundryGarmentLookup() {
             <Button size="sm" variant="outline" className="gap-1.5" onClick={previewOne}><BarcodeIcon className="h-3.5 w-3.5" /> Preview Label</Button>
             <Button size="sm" variant="ghost" className="gap-1.5" onClick={reprintBarcode}><Printer className="h-3.5 w-3.5" /> Reprint Barcode</Button>
             <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => window.open(`/admin#laundryPage=order-detail&orderId=${result.order.id}`, "_blank")}><ExternalLink className="h-3.5 w-3.5" /> View Order</Button>
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => copyToClipboard(result.item.barcode, "GAR")}><Copy className="h-3.5 w-3.5" /> Copy GAR</Button>
+            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => copyToClipboard(garCode(result), "GAR")}><Copy className="h-3.5 w-3.5" /> Copy GAR</Button>
             <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => copyToClipboard(result.item.itemNumber, "Item Number")}><Copy className="h-3.5 w-3.5" /> Copy ITM</Button>
           </div>
 
@@ -311,15 +312,15 @@ export function LaundryGarmentLookup() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-center py-3 bg-slate-50 rounded-lg">
                   <div className="flex flex-col items-center gap-1.5">
-                    <span className="text-lg font-bold font-mono text-blue-700">{result.item.barcode.startsWith("GAR") ? result.item.barcode : ""}</span>
-                    <Barcode value={result.item.barcode} height={44} />
-                    <span className="text-[9px] font-mono text-slate-400">Barcode encodes: {result.item.barcode}</span>
+                    <span className="text-lg font-bold font-mono text-blue-700">{garCode(result)}</span>
+                    <Barcode value={garCode(result)} height={44} />
+                    <span className="text-[9px] font-mono text-slate-400">Barcode encodes: {garCode(result)}</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                   <div><span className="text-slate-400 text-xs">Garment</span><p className="font-semibold text-slate-800">{result.item.garmentName}</p></div>
-                  <div><span className="text-slate-400 text-xs">GAR Number</span><p className="font-mono font-bold text-blue-700 text-base">{result.item.barcode}</p></div>
+                  <div><span className="text-slate-400 text-xs">GAR Number</span><p className="font-mono font-bold text-blue-700 text-base">{garCode(result)}</p></div>
                   <div className="col-span-2"><span className="text-slate-400 text-xs">Item Number</span><p className="font-mono text-xs text-slate-500 break-all">{result.item.itemNumber}</p></div>
                   <div><span className="text-slate-400 text-xs">Service</span><p className="font-medium text-slate-800">{result.item.serviceName}</p></div>
                   <div><span className="text-slate-400 text-xs">Quantity</span><p className="font-medium text-slate-800">{result.item.quantity}</p></div>
