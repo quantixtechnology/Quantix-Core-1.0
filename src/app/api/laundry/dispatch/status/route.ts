@@ -41,12 +41,19 @@ export async function GET(request: Request) {
         deliveryRequired: true, deliveryExecutiveId: true, deliveryAssignedAt: true,
         deliveryAcceptance: true, deliveryAcceptedAt: true, deliveryCompletedAt: true, deliveredAt: true,
         fieldStatus: true,
-        pickupExecutive: { select: { name: true } },
-        deliveryExecutive: { select: { name: true } },
       },
       orderBy: { createdAt: "desc" },
       take: scope === "history" ? 50 : 20,
     })
+
+    // Executives (pickup + delivery) live in one LaundryDeliveryExecutive table
+    // with no relation on the order — batch-resolve names by id, as the
+    // pickup-scheduler does (single source of truth for executive lookups).
+    const execIds = Array.from(new Set(orders.flatMap((o) => [o.pickupExecutiveId, o.deliveryExecutiveId]).filter((x): x is string => !!x)))
+    const execs = execIds.length
+      ? await prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true } })
+      : []
+    const execNames = new Map(execs.map((e) => [e.id, e.name]))
 
     const data = orders.map((o) => ({
       orderId: o.id, orderNumber: o.orderNumber, status: o.status, orderType: o.orderType, createdAt: o.createdAt?.toISOString() ?? null,
@@ -54,7 +61,7 @@ export async function GET(request: Request) {
         required: o.pickupRequired,
         status: o.pickupCompletedAt ? "COMPLETED" : o.pickupAcceptedAt ? "ACCEPTED" : o.pickupExecutiveId ? "ASSIGNED" : "PENDING",
         executiveId: o.pickupExecutiveId,
-        executiveName: o.pickupExecutive?.name ?? null,
+        executiveName: execNames.get(o.pickupExecutiveId ?? "") ?? null,
         assignedAt: o.pickupAssignedAt?.toISOString() ?? null,
         acceptedAt: o.pickupAcceptedAt?.toISOString() ?? null,
         completedAt: o.pickupCompletedAt?.toISOString() ?? null,
@@ -65,7 +72,7 @@ export async function GET(request: Request) {
         required: o.deliveryRequired,
         status: o.deliveryCompletedAt ? "COMPLETED" : o.deliveryAcceptedAt ? "ACCEPTED" : o.deliveryExecutiveId ? "ASSIGNED" : o.deliveryRequired ? "PENDING" : "NOT_REQUIRED",
         executiveId: o.deliveryExecutiveId,
-        executiveName: o.deliveryExecutive?.name ?? null,
+        executiveName: execNames.get(o.deliveryExecutiveId ?? "") ?? null,
         assignedAt: o.deliveryAssignedAt?.toISOString() ?? null,
         acceptedAt: o.deliveryAcceptedAt?.toISOString() ?? null,
         completedAt: o.deliveryCompletedAt?.toISOString() ?? null,
