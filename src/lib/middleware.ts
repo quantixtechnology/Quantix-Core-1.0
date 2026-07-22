@@ -98,7 +98,10 @@ function cleanupRateLimitStore(now: number) {
 // SESSION / AUTH EXTRACTION
 // ============================================================================
 
-// Distinct sentinel values so withMiddleware can return specific 401 messages
+// Distinct sentinel values so withMiddleware can return specific error
+// responses.  Auth failures (missing / expired token) → 401.  Infra failures
+// (DB unavailable, Prisma query error) → 503.  Never confuse the two —
+// a temporary database hiccup must not log out every active session.
 const AUTH_ERRORS = {
   NO_TOKEN:    'Session not found. Please sign in.',
   EXPIRED:     'Session expired. Please sign in again.',
@@ -106,9 +109,13 @@ const AUTH_ERRORS = {
 } as const
 type AuthError = typeof AUTH_ERRORS[keyof typeof AUTH_ERRORS]
 
+// Returned by extractUserFromRequest when the DB / Prisma query itself fails.
+// withMiddleware maps this to a 503 instead of a 401.
+const INFRA_FAILURE = Symbol('INFRA_FAILURE')
+
 async function extractUserFromRequest(
   req: NextRequest,
-): Promise<AuthenticatedRequest['user'] | AuthError | null> {
+): Promise<AuthenticatedRequest['user'] | AuthError | typeof INFRA_FAILURE> {
   try {
     const authHeader = req.headers.get('authorization');
     const businessIdHeader = req.headers.get('x-business-id');
@@ -197,8 +204,9 @@ async function extractUserFromRequest(
       permissions: await getDbPermissionsForRole(role) as Permission[],
       isPlatformAdmin: platAdmin,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    console.error('[middleware] extractUserFromRequest error:', error);
+    return INFRA_FAILURE;
   }
 }
 
@@ -240,9 +248,15 @@ export function withMiddleware(config: MiddlewareConfig = {}) {
         // Authentication
         if (config.requireAuth) {
           const userOrError = await extractUserFromRequest(req);
-          // String return = a specific auth error message
-          if (!userOrError || typeof userOrError === 'string') {
-            return createErrorResponse(userOrError || AUTH_ERRORS.NO_TOKEN, 401);
+          if (userOrError === INFRA_FAILURE) {
+            return createErrorResponse(
+              'Authentication service temporarily unavailable. Please try again.',
+              503,
+            );
+          }
+          // String return = a specific auth error message → 401
+          if (typeof userOrError === 'string') {
+            return createErrorResponse(userOrError, 401);
           }
           const user = userOrError;
           (req as AuthenticatedRequest).user = user;

@@ -2,6 +2,12 @@
 // Route: POST /api/core/auth/refresh
 // Refresh access token using a valid refresh token
 // Implements token rotation: old refresh token is deleted, new one issued
+//
+// Idempotency: a short-lived in-memory cache maps old → new tokens so that
+// near-simultaneous refreshes (from concurrent API calls in different modules
+// or tabs) all receive the same new pair instead of each independently calling
+// the rotation endpoint — which would cause all but the first to fail (the old
+// token was already deleted) and cascade into a "Session expired" logout.
 // ============================================================================
 
 import { db } from '@/lib/db';
@@ -10,6 +16,30 @@ import { NextResponse } from 'next/server';
 
 // New refresh token expiry: 60 days
 const REFRESH_TOKEN_EXPIRY_DAYS = 60;
+
+// ─── Idempotency cache ───────────────────────────────────────────────
+// Maps old refresh token → { new tokens, timestamp }.  When the same old
+// token is presented within the grace window, the cached result is returned
+// instead of performing a second rotation (which would fail because the old
+// token was already deleted by the first rotation).
+const IDEMPOTENCY_TTL_MS = 10_000; // 10 seconds
+const rotationCache = new Map<string, { accessToken: string; refreshToken: string; ts: number }>();
+
+function getCachedRotation(oldToken: string): { accessToken: string; refreshToken: string } | null {
+  const entry = rotationCache.get(oldToken);
+  if (entry && Date.now() - entry.ts < IDEMPOTENCY_TTL_MS) return entry;
+  rotationCache.delete(oldToken); // stale
+  return null;
+}
+
+function setCachedRotation(oldToken: string, accessToken: string, refreshToken: string): void {
+  rotationCache.set(oldToken, { accessToken, refreshToken, ts: Date.now() });
+  // Throttled cleanup: prune stale entries once the map grows past a threshold
+  if (rotationCache.size > 1000) {
+    const cutoff = Date.now() - IDEMPOTENCY_TTL_MS;
+    for (const [k, v] of rotationCache) if (v.ts < cutoff) rotationCache.delete(k);
+  }
+}
 
 function generateRefreshToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -30,6 +60,17 @@ export async function POST(request: Request) {
         { success: false, error: 'Refresh token is required' },
         { status: 400 }
       );
+    }
+
+    // ── Idempotency check ───────────────────────────────────────────
+    // If this exact old token was already rotated within the grace window,
+    // return the SAME new pair instead of creating a duplicate rotation.
+    const cached = getCachedRotation(refreshToken);
+    if (cached) {
+      return NextResponse.json({
+        success: true,
+        data: { accessToken: cached.accessToken, refreshToken: cached.refreshToken },
+      });
     }
 
     // Find the refresh token
@@ -105,6 +146,9 @@ export async function POST(request: Request) {
         expiresAt: refreshExpiresAt,
       },
     });
+
+    // ── Cache rotation result for idempotency ───────────────────────
+    setCachedRotation(refreshToken, accessToken, newRefreshTokenValue);
 
     return NextResponse.json({
       success: true,

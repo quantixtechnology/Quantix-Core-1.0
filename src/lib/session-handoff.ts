@@ -30,6 +30,10 @@ const SESSION_KEYS = [
 const TOKEN_KEY = "quantix_auth_token"
 const REFRESH_KEY = "quantix_auth_refresh_token"
 const HANDOFF_PARAM = "__qxsession"
+/** Set in localStorage after a successful session exchange. Absent = handoff
+ *  tokens not yet swapped → the workspace is still using the launching origin's
+ *  tokens and MUST retry exchange on every page load until it succeeds. */
+const EXCHANGED_KEY = "quantix_auth_exchanged"
 
 function b64encode(s: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(s)))
@@ -94,33 +98,77 @@ export function importSessionFromHash(): boolean {
 }
 
 /**
+ * Return true when this origin has tokens in localStorage but has NOT yet
+ * completed a handoff exchange — meaning the tokens belong to the LAUNCHING
+ * origin (not this workspace's independent chain).  The caller should retry
+ * exchange so rotating this origin's token never logs another workspace out.
+ *
+ * Safe to call on every page load: once exchanged the marker is set for good.
+ */
+export function needsExchange(): boolean {
+  if (typeof window === "undefined") return false
+  const token = window.localStorage.getItem(TOKEN_KEY)
+  if (!token) return false
+  return !window.localStorage.getItem(EXCHANGED_KEY)
+}
+
+/**
  * Per-origin sessions: after a handoff is imported, the origin still holds the
  * LAUNCHING origin's refresh token. Exchange it for a brand-new, INDEPENDENT
  * access + refresh token dedicated to THIS origin, so rotating this origin's
  * token never invalidates the launching origin (or any other workspace).
  *
- * Returns the new { accessToken, refreshToken } (also written to localStorage),
- * or null if the exchange could not be completed (the handed-off session keeps
- * working in that case — no worse than before).
+ * Retries up to 3 times with exponential backoff so transient network blips
+ * do not leave the workspace permanently using the launching origin's tokens.
+ *
+ * On success writes the new tokens + a marker to localStorage so future page
+ * loads know the exchange is complete and skip it.
+ *
+ * Returns the new { accessToken, refreshToken } or null if all retries fail
+ * (the handoff session keeps working in the meantime — no worse than before).
  */
 export async function exchangeHandoffSession(): Promise<{ accessToken: string; refreshToken: string } | null> {
   if (typeof window === "undefined") return null
-  try {
-    const presented =
-      window.localStorage.getItem(REFRESH_KEY) || window.localStorage.getItem(TOKEN_KEY)
-    if (!presented) return null
-    const res = await fetch("/api/core/auth/session-exchange", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: presented }),
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    if (!data?.success || !data.data?.accessToken || !data.data?.refreshToken) return null
-    window.localStorage.setItem(TOKEN_KEY, data.data.accessToken)
-    window.localStorage.setItem(REFRESH_KEY, data.data.refreshToken)
-    return { accessToken: data.data.accessToken, refreshToken: data.data.refreshToken }
-  } catch {
-    return null
+  const maxRetries = 3
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const presented =
+        window.localStorage.getItem(REFRESH_KEY) || window.localStorage.getItem(TOKEN_KEY)
+      if (!presented) return null
+
+      console.log(`[session-handoff] exchange attempt ${attempt}/${maxRetries}`)
+      const res = await fetch("/api/core/auth/session-exchange", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: presented }),
+      })
+      if (!res.ok) {
+        console.warn(`[session-handoff] exchange attempt ${attempt} failed: HTTP ${res.status}`)
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)))
+        }
+        continue
+      }
+      const data = await res.json()
+      if (!data?.success || !data.data?.accessToken || !data.data?.refreshToken) {
+        console.warn(`[session-handoff] exchange attempt ${attempt} failed: invalid response`)
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)))
+        }
+        continue
+      }
+      window.localStorage.setItem(TOKEN_KEY, data.data.accessToken)
+      window.localStorage.setItem(REFRESH_KEY, data.data.refreshToken)
+      window.localStorage.setItem(EXCHANGED_KEY, "true")
+      console.log("[session-handoff] exchange succeeded")
+      return { accessToken: data.data.accessToken, refreshToken: data.data.refreshToken }
+    } catch (err) {
+      console.error(`[session-handoff] exchange attempt ${attempt} error:`, err)
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)))
+      }
+    }
   }
+  console.error("[session-handoff] exchange failed after all retries")
+  return null
 }

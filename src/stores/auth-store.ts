@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 import type { Role, BusinessType, Permission, SessionUser } from "@/lib/types";
-import { importSessionFromHash, exchangeHandoffSession } from "@/lib/session-handoff";
+import { importSessionFromHash, exchangeHandoffSession, needsExchange } from "@/lib/session-handoff";
 
 // ============================================================================
 // TYPES
@@ -124,10 +124,13 @@ function saveToStorage(data: Partial<AuthState>): void {
   }
 }
 
+const EXCHANGED_KEY = "quantix_auth_exchanged";
+
 function clearStorage(): void {
   if (typeof window === "undefined") return;
   try {
     Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+    localStorage.removeItem(EXCHANGED_KEY);
   } catch {
     // Silently fail
   }
@@ -213,12 +216,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Per-origin sessions: if this session arrived via a workspace handoff, it
       // currently holds the LAUNCHING origin's refresh token. Swap it for an
       // origin-specific one so rotating this origin's token never logs the
-      // launching origin (or another workspace) out. Fire-and-forget — the
-      // handed-off session keeps working if the exchange can't complete.
-      if (importedHandoff) {
+      // launching origin (or another workspace) out.
+      // Also retry if a previous exchange failed (marker absent).
+      if (importedHandoff || needsExchange()) {
         exchangeHandoffSession()
-          .then((res) => { if (res) set({ token: res.accessToken, refreshToken: res.refreshToken }); })
-          .catch(() => null);
+          .then((res) => { if (res) set({ token: res.accessToken, refreshToken: res.refreshToken }); });
       }
     } else {
       set({ _isHydrated: true, _isSynced: true });
@@ -318,6 +320,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const primaryStoreId = primaryBusiness?.storeId || null;
         if (primaryStoreId) localStorage.setItem('quantix_store_id', primaryStoreId);
         else localStorage.removeItem('quantix_store_id');
+        // Direct login — never a handoff exchange needed
+        localStorage.setItem(EXCHANGED_KEY, "true");
       }
 
       set(newState);
@@ -391,6 +395,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const primaryStoreId = primaryBusiness?.storeId || null;
         if (primaryStoreId) localStorage.setItem('quantix_store_id', primaryStoreId);
         else localStorage.removeItem('quantix_store_id');
+        localStorage.setItem(EXCHANGED_KEY, "true");
       }
 
       set(newState);

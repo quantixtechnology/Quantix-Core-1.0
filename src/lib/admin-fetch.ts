@@ -21,19 +21,44 @@ function clearAuthAndRedirect() {
   window.location.href = '/';
 }
 
+// Singleton refresh lock — serialises concurrent 401-triggered refreshes
+// so N parallel calls share ONE inflight refresh instead of each causing
+// their own (which races the server's token rotation and destroys the session).
+let pendingRefresh: Promise<boolean> | null = null;
+
 async function attemptTokenRefresh(): Promise<boolean> {
+  if (pendingRefresh) return pendingRefresh;
+
+  pendingRefresh = _doTokenRefresh();
+  try {
+    return await pendingRefresh;
+  } finally {
+    pendingRefresh = null;
+  }
+}
+
+async function _doTokenRefresh(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-  if (!refreshToken) return false;
+  const oldRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!oldRefreshToken) return false;
   try {
     const res = await fetch('/api/core/auth/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify({ refreshToken: oldRefreshToken }),
     });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      // Another module (api-client, auth-store) may have already rotated the
+      // token.  If localStorage now holds a *different* refresh token, adopt
+      // the new tokens instead of destroying the session.
+      const now = localStorage.getItem(REFRESH_TOKEN_KEY);
+      return !!(now && now !== oldRefreshToken);
+    }
     const data = await res.json();
-    if (!data.success) return false;
+    if (!data.success) {
+      const now = localStorage.getItem(REFRESH_TOKEN_KEY);
+      return !!(now && now !== oldRefreshToken);
+    }
     localStorage.setItem(AUTH_TOKEN_KEY, data.data.accessToken);
     if (data.data.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, data.data.refreshToken);
     return true;

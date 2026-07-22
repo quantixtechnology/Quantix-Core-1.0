@@ -9,6 +9,8 @@
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp -r .next/server/chunks/. .next/standalone/.next/server/chunks/",
     "start": "NODE_ENV=production node .next/standalone/Quantix-Core-1.0/server.js",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:customer-address": "tsx scripts/test-customer-address.mjs",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
@@ -121,6 +123,8 @@
   "devDependencies": {
     "bun-types": "^1.3.4",
     "eslint": "^9",
-    "eslint-config-next": "^16.1.1"
+    "eslint-config-next": "^16.1.1",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.10"
   }
 }

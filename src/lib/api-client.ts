@@ -100,24 +100,61 @@ function updateStoredTokens(accessToken: string, refreshToken: string): void {
 }
 
 /**
- * Attempt to refresh the access token using the refresh token
- * Returns the new access token, or null if refresh failed
+ * Singleton refresh lock — when N concurrent API calls hit 401 they all share
+ * ONE inflight refresh instead of each starting their own (which causes token
+ * rotation race conditions: the server deletes the old token on the first
+ * refresh, then the remaining N-1 calls fail and destroy the session).
+ *
+ * On refresh failure we also check if localStorage already holds a DIFFERENT
+ * refresh token than the one we presented — that means another module
+ * (admin-fetch, auth-store) already rotated it.  We adopt those new tokens
+ * instead of wiping a still-valid session.
  */
+let pendingRefresh: Promise<string | null> | null = null;
+
 async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
+  if (pendingRefresh) return pendingRefresh;
+
+  pendingRefresh = _doRefresh();
+  try {
+    return await pendingRefresh;
+  } finally {
+    pendingRefresh = null;
+  }
+}
+
+async function _doRefresh(): Promise<string | null> {
+  const oldRefreshToken = getRefreshToken();
+  if (!oldRefreshToken) return null;
 
   try {
     const response = await fetch(`${API_BASE}/core/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify({ refreshToken: oldRefreshToken }),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // Token rotation race — another module (admin-fetch, auth-store) may
+      // have already rotated the token.  If localStorage now holds a
+      // *different* refresh token than ours, adopt the new tokens.
+      const now = localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (now && now !== oldRefreshToken) {
+        const newAccess = localStorage.getItem(AUTH_TOKEN_KEY);
+        return newAccess;
+      }
+      return null;
+    }
 
     const data = await response.json();
-    if (!data.success || !data.data) return null;
+    if (!data.success || !data.data) {
+      const now = localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (now && now !== oldRefreshToken) {
+        const newAccess = localStorage.getItem(AUTH_TOKEN_KEY);
+        return newAccess;
+      }
+      return null;
+    }
 
     const { accessToken, refreshToken: newRefreshToken } = data.data;
     updateStoredTokens(accessToken, newRefreshToken);
