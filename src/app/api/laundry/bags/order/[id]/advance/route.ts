@@ -4,10 +4,16 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { getBagReleaseStage, releaseBagsForOrder } from "@/lib/laundry-bag-assign"
 
 export const runtime = "nodejs"
 
 const LIFECYCLE = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING", "READY_FOR_DELIVERY", "DELIVERED", "RETURNED", "CLEANING", "AVAILABLE"])
+// Store-arrival stages: the garments have been received/counted at the store, so
+// a STORE_RECEIVE laundry's bag is emptied here and must be RELEASED (not just
+// advanced). This is the transition Store Audit fires (→ PROCESSING) — the
+// systemic point the release was previously never wired to.
+const STORE_ARRIVAL = new Set(["RECEIVED_AT_STORE", "UNDER_AUDIT", "PROCESSING"])
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -20,9 +26,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const toStatus = String(b.toStatus || "").trim()
     if (!LIFECYCLE.has(toStatus)) return NextResponse.json({ error: "Invalid lifecycle status." }, { status: 400 })
 
-    const data: Record<string, unknown> = { status: toStatus }
-    if (toStatus === "AVAILABLE") Object.assign(data, { currentOrderId: null, currentOrderNumber: null, currentServiceId: null, currentServiceName: null, currentCustomerId: null, currentCustomerName: null })
-    const res = await prisma.laundryBag.updateMany({ where: { businessId: order.businessId, currentOrderId: id }, data })
+    // Configurable release: a STORE_RECEIVE laundry releases its bags the moment
+    // the order is received/audited at the store — the same release engine, just
+    // fired at this stage instead of at delivery. AFTER_DELIVERY laundries keep
+    // advancing the bag through the lifecycle (released later at delivery).
+    if ((toStatus === "AVAILABLE") ||
+        (STORE_ARRIVAL.has(toStatus) && (await getBagReleaseStage(order.businessId)) === "STORE_RECEIVE")) {
+      const released = await releaseBagsForOrder(order.businessId, id)
+      return NextResponse.json({ success: true, advanced: released, released: true })
+    }
+
+    const res = await prisma.laundryBag.updateMany({ where: { businessId: order.businessId, currentOrderId: id }, data: { status: toStatus } })
     return NextResponse.json({ success: true, advanced: res.count })
   } catch (e) {
     console.error("[bags-order-advance] POST", e)
