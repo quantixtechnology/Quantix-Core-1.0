@@ -108,7 +108,7 @@ export async function GET(request: Request) {
     }).catch(() => {})
 
     const where = type === "delivery"
-      ? { businessId: lbId, deliveryRequired: true, deliveryCompletedAt: null, status: { notIn: [LaundryOrderStatus.DELIVERED, LaundryOrderStatus.CANCELLED] } }
+      ? { businessId: lbId, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
       : { businessId: lbId, pickupRequired: true, pickupCompletedAt: null, status: { not: LaundryOrderStatus.CANCELLED } }
 
     const orders = await prisma.laundryOrder.findMany({
