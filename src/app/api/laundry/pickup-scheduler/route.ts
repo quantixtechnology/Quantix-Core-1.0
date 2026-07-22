@@ -109,7 +109,7 @@ export async function GET(request: Request) {
 
     const where = type === "delivery"
       ? { businessId: lbId, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
-      : { businessId: lbId, pickupRequired: true, pickupCompletedAt: null, status: { not: LaundryOrderStatus.CANCELLED } }
+      : { businessId: lbId, pickupRequired: true, pickupCompletedAt: null, status: { notIn: [LaundryOrderStatus.CANCELLED, LaundryOrderStatus.READY_FOR_DELIVERY, LaundryOrderStatus.DELIVERED] } }
 
     const orders = await prisma.laundryOrder.findMany({
       where,
