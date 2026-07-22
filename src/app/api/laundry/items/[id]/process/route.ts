@@ -134,7 +134,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
     }
 
-    return NextResponse.json({ success: true, data: { id: updated.id, processingStage: updated.processingStage, processingStatus: updated.processingStatus, department: updated.processingDept, qcFailCount: updated.qcFailCount, orderComplete } })
+    const row = updated[0]
+    return NextResponse.json({ success: true, data: { id: row.id, processingStage: row.processingStage, processingStatus: row.processingStatus, department: row.processingDept, qcFailCount: row.qcFailCount, orderComplete } })
   } catch (e) {
     console.error("[laundry-item-process] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
