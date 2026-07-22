@@ -101,20 +101,24 @@ export async function GET(request: Request) {
     // ── Active (today's live queue) ─────────────────────────────────────────
     const { start, end } = dayRange(now)
 
-    // Ensure HOME_PICKUP orders have pickupRequired flagged
+    // Ensure HOME_PICKUP orders have both flags set (fixes data inconsistencies)
     await prisma.laundryOrder.updateMany({
-      where: { businessId: lbId, orderType: "HOME_PICKUP", pickupRequired: false },
+      where: { businessId: lbId, orderType: "HOME_PICKUP" },
       data: { pickupRequired: true, deliveryRequired: true },
     }).catch(() => {})
 
+    const debug = sp.get("_debug") === "1"
     const where = type === "delivery"
       ? { businessId: lbId, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
       : { businessId: lbId, pickupRequired: true, pickupCompletedAt: null, status: { notIn: [LaundryOrderStatus.CANCELLED, LaundryOrderStatus.READY_FOR_DELIVERY, LaundryOrderStatus.DELIVERED] } }
+
+    if (debug) console.log(`[DISPATCH_DEBUG] type=${type} where=${JSON.stringify(where)}`)
 
     const orders = await prisma.laundryOrder.findMany({
       where,
       select: {
         id: true, orderNumber: true, status: true, isExpress: true, customerId: true,
+        pickupRequired: true, deliveryRequired: true,
         pickupDate: true, pickupTimeSlot: true, pickupAddress: true, pickupLandmark: true,
         pickupMapsLink: true, pickupLat: true, pickupLng: true, fieldStatus: true,
         pickupExecutiveId: true, deliveryExecutiveId: true,
@@ -200,7 +204,22 @@ export async function GET(request: Request) {
     for (const d of data) { counts[d.bucket] = (counts[d.bucket] || 0) + 1 }
     counts.total = data.length
 
-    return NextResponse.json({ success: true, data, counts })
+    const resp: Record<string, unknown> = { success: true, data, counts }
+    if (debug) {
+      resp._debug = {
+        url: request.url,
+        type,
+        where,
+        returned: orders.map((o) => ({
+          id: o.id, orderNumber: o.orderNumber, status: o.status,
+          pickupRequired: o.pickupRequired, pickupCompletedAt: o.pickupCompletedAt?.toISOString() ?? null,
+          deliveryRequired: o.deliveryRequired, deliveryCompletedAt: o.deliveryCompletedAt?.toISOString() ?? null,
+          deliveredAt: o.deliveredAt?.toISOString() ?? null,
+          fieldStatus: o.fieldStatus,
+        })),
+      }
+    }
+    return NextResponse.json(resp)
   } catch (e) {
     console.error("[dispatch] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

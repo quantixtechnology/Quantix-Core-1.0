@@ -115,7 +115,7 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
       ])
       if (s.success) { setOpsJobs(s.data); setCounts(s.counts || {}) }
       if (e.success) setExecs(e.data)
-    } catch { /* noop */ }
+    } catch (err) { console.error("[loadOps]", err) }
   }, [currentBusinessId, mode, tab, opsSearch])
 
   // ── Load history ────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
 
       const s = await fetch(`/api/laundry/pickup-scheduler?${params}`).then((r) => r.json())
       if (s.success) { setHistJobs(s.data); setHistTotal(s.total || 0) }
-    } catch { /* noop */ } finally { setHistLoading(false) }
+    } catch (err) { console.error("[loadHist]", err) } finally { setHistLoading(false) }
   }, [currentBusinessId, mode, histPreset, histFrom, histTo, histPage, histSearch])
 
   // ── Initial load ────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Failed")
       toast.success(executiveId ? "Assigned" : "Cleared")
-      setOpsJobs((prev) => prev.filter((p) => p.id !== job.id))
+      loadOps()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed")
     }
@@ -187,8 +187,8 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
       const j = await res.json()
       if (!res.ok || !j.success) throw new Error(j.error || "Failed")
       toast.success(executiveId ? `Assigned ${ids.length} jobs` : `Cleared ${ids.length} assignments`)
-      setOpsJobs((prev) => prev.filter((p) => !selected.has(p.id)))
       setSelected(new Set())
+      loadOps()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed")
     }
