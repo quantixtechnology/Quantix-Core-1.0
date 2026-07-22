@@ -14,7 +14,7 @@
 // ============================================================================
 
 export type LaundryOrderStatus =
-  | "DRAFT" | "PENDING_STORE_AUDIT" | "UNDER_AUDIT" | "PAYMENT_PENDING"
+  | "DRAFT" | "AWAITING_PICKUP_ASSIGNMENT" | "PENDING_STORE_AUDIT" | "UNDER_AUDIT" | "PAYMENT_PENDING"
   | "READY_FOR_PROCESSING" | "PACKED" | "IN_TRANSIT_TO_PROCESSING"
   | "PROCESSING" | "QC_PENDING" | "RETURN_IN_TRANSIT"
   | "READY_FOR_DELIVERY" | "DELIVERED" | "CANCELLED"
@@ -31,6 +31,7 @@ export interface StatusMeta {
 
 export const STATUS_META: Record<LaundryOrderStatus, StatusMeta> = {
   DRAFT:                    { label: "Draft",                 department: "STORE_COUNTER" },
+  AWAITING_PICKUP_ASSIGNMENT: { label: "Awaiting Pickup Assignment", department: "STORE_COUNTER" },
   PENDING_STORE_AUDIT:      { label: "Pending Store Audit",   department: "STORE_COUNTER" },
   UNDER_AUDIT:              { label: "Under Audit",           department: "STORE_COUNTER" },
   PAYMENT_PENDING:          { label: "Payment Pending",       department: "STORE_COUNTER" },
@@ -59,6 +60,10 @@ export interface TransitionDef {
 export const TRANSITIONS: Record<LaundryOrderStatus, TransitionDef[]> = {
   DRAFT: [
     { to: "PENDING_STORE_AUDIT", action: "SUBMIT_ORDER", label: "Submit for Audit", primary: true },
+    { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
+  ],
+  AWAITING_PICKUP_ASSIGNMENT: [
+    { to: "PENDING_STORE_AUDIT", action: "PICKUP_COMPLETED", label: "Pickup Completed", primary: true },
     { to: "CANCELLED", action: "CANCEL", label: "Cancel" },
   ],
   PENDING_STORE_AUDIT: [

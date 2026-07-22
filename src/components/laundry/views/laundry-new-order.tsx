@@ -24,7 +24,7 @@ import {
   Search, UserPlus, User, Phone, MapPin, Clock, CreditCard, Store as StoreIcon,
   FileText, Save, Send, ArrowRight, Loader2, ShoppingBag, ShoppingCart, CheckCircle2,
   Hash, Calendar, UserCircle, Trash2, Info, X, Shirt, Plus, Minus,
-  BadgeCheck, ImagePlus, Upload, Truck, Paperclip, Building2,
+  BadgeCheck, ImagePlus, Upload, Truck, Navigation, Paperclip, Building2,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SearchableSelect } from "./pricing/searchable-select"
@@ -127,8 +127,12 @@ export default function LaundryNewOrder() {
   const [overrideDelivery, setOverrideDelivery] = useState(false)
   const [overrideReason, setOverrideReason] = useState("")
   const [customDeliveryDate, setCustomDeliveryDate] = useState("")
+  const [pickupRequired, setPickupRequired] = useState(false)
+  const [deliveryRequired, setDeliveryRequired] = useState(false)
   const [pickupDate, setPickupDate] = useState("")
   const [pickupTimeSlot, setPickupTimeSlot] = useState("")
+  const [deliveryDate, setDeliveryDate] = useState("")
+  const [deliveryTimeSlot, setDeliveryTimeSlot] = useState("")
   const [pickupAddress, setPickupAddress] = useState("")
   const [pickupInstructions, setPickupInstructions] = useState("")
   const [savedAddresses, setSavedAddresses] = useState<AddressRow[]>([])
@@ -145,6 +149,8 @@ export default function LaundryNewOrder() {
   const [submitting, setSubmitting] = useState(false)
 
   const isPickup = orderType === "HOME_PICKUP"
+  const showPickupFields = isPickup || pickupRequired
+  const showDeliveryFields = deliveryRequired
   const selectedStore = stores.find((s) => s.id === selectedStoreId)
 
   const loadMasters = useCallback(async () => {
@@ -443,8 +449,11 @@ export default function LaundryNewOrder() {
         expectedDeliveryDate: expectedDelivery ? expectedDelivery.toISOString().split("T")[0] : null,
         deliveryOverride: overrideDelivery, overrideReason: overrideDelivery ? overrideReason : null,
         paymentPreference,
-        pickupDate: isPickup ? pickupDate : null, pickupTimeSlot: isPickup ? pickupTimeSlot : null,
-        pickupAddress: isPickup ? pickupAddress : null, pickupInstructions: isPickup ? pickupInstructions : null,
+        pickupRequired: !isPickup ? pickupRequired : undefined,
+        deliveryRequired,
+        pickupDate: showPickupFields ? pickupDate : null, pickupTimeSlot: showPickupFields ? pickupTimeSlot : null,
+        deliveryDate: showDeliveryFields ? deliveryDate : null, deliveryTimeSlot: showDeliveryFields ? deliveryTimeSlot : null,
+        pickupAddress: showPickupFields ? pickupAddress : null, pickupInstructions: showPickupFields ? pickupInstructions : null,
         specialInstructions, notes: null, createdBy: user?.name || "counter",
       }
       const res = await fetch("/api/laundry/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
@@ -825,29 +834,64 @@ export default function LaundryNewOrder() {
               </CardContent>
             </Card>
 
-            <Card className={`rounded-xl border-slate-200 shadow-sm ${isPickup ? "" : "opacity-75"}`}>
-              <CardHead icon={Truck} title="Pickup Details" note="(Only for Pickup Orders)" />
+            <Card className="rounded-xl border-slate-200 shadow-sm">
+              <CardHead icon={Truck} title="Pickup Details" note={isPickup ? "(Home Pickup)" : "(Optional)"} />
               <CardContent className="px-5 pb-5 pt-0 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Date</Label><Input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} disabled={!isPickup} className="bg-slate-50 border-slate-200" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Time Slot</Label>
-                    <Select value={pickupTimeSlot} onValueChange={setPickupTimeSlot} disabled={!isPickup}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
-                      <SelectContent>{PICKUP_SLOTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                {!isPickup && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-500">Pickup Required</span>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setPickupRequired(true)} className={`px-3 py-1 text-xs rounded border ${pickupRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>Yes</button>
+                      <button type="button" onClick={() => { setPickupRequired(false); setPickupDate(""); setPickupTimeSlot(""); setPickupAddress(""); setPickupInstructions("") }} className={`px-3 py-1 text-xs rounded border ${!pickupRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>No</button>
+                    </div>
+                  </div>
+                )}
+                {(isPickup || pickupRequired) && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Date</Label><Input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="bg-slate-50 border-slate-200" /></div>
+                      <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Time Slot</Label>
+                        <Select value={pickupTimeSlot} onValueChange={setPickupTimeSlot}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
+                          <SelectContent>{PICKUP_SLOTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                      </div>
+                    </div>
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Address</Label>
+                      <div className="flex gap-1">
+                        <Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} placeholder="Enter pickup address" className="bg-slate-50 border-slate-200 flex-1" />
+                        {savedAddresses.length > 0 && (
+                          <select className="h-9 text-xs border border-slate-200 rounded-md px-2 bg-slate-50 shrink-0 max-w-[130px]" defaultValue="" onChange={(e) => { if (!e.target.value) return; const a = savedAddresses.find((ad: AddressRow) => ad.id === e.target.value); if (a) setPickupAddress([a.addressLine1, a.area, a.city].filter(Boolean).join(", ")) }}>
+                            <option value="" disabled>Change…</option>
+                            {savedAddresses.map((a: AddressRow) => <option key={a.id} value={a.id}>{a.label || a.addressType || "Addr"} — {a.city}</option>)}
+                          </select>
+                        )}
+                        {addressesLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 my-auto" />}
+                      </div>
+                    </div>
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">Special Instructions</Label><Input value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} placeholder="e.g. Call before arrival" className="bg-slate-50 border-slate-200" /></div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border-slate-200 shadow-sm">
+              <CardHead icon={Navigation} title="Delivery Details" note="(Optional)" />
+              <CardContent className="px-5 pb-5 pt-0 space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-500">Delivery Required</span>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setDeliveryRequired(true)} className={`px-3 py-1 text-xs rounded border ${deliveryRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>Yes</button>
+                    <button type="button" onClick={() => { setDeliveryRequired(false); setDeliveryDate(""); setDeliveryTimeSlot("") }} className={`px-3 py-1 text-xs rounded border ${!deliveryRequired ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200"}`}>No</button>
                   </div>
                 </div>
-                <div className="space-y-1"><Label className="text-xs text-slate-600">Pickup Address</Label>
-                  <div className="flex gap-1">
-                    <Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} disabled={!isPickup} placeholder={isPickup ? "Enter pickup address" : "Select Home Pickup order type to edit"} className="bg-slate-50 border-slate-200 flex-1" />
-                    {savedAddresses.length > 0 && (
-                      <select disabled={!isPickup} className="h-9 text-xs border border-slate-200 rounded-md px-2 bg-slate-50 shrink-0 max-w-[130px]" defaultValue="" onChange={(e) => { if (!e.target.value) return; const a = savedAddresses.find((ad: AddressRow) => ad.id === e.target.value); if (a) setPickupAddress([a.addressLine1, a.area, a.city].filter(Boolean).join(", ")) }}>
-                        <option value="" disabled>Change…</option>
-                        {savedAddresses.map((a: AddressRow) => <option key={a.id} value={a.id}>{a.label || a.addressType || "Addr"} — {a.city}</option>)}
-                      </select>
-                    )}
-                    {addressesLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 my-auto" />}
+                {deliveryRequired && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Date</Label><Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="bg-slate-50 border-slate-200" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-slate-600">Delivery Time Slot</Label>
+                      <Select value={deliveryTimeSlot} onValueChange={setDeliveryTimeSlot}><SelectTrigger className="bg-slate-50 border-slate-200"><SelectValue placeholder="Select slot" /></SelectTrigger>
+                        <SelectContent>{PICKUP_SLOTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-1"><Label className="text-xs text-slate-600">Special Instructions</Label><Input value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} disabled={!isPickup} placeholder="e.g. Call before arrival" className="bg-slate-50 border-slate-200" /></div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -943,7 +987,8 @@ export default function LaundryNewOrder() {
             </div>
             <div className="border-t border-slate-100 pt-3 flex items-center justify-between"><p className="text-xs text-slate-400">Estimated Total</p><p className="text-lg font-bold text-blue-700">{inr(grandTotal)}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Est. Delivery</p><p className="font-semibold text-slate-800">{expectedDelivery ? fmtDateTime(expectedDelivery) : "—"}</p></div>
-            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Pickup</p><p className="font-semibold text-slate-800">{isPickup ? (pickupDate || "Scheduled") : "Not Applicable"}</p></div>
+            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Pickup</p><p className="font-semibold text-slate-800">{isPickup || pickupRequired ? (pickupDate || "Required") : "Not Required"}</p></div>
+            <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Delivery</p><p className="font-semibold text-slate-800">{deliveryRequired ? (deliveryDate || "Required") : "Not Required"}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Payment Pref.</p><p className="font-semibold text-slate-800">{PAYMENT_PREFERENCES.find((p) => p.value === paymentPreference)?.label}</p></div>
             <div className="border-t border-slate-100 pt-3"><p className="text-xs text-slate-400">Order Status</p><Badge variant="outline" className="mt-1 border-amber-300 text-amber-700 bg-amber-50">Pending Store Audit</Badge></div>
           </CardContent>

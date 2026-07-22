@@ -1,11 +1,6 @@
 "use client"
 
-// Order Detail — the complete operational journey of one laundry order.
-// Header + financials + garments (each individually traceable with its own
-// item code, route, current stage and per-garment history) + a merged,
-// readable order timeline (order milestones + per-garment processing events).
-
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useAdminStore } from "@/stores/admin-store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,6 +14,7 @@ import {
 import { statusLabel, actionLabel } from "@/lib/laundry-workflow"
 import { stageLabel, resolveFlow } from "@/lib/laundry-processing"
 import { LaundryInvoicePanel } from "@/components/laundry/invoice/laundry-invoice-panel"
+import { toast } from "sonner"
 
 const inr = (n: number) => `₹${(n || 0).toFixed(2)}`
 const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
@@ -39,38 +35,74 @@ interface Detail {
   customer?: { name: string; phone: string | null; customerCode: string | null } | null
   items: Item[]; events: OrderEvent[]
   packet?: { packetNumber: string; status: string } | null
+  pickupRequired: boolean; pickupDate: string | null; pickupTimeSlot: string | null
+  pickupExecutiveId: string | null; pickupAssignedAt: string | null
+  pickupAcceptance: string | null; pickupAcceptedAt: string | null
+  pickupCompletedAt: string | null; pickupStartedAt: string | null
+  deliveryRequired: boolean; deliveryDate: string | null; deliveryTimeSlot: string | null
+  deliveryExecutiveId: string | null; deliveryAssignedAt: string | null
+  deliveryAcceptance: string | null; deliveryAcceptedAt: string | null
+  deliveryCompletedAt: string | null; deliveryStartedAt: string | null
+  fieldStatus: string | null
+}
+
+interface Exec {
+  id: string; name: string; mobile: string | null
+  availability: string; isActive: boolean
+  todaysPickups: number; todaysDeliveries: number
+}
+
+interface DispatchInfo {
+  pickup: { required: boolean; status: string; executiveId: string | null; executiveName: string | null; scheduledDate: string | null; timeSlot: string | null; completedAt: string | null }
+  delivery: { required: boolean; status: string; executiveId: string | null; executiveName: string | null; completedAt: string | null }
 }
 
 const STATUS_STYLE: Record<string, string> = {
   DELIVERED: "bg-green-100 text-green-700", CANCELLED: "bg-slate-100 text-slate-500",
 }
 
+const PICKUP_STATUS_BADGE: Record<string, string> = {
+  PENDING: "border-amber-200 text-amber-700 bg-amber-50",
+  ASSIGNED: "border-blue-200 text-blue-700 bg-blue-50",
+  ACCEPTED: "border-indigo-200 text-indigo-700 bg-indigo-50",
+  COMPLETED: "border-emerald-200 text-emerald-700 bg-emerald-50",
+}
+
+const PICKUP_STATUS_LABEL: Record<string, string> = {
+  PENDING: "Awaiting Assignment",
+  ASSIGNED: "Assigned",
+  ACCEPTED: "Accepted",
+  COMPLETED: "Completed",
+}
+
 export function LaundryOrderDetail() {
   const { selectedOrderId, setLaundryPage } = useAdminStore()
   const { currentBusinessId } = useAuthStore()
   const [order, setOrder] = useState<Detail | null>(null)
+  const [dispatchStatus, setDispatchStatus] = useState<DispatchInfo | null>(null)
+  const [execs, setExecs] = useState<Exec[]>([])
   const [itemEvents, setItemEvents] = useState<Record<string, ItemEvent[]>>({})
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [scanCode, setScanCode] = useState("")
-  const [dispatchStatus, setDispatchStatus] = useState<any>(null)
+  const [assigning, setAssigning] = useState<"pickup" | "delivery" | null>(null)
 
   const load = useCallback(async () => {
     if (!selectedOrderId) return
     setLoading(true)
     try {
-      const [ord, disp] = await Promise.all([
+      const [ord, disp, ex] = await Promise.all([
         fetch(`/api/laundry/orders/${selectedOrderId}`).then((r) => r.json()),
         fetch(`/api/laundry/dispatch/status?businessId=${currentBusinessId}&orderId=${selectedOrderId}`).then((r) => r.json()),
+        fetch(`/api/laundry/delivery-executives?businessId=${currentBusinessId}`).then((r) => r.json()),
       ])
       if (ord.success) setOrder(ord.data)
       if (disp.success && disp.data?.[0]) setDispatchStatus(disp.data[0])
+      if (ex.success) setExecs(ex.data)
     } catch { setOrder(null) } finally { setLoading(false) }
   }, [selectedOrderId, currentBusinessId])
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [load])
 
-  // Lazy-load a garment's own timeline via the scan endpoint (has item events).
   const toggleItem = async (it: Item) => {
     const next = new Set(expanded)
     if (next.has(it.id)) { next.delete(it.id); setExpanded(next); return }
@@ -89,6 +121,45 @@ export function LaundryOrderDetail() {
     const it = order?.items.find((x) => x.barcode === code || x.itemNumber === code)
     if (it) { setScanCode(""); toggleItem(it) }
   }
+
+  const handleAssign = async (type: "pickup" | "delivery", executiveId: string | null) => {
+    if (!order || !currentBusinessId) return
+    setAssigning(type)
+    try {
+      const res = await fetch("/api/laundry/pickup-scheduler", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: currentBusinessId, orderId: order.id, type, executiveId }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      toast.success(executiveId ? `${type === "pickup" ? "Pickup" : "Delivery"} executive assigned` : `${type === "pickup" ? "Pickup" : "Delivery"} assignment cleared`)
+      load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally { setAssigning(null) }
+  }
+
+  const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : null
+  const fmtDateTimeShort = (d: string | null | undefined) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : null
+
+  const pickExecId = order?.pickupExecutiveId
+  const delExecId = order?.deliveryExecutiveId
+  const pickStatus = useMemo(() => {
+    if (!order) return "NOT_REQUIRED"
+    if (!order.pickupRequired) return "NOT_REQUIRED"
+    if (order.pickupCompletedAt) return "COMPLETED"
+    if (order.pickupAcceptedAt) return "ACCEPTED"
+    if (order.pickupExecutiveId) return "ASSIGNED"
+    return "PENDING"
+  }, [order])
+  const delStatus = useMemo(() => {
+    if (!order) return "NOT_REQUIRED"
+    if (!order.deliveryRequired) return "NOT_REQUIRED"
+    if (order.deliveryCompletedAt || order.deliveredAt) return "COMPLETED"
+    if (order.deliveryAcceptedAt) return "ACCEPTED"
+    if (order.deliveryExecutiveId) return "ASSIGNED"
+    return "PENDING"
+  }, [order])
 
   if (loading) return <div className="flex items-center gap-2 py-16 justify-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading order…</div>
   if (!order) return (
@@ -128,40 +199,93 @@ export function LaundryOrderDetail() {
 
       {selectedOrderId && <LaundryInvoicePanel orderId={selectedOrderId} businessId={currentBusinessId || ""} />}
 
-      {/* Dispatch Status */}
-      {dispatchStatus && (
-        <Card className="rounded-lg border-blue-200 bg-blue-50/40">
-          <CardContent className="p-3 space-y-2">
-            <p className="text-xs font-semibold text-blue-800 flex items-center gap-1"><Truck className="h-3.5 w-3.5" /> Dispatch Status</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <p className="text-[10px] text-slate-500 uppercase font-medium">Pickup</p>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className={`text-[10px] ${dispatchStatus.pickup.status === "COMPLETED" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : dispatchStatus.pickup.status === "ACCEPTED" ? "border-indigo-300 text-indigo-700 bg-indigo-50" : dispatchStatus.pickup.status === "ASSIGNED" ? "border-blue-300 text-blue-700 bg-blue-50" : "border-amber-300 text-amber-700 bg-amber-50"}`}>
-                    {dispatchStatus.pickup.status}
-                  </Badge>
-                  {dispatchStatus.pickup.executiveName && <span className="text-[10px] text-slate-600">→ {dispatchStatus.pickup.executiveName}</span>}
-                </div>
-                {dispatchStatus.pickup.timeSlot && <p className="text-[10px] text-slate-400">{dispatchStatus.pickup.scheduledDate ? new Date(dispatchStatus.pickup.scheduledDate).toLocaleDateString("en-IN") : ""} {dispatchStatus.pickup.timeSlot}</p>}
-                {dispatchStatus.pickup.completedAt && <p className="text-[10px] text-emerald-600">Completed {new Date(dispatchStatus.pickup.completedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] text-slate-500 uppercase font-medium">Delivery</p>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className={`text-[10px] ${dispatchStatus.delivery.status === "COMPLETED" ? "border-emerald-300 text-emerald-700 bg-emerald-50" : dispatchStatus.delivery.status === "ACCEPTED" ? "border-indigo-300 text-indigo-700 bg-indigo-50" : dispatchStatus.delivery.status === "ASSIGNED" ? "border-blue-300 text-blue-700 bg-blue-50" : dispatchStatus.delivery.status === "NOT_REQUIRED" ? "border-slate-200 text-slate-400" : "border-amber-300 text-amber-700 bg-amber-50"}`}>
-                    {dispatchStatus.delivery.status === "NOT_REQUIRED" ? "Not Scheduled" : dispatchStatus.delivery.status}
-                  </Badge>
-                  {dispatchStatus.delivery.executiveName && <span className="text-[10px] text-slate-600">→ {dispatchStatus.delivery.executiveName}</span>}
-                </div>
-                {dispatchStatus.delivery.completedAt && <p className="text-[10px] text-emerald-600">Completed {new Date(dispatchStatus.delivery.completedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+      {/* Pickup Operational Section */}
+      <Card className="rounded-lg border-amber-200">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm flex items-center gap-2"><Truck className="h-4 w-4 text-amber-600" /> Pickup</CardTitle>
+          <Badge variant="outline" className={`text-[10px] ${PICKUP_STATUS_BADGE[pickStatus] || "border-slate-200 text-slate-400"}`}>
+            {PICKUP_STATUS_LABEL[pickStatus] || "Not Required"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="p-3 space-y-2">
+          {order.pickupRequired ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <div><span className="text-slate-400">Scheduled Date</span><p className="font-medium">{fmtDate(order.pickupDate) || "—"}</p></div>
+              <div><span className="text-slate-400">Time Slot</span><p className="font-medium">{order.pickupTimeSlot || "—"}</p></div>
+              <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                <span className="text-slate-400 shrink-0">Assign Executive</span>
+                <select
+                  value={pickExecId || ""}
+                  onChange={(e) => handleAssign("pickup", e.target.value || null)}
+                  disabled={assigning === "pickup"}
+                  className="h-7 text-xs rounded border border-slate-200 px-1 bg-white min-w-[120px] flex-1 max-w-[180px]">
+                  <option value="">{assigning === "pickup" ? "Assigning…" : "— Unassigned —"}</option>
+                  {execs.map((ex) => (
+                    <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysPickups > 0 ? `(${ex.todaysPickups})` : ""}</option>
+                  ))}
+                </select>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <p className="text-xs text-slate-400">Pickup not required for this order.</p>
+          )}
+          {order.pickupRequired && order.pickupExecutiveId && (
+            <div className="border-t border-amber-100 pt-2 mt-1 space-y-1 text-[11px]">
+              <p className="text-slate-500 font-medium">Assignment Timeline</p>
+              {order.pickupAssignedAt && <p className="text-slate-500"><span className="text-slate-400">Assigned</span> {fmtDateTimeShort(order.pickupAssignedAt)}</p>}
+              {order.pickupAcceptedAt && <p className="text-emerald-600"><span className="text-emerald-500">Accepted</span> {fmtDateTimeShort(order.pickupAcceptedAt)}</p>}
+              {order.pickupStartedAt && <p className="text-indigo-600"><span className="text-indigo-500">Started</span> {fmtDateTimeShort(order.pickupStartedAt)}</p>}
+              {order.pickupCompletedAt && <p className="text-emerald-700 font-medium"><span className="text-emerald-500">Completed</span> {fmtDateTimeShort(order.pickupCompletedAt)}</p>}
+              {!order.pickupCompletedAt && !order.pickupAcceptedAt && <p className="text-amber-600">Awaiting executive response</p>}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Delivery Operational Section */}
+      <Card className="rounded-lg border-blue-200">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm flex items-center gap-2"><Navigation className="h-4 w-4 text-blue-600" /> Delivery</CardTitle>
+          <Badge variant="outline" className={`text-[10px] ${PICKUP_STATUS_BADGE[delStatus] || "border-slate-200 text-slate-400"}`}>
+            {PICKUP_STATUS_LABEL[delStatus] || "Not Required"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="p-3 space-y-2">
+          {order.deliveryRequired ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <div><span className="text-slate-400">Scheduled Date</span><p className="font-medium">{fmtDate(order.deliveryDate) || "—"}</p></div>
+              <div><span className="text-slate-400">Time Slot</span><p className="font-medium">{order.deliveryTimeSlot || "—"}</p></div>
+              <div className="col-span-2 flex items-center gap-2 flex-wrap">
+                <span className="text-slate-400 shrink-0">Assign Executive</span>
+                <select
+                  value={delExecId || ""}
+                  onChange={(e) => handleAssign("delivery", e.target.value || null)}
+                  disabled={assigning === "delivery"}
+                  className="h-7 text-xs rounded border border-slate-200 px-1 bg-white min-w-[120px] flex-1 max-w-[180px]">
+                  <option value="">{assigning === "delivery" ? "Assigning…" : "— Unassigned —"}</option>
+                  {execs.map((ex) => (
+                    <option key={ex.id} value={ex.id}>{ex.name} {ex.todaysDeliveries > 0 ? `(${ex.todaysDeliveries})` : ""}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">Delivery not required for this order.</p>
+          )}
+          {order.deliveryRequired && order.deliveryExecutiveId && (
+            <div className="border-t border-blue-100 pt-2 mt-1 space-y-1 text-[11px]">
+              <p className="text-slate-500 font-medium">Assignment Timeline</p>
+              {order.deliveryAssignedAt && <p className="text-slate-500"><span className="text-slate-400">Assigned</span> {fmtDateTimeShort(order.deliveryAssignedAt)}</p>}
+              {order.deliveryAcceptedAt && <p className="text-emerald-600"><span className="text-emerald-500">Accepted</span> {fmtDateTimeShort(order.deliveryAcceptedAt)}</p>}
+              {order.deliveryStartedAt && <p className="text-indigo-600"><span className="text-indigo-500">Started</span> {fmtDateTimeShort(order.deliveryStartedAt)}</p>}
+              {order.deliveryCompletedAt && <p className="text-emerald-700 font-medium"><span className="text-emerald-500">Delivered</span> {fmtDateTimeShort(order.deliveryCompletedAt)}</p>}
+              {!order.deliveryCompletedAt && !order.deliveryAcceptedAt && order.deliveryExecutiveId && <p className="text-amber-600">Awaiting executive response</p>}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        {/* Garments — individually traceable */}
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm flex items-center gap-2"><Shirt className="h-4 w-4 text-blue-600" /> Garments ({order.items.length})</CardTitle>
@@ -179,40 +303,18 @@ export function LaundryOrderDetail() {
                   const open = expanded.has(it.id)
                   const done = it.processingStage === "PACKED" && it.processingStatus === "DONE"
                   return (
-                    <>
-                      <TableRow key={it.id} className="cursor-pointer" onClick={() => toggleItem(it)}>
-                        <TableCell className="font-mono text-[11px] text-slate-500">{it.itemNumber}</TableCell>
-                        <TableCell className="text-sm font-medium">{it.garmentName}{it.condition === "DAMAGED" && <Badge variant="outline" className="ml-1 text-[9px] border-amber-300 text-amber-700">flagged</Badge>}</TableCell>
-                        <TableCell className="text-xs text-slate-600">{it.serviceName}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={`text-[10px] ${done ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-blue-300 text-blue-700 bg-blue-50"}`}>
-                            {done ? "Complete" : `${stageLabel(it.processingStage)} · ${it.processingStatus || "—"}`}
-                          </Badge>
-                          {it.qcFailCount > 0 && <Badge variant="outline" className="ml-1 text-[9px] border-rose-300 text-rose-600">QC×{it.qcFailCount + 1}</Badge>}
-                        </TableCell>
-                        <TableCell>{open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}</TableCell>
-                      </TableRow>
-                      {open && (
-                        <TableRow key={`${it.id}-detail`}>
-                          <TableCell colSpan={5} className="bg-slate-50/60">
-                            <div className="py-1">
-                              <p className="text-[11px] text-slate-500 mb-2">Route: {flow.map((f) => stageLabel(f)).join(" → ")}{it.barcode ? ` · barcode ${it.barcode}` : ""}</p>
-                              <div className="space-y-1">
-                                {(itemEvents[it.id] || []).length === 0 ? <p className="text-[11px] text-slate-400">No processing events yet.</p> : itemEvents[it.id].map((e) => (
-                                  <div key={e.id} className="flex items-center gap-2 text-[11px]">
-                                    <Clock className="h-3 w-3 text-slate-300 shrink-0" />
-                                    <span className="font-medium text-slate-700">{e.action.replace(/_/g, " ")}</span>
-                                    {e.fromStage && e.toStage && e.fromStage !== e.toStage && <span className="text-slate-400 flex items-center gap-0.5">{stageLabel(e.fromStage)} <ArrowRight className="h-2.5 w-2.5" /> {stageLabel(e.toStage)}</span>}
-                                    {e.note && <span className="text-slate-500">· {e.note}</span>}
-                                    <span className="text-slate-400 ml-auto">{e.actorName || ""} · {fmt(e.createdAt)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </>
+                    <TableRow key={it.id} className="cursor-pointer" onClick={() => toggleItem(it)}>
+                      <TableCell className="font-mono text-[11px] text-slate-500">{it.itemNumber}</TableCell>
+                      <TableCell className="text-sm font-medium">{it.garmentName}{it.condition === "DAMAGED" && <Badge variant="outline" className="ml-1 text-[9px] border-amber-300 text-amber-700">flagged</Badge>}</TableCell>
+                      <TableCell className="text-xs text-slate-600">{it.serviceName}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-[10px] ${done ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-blue-300 text-blue-700 bg-blue-50"}`}>
+                          {done ? "Complete" : `${stageLabel(it.processingStage)} · ${it.processingStatus || "—"}`}
+                        </Badge>
+                        {it.qcFailCount > 0 && <Badge variant="outline" className="ml-1 text-[9px] border-rose-300 text-rose-600">QC×{it.qcFailCount + 1}</Badge>}
+                      </TableCell>
+                      <TableCell>{open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}</TableCell>
+                    </TableRow>
                   )
                 })}
               </TableBody>
@@ -220,7 +322,6 @@ export function LaundryOrderDetail() {
           </CardContent>
         </Card>
 
-        {/* Order timeline — milestones */}
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Clock className="h-4 w-4 text-blue-600" /> Order Timeline</CardTitle></CardHeader>
           <CardContent>

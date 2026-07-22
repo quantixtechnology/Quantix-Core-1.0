@@ -38,7 +38,7 @@ const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("en-IN", { day
 
 export function LaundryProcessingConsole() {
   const { currentBusinessId, user } = useAuthStore()
-  const { openAuditBarcode } = useAdminStore()
+  const { openAuditBarcode, setSelectedOrderId, setLaundryPage } = useAdminStore()
   const { toast } = useToast()
   const [incoming, setIncoming] = useState<Incoming[]>([])
   const [awaitingBarcode, setAwaitingBarcode] = useState<{ id: string; orderNumber: string; customer: string | null; items: number; barcoded: number }[]>([])
@@ -143,7 +143,7 @@ export function LaundryProcessingConsole() {
               <TableBody>{incoming.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell className="font-mono text-xs">{o.packetNumber || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{o.orderNumber}</TableCell>
+                  <TableCell><button type="button" className="font-mono text-xs text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button></TableCell>
                   <TableCell className="text-sm">{o.fromStore || "—"}</TableCell>
                   <TableCell className="text-sm">{o.customer || "—"}</TableCell>
                   <TableCell className="text-center">{o.items}</TableCell>
@@ -167,7 +167,7 @@ export function LaundryProcessingConsole() {
               <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>Barcodes</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
               <TableBody>{awaitingBarcode.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell className="font-mono text-sm">{o.orderNumber}</TableCell>
+                  <TableCell><button type="button" className="font-mono text-sm text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button></TableCell>
                   <TableCell className="text-sm">{o.customer || "—"}</TableCell>
                   <TableCell className="text-center">{o.items}</TableCell>
                   <TableCell><Badge variant="outline" className={o.barcoded === o.items ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-amber-300 text-amber-700 bg-amber-50"}>{o.barcoded}/{o.items} barcoded</Badge></TableCell>
@@ -190,7 +190,7 @@ export function LaundryProcessingConsole() {
               <TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Packet</TableHead><TableHead>Customer</TableHead><TableHead className="text-center">Garments</TableHead><TableHead>To Store</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
               <TableBody>{readyToReturn.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell className="font-mono text-xs">{o.orderNumber}</TableCell>
+                  <TableCell><button type="button" className="font-mono text-xs text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button></TableCell>
                   <TableCell className="font-mono text-xs">{o.packetNumber || "—"}</TableCell>
                   <TableCell className="text-sm">{o.customer || "—"}</TableCell>
                   <TableCell className="text-center">{o.items}</TableCell>

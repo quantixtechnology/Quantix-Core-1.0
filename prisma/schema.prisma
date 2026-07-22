@@ -4463,6 +4463,7 @@ model LaundryBusinessFeature {
 
 enum LaundryOrderStatus {
   DRAFT
+  AWAITING_PICKUP_ASSIGNMENT
   PENDING_STORE_AUDIT
   UNDER_AUDIT
   PAYMENT_PENDING
@@ -4496,6 +4497,8 @@ model LaundryOrder {
   overrideReason       String?
   pickupDate           DateTime?
   pickupTimeSlot       String?
+  deliveryDate         DateTime?
+  deliveryTimeSlot     String?
   pickupAddress        String?
   pickupInstructions   String?
   specialInstructions  String?

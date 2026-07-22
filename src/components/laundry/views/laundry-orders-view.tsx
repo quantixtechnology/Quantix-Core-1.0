@@ -152,7 +152,7 @@ export function LaundryOrdersView() {
                   const act = STAGE_ACTION[o.status]
                   return (
                     <TableRow key={o.id}>
-                      <TableCell className="font-mono font-medium text-sm">{o.orderNumber}</TableCell>
+                      <TableCell><button type="button" className="font-mono font-medium text-sm text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(o.id); setLaundryPage("order-detail") }}>{o.orderNumber}</button></TableCell>
                       <TableCell><div className="text-sm font-medium text-slate-700">{o.customer?.name || "—"}</div><div className="text-[11px] text-slate-400">{o.customer?.phone || ""}</div></TableCell>
                       <TableCell className="text-sm text-slate-600">{o.store?.storeName || "—"}</TableCell>
                       <TableCell className="text-center text-sm tabular-nums">{o.itemCount}</TableCell>

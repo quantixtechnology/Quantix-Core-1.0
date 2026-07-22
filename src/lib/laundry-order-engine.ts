@@ -74,8 +74,12 @@ export interface CreateLaundryOrderInput {
   expectedDeliveryDate?: Date | null
   deliveryOverride?: boolean
   overrideReason?: string | null
+  pickupRequired?: boolean
+  deliveryRequired?: boolean
   pickupDate?: Date | null
   pickupTimeSlot?: string | null
+  deliveryDate?: Date | null
+  deliveryTimeSlot?: string | null
   pickupAddress?: string | null
   pickupInstructions?: string | null
   specialInstructions?: string | null
@@ -145,6 +149,8 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
 
   const f = input.financials
   const grandTotal = f.grandTotal
+  const pickupReq = input.pickupRequired ?? input.orderType === "HOME_PICKUP"
+  const deliveryReq = input.deliveryRequired ?? input.orderType === "HOME_PICKUP"
 
   const order = await prisma.laundryOrder.create({
     data: {
@@ -155,17 +161,17 @@ export async function createLaundryOrder(input: CreateLaundryOrderInput) {
       orderType: input.orderType,
       orderSource: input.orderSource,
       source: input.source,
-      status: (input.status || "PENDING_STORE_AUDIT") as never,
-      // Field Operations eligibility (independent of order status). A HOME_PICKUP
-      // order needs a field pickup + delivery; walk-in/store-drop do not.
-      pickupRequired: input.orderType === "HOME_PICKUP",
-      deliveryRequired: input.orderType === "HOME_PICKUP",
+      status: (input.status || (pickupReq ? "AWAITING_PICKUP_ASSIGNMENT" : "PENDING_STORE_AUDIT")) as never,
+      pickupRequired: pickupReq,
+      deliveryRequired: deliveryReq,
       paymentPreference: input.paymentPreference || "COD",
       expectedDeliveryDate: input.expectedDeliveryDate ?? null,
       deliveryOverride: input.deliveryOverride || false,
       overrideReason: input.overrideReason ?? null,
       pickupDate: input.pickupDate ?? null,
       pickupTimeSlot: input.pickupTimeSlot ?? null,
+      deliveryDate: input.deliveryDate ?? null,
+      deliveryTimeSlot: input.deliveryTimeSlot ?? null,
       pickupAddress: input.pickupAddress ?? null,
       pickupInstructions: input.pickupInstructions ?? null,
       specialInstructions: input.specialInstructions ?? null,

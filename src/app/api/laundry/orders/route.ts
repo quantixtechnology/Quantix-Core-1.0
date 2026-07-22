@@ -12,7 +12,7 @@ export const runtime = "nodejs"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { businessId: businessIdInput, storeId, customerId, orderType, orderSource, services, items, isExpress, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupDate, pickupTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
+    const { businessId: businessIdInput, storeId, customerId, orderType, orderSource, services, items, isExpress, expectedDeliveryDate, paymentPreference, notes, specialInstructions, deliveryOverride, overrideReason, pickupRequired, deliveryRequired, pickupDate, pickupTimeSlot, deliveryDate, deliveryTimeSlot, pickupAddress, pickupInstructions, createdBy } = body
 
     if (!businessIdInput || !storeId) {
       return NextResponse.json({ error: "Missing required fields: businessId, storeId" }, { status: 400 })
@@ -120,8 +120,12 @@ export async function POST(request: Request) {
       expectedDeliveryDate: expectedDeliveryDate ? new Date(expectedDeliveryDate) : null,
       deliveryOverride: deliveryOverride || false,
       overrideReason: overrideReason || null,
+      pickupRequired: pickupRequired ?? undefined,
+      deliveryRequired: deliveryRequired ?? undefined,
       pickupDate: pickupDate ? new Date(pickupDate) : null,
       pickupTimeSlot: pickupTimeSlot || null,
+      deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
+      deliveryTimeSlot: deliveryTimeSlot || null,
       pickupAddress: pickupAddress || null,
       pickupInstructions: pickupInstructions || null,
       specialInstructions: specialInstructions || null,

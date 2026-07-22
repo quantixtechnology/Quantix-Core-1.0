@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
     items: b.items.map((l: { serviceId: string; garmentId: string; quantity?: number; weightKg?: number }) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity || 1, ...(l.weightKg ? { weightKg: l.weightKg } : {}) })),
     isExpress: !!b.isExpress,
-    pickupDate: b.pickupDate || null, pickupTimeSlot: b.pickupTimeSlot || null, pickupAddress: b.pickupAddress || null, pickupInstructions: b.pickupInstructions || null,
+    pickupDate: b.pickupDate || null, pickupTimeSlot: b.pickupTimeSlot || null, deliveryDate: b.deliveryDate || null, deliveryTimeSlot: b.deliveryTimeSlot || null, pickupAddress: b.pickupAddress || null, pickupInstructions: b.pickupInstructions || null,
     specialInstructions: b.specialInstructions || null, createdBy: "customer-app",
   }
   // The customer is already authenticated (app session) — delegate to the

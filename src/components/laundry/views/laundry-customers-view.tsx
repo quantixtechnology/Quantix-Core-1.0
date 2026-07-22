@@ -47,7 +47,7 @@ export function LaundryCustomersView() {
   const isSuperAdmin = user?.role === "QUANTIX_SUPER_ADMIN"
   const { can } = useLaundryPermissions()
   const canArchive = can("laundry.customers.delete") || isSuperAdmin
-  const { setLaundryPage, laundryFocusCustomerId, setLaundryFocusCustomerId } = useAdminStore()
+  const { setLaundryPage, setSelectedOrderId, laundryFocusCustomerId, setLaundryFocusCustomerId } = useAdminStore()
   const { toast } = useToast()
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
@@ -467,13 +467,13 @@ export function LaundryCustomersView() {
                   <div className="space-y-1">
                     {dispatchStatus.filter((d: any) => d.pickup.required && d.pickup.status !== "COMPLETED").map((d: any) => (
                       <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-blue-100 px-2 py-1">
-                        <span className="font-mono text-blue-700">{d.orderNumber}</span>
+                        <button type="button" className="font-mono text-blue-700 hover:underline text-left" onClick={() => { setSelectedOrderId(d.orderId); setLaundryPage("order-detail") }}>{d.orderNumber}</button>
                         <span className="flex items-center gap-1 text-slate-600">{d.pickup.executiveName || "Unassigned"} · {d.pickup.status}</span>
                       </div>
                     ))}
                     {dispatchStatus.filter((d: any) => d.delivery.required && d.delivery.status !== "COMPLETED").map((d: any) => (
                       <div key={d.orderId} className="flex items-center justify-between text-[10px] bg-white rounded border border-violet-100 px-2 py-1">
-                        <span className="font-mono text-violet-700">{d.orderNumber}</span>
+                        <button type="button" className="font-mono text-violet-700 hover:underline text-left" onClick={() => { setSelectedOrderId(d.orderId); setLaundryPage("order-detail") }}>{d.orderNumber}</button>
                         <span className="flex items-center gap-1 text-slate-600">{d.delivery.executiveName || "Unassigned"} · {d.delivery.status}</span>
                       </div>
                     ))}
@@ -582,7 +582,7 @@ export function LaundryCustomersView() {
                 {loadingHistory ? <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div> : dispatchHistory.length === 0 ? <p className="text-slate-400 text-xs py-3 text-center">No dispatch history found. Run backfill if historical records are missing.</p> : dispatchHistory.map((d: any) => (
                   <div key={d.orderId} className="rounded-lg border border-slate-200 p-2 text-xs">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono text-blue-700 font-medium">{d.orderNumber}</span>
+                      <button type="button" className="font-mono text-blue-700 font-medium hover:underline text-left" onClick={() => { setSelectedOrderId(d.orderId); setLaundryPage("order-detail") }}>{d.orderNumber}</button>
                       <span className="text-[10px] text-slate-400">{d.createdAt ? new Date(d.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span>
                     </div>
                     <div className="flex gap-3 text-[10px] text-slate-600">

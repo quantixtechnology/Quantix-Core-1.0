@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
+import { useAdminStore } from "@/stores/admin-store"
 
 interface Exec {
   id: string; name: string; mobile: string | null
@@ -78,6 +79,7 @@ const BUCKET_LABELS: Record<string, string> = {
 export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | "delivery" }) {
   const isDelivery = mode === "delivery"
   const { currentBusinessId } = useAuthStore()
+  const { setLaundryPage, setSelectedOrderId } = useAdminStore()
 
   // Operations state
   const [opsJobs, setOpsJobs] = useState<Job[]>([])
@@ -286,9 +288,9 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
           ) : (
             <div className="space-y-1">
               {opsJobs.map((job) => (
-                <Card key={job.id} className={`rounded-lg border ${selected.has(job.id) ? "border-blue-300 bg-blue-50/40" : "border-slate-200 bg-white"} transition-colors`}>
+                <Card key={job.id} className={`rounded-lg border ${selected.has(job.id) ? "border-blue-300 bg-blue-50/40" : "border-slate-200 bg-white"} transition-colors cursor-pointer hover:border-slate-300`} onClick={() => { setSelectedOrderId(job.id); setLaundryPage("order-detail") }}>
                   <CardContent className="p-1.5 flex items-center gap-1.5">
-                    <Checkbox checked={selected.has(job.id)} onCheckedChange={() => toggleOne(job.id)} className="shrink-0" />
+                    <Checkbox checked={selected.has(job.id)} onCheckedChange={() => toggleOne(job.id)} className="shrink-0" onClick={(e) => e.stopPropagation()} />
                     <div className="flex items-center gap-1 text-[10px] min-w-0 flex-1 flex-wrap">
                       <span className="font-mono font-bold text-slate-800 shrink-0">{job.orderNumber}</span>
                       <span className="text-slate-700 truncate max-w-[100px] lg:max-w-[140px]">{job.customerName}</span>
@@ -302,6 +304,7 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
                       <select
                         value={job.executiveId || ""}
                         onChange={(e) => assign(job, e.target.value || null)}
+                        onClick={(e) => e.stopPropagation()}
                         className="h-6 text-[10px] w-20 lg:w-24 rounded border border-slate-200 px-1 bg-white">
                         <option value="">—</option>
                         {execs.map((ex) => (
@@ -314,7 +317,8 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
                       </Badge>
                       {(job.mapsLink || (job.lat && job.lng)) && (
                         <a href={job.mapsLink || `https://www.google.com/maps/search/?api=1&query=${job.lat},${job.lng}`}
-                          target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-600 shrink-0" title="Navigate">
+                          target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-600 shrink-0" title="Navigate"
+                          onClick={(e) => e.stopPropagation()}>
                           <Navigation className="h-3 w-3" />
                         </a>
                       )}
@@ -366,8 +370,8 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
           ) : (
             <>
               <div className="space-y-1">
-                {histJobs.map((job) => (
-                  <Card key={job.id} className="rounded-lg border-slate-100 bg-slate-50/60">
+                  {histJobs.map((job) => (
+                  <Card key={job.id} className="rounded-lg border-slate-100 bg-slate-50/60 cursor-pointer hover:border-slate-300" onClick={() => { setSelectedOrderId(job.id); setLaundryPage("order-detail") }}>
                     <CardContent className="p-1.5 flex items-center gap-1.5">
                       <div className="flex items-center gap-1 text-[10px] min-w-0 flex-1 flex-wrap">
                         <span className="font-mono font-bold text-slate-600 shrink-0">{job.orderNumber}</span>
