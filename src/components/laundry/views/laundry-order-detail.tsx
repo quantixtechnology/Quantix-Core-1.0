@@ -77,7 +77,7 @@ const PICKUP_STATUS_LABEL: Record<string, string> = {
 
 export function LaundryOrderDetail() {
   const { selectedOrderId, setLaundryPage } = useAdminStore()
-  const { currentBusinessId } = useAuthStore()
+  const { currentBusinessId, user } = useAuthStore()
   const [order, setOrder] = useState<Detail | null>(null)
   const [dispatchStatus, setDispatchStatus] = useState<DispatchInfo | null>(null)
   const [execs, setExecs] = useState<Exec[]>([])
@@ -86,6 +86,7 @@ export function LaundryOrderDetail() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [scanCode, setScanCode] = useState("")
   const [assigning, setAssigning] = useState<"pickup" | "delivery" | null>(null)
+  const [receiving, setReceiving] = useState(false)
 
   const load = useCallback(async () => {
     if (!selectedOrderId) return
@@ -137,6 +138,29 @@ export function LaundryOrderDetail() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed")
     } finally { setAssigning(null) }
+  }
+
+  // Pickup Received — the missing UI bridge for the already-verified backend
+  // transition. When an executive-completed pickup (pickupCompletedAt set) is
+  // physically received at the store, the counter confirms it here, firing the
+  // EXISTING PICKUP_COMPLETED transition (AWAITING_PICKUP_ASSIGNMENT →
+  // PENDING_STORE_AUDIT). No new API, no state-machine change — this is the
+  // deliberate admin gate (pickup completion ≠ garments received at store).
+  const handlePickupReceived = async () => {
+    if (!order || !currentBusinessId) return
+    setReceiving(true)
+    try {
+      const res = await fetch(`/api/laundry/orders/${order.id}/transition`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toStatus: "PENDING_STORE_AUDIT", actorName: user?.name || "Store", note: "Pickup received at store" }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.success) throw new Error(j.error || "Failed")
+      toast.success("Pickup received — order sent to Store Audit")
+      load() // refreshes this order; the Pickup and Store Audit queues refetch on open
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally { setReceiving(false) }
   }
 
   const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : null
@@ -237,6 +261,16 @@ export function LaundryOrderDetail() {
               {order.pickupStartedAt && <p className="text-indigo-600"><span className="text-indigo-500">Started</span> {fmtDateTimeShort(order.pickupStartedAt)}</p>}
               {order.pickupCompletedAt && <p className="text-emerald-700 font-medium"><span className="text-emerald-500">Completed</span> {fmtDateTimeShort(order.pickupCompletedAt)}</p>}
               {!order.pickupCompletedAt && !order.pickupAcceptedAt && <p className="text-amber-600">Awaiting executive response</p>}
+            </div>
+          )}
+          {order.status === "AWAITING_PICKUP_ASSIGNMENT" && order.pickupCompletedAt && (
+            <div className="border-t border-amber-100 pt-2 mt-1">
+              <Button size="sm" disabled={receiving} onClick={handlePickupReceived}
+                className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
+                {receiving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Pickup Received — Send to Store Audit
+              </Button>
+              <p className="text-[10px] text-slate-400 mt-1 text-center">Confirms the garments were physically received at the store.</p>
             </div>
           )}
         </CardContent>
