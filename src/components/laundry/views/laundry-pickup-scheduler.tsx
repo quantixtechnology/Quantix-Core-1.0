@@ -28,11 +28,12 @@ interface Job {
   services: string[]; bagCount: number
   executiveId: string | null; executiveName: string | null; vehicle: string | null
   acceptance: string | null; assignedAt: string | null; acceptedAt: string | null; completedAt: string | null
+  scheduledDate: string | null
   bucket: string
 }
 
 interface HistoryJob extends Job {
-  requestedAt: string | null; createdAt: string | null; reason: string | null
+  storeName: string | null; requestedAt: string | null; createdAt: string | null; reason: string | null
 }
 
 const OPS_TABS = [
@@ -49,6 +50,15 @@ const HISTORY_PRESETS = [
   { key: "thisMonth", label: "This Month" },
   { key: "custom", label: "Custom Range" },
 ] as const
+
+const isOverdue = (job: Job) => {
+  if (job.completedAt || job.bucket === "completed" || job.bucket === "cancelled") return false
+  if (!job.scheduledDate) return false
+  const now = new Date()
+  const sched = new Date(job.scheduledDate)
+  const endOfSchedDay = new Date(sched); endOfSchedDay.setHours(23, 59, 59, 999)
+  return now > endOfSchedDay
+}
 
 const BUCKET_STYLES: Record<string, string> = {
   awaiting: "border-amber-200 text-amber-700 bg-amber-50",
@@ -285,6 +295,7 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
                       {job.customerPhone && <span className="text-slate-400 shrink-0 hidden xs:inline">{job.customerPhone}</span>}
                       {job.address && <span className="text-slate-400 truncate max-w-[80px] lg:max-w-[120px] hidden md:inline">{job.address}</span>}
                       {job.timeSlot && <span className="text-slate-400 shrink-0 hidden lg:inline flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{job.timeSlot}</span>}
+                      {isOverdue(job) && <Badge variant="outline" className="text-[9px] leading-none px-1 h-4 shrink-0 border-red-300 text-red-600 bg-red-50 shrink-0">OVERDUE</Badge>}
                       {job.bagCount > 0 && <span className="text-slate-400 shrink-0 hidden lg:inline flex items-center gap-0.5"><ShoppingBag className="h-2.5 w-2.5" />{job.bagCount}</span>}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">

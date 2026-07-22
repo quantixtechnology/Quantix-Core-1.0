@@ -11,6 +11,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
+import { LaundryOrderStatus } from "@prisma/client"
 import { logFieldEvent, FIELD_STATUS } from "@/lib/laundry-field-ops"
 import { notifyCustomerForOrder } from "@/lib/laundry-notify"
 
@@ -107,8 +108,8 @@ export async function GET(request: Request) {
     }).catch(() => {})
 
     const where = type === "delivery"
-      ? { businessId: lbId, deliveryRequired: true, OR: [{ status: "READY_FOR_DELIVERY" as const }, { AND: [{ status: "DELIVERED" as const }, { deliveredAt: { gte: start, lt: end } }] }] }
-      : { businessId: lbId, pickupRequired: true }
+      ? { businessId: lbId, deliveryRequired: true, deliveryCompletedAt: null, status: { notIn: [LaundryOrderStatus.DELIVERED, LaundryOrderStatus.CANCELLED] } }
+      : { businessId: lbId, pickupRequired: true, pickupCompletedAt: null, status: { not: LaundryOrderStatus.CANCELLED } }
 
     const orders = await prisma.laundryOrder.findMany({
       where,
@@ -133,7 +134,7 @@ export async function GET(request: Request) {
     const custIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
     const [execs, custs] = await Promise.all([
       prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true, vehicleType: true, vehicleNumber: true } }),
-      prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true, phone: true, address: true } }),
+      prisma.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, name: true, phone: true } }),
     ])
     const execMap = new Map(execs.map((e) => [e.id, e]))
     const custMap = new Map(custs.map((c) => [c.id, c]))
@@ -176,6 +177,7 @@ export async function GET(request: Request) {
         assignedAt: (type === "delivery" ? o.deliveryAssignedAt : o.pickupAssignedAt)?.toISOString() ?? null,
         acceptedAt: (type === "delivery" ? o.deliveryAcceptedAt : o.pickupAcceptedAt)?.toISOString() ?? null,
         completedAt: completedTime?.toISOString() ?? null,
+        scheduledDate: o.pickupDate?.toISOString() ?? null,
         bucket,
       }
     })
@@ -250,7 +252,6 @@ async function handleHistory(sp: URLSearchParams, lbId: string, type: string, no
         storeId: true, store: { select: { storeName: true, city: true } },
         services: { select: { serviceName: true } },
         _count: { select: { items: true } },
-        customer: { select: { name: true, phone: true } },
       },
       orderBy: { [timeField]: "desc" },
       skip: page * limit,
@@ -259,8 +260,13 @@ async function handleHistory(sp: URLSearchParams, lbId: string, type: string, no
   ])
 
   const execIds = [...new Set(orders.flatMap((o) => [o.pickupExecutiveId, o.deliveryExecutiveId]).filter(Boolean) as string[])]
-  const execs = await prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true } })
+  const custIds2 = [...new Set(orders.map((o) => o.customerId).filter(Boolean) as string[])]
+  const [execs, custs2] = await Promise.all([
+    prisma.laundryDeliveryExecutive.findMany({ where: { id: { in: execIds } }, select: { id: true, name: true } }),
+    prisma.customer.findMany({ where: { id: { in: custIds2 } }, select: { id: true, name: true, phone: true } }),
+  ])
   const execMap = new Map(execs.map((e) => [e.id, e.name]))
+  const custMap2 = new Map(custs2.map((c) => [c.id, c]))
 
   // Fetch latest relevant events for context (rejection reason, cancellation reason)
   const eventActions = isPickup
@@ -281,7 +287,7 @@ async function handleHistory(sp: URLSearchParams, lbId: string, type: string, no
   let data = orders.map((o) => {
     const execId = isPickup ? o.pickupExecutiveId : o.deliveryExecutiveId
     const execName = execId ? execMap.get(execId) ?? null : null
-    const cust = o.customer
+    const cust = o.customerId ? custMap2.get(o.customerId) : null
     const orderEvents = eventsByOrder.get(o.id) || []
 
     const completedTime = isPickup ? o.pickupCompletedAt : (o.deliveryCompletedAt || o.deliveredAt)
