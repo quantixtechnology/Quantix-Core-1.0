@@ -101,12 +101,6 @@ export async function GET(request: Request) {
     // ── Active (today's live queue) ─────────────────────────────────────────
     const { start, end } = dayRange(now)
 
-    // Ensure HOME_PICKUP orders have both flags set (fixes data inconsistencies)
-    await prisma.laundryOrder.updateMany({
-      where: { businessId: lbId, orderType: "HOME_PICKUP" },
-      data: { pickupRequired: true, deliveryRequired: true },
-    }).catch(() => {})
-
     const debug = sp.get("_debug") === "1"
     const where = type === "delivery"
       ? { businessId: lbId, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
