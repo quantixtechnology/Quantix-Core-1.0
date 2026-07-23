@@ -110,6 +110,7 @@ export type LaundryBusinessPage =
   | "ready-delivery-queue"
   | "pickup-bags"
   | "bag-management"
+  | "dispatch-center"
   | "pickup-scheduler"
   | "delivery-assignments"
   | "delivery-executives"

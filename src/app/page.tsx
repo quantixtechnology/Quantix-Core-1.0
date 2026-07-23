@@ -215,7 +215,7 @@ const LaundryDispatch = dynamic(() => import("@/components/laundry/views/laundry
 const LaundryStoreReceive = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryStoreReceive })), { loading: () => <PageLoader /> })
 const LaundryPickupBags = dynamic(() => import("@/components/laundry/views/laundry-pickup-bags").then(m => ({ default: m.LaundryPickupBags })), { loading: () => <PageLoader /> })
 const LaundryBagManagement = dynamic(() => import("@/components/laundry/views/laundry-bag-management").then(m => ({ default: m.LaundryBagManagement })), { loading: () => <PageLoader /> })
-const LaundryPickupScheduler = dynamic(() => import("@/components/laundry/views/laundry-pickup-scheduler").then(m => ({ default: m.LaundryPickupScheduler })), { loading: () => <PageLoader /> })
+const LaundryDispatchCenter = dynamic(() => import("@/components/laundry/views/laundry-dispatch-center").then(m => ({ default: m.LaundryDispatchCenter })), { loading: () => <PageLoader /> })
 const LaundryDeliveryExecutives = dynamic(() => import("@/components/laundry/views/laundry-delivery-executives").then(m => ({ default: m.LaundryDeliveryExecutives })), { loading: () => <PageLoader /> })
 const LaundryMobileApps = dynamic(() => import("@/components/laundry/views/laundry-mobile-apps").then(m => ({ default: m.LaundryMobileApps })), { loading: () => <PageLoader /> })
 const LaundryReadyForDelivery = dynamic(() => import("@/components/laundry/views/laundry-store-stages").then(m => ({ default: m.LaundryReadyForDelivery })), { loading: () => <PageLoader /> })
@@ -722,8 +722,10 @@ function AppContent({ storefrontSlug, deliveryEntry, productWorkspaceCode, works
       case "store-receive-queue": return <LaundryStoreReceive />
       case "pickup-bags": return <LaundryPickupBags />
       case "bag-management": return <LaundryBagManagement />
-      case "pickup-scheduler": return <LaundryPickupScheduler mode="pickup" />
-      case "delivery-assignments": return <LaundryPickupScheduler mode="delivery" />
+      case "dispatch-center": return <LaundryDispatchCenter />
+      // Legacy deep links now land on the unified Dispatch Center.
+      case "pickup-scheduler": return <LaundryDispatchCenter />
+      case "delivery-assignments": return <LaundryDispatchCenter />
       case "delivery-executives": return <LaundryDeliveryExecutives />
       case "mobile-apps": return <LaundryMobileApps />
       case "ready-delivery-queue": return <LaundryReadyForDelivery />
