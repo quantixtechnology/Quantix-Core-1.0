@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       success: true,
       data: {
         token,
-        staff: { name: user.name, roleCode: assign.role.code, roleName: assign.role.name, storeId: store.id, storeName: store.storeName, storeCode: store.storeCode },
+        staff: { name: user.name, businessId: biz.id, roleCode: assign.role.code, roleName: assign.role.name, storeId: store.id, storeName: store.storeName, storeCode: store.storeCode },
       },
     })
   } catch (e) {

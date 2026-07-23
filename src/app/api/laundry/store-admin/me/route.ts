@@ -18,6 +18,7 @@ export async function GET(request: Request) {
     success: true,
     data: {
       name: user?.name ?? null, email: user?.email ?? null,
+      businessId: s.businessId,
       roleCode: s.roleCode, roleName: s.roleName,
       storeId: s.storeId, storeName: store?.storeName ?? null, storeCode: store?.storeCode ?? null,
     },

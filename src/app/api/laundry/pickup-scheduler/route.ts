@@ -102,9 +102,11 @@ export async function GET(request: Request) {
     const { start, end } = dayRange(now)
 
     const debug = sp.get("_debug") === "1"
+    // Optional store scope (Store Admin PWA passes its own storeId → isolation).
+    const storeScope = sp.get("storeId") ? { storeId: sp.get("storeId") as string } : {}
     const where = type === "delivery"
-      ? { businessId: lbId, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
-      : { businessId: lbId, pickupRequired: true, pickupCompletedAt: null, status: { notIn: [LaundryOrderStatus.CANCELLED, LaundryOrderStatus.READY_FOR_DELIVERY, LaundryOrderStatus.DELIVERED] } }
+      ? { businessId: lbId, ...storeScope, deliveryRequired: true, deliveryCompletedAt: null, status: LaundryOrderStatus.READY_FOR_DELIVERY }
+      : { businessId: lbId, ...storeScope, pickupRequired: true, pickupCompletedAt: null, status: { notIn: [LaundryOrderStatus.CANCELLED, LaundryOrderStatus.READY_FOR_DELIVERY, LaundryOrderStatus.DELIVERED] } }
 
     if (debug) console.log(`[DISPATCH_DEBUG] type=${type} where=${JSON.stringify(where)}`)
 
