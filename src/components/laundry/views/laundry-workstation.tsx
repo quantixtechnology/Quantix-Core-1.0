@@ -54,7 +54,7 @@ async function engineScan(code: string, opts: EngineOpts): Promise<{ ok: true; a
   const actorName = opts.user?.name || "operator"
   const res = await fetch(`/api/laundry/items/${item.id}/process`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, actorName }),
+    body: JSON.stringify({ action, actorName, expectedStage: opts.stage }),
   })
   const rj = await res.json()
   if (!res.ok || !rj.success) return { ok: false, error: rj.error || "Action failed" }
@@ -120,7 +120,7 @@ export function LaundryWorkstation({ stage, icon: Icon = Factory }: { stage: str
     try {
       const res = await fetch(`/api/laundry/items/${itemId}/process`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, actorName: user?.name || "operator", ...extra }),
+        body: JSON.stringify({ action, actorName: user?.name || "operator", expectedStage: stage, ...extra }),
       })
       const j = await res.json()
       if (!res.ok || !j.success) {

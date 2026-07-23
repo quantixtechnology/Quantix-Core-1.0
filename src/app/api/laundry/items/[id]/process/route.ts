@@ -11,7 +11,7 @@
 //   action ∈ START | PAUSE | RESUME | COMPLETE | QC_PASS | QC_FAIL | REJECT | RETURN | NOTE
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor } from "@/lib/laundry-processing"
+import { resolveFlow, nextStageOf, reworkStagesOf, departmentFor, stageLabel } from "@/lib/laundry-processing"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
 
 const STAGE_SCREEN: Record<string, string> = {
@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const action = String(b.action || "").toUpperCase()
     const item = await prisma.laundryOrderItem.findUnique({
       where: { id },
-      select: { id: true, orderId: true, serviceName: true, processingStage: true, processingStatus: true, processFlow: true, qcFailCount: true, order: { select: { businessId: true } } },
+      select: { id: true, orderId: true, serviceName: true, processingStage: true, processingStatus: true, processFlow: true, qcFailCount: true, order: { select: { businessId: true, status: true } } },
     })
     if (!item) return NextResponse.json({ error: "Garment not found" }, { status: 404 })
 
@@ -39,6 +39,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     else permAction = "process"
     const guard = await requireLaundryPermission(request, item.order.businessId, `processing.${screen}.${permAction}`)
     if (!guard.ok) return guard.res
+
+    // ── Scan safety (server-authoritative). A garment may only be processed on a
+    // LIVE order and at the workstation it currently belongs to. Every rejection
+    // here happens BEFORE any write — no status change, no timeline event, no
+    // timestamp — so a wrong/duplicate/stale scan is completely inert. ──
+    if (item.order.status === "CANCELLED")
+      return NextResponse.json({ error: "This order has been cancelled — the garment cannot be processed." }, { status: 409 })
+    if (item.order.status === "DELIVERED")
+      return NextResponse.json({ error: "This order has already been delivered — the garment cannot be processed." }, { status: 409 })
+    // Correct-workstation guard: the caller (workstation) declares which station
+    // it is; reject a garment that belongs to a different department.
+    const expectedStage = typeof b.expectedStage === "string" && b.expectedStage ? b.expectedStage : null
+    if (expectedStage && item.processingStage !== expectedStage)
+      return NextResponse.json({ error: `This garment is not ready for ${stageLabel(expectedStage)} — it belongs to ${stageLabel(item.processingStage)}.` }, { status: 409 })
 
     const flow = resolveFlow(item)
     const cur = item.processingStage
