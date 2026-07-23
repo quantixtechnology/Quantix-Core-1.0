@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
-  Loader2, Truck, Navigation, ShoppingBag,
+  Loader2, Truck, Navigation, ShoppingBag, PackageCheck,
   Clock, Search, RefreshCw, History as HistoryIcon, ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -24,6 +24,7 @@ interface Exec {
 interface Job {
   id: string; orderNumber: string; status: string; fieldStatus: string | null; priority: string
   customerName: string; customerPhone: string | null; timeSlot: string | null
+  amountDue: number
   address: string | null; landmark: string | null; mapsLink: string | null
   lat: number | null; lng: number | null
   services: string[]; bagCount: number
@@ -75,6 +76,9 @@ const BUCKET_LABELS: Record<string, string> = {
   awaiting: "Pending", assigned: "Assigned", accepted: "In Progress", completed: "Done",
   cancelled: "Cancelled", rejected: "Rejected", failed: "Failed",
 }
+
+const fmtDay = (s: string | null | undefined) => (s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : null)
+const inr = (n: number) => `₹${(n || 0).toFixed(0)}`
 
 export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | "delivery" }) {
   const isDelivery = mode === "delivery"
@@ -206,6 +210,17 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
 
   return (
     <div className="px-2 lg:px-4 py-2 space-y-2 max-w-full">
+      {/* Queue identity — distinguishes the Pickup vs Delivery operational queue */}
+      <div className="flex items-center gap-2">
+        <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${isDelivery ? "bg-violet-100 text-violet-600" : "bg-amber-100 text-amber-600"}`}>
+          {isDelivery ? <PackageCheck className="h-4 w-4" /> : <Truck className="h-4 w-4" />}
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800 leading-tight">{isDelivery ? "Delivery Dispatch" : "Pickup Dispatch"}</h2>
+          <p className="text-[10px] text-slate-400 leading-tight">Assign executives to today&apos;s {isDelivery ? "deliveries" : "pickups"} — updates the order directly</p>
+        </div>
+      </div>
+
       {/* Mode toggle */}
       <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg p-0.5 w-fit">
         <button onClick={() => { setHistView(false); setSelected(new Set()) }}
@@ -295,8 +310,14 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
                       <span className="font-mono font-bold text-slate-800 shrink-0">{job.orderNumber}</span>
                       <span className="text-slate-700 truncate max-w-[100px] lg:max-w-[140px]">{job.customerName}</span>
                       {job.customerPhone && <span className="text-slate-400 shrink-0 hidden xs:inline">{job.customerPhone}</span>}
-                      {job.address && <span className="text-slate-400 truncate max-w-[80px] lg:max-w-[120px] hidden md:inline">{job.address}</span>}
+                      {fmtDay(job.scheduledDate) && <span className="text-slate-500 shrink-0 hidden sm:inline">{fmtDay(job.scheduledDate)}</span>}
                       {job.timeSlot && <span className="text-slate-400 shrink-0 hidden lg:inline flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{job.timeSlot}</span>}
+                      {/* Pickup: physical address to reach. Delivery: amount to collect. */}
+                      {isDelivery
+                        ? (job.amountDue > 0
+                            ? <span className="shrink-0 font-semibold text-rose-600">{inr(job.amountDue)} due</span>
+                            : <span className="shrink-0 text-emerald-600 hidden sm:inline">Paid</span>)
+                        : (job.address && <span className="text-slate-400 truncate max-w-[80px] lg:max-w-[120px] hidden md:inline">{job.address}</span>)}
                       {isOverdue(job) && <Badge variant="outline" className="text-[9px] leading-none px-1 h-4 shrink-0 border-red-300 text-red-600 bg-red-50 shrink-0">OVERDUE</Badge>}
                       {job.bagCount > 0 && <span className="text-slate-400 shrink-0 hidden lg:inline flex items-center gap-0.5"><ShoppingBag className="h-2.5 w-2.5" />{job.bagCount}</span>}
                     </div>
@@ -315,7 +336,7 @@ export function LaundryPickupScheduler({ mode = "pickup" }: { mode?: "pickup" | 
                       <Badge variant="outline" className={`text-[9px] leading-none px-1 h-4 shrink-0 ${BUCKET_STYLES[job.bucket] || "border-slate-200 text-slate-400"}`}>
                         {BUCKET_LABELS[job.bucket] || job.bucket}
                       </Badge>
-                      {(job.mapsLink || (job.lat && job.lng)) && (
+                      {!isDelivery && (job.mapsLink || (job.lat && job.lng)) && (
                         <a href={job.mapsLink || `https://www.google.com/maps/search/?api=1&query=${job.lat},${job.lng}`}
                           target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-600 shrink-0" title="Navigate"
                           onClick={(e) => e.stopPropagation()}>

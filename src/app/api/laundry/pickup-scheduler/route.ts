@@ -120,7 +120,7 @@ export async function GET(request: Request) {
         pickupStartedAt: true, pickupCompletedAt: true,
         deliveryAssignedAt: true, deliveryAcceptance: true, deliveryAcceptedAt: true,
         deliveryStartedAt: true, deliveryCompletedAt: true, deliveredAt: true,
-        expectedDeliveryDate: true,
+        expectedDeliveryDate: true, deliveryDate: true, deliveryTimeSlot: true, balanceDue: true,
         storeId: true, store: { select: { storeName: true, city: true } },
         services: { select: { serviceName: true } },
         _count: { select: { items: true } },
@@ -164,7 +164,9 @@ export async function GET(request: Request) {
         id: o.id, orderNumber: o.orderNumber, status: o.status, fieldStatus: o.fieldStatus,
         priority: o.isExpress ? "EXPRESS" : "NORMAL",
         customerName: cust?.name ?? "—", customerPhone: cust?.phone ?? null,
-        timeSlot: type === "delivery" ? (o.expectedDeliveryDate ? new Date(o.expectedDeliveryDate).toLocaleDateString() : null) : o.pickupTimeSlot,
+        // Mode-aware schedule: the same Order fields, surfaced per queue. No new data.
+        timeSlot: type === "delivery" ? o.deliveryTimeSlot : o.pickupTimeSlot,
+        amountDue: o.balanceDue ?? 0,
         storeName: o.store?.storeName ?? null, address: o.pickupAddress,
         landmark: o.pickupLandmark, mapsLink: o.pickupMapsLink, lat: o.pickupLat, lng: o.pickupLng,
         area,
@@ -175,7 +177,7 @@ export async function GET(request: Request) {
         assignedAt: (type === "delivery" ? o.deliveryAssignedAt : o.pickupAssignedAt)?.toISOString() ?? null,
         acceptedAt: (type === "delivery" ? o.deliveryAcceptedAt : o.pickupAcceptedAt)?.toISOString() ?? null,
         completedAt: completedTime?.toISOString() ?? null,
-        scheduledDate: o.pickupDate?.toISOString() ?? null,
+        scheduledDate: (type === "delivery" ? (o.deliveryDate ?? o.expectedDeliveryDate) : o.pickupDate)?.toISOString() ?? null,
         bucket,
       }
     })
