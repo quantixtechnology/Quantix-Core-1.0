@@ -27,8 +27,11 @@ export async function POST(request: Request) {
       where: { userId: user.id, active: true, storeId: { not: null } },
       include: { role: { select: { code: true, name: true, isActive: true } } },
     })
+    // Only store-operational staff bound to a store may enter. Super Admins,
+    // Business Owners and every other role are rejected with a clear redirect —
+    // never auto-converted into a store account.
     if (!assign?.storeId || !assign.role.isActive || !STORE_ADMIN_ROLES.has(assign.role.code)) {
-      return NextResponse.json({ error: "This account is not authorised for the Store Admin app." }, { status: 403 })
+      return NextResponse.json({ error: "This application is for Store Staff only. Please log in to the Admin Dashboard.", code: "NOT_STORE_STAFF" }, { status: 403 })
     }
 
     const biz = await resolveLaundryBusiness(assign.businessId)
