@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AppShareCard } from "@/components/laundry/apps/app-share-card"
-import { Smartphone, Bike, MapPin, RefreshCw, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react"
+import { Smartphone, Bike, MapPin, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Store } from "lucide-react"
 import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 
@@ -53,6 +53,7 @@ export function LaundryMobileApps() {
 
   const customerUrl = prov?.customer.url || (origin ? `${origin}/laundry/app` : "")
   const executiveUrl = prov?.executive.url || (origin ? `${origin}/laundry/executive` : "")
+  const storeAdminUrl = origin ? `${origin}/laundry/store` : ""
   const anyFailed = prov && [prov.customer.sslStatus, prov.executive.sslStatus].some((s) => s === "failed")
 
   return (
@@ -77,6 +78,9 @@ export function LaundryMobileApps() {
         <div className="space-y-2">
           <AppShareCard title="Executive Pickup & Delivery App" description="Field executives run assigned pickups and deliveries." icon={<Bike className="h-5 w-5" />} url={executiveUrl} note="Dedicated per-tenant host — only active Delivery Executives sign in; the business is set by the URL." />
           <StatusStrip label="Executive host" status={prov?.executive} loading={loading} />
+        </div>
+        <div className="space-y-2">
+          <AppShareCard title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Only Store Managers, Supervisors and Counter Staff sign in — each sees only their own store." />
         </div>
         <Card className="rounded-xl border-slate-200">
           <CardContent className="p-4 space-y-2">
