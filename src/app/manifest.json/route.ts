@@ -42,9 +42,13 @@ export async function GET(request: Request) {
   const rawHost = (request.headers.get('host') ?? '').toLowerCase().split(':')[0]
   const isDeliveryHost = rawHost.startsWith('delivery.')
   const isExecutive = isDeliveryHost || new URL(request.url).searchParams.get('app') === 'executive'
+  // A `store.<tenant>` host IS the dedicated Store Admin app — its manifest is the
+  // store flavor (root start_url) regardless of query params.
+  const isStoreHost = rawHost.startsWith('store.')
+  const isStore = isStoreHost || new URL(request.url).searchParams.get('app') === 'store'
 
-  // ── Resolve tenant from Host header (strip the delivery. prefix) ───────────
-  const host = isDeliveryHost ? rawHost.slice('delivery.'.length) : rawHost
+  // ── Resolve tenant from Host header (strip the app prefix) ─────────────────
+  const host = isDeliveryHost ? rawHost.slice('delivery.'.length) : isStoreHost ? rawHost.slice('store.'.length) : rawHost
 
   let name        = 'Quantix Store'
   let theme       = '#10B981'
@@ -90,7 +94,33 @@ export async function GET(request: Request) {
   // workspace host it lives under /laundry/executive.
   const execStart = isDeliveryHost ? '/?source=pwa' : '/laundry/executive?source=pwa'
   const execScope = isDeliveryHost ? '/' : '/laundry/executive'
-  const manifest = isExecutive
+  // On a dedicated store.<tenant> host the Store Admin app lives at the ROOT; on
+  // the shared workspace host it lives under /laundry/store.
+  const storeStart = isStoreHost ? '/?source=pwa' : '/laundry/store?source=pwa'
+  const storeScope = isStoreHost ? '/' : '/laundry/store'
+  const manifest = isStore
+    ? {
+        id:               isStoreHost ? '/' : '/laundry/store',
+        name:             `${name} Store Admin`,
+        short_name:       shortName(name),
+        description:      'Store operations — orders, audit, payment, dispatch',
+        start_url:        storeStart,
+        display:          'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        background_color: '#ffffff',
+        theme_color:      theme,
+        orientation:      'portrait-primary',
+        lang:             'en-IN',
+        scope:            storeScope,
+        categories:       ['business', 'productivity'],
+        icons: [
+          { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        prefer_related_applications: false,
+      }
+    : isExecutive
     ? {
         id:               isDeliveryHost ? '/' : '/laundry/executive',
         name:             `${name} Pickup & Delivery`,

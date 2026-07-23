@@ -21,9 +21,14 @@ export async function GET(request: Request) {
     // Auto-provision (no manual step): if the executive host isn't secured yet and
     // the customer host is already reachable (server + DNS are up), kick off
     // provisioning in the background. Setting 'provisioning' prevents re-firing.
-    if (status.customer.httpsReachable && (status.executive.sslStatus === "pending" || status.executive.sslStatus === "failed")) {
+    // One background provision covers all three hosts. Heal when the customer host
+    // is up and either the executive or the store host isn't secured yet.
+    const execNeedsHeal = status.executive.sslStatus === "pending" || status.executive.sslStatus === "failed"
+    const storeNeedsHeal = !status.store.httpsReachable && status.store.sslStatus !== "provisioning"
+    if (status.customer.httpsReachable && (execNeedsHeal || storeNeedsHeal)) {
       void provisionTenantApps(guard.platformBusinessId).catch(() => {})
-      status.executive.sslStatus = "provisioning"
+      if (execNeedsHeal) status.executive.sslStatus = "provisioning"
+      if (storeNeedsHeal) status.store.sslStatus = "provisioning"
     }
     return NextResponse.json({ success: true, data: status })
   } catch (e) {
@@ -39,7 +44,7 @@ export async function POST(request: Request) {
     if (!guard.ok) return guard.res
     const r = await provisionTenantApps(guard.platformBusinessId)
     if (!r.ok) return NextResponse.json({ success: false, error: r.error }, { status: 400 })
-    return NextResponse.json({ success: true, customer: { ssl: r.customer.ssl, https: r.customer.httpsReachable }, executive: { ssl: r.executive.ssl, https: r.executive.httpsReachable } })
+    return NextResponse.json({ success: true, customer: { ssl: r.customer.ssl, https: r.customer.httpsReachable }, executive: { ssl: r.executive.ssl, https: r.executive.httpsReachable }, store: { ssl: r.store.ssl, https: r.store.httpsReachable } })
   } catch (e) {
     console.error("[laundry-app-provisioning] POST", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

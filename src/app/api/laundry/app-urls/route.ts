@@ -5,7 +5,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { requireLaundryPermission } from "@/lib/laundry-rbac"
-import { customerUrlForSlug, executiveUrlForSlug } from "@/lib/laundry-executive-tenant"
+import { customerUrlForSlug, executiveUrlForSlug, storeUrlForSlug } from "@/lib/laundry-executive-tenant"
 
 export const runtime = "nodejs"
 
@@ -23,8 +23,9 @@ export async function GET(request: Request) {
     const customDomain = business?.domain?.status === "ACTIVE" ? business.domain.domain : null
     const customerUrl = customDomain ? `https://${customDomain}` : (slug ? customerUrlForSlug(slug) : null)
     const executiveUrl = customDomain ? `https://delivery.${customDomain}` : (slug ? executiveUrlForSlug(slug) : null)
+    const storeUrl = customDomain ? `https://store.${customDomain}` : (slug ? storeUrlForSlug(slug) : null)
 
-    return NextResponse.json({ success: true, data: { slug, customerUrl, executiveUrl } })
+    return NextResponse.json({ success: true, data: { slug, customerUrl, executiveUrl, storeUrl } })
   } catch (e) {
     console.error("[laundry-app-urls] GET", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

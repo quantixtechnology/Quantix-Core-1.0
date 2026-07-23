@@ -61,6 +61,17 @@ export default function proxy(request: NextRequest) {
       return withSecurityHeaders(NextResponse.rewrite(url))
     }
 
+    // 0b) Dedicated Laundry Store Admin PWA host: store.<tenant>.<base> (and, on a
+    // custom domain, store.<customdomain>). Same architecture as the executive
+    // host — the whole subdomain IS the Store Admin app, served at the root.
+    if (hostWithoutPort.startsWith('store.')) {
+      const url = request.nextUrl.clone()
+      if (!pathname.startsWith('/laundry/store')) url.pathname = '/laundry/store'
+      url.searchParams.set('_store', '1')
+      log(`[proxy] STORE host=${hostWithoutPort} → ${url.toString()}`)
+      return withSecurityHeaders(NextResponse.rewrite(url))
+    }
+
     // 1) Product workspace host (commerce.*, laundry.*, …) — handled BEFORE
     // storefront so a product subdomain is never mistaken for a tenant slug.
     const productCode = getProductCodeForHost(hostWithoutPort, STOREFRONT_BASE)

@@ -1,18 +1,20 @@
-// Unified tenant-app provisioning for laundry. A laundry business has TWO public
-// apps — the Customer site (<domain>) and the Executive PWA (delivery.<domain>).
-// Both are provisioned by the SAME engine (provisionProductHost → nginx vhost +
-// Let's Encrypt), never a separate infrastructure step. Status is tracked on the
-// existing DomainMapping row. Idempotent (reuses an existing vhost/cert).
+// Unified tenant-app provisioning for laundry. A laundry business has THREE public
+// apps — the Customer site (<domain>), the Executive PWA (delivery.<domain>) and
+// the Store Admin PWA (store.<domain>). All are provisioned by the SAME engine
+// (provisionProductHost → nginx vhost + Let's Encrypt), never a separate
+// infrastructure step. Customer + Executive SSL status is persisted on the
+// existing DomainMapping row; the Store host reports status via live HTTPS
+// reachability (no schema change). Idempotent (reuses an existing vhost/cert).
 import { prisma } from "@/lib/prisma"
 import { provisionProductHost } from "@/lib/product-host-provisioner"
 
 const SF_BASE = process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN || "quantixtechnology.in"
 
-async function resolveDomains(platformBusinessId: string): Promise<{ customer: string; executive: string } | null> {
+async function resolveDomains(platformBusinessId: string): Promise<{ customer: string; executive: string; store: string } | null> {
   const b = await prisma.business.findUnique({ where: { id: platformBusinessId }, select: { slug: true, domain: { select: { domain: true } } } })
   const customer = b?.domain?.domain || (b?.slug ? `${b.slug}.${SF_BASE}` : null)
   if (!customer) return null
-  return { customer, executive: `delivery.${customer}` }
+  return { customer, executive: `delivery.${customer}`, store: `store.${customer}` }
 }
 
 const sslLabel = (r: "issued" | "existing" | "failed") => (r === "failed" ? "failed" : "active")
@@ -23,7 +25,9 @@ export async function provisionTenantApps(platformBusinessId: string) {
   if (!d) return { ok: false as const, error: "Business has no slug or mapped domain" }
 
   await prisma.domainMapping.updateMany({ where: { businessId: platformBusinessId }, data: { executiveSslStatus: "provisioning" } }).catch(() => {})
-  const [cust, exec] = await Promise.all([provisionProductHost(d.customer), provisionProductHost(d.executive)])
+  // All three hosts through the same engine, in parallel. The Store host is
+  // provisioned identically; its status is reported live (no persisted column).
+  const [cust, exec, store] = await Promise.all([provisionProductHost(d.customer), provisionProductHost(d.executive), provisionProductHost(d.store)])
 
   await prisma.domainMapping.updateMany({
     where: { businessId: platformBusinessId },
@@ -35,7 +39,7 @@ export async function provisionTenantApps(platformBusinessId: string) {
     },
   }).catch(() => {})
 
-  return { ok: true as const, customer: cust, executive: exec }
+  return { ok: true as const, customer: cust, executive: exec, store }
 }
 
 async function httpsReachable(host: string): Promise<boolean> {
@@ -52,15 +56,18 @@ async function httpsReachable(host: string): Promise<boolean> {
 export interface TenantAppStatus {
   customer: { url: string; sslStatus: string; httpsReachable: boolean }
   executive: { url: string; sslStatus: string; httpsReachable: boolean }
+  store: { url: string; sslStatus: string; httpsReachable: boolean }
 }
 
 export async function getTenantAppStatus(platformBusinessId: string): Promise<TenantAppStatus | null> {
   const d = await resolveDomains(platformBusinessId)
   if (!d) return null
   const dm = await prisma.domainMapping.findUnique({ where: { businessId: platformBusinessId }, select: { sslStatus: true, executiveSslStatus: true } })
-  const [custHttps, execHttps] = await Promise.all([httpsReachable(d.customer), httpsReachable(d.executive)])
+  const [custHttps, execHttps, storeHttps] = await Promise.all([httpsReachable(d.customer), httpsReachable(d.executive), httpsReachable(d.store)])
   return {
     customer: { url: `https://${d.customer}`, sslStatus: dm?.sslStatus ?? "pending", httpsReachable: custHttps },
     executive: { url: `https://${d.executive}`, sslStatus: dm?.executiveSslStatus ?? "pending", httpsReachable: execHttps },
+    // Store status derived from live reachability (active once its cert serves).
+    store: { url: `https://${d.store}`, sslStatus: storeHttps ? "active" : "pending", httpsReachable: storeHttps },
   }
 }

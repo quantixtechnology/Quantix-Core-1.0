@@ -15,7 +15,7 @@ import { toast } from "sonner"
 import { useAuthStore } from "@/stores/auth-store"
 
 interface AppStatus { url: string; sslStatus: string; httpsReachable: boolean }
-interface Provisioning { customer: AppStatus; executive: AppStatus }
+interface Provisioning { customer: AppStatus; executive: AppStatus; store: AppStatus }
 
 export function LaundryMobileApps() {
   const { currentBusinessId } = useAuthStore()
@@ -35,7 +35,7 @@ export function LaundryMobileApps() {
   useEffect(() => { load() }, [load])
   // Poll while anything is still provisioning so status updates live.
   useEffect(() => {
-    const busy = prov && [prov.customer.sslStatus, prov.executive.sslStatus].some((s) => s === "provisioning")
+    const busy = prov && [prov.customer.sslStatus, prov.executive.sslStatus, prov.store.sslStatus].some((s) => s === "provisioning")
     if (!busy) return
     const t = setInterval(load, 8000)
     return () => clearInterval(t)
@@ -53,8 +53,8 @@ export function LaundryMobileApps() {
 
   const customerUrl = prov?.customer.url || (origin ? `${origin}/laundry/app` : "")
   const executiveUrl = prov?.executive.url || (origin ? `${origin}/laundry/executive` : "")
-  const storeAdminUrl = origin ? `${origin}/laundry/store` : ""
-  const anyFailed = prov && [prov.customer.sslStatus, prov.executive.sslStatus].some((s) => s === "failed")
+  const storeAdminUrl = prov?.store.url || (origin ? `${origin}/laundry/store` : "")
+  const anyFailed = prov && [prov.customer.sslStatus, prov.executive.sslStatus, prov.store.sslStatus].some((s) => s === "failed")
 
   return (
     <div className="space-y-4">
@@ -80,7 +80,8 @@ export function LaundryMobileApps() {
           <StatusStrip label="Executive host" status={prov?.executive} loading={loading} />
         </div>
         <div className="space-y-2">
-          <AppShareCard title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Only Store Managers, Supervisors and Counter Staff sign in — each sees only their own store." />
+          <AppShareCard title="Store Admin App" description="Store staff run daily operations from their phone." icon={<Store className="h-5 w-5" />} url={storeAdminUrl} note="Dedicated per-tenant host — only Store Managers, Supervisors and Counter Staff sign in; each sees only their own store." />
+          <StatusStrip label="Store host" status={prov?.store} loading={loading} />
         </div>
         <Card className="rounded-xl border-slate-200">
           <CardContent className="p-4 space-y-2">

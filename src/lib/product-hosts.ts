@@ -29,7 +29,9 @@
 import { getWorkspaceEntryRoute } from './workspace-routes'
 
 // Hostnames reserved by the platform itself (never products, never tenant slugs).
-const PLATFORM_RESERVED_PREFIXES = ['www', 'app', 'admin', 'api', 'mail'] as const
+// `delivery` and `store` are the dedicated laundry PWA host prefixes — reserving
+// them prevents a tenant slug from colliding with an app subdomain.
+const PLATFORM_RESERVED_PREFIXES = ['www', 'app', 'admin', 'api', 'mail', 'delivery', 'store'] as const
 
 // Products shipped in this repository. Prefix === lowercased product code.
 const DEFAULT_PRODUCT_HOST_PREFIXES = ['commerce', 'laundry'] as const
