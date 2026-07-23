@@ -28,8 +28,11 @@ type Identity = { userId: string; role: string; email: string; name: string }
  * cookie. This resolves both so API guards recognise tenant users too.
  */
 async function resolveIdentity(request?: Request): Promise<Identity | null> {
-  // 1. NextAuth session cookie (platform staff / support mode).
-  const session = await getServerSession(authOptions)
+  // 1. NextAuth session cookie (platform staff / support mode). Never let a
+  //    session-read failure (no cookie, malformed cookie, missing context) throw
+  //    — that would surface as a 500 for perfectly valid Bearer-token callers
+  //    (e.g. the Store Admin / Executive PWAs). Fall through to the Bearer path.
+  const session = await getServerSession(authOptions).catch(() => null)
   if (session?.user?.id) {
     return { userId: session.user.id, role: session.user.role, email: session.user.email || "", name: session.user.name || "" }
   }
