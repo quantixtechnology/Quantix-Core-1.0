@@ -26,7 +26,11 @@ export async function POST(request: Request) {
     const email = normalizeEmail(body.email || '');
     const phone = normalizePhone(body.phone || '');
     const { code, businessId, storeId } = body;
-    const name = body.name?.trim() || email.split('@')[0];
+    // NEVER derive a customer name from the email username (same rule as the
+    // Commerce platform). Only the explicitly-entered name is stored; if it's
+    // missing the customer keeps their existing name (createStorefrontSession
+    // never overwrites) and the app prompts for it — no email-as-name.
+    const name = (body.name ?? '').trim();
 
     if (!email || !code || !businessId) {
       return NextResponse.json(

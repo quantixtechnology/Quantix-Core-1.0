@@ -692,8 +692,42 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
   const [svc, setSvc] = useState(""); const [gar, setGar] = useState(""); const [qty, setQty] = useState("1")
   const [lines, setLines] = useState<{ serviceId: string; serviceName: string; garmentId: string; garmentName: string; quantity: number }[]>([])
   // pickup
-  const [address, setAddress] = useState(""); const [date, setDate] = useState(""); const [slot, setSlot] = useState("")
+  const [date, setDate] = useState(""); const [slot, setSlot] = useState("")
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
+  // saved addresses (reuse the existing customer address module — single source)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [addresses, setAddresses] = useState<any[]>([])
+  const [addrId, setAddrId] = useState("")
+  const [showAddAddr, setShowAddAddr] = useState(false)
+  const [na, setNa] = useState({ addressType: "HOME", addressLine1: "", area: "", city: "", pincode: "" })
+  const [savingAddr, setSavingAddr] = useState(false)
+  const fmtAddr = (a: { addressLine1: string; area?: string | null; city?: string | null }) => [a.addressLine1, a.area, a.city].filter(Boolean).join(", ")
+
+  const loadAddresses = useCallback(async (custId: string) => {
+    const j = await api(`/api/laundry/customers/${custId}/addresses?businessId=${staff.businessId}`)
+    const list = j.success ? (j.data || []) : []
+    setAddresses(list)
+    // Preselect the pickup-default, else the default, else the only/first one.
+    const pref = list.find((a: { isPickupDefault?: boolean }) => a.isPickupDefault) || list.find((a: { isDefault?: boolean }) => a.isDefault) || list[0]
+    setAddrId(pref?.id || "")
+    setShowAddAddr(list.length === 0)
+  }, [api, staff.businessId])
+  useEffect(() => {
+    if (kind === "HOME_PICKUP" && customer?.id) loadAddresses(customer.id)
+    else { setAddresses([]); setAddrId(""); setShowAddAddr(false) }
+  }, [kind, customer, loadAddresses])
+
+  const saveAddress = async () => {
+    if (!customer?.id || !na.addressLine1.trim()) return
+    setSavingAddr(true)
+    try {
+      const j = await api(`/api/laundry/customers/${customer.id}/addresses`, { method: "POST", body: JSON.stringify({ businessId: staff.businessId, ...na, isPickupDefault: addresses.length === 0 }) })
+      if (!j.success) { setErr(j.error || "Could not save address"); return }
+      setNa({ addressType: "HOME", addressLine1: "", area: "", city: "", pincode: "" }); setShowAddAddr(false)
+      await loadAddresses(customer.id)
+      if (j.data?.id) setAddrId(j.data.id) // select the newly-added address
+    } finally { setSavingAddr(false) }
+  }
 
   useEffect(() => {
     api(`/api/laundry/services?businessId=${staff.businessId}`).then((j) => { if (j.success) setServices(j.data || j.services || []) })
@@ -723,13 +757,15 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
     setErr(null)
     if (!customer) { setErr("Select or create a customer"); return }
     if (lines.length === 0) { setErr("Add at least one garment"); return }
+    const selAddr = addresses.find((a) => a.id === addrId)
+    if (kind === "HOME_PICKUP" && !selAddr) { setErr("Select or add a pickup address"); return }
     setBusy(true)
     try {
       const j = await api("/api/laundry/orders", { method: "POST", body: JSON.stringify({
         businessId: staff.businessId, storeId: staff.storeId, customerId: customer.id, orderType: kind,
         createdBy: staff.name,
         items: lines.map((l) => ({ serviceId: l.serviceId, garmentId: l.garmentId, quantity: l.quantity, weightKg: 0 })),
-        ...(kind === "HOME_PICKUP" ? { pickupRequired: true, pickupAddress: address || null, pickupDate: date || null, pickupTimeSlot: slot || null } : {}),
+        ...(kind === "HOME_PICKUP" ? { pickupRequired: true, pickupAddress: selAddr ? fmtAddr(selAddr) : null, pickupDate: date || null, pickupTimeSlot: slot || null } : {}),
       }) })
       if (!j.success) throw new Error(j.error || "Failed to create order")
       onCreated()
@@ -791,9 +827,44 @@ function CreateSheet({ staff, api, onClose, onCreated }: { staff: Staff; api: Ap
 
         {kind === "HOME_PICKUP" && (
           <section className="space-y-2">
-            <p className="text-[12px] font-semibold text-slate-600">Pickup</p>
-            <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400 shrink-0" /><input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Pickup address" className="w-full h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /></div>
-            <div className="grid grid-cols-2 gap-2"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /><input value={slot} onChange={(e) => setSlot(e.target.value)} placeholder="Time slot" className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /></div>
+            <p className="text-[12px] font-semibold text-slate-600">Pickup Address</p>
+            {!customer ? (
+              <p className="text-[12px] text-slate-400">Select a customer to load their saved addresses.</p>
+            ) : (
+              <>
+                {addresses.map((a) => (
+                  <label key={a.id} className={`flex items-start gap-2 rounded-xl border p-3 ${addrId === a.id ? "border-blue-400 bg-blue-50/50" : "border-slate-200"}`}>
+                    <input type="radio" checked={addrId === a.id} onChange={() => setAddrId(a.id)} className="mt-0.5" />
+                    <span className="min-w-0">
+                      <span className="text-[13px] font-medium text-slate-800">{a.label || a.addressType}{a.isPickupDefault ? " · Default" : ""}</span>
+                      <span className="block text-[12px] text-slate-500">{fmtAddr(a)}{a.pincode ? ` — ${a.pincode}` : ""}</span>
+                    </span>
+                  </label>
+                ))}
+                {addresses.length === 0 && !showAddAddr && <p className="text-[12px] text-slate-400">No saved addresses.</p>}
+                {!showAddAddr ? (
+                  <button onClick={() => setShowAddAddr(true)} className="w-full h-10 rounded-xl border border-dashed border-blue-200 text-blue-700 text-[13px] font-medium flex items-center justify-center gap-1"><MapPin className="h-4 w-4" /> Add New Address</button>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 p-2.5 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <select value={na.addressType} onChange={(e) => setNa((p) => ({ ...p, addressType: e.target.value }))} className="h-10 rounded-lg border border-slate-200 px-2 text-[13px] bg-white">{["HOME", "OFFICE", "APARTMENT", "OTHER"].map((t) => <option key={t} value={t}>{t}</option>)}</select>
+                      <input value={na.pincode} onChange={(e) => setNa((p) => ({ ...p, pincode: e.target.value }))} inputMode="numeric" placeholder="Pincode" className="h-10 rounded-lg border border-slate-200 px-3 text-[13px]" />
+                    </div>
+                    <input value={na.addressLine1} onChange={(e) => setNa((p) => ({ ...p, addressLine1: e.target.value }))} placeholder="Address line" className="w-full h-10 rounded-lg border border-slate-200 px-3 text-[14px]" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={na.area} onChange={(e) => setNa((p) => ({ ...p, area: e.target.value }))} placeholder="Area" className="h-10 rounded-lg border border-slate-200 px-3 text-[13px]" />
+                      <input value={na.city} onChange={(e) => setNa((p) => ({ ...p, city: e.target.value }))} placeholder="City" className="h-10 rounded-lg border border-slate-200 px-3 text-[13px]" />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={saveAddress} disabled={savingAddr || !na.addressLine1.trim()} className="flex-1 h-10 rounded-lg bg-blue-600 text-white text-[13px] font-medium disabled:opacity-50">{savingAddr ? "Saving…" : "Save Address"}</button>
+                      {addresses.length > 0 && <button onClick={() => setShowAddAddr(false)} className="h-10 px-3 rounded-lg border border-slate-200 text-[13px] text-slate-500">Cancel</button>}
+                    </div>
+                  </div>
+                )}
+                <p className="text-[12px] font-semibold text-slate-600 pt-1">Pickup Schedule</p>
+                <div className="grid grid-cols-2 gap-2"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /><input value={slot} onChange={(e) => setSlot(e.target.value)} placeholder="Time slot" className="h-11 rounded-xl border border-slate-200 px-3 text-[14px]" /></div>
+              </>
+            )}
           </section>
         )}
         {err && <p className="text-sm text-rose-600">{err}</p>}
