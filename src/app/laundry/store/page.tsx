@@ -16,7 +16,18 @@ import { getTransitions, statusLabel } from "@/lib/laundry-workflow"
 
 const TOKEN_KEY = "qx_store_token"
 
-interface Staff { name: string | null; businessId: string; roleName: string; storeId: string; storeName: string | null; storeCode: string | null }
+interface Staff { name: string | null; businessId: string; businessName?: string | null; businessLogo?: string | null; roleName: string; storeId: string; storeName: string | null; storeCode: string | null }
+
+function useOnline() {
+  const [online, setOnline] = useState(true)
+  useEffect(() => {
+    const on = () => setOnline(true); const off = () => setOnline(false)
+    setOnline(navigator.onLine)
+    window.addEventListener("online", on); window.addEventListener("offline", off)
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off) }
+  }, [])
+  return online
+}
 interface Counts { todaysOrders: number; todaysPickup: number; todaysDelivery: number; pendingAudit: number; pendingPayment: number; readyProcessing: number; readyDelivery: number; completedToday: number }
 type Tab = "dashboard" | "orders" | "dispatch" | "scan" | "profile"
 
@@ -131,15 +142,41 @@ export default function StoreAdminApp() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Api = (path: string, init?: RequestInit, tk?: string) => Promise<any>
 
+function Field({ label, value, tone }: { label: string; value: string; tone?: "rose" | "emerald" }) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase text-slate-400">{label}</p>
+      <p className={`font-medium ${tone === "rose" ? "text-rose-600" : tone === "emerald" ? "text-emerald-600" : "text-slate-700"}`}>{value}</p>
+    </div>
+  )
+}
+
 function Header({ staff }: { staff: Staff }) {
+  const online = useOnline()
+  const today = new Date().toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" })
   return (
     <header className="bg-blue-600 text-white px-4 pt-5 pb-6 rounded-b-2xl">
-      <div className="flex items-center gap-2.5">
-        <div className="h-10 w-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0"><Store className="h-5 w-5" /></div>
-        <div className="min-w-0">
-          <p className="text-[15px] font-semibold truncate">{staff.storeName || "Your Store"}</p>
-          <p className="text-[11px] text-blue-100 truncate">{staff.name} · {staff.roleName}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center shrink-0 overflow-hidden">
+            {staff.businessLogo
+              ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={staff.businessLogo} alt="" className="h-full w-full object-contain" />
+              : <Store className="h-5 w-5 text-blue-600" />}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[15px] font-bold truncate leading-tight">{staff.businessName || "Laundry"}</p>
+            <p className="text-[12px] text-blue-100 truncate">{staff.storeName || "Your Store"}</p>
+          </div>
         </div>
+        <div className="text-right shrink-0">
+          <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ${online ? "bg-emerald-400/20 text-emerald-50" : "bg-amber-400/20 text-amber-50"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-emerald-300" : "bg-amber-300"}`} />{online ? "Online" : "Offline"}
+          </span>
+          <p className="text-[10px] text-blue-100 mt-1">{today}</p>
+        </div>
+      </div>
+      <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-blue-100">
+        <User className="h-3 w-3" />{staff.name} · <span className="text-white font-medium">{staff.roleName}</span>
       </div>
     </header>
   )
@@ -165,6 +202,28 @@ function Dashboard({ staff, api, onCounter, onTab }: { staff: Staff; api: Api; o
     <>
       <Header staff={staff} />
       <main className="px-4 -mt-3 space-y-4">
+        {/* Pending Actions — what needs attention right now */}
+        {counts && (() => {
+          const items = [
+            counts.pendingAudit > 0 && { n: counts.pendingAudit, label: "awaiting audit", color: "text-blue-700 bg-blue-50 border-blue-200", go: () => onCounter("PENDING_STORE_AUDIT") },
+            counts.pendingPayment > 0 && { n: counts.pendingPayment, label: "payments pending", color: "text-rose-700 bg-rose-50 border-rose-200", go: () => onCounter("PAYMENT_PENDING") },
+            counts.readyDelivery > 0 && { n: counts.readyDelivery, label: "ready to deliver", color: "text-emerald-700 bg-emerald-50 border-emerald-200", go: () => onCounter("READY_FOR_DELIVERY") },
+          ].filter(Boolean) as { n: number; label: string; color: string; go: () => void }[]
+          if (items.length === 0) return null
+          return (
+            <section>
+              <h2 className="text-[13px] font-semibold text-slate-700 px-1 mb-2">Needs attention</h2>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {items.map((it, i) => (
+                  <button key={i} onClick={it.go} className={`shrink-0 rounded-xl border ${it.color} px-3 py-2 text-left active:scale-[0.98] transition-transform`}>
+                    <span className="text-lg font-bold tabular-nums">{it.n}</span>
+                    <span className="text-[11px] ml-1.5 font-medium">{it.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )
+        })()}
         <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3">
           <div className="flex items-center justify-between mb-2 px-1">
             <h2 className="text-[13px] font-semibold text-slate-700">Today at a glance</h2>
@@ -263,13 +322,37 @@ function OrderDetail({ id, staff, api, onBack }: { id: string; staff: Staff; api
         <div className="min-w-0"><p className="font-mono font-bold text-[14px] text-slate-800 truncate">{order.orderNumber}</p><p className="text-[11px] text-slate-400">{statusLabel(order.status)}</p></div>
       </header>
       <div className="p-3 space-y-3">
-        <div className="bg-white rounded-xl border border-slate-200 p-3 space-y-1.5">
-          <div className="flex items-center gap-2 text-[13px]"><User className="h-4 w-4 text-slate-400" />{order.customer?.name || "—"}</div>
-          {order.customer?.phone && <div className="flex items-center gap-2 text-[13px] text-slate-500"><Phone className="h-4 w-4 text-slate-400" />{order.customer.phone}</div>}
-          <div className="flex items-center justify-between pt-1 text-[13px]">
+        {/* Prominent current-stage banner — staff instantly know what's expected */}
+        <div className="rounded-xl bg-blue-600 text-white p-3">
+          <p className="text-[10px] uppercase tracking-wide text-blue-100">Current Stage</p>
+          <p className="text-[17px] font-bold leading-tight">{statusLabel(order.status)}</p>
+          {primary && <p className="text-[11px] text-blue-100 mt-0.5">Next: {primary.label}</p>}
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-[14px] font-medium"><User className="h-4 w-4 text-slate-400" />{order.customer?.name || "—"}</div>
+          {order.customer?.phone && (
+            <div className="flex items-center gap-2">
+              <span className="flex-1 flex items-center gap-2 text-[13px] text-slate-500"><Phone className="h-4 w-4 text-slate-400" />{order.customer.phone}</span>
+              <a href={`tel:${order.customer.phone}`} className="h-9 px-3 rounded-lg bg-blue-50 text-blue-700 text-[12px] font-medium flex items-center gap-1"><Phone className="h-3.5 w-3.5" />Call</a>
+              <a href={`https://wa.me/${String(order.customer.phone).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className="h-9 px-3 rounded-lg bg-emerald-50 text-emerald-700 text-[12px] font-medium flex items-center gap-1"><Phone className="h-3.5 w-3.5" />WhatsApp</a>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[13px]">
             <span className="text-slate-500">Total {inr(order.grandTotal)}</span>
             <span className={order.balanceDue > 0 ? "text-rose-600 font-bold" : "text-emerald-600 font-semibold"}>{order.balanceDue > 0 ? `${inr(order.balanceDue)} due` : "Paid"}</span>
           </div>
+        </div>
+
+        {/* Status panel */}
+        <div className="bg-white rounded-xl border border-slate-200 p-3 grid grid-cols-2 gap-y-2 gap-x-3 text-[12px]">
+          <Field label="Payment" value={order.balanceDue > 0 ? "Pending" : "Paid"} tone={order.balanceDue > 0 ? "rose" : "emerald"} />
+          <Field label="Order Type" value={order.orderType || "—"} />
+          {order.pickupRequired && <Field label="Pickup Slot" value={[fmtDay(order.pickupDate), order.pickupTimeSlot].filter(Boolean).join(" ") || "—"} />}
+          {order.pickupRequired && <Field label="Pickup Exec" value={order.pickupExecutiveId ? "Assigned" : "Unassigned"} />}
+          {order.deliveryRequired && <Field label="Delivery Slot" value={[fmtDay(order.deliveryDate), order.deliveryTimeSlot].filter(Boolean).join(" ") || "—"} />}
+          {order.deliveryRequired && <Field label="Delivery Exec" value={order.deliveryExecutiveId ? "Assigned" : "Unassigned"} />}
+          {order.packet?.packetNumber && <Field label="Package" value={order.packet.packetNumber} />}
         </div>
         {Array.isArray(order.items) && order.items.length > 0 && (
           <div className="bg-white rounded-xl border border-slate-200 p-3">

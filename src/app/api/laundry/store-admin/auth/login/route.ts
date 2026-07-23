@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma"
 import { verifyPassword, createAccessToken } from "@/lib/password-utils"
 import { resolveLaundryBusiness } from "@/lib/laundry-business"
 import { STORE_ADMIN_ROLES } from "@/lib/laundry-store-admin-auth"
+import { resolveImageUrl } from "@/lib/image-url"
 
 export const runtime = "nodejs"
 
@@ -44,11 +45,17 @@ export async function POST(request: Request) {
     await prisma.refreshToken.create({ data: { userId: user.id, token, expiresAt } })
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => {})
 
+    const business = biz.platformBusinessId ? await prisma.business.findUnique({ where: { id: biz.platformBusinessId }, select: { name: true, logo: true } }) : null
+
     return NextResponse.json({
       success: true,
       data: {
         token,
-        staff: { name: user.name, businessId: biz.id, roleCode: assign.role.code, roleName: assign.role.name, storeId: store.id, storeName: store.storeName, storeCode: store.storeCode },
+        staff: {
+          name: user.name, businessId: biz.id,
+          businessName: business?.name ?? null, businessLogo: business?.logo ? resolveImageUrl(business.logo) : null,
+          roleCode: assign.role.code, roleName: assign.role.name, storeId: store.id, storeName: store.storeName, storeCode: store.storeCode,
+        },
       },
     })
   } catch (e) {
